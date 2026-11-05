@@ -88,9 +88,28 @@ def render(request: Request, name: str, status_code: int = 200, **context: objec
     context["min_password_length"] = auth.MIN_PASSWORD_LENGTH
     context.setdefault("notice", request.session.pop(FLASH_KEY, None))
     context["csrf_token"] = csrf_token(request)
+    _add_rights_notice(request, context)
     return request.app.state.templates.TemplateResponse(
         request, name, context, status_code=status_code
     )
+
+
+def _add_rights_notice(request: Request, context: dict[str, object]) -> None:
+    """What base.html needs to show the missing-rights dialog or, after "Later", the warning line."""
+    notice = request.app.state.rights.notice
+    context["rights_notice"] = notice
+    context["rights_later"] = bool(request.session.get("rights_later", False))
+    if notice is None:
+        return
+    from reprintbuddy.web.bambuddy_check import permission_context  # imports deps: not at the top
+
+    tables = permission_context()
+    for name, value in tables.items():
+        context.setdefault(name, value)
+    labels = tables["editor_labels"]
+    context["rights_names"] = ", ".join(str(labels[code]) for code in notice.missing)
+    target = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    context["rights_next"] = target
 
 
 def flash(request: Request, key: str) -> None:

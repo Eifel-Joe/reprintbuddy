@@ -56,10 +56,24 @@
     <div class="sidebar-footer">{{ nav_footer() }}</div>
   </aside>
   <main class="content">
+    {% if rights_notice and rights_later %}
+    {# After "Later": the notice shrinks to one line until the person signs out. #}
+    <div class="rights-banner" role="status">
+      <span>{{ t('rights.banner', rights=rights_names) }} <a href="/settings">{{ t('rights.details') }}</a></span>
+      <form method="post" action="/bambuddy/rights/recheck">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ rights_next }}">
+        <button class="btn secondary" type="submit">{{ t('rights.recheck') }}</button>
+      </form>
+    </div>
+    {% endif %}
     {% for message in pop_flashes(request) %}<p class="flash" role="status">{{ message }}</p>{% endfor %}
     {% block content %}{% endblock %}
   </main>
 </div>
+{% if rights_notice and not rights_later %}
+{% include "_rights_notice.html" %}
+{% endif %}
 {% endblock %}
 </body>
 </html>
