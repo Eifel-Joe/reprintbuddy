@@ -10,6 +10,13 @@
   <li>{% include "_permission_label.html" %}</li>
   {% endfor %}
 </ul>
+<p>{{ t('bambuddy.user.key_rights') }}</p>
+<ul class="perms">
+  {% for code in key_creation_permissions %}
+  <li>{% include "_permission_label.html" %}</li>
+  {% endfor %}
+</ul>
+<p class="muted">{{ t('bambuddy.user.key_rights_after') }}</p>
 <p>{{ t('bambuddy.user.user') }}</p>
 <p class="muted">{{ t('bambuddy.user.password') }}</p>
 <p class="actions"><a class="btn" href="/setup/bambuddy/key">{{ t('bambuddy.next') }}</a></p>

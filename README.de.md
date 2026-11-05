@@ -1,4 +1,21 @@
-# Reprintbuddy
+<p align="center">
+  <img src="src/reprintbuddy/web/static/img/logo.svg" alt="Reprintbuddy" width="128" height="128">
+</p>
+
+<h1 align="center">Reprintbuddy</h1>
+
+<p align="center">
+  <strong>Dein Regal bleibt voll. Bambuddy druckt.</strong><br>
+  Selbst gehostete Lagerführung für 3D-gedruckte Teile, Nachdrucke über die Warteschlange von Bambuddy.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/releases"><img src="https://img.shields.io/github/v/release/Eifel-Joe/reprintbuddy" alt="Release"></a>
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Eifel-Joe/reprintbuddy/ci.yml?branch=main&logo=github&label=CI" alt="CI"></a>
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Eifel-Joe/reprintbuddy" alt="License: AGPL-3.0"></a>
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/stargazers"><img src="https://img.shields.io/github/stars/Eifel-Joe/reprintbuddy?style=flat" alt="Stars"></a>
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/issues"><img src="https://img.shields.io/github/issues/Eifel-Joe/reprintbuddy" alt="Issues"></a>
+</p>
 
 [English: README.md](README.md)
 
@@ -8,7 +25,7 @@ Bambuddy stellt. Fertige Drucke prüfst
 du in Reprintbuddy, und es zeigt dir, was nachzubestellen ist. Es läuft als
 kleine Webanwendung im Heimnetz und ist von außen nur über ein VPN erreichbar.
 
-> **Stand:** in Entwicklung, noch keine Version veröffentlicht.
+> **Stand:** in Entwicklung, noch nicht einsatzbereit.
 
 Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu Lab verbunden.
 
@@ -111,14 +128,19 @@ Einrichtung akzeptiert.
 2. **Gruppe und Benutzer in Bambuddy:** Lege in Bambuddy unter *Einstellungen → Benutzer* eine
    eigene Gruppe `Reprintbuddy` an. Keine Systemgruppe passt: *Operators* sieht nur eigene
    Dateien und Aufträge, *Administrators* darf alles. Gib der Gruppe diese Rechte (in Klammern
-   der interne Name):
+   der interne Name). Bambuddy zeigt die Rechte nur auf Englisch, deshalb stehen sie hier wie dort:
 
-   - Bibliothek lesen, alle (`library:read_all`)
-   - Warteschlange lesen, alle (`queue:read_all`)
-   - Warteschlange anlegen (`queue:create`)
-   - ohne Prüfung drucken (`queue:start_unreviewed`, „Print Without Review“)
-   - Drucker lesen (`printers:read`)
-   - Inventar lesen (`inventory:read`)
+   - Read All Library (`library:read_all`): damit Reprintbuddy deine Druckdateien sieht
+   - Read All Queue (`queue:read_all`): damit Reprintbuddy die ganze Warteschlange sieht
+   - Create Queue (`queue:create`): damit Reprintbuddy Nachdrucke einreihen kann
+   - Start Unreviewed Queue (`queue:start_unreviewed`): damit Nachdrucke ohne Freigabe starten
+   - Read Printers (`printers:read`): damit Reprintbuddy die Drucker und ihren Zustand sieht
+   - Read Inventory (`inventory:read`): damit Reprintbuddy den Filamentbestand liest
+
+   Nur zum Erzeugen des Schlüssels im nächsten Schritt braucht die Gruppe zusätzlich diese drei
+   Rechte; Reprintbuddy prüft sie nicht, und sie dürfen danach wieder weg: Read Api Keys
+   (`api_keys:read`), Create Api Keys (`api_keys:create`) und Read Settings (`settings:read`;
+   ohne es blendet Bambuddy das Menü Einstellungen aus).
 
    Lege dann den Benutzer `reprintbuddy` in dieser Gruppe an. Sein Passwort brauchst du nur
    einmal, um den Schlüssel zu erzeugen; Reprintbuddy fragt es nicht ab und speichert es nicht.
@@ -127,9 +149,8 @@ Einrichtung akzeptiert.
    und stelle ihn genau so ein: Name „Reprintbuddy“; *Status lesen* (*Read Status*) **an**;
    *Warteschlange verwalten* (*Manage Queue*) **an**; alle anderen **aus** (*Control Printer*,
    *Manage Library*, *Manage Inventory*, *Manage Maintenance*, *Manage Archives*,
-   *Manage Projects*, *Allow Cloud Access*, *Update Electricity Price*, *Send Notifications*);
-   Drucker: **keine Einschränkung** (sonst sieht Reprintbuddy nur einen Teil der Drucker);
-   Ablaufdatum: **keins** (sonst hört Reprintbuddy an dem Tag still auf). Kopiere den Schlüssel
+   *Manage Projects*, *Allow Cloud Access*, *Update Electricity Price*, *Send Notifications*).
+   Kopiere den Schlüssel
    sofort (Bambuddy zeigt ihn nur einmal) und melde dich wieder ab.
 4. **Bambuddy anbinden:** Trage die Adresse von Bambuddy und den Schlüssel ein. Reprintbuddy
    fragt Bambuddy (`GET /api/v1/auth/me`), wem der Schlüssel gehört und welche Rechte er wirklich

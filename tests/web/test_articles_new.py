@@ -62,7 +62,8 @@ def test_browse_unknown_folder_param(bb_client):
 
 def test_plates_listed_with_thumbnails(bb_client):
     page = bb_client.get("/articles/new/file/2")
-    images = re.findall(r'<img[^>]*src="([^"]+)"', page.text)
+    # the page header carries the logo too: look at the plate pictures only
+    images = [src for src in re.findall(r'<img[^>]*src="([^"]+)"', page.text) if "/plate/" in src]
     assert images == ["/articles/new/file/2/plate/1/thumbnail", "/articles/new/file/2/plate/2/thumbnail"]
     image = bb_client.get(images[0])
     assert image.status_code == 200 and image.headers["content-type"] == "image/png"

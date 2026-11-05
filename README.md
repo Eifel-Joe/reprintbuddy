@@ -1,4 +1,21 @@
-# Reprintbuddy
+<p align="center">
+  <img src="src/reprintbuddy/web/static/img/logo.svg" alt="Reprintbuddy" width="128" height="128">
+</p>
+
+<h1 align="center">Reprintbuddy</h1>
+
+<p align="center">
+  <strong>Your shelf stays stocked. Bambuddy does the printing.</strong><br>
+  Self-hosted stock keeping for 3D-printed items, with reprints through Bambuddy's queue.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/releases"><img src="https://img.shields.io/github/v/release/Eifel-Joe/reprintbuddy" alt="Release"></a>
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Eifel-Joe/reprintbuddy/ci.yml?branch=main&logo=github&label=CI" alt="CI"></a>
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Eifel-Joe/reprintbuddy" alt="License: AGPL-3.0"></a>
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/stargazers"><img src="https://img.shields.io/github/stars/Eifel-Joe/reprintbuddy?style=flat" alt="Stars"></a>
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/issues"><img src="https://img.shields.io/github/issues/Eifel-Joe/reprintbuddy" alt="Issues"></a>
+</p>
 
 [Deutsch: README.de.md](README.de.md)
 
@@ -7,7 +24,7 @@ handing print jobs to Bambuddy's queue,
 lets you check finished prints, and tells you what to reorder. It runs as a
 small web application on your home network, reachable from outside only through a VPN.
 
-> **Status:** under development, no release yet.
+> **Status:** under development, not ready for real use yet.
 
 Reprintbuddy is an independent project and is not affiliated with Bambuddy or Bambu Lab.
 
@@ -107,14 +124,20 @@ DNS names, are accepted only after setup.
 2. **Group and user in Bambuddy:** in Bambuddy, under *Settings → Users*, create your own
    group named `Reprintbuddy`. No system group fits: *Operators* only sees its own files and
    queue entries, *Administrators* may do everything. Give the group these rights (the
-   internal names are in brackets):
+   internal names are in brackets). Bambuddy shows its rights in English only, so they are
+   named here as in Bambuddy:
 
-   - read library, all (`library:read_all`)
-   - read queue, all (`queue:read_all`)
-   - create queue entries (`queue:create`)
-   - print without review (`queue:start_unreviewed`, "Print Without Review")
-   - read printers (`printers:read`)
-   - read inventory (`inventory:read`)
+   - Read All Library (`library:read_all`): so that Reprintbuddy sees your print files
+   - Read All Queue (`queue:read_all`): so that Reprintbuddy sees the whole queue
+   - Create Queue (`queue:create`): so that Reprintbuddy can queue reprints
+   - Start Unreviewed Queue (`queue:start_unreviewed`): so that reprints start without approval
+   - Read Printers (`printers:read`): so that Reprintbuddy sees the printers and their state
+   - Read Inventory (`inventory:read`): so that Reprintbuddy reads the filament stock
+
+   Only to create the key in the next step, the group also needs these three rights; Reprintbuddy
+   does not check them, and they may be removed again afterwards: Read Api Keys
+   (`api_keys:read`), Create Api Keys (`api_keys:create`) and Read Settings (`settings:read`;
+   without it Bambuddy hides the Settings menu).
 
    Then create the user `reprintbuddy` in this group. Its password is needed only once, to
    create the key; Reprintbuddy neither asks for it nor stores it.
@@ -123,9 +146,7 @@ DNS names, are accepted only after setup.
    name "Reprintbuddy"; *Read Status* **on**; *Manage Queue* **on**; all others **off**
    (*Control Printer*, *Manage Library*, *Manage Inventory*, *Manage Maintenance*,
    *Manage Archives*, *Manage Projects*, *Allow Cloud Access*, *Update Electricity Price*,
-   *Send Notifications*); printers: **no restriction** (otherwise Reprintbuddy sees only some
-   printers); expiry date: **none** (otherwise Reprintbuddy stops working silently on that day).
-   Copy the key at once (Bambuddy shows it only one time) and sign out again.
+   *Send Notifications*). Copy the key at once (Bambuddy shows it only one time) and sign out again.
 4. **Connect Bambuddy:** enter the Bambuddy address and the key. Reprintbuddy asks Bambuddy
    (`GET /api/v1/auth/me`) whom the key belongs to and which rights it can really use, and
    shows the owner and each required right with a check or a cross. The interface opens only

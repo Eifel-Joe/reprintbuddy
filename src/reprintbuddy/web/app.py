@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.convertors import Convertor, register_url_convertor
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
@@ -104,6 +105,11 @@ def create_app(
     app.add_exception_handler(StarletteHTTPException, deps.http_error_handler)
     app.add_exception_handler(OverflowError, deps.overflow_handler)
     app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> FileResponse:
+        # Browsers ask for this path on their own, also before anybody is signed in.
+        return FileResponse(WEB_DIR / "static" / "img" / "favicon-48.png", media_type="image/png")
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
