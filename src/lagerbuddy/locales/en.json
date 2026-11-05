@@ -1,0 +1,16 @@
+{
+  "nav.overview": "Overview",
+  "nav.articles": "Articles",
+  "nav.sets": "Sets",
+  "nav.orders": "Orders",
+  "nav.bookings": "Bookings",
+  "nav.inspection": "To check",
+  "nav.assembly": "Assembly",
+  "nav.queue": "Queue",
+  "nav.filament": "Filament",
+  "nav.parts": "Parts",
+  "nav.reorder": "Reorder",
+  "nav.settings": "Settings",
+  "nav.open_bambuddy": "Open Bambuddy",
+  "nav.logout": "Log out"
+}

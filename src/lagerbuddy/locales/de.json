@@ -1,0 +1,16 @@
+{
+  "nav.overview": "Übersicht",
+  "nav.articles": "Artikel",
+  "nav.sets": "Sets",
+  "nav.orders": "Bestellungen",
+  "nav.bookings": "Buchen",
+  "nav.inspection": "Zu prüfen",
+  "nav.assembly": "Montage",
+  "nav.queue": "Warteschlange",
+  "nav.filament": "Filament",
+  "nav.parts": "Zukaufteile",
+  "nav.reorder": "Bestellvorschläge",
+  "nav.settings": "Einstellungen",
+  "nav.open_bambuddy": "Bambuddy öffnen",
+  "nav.logout": "Abmelden"
+}
