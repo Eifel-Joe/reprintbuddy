@@ -194,11 +194,85 @@ def test_readme_uses_bambuddys_labels_and_has_no_printer_or_expiry_setting(name)
         assert word not in text, (name, word)  # the Bambuddy dialog has no such fields
 
 
-@pytest.mark.parametrize("name", READMES)
-def test_readme_starts_with_the_centred_symbol_and_the_name(name):
+REPO ="https://github.com/Eifel-Joe/reprintbuddy"
+HEADLINE = {
+    "README.md": (
+        "Your shelf stays stocked. Bambuddy does the printing.",
+        "Self-hosted stock keeping for 3D-printed items, with reprints through Bambuddy's queue.",
+    ),
+    "README.de.md": (
+        "Dein Regal bleibt voll. Bambuddy druckt.",
+        "Selbst gehostete Lagerführung für 3D-gedruckte Teile, Nachdrucke über die Warteschlange von Bambuddy.",
+    ),
+}
+BADGES = [
+    (f"{REPO}/releases", "https://img.shields.io/github/v/release/Eifel-Joe/reprintbuddy", "Release"),
+    (
+        f"{REPO}/actions/workflows/ci.yml",
+        "https://img.shields.io/github/actions/workflow/status/Eifel-Joe/reprintbuddy/ci.yml?branch=main&logo=github&label=CI",
+        "CI",
+    ),
+    (f"{REPO}/blob/main/LICENSE", "https://img.shields.io/github/license/Eifel-Joe/reprintbuddy", "License: AGPL-3.0"),
+    (f"{REPO}/stargazers", "https://img.shields.io/github/stars/Eifel-Joe/reprintbuddy?style=flat", "Stars"),
+    (f"{REPO}/issues", "https://img.shields.io/github/issues/Eifel-Joe/reprintbuddy", "Issues"),
+]
+
+
+def head_of(name):
+    """Everything above the language switch."""
     text = read(name)
-    head = text[:600]
-    assert '<p align="center">' in head
-    assert '<img src="src/reprintbuddy/web/static/img/logo.svg" alt="Reprintbuddy" width="96" height="96">' in head
+    marker = "[Deutsch: README.de.md]" if name == "README.md" else "[English: README.md]"
+    return text[: text.index(marker)]
+
+
+@pytest.mark.parametrize("name", READMES)
+def test_readme_head_has_the_centred_logo_and_name(name):
+    head = head_of(name)
+    assert head.startswith('<p align="center">\n  <img src="src/reprintbuddy/web/static/img/logo.svg"')
+    assert 'alt="Reprintbuddy" width="128" height="128">' in head
     assert '<h1 align="center">Reprintbuddy</h1>' in head
-    assert (ROOT / "src/reprintbuddy/web/static/img/logo.svg").is_file()
+    assert (ROOT / "src/reprintbuddy/web/static/img/logo.svg").is_file()  # the path in the head exists
+
+
+@pytest.mark.parametrize("name", READMES)
+def test_readme_head_has_headline_and_subtitle(name):
+    headline, subtitle = HEADLINE[name]
+    head = head_of(name)
+    assert f"<strong>{headline}</strong><br>\n  {subtitle}" in head
+    assert head.index("</h1>") < head.index(headline) < head.index("img.shields.io")
+
+
+@pytest.mark.parametrize("name", READMES)
+def test_readme_head_has_exactly_the_five_badges(name):
+    head = head_of(name)
+    for link, image, alt in BADGES:
+        assert f'<a href="{link}"><img src="{image}" alt="{alt}"></a>' in head, (name, alt)
+    assert head.count("img.shields.io") == 5
+    lowered = head.lower()
+    for forbidden in ("discord", "ko-fi", "sponsor", "codeql", "security-audit", "security audit"):
+        assert forbidden not in lowered, (name, forbidden)
+
+
+def test_both_readme_heads_are_built_the_same_way():
+    """Same markup in both languages; only the headline and subtitle differ."""
+
+    def skeleton(name):
+        head = head_of(name)
+        for text in HEADLINE[name]:
+            head = head.replace(text, "TEXT")
+        return head
+
+    assert skeleton("README.md") == skeleton("README.de.md")
+
+
+@pytest.mark.parametrize(
+    "name,status",
+    [
+        ("README.md", "> **Status:** under development, not ready for real use yet."),
+        ("README.de.md", "> **Stand:** in Entwicklung, noch nicht einsatzbereit."),
+    ],
+)
+def test_readme_status_line_is_true(name, status):
+    text = read(name)
+    assert status in text
+    assert "no release yet" not in text and "noch keine Version veröffentlicht" not in text

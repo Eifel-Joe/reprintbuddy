@@ -1,8 +1,21 @@
 <p align="center">
-  <img src="src/reprintbuddy/web/static/img/logo.svg" alt="Reprintbuddy" width="96" height="96">
+  <img src="src/reprintbuddy/web/static/img/logo.svg" alt="Reprintbuddy" width="128" height="128">
 </p>
 
 <h1 align="center">Reprintbuddy</h1>
+
+<p align="center">
+  <strong>Your shelf stays stocked. Bambuddy does the printing.</strong><br>
+  Self-hosted stock keeping for 3D-printed items, with reprints through Bambuddy's queue.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/releases"><img src="https://img.shields.io/github/v/release/Eifel-Joe/reprintbuddy" alt="Release"></a>
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Eifel-Joe/reprintbuddy/ci.yml?branch=main&logo=github&label=CI" alt="CI"></a>
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Eifel-Joe/reprintbuddy" alt="License: AGPL-3.0"></a>
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/stargazers"><img src="https://img.shields.io/github/stars/Eifel-Joe/reprintbuddy?style=flat" alt="Stars"></a>
+  <a href="https://github.com/Eifel-Joe/reprintbuddy/issues"><img src="https://img.shields.io/github/issues/Eifel-Joe/reprintbuddy" alt="Issues"></a>
+</p>
 
 [Deutsch: README.de.md](README.de.md)
 
@@ -11,7 +24,7 @@ handing print jobs to Bambuddy's queue,
 lets you check finished prints, and tells you what to reorder. It runs as a
 small web application on your home network, reachable from outside only through a VPN.
 
-> **Status:** under development, no release yet.
+> **Status:** under development, not ready for real use yet.
 
 Reprintbuddy is an independent project and is not affiliated with Bambuddy or Bambu Lab.
 
