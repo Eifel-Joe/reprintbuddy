@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
+from reprintbuddy.bambuddy.connection import ConnectionCheck
 from reprintbuddy.models import Setting
 
 MASK = "********"
@@ -208,6 +209,25 @@ def bambuddy_configured(session: Session) -> bool:
         and get_setting(session, "bambuddy_api_key")
         and get_setting(session, "bambuddy_review_confirmed")
     )
+
+
+def apply_check(session: Session, url: object, api_key: str, check: ConnectionCheck) -> None:
+    """Store the Bambuddy connection after a successful check, in one transaction.
+
+    The user name is the owner Bambuddy reported for the key (it is never typed in), and
+    the review flag becomes true because the check proved the right to print without review.
+    """
+    if not check.ok or not check.owner:
+        raise ValueError("the connection check did not succeed")
+    try:
+        set_setting(session, "bambuddy_url", url, commit=False)
+        set_setting(session, "bambuddy_username", check.owner, commit=False)
+        set_setting(session, "bambuddy_api_key", api_key, commit=False)
+        set_setting(session, "bambuddy_review_confirmed", True, commit=False)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
 
 
 def same_address(a: str | None, b: str | None) -> bool:

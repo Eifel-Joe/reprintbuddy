@@ -212,3 +212,52 @@ def test_url_with_a_good_port_is_accepted(good):
 def test_same_address_does_not_fail_on_bad_input():
     assert st.same_address("http://h:99999", "http://h:80") is False
     assert st.same_address("http://h:80", "http://h:abc") is False
+
+
+# --- the setup/settings save after a successful check (v0.1.1) --------------------------------
+
+
+def _check(**over):
+    from reprintbuddy.bambuddy.connection import ConnectionCheck
+
+    values = {"ok": True, "reason": "ok", "owner": "reprintbuddy"}
+    values.update(over)
+    return ConnectionCheck(**values)
+
+
+def test_successful_check_sets_owner_and_review(session):
+    st.apply_check(session, "http://h:8000/", "bb_key", _check())
+    assert st.get_setting(session, "bambuddy_url") == "http://h:8000"
+    assert st.get_setting(session, "bambuddy_api_key") == "bb_key"
+    assert st.get_setting(session, "bambuddy_username") == "reprintbuddy"  # from the check, not typed
+    assert st.get_setting(session, "bambuddy_review_confirmed") is True
+    assert st.bambuddy_configured(session) is True
+
+
+def test_apply_check_is_a_single_commit(session):
+    from sqlalchemy import event
+
+    commits = []
+    event.listen(session.get_bind(), "commit", lambda *a: commits.append(1))
+    st.apply_check(session, "http://h:8000", "bb_key", _check())
+    assert len(commits) == 1
+
+
+def test_apply_check_refuses_a_failed_check_and_stores_nothing(session):
+    with pytest.raises(ValueError):
+        st.apply_check(session, "http://h:8000", "bb_key", _check(ok=False, reason="missing_permissions"))
+    assert st.get_setting(session, "bambuddy_url") is None
+    assert st.get_setting(session, "bambuddy_api_key") is None
+
+
+def test_apply_check_refuses_a_check_without_owner(session):
+    with pytest.raises(ValueError):
+        st.apply_check(session, "http://h:8000", "bb_key", _check(owner=None))
+    assert st.get_setting(session, "bambuddy_url") is None
+
+
+def test_apply_check_overwrites_an_older_owner(session):
+    st.apply_check(session, "http://h:8000", "bb_key", _check(owner="old-user"))
+    st.apply_check(session, "http://h:8000", "bb_key2", _check(owner="reprintbuddy"))
+    assert st.get_setting(session, "bambuddy_username") == "reprintbuddy"
+    assert st.get_setting(session, "bambuddy_api_key") == "bb_key2"
