@@ -57,6 +57,8 @@ def create_app(
 
     # Middleware added later wraps the earlier ones: the session must be the
     # outer layer so the gate can read it.
+    # Innermost: pauses writes while an update runs; the gate has already decided who may pass.
+    app.middleware("http")(ops_routes.update_guard)
     app.middleware("http")(deps.gate)
     app.add_middleware(
         SessionMiddleware,

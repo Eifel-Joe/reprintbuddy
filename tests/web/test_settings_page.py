@@ -367,6 +367,8 @@ def test_all_settings_posts_require_csrf(ready_client):
         "/settings/password",
         "/settings/restart",
         "/settings/server",
+        "/settings/update",
+        "/settings/update/check",
     ]
     csrf_of(ready_client, "/settings")  # a session with a token exists
     for path in paths:

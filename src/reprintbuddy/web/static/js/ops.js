@@ -30,4 +30,30 @@
     };
     window.setTimeout(checkHealth, 3000);
   }
+
+  // --- update: reload the page when the state or the step changes -------------
+  var update = document.getElementById("update-status");
+  if (update) {
+    var statusUrl = update.getAttribute("data-status-url");
+    var knownState = update.getAttribute("data-state");
+    var knownStep = update.getAttribute("data-step");
+    var poll = function () {
+      fetch(statusUrl, { cache: "no-store", headers: { Accept: "application/json" } })
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (status) {
+          if (status.state !== knownState || status.step !== knownStep) {
+            window.location.reload();
+            return;
+          }
+          window.setTimeout(poll, 3000);
+        })
+        .catch(function () {
+          // The service restarts during an update, or the sign-in page answers: keep asking.
+          window.setTimeout(poll, 3000);
+        });
+    };
+    window.setTimeout(poll, 3000);
+  }
 })();
