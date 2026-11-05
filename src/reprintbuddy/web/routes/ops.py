@@ -52,10 +52,13 @@ OPS_MESSAGES = frozenset(
 )
 
 # POST routes that stay usable while an update runs: asking GitHub, the update button
-# itself (it answers "busy" on its own) and signing out. Everything else is paused:
-# the rollback restores the backup made before the update, so a booking made
-# meanwhile would be lost.
-UPDATE_EXEMPT_PATHS = frozenset({"/settings/update/check", "/settings/update", "/logout"})
+# itself (it answers "busy" on its own), signing out, and the two buttons of the notice
+# about a missing right (they ask Bambuddy and set a flag in the cookie, nothing in the
+# database). Everything else is paused: the rollback restores the backup made before the
+# update, so a booking made meanwhile would be lost.
+UPDATE_EXEMPT_PATHS = frozenset(
+    {"/settings/update/check", "/settings/update", "/logout", "/bambuddy/rights/later", "/bambuddy/rights/recheck"}
+)
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 

@@ -253,7 +253,7 @@ def test_writes_blocked_during_update(ops_env):
     git_env(ops_env)
     token = csrf_of(ops_env.client, "/settings")
     write_status(data_dir(ops_env), UpdateStatus(state="running", step="install", started_at=now() - timedelta(minutes=1)))
-    exempt = {"/settings/update/check", "/settings/update", "/logout"}
+    exempt = {"/settings/update/check", "/settings/update", "/logout", "/bambuddy/rights/later", "/bambuddy/rights/recheck"}
     paths = sorted(
         {
             route.path
@@ -270,6 +270,20 @@ def test_writes_blocked_during_update(ops_env):
         assert st.get_setting(session, "language") == "en"
     assert START_UPDATE_CMD not in ops_env.runner.calls
     assert not [c for c in ops_env.runner.calls if "restart" in c or "start" in c]  # no restart, no start either
+
+
+def test_rights_buttons_work_during_an_update(ops_env, respx_mock):
+    """M4 of the review: they write nothing to the database, so the dialog can be closed."""
+    from conftest import mock_auth_me
+
+    mock_auth_me(respx_mock)
+    token = csrf_of(ops_env.client, "/settings")
+    write_status(data_dir(ops_env), UpdateStatus(state="running", step="install", started_at=now() - timedelta(minutes=1)))
+    for path in ("/bambuddy/rights/later", "/bambuddy/rights/recheck"):
+        response = ops_env.client.post(path, data={"csrf_token": token, "next": "/settings"})
+        assert response.status_code == 303 and response.headers["location"] == "/settings", path
+    with ops_env.client.app.state.sessionmaker() as session:
+        assert st.get_setting(session, "language") == "en"  # nothing was written
 
 
 def test_writes_allowed_again_after_the_update(ops_env):
