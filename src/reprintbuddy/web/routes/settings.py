@@ -217,5 +217,5 @@ async def save_server(request: Request, db: Session = Depends(get_db)):
     st.set_setting(db, "tls_cert", cert, commit=False)
     st.set_setting(db, "tls_key", key, commit=False)
     db.commit()
-    # Ports below 1024 need extra rights; the service does not run as root.
+    # Ports below 1024 need CAP_NET_BIND_SERVICE: the installed service has it, others may not.
     return _saved(request, "settings.privileged_port" if port < 1024 else "settings.restart_needed")

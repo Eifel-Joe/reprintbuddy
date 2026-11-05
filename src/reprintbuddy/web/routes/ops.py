@@ -144,7 +144,8 @@ async def update_guard(request: Request, call_next) -> Response:
 
 
 @router.get("/settings/export")
-async def export(db: Session = Depends(get_db)):
+def export(db: Session = Depends(get_db)):
+    # A plain `def`: reading every table is blocking work and runs in the thread pool.
     now = _utc_now()
     body = export_bytes(db.connection(), now=now)
     name = f"reprintbuddy-export-{now:%Y%m%d-%H%M%S}.json"
@@ -161,7 +162,7 @@ async def export(db: Session = Depends(get_db)):
 @router.post("/settings/restart", dependencies=[Depends(verify_csrf)])
 async def restart(request: Request, db: Session = Depends(get_db)):
     ops = request.app.state.ops
-    result = request_restart(ops.runner)
+    result = await run_in_threadpool(request_restart, ops.runner)  # sudo may take seconds
     if not result.ok:
         # The reason (sudo output) goes to the log only, never onto the page.
         log.warning("restart failed: %s", (result.stderr or "").strip()[:300])

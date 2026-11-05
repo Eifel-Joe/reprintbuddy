@@ -422,7 +422,9 @@ def test_a_port_below_1024_is_saved_with_a_hint(ready_client):
     assert response.status_code == 303
     assert saved(ready_client, "port") == 80
     page = ready_client.get("/settings").text
-    assert "below 1024" in page and "root" in page and "set-port" in page
+    assert "below 1024" in page and "set-port" in page
+    assert "install script" in page  # the installed service has the right to use such a port
+    assert "does not run as root" not in page  # it does bind low ports: CAP_NET_BIND_SERVICE
 
 
 def test_a_normal_port_has_no_privileged_hint(ready_client):

@@ -119,8 +119,9 @@ def _set_port(args: argparse.Namespace) -> int:
     print(f"Port set to {port}. Restart Reprintbuddy for it to take effect.")
     if port < 1024:
         print(
-            "Note: ports below 1024 need extra rights and the service does not run as root, "
-            "so it probably cannot use this port. If it does not start, choose a higher one."
+            "Note: ports below 1024 need the right to bind privileged ports. The service set up "
+            "by the install script has it; a service started another way may not. "
+            "If it does not start after the restart, choose a higher port."
         )
     return 0
 

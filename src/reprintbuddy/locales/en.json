@@ -90,7 +90,7 @@
   "error.host.message": "While Reprintbuddy is being set up, open it by its IP address (for example http://<server-address>:8080) instead of a host name.",
   "error.generic.title": "Something went wrong",
   "error.generic.message": "The request could not be completed.",
-  "settings.privileged_port": "Saved. Note: ports below 1024 need extra rights and the service does not run as root, so it probably cannot use this port. Changes take effect after Reprintbuddy has been restarted; if it does not start, set another port with the command set-port.",
+  "settings.privileged_port": "Saved. Note: ports below 1024 need the right to bind privileged ports. The service set up by the install script has it, so this works there; a service started another way may not. Changes take effect after Reprintbuddy has been restarted; if it does not start, set another port with the command set-port.",
   "ops.restart.title": "Restart",
   "ops.restart.button": "Restart Reprintbuddy",
   "ops.restart.in_progress": "Restarting … this page reloads when Reprintbuddy is back.",

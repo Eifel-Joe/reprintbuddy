@@ -33,3 +33,13 @@ def test_settings_has_export_link(ops_env):
 def test_export_runs_no_commands(ops_env):
     ops_env.client.get("/settings/export")
     assert ops_env.runner.calls == []
+
+
+def test_export_does_not_run_on_the_event_loop(ops_env):
+    """Reading every table is blocking work: a plain `def` route runs in the thread pool."""
+    import inspect
+
+    from conftest import api_routes
+
+    route = next(r for r in api_routes(ops_env.client.app) if r.path == "/settings/export")
+    assert not inspect.iscoroutinefunction(route.endpoint)

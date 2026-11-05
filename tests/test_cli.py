@@ -211,7 +211,8 @@ def test_set_password_asks_nothing_when_the_name_is_empty(db, monkeypatch):
 def test_set_port_below_1024_is_allowed_but_warned_about(db, capsys):
     assert main(["set-port", "80", "--db", str(db)]) == 0
     output = capsys.readouterr()
-    assert "1024" in output.out + output.err and "root" in output.out + output.err
+    assert "1024" in output.out + output.err and "install script" in output.out + output.err
+    assert "does not run as root" not in output.out + output.err
     with open_session(db) as s:
         assert st.get_setting(s, "port") == 80
 

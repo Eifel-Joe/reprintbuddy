@@ -86,3 +86,19 @@ def test_ops_messages_have_texts():
     for code in OPS_MESSAGES:
         assert f"ops.msg.{code}" in locales["en"], code
         assert f"ops.msg.{code}" in locales["de"], code
+
+
+def test_restart_command_runs_in_the_thread_pool(ops_env, monkeypatch):
+    """`sudo` can take seconds: it must not block the event loop of the one worker."""
+    from reprintbuddy.web.routes import ops as routes
+
+    seen = []
+    real = routes.run_in_threadpool
+
+    async def spy(function, *args, **kwargs):
+        seen.append(function)
+        return await real(function, *args, **kwargs)
+
+    monkeypatch.setattr(routes, "run_in_threadpool", spy)
+    assert post_restart(ops_env).status_code == 200
+    assert routes.request_restart in seen
