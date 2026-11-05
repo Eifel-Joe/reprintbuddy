@@ -49,3 +49,7 @@ lagerbuddy = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    # Starlette's TestClient prefers httpx2; this project keeps plain httpx.
+    "ignore:Using .httpx. with .starlette.testclient.",
+]

@@ -12,5 +12,22 @@
   "nav.reorder": "Reorder",
   "nav.settings": "Settings",
   "nav.open_bambuddy": "Open Bambuddy",
-  "nav.logout": "Log out"
+  "nav.logout": "Log out",
+  "language.en": "English",
+  "language.de": "Deutsch",
+  "login.title": "Log in",
+  "login.username": "Username",
+  "login.password": "Password",
+  "login.submit": "Log in",
+  "login.failed": "Wrong username or password.",
+  "setup.title": "Welcome to Lagerbuddy",
+  "setup.intro": "Step 1 of 2: create the admin account.",
+  "setup.username": "Username",
+  "setup.password": "Password (at least 8 characters)",
+  "setup.password_repeat": "Repeat password",
+  "setup.language": "Language",
+  "setup.submit": "Create account",
+  "setup.mismatch": "The two passwords do not match.",
+  "setup.too_short": "The password must have at least 8 characters.",
+  "setup.username_required": "Please enter a username."
 }
