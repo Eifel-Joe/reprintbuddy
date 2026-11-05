@@ -458,3 +458,38 @@ def test_which_key_right_covers_which_permission(admin_client, respx_mock):
     page = admin_client.post(CONNECT, data=_form(token)).text
     assert "Status lesen" in _item(page, "printers:read")
     assert "Warteschlange verwalten" in _item(page, "queue:create")
+
+
+def test_guide_names_the_rights_for_creating_the_key(admin_client):
+    page = admin_client.get(USER_PAGE).text
+    for code, label, editor in (
+        ("api_keys:read", "Read API keys", "Read Api Keys"),
+        ("api_keys:create", "Create API keys", "Create Api Keys"),
+    ):
+        assert f"<code>{code}</code>" in page, code
+        assert label in page and f"Bambuddy: {editor}" in page, code
+    assert "only to create the key" in page.lower()
+
+
+def test_guide_names_the_rights_for_creating_the_key_in_german(admin_client):
+    _german(admin_client)
+    page = admin_client.get(USER_PAGE).text
+    assert "API-Schlüssel lesen" in page and "API-Schlüssel anlegen" in page
+    assert "Bambuddy: Read Api Keys" in page and "Bambuddy: Create Api Keys" in page
+    assert "nur zum erzeugen des schlüssels" in page.lower()
+
+
+def test_the_key_creation_rights_are_not_checked(admin_client, respx_mock):
+    """A key without them passes: Reprintbuddy needs them only while the key is created."""
+    mock_auth_me(respx_mock)  # exactly the six required rights, no api_keys:*
+    token = csrf_of(admin_client, CONNECT)
+    response = admin_client.post(CONNECT, data=_form(token))
+    assert response.status_code == 303
+    assert _saved(admin_client, "bambuddy_api_key") == KEY
+
+
+def test_the_key_creation_rights_are_not_in_the_result_list(admin_client, respx_mock):
+    mock_auth_me(respx_mock, permissions=[])
+    token = csrf_of(admin_client, CONNECT)
+    page = admin_client.post(CONNECT, data=_form(token)).text
+    assert "api_keys" not in page

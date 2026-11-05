@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.connection import (
     EDITOR_LABELS,
+    KEY_CREATION_LABELS,
     KEY_RIGHT_FOR,
     KEY_SETTINGS_OFF,
     KEY_SETTINGS_ON,
@@ -49,7 +50,8 @@ def permission_context() -> dict[str, object]:
     """The fixed tables the templates need (labels, where a right can be set)."""
     return {
         "required_permissions": REQUIRED_PERMISSIONS,
-        "editor_labels": EDITOR_LABELS,
+        "key_creation_permissions": tuple(KEY_CREATION_LABELS),
+        "editor_labels": {**EDITOR_LABELS, **KEY_CREATION_LABELS},
         "key_right_for": KEY_RIGHT_FOR,
         "key_settings_on": KEY_SETTINGS_ON,
         "key_settings_off": KEY_SETTINGS_OFF,

@@ -94,6 +94,7 @@ def test_dynamic_message_keys_exist():
     from reprintbuddy.bambuddy.connection import REQUIRED_PERMISSIONS
 
     used |= {f"permission.{code}" for code in REQUIRED_PERMISSIONS}  # built in the templates
+    used |= {"permission.api_keys:read", "permission.api_keys:create"}
     used |= {f"keyright.{name}" for name in ("name", "status", "queue", "printers", "expiry")}
     used |= {
         f"keyright.off.{name}"

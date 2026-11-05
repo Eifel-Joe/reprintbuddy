@@ -168,3 +168,18 @@ async def test_key_is_not_logged(respx_mock, caplog):
     respx_mock.get(ME).respond(401)
     await run(key="bb_LEAKCHECK_logs")
     assert "LEAKCHECK" not in caplog.text
+
+
+def test_key_creation_rights_are_not_required():
+    assert not any(p.startswith("api_keys:") for p in REQUIRED_PERMISSIONS)
+
+
+async def test_a_key_without_the_key_creation_rights_passes(respx_mock):
+    respx_mock.get(ME).respond(200, json=auth_me(permissions=list(REQUIRED)))
+    assert (await run()).ok is True
+
+
+def test_key_creation_labels_are_a_fixed_table():
+    from reprintbuddy.bambuddy.connection import KEY_CREATION_LABELS
+
+    assert KEY_CREATION_LABELS == {"api_keys:read": "Read Api Keys", "api_keys:create": "Create Api Keys"}
