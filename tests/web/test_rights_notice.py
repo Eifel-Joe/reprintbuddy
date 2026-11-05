@@ -119,6 +119,43 @@ def test_settings_show_no_rights_list_when_nothing_is_missing(rights_client, res
     assert "<code>inventory:read</code>" not in section
 
 
+def _save_settings_with_the_right_still_missing(client, **headers):
+    """A page that is the answer to a POST: the failed save of the Bambuddy settings."""
+    token = csrf_of(client, "/settings")
+    return client.post(
+        "/settings/bambuddy",
+        data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": "bb_newkey123"},
+        headers=headers,
+    )
+
+
+def _nexts(html):
+    return re.findall(r'name="next" value="([^"]*)"', html)
+
+
+def test_next_on_the_answer_to_a_post_is_the_page_the_form_came_from(missing_client):
+    """I1 of the review: never the POST route, which answers a GET with 405."""
+    _post(missing_client, LATER, next="/")
+    response = _save_settings_with_the_right_still_missing(missing_client, Referer="http://testserver/settings")
+    assert response.status_code == 200 and "rights-banner" in response.text
+    assert set(_nexts(response.text)) == {"/settings"}
+    back = _post(missing_client, RECHECK, next=_nexts(response.text)[0])
+    assert back.status_code == 303
+    assert missing_client.get(back.headers["location"]).status_code == 200
+
+
+@pytest.mark.parametrize("referer", [None, "http://evil.example/settings", "not a url", "http://testserver"])
+def test_next_on_the_answer_to_a_post_without_a_usable_referer_is_the_start_page(missing_client, referer):
+    _post(missing_client, LATER, next="/")
+    headers = {"Referer": referer} if referer else {}
+    response = _save_settings_with_the_right_still_missing(missing_client, **headers)
+    assert set(_nexts(response.text)) == {"/"}
+
+
+def test_next_on_a_page_shown_by_get_is_that_page(missing_client):
+    assert set(_nexts(missing_client.get("/settings?x=1").text)) == {"/settings?x=1"}
+
+
 def test_dialog_is_on_every_page_of_the_interface(missing_client):
     for path in ("/", "/settings", "/articles"):
         assert "rights-dialog" in missing_client.get(path).text, path

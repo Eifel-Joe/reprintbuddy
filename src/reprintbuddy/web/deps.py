@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse, Response
@@ -94,6 +94,21 @@ def render(request: Request, name: str, status_code: int = 200, **context: objec
     )
 
 
+def _page_to_return_to(request: Request) -> str:
+    """Where the buttons of the rights notice lead back to.
+
+    The page itself when it was shown for a GET. A page that is the answer to a POST
+    (a failed save, an error page) has an address that only answers POST, so then the
+    page the form came from: the Referer, if it is from this very server; else the start page.
+    """
+    if request.method == "GET":
+        return request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    referer = urlsplit(request.headers.get("referer", ""))
+    if referer.netloc and referer.netloc == request.headers.get("host"):
+        return safe_next(referer.path + (f"?{referer.query}" if referer.query else ""))
+    return "/"
+
+
 def _add_rights_notice(request: Request, context: dict[str, object]) -> None:
     """What base.html needs to show the missing-rights dialog or, after "Later", the warning line."""
     notice = request.app.state.rights.notice
@@ -108,8 +123,7 @@ def _add_rights_notice(request: Request, context: dict[str, object]) -> None:
         context.setdefault(name, value)
     labels = tables["editor_labels"]
     context["rights_names"] = ", ".join(str(labels[code]) for code in notice.missing)
-    target = request.url.path + (f"?{request.url.query}" if request.url.query else "")
-    context["rights_next"] = target
+    context["rights_next"] = _page_to_return_to(request)
 
 
 def flash(request: Request, key: str) -> None:
