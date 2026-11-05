@@ -25,7 +25,7 @@
       <label>{{ t('sets.field.articles') }}
         <select name="pos_{{ i }}_articles" multiple size="{{ 4 if articles|length > 4 else (articles|length or 1) }}">
           {% for article in articles %}
-          <option value="{{ article.id }}"{% if article.id in row.selected %} selected{% endif %}>{{ article.name }}</option>
+          <option value="{{ article.id }}"{% if article.id in row.selected %} selected{% endif %}>{{ article.name }}{% if article.archived %} ({{ t('catalog.archived_badge') }}){% endif %}</option>
           {% endfor %}
         </select>
       </label>

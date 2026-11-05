@@ -183,6 +183,13 @@ def error_response(request: Request, status_code: int, kind: str) -> Response:
     )
 
 
+async def overflow_handler(request: Request, exc: OverflowError) -> Response:
+    """A number in the address too large for SQLite names nothing that exists: 404."""
+    if "SQLite INTEGER" in str(exc):
+        return error_response(request, 404, "not_found")
+    return error_response(request, 500, "generic")
+
+
 async def http_error_handler(request: Request, exc: StarletteHTTPException) -> Response:
     kind = {403: "forbidden", 404: "not_found"}.get(exc.status_code, "generic")
     response = error_response(request, exc.status_code, kind)

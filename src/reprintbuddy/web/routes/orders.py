@@ -17,6 +17,7 @@ from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.formatting import to_local
 from reprintbuddy.web.forms import (
+    ascii_digits,
     duplicate_redirect,
     error_status,
     error_text,
@@ -54,7 +55,7 @@ async def orders_list(request: Request, view: str = "open", db: Session = Depend
 
 def _rows_of(form, *, more: bool) -> int:
     raw = str(form.get("rows", "")).strip()
-    rows = int(raw) if raw.isdigit() and 1 <= int(raw) <= MAX_ROWS else DEFAULT_ROWS
+    rows = int(raw) if ascii_digits(raw) and 1 <= int(raw) <= MAX_ROWS else DEFAULT_ROWS
     return min(rows + MORE_ROWS, MAX_ROWS) if more else rows
 
 
@@ -78,7 +79,7 @@ def _typed_items(form, rows: int) -> list[dict[str, str]]:
 
 def _parse_item(raw: str) -> tuple[str, int]:
     kind, _, ident = raw.partition(":")
-    if kind not in ("article", "set") or not ident.isdigit() or int(ident) > MAX_ID:
+    if kind not in ("article", "set") or not ascii_digits(ident) or int(ident) > MAX_ID:
         raise ValidationError("orders.invalid_item")
     return kind, int(ident)
 
@@ -88,7 +89,7 @@ def _choice_blocks(db: Session, form, items: list[dict[str, str]]) -> dict[int, 
     blocks: dict[int, list[dict[str, object]]] = {}
     for i, row in enumerate(items):
         kind, _, ident = row["item"].partition(":")
-        if kind != "set" or not ident.isdigit() or int(ident) > MAX_ID:
+        if kind != "set" or not ascii_digits(ident) or int(ident) > MAX_ID:
             continue
         positions = db.scalars(
             select(SetPosition).where(SetPosition.set_id == int(ident)).order_by(SetPosition.sort, SetPosition.id)
@@ -176,7 +177,7 @@ async def orders_create(request: Request, db: Session = Depends(get_db)):
                 choices = {}
                 for block in blocks.get(i, []):
                     chosen = str(block["chosen"])
-                    choices[int(block["position_id"])] = int(chosen) if chosen.isdigit() and int(chosen) <= MAX_ID else -1
+                    choices[int(block["position_id"])] = int(chosen) if ascii_digits(chosen) and int(chosen) <= MAX_ID else -1
                 order_items.append(SetItem(ident, qty, choices))
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
             order = orders.create_order(

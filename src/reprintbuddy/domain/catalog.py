@@ -431,6 +431,15 @@ def _check_set_input(
     if not data.positions:
         raise ValidationError("sets.no_positions")
     positions: list[tuple[int, list[int]]] = []
+    kept: set[int] = set()  # archived articles that are already part of this set may stay
+    if set_id is not None:
+        kept = set(
+            session.scalars(
+                select(SetPositionOption.article_id)
+                .join(SetPosition, SetPosition.id == SetPositionOption.position_id)
+                .where(SetPosition.set_id == set_id)
+            )
+        )
     for position in data.positions:
         qty = _int_in(position.qty, "sets.field.qty", 1, 1000)
         article_ids = list(dict.fromkeys(position.article_ids))
@@ -440,7 +449,7 @@ def _check_set_input(
             article = session.get(Article, article_id)
             if article is None:
                 raise NotFoundError("articles.not_found")
-            if article.archived_at is not None:
+            if article.archived_at is not None and article_id not in kept:
                 raise ValidationError("sets.article_archived", name=article.name)
         positions.append((qty, article_ids))
     return name, sku, positions

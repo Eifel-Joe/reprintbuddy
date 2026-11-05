@@ -18,6 +18,11 @@ from reprintbuddy.web.i18n import translate
 _INT = re.compile(r"-?[0-9]{1,18}", re.ASCII)
 
 
+def ascii_digits(raw: str) -> bool:
+    """Only the digits 0-9 (str.isdigit also accepts characters like the superscript two)."""
+    return raw.isascii() and raw.isdigit()
+
+
 def parse_int(
     raw: str | None, *, field: str, min: int, max: int, default: int | None = None
 ) -> int:

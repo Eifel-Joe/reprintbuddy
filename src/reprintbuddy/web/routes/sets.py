@@ -9,10 +9,11 @@ from sqlalchemy.orm import Session
 from reprintbuddy.domain import catalog
 from reprintbuddy.domain.catalog import PositionInput, SetInput
 from reprintbuddy.domain.errors import DomainError
-from reprintbuddy.models import ProductSet, SetPosition, SetPositionOption
+from reprintbuddy.models import Article, ProductSet, SetPosition, SetPositionOption
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.forms import (
+    ascii_digits,
     duplicate_redirect,
     run_form_action,
     error_status,
@@ -32,13 +33,13 @@ router = APIRouter()
 
 DEFAULT_ROWS = 5
 MORE_ROWS = 5
-MAX_ROWS = 50
+MAX_ROWS = 200  # a set may have many positions; the edit form must show all of them
 MAX_ID = 2**31 - 1
 
 
 def _rows_of(form, *, more: bool) -> int:
     raw = str(form.get("rows", "")).strip()
-    rows = int(raw) if raw.isdigit() and 1 <= int(raw) <= MAX_ROWS else DEFAULT_ROWS
+    rows = int(raw) if ascii_digits(raw) and 1 <= int(raw) <= MAX_ROWS else DEFAULT_ROWS
     return min(rows + MORE_ROWS, MAX_ROWS) if more else rows
 
 
@@ -47,7 +48,7 @@ def _typed_rows(form, rows: int) -> list[dict[str, object]]:
     for i in range(rows):
         selected = set()
         for raw in form.getlist(f"pos_{i}_articles"):
-            if str(raw).strip().isdigit() and int(raw) <= MAX_ID:
+            if ascii_digits(str(raw).strip()) and int(raw) <= MAX_ID:
                 selected.add(int(raw))
         result.append({"qty": str(form.get(f"pos_{i}_qty", "1")), "selected": selected})
     return result
@@ -69,6 +70,15 @@ def _parse(form, rows: int) -> SetInput:
     )
 
 
+def _article_options(db: Session, rows_values) -> list[dict[str, object]]:
+    """Active articles, plus archived ones that are selected in the form: the set keeps them."""
+    options = {row.id: {"id": row.id, "name": row.name, "archived": False} for row in catalog.list_articles(db)}
+    selected = {article_id for row in rows_values for article_id in row["selected"]}
+    for article in db.scalars(select(Article).where(Article.id.in_(selected), Article.archived_at.is_not(None))):
+        options[article.id] = {"id": article.id, "name": article.name, "archived": True}
+    return sorted(options.values(), key=lambda o: (str(o["name"]).casefold(), o["id"]))
+
+
 def _form_page(request, db, *, product_set, values, rows_values, rows, error=None, status=200):
     return render(
         request,
@@ -79,7 +89,7 @@ def _form_page(request, db, *, product_set, values, rows_values, rows, error=Non
         values=values,
         rows_values=rows_values,
         rows=rows,
-        articles=catalog.list_articles(db),
+        articles=_article_options(db, rows_values),
         error=error,
     )
 
