@@ -59,9 +59,10 @@ def _serve(args: argparse.Namespace) -> int:
     with app.state.sessionmaker() as session:
         host = str(st.get_setting(session, "host"))
         port = int(st.get_setting(session, "port"))
+        tls = st.tls_enabled(session)
         cert = st.get_setting(session, "tls_cert")
         key = st.get_setting(session, "tls_key")
-    if cert and key:
+    if tls:
         with _pem_files(str(cert), str(key)) as (cert_file, key_file):
             uvicorn.run(app, host=host, port=port, ssl_certfile=cert_file, ssl_keyfile=key_file)
     else:

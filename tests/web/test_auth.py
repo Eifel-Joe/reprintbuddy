@@ -115,6 +115,7 @@ def test_cookie_flags(logged_out):
 
 def test_cookie_secure_when_tls_configured(db_path, fresh_db):
     st.set_setting(fresh_db, "tls_cert", "-----BEGIN CERTIFICATE-----\nabc")
+    st.set_setting(fresh_db, "tls_key", "-----BEGIN PRIVATE KEY-----\nabc")
     client = make_client(db_path)
     response = client.get("/setup")
     assert "secure" in response.headers["set-cookie"].lower()
@@ -167,3 +168,9 @@ def test_session_secret_is_reused(db_path):
     make_client(db_path)
     with make_sessionmaker(make_engine(db_path))() as s:
         assert st.ensure_session_secret(s) == first
+
+
+def test_cookie_is_not_secure_with_a_certificate_alone(db_path, fresh_db):
+    st.set_setting(fresh_db, "tls_cert", "-----BEGIN CERTIFICATE-----\nabc")
+    client = make_client(db_path)
+    assert "secure" not in client.get("/setup").headers["set-cookie"].lower()

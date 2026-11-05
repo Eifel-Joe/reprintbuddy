@@ -204,3 +204,9 @@ def test_pull_request_template_asks_for_license_agreement():
 )
 def test_readme_states_independence(readme, sentence):
     assert sentence in _read(readme)
+
+
+def test_line_endings_are_pinned():
+    lines = _read(".gitattributes").splitlines()
+    assert "* text=auto" in lines
+    assert "*.sh text eol=lf" in lines

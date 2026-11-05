@@ -172,3 +172,13 @@ def test_set_host_refuses_an_address_that_cannot_be_bound(db, bad, capsys):
     assert "host" in capsys.readouterr().err.lower()
     with open_session(db) as s:
         assert st.get_setting(s, "host") == "0.0.0.0"
+
+
+def test_serve_does_not_use_tls_with_a_certificate_alone(db, monkeypatch):
+    main(["migrate", "--db", str(db)])
+    with open_session(db) as s:
+        st.set_setting(s, "tls_cert", CERT)
+    calls = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: calls.append(kw))
+    assert main(["serve", "--db", str(db)]) == 0
+    assert calls[0].get("ssl_certfile") is None

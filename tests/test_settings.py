@@ -165,3 +165,34 @@ def test_api_key_is_stripped():
 def test_api_key_with_unusable_characters_is_refused(bad):
     with pytest.raises(ValueError):
         st.validate("bambuddy_api_key", bad)
+
+
+def test_never_export_covers_secrets_and_internal_values():
+    assert st.SENSITIVE <= st.NEVER_EXPORT
+    assert {"session_secret", "session_generation"} <= st.NEVER_EXPORT
+    assert "language" not in st.NEVER_EXPORT
+
+
+def test_set_setting_commits_by_default(session):
+    st.set_setting(session, "queue_cap", 25)
+    with make_sessionmaker(session.get_bind())() as other:
+        assert st.get_setting(other, "queue_cap") == 25
+
+
+def test_set_setting_without_commit_leaves_the_transaction_to_the_caller(session):
+    st.set_setting(session, "queue_cap", 25, commit=False)
+    assert st.get_setting(session, "queue_cap") == 25  # visible inside the transaction
+    session.rollback()
+    assert st.get_setting(session, "queue_cap") == 10  # and gone with it
+
+
+def test_tls_is_enabled_only_with_certificate_and_key(session):
+    cert = "-----BEGIN CERTIFICATE-----\nabc"
+    key = "-----BEGIN PRIVATE KEY-----\nabc"
+    assert st.tls_enabled(session) is False
+    st.set_setting(session, "tls_cert", cert)
+    assert st.tls_enabled(session) is False
+    st.set_setting(session, "tls_key", key)
+    assert st.tls_enabled(session) is True
+    st.set_setting(session, "tls_cert", None)
+    assert st.tls_enabled(session) is False

@@ -32,7 +32,7 @@ def create_app(
     sessionmaker = make_sessionmaker(engine)
     with sessionmaker() as session:
         secret = st.ensure_session_secret(session)
-        https = bool(st.get_setting(session, "tls_cert"))
+        https = st.tls_enabled(session)
 
     # No interactive API docs: this is a browser application, not a public API.
     app = FastAPI(title="Reprintbuddy", docs_url=None, redoc_url=None, openapi_url=None)

@@ -44,15 +44,25 @@ def _configure(engine: Engine, *, foreign_keys: bool) -> None:
 def make_engine(db_path: Path) -> Engine:
     """Create the engine, the parent folder and (on POSIX) a 0o600 file."""
     db_path = Path(db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(f"sqlite:///{db_path}", future=True)
-    _configure(engine, foreign_keys=True)
-
-    # Connect once so the file exists, then restrict it to the service user.
-    with engine.connect() as conn:
-        conn.execute(text("select 1"))
+    # A restrictive umask while the folder and the database (with its -wal and -shm
+    # files, which copy the database file's mode) come into being, so they are never
+    # readable by others, not even briefly. The umask is process-wide, hence only
+    # held for this start-up step.
+    previous_umask = os.umask(0o077)
+    try:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        engine = create_engine(
+            f"sqlite:///{db_path}",
+            future=True,
+            connect_args={"check_same_thread": False},  # sessions are used from worker threads
+        )
+        _configure(engine, foreign_keys=True)
+        with engine.connect() as conn:  # connect once so the file exists
+            conn.execute(text("select 1"))
+    finally:
+        os.umask(previous_umask)
     if os.name == "posix":
-        os.chmod(db_path, 0o600)
+        os.chmod(db_path, 0o600)  # also for a database file that already existed
     return engine
 
 
@@ -67,7 +77,9 @@ def upgrade(engine: Engine, script_location: Path | None = None) -> None:
     """
     cfg = Config()
     cfg.set_main_option("script_location", str(script_location or _MIGRATIONS_DIR))
-    migration_engine = create_engine(engine.url, future=True)
+    migration_engine = create_engine(
+        engine.url, future=True, connect_args={"check_same_thread": False}
+    )
     _configure(migration_engine, foreign_keys=False)
     try:
         with migration_engine.begin() as connection:

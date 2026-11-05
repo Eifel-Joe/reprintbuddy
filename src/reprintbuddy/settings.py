@@ -36,6 +36,10 @@ DEFAULTS: dict[str, object] = {
 
 SENSITIVE: frozenset[str] = frozenset({"bambuddy_api_key", "tls_key"})
 
+# Never part of an export, a log line or any page: the sensitive settings plus the
+# values Reprintbuddy keeps for itself.
+NEVER_EXPORT: frozenset[str] = SENSITIVE | {"session_secret", "session_generation"}
+
 _SECRET_KEY = "session_secret"
 _GENERATION_KEY = "session_generation"
 LANGUAGES = ("en", "de")
@@ -153,10 +157,17 @@ def validate(key: str, value: object) -> object:
     return _VALIDATORS[key](value)
 
 
-def set_setting(session: Session, key: str, value: object) -> None:
+def set_setting(session: Session, key: str, value: object, *, commit: bool = True) -> None:
+    """Validate and store a setting.
+
+    By default the change is committed at once. Code that changes several things
+    in one transaction (stock bookings, for example) passes `commit=False` and
+    commits or rolls back itself; the new value is already visible to this session.
+    """
     checked = validate(key, value)
     session.merge(Setting(key=key, value=json.dumps(checked)))
-    session.commit()
+    if commit:
+        session.commit()
 
 
 def ensure_session_secret(session: Session) -> str:
@@ -188,6 +199,11 @@ def display_value(key: str, value: object) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def tls_enabled(session: Session) -> bool:
+    """HTTPS is on only when both the certificate and the private key are stored."""
+    return bool(get_setting(session, "tls_cert") and get_setting(session, "tls_key"))
 
 
 def bambuddy_configured(session: Session) -> bool:
