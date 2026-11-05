@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Reprintbuddy installer for Debian 12 and 13 (native install, no Docker, systemd).
 #
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/main/install/install.sh)"
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/main/install/install.sh)"
 #
 # Run as root inside the container. Safe to run again: the installed version and the
 # database stay as they are; packages, user, permissions, units and the service are
@@ -11,7 +11,7 @@
 set -Eeuo pipefail
 
 # Replaced when the repository is published; the script refuses to run with the placeholder.
-REPO_URL_DEFAULT="https://github.com/<owner>/reprintbuddy.git"
+REPO_URL_DEFAULT="https://github.com/Eifel-Joe/reprintbuddy.git"
 
 APP_USER="reprintbuddy"
 INSTALL_DIR="/opt/reprintbuddy"
@@ -350,7 +350,7 @@ check_installer_matches_code() {
             tag="$(capture_as_service_user git -C "${INSTALL_DIR}" describe --tags --exact-match HEAD 2>/dev/null || true)"
             die 1 "The installer does not match the installed version (${file} differs)." \
                 "Use the install.sh of the tag ${tag:-of the installed version} (${REPO_URL}), for example:" \
-                "  bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/${tag:-<tag>}/install/install.sh)\""
+                "  bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/${tag:-<tag>}/install/install.sh)\""
         fi
     done
 }

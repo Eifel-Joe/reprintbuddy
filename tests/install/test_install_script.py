@@ -160,12 +160,12 @@ def test_placeholder_repo_refused(bash, tmp_path):
     assert "Repository URL not set" in result.stderr + result.stdout
 
 
-def test_default_repo_is_the_placeholder(bash, tmp_path):
-    """Until the repository is published the script refuses to run without --repo."""
+def test_default_repo_is_the_published_one(bash, tmp_path):
+    """Published: without --repo the script clones the public repository."""
     os_release(tmp_path)
     result = run(bash, tmp_path)
-    assert result.returncode == 1
-    assert "Repository URL not set" in result.stderr + result.stdout
+    assert result.returncode == 0, result.stderr
+    assert "git clone https://github.com/Eifel-Joe/reprintbuddy.git /opt/reprintbuddy" in lines(result)
 
 
 def test_repo_from_environment(bash, tmp_path):
@@ -233,7 +233,7 @@ def test_not_root_refused(bash, tmp_path):
 
 def test_messages_are_english_only_and_neutral():
     text = INSTALL_SH.read_text(encoding="utf-8")
-    assert "<owner>" in text  # the placeholder stays until publication
+    assert 'REPO_URL_DEFAULT="https://github.com/Eifel-Joe/reprintbuddy.git"' in text
 
 
 # --- root must not install anything from a place the service user can write to ---------

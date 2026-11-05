@@ -41,13 +41,13 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 ## Installation
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/main/install/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/main/install/install.sh)"
 ```
 
 Run it as root inside the container. To skip the language question, add the language:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/main/install/install.sh)" _ --language de
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/main/install/install.sh)" _ --language de
 ```
 
 *Available from the first release.*
@@ -56,7 +56,7 @@ The command above takes the installer from the `main` branch. To install exactly
 into the URL, for example `v0.1.0` for `<tag>`; installer and code are then guaranteed to belong together:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/<tag>/install/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
 ```
 
 What the installer does:

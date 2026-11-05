@@ -44,13 +44,13 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 ## Installation
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/main/install/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/main/install/install.sh)"
 ```
 
 Als root im Container ausführen. Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/main/install/install.sh)" _ --language de
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/main/install/install.sh)" _ --language de
 ```
 
 *Verfügbar ab der ersten Version.*
@@ -59,7 +59,7 @@ Der Befehl oben holt das Installationsskript vom Zweig `main`. Soll genau eine V
 setze ihren Tag in die Adresse (für `<tag>` zum Beispiel `v0.1.0`); Skript und Code gehören dann sicher zusammen:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/<tag>/install/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
 ```
 
 Das Skript

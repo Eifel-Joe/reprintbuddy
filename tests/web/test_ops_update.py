@@ -62,7 +62,10 @@ def test_settings_shows_installed(ops_env):
     assert "Not checked yet." in page
 
 
-def test_dev_build_shown(ops_env):
+def test_dev_build_shown(ops_env, monkeypatch):
+    from reprintbuddy.web.routes import ops as routes
+
+    monkeypatch.setattr(routes, "__version__", "0.1.0.dev0")
     git_env(ops_env, describe=None)
     assert "development build 0.1.0.dev0" in ops_env.client.get("/settings").text
 
@@ -361,8 +364,11 @@ def test_idle_page_asks_systemd_nothing(ops_env):
 # --- the Git tag and the package version side by side -------------------------------------
 
 
-def test_package_version_is_shown_when_it_differs_from_the_tag(ops_env):
-    git_env(ops_env)  # tag v0.1.0, package 0.1.0.dev0 (the version before the first release)
+def test_package_version_is_shown_when_it_differs_from_the_tag(ops_env, monkeypatch):
+    from reprintbuddy.web.routes import ops as routes
+
+    monkeypatch.setattr(routes, "__version__", "0.1.0.dev0")
+    git_env(ops_env)  # tag v0.1.0, package 0.1.0.dev0
     page = ops_env.client.get("/settings").text
     assert "Installed version: v0.1.0 (package version 0.1.0.dev0)" in page
 
