@@ -80,3 +80,41 @@ def ready_client(admin_client):
         st.set_setting(session, "bambuddy_api_key", "bb_testkey")
         st.set_setting(session, "bambuddy_review_confirmed", True)
     return admin_client
+
+
+class FakeRunner:
+    """Stands in for the command runner: records every call, answers from a script.
+
+    `on(prefix, *results)` answers calls that start with `prefix`: the results in order,
+    the last one repeats. A result may be a function that receives the call (to check
+    the state of the world in the middle of a run) and returns a CommandResult.
+    The longest matching prefix wins; without a match the call succeeds.
+    """
+
+    def __init__(self):
+        self.calls: list[tuple[str, ...]] = []
+        self._rules: list[tuple[tuple[str, ...], list, list[int]]] = []
+
+    def on(self, prefix, *results):
+        self._rules.append((tuple(prefix), list(results), [0]))
+
+    def __call__(self, args, *, cwd=None, timeout=120.0):
+        from reprintbuddy.ops.runner import CommandResult
+
+        call = tuple(args)
+        self.calls.append(call)
+        best = None
+        for prefix, results, position in self._rules:
+            if call[: len(prefix)] == prefix and (best is None or len(prefix) >= len(best[0])):
+                best = (prefix, results, position)
+        if best is None:
+            return CommandResult(0)
+        _, results, position = best
+        result = results[min(position[0], len(results) - 1)]
+        position[0] += 1
+        return result(call) if callable(result) else result
+
+
+@pytest.fixture
+def fake_runner():
+    return FakeRunner()

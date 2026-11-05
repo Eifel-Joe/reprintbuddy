@@ -1,0 +1,14 @@
+[Unit]
+Description=Reprintbuddy update (started from the settings page)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=reprintbuddy
+Group=reprintbuddy
+WorkingDirectory=/var/lib/reprintbuddy
+ExecStart=/opt/reprintbuddy/.venv/bin/reprintbuddy update --db /var/lib/reprintbuddy/reprintbuddy.db
+TimeoutStartSec=30min
+UMask=0077
+Environment=HOME=/var/lib/reprintbuddy
