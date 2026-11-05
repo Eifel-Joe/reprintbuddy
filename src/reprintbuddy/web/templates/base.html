@@ -19,7 +19,7 @@
     ('assembly', '/', t('nav.assembly')),
     ('queue', '/', t('nav.queue')),
     ('filament', '/', t('nav.filament')),
-    ('parts', '/', t('nav.parts')),
+    ('parts', '/parts', t('nav.parts')),
     ('reorder', '/', t('nav.reorder')),
     ('settings', '/settings', t('nav.settings')),
   ] %}
@@ -51,6 +51,7 @@
     <div class="sidebar-footer">{{ nav_footer() }}</div>
   </aside>
   <main class="content">
+    {% for message in pop_flashes(request) %}<p class="flash" role="status">{{ message }}</p>{% endfor %}
     {% block content %}{% endblock %}
   </main>
 </div>

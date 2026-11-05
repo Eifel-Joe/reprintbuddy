@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ t('parts.title') }}{% endblock %}
+{% block content %}
+<h1>{{ t('parts.title') }}</h1>
+<p><a class="btn" href="/parts/new">{{ t('parts.new') }}</a></p>
+{% if parts %}
+<div class="card table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>{{ t('parts.field.name') }}</th>
+        <th class="num">{{ t('parts.stock') }}</th>
+        <th class="num">{{ t('parts.field.min_stock') }}</th>
+        <th class="num">{{ t('parts.field.pack_size') }}</th>
+        <th>{{ t('parts.field.supplier') }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for part in parts %}
+      <tr>
+        <td><a href="/parts/{{ part.id }}/edit">{{ part.name }}</a></td>
+        <td class="num">{{ part.stock }} {{ part.unit }}</td>
+        <td class="num">{{ part.min_stock }}</td>
+        <td class="num">{{ part.pack_size }}</td>
+        <td>{{ part.supplier or '' }}</td>
+        <td><a href="/journal?part={{ part.id }}">{{ t('journal.title') }}</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card"><p class="muted">{{ t('parts.empty') }}</p></div>
+{% endif %}
+{% endblock %}

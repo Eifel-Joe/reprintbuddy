@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}{% if part %}{{ t('parts.edit') }}{% else %}{{ t('parts.new') }}{% endif %}{% endblock %}
+{% block content %}
+<h1>{% if part %}{{ part.name }}{% else %}{{ t('parts.new') }}{% endif %}</h1>
+<section class="card section">
+  {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+  {% set action = '/parts/' ~ part.id ~ '/edit' if part else '/parts/new' %}
+  <form method="post" action="{{ action }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if not part %}<input type="hidden" name="form_token" value="{{ form_token() }}">{% endif %}
+    <label>{{ t('parts.field.name') }}
+      <input name="name" value="{{ values.name }}" maxlength="200" required>
+    </label>
+    <div class="row">
+      <label>{{ t('parts.field.unit') }}
+        <input name="unit" value="{{ values.unit }}" maxlength="20" required>
+      </label>
+      {% if part %}
+      <div>
+        <p class="label-like">{{ t('parts.stock') }}</p>
+        <p><strong>{{ part.stock }}</strong> {{ part.unit }}</p>
+        <span class="hint">{{ t('parts.stock_via_bookings') }}</span>
+      </div>
+      {% else %}
+      <label>{{ t('parts.field.initial_stock') }}
+        <input name="initial_stock" inputmode="numeric" value="{{ values.initial_stock }}">
+      </label>
+      {% endif %}
+    </div>
+    <div class="row">
+      <label>{{ t('parts.field.min_stock') }}
+        <input name="min_stock" inputmode="numeric" value="{{ values.min_stock }}">
+      </label>
+      <label>{{ t('parts.field.pack_size') }}
+        <input name="pack_size" inputmode="numeric" value="{{ values.pack_size }}">
+      </label>
+    </div>
+    <div class="row">
+      <label>{{ t('parts.field.min_order_packs') }}
+        <input name="min_order_packs" inputmode="numeric" value="{{ values.min_order_packs }}">
+      </label>
+      <label>{{ t('parts.field.lead_time_days') }}
+        <input name="lead_time_days" inputmode="numeric" value="{{ values.lead_time_days }}">
+      </label>
+    </div>
+    <div class="row">
+      <label>{{ t('parts.field.safety_value') }}
+        <input name="safety_value" inputmode="numeric" value="{{ values.safety_value }}">
+      </label>
+      <label>{{ t('parts.field.safety_unit') }}
+        <select name="safety_unit">
+          <option value="days"{% if values.safety_unit == 'days' %} selected{% endif %}>{{ t('parts.safety_unit.days') }}</option>
+          <option value="qty"{% if values.safety_unit == 'qty' %} selected{% endif %}>{{ t('parts.safety_unit.qty') }}</option>
+        </select>
+      </label>
+    </div>
+    <label>{{ t('parts.field.supplier') }}
+      <input name="supplier" value="{{ values.supplier }}" maxlength="200">
+    </label>
+    <label>{{ t('parts.field.order_url') }}
+      <input name="order_url" value="{{ values.order_url }}" maxlength="2000" inputmode="url">
+    </label>
+    <button class="btn" type="submit">{{ t('parts.save') }}</button>
+    <a class="btn-link" href="/parts">{{ t('common.cancel') }}</a>
+  </form>
+</section>
+{% endblock %}

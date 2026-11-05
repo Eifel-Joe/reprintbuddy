@@ -176,3 +176,26 @@ input[type="file"] { margin-top: 0.5rem; color: var(--text-2); max-width: 100%; 
 @media (max-width: 899px) {
   .row { grid-template-columns: minmax(0, 1fr); gap: 0; }
 }
+
+/* ---- lists, tables, flash messages (B3) ---------------------------------- */
+
+.neg { color: var(--danger); font-weight: 600; }
+
+.flash {
+  padding: 0.7rem 0.9rem;
+  margin: 0 0 1rem;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 8px;
+}
+
+.table-wrap { padding: 0; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+th, td { padding: 0.6rem 0.8rem; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--text-2); font-weight: 600; white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td a, .btn-link { color: var(--accent); text-decoration: none; }
+td a:hover, .btn-link:hover { text-decoration: underline; }
+.btn-link { margin-left: 1rem; }
+.label-like { margin: 0 0 0.35rem; color: var(--text-2); font-size: 0.9rem; }

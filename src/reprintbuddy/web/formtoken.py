@@ -60,18 +60,26 @@ def consume_form_token(session: Session, secret: str, token: str, max_age_s: int
 
 
 @contextmanager
-def form_transaction(request: Request, token: str | None) -> Iterator[Session]:
-    """The write transaction of a form: starts immediately, uses the token up first.
+def write_transaction(request: Request) -> Iterator[Session]:
+    """A write transaction on the request's own database session (B1: one per request).
 
-    It uses the request's own database session (B1: one per request). Anything the
-    session held before is released. If the body raises, nothing is written and the
-    token stays usable.
+    It starts immediately (see `db.begin_immediate`); anything the session held before,
+    such as a read snapshot, is released first. Do not await inside the block.
     """
-    if not token:
-        raise FormTokenInvalid
     session = db_session(request)
-    session.rollback()  # no read snapshot may survive into the write transaction
+    session.rollback()
     with session.begin():
         begin_immediate(session)
+        yield session
+
+
+@contextmanager
+def form_transaction(request: Request, token: str | None) -> Iterator[Session]:
+    """The write transaction of a form that creates or books something: it uses the
+    one-time token up first. If the body raises, nothing is written and the token
+    stays usable for the corrected form."""
+    if not token:
+        raise FormTokenInvalid
+    with write_transaction(request) as session:
         consume_form_token(session, request.app.state.session_secret, token)
         yield session
