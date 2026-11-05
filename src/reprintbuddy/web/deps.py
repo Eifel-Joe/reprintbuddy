@@ -136,10 +136,10 @@ async def security_headers(request: Request, call_next) -> Response:
 
 
 def host_allowed_for_setup(host_header: str | None) -> bool:
-    """Is this `Host` header plausible for someone on the home network?
+    """Is this `Host` header plausible for someone on the home network or VPN?
 
     While no account exists, anybody who reaches the page could create it. A web
-    page on the internet can make a visitor's browser talk to the home network by
+    page on the internet can make a visitor's browser talk to the home network or VPN by
     pointing its own name at a private address (DNS rebinding); the request then
     carries that name in `Host`. During setup only IP addresses, `localhost`,
     names without a dot and typical home-network endings are accepted.
