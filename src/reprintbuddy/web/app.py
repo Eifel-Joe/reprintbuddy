@@ -15,6 +15,7 @@ from starlette.templating import Jinja2Templates
 from reprintbuddy import settings as st
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.web import deps
+from reprintbuddy.web.throttle import FailureBrake, HashLimiter
 from reprintbuddy.web.routes import auth as auth_routes
 from reprintbuddy.web.routes import overview as overview_routes
 from reprintbuddy.web.routes import settings as settings_routes
@@ -40,6 +41,8 @@ def create_app(
     app.state.engine = engine
     app.state.sessionmaker = sessionmaker
     app.state.login_failure_delay = 0.5  # seconds of pause after a wrong password
+    app.state.login_brake = FailureBrake()  # 10 failures in 60 s: every attempt waits 2 s
+    app.state.hash_limiter = HashLimiter(capacity=2)  # at most two argon2 runs at once
     app.state.http_client_factory = http_client_factory or httpx.AsyncClient
 
     templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))

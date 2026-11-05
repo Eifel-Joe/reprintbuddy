@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from functools import partial
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
 from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
@@ -63,7 +60,9 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)):
         )
 
     # The account and the language are saved together or not at all.
-    user = await run_in_threadpool(partial(accounts.create_admin, db, username, password, commit=False))
+    user = await request.app.state.hash_limiter.run(
+        accounts.create_admin, db, username, password, commit=False
+    )
     st.set_setting(db, "language", language, commit=False)
     start_session(request, user, db, commit=False)
     db.commit()

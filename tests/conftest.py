@@ -38,7 +38,8 @@ def api_routes(app):
 
 def make_client(db_path) -> TestClient:
     app = create_app(db_path)
-    app.state.login_failure_delay = 0  # tests do not wait; one test checks the delay itself
+    app.state.login_failure_delay = 0  # tests do not wait; some tests set these themselves
+    app.state.login_brake.delay = 0
     return TestClient(app, follow_redirects=False)
 
 

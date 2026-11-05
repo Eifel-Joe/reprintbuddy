@@ -7,7 +7,6 @@ import asyncio
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
 from reprintbuddy import auth as accounts
 from reprintbuddy.web.csrf import verify_csrf
@@ -26,9 +25,17 @@ async def login(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     target = safe_next(str(form.get("next") or ""))
     username = str(form.get("username", "")).strip()
-    # Hashing takes a noticeable time: keep it off the event loop.
-    user = await run_in_threadpool(accounts.authenticate, db, username, str(form.get("password", "")))
+    brake = request.app.state.login_brake
+    pause = brake.current_delay()  # many recent failures: every attempt waits
+    if pause:
+        release_connection(db)
+        await asyncio.sleep(pause)
+    # Hashing takes a noticeable time and memory: off the event loop, a few at a time.
+    user = await request.app.state.hash_limiter.run(
+        accounts.authenticate, db, username, str(form.get("password", ""))
+    )
     if user is None:
+        brake.record_failure()
         # A short pause per failed attempt slows down guessing; no connection is held meanwhile.
         release_connection(db)
         await asyncio.sleep(request.app.state.login_failure_delay)
