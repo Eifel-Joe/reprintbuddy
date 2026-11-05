@@ -7,7 +7,7 @@
 <p>{{ t('bambuddy.user.group') }}</p>
 <ul class="perms">
   {% for code in required_permissions %}
-  <li>{% set label = 'permission.' ~ code %}{{ t(label) }} (<code>{{ code }}</code>)</li>
+  <li>{% include "_permission_label.html" %}</li>
   {% endfor %}
 </ul>
 <p>{{ t('bambuddy.user.user') }}</p>

@@ -322,11 +322,139 @@ def test_german_texts(admin_client, respx_mock):
     user = admin_client.get(USER_PAGE).text
     for code in REQUIRED:
         assert f"<code>{code}</code>" in user
-    assert "Bibliothek lesen" in user and "Systemgruppe" in user
+    assert "Alle Dateien der Bibliothek lesen" in user and "Systemgruppe" in user
     permissions = [p for p in REQUIRED if p != "inventory:read"]
     mock_auth_me(respx_mock, permissions=permissions)
     token = csrf_of(admin_client, CONNECT)
     response = admin_client.post(CONNECT, data=_form(token))
-    assert "Inventar lesen" in response.text and "fehlen" in response.text
+    assert "Filamentbestand lesen" in response.text and "fehlen" in response.text
     for raw_key in ("bambuddy.reason", "bambuddy.result", "permission."):
         assert raw_key not in response.text  # no untranslated keys
+
+
+EDITOR = {
+    "library:read_all": "Read All Library",
+    "queue:read_all": "Read All Queue",
+    "queue:create": "Create Queue",
+    "queue:start_unreviewed": "Start Unreviewed Queue",
+    "printers:read": "Read Printers",
+    "inventory:read": "Read Inventory",
+}
+DE = {
+    "library:read_all": "Alle Dateien der Bibliothek lesen",
+    "queue:read_all": "Ganze Warteschlange lesen",
+    "queue:create": "Druckaufträge einreihen",
+    "queue:start_unreviewed": "Ohne Prüfung drucken",
+    "printers:read": "Drucker lesen",
+    "inventory:read": "Filamentbestand lesen",
+}
+EN = {
+    "library:read_all": "Read all library files",
+    "queue:read_all": "Read the whole queue",
+    "queue:create": "Add print jobs",
+    "queue:start_unreviewed": "Print without review",
+    "printers:read": "Read printers",
+    "inventory:read": "Read inventory",
+}
+
+
+def test_editor_labels_are_a_fixed_table_in_the_code():
+    from reprintbuddy.bambuddy.connection import EDITOR_LABELS
+
+    assert EDITOR_LABELS == EDITOR
+
+
+def test_permission_labels_follow_ui_language(admin_client, respx_mock):
+    permissions = [p for p in REQUIRED if p != "queue:start_unreviewed"]
+    mock_auth_me(respx_mock, permissions=permissions)
+
+    def pages():
+        token = csrf_of(admin_client, CONNECT)
+        result = admin_client.post(CONNECT, data=_form(token))
+        return admin_client.get(USER_PAGE).text, result.text
+
+    en_user, en_result = pages()
+    for page in (en_user, en_result):
+        for code in REQUIRED:
+            assert EN[code] in page and EDITOR[code] in page, code
+        assert "Ohne Prüfung drucken" not in page
+    _german(admin_client)
+    de_user, de_result = pages()
+    for page in (de_user, de_result):
+        for code in REQUIRED:
+            assert DE[code] in page and EDITOR[code] in page, code  # the Bambuddy label stays English
+        assert "Print without review" not in page
+    assert "Ohne Prüfung drucken" in de_user and "Start Unreviewed Queue" in de_user
+
+
+KEY_OFF = (
+    "Control Printer",
+    "Manage Library",
+    "Manage Inventory",
+    "Manage Maintenance",
+    "Manage Archives",
+    "Manage Projects",
+    "Allow Cloud Access",
+    "Update Electricity Price",
+    "Send Notifications",
+)
+
+
+def test_key_guide_is_a_table_of_the_settings_with_bambuddys_labels(admin_client):
+    page = admin_client.get(KEY_PAGE).text
+    table = page[page.index("<table") : page.index("</table>")]
+    rows = re.findall(r"<tr[^>]*>(.*?)</tr>", table, re.S)
+    on_rows = [r for r in rows if 'class="on"' in r]
+    off_rows = [r for r in rows if 'class="off"' in r]
+    assert len(on_rows) == 2 and "Read Status" in on_rows[0] and "Manage Queue" in on_rows[1]
+    assert len(off_rows) == len(KEY_OFF)
+    for label in KEY_OFF:
+        assert any(label in r for r in off_rows), label
+    assert "Reprintbuddy" in table
+    assert "no restriction" in page and "no expiry" in page.lower()
+
+
+def test_key_guide_in_german_names_both_languages(admin_client):
+    _german(admin_client)
+    page = admin_client.get(KEY_PAGE).text
+    assert "Status lesen" in page and "Read Status" in page
+    assert "Warteschlange verwalten" in page and "Manage Queue" in page
+    assert "Ablaufdatum" in page and "keine Einschränkung" in page
+    assert "Drucker steuern" in page and "Control Printer" in page
+
+
+def _item(html, code):
+    """The list item of one right."""
+    pattern = r'<li class="perm[^>]*>(?:(?!</li>).)*<code>' + re.escape(code) + r"</code>.*?</li>"
+    return re.search(pattern, html, re.S).group(0)
+
+
+def test_missing_permission_names_group_and_key(admin_client, respx_mock):
+    permissions = [p for p in REQUIRED if p not in ("queue:start_unreviewed", "library:read_all")]
+    mock_auth_me(respx_mock, permissions=permissions)
+    token = csrf_of(admin_client, CONNECT)
+    page = admin_client.post(CONNECT, data=_form(token)).text
+    queue_item = _item(page, "queue:start_unreviewed")
+    assert "Manage Queue" in queue_item and "Read Status" not in queue_item
+    assert "Reprintbuddy" in queue_item
+    assert f'href="{USER_PAGE}"' in queue_item and f'href="{KEY_PAGE}"' in queue_item
+    read_item = _item(page, "library:read_all")
+    assert "Read Status" in read_item and "Manage Queue" not in read_item
+    assert f'href="{USER_PAGE}"' in read_item and f'href="{KEY_PAGE}"' in read_item
+    assert "where it can be missing" in queue_item.lower()
+
+
+def test_which_key_right_covers_which_permission(admin_client, respx_mock):
+    """Reading rights come with 'Read Status', queue rights with 'Manage Queue'."""
+    mock_auth_me(respx_mock, permissions=[])
+    token = csrf_of(admin_client, CONNECT)
+    page = admin_client.post(CONNECT, data=_form(token)).text
+    for code in ("library:read_all", "queue:read_all", "printers:read", "inventory:read"):
+        assert "Read Status" in _item(page, code), code
+    for code in ("queue:create", "queue:start_unreviewed"):
+        assert "Manage Queue" in _item(page, code), code
+    _german(admin_client)
+    token = csrf_of(admin_client, CONNECT)
+    page = admin_client.post(CONNECT, data=_form(token)).text
+    assert "Status lesen" in _item(page, "printers:read")
+    assert "Warteschlange verwalten" in _item(page, "queue:create")

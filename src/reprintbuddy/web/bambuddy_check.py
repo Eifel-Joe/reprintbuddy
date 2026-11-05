@@ -6,7 +6,15 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 
 from reprintbuddy import settings as st
-from reprintbuddy.bambuddy.connection import REQUIRED_PERMISSIONS, ConnectionCheck, check_connection
+from reprintbuddy.bambuddy.connection import (
+    EDITOR_LABELS,
+    KEY_RIGHT_FOR,
+    KEY_SETTINGS_OFF,
+    KEY_SETTINGS_ON,
+    REQUIRED_PERMISSIONS,
+    ConnectionCheck,
+    check_connection,
+)
 from reprintbuddy.web.deps import release_connection
 
 
@@ -34,4 +42,15 @@ async def run_check(request: Request, db: Session, url: str, api_key: str) -> Co
 
 def result_context(check: ConnectionCheck | None) -> dict[str, object]:
     """What the result partial needs."""
-    return {"check": check, "required_permissions": REQUIRED_PERMISSIONS}
+    return {"check": check, **permission_context()}
+
+
+def permission_context() -> dict[str, object]:
+    """The fixed tables the templates need (labels, where a right can be set)."""
+    return {
+        "required_permissions": REQUIRED_PERMISSIONS,
+        "editor_labels": EDITOR_LABELS,
+        "key_right_for": KEY_RIGHT_FOR,
+        "key_settings_on": KEY_SETTINGS_ON,
+        "key_settings_off": KEY_SETTINGS_OFF,
+    }

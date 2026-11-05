@@ -42,6 +42,45 @@ _LEGACY_NAMES: dict[str, str] = {
     "queue:read_all": "queue:read",
 }
 
+# How Bambuddy's group editor names each right (generated server-side in English only,
+# backend/app/api/routes/groups.py `_permission_label`). Shown small below the translated text.
+EDITOR_LABELS: dict[str, str] = {
+    "library:read_all": "Read All Library",
+    "queue:read_all": "Read All Queue",
+    "queue:create": "Create Queue",
+    "queue:start_unreviewed": "Start Unreviewed Queue",
+    "printers:read": "Read Printers",
+    "inventory:read": "Read Inventory",
+}
+
+# The effective rights come from the group and the key together. Which key right
+# ("status" = Read Status, "queue" = Manage Queue) can stand in for a right the group lacks.
+KEY_RIGHT_FOR: dict[str, str] = {
+    "library:read_all": "status",
+    "queue:read_all": "status",
+    "printers:read": "status",
+    "inventory:read": "status",
+    "queue:create": "queue",
+    "queue:start_unreviewed": "queue",
+}
+
+# The settings page 3 of the setup asks for: (id, Bambuddy's English label, on or off).
+KEY_SETTINGS_ON: tuple[tuple[str, str], ...] = (
+    ("status", "Read Status"),
+    ("queue", "Manage Queue"),
+)
+KEY_SETTINGS_OFF: tuple[tuple[str, str], ...] = (
+    ("control", "Control Printer"),
+    ("library", "Manage Library"),
+    ("inventory", "Manage Inventory"),
+    ("maintenance", "Manage Maintenance"),
+    ("archives", "Manage Archives"),
+    ("projects", "Manage Projects"),
+    ("cloud", "Allow Cloud Access"),
+    ("electricity", "Update Electricity Price"),
+    ("notifications", "Send Notifications"),
+)
+
 ADMIN_GROUP = "Administrators"
 
 

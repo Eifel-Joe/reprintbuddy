@@ -17,7 +17,7 @@ from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops.tls import validate_tls_pair
-from reprintbuddy.web.bambuddy_check import result_context, run_check, validate_address, validate_key
+from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.routes.ops import ops_view
 from reprintbuddy.web.deps import flash, get_db, logged_in_user, render, start_session
@@ -54,7 +54,8 @@ def _page(
         tls_key_mask=st.display_value("tls_key", st.get_setting(db, "tls_key")),
         tls_cert_set=bool(st.get_setting(db, "tls_cert")),
         ops=ops_view(request, db),
-        **result_context(check),
+        **permission_context(),
+        check=check,
         **values,
     )
 

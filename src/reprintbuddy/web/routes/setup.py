@@ -8,9 +8,14 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
-from reprintbuddy.bambuddy.connection import REQUIRED_PERMISSIONS
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.bambuddy_check import result_context, run_check, validate_address, validate_key
+from reprintbuddy.web.bambuddy_check import (
+    permission_context,
+    result_context,
+    run_check,
+    validate_address,
+    validate_key,
+)
 from reprintbuddy.web.deps import current_language, flash, get_db, render, start_session
 
 router = APIRouter()
@@ -89,12 +94,12 @@ async def bambuddy_start(db: Session = Depends(get_db)):
 
 @router.get(f"{BASE}/user")
 async def bambuddy_user_guide(request: Request, db: Session = Depends(get_db)):
-    return _closed(db) or render(request, "setup_bambuddy_user.html", required_permissions=REQUIRED_PERMISSIONS)
+    return _closed(db) or render(request, "setup_bambuddy_user.html", **permission_context())
 
 
 @router.get(f"{BASE}/key")
 async def bambuddy_key_guide(request: Request, db: Session = Depends(get_db)):
-    return _closed(db) or render(request, "setup_bambuddy_key.html")
+    return _closed(db) or render(request, "setup_bambuddy_key.html", **permission_context())
 
 
 def _connect_page(request: Request, error: str | None = None, address: str = "", check=None):

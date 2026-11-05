@@ -481,3 +481,20 @@ def test_a_normal_port_has_no_privileged_hint(ready_client):
     page = ready_client.get("/settings").text
     assert "below 1024" not in page
     assert "restarted" in page  # the usual restart hint is still there
+
+
+def test_settings_list_has_labels_in_the_ui_language_and_where_to_fix(ready_client, respx_mock):
+    from conftest import REQUIRED
+
+    body = auth_me(permissions=[p for p in REQUIRED if p != "queue:create"])
+    respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=body)
+    response = post(ready_client, "/settings/bambuddy", **bambuddy_form())
+    assert response.status_code == 200
+    assert "Add print jobs" in response.text and "Create Queue" in response.text
+    assert "Manage Queue" in response.text
+    assert 'href="/setup/bambuddy' not in response.text  # the guide pages are closed after the setup
+    with ready_client.app.state.sessionmaker() as s:
+        st.set_setting(s, "language", "de")
+    response = post(ready_client, "/settings/bambuddy", **bambuddy_form())
+    assert "Druckaufträge einreihen" in response.text and "Create Queue" in response.text
+    assert "Warteschlange verwalten" in response.text

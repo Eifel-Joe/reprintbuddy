@@ -1,0 +1,3 @@
+{# One right: the text in the interface language, small below it how Bambuddy's group editor names it.
+   Needs `code` and `editor_labels`. #}
+{% set label = 'permission.' ~ code %}{{ t(label) }} (<code>{{ code }}</code>)<small class="editor">Bambuddy: {{ editor_labels[code] }}</small>
