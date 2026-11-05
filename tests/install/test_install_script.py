@@ -282,7 +282,7 @@ def test_rerun_after_an_aborted_first_install_switches_to_the_release(bash, tmp_
     (tmp_path / "opt/reprintbuddy/.git").mkdir(parents=True)
     out = lines(run(bash, tmp_path, "--repo", REPO))
     assert "Unfinished installation found" in out
-    assert "git -C /opt/reprintbuddy fetch --tags origin" in out
+    assert "git -C /opt/reprintbuddy fetch --prune --prune-tags --force --tags origin" in out
     assert "checkout --quiet --detach vX.Y.Z" in out
     assert "git clone" not in out
     assert "Existing installation found, keeping version." not in out

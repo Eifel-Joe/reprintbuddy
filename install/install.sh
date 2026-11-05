@@ -216,7 +216,7 @@ fetch_code() {
         if [ ! -e "${DESTDIR}${DB_FILE}" ] &&
             ! capture_as_service_user git -C "${INSTALL_DIR}" describe --tags --exact-match HEAD >/dev/null 2>&1; then
             say "Unfinished installation found, switching to the newest release."
-            as_service_user git -C "${INSTALL_DIR}" fetch --tags origin
+            as_service_user git -C "${INSTALL_DIR}" fetch --prune --prune-tags --force --tags origin
             checkout_newest_release
             return 0
         fi

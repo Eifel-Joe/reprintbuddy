@@ -81,7 +81,7 @@ def test_happy_path_commands(update_env):
     assert e.runner.calls == [
         git + ("describe", "--tags", "--exact-match", "HEAD"),
         git + ("rev-parse", "HEAD"),
-        git + ("fetch", "--tags", "origin"),
+        git + ("fetch", "--prune", "--prune-tags", "--force", "--tags", "origin"),
         git + ("tag", "--list", "v*"),
         git + ("checkout", "--quiet", "--detach", "v0.2.0"),
         (e.py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", e.d),
@@ -305,6 +305,43 @@ def test_dev_build_without_tag_labels_backup_with_the_commit(update_env):
     assert result.state == "succeeded"
     assert result.from_tag is None
     assert "reprintbuddy-" + REF[:12] + "-" in result.backup
+
+
+def queue(e, to_tag):
+    write_status(
+        e.data,
+        UpdateStatus(state="queued", step="start", from_tag="v0.1.0", to_tag=to_tag, started_at=NOW - timedelta(minutes=1)),
+    )
+
+
+def test_update_goes_to_the_version_the_page_offered(update_env):
+    """A newer tag published between 'Check for updates' and the click is not installed."""
+    e = update_env
+    e.runner.on(("git", "-C", e.d, "tag", "--list"), CommandResult(0, "v0.1.0\nv0.2.0\nv0.3.0\n"))
+    e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.2.0\n"))
+    queue(e, "v0.2.0")
+    result = e.update()
+    assert result.state == "succeeded" and result.to_tag == "v0.2.0"
+    assert ("git", "-C", e.d, "checkout", "--quiet", "--detach", "v0.2.0") in e.runner.calls
+
+
+def test_an_explicit_target_wins_over_the_queued_one(update_env):
+    e = update_env
+    e.runner.on(("git", "-C", e.d, "tag", "--list"), CommandResult(0, "v0.1.0\nv0.2.0\nv0.3.0\n"))
+    e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.3.0\n"))
+    queue(e, "v0.2.0")
+    assert e.update(target="v0.3.0").to_tag == "v0.3.0"
+
+
+@pytest.mark.parametrize("offered", ["v0.2.0", "latest", "v01.2.0"])
+def test_a_queued_version_that_is_gone_or_invalid_is_not_replaced_by_another(update_env, offered):
+    """The tag was deleted on GitHub meanwhile: do not silently install something else."""
+    e = update_env
+    e.runner.on(("git", "-C", e.d, "tag", "--list"), CommandResult(0, "v0.1.0\nv0.3.0\n"))
+    queue(e, offered)
+    result = e.update()
+    assert result.state == "failed" and f"unknown target {offered}" in result.message
+    assert not e.called("git", "-C", e.d, "checkout")
 
 
 def test_reason_is_the_line_that_says_what_went_wrong(update_env):

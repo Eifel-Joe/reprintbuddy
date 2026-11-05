@@ -131,15 +131,22 @@ def run_update(
     info["backup"] = str(backup)
 
     put("running", "fetch")
-    fetched = runner((*git, "fetch", "--tags", "origin"), timeout=300.0)
+    # --force: a tag moved on GitHub ("would clobber existing tag") must not stop every update;
+    # --prune-tags: a tag deleted there must not stay offered here.
+    fetched = runner(
+        (*git, "fetch", "--prune", "--prune-tags", "--force", "--tags", "origin"), timeout=300.0
+    )
     if not fetched.ok:
         return finish("failed", "fetch", "fetch: " + _reason(fetched, "git fetch failed"))
     tags = local_tags(install_dir, runner)
-    goal = target or newest_release(tags)
-    if goal is None and not target:
+    # The version the page offered (or the one asked for) is installed, not whatever is newest
+    # by now; if it is gone, the update stops instead of installing something else.
+    wanted = target or info["to_tag"]
+    goal = wanted or newest_release(tags)
+    if goal is None:
         return finish("failed", "fetch", "fetch: no newer release")
-    if goal is None or parse_release_tag(goal) is None or goal not in tags:
-        return finish("failed", "fetch", f"fetch: unknown target {target}")
+    if parse_release_tag(goal) is None or goal not in tags:
+        return finish("failed", "fetch", f"fetch: unknown target {goal}")
     info["to_tag"] = goal
     if not is_newer(goal, info["from_tag"]):
         return finish("failed", "fetch", "fetch: no newer release")
