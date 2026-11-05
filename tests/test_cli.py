@@ -243,3 +243,32 @@ def test_disable_https(db, capsys):
         assert st.get_setting(s, "tls_cert") is None
         assert st.get_setting(s, "tls_key") is None
     assert "restart" in capsys.readouterr().out.lower()
+
+
+def test_cli_version(capsys):
+    with pytest.raises(SystemExit) as stop:
+        main(["--version"])
+    assert stop.value.code == 0
+    assert capsys.readouterr().out.strip() == "reprintbuddy 0.1.0.dev0"
+
+
+@pytest.mark.parametrize("state,code", [("succeeded", 0), ("rolled_back", 1), ("failed", 1), ("running", 3)])
+def test_cli_update_exit_codes(db, monkeypatch, state, code):
+    from reprintbuddy.ops.status import UpdateStatus
+
+    main(["migrate", "--db", str(db)])
+    calls = []
+
+    def fake(db_path, **kwargs):
+        calls.append((db_path, kwargs))
+        return UpdateStatus(state=state, step="done", message="m")
+
+    monkeypatch.setattr("reprintbuddy.cli.run_update", fake)
+    assert main(["update", "--db", str(db), "--target", "v0.2.0"]) == code
+    assert calls[0][0] == db
+    assert calls[0][1]["target"] == "v0.2.0"
+
+
+def test_cli_update_missing_db(db, capsys):
+    assert main(["update", "--db", str(db)]) == 1
+    assert not db.exists()

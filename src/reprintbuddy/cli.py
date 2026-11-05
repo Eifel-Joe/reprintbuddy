@@ -1,4 +1,4 @@
-"""Command line: serve, migrate, init, set-password, set-port, set-host, disable-https.
+"""Command line: serve, migrate, init, set-password, set-port, set-host, disable-https, update.
 
 Every command takes `--db PATH`; the database path is the only thing that
 does not live in the database itself (Spec 11.5a).
@@ -12,16 +12,20 @@ import getpass
 import os
 import sys
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterator
 
 import uvicorn
 
-from reprintbuddy import auth
+from reprintbuddy import __version__, auth
 from reprintbuddy import settings as st
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops.context import OpsContext
+from reprintbuddy.ops.runner import subprocess_runner
 from reprintbuddy.ops.server import effective_from_settings
+from reprintbuddy.ops.service import INSTALL_DIR
+from reprintbuddy.ops.updater import http_health_waiter, run_update
 from reprintbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upgrade
 from reprintbuddy.web.app import create_app
 
@@ -130,6 +134,24 @@ def _set_host(args: argparse.Namespace) -> int:
     return 0
 
 
+def _update(args: argparse.Namespace) -> int:
+    """Update to the newest release (or `--target`); started by the update unit."""
+    if not args.db.is_file():
+        _error(f"database not found: {args.db}")
+        return 1
+    result = run_update(
+        args.db,
+        install_dir=INSTALL_DIR,
+        runner=subprocess_runner,
+        wait_healthy=http_health_waiter(args.db),
+        now=lambda: datetime.now(UTC),
+        target=args.target,
+    )
+    if result.state == "succeeded":
+        return 0
+    return 3 if result.state in ("running", "queued") else 1
+
+
 def _disable_https(args: argparse.Namespace) -> int:
     with _session(args.db) as session:
         st.set_setting(session, "tls_cert", None, commit=False)
@@ -141,6 +163,7 @@ def _disable_https(args: argparse.Namespace) -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="reprintbuddy")
+    parser.add_argument("--version", action="version", version=f"reprintbuddy {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
 
     def command(name: str, handler, help_: str) -> argparse.ArgumentParser:
@@ -164,6 +187,8 @@ def _parser() -> argparse.ArgumentParser:
     set_port.add_argument("port", help="port number, 1 to 65535")
     set_host = command("set-host", _set_host, "set the listen address (emergency exit)")
     set_host.add_argument("host", help="address to listen on, for example 0.0.0.0")
+    update = command("update", _update, "update to the newest release (started from the settings page)")
+    update.add_argument("--target", help="release tag to update to, for example v0.2.0")
     command("disable-https", _disable_https, "remove the HTTPS certificate (emergency exit)")
     return parser
 
