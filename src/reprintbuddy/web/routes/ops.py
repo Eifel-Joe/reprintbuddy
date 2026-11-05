@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
+from reprintbuddy.ops.export import export_bytes
 from reprintbuddy.ops.server import (
     EffectiveServer,
     address_changed,
@@ -56,6 +58,21 @@ def ops_view(request: Request, session: Session) -> OpsView:
     code = request.query_params.get("ops")
     message = f"ops.msg.{code}" if code in OPS_MESSAGES else None
     return OpsView(running_url=running_url, restart_pending=pending, message=message)
+
+
+@router.get("/settings/export")
+async def export(db: Session = Depends(get_db)):
+    now = datetime.now(UTC)
+    body = export_bytes(db.connection(), now=now)
+    name = f"reprintbuddy-export-{now:%Y%m%d-%H%M%S}.json"
+    return Response(
+        body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.post("/settings/restart", dependencies=[Depends(verify_csrf)])

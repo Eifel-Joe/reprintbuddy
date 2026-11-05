@@ -105,5 +105,8 @@
   "ops.msg.not_git": "Updates from this page need an installation made with the install script.",
   "ops.tls.invalid": "Certificate and private key do not match or cannot be read. Nothing was saved.",
   "ops.tls.encrypted": "Password-protected private keys are not supported. Nothing was saved.",
-  "ops.tls.incomplete": "HTTPS needs both certificate and private key. Nothing was saved."
+  "ops.tls.incomplete": "HTTPS needs both certificate and private key. Nothing was saved.",
+  "ops.export.title": "Export",
+  "ops.export.text": "Download all data as a JSON file. API keys, passwords, the private HTTPS key and the session secret are never included.",
+  "ops.export.button": "Download export"
 }

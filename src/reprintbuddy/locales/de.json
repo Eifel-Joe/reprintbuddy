@@ -105,5 +105,8 @@
   "ops.msg.not_git": "Updates aus der Oberfläche brauchen eine Installation mit dem Installationsskript.",
   "ops.tls.invalid": "Zertifikat und privater Schlüssel passen nicht zusammen oder sind nicht lesbar. Nichts gespeichert.",
   "ops.tls.encrypted": "Passwortgeschützte private Schlüssel werden nicht unterstützt. Nichts gespeichert.",
-  "ops.tls.incomplete": "HTTPS braucht Zertifikat und privaten Schlüssel. Nichts gespeichert."
+  "ops.tls.incomplete": "HTTPS braucht Zertifikat und privaten Schlüssel. Nichts gespeichert.",
+  "ops.export.title": "Export",
+  "ops.export.text": "Alle Daten als JSON-Datei herunterladen. API-Schlüssel, Passwörter, der private HTTPS-Schlüssel und das Sitzungsgeheimnis sind nie enthalten.",
+  "ops.export.button": "Export herunterladen"
 }
