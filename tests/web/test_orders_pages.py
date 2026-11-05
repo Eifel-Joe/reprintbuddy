@@ -255,3 +255,9 @@ def test_orders_german(ready_client):
 
 def test_nav_orders_active(ready_client):
     assert 'class="nav-link active" href="/orders"' in ready_client.get("/orders").text
+
+
+def test_enter_in_a_field_places_the_order_instead_of_adding_rows(ready_client):
+    form = re.search(r'<form[^>]*action="/orders/new"[^>]*>(.*?)</form>', ready_client.get("/orders/new").text, re.S).group(1)
+    first = re.search(r"<button[^>]*>", form).group(0)
+    assert 'name="action"' not in first and 'type="submit"' in first

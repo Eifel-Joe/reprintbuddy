@@ -8,6 +8,8 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="form_token" value="{{ form_token() }}">
     <input type="hidden" name="rows" value="{{ rows }}">
+    {# Enter in a text field presses the first submit button: that must place the order, not add rows. #}
+    <button class="default-submit" type="submit" tabindex="-1" aria-hidden="true">{{ t('orders.create') }}</button>
     <div class="row">
       <label>{{ t('orders.field.reference') }}
         <input name="reference" value="{{ values.reference }}" maxlength="100" required>

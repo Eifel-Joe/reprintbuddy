@@ -169,3 +169,19 @@ def test_sets_german(ready_client):
 
 def test_nav_sets_active(ready_client):
     assert 'class="nav-link active" href="/sets"' in ready_client.get("/sets").text
+
+
+def _first_button(html, action):
+    form = re.search(rf'<form[^>]*action="{re.escape(action)}"[^>]*>(.*?)</form>', html, re.S).group(1)
+    return re.search(r"<button[^>]*>", form).group(0)
+
+
+def test_enter_in_a_field_saves_instead_of_adding_rows(ready_client):
+    """The browser's Enter key presses the first submit button of the form; that must be Save."""
+    a, b, c = three_articles(ready_client)
+    new_form = _first_button(ready_client.get("/sets/new").text, "/sets/new")
+    assert 'name="action"' not in new_form and 'type="submit"' in new_form
+    ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c))
+    set_id = sets_in_db(ready_client)[0].id
+    edit_form = _first_button(ready_client.get(f"/sets/{set_id}/edit").text, f"/sets/{set_id}/edit")
+    assert 'name="action"' not in edit_form

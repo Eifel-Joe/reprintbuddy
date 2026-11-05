@@ -240,3 +240,5 @@ select[multiple] { height: auto; }
 .forms-grid .section { max-width: none; margin-bottom: 0; }
 
 a.btn { text-decoration: none; }
+
+.default-submit { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }

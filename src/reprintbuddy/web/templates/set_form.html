@@ -8,6 +8,8 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if not product_set %}<input type="hidden" name="form_token" value="{{ form_token() }}">{% endif %}
     <input type="hidden" name="rows" value="{{ rows }}">
+    {# Enter in a text field presses the first submit button: that must be Save, not "more rows". #}
+    <button class="default-submit" type="submit" tabindex="-1" aria-hidden="true">{{ t('common.save') }}</button>
     <label>{{ t('sets.field.name') }}
       <input name="name" value="{{ values.name }}" maxlength="200" required>
     </label>
