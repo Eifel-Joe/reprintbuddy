@@ -126,6 +126,19 @@ class FakeRunner:
         return result(call) if callable(result) else result
 
 
+def make_tls_pair(name: str = "localhost") -> tuple[str, str]:
+    """A certificate and the matching private key (PEM text) for tests."""
+    import trustme
+
+    leaf = trustme.CA().issue_cert(name)
+    return leaf.cert_chain_pems[0].bytes().decode(), leaf.private_key_pem.bytes().decode()
+
+
+@pytest.fixture
+def tls_pair():
+    return make_tls_pair()
+
+
 @pytest.fixture
 def fake_runner():
     return FakeRunner()

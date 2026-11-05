@@ -5,6 +5,8 @@ import json
 
 from conftest import PASSWORD, api_routes, csrf_of
 
+from reprintbuddy import settings as st
+
 API_KEY = "bb_LEAKCHECK_123456"
 TLS_KEY = "-----BEGIN PRIVATE KEY-----LEAKCHECK"
 NEW_PASSWORD = "LEAKCHECK-password-9"
@@ -28,19 +30,11 @@ def _store_secrets(client, respx_mock):
         ).status_code
         == 303
     )
-    assert (
-        client.post(
-            "/settings/server",
-            data={
-                "csrf_token": token,
-                "host": "0.0.0.0",
-                "port": "8443",
-                "tls_cert": CERT,
-                "tls_key": TLS_KEY + "\n-----END PRIVATE KEY-----\n",
-            },
-        ).status_code
-        == 303
-    )
+    # A valid pair cannot carry a marker, so the marked key goes into the database
+    # directly: no page may show it, whatever it contains.
+    with client.app.state.sessionmaker() as session:
+        st.set_setting(session, "tls_cert", CERT)
+        st.set_setting(session, "tls_key", TLS_KEY + "\n-----END PRIVATE KEY-----\n")
     assert (
         client.post(
             "/settings/password",

@@ -69,7 +69,8 @@ def test_settings_bambuddy_save_is_a_single_commit(ready_client, respx_mock):
     assert saved(ready_client, "bambuddy_url") == "http://other.test:8000"
 
 
-def test_settings_server_failure_half_way_changes_nothing(ready_client, monkeypatch):
+def test_settings_server_failure_half_way_changes_nothing(ready_client, monkeypatch, tls_pair):
+    CERT, KEY_PEM = tls_pair
     token = csrf_of(ready_client, "/settings")
     fail_when_saving(monkeypatch, "tls_key")  # host, port and certificate come first
     with pytest.raises(RuntimeError):
@@ -83,7 +84,8 @@ def test_settings_server_failure_half_way_changes_nothing(ready_client, monkeypa
     assert saved(ready_client, "tls_cert") is None  # no half a TLS pair
 
 
-def test_settings_server_save_is_a_single_commit(ready_client):
+def test_settings_server_save_is_a_single_commit(ready_client, tls_pair):
+    CERT, KEY_PEM = tls_pair
     token = csrf_of(ready_client, "/settings")
     commits = Commits(ready_client.app.state.engine)
     response = ready_client.post(

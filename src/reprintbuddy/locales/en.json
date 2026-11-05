@@ -78,7 +78,6 @@
   "settings.invalid_port": "The port must be a number from 1 to 65535.",
   "settings.invalid_host": "Please enter a listen address.",
   "settings.invalid_pem": "The certificate or the private key could not be read. Expected PEM text, at most 64 KB.",
-  "settings.tls_pair_required": "Please provide the certificate and the private key together.",
   "settings.key_required_new_address": "The address has changed. Please enter the API key again: a stored key is never sent to a new address.",
   "settings.host_unbindable": "This machine cannot listen on this address. Check it: saving an unusable address would lock you out.",
   "bambuddy.key_invalid": "The API key contains characters that are not allowed (only visible ASCII characters, no spaces or line breaks). Please copy it again.",
@@ -103,5 +102,8 @@
   "ops.msg.busy": "An update is already running.",
   "ops.msg.no_update": "There is no newer release to update to. Check for updates first.",
   "ops.msg.start_failed": "The update could not be started.",
-  "ops.msg.not_git": "Updates from this page need an installation made with the install script."
+  "ops.msg.not_git": "Updates from this page need an installation made with the install script.",
+  "ops.tls.invalid": "Certificate and private key do not match or cannot be read. Nothing was saved.",
+  "ops.tls.encrypted": "Password-protected private keys are not supported. Nothing was saved.",
+  "ops.tls.incomplete": "HTTPS needs both certificate and private key. Nothing was saved."
 }

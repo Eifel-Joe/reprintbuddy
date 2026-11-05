@@ -1,4 +1,4 @@
-"""Command line: serve, migrate, init, set-password, set-port.
+"""Command line: serve, migrate, init, set-password, set-port, set-host, disable-https.
 
 Every command takes `--db PATH`; the database path is the only thing that
 does not live in the database itself (Spec 11.5a).
@@ -130,6 +130,15 @@ def _set_host(args: argparse.Namespace) -> int:
     return 0
 
 
+def _disable_https(args: argparse.Namespace) -> int:
+    with _session(args.db) as session:
+        st.set_setting(session, "tls_cert", None, commit=False)
+        st.set_setting(session, "tls_key", None, commit=False)
+        session.commit()
+    print("HTTPS turned off. Restart Reprintbuddy for it to take effect.")
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="reprintbuddy")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -155,6 +164,7 @@ def _parser() -> argparse.ArgumentParser:
     set_port.add_argument("port", help="port number, 1 to 65535")
     set_host = command("set-host", _set_host, "set the listen address (emergency exit)")
     set_host.add_argument("host", help="address to listen on, for example 0.0.0.0")
+    command("disable-https", _disable_https, "remove the HTTPS certificate (emergency exit)")
     return parser
 
 

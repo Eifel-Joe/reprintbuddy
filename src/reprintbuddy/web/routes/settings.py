@@ -17,6 +17,7 @@ from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.connection import check_connection
 from reprintbuddy.netcheck import can_bind
+from reprintbuddy.ops.tls import validate_tls_pair
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.routes.ops import ops_view
 from reprintbuddy.web.deps import flash, get_db, logged_in_user, release_connection, render, start_session
@@ -202,7 +203,13 @@ async def save_server(request: Request, db: Session = Depends(get_db)):
         except ValueError:
             return fail("settings.invalid_pem")  # never echoes the input
         if (cert is None) != (key is None):
-            return fail("settings.tls_pair_required")
+            return fail("ops.tls.incomplete")
+        if cert is not None and key is not None:
+            # A pair that does not load would keep Reprintbuddy from starting after the restart.
+            try:
+                await run_in_threadpool(validate_tls_pair, str(cert), str(key))
+            except ValueError as problem:
+                return fail("ops.tls.encrypted" if str(problem) == "tls_encrypted" else "ops.tls.invalid")
 
     # One transaction: no half a TLS pair, no new address with an old port.
     st.set_setting(db, "host", host, commit=False)

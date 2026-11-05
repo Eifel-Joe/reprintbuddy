@@ -231,3 +231,15 @@ def test_serve_passes_effective_server(db_path, monkeypatch):
     monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: seen.update(app=app, **kwargs))
     assert main(["serve", "--db", str(db_path)]) == 0
     assert seen["app"].state.ops.effective == EffectiveServer("0.0.0.0", 8080, None)
+
+
+def test_disable_https(db, capsys):
+    main(["migrate", "--db", str(db)])
+    with open_session(db) as s:
+        st.set_setting(s, "tls_cert", CERT)
+        st.set_setting(s, "tls_key", KEY)
+    assert main(["disable-https", "--db", str(db)]) == 0
+    with open_session(db) as s:
+        assert st.get_setting(s, "tls_cert") is None
+        assert st.get_setting(s, "tls_key") is None
+    assert "restart" in capsys.readouterr().out.lower()

@@ -78,7 +78,6 @@
   "settings.invalid_port": "Der Port muss eine Zahl von 1 bis 65535 sein.",
   "settings.invalid_host": "Bitte eine Lauschadresse eintragen.",
   "settings.invalid_pem": "Zertifikat oder privater Schlüssel konnten nicht gelesen werden. Erwartet wird PEM-Text, höchstens 64 KB.",
-  "settings.tls_pair_required": "Bitte Zertifikat und privaten Schlüssel zusammen angeben.",
   "settings.key_required_new_address": "Die Adresse hat sich geändert. Bitte den API-Schlüssel erneut eingeben: ein gespeicherter Schlüssel wird nie an eine neue Adresse geschickt.",
   "settings.host_unbindable": "Dieser Rechner kann auf dieser Adresse nicht lauschen. Bitte prüfen: eine unbrauchbare Adresse würde dich aussperren.",
   "bambuddy.key_invalid": "Der API-Schlüssel enthält unzulässige Zeichen (nur sichtbare ASCII-Zeichen, keine Leerzeichen oder Zeilenumbrüche). Bitte erneut kopieren.",
@@ -103,5 +102,8 @@
   "ops.msg.busy": "Es läuft bereits ein Update.",
   "ops.msg.no_update": "Es gibt keine neuere Version. Suchen Sie zuerst nach Updates.",
   "ops.msg.start_failed": "Das Update ließ sich nicht starten.",
-  "ops.msg.not_git": "Updates aus der Oberfläche brauchen eine Installation mit dem Installationsskript."
+  "ops.msg.not_git": "Updates aus der Oberfläche brauchen eine Installation mit dem Installationsskript.",
+  "ops.tls.invalid": "Zertifikat und privater Schlüssel passen nicht zusammen oder sind nicht lesbar. Nichts gespeichert.",
+  "ops.tls.encrypted": "Passwortgeschützte private Schlüssel werden nicht unterstützt. Nichts gespeichert.",
+  "ops.tls.incomplete": "HTTPS braucht Zertifikat und privaten Schlüssel. Nichts gespeichert."
 }
