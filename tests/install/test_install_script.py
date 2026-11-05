@@ -289,3 +289,11 @@ def test_rerun_after_an_aborted_first_install_switches_to_the_release(bash, tmp_
     for line in out.splitlines():
         if "fetch --tags" in line or "checkout --quiet" in line:
             assert line.startswith(RUNUSER), line
+
+
+def test_script_and_python_use_the_same_release_tag_rule():
+    from reprintbuddy.ops.versions import RELEASE_TAG
+
+    number = "(0|[1-9][0-9]*)"
+    assert rf"'^v{number}\.{number}\.{number}$'" in INSTALL_SH.read_text(encoding="utf-8")
+    assert RELEASE_TAG.pattern == rf"^v{number}\.{number}\.{number}$"

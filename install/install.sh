@@ -196,7 +196,7 @@ prepare_dirs() {
 latest_release_tag() {
     # `tail -n 1` instead of `head -n 1`: head can end early and kill the pipe under pipefail.
     capture_as_service_user git -C "${INSTALL_DIR}" tag --list 'v*' |
-        grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1
+        grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' | sort -V | tail -n 1
 }
 
 checkout_newest_release() {

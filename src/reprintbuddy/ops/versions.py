@@ -14,7 +14,10 @@ from typing import Iterable
 
 from reprintbuddy.ops.runner import CommandRunner
 
-RELEASE_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+# ASCII digits only (`\d` also matches the digits of other scripts) and no leading zeros,
+# so that every version has exactly one tag name.
+_NUMBER = r"(0|[1-9][0-9]*)"
+RELEASE_TAG = re.compile(rf"^v{_NUMBER}\.{_NUMBER}\.{_NUMBER}$")
 
 
 class UpdateCheckError(Exception):

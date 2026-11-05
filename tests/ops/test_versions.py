@@ -35,6 +35,13 @@ def test_parse_release_tag():
         assert parse_release_tag(bad) is None, bad
 
 
+def test_release_tags_are_plain_ascii_without_leading_zeros():
+    """\\d also matches other scripts' digits; a leading zero would make v01.2.3 and v1.2.3 two names."""
+    for bad in ("v١.٠.٠", "v01.2.3", "v1.02.3", "v1.2.03", "v1.2.3 "):
+        assert parse_release_tag(bad) is None, bad
+    assert parse_release_tag("v0.10.100") == (0, 10, 100)
+
+
 def test_newest_release():
     assert newest_release(["v0.9.0", "v0.10.0", "v0.2.1", "junk"]) == "v0.10.0"
     assert newest_release([]) is None
