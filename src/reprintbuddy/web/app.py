@@ -21,6 +21,7 @@ from reprintbuddy.web.formtoken import issue_form_token
 from reprintbuddy.web.throttle import FailureBrake, HashLimiter
 from reprintbuddy.web.routes import articles as articles_routes
 from reprintbuddy.web.routes import auth as auth_routes
+from reprintbuddy.web.routes import bookings as bookings_routes
 from reprintbuddy.web.routes import journal as journal_routes
 from reprintbuddy.web.routes import orders as orders_routes
 from reprintbuddy.web.routes import overview as overview_routes
@@ -91,4 +92,5 @@ def create_app(
     app.include_router(journal_routes.router)
     app.include_router(sets_routes.router)
     app.include_router(orders_routes.router)
+    app.include_router(bookings_routes.router)
     return app

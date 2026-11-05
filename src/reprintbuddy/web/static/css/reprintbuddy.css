@@ -235,3 +235,6 @@ select[multiple] { height: auto; }
 .badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 .badge.ok { background: var(--accent-soft); color: var(--accent); }
 .badge.wait { background: rgba(148, 163, 184, 0.15); color: var(--text-2); }
+
+.forms-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 1rem; align-items: start; margin-bottom: 1.5rem; }
+.forms-grid .section { max-width: none; margin-bottom: 0; }

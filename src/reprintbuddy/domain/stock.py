@@ -388,7 +388,7 @@ def count_article(
 ) -> int:
     """Inventory: sets the value to the counted quantity and books the difference (Spec 6.2)."""
     if field not in ("stock", "awaiting_assembly"):
-        raise ValidationError("bookings.invalid_field", field=str(field))
+        raise ValidationError("bookings.invalid_field", value=str(field))
     note = _clean_note(note)
     counted = _counted(counted)
     article = _article(session, article_id)

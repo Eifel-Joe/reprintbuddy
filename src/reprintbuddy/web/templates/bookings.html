@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}{{ t('bookings.title') }}{% endblock %}
+{% block content %}
+{% macro form_error(name) %}{% if error_form == name and error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}{% endmacro %}
+{% macro article_select(name, selected) %}
+  <select name="{{ name }}" required>
+    <option value="">–</option>
+    {% for article in articles %}<option value="{{ article.id }}"{% if selected == article.id|string %} selected{% endif %}>{{ article.name }}</option>{% endfor %}
+  </select>
+{% endmacro %}
+{% macro part_select(name, selected) %}
+  <select name="{{ name }}" required>
+    <option value="">–</option>
+    {% for part in parts %}<option value="{{ part.id }}"{% if selected == part.id|string %} selected{% endif %}>{{ part.name }}</option>{% endfor %}
+  </select>
+{% endmacro %}
+<h1>{{ t('bookings.title') }}</h1>
+<div class="forms-grid">
+
+<section class="card section">
+  <h2>{{ t('bookings.inventory') }}</h2>
+  <p class="muted">{{ t('bookings.inventory_hint') }}</p>
+  {{ form_error('inventory') }}
+  {% set v = values if error_form == 'inventory' else {} %}
+  <form method="post" action="/bookings/inventory">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <label>{{ t('bookings.field.article') }} {{ article_select('article_id', v.get('article_id')) }}</label>
+    <div class="row">
+      <label>{{ t('bookings.inventory_field') }}
+        <select name="field">
+          <option value="stock"{% if v.get('field') != 'awaiting_assembly' %} selected{% endif %}>{{ t('articles.col.stock') }}</option>
+          <option value="awaiting_assembly"{% if v.get('field') == 'awaiting_assembly' %} selected{% endif %}>{{ t('articles.col.awaiting_assembly') }}</option>
+        </select>
+      </label>
+      <label>{{ t('bookings.field.counted') }}
+        <input name="counted" inputmode="numeric" value="{{ v.get('counted', '') }}" required>
+      </label>
+    </div>
+    <label>{{ t('journal.field.note') }} <input name="note" value="{{ v.get('note', '') }}" maxlength="500"></label>
+    <button class="btn" type="submit">{{ t('bookings.book') }}</button>
+  </form>
+</section>
+
+<section class="card section">
+  <h2>{{ t('bookings.part_inventory') }}</h2>
+  {{ form_error('part-inventory') }}
+  {% set v = values if error_form == 'part-inventory' else {} %}
+  <form method="post" action="/bookings/part-inventory">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <label>{{ t('bookings.field.part') }} {{ part_select('part_id', v.get('part_id')) }}</label>
+    <label>{{ t('bookings.field.counted') }}
+      <input name="counted" inputmode="numeric" value="{{ v.get('counted', '') }}" required>
+    </label>
+    <label>{{ t('journal.field.note') }} <input name="note" value="{{ v.get('note', '') }}" maxlength="500"></label>
+    <button class="btn" type="submit">{{ t('bookings.book') }}</button>
+  </form>
+</section>
+
+<section class="card section">
+  <h2>{{ t('bookings.part_receipt') }}</h2>
+  {{ form_error('part-receipt') }}
+  {% set v = values if error_form == 'part-receipt' else {} %}
+  <form method="post" action="/bookings/part-receipt">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <label>{{ t('bookings.field.part') }} {{ part_select('part_id', v.get('part_id')) }}</label>
+    <label>{{ t('bookings.field.qty') }}
+      <input name="qty" inputmode="numeric" value="{{ v.get('qty', '') }}" required>
+    </label>
+    <label>{{ t('journal.field.note') }} <input name="note" value="{{ v.get('note', '') }}" maxlength="500"></label>
+    <button class="btn" type="submit">{{ t('bookings.book') }}</button>
+  </form>
+</section>
+
+<section class="card section">
+  <h2>{{ t('bookings.sale') }}</h2>
+  <p class="muted">{{ t('bookings.sale_hint') }}</p>
+  {{ form_error('sale') }}
+  {% set v = values if error_form == 'sale' else {} %}
+  <form method="post" action="/bookings/sale">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <label>{{ t('bookings.field.article') }} {{ article_select('article_id', v.get('article_id')) }}</label>
+    <label>{{ t('bookings.field.qty') }}
+      <input name="qty" inputmode="numeric" value="{{ v.get('qty', '') }}" required>
+    </label>
+    <label>{{ t('journal.field.note') }} <input name="note" value="{{ v.get('note', '') }}" maxlength="500"></label>
+    <button class="btn" type="submit">{{ t('bookings.book') }}</button>
+  </form>
+</section>
+
+<section class="card section">
+  <h2>{{ t('bookings.stock_in') }}</h2>
+  <p class="muted">{{ t('bookings.stock_in_hint') }}</p>
+  {{ form_error('stock-in') }}
+  {% set v = values if error_form == 'stock-in' else {} %}
+  <form method="post" action="/bookings/stock-in">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <label>{{ t('bookings.field.article') }} {{ article_select('article_id', v.get('article_id')) }}</label>
+    <label>{{ t('bookings.field.qty') }}
+      <input name="qty" inputmode="numeric" value="{{ v.get('qty', '') }}" required>
+    </label>
+    <label class="check">
+      <input name="consume_parts" type="checkbox"{% if consume_checked %} checked{% endif %}>
+      <span>{{ t('bookings.consume_parts') }}</span>
+    </label>
+    <label>{{ t('journal.field.note') }} <input name="note" value="{{ v.get('note', '') }}" maxlength="500"></label>
+    <button class="btn" type="submit">{{ t('bookings.book') }}</button>
+  </form>
+</section>
+
+</div>
+
+<h2>{{ t('bookings.recent') }}</h2>
+{% include "_journal_table.html" %}
+<p><a class="btn-link" href="/journal">{{ t('bookings.whole_journal') }}</a></p>
+{% endblock %}
