@@ -65,13 +65,18 @@ def test_css_is_reachable_without_login(client):
     assert client.get("/static/css/reprintbuddy.css").status_code == 200
 
 
+SVG_NAMESPACE = 'xmlns="http://www.w3.org/2000/svg"'  # an identifier, nothing is ever fetched from it
+
+
 def test_no_external_urls():
     pattern = re.compile(r"https?://")
     offenders = [
         str(path.relative_to(WEB))
         for folder in ("templates", "static")
         for path in (WEB / folder).rglob("*")
-        if path.is_file() and pattern.search(path.read_text(encoding="utf-8"))
+        if path.is_file()
+        and path.suffix != ".png"  # binary images
+        and pattern.search(path.read_text(encoding="utf-8").replace(SVG_NAMESPACE, ""))
     ]
     assert offenders == []
 

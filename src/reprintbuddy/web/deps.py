@@ -22,7 +22,7 @@ SID_KEY = "sid"
 FLASH_KEY = "flash"
 
 # Reachable by everyone, whatever the state of the installation.
-_OPEN_EXACT = {"/healthz"}
+_OPEN_EXACT = {"/healthz", "/favicon.ico"}
 _OPEN_PREFIX = ("/static/",)
 
 
