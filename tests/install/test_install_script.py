@@ -266,8 +266,11 @@ def test_system_files_are_not_installed_from_the_install_tree(bash, tmp_path):
     os_release(tmp_path)
     out = lines(run(bash, tmp_path, "--repo", REPO))
     assert "/opt/reprintbuddy/install/" not in out
+    # The installed tree is only compared with (cmp), never a source for `install`.
     script = INSTALL_SH.read_text(encoding="utf-8")
-    assert "${INSTALL_DIR}/install" not in script
+    for line in script.splitlines():
+        if line.lstrip().startswith("run install "):
+            assert "INSTALL_DIR" not in line, line
 
 
 def test_sudoers_is_checked_before_it_is_installed(bash, tmp_path):

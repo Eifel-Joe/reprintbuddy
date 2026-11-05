@@ -125,3 +125,54 @@ def test_wrapper_keeps_the_terminal_for_the_password_prompt(bash, tmp_path):
     out = wrapper(bash, tmp_path, "set-password", "--username", "admin")
     assert out.startswith("runuser -u reprintbuddy -- env HOME=/var/lib/reprintbuddy ")
     assert "setsid" not in out
+
+
+# --- an installer from `main` must not install units that belong to another version --------
+
+INSTALL_DIR_FILES = ("reprintbuddy.sudoers", "reprintbuddy.service", "reprintbuddy-update.service", "reprintbuddy-cli.sh")
+
+
+def installed_tree(dest: Path, *, change: str | None = None) -> None:
+    """An existing installation whose install/ files are those of the repository (or one changed)."""
+    tree = dest / "opt/reprintbuddy"
+    (tree / ".git").mkdir(parents=True)
+    (tree / "install").mkdir()
+    for name in INSTALL_DIR_FILES:
+        text = (INSTALL_SH.parent / name).read_text(encoding="utf-8")
+        if name == change:
+            text += "# changed in another version\n"
+        (tree / "install" / name).write_text(text, encoding="utf-8", newline="\n")
+
+
+def test_matching_installer_and_code_go_on(bash, tmp_path):
+    os_release(tmp_path)
+    installed_tree(tmp_path)
+    result = run(bash, tmp_path, "--repo", REPO)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("changed", INSTALL_DIR_FILES)
+def test_an_installer_that_does_not_match_the_installed_code_stops(bash, tmp_path, changed):
+    os_release(tmp_path)
+    installed_tree(tmp_path, change=changed)
+    result = run(bash, tmp_path, "--repo", REPO)
+    assert result.returncode == 1
+    message = result.stderr + result.stdout
+    assert "The installer does not match the installed version" in message
+    assert changed in message
+    assert "Use the install.sh of the tag" in message
+    out = lines(result)
+    assert "visudo" not in out and "/etc/sudoers.d/" not in out, "nothing may be installed before the check"
+
+
+def test_the_check_reads_only(bash, tmp_path):
+    os_release(tmp_path)
+    installed_tree(tmp_path, change="reprintbuddy.service")
+    before = {p: p.read_bytes() for p in (tmp_path / "opt").rglob("*") if p.is_file()}
+    run(bash, tmp_path, "--repo", REPO)
+    assert {p: p.read_bytes() for p in (tmp_path / "opt").rglob("*") if p.is_file()} == before
+
+
+def test_the_check_is_skipped_for_a_dry_run_that_clones_nothing(bash, tmp_path):
+    os_release(tmp_path)  # nothing installed: there is no tree to compare with
+    assert run(bash, tmp_path, "--repo", REPO).returncode == 0

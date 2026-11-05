@@ -40,7 +40,7 @@ say() { printf '%s\n' "$*"; }
 die() {
     local code="$1"
     shift
-    printf '%s\n' "$*" >&2
+    printf '%s\n' "$@" >&2
     exit "${code}"
 }
 
@@ -327,9 +327,36 @@ exec /opt/reprintbuddy/.venv/bin/reprintbuddy "$@"
 RB_CLI_EOF
 }
 
+# Written once into a private folder; checked against the installed code, then installed.
+stage_system_files() {
+    if [ -z "${STAGE_DIR}" ]; then
+        STAGE_DIR="$(mktemp -d)"
+        write_system_files "${STAGE_DIR}"
+    fi
+}
+
+# This script comes from the branch the user fetched it from, the code from a release tag.
+# If the two disagree about the units, the sudoers rule or the wrapper, installing this
+# script's copies would put files on the system that the installed version does not expect.
+check_installer_matches_code() {
+    stage_system_files
+    local file tree tag
+    for file in reprintbuddy.sudoers reprintbuddy.service reprintbuddy-update.service reprintbuddy-cli.sh; do
+        tree="${DESTDIR}${INSTALL_DIR}/install/${file}"
+        if [ ! -e "${tree}" ] && [ "${DRY_RUN}" -eq 1 ]; then
+            continue # a dry run that cloned nothing has nothing to compare with
+        fi
+        if ! cmp -s "${STAGE_DIR}/${file}" "${tree}" 2>/dev/null; then
+            tag="$(capture_as_service_user git -C "${INSTALL_DIR}" describe --tags --exact-match HEAD 2>/dev/null || true)"
+            die 1 "The installer does not match the installed version (${file} differs)." \
+                "Use the install.sh of the tag ${tag:-of the installed version} (${REPO_URL}), for example:" \
+                "  bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/${tag:-<tag>}/install/install.sh)\""
+        fi
+    done
+}
+
 install_system_files() {
-    STAGE_DIR="$(mktemp -d)"
-    write_system_files "${STAGE_DIR}"
+    stage_system_files
     # Checked before it is installed: a broken sudoers file can lock root out of sudo.
     run visudo -cf "${STAGE_DIR}/reprintbuddy.sudoers"
     run install -m 0440 -o root -g root "${STAGE_DIR}/reprintbuddy.sudoers" /etc/sudoers.d/reprintbuddy
@@ -394,6 +421,7 @@ main() {
     create_user
     prepare_dirs
     fetch_code
+    check_installer_matches_code
     install_python
     init_database
     install_system_files
