@@ -118,10 +118,12 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     if not result.ok:
         return fail(f"bambuddy.reason.{result.reason}")
 
-    st.set_setting(db, "bambuddy_url", url)
-    st.set_setting(db, "bambuddy_username", username)
-    st.set_setting(db, "bambuddy_api_key", api_key)
-    st.set_setting(db, "bambuddy_review_confirmed", True)
+    # One transaction: a failure must not leave a new address with the old key.
+    st.set_setting(db, "bambuddy_url", url, commit=False)
+    st.set_setting(db, "bambuddy_username", username, commit=False)
+    st.set_setting(db, "bambuddy_api_key", api_key, commit=False)
+    st.set_setting(db, "bambuddy_review_confirmed", True, commit=False)
+    db.commit()
     return _saved(request)
 
 
@@ -199,8 +201,10 @@ async def save_server(request: Request, db: Session = Depends(get_db)):
         if (cert is None) != (key is None):
             return fail("settings.tls_pair_required")
 
-    st.set_setting(db, "host", host)
-    st.set_setting(db, "port", port)
-    st.set_setting(db, "tls_cert", cert)
-    st.set_setting(db, "tls_key", key)
+    # One transaction: no half a TLS pair, no new address with an old port.
+    st.set_setting(db, "host", host, commit=False)
+    st.set_setting(db, "port", port, commit=False)
+    st.set_setting(db, "tls_cert", cert, commit=False)
+    st.set_setting(db, "tls_key", key, commit=False)
+    db.commit()
     return _saved(request, "settings.restart_needed")

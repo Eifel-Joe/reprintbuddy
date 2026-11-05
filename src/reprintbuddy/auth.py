@@ -49,14 +49,21 @@ def has_user(session: Session) -> bool:
     return session.scalars(select(User.id).limit(1)).first() is not None
 
 
-def create_admin(session: Session, username: str, pw: str) -> User:
-    """First-run setup: create the account; refuse if one already exists."""
+def create_admin(session: Session, username: str, pw: str, *, commit: bool = True) -> User:
+    """First-run setup: create the account; refuse if one already exists.
+
+    With `commit=False` the caller commits (setup saves the account and the language
+    in one transaction); the account is flushed, so it already has its id.
+    """
     _check_length(pw)
     if has_user(session):
         raise ValueError("an account already exists")
     user = User(username=username, password_hash=hash_password(pw))
     session.add(user)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     return user
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -60,8 +62,10 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)):
             lang=language,
         )
 
-    user = await run_in_threadpool(accounts.create_admin, db, username, password)
-    st.set_setting(db, "language", language)
+    # The account and the language are saved together or not at all.
+    user = await run_in_threadpool(partial(accounts.create_admin, db, username, password, commit=False))
+    st.set_setting(db, "language", language, commit=False)
+    db.commit()
     start_session(request, user, db)
     return RedirectResponse("/setup/bambuddy", status_code=303)
 
@@ -116,8 +120,10 @@ async def bambuddy_submit(request: Request, db: Session = Depends(get_db)):
     if not result.ok:
         return _bambuddy_page(request, f"bambuddy.reason.{result.reason}", **shown)
 
-    st.set_setting(db, "bambuddy_url", url)
-    st.set_setting(db, "bambuddy_username", username)
-    st.set_setting(db, "bambuddy_api_key", api_key)
-    st.set_setting(db, "bambuddy_review_confirmed", True)
+    # One transaction: address, user, key and confirmation are saved together or not at all.
+    st.set_setting(db, "bambuddy_url", url, commit=False)
+    st.set_setting(db, "bambuddy_username", username, commit=False)
+    st.set_setting(db, "bambuddy_api_key", api_key, commit=False)
+    st.set_setting(db, "bambuddy_review_confirmed", True, commit=False)
+    db.commit()
     return RedirectResponse("/", status_code=303)
