@@ -33,8 +33,13 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
   mit den Rechten **„Status lesen“** (*Read Status*) und **„Warteschlange
   verwalten“** (*Manage Queue*). Der eigene Benutzer macht Reprintbuddys Aufträge
   in Bambuddy erkennbar.
-- Ein Linux-Rechner oder -Container mit Python 3.11 oder neuer. Docker ist nicht
-  nötig.
+- Ein **Proxmox-LXC-Container** (unprivilegiert genügt) oder ein anderer Rechner mit
+  **Debian 12 oder 13**. Ein CPU-Kern, 1 GB RAM und 8 GB Platte reichen. Docker ist
+  nicht nötig.
+- Ausgehender Netzzugang dieses Rechners zu den Debian-Paketquellen (`apt`),
+  `github.com` und `raw.githubusercontent.com` (Installation und Updates),
+  `pypi.org` und `files.pythonhosted.org` (Python-Pakete, bei der Installation und
+  bei jedem Update) und zu deinem Bambuddy.
 
 ## Installation
 
@@ -42,9 +47,41 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/main/install/install.sh)"
 ```
 
-Das Installationsskript richtet eine Python-Umgebung und einen systemd-Dienst
-ein, fragt die Sprache der Oberfläche ab (Vorgabe Englisch) und nennt die
-Adresse für die Ersteinrichtung. *Verfügbar ab der ersten Version.*
+Als root im Container ausführen. Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/main/install/install.sh)" _ --language de
+```
+
+*Verfügbar ab der ersten Version.*
+
+Das Skript
+
+- installiert die nötigen Pakete (`python3`, `python3-venv`, `git`, `curl`, `sudo`,
+  `ca-certificates`),
+- legt den Systembenutzer `reprintbuddy` an,
+- legt Reprintbuddy auf dem neuesten Release-Tag nach `/opt/reprintbuddy` und die
+  Python-Umgebung nach `/opt/reprintbuddy/.venv`,
+- legt `/var/lib/reprintbuddy` (Rechte 700) mit Datenbank, Sicherungen und Update-Stand an,
+- richtet die systemd-Einheiten `reprintbuddy.service` und `reprintbuddy-update.service` ein,
+- installiert eine sudoers-Regel in `/etc/sudoers.d/reprintbuddy`, die dem Dienstbenutzer genau
+  diese drei Befehle als root erlaubt und nichts sonst:
+
+  ```text
+  /usr/bin/systemctl restart --no-block reprintbuddy.service
+  /usr/bin/systemctl restart reprintbuddy.service
+  /usr/bin/systemctl start --no-block reprintbuddy-update.service
+  ```
+
+- installiert den Befehl `/usr/local/bin/reprintbuddy` (siehe *Kommandozeile*),
+- startet den Dienst und nennt die Adresse für die Ersteinrichtung.
+
+**Schließe die Einrichtung sofort ab** unter `http://<container-ip>:8080/setup`: Bis das
+Admin-Konto existiert, kann es jeder in deinem Netz anlegen.
+
+Das Skript erneut auszuführen ist sicher: Version und Datenbank bleiben, es repariert Pakete,
+Benutzer, Rechte, Einheiten und den Dienst. Die Version wechselt nur das Update (siehe
+*Update*). Mit `--dry-run` zeigt das Skript, was es täte, ohne etwas zu ändern.
 
 Für die Entwicklung:
 
@@ -70,14 +107,74 @@ erledige sie gleich.
 
 Es gibt **keine Konfigurationsdatei**. Jede Einstellung liegt in der Datenbank
 und wird in der Weboberfläche unter *Einstellungen* geändert: Sprache,
-Bambuddy-Verbindung, Passwort, Adresse, Port und optionales HTTPS-Zertifikat.
+Bambuddy-Verbindung, Passwort, Adresse, Port, optionales HTTPS-Zertifikat, Neustart,
+Update und Export.
 Nur der Pfad der Datenbank wird auf der Kommandozeile angegeben (`--db`).
 
 ## Update
 
-*Einstellungen → Update* zeigt die installierte und die neueste freigegebene
-Version und aktualisiert auf Klick, nachdem die Datenbank gesichert wurde.
-*Verfügbar ab der ersten Version.*
+*Einstellungen → Update*: **Nach Updates suchen** drücken; gibt es eine neuere Version,
+**Auf … aktualisieren**. *Verfügbar ab der ersten Version.* Das Update
+
+1. sichert die Datenbank,
+2. wechselt auf den neuen Release-Tag,
+3. installiert die Pakete,
+4. migriert die Datenbank,
+5. startet den Dienst neu und
+6. prüft, ob die neue Version antwortet.
+
+Scheitert ein Schritt, geht Reprintbuddy auf die vorige Version zurück **und** spielt die
+Datenbank aus der Sicherung zurück; die Seite nennt den gescheiterten Schritt. Änderungen aus
+der Zeit des Updates gingen dabei verloren, darum sind alle Änderungen gesperrt, bis es fertig ist.
+
+Die Sicherungen liegen in `/var/lib/reprintbuddy/backups/` (die letzten 5). Ein Update von Hand
+startest du mit `systemctl start reprintbuddy-update.service`; das Protokoll steht in
+`journalctl -u reprintbuddy-update`.
+
+Versionen sind Git-Tags `vX.Y.Z`, die Paketversion entspricht dem Tag. Ändert eine Version die
+systemd-Einheiten oder die sudoers-Regel, steht es in der Release-Notiz; dann das
+Installationsskript erneut ausführen.
+
+## Neustart
+
+*Einstellungen → Neustart* startet Reprintbuddy neu. Adresse, Port und HTTPS wirken erst nach
+einem Neustart; die Einstellungsseite sagt, wenn eine gespeicherte Änderung noch wartet. Nach
+einer Änderung von Adresse oder Port nennt die Neustart-Seite die neue Adresse. Im Container:
+`systemctl restart reprintbuddy`.
+
+## HTTPS
+
+HTTP genügt im Heimnetz. Für HTTPS lädst du unter *Einstellungen* ein Zertifikat und seinen
+privaten Schlüssel (ohne Passwort) hoch; Reprintbuddy prüft vor dem Speichern, ob beide
+zusammengehören, danach neu starten. Zurück zu HTTP geht über das Häkchen *Zertifikat und
+privaten Schlüssel entfernen*.
+
+Alternativ läuft Reprintbuddy hinter einem vorhandenen Reverse-Proxy: Reprintbuddy bleibt bei
+HTTP, der Proxy macht TLS. Läuft der Proxy im selben Container, stelle die Lauschadresse auf
+`127.0.0.1`.
+
+Ausgesperrt durch ein Zertifikat, das nicht mehr taugt (abgelaufen, falscher Name)? Im Container:
+
+```bash
+reprintbuddy disable-https && systemctl restart reprintbuddy
+```
+
+Bei falschem Port: `reprintbuddy set-port 8080 && systemctl restart reprintbuddy`.
+
+## Sicherung und Export
+
+Alles liegt unter `/var/lib/reprintbuddy`, die Proxmox-Sicherung des Containers erfasst es also.
+*Einstellungen → Export* lädt alle Daten als JSON-Datei herunter, **ohne** API-Schlüssel,
+Passwörter, den privaten HTTPS-Schlüssel und das Sitzungsgeheimnis.
+
+Eine Datenbanksicherung von Hand zurückspielen:
+
+```bash
+systemctl stop reprintbuddy
+runuser -u reprintbuddy -- cp /var/lib/reprintbuddy/backups/<sicherung>.db /var/lib/reprintbuddy/reprintbuddy.db
+rm -f /var/lib/reprintbuddy/reprintbuddy.db-wal /var/lib/reprintbuddy/reprintbuddy.db-shm
+systemctl start reprintbuddy
+```
 
 ## Sicherheit
 
@@ -92,6 +189,19 @@ Version und aktualisiert auf Klick, nachdem die Datenbank gesichert wurde.
   Root ist, kann sie lesen.
 
 Sicherheitslücken meldest du wie in [SECURITY.md](SECURITY.md) beschrieben.
+
+## Kommandozeile
+
+Im Container läuft der Befehl `reprintbuddy` als Dienstbenutzer `reprintbuddy` (auch als root),
+damit die Datenbankdateien ihren Besitzer behalten:
+
+```bash
+reprintbuddy set-password --username <name>
+reprintbuddy set-port <port>
+reprintbuddy set-host <adresse>
+reprintbuddy disable-https
+reprintbuddy --version
+```
 
 ## Passwort vergessen oder falscher Port
 
