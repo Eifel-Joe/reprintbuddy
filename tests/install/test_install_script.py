@@ -85,7 +85,8 @@ def test_dry_run_fresh(bash, tmp_path):
         "rm -rf /opt/reprintbuddy/build",
         "-m pip install --no-cache-dir --upgrade /opt/reprintbuddy",
         "reprintbuddy init --db /var/lib/reprintbuddy/reprintbuddy.db --language de",
-        "visudo -cf /opt/reprintbuddy/install/reprintbuddy.sudoers",
+        "visudo -cf ",
+        "reprintbuddy.sudoers",
         "/etc/sudoers.d/reprintbuddy",
         "/etc/systemd/system/reprintbuddy.service",
         "/etc/systemd/system/reprintbuddy-update.service",
@@ -233,3 +234,43 @@ def test_not_root_refused(bash, tmp_path):
 def test_messages_are_english_only_and_neutral():
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert "<owner>" in text  # the placeholder stays until publication
+
+
+# --- root must not install anything from a place the service user can write to ---------
+
+
+def embedded(name: str) -> str:
+    """The text of a file embedded in install.sh as a quoted here-document."""
+    import re
+
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    match = re.search(rf"<<'RB_{name}_EOF'\n(.*?)\nRB_{name}_EOF\n", text, re.S)
+    assert match, f"{name} is not embedded in install.sh"
+    return match.group(1) + "\n"
+
+
+@pytest.mark.parametrize(
+    "name,filename",
+    [
+        ("SUDOERS", "reprintbuddy.sudoers"),
+        ("SERVICE", "reprintbuddy.service"),
+        ("UPDATE_SERVICE", "reprintbuddy-update.service"),
+        ("CLI", "reprintbuddy-cli.sh"),
+    ],
+)
+def test_embedded_system_files_equal_the_install_directory(name, filename):
+    assert embedded(name) == (ROOT / "install" / filename).read_text(encoding="utf-8")
+
+
+def test_system_files_are_not_installed_from_the_install_tree(bash, tmp_path):
+    os_release(tmp_path)
+    out = lines(run(bash, tmp_path, "--repo", REPO))
+    assert "/opt/reprintbuddy/install/" not in out
+    script = INSTALL_SH.read_text(encoding="utf-8")
+    assert "${INSTALL_DIR}/install" not in script
+
+
+def test_sudoers_is_checked_before_it_is_installed(bash, tmp_path):
+    os_release(tmp_path)
+    out = lines(run(bash, tmp_path, "--repo", REPO))
+    assert out.index("visudo -cf ") < out.index("/etc/sudoers.d/reprintbuddy")

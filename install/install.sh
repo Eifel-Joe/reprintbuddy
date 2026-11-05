@@ -27,6 +27,14 @@ REPO_URL="${REPRINTBUDDY_REPO:-${REPO_URL_DEFAULT}}"
 DESTDIR="${REPRINTBUDDY_DESTDIR:-}"
 DESTDIR="${DESTDIR%/}"
 NEW_DATABASE=0
+STAGE_DIR=""
+
+cleanup() {
+    if [ -n "${STAGE_DIR}" ]; then
+        rm -rf "${STAGE_DIR}"
+    fi
+}
+trap cleanup EXIT
 
 say() { printf '%s\n' "$*"; }
 die() {
@@ -222,15 +230,74 @@ init_database() {
     as_service_user "${VENV_DIR}/bin/reprintbuddy" init --db "${DB_FILE}" --language "${LANGUAGE_CHOICE}"
 }
 
+# Written from this script, never copied from ${INSTALL_DIR}: that tree belongs to the
+# service user, and root must not install a sudoers rule, a unit or a wrapper from a place
+# the (web-facing) service user can write to. The copies in install/ are kept equal by a test.
+write_system_files() {
+    cat >"$1/reprintbuddy.sudoers" <<'RB_SUDOERS_EOF'
+# Lets the Reprintbuddy service restart itself and start its update unit; nothing else.
+reprintbuddy ALL=(root) NOPASSWD: /usr/bin/systemctl restart --no-block reprintbuddy.service, /usr/bin/systemctl restart reprintbuddy.service, /usr/bin/systemctl start --no-block reprintbuddy-update.service
+RB_SUDOERS_EOF
+    cat >"$1/reprintbuddy.service" <<'RB_SERVICE_EOF'
+[Unit]
+Description=Reprintbuddy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=reprintbuddy
+Group=reprintbuddy
+WorkingDirectory=/var/lib/reprintbuddy
+ExecStart=/opt/reprintbuddy/.venv/bin/reprintbuddy serve --db /var/lib/reprintbuddy/reprintbuddy.db
+Restart=on-failure
+RestartSec=5
+UMask=0077
+# Ports below 1024 (for example 443) without running as root.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+RB_SERVICE_EOF
+    cat >"$1/reprintbuddy-update.service" <<'RB_UPDATE_SERVICE_EOF'
+[Unit]
+Description=Reprintbuddy update (started from the settings page)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=reprintbuddy
+Group=reprintbuddy
+WorkingDirectory=/var/lib/reprintbuddy
+ExecStart=/opt/reprintbuddy/.venv/bin/reprintbuddy update --db /var/lib/reprintbuddy/reprintbuddy.db
+TimeoutStartSec=30min
+UMask=0077
+Environment=HOME=/var/lib/reprintbuddy
+RB_UPDATE_SERVICE_EOF
+    cat >"$1/reprintbuddy-cli.sh" <<'RB_CLI_EOF'
+#!/usr/bin/env bash
+# /usr/local/bin/reprintbuddy: run the command line as the service user, so that
+# database files created or changed here keep their owner.
+set -euo pipefail
+
+if [ "$(id -u)" -eq 0 ]; then
+    cd /
+    exec runuser -u reprintbuddy -- env HOME=/var/lib/reprintbuddy /opt/reprintbuddy/.venv/bin/reprintbuddy "$@"
+fi
+exec /opt/reprintbuddy/.venv/bin/reprintbuddy "$@"
+RB_CLI_EOF
+}
+
 install_system_files() {
-    local src="${INSTALL_DIR}/install"
+    STAGE_DIR="$(mktemp -d)"
+    write_system_files "${STAGE_DIR}"
     # Checked before it is installed: a broken sudoers file can lock root out of sudo.
-    run visudo -cf "${src}/reprintbuddy.sudoers"
-    run install -m 0440 -o root -g root "${src}/reprintbuddy.sudoers" /etc/sudoers.d/reprintbuddy
-    run install -m 0644 -o root -g root "${src}/reprintbuddy.service" /etc/systemd/system/reprintbuddy.service
-    run install -m 0644 -o root -g root "${src}/reprintbuddy-update.service" \
+    run visudo -cf "${STAGE_DIR}/reprintbuddy.sudoers"
+    run install -m 0440 -o root -g root "${STAGE_DIR}/reprintbuddy.sudoers" /etc/sudoers.d/reprintbuddy
+    run install -m 0644 -o root -g root "${STAGE_DIR}/reprintbuddy.service" /etc/systemd/system/reprintbuddy.service
+    run install -m 0644 -o root -g root "${STAGE_DIR}/reprintbuddy-update.service" \
         /etc/systemd/system/reprintbuddy-update.service
-    run install -m 0755 -o root -g root "${src}/reprintbuddy-cli.sh" /usr/local/bin/reprintbuddy
+    run install -m 0755 -o root -g root "${STAGE_DIR}/reprintbuddy-cli.sh" /usr/local/bin/reprintbuddy
 }
 
 start_service() {
