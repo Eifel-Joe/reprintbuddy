@@ -6,7 +6,7 @@ Reprintbuddy führt den Lagerbestand von 3D-gedruckten Teilen. Was knapp wird,
 druckt es nach, indem es Druckaufträge in die Warteschlange von
 Bambuddy stellt. Fertige Drucke prüfst
 du in Reprintbuddy, und es zeigt dir, was nachzubestellen ist. Es läuft als
-kleine Webanwendung im Heimnetz.
+kleine Webanwendung im Heimnetz und ist von außen nur über ein VPN erreichbar.
 
 > **Stand:** in Entwicklung, noch keine Version veröffentlicht.
 
@@ -106,7 +106,9 @@ python -m venv .venv
 
 Öffne die Adresse, die das Installationsskript nennt. Solange die Einrichtung
 nicht abgeschlossen ist, kann jeder in deinem Netz die Seite benutzen, also
-erledige sie gleich.
+erledige sie gleich. Bei der Ersteinrichtung öffne Reprintbuddy über seine IP-Adresse (oder einen
+lokalen Namen); Namen aus öffentlichen Domains, z. B. VPN-DNS-Namen, werden erst nach der
+Einrichtung akzeptiert.
 
 1. **Admin-Konto:** Benutzername, Passwort und Sprache wählen.
 2. **Bambuddy anbinden:** Adresse, Benutzername und API-Schlüssel von Bambuddy
@@ -161,7 +163,7 @@ einer Änderung von Adresse oder Port nennt die Neustart-Seite die neue Adresse.
 
 ## HTTPS
 
-HTTP genügt im Heimnetz. Für HTTPS lädst du unter *Einstellungen* ein Zertifikat und seinen
+HTTP genügt im Heimnetz oder über ein VPN. Für HTTPS lädst du unter *Einstellungen* ein Zertifikat und seinen
 privaten Schlüssel (ohne Passwort) hoch; Reprintbuddy prüft vor dem Speichern, ob beide
 zusammengehören, danach neu starten. Zurück zu HTTP geht über das Häkchen *Zertifikat und
 privaten Schlüssel entfernen*.
@@ -195,8 +197,9 @@ systemctl start reprintbuddy
 
 ## Sicherheit
 
-- Reprintbuddy ist **nur für dein Heimnetz** gedacht. Nicht aus dem Internet
-  erreichbar machen.
+- Reprintbuddy nicht direkt ins Internet stellen (keine Portweiterleitung, kein öffentlicher
+  Reverse-Proxy). Für den Zugriff von unterwegs ein VPN in dein Netz nutzen (z. B. das VPN deines
+  Routers, WireGuard oder Tailscale).
 - API-Schlüssel, der private Schlüssel eines HTTPS-Zertifikats und Passwörter
   sind nur beim Eintippen sichtbar. Gespeichert zeigt die Oberfläche `********`;
   ein leeres Feld behält den gespeicherten Wert, eine neue Eingabe ersetzt ihn.

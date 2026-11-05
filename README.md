@@ -5,7 +5,7 @@
 Reprintbuddy keeps the stock of 3D-printed items. It reprints what runs low by
 handing print jobs to Bambuddy's queue,
 lets you check finished prints, and tells you what to reorder. It runs as a
-small web application on your home network.
+small web application on your home network, reachable from outside only through a VPN.
 
 > **Status:** under development, no release yet.
 
@@ -102,7 +102,9 @@ python -m venv .venv
 ## First run
 
 Open the address printed by the installer. Until you finish the setup, the
-page is open to everyone on your network, so do it right away.
+page is open to everyone on your network, so do it right away. During first-run setup,
+open Reprintbuddy by its IP address (or a local name); names from public domains, e.g. VPN
+DNS names, are accepted only after setup.
 
 1. **Admin account:** choose a user name, a password and the language.
 2. **Connect Bambuddy:** enter the Bambuddy address, the user name and the API
@@ -153,7 +155,7 @@ address or port the restart page names the new address. In the container:
 
 ## HTTPS
 
-HTTP is fine inside a home network. For HTTPS, upload a certificate and its private key
+HTTP is fine inside your home network or over a VPN. For HTTPS, upload a certificate and its private key
 (without a password) under *Settings*; Reprintbuddy checks that they belong together before it
 saves them, then restart. To go back to HTTP, tick *Remove certificate and private key*.
 
@@ -186,8 +188,9 @@ systemctl start reprintbuddy
 
 ## Security
 
-- Reprintbuddy is meant for your **home network only**. Do not expose it to the
-  internet.
+- Do not expose Reprintbuddy directly to the internet (no port forwarding, no public
+  reverse proxy). For remote access, use a VPN into your network (e.g. your router's VPN,
+  WireGuard or Tailscale).
 - API keys, the private key of an HTTPS certificate and passwords are only
   visible while you type them. Once saved, the interface shows `********`;
   an empty field keeps the stored value, a new entry replaces it. Passwords are
