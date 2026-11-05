@@ -199,3 +199,15 @@ td a, .btn-link { color: var(--accent); text-decoration: none; }
 td a:hover, .btn-link:hover { text-decoration: underline; }
 .btn-link { margin-left: 1rem; }
 .label-like { margin: 0 0 0.35rem; color: var(--text-2); font-size: 0.9rem; }
+
+.crumbs { color: var(--text-2); }
+.crumbs a, .plain-list a { color: var(--accent); text-decoration: none; }
+.plain-list { list-style: none; margin: 0; padding: 0; }
+.plain-list li { padding: 0.45rem 0; border-bottom: 1px solid var(--line); }
+.plain-list li:last-child { border-bottom: 0; }
+.plate-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 1rem; margin-bottom: 1rem; }
+.plate p { margin: 0.5rem 0 0; }
+.thumb { display: block; width: 100%; max-width: 220px; height: auto; background: var(--bg); border-radius: 8px; }
+.plate-head { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+.plate-head .thumb { width: 120px; }
+.swatch { display: inline-block; width: 0.9rem; height: 0.9rem; margin-right: 0.4rem; border: 1px solid var(--line); border-radius: 3px; vertical-align: -1px; }

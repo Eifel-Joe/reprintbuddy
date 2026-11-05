@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ t('articles.choose_plate') }}{% endblock %}
+{% block content %}
+<h1>{{ file.filename }}</h1>
+<p class="muted">{{ t('articles.choose_plate') }}</p>
+<div class="plate-grid">
+  {% for plate in plates %}
+  <div class="card plate">
+    <img class="thumb" src="{{ file_base }}/{{ file.id }}/plate/{{ plate.index }}/thumbnail" alt="" loading="lazy">
+    <p><strong>{{ t('articles.plate') }} {{ plate.index }}</strong>{% if plate.name %} · {{ plate.name }}{% endif %}</p>
+    {% if plate.index in taken %}
+    <p class="muted">{{ t('articles.plate_taken_by', name=taken[plate.index]) }}</p>
+    {% else %}
+    <p><a class="btn" href="{{ file_base }}/{{ file.id }}/plate/{{ plate.index }}">{{ t('articles.use_plate') }}</a></p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+<p><a class="btn-link" href="{{ back }}">{{ t('articles.back') }}</a></p>
+{% endblock %}

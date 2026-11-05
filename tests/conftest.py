@@ -4,6 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from reprintbuddy import settings as st
+from reprintbuddy.bambuddy.fake import FakeBambuddy
+from reprintbuddy.bambuddy.types import FilamentRequirement
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.web.app import create_app
 
@@ -113,3 +115,24 @@ def db(tmp_path):
     upgrade(engine)
     yield make_sessionmaker(engine)
     engine.dispose()
+
+
+@pytest.fixture
+def fake_bambuddy():
+    """Folder "Templates" (id 1) with Template A (1 plate) and Template B (2 plates), three printers."""
+    fake = FakeBambuddy()
+    folder = fake.add_folder("Templates")
+    template_a = fake.add_file("Template A.gcode.3mf", folder.id, printer_model="A1", plates=1)
+    fake.set_requirements(template_a.id, 1, [FilamentRequirement(1, 42.5, "PLA", "#000000")])
+    fake.add_file("Template B.gcode.3mf", folder.id, printer_model="A1", plates=2)
+    fake.add_printer("Printer 1", "A1")
+    fake.add_printer("Printer 2", "A1")
+    fake.add_printer("Printer 3", "P1S")
+    return fake
+
+
+@pytest.fixture
+def bb_client(ready_client, fake_bambuddy):
+    """A ready client whose Bambuddy is the in-memory fake."""
+    ready_client.app.state.bambuddy_factory = lambda: fake_bambuddy
+    return ready_client

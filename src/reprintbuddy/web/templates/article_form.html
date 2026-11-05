@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{{ t('articles.new') }}{% endblock %}
+{% block content %}
+<h1>{{ t('articles.new') }}</h1>
+<section class="card section">
+  <div class="plate-head">
+    <img class="thumb" src="/articles/new/file/{{ file.id }}/plate/{{ plate.index }}/thumbnail" alt="">
+    <div>
+      <p><strong>{{ file.filename }}</strong></p>
+      <p class="muted">{{ t('articles.plate') }} {{ plate.index }}</p>
+    </div>
+  </div>
+  <h3>{{ t('articles.filament_title') }}</h3>
+  {% if requirements %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>{{ t('articles.filament.slot') }}</th><th>{{ t('articles.filament.material') }}</th><th>{{ t('articles.filament.color') }}</th><th class="num">{{ t('articles.filament.grams') }}</th></tr></thead>
+      <tbody>
+      {% for r in requirements %}
+        <tr>
+          <td>{{ r.slot }}</td>
+          <td>{{ r.material }}</td>
+          <td>{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}{{ r.color }}</td>
+          <td class="num">{{ r.grams }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">{{ t('articles.filament_none') }}</p>
+  {% endif %}
+</section>
+<section class="card section">
+  {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="{{ action }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    {% include "_article_fields.html" %}
+    <button class="btn" type="submit">{{ t('articles.create') }}</button>
+    <a class="btn-link" href="/articles/new/file/{{ file.id }}">{{ t('common.cancel') }}</a>
+  </form>
+</section>
+{% endblock %}

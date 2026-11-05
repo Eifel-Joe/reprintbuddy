@@ -18,6 +18,7 @@ from reprintbuddy.web import deps
 from reprintbuddy.web.flash import pop_flashes
 from reprintbuddy.web.formtoken import issue_form_token
 from reprintbuddy.web.throttle import FailureBrake, HashLimiter
+from reprintbuddy.web.routes import articles as articles_routes
 from reprintbuddy.web.routes import auth as auth_routes
 from reprintbuddy.web.routes import overview as overview_routes
 from reprintbuddy.web.routes import parts as parts_routes
@@ -47,6 +48,7 @@ def create_app(
     app.state.login_brake = FailureBrake()  # 10 failures in 60 s: every attempt waits 2 s
     app.state.hash_limiter = HashLimiter(capacity=2)  # at most two argon2 runs at once
     app.state.http_client_factory = http_client_factory or httpx.AsyncClient
+    app.state.bambuddy_factory = None  # B2 sets the HTTP factory; tests set the fake
     app.state.session_secret = secret  # also signs the one-time form tokens
 
     templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
@@ -79,4 +81,5 @@ def create_app(
     app.include_router(overview_routes.router)
     app.include_router(settings_routes.router)
     app.include_router(parts_routes.router)
+    app.include_router(articles_routes.router)
     return app

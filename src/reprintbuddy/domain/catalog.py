@@ -109,9 +109,12 @@ def target_options(
     printers: Sequence[Printer] | None, file_model: str | None, current: str = ""
 ) -> list[TargetOption]:
     """The choices for the print target; `printers is None` means Bambuddy could not be asked."""
+    try:
+        current_model, _ = parse_target(current)
+    except ValidationError:  # a stored or typed value in a wrong format is not offered
+        current, current_model = "", None
     if printers is None:
-        model, printer_id = parse_target(current)
-        return [TargetOption(current, model, None)]
+        return [TargetOption(current, current_model, None)]
     models = sorted({p.model for p in printers} | ({file_model} if file_model else set()))
     options = [TargetOption(f"model:{m}", m, None) for m in models]
     options += [
@@ -119,8 +122,7 @@ def target_options(
         for p in sorted(printers, key=lambda p: (p.name, p.id))
     ]
     if current and current not in {o.value for o in options}:
-        model, _printer_id = parse_target(current)
-        options.append(TargetOption(current, model, None))
+        options.append(TargetOption(current, current_model, None))
     options.append(TargetOption("", None, None))
     return options
 

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ t('articles.browse_title') }}{% endblock %}
+{% block content %}
+<h1>{{ t('articles.browse_title') }}</h1>
+{% if problem %}
+<p class="alert" role="alert">{{ t(problem) }}</p>
+<p><a class="btn-link" href="/articles">{{ t('articles.title') }}</a></p>
+{% else %}
+<p class="crumbs">
+  <a href="{{ base }}">{{ t('articles.folder_root') }}</a>
+  {% for folder in crumbs %} / <a href="{{ base }}?folder={{ folder.id }}">{{ folder.name }}</a>{% endfor %}
+</p>
+<div class="card">
+  {% if subfolders or files %}
+  <ul class="plain-list">
+    {% for folder in subfolders %}
+    <li><a href="{{ base }}?folder={{ folder.id }}">{{ folder.name }}</a></li>
+    {% endfor %}
+    {% for file in files %}
+    <li><a href="{{ file_base }}/{{ file.id }}">{{ file.filename }}</a></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">{{ t('articles.no_files') }}</p>
+  {% endif %}
+</div>
+<p><a class="btn-link" href="/articles">{{ t('articles.title') }}</a></p>
+{% endif %}
+{% endblock %}

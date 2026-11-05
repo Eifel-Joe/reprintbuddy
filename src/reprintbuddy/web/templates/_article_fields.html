@@ -1,0 +1,47 @@
+{# The settings of an article (Spec 5.2): shared by the create and the edit form. #}
+<label>{{ t('articles.field.name') }}
+  <input name="name" value="{{ values.name }}" maxlength="200" required>
+</label>
+<label>{{ t('catalog.field.sku') }}
+  <input name="sku" value="{{ values.sku }}" maxlength="64">
+</label>
+<div class="row">
+  <label>{{ t('articles.field.units_per_print') }}
+    <input name="units_per_print" inputmode="numeric" value="{{ values.units_per_print }}">
+  </label>
+  <label>{{ t('articles.field.target') }}
+    <select name="target">
+      {% for choice in target_choices %}
+      <option value="{{ choice.value }}"{% if choice.selected %} selected{% endif %}>{{ choice.label }}</option>
+      {% endfor %}
+    </select>
+    {% if printers_unavailable %}<span class="hint">{{ t('articles.printers_unavailable') }}</span>{% endif %}
+  </label>
+</div>
+<div class="row">
+  <label>{{ t('articles.field.min_stock') }}
+    <input name="min_stock" inputmode="numeric" value="{{ values.min_stock }}">
+  </label>
+  <label>{{ t('articles.field.buffer') }}
+    <input name="buffer" inputmode="numeric" value="{{ values.buffer }}">
+  </label>
+</div>
+<label class="check">
+  <input name="needs_assembly" type="checkbox"{% if values.needs_assembly %} checked{% endif %}>
+  <span>{{ t('articles.field.needs_assembly') }}</span>
+</label>
+<label class="check">
+  <input name="auto_enabled" type="checkbox"{% if values.auto_enabled %} checked{% endif %}>
+  <span>{{ t('articles.field.auto_enabled') }}</span>
+</label>
+{% if parts %}
+<h3>{{ t('articles.parts_title') }}</h3>
+<p class="hint">{{ t('articles.parts_hint') }}</p>
+<div class="row">
+  {% for part in parts %}
+  <label>{{ part.name }}
+    <input name="part_{{ part.id }}" inputmode="numeric" value="{{ values.parts[part.id] }}">
+  </label>
+  {% endfor %}
+</div>
+{% endif %}

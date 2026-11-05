@@ -12,6 +12,7 @@ from jinja2 import pass_context
 from sqlalchemy.orm import Session
 
 from reprintbuddy import auth
+from reprintbuddy.bambuddy.client import BambuddyClient
 from reprintbuddy import settings as st
 from reprintbuddy.models import User
 from reprintbuddy.web.csrf import csrf_token
@@ -61,6 +62,13 @@ def close_request_session(request: Request) -> None:
     if db is not None:
         request.state.db = None
         db.close()
+
+
+def get_bambuddy(request: Request) -> BambuddyClient | None:
+    """The client for Bambuddy, or None when no connection is available (B2 sets the factory;
+    tests set a fake)."""
+    factory = getattr(request.app.state, "bambuddy_factory", None)
+    return factory() if factory is not None else None
 
 
 async def get_db(request: Request) -> Session:

@@ -130,6 +130,9 @@ def test_target_options():
     unknown = catalog.target_options([], None, current="printer:99")[0]
     assert unknown.printer_name is None and unknown.model is None
     assert [o.value for o in catalog.target_options(None, None, current="model:A1")] == ["model:A1"]
+    assert [o.value for o in catalog.target_options(printers, "A1", current="bogus")][-1] == ""
+    assert "bogus" not in [o.value for o in catalog.target_options(printers, "A1", current="bogus")]
+    assert [o.value for o in catalog.target_options(None, None, current="bogus")] == [""]
     p = catalog.target_options(printers, "A1")[2]
     assert (p.model, p.printer_name) == ("A1", "Printer 1")
 
