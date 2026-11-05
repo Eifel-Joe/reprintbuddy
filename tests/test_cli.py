@@ -272,3 +272,46 @@ def test_cli_update_exit_codes(db, monkeypatch, state, code):
 def test_cli_update_missing_db(db, capsys):
     assert main(["update", "--db", str(db)]) == 1
     assert not db.exists()
+
+
+def test_cli_url_local(db, capsys):
+    main(["migrate", "--db", str(db)])
+    assert main(["url", "--db", str(db)]) == 0
+    assert capsys.readouterr().out.strip() == "http://127.0.0.1:8080"
+
+
+def test_cli_url_next_fresh(db, capsys):
+    main(["migrate", "--db", str(db)])
+    assert main(["url", "--db", str(db), "--host", "203.0.113.10", "--next"]) == 0
+    assert capsys.readouterr().out.strip() == "http://203.0.113.10:8080/setup"
+
+
+def test_cli_url_next_after_setup(db, capsys):
+    main(["migrate", "--db", str(db)])
+    with open_session(db) as s:
+        auth.set_password(s, "admin", "password123")
+    assert main(["url", "--db", str(db), "--host", "203.0.113.10", "--next"]) == 0
+    assert capsys.readouterr().out.strip() == "http://203.0.113.10:8080/"
+
+
+def test_cli_url_tls(db, capsys):
+    main(["migrate", "--db", str(db)])
+    with open_session(db) as s:
+        st.set_setting(s, "tls_cert", CERT)
+        st.set_setting(s, "tls_key", KEY)
+        st.set_setting(s, "port", 8443)
+    assert main(["url", "--db", str(db)]) == 0
+    assert capsys.readouterr().out.strip() == "https://127.0.0.1:8443"
+
+
+def test_cli_url_uses_the_saved_host(db, capsys):
+    main(["migrate", "--db", str(db)])
+    with open_session(db) as s:
+        st.set_setting(s, "host", "203.0.113.5")  # stored directly: set-host would check it
+    main(["url", "--db", str(db)])
+    assert capsys.readouterr().out.strip() == "http://203.0.113.5:8080"
+
+
+def test_cli_url_missing_db(db, capsys):
+    assert main(["url", "--db", str(db)]) == 1
+    assert not db.exists()

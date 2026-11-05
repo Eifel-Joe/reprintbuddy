@@ -1,4 +1,4 @@
-"""Command line: serve, migrate, init, set-password, set-port, set-host, disable-https, update.
+"""Command line: serve, migrate, init, set-password, set-port, set-host, disable-https, update, url.
 
 Every command takes `--db PATH`; the database path is the only thing that
 does not live in the database itself (Spec 11.5a).
@@ -23,7 +23,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.runner import subprocess_runner
-from reprintbuddy.ops.server import effective_from_settings
+from reprintbuddy.ops.server import base_url, connect_host, effective_from_settings
 from reprintbuddy.ops.service import INSTALL_DIR
 from reprintbuddy.ops.updater import http_health_waiter, run_update
 from reprintbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upgrade
@@ -152,6 +152,21 @@ def _update(args: argparse.Namespace) -> int:
     return 3 if result.state in ("running", "queued") else 1
 
 
+def _url(args: argparse.Namespace) -> int:
+    """Print the address Reprintbuddy answers on; the install script uses it."""
+    if not args.db.is_file():
+        _error(f"database not found: {args.db}")
+        return 1
+    with _session(args.db) as session:
+        host = args.host or connect_host(str(st.get_setting(session, "host")))
+        port = int(st.get_setting(session, "port"))
+        url = base_url(host, port, st.tls_enabled(session))
+        if args.next:
+            url += "/" if auth.has_user(session) else "/setup"
+    print(url)
+    return 0
+
+
 def _disable_https(args: argparse.Namespace) -> int:
     with _session(args.db) as session:
         st.set_setting(session, "tls_cert", None, commit=False)
@@ -189,6 +204,9 @@ def _parser() -> argparse.ArgumentParser:
     set_host.add_argument("host", help="address to listen on, for example 0.0.0.0")
     update = command("update", _update, "update to the newest release (started from the settings page)")
     update.add_argument("--target", help="release tag to update to, for example v0.2.0")
+    url = command("url", _url, "print the address of the web interface (for the installer)")
+    url.add_argument("--host", help="use this host instead of the saved listen address")
+    url.add_argument("--next", action="store_true", help="add the page to open next (/setup until there is an account)")
     command("disable-https", _disable_https, "remove the HTTPS certificate (emergency exit)")
     return parser
 
