@@ -170,24 +170,42 @@ async def test_twelve_concurrent_wrong_logins_all_finish(ready_client):
 
 
 async def test_no_connection_is_held_while_a_failed_login_waits(ready_client):
+    """Looks at the pause itself: the test waits for the hashing to end, not for a fixed time."""
     app = ready_client.app
     connections = Connections(app.state.engine)
-    app.state.login_failure_delay = 0.6
+    app.state.login_failure_delay = 1.0
+    hashed = asyncio.Event()
+    record_failure = app.state.login_brake.record_failure
+
+    def failure_recorded():
+        record_failure()
+        hashed.set()  # the route goes on to give the connection back and to pause, without waiting
+
+    app.state.login_brake.record_failure = failure_recorded
     async with asgi_client(app) as client:
         token = token_of(await client.get("/login"))
         waiting = asyncio.create_task(
             client.post("/login", data={"csrf_token": token, "username": ADMIN, "password": "wrong-password"})
         )
-        await asyncio.sleep(0.35)  # past the hashing, inside the pause
-        assert not waiting.done()
+        await asyncio.wait_for(hashed.wait(), timeout=30)  # as long as the hashing takes
+        assert not waiting.done()  # now it is inside the pause
         assert connections.out == 0, "a database connection is held during the pause"
         await waiting
 
 
 async def test_no_connection_is_held_while_bambuddy_answers(ready_client):
+    """Looks at the moment Bambuddy is asked: the test waits for the request, not for a fixed time."""
     app = ready_client.app
     connections = Connections(app.state.engine)
-    app.state.http_client_factory = lambda: httpx.AsyncClient(transport=httpx.MockTransport(slow_check))
+    asked = asyncio.Event()
+    answer = asyncio.Event()
+
+    async def bambuddy(_request: httpx.Request) -> httpx.Response:
+        asked.set()
+        await answer.wait()  # Bambuddy "thinks" until the test has looked
+        return httpx.Response(200, json=auth_me(username="other-user"))
+
+    app.state.http_client_factory = lambda: httpx.AsyncClient(transport=httpx.MockTransport(bambuddy))
     async with asgi_client(app, ready_client.cookies.get(COOKIE)) as client:
         token = token_of(await client.get("/settings"))
         saving = asyncio.create_task(
@@ -200,7 +218,8 @@ async def test_no_connection_is_held_while_bambuddy_answers(ready_client):
                 },
             )
         )
-        await asyncio.sleep(0.3)  # the check is running
+        await asyncio.wait_for(asked.wait(), timeout=30)  # the check is running
         assert not saving.done()
         assert connections.out == 0, "a database connection is held while waiting for Bambuddy"
+        answer.set()
         await saving
