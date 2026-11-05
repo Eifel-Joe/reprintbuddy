@@ -78,8 +78,7 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     url_input = str(form.get("bambuddy_url", "")).strip()
     username = str(form.get("bambuddy_username", "")).strip()
-    # Empty key field = keep the stored key (and use it for the check).
-    api_key = str(form.get("bambuddy_api_key", "")) or str(st.get_setting(db, "bambuddy_api_key") or "")
+    entered_key = str(form.get("bambuddy_api_key", ""))
     confirmed = form.get("bambuddy_review_confirmed") is not None
     typed = {"bambuddy_url": url_input, "bambuddy_username": username, "review_confirmed": confirmed}
 
@@ -88,12 +87,22 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
 
     if not confirmed:
         return fail("bambuddy.review_required")
-    if not (url_input and username and api_key):
+    if not (url_input and username):
         return fail("bambuddy.fields_required")
     try:
         url = st.validate("bambuddy_url", url_input)
     except ValueError:
         return fail("bambuddy.invalid_url")
+
+    # An empty key field keeps the stored key, but only for the same address:
+    # a stored key is never sent to a different scheme, host or port.
+    api_key = entered_key
+    if not api_key:
+        if not st.same_address(str(url), str(st.get_setting(db, "bambuddy_url") or "")):
+            return fail("settings.key_required_new_address")
+        api_key = str(st.get_setting(db, "bambuddy_api_key") or "")
+    if not api_key:
+        return fail("bambuddy.fields_required")
 
     async with request.app.state.http_client_factory() as client:
         result = await check_connection(str(url), api_key, client)

@@ -72,16 +72,55 @@ def test_bambuddy_change_checked(ready_client, respx_mock):
 
 
 def test_bambuddy_empty_key_keeps_old(ready_client, respx_mock):
-    route = respx_mock.get(f"{NEW_URL}/api/v1/queue/").respond(200, json=[])
+    # same address, another user name: the stored key is reused for the check and kept
+    route = respx_mock.get(f"{OLD_URL}/api/v1/queue/").respond(200, json=[])
     response = post(
-        ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_url=NEW_URL)
+        ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_username="other-user")
     )
     assert response.status_code == 303
-    # the stored key was used for the check ...
     assert route.calls.last.request.headers["x-api-key"] == "bb_testkey"
-    # ... and stays stored
     assert saved(ready_client, "bambuddy_api_key") == "bb_testkey"
+    assert saved(ready_client, "bambuddy_username") == "other-user"
+
+
+def test_bambuddy_same_address_written_differently_keeps_key(ready_client, respx_mock):
+    route = respx_mock.get(f"{OLD_URL}/api/v1/queue/").respond(200, json=[])
+    response = post(
+        ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_url=OLD_URL + "/")
+    )
+    assert response.status_code == 303
+    assert route.calls.last.request.headers["x-api-key"] == "bb_testkey"
+
+
+@pytest.mark.parametrize(
+    "new_url",
+    [NEW_URL, "https://bambuddy.test:8000", "http://bambuddy.test:9000"],
+    ids=["host", "scheme", "port"],
+)
+def test_bambuddy_new_address_needs_the_key_again(ready_client, respx_mock, new_url):
+    """A stored key is never sent to a different address."""
+    route = respx_mock.get(f"{new_url}/api/v1/queue/").respond(200, json=[])
+    response = post(
+        ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_url=new_url)
+    )
+    assert response.status_code == 200
+    assert "enter the API key again" in response.text
+    assert not route.called, "the stored key must not leave for the new address"
+    assert saved(ready_client, "bambuddy_url") == OLD_URL
+    assert saved(ready_client, "bambuddy_api_key") == "bb_testkey"
+
+
+def test_bambuddy_new_address_with_new_key_is_saved(ready_client, respx_mock):
+    route = respx_mock.get(f"{NEW_URL}/api/v1/queue/").respond(200, json=[])
+    response = post(
+        ready_client,
+        "/settings/bambuddy",
+        **bambuddy_form(bambuddy_url=NEW_URL, bambuddy_api_key="bb_for_new"),
+    )
+    assert response.status_code == 303
+    assert route.calls.last.request.headers["x-api-key"] == "bb_for_new"
     assert saved(ready_client, "bambuddy_url") == NEW_URL
+    assert saved(ready_client, "bambuddy_api_key") == "bb_for_new"
 
 
 def test_bambuddy_new_key_overwrites(ready_client, respx_mock):
@@ -97,7 +136,9 @@ def test_bambuddy_new_key_overwrites(ready_client, respx_mock):
 def test_bambuddy_unreachable_changes_nothing(ready_client, respx_mock):
     respx_mock.get(f"{NEW_URL}/api/v1/queue/").mock(side_effect=httpx.ConnectError("x"))
     response = post(
-        ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_url=NEW_URL)
+        ready_client,
+        "/settings/bambuddy",
+        **bambuddy_form(bambuddy_url=NEW_URL, bambuddy_api_key="bb_for_new"),
     )
     assert response.status_code == 200
     assert "Could not reach Bambuddy" in response.text

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import secrets
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
@@ -166,3 +167,20 @@ def bambuddy_configured(session: Session) -> bool:
         and get_setting(session, "bambuddy_api_key")
         and get_setting(session, "bambuddy_review_confirmed")
     )
+
+
+def same_address(a: str | None, b: str | None) -> bool:
+    """Do two stored/entered addresses point at the same scheme, host and port?
+
+    Used to decide whether a stored API key may be sent to an address: the key
+    belongs to one Bambuddy address and never travels to another.
+    """
+    if not a or not b:
+        return False
+
+    def origin(url: str) -> tuple[str, str, int | None]:
+        parts = urlsplit(url.strip())
+        default = {"http": 80, "https": 443}.get(parts.scheme)
+        return parts.scheme, (parts.hostname or "").lower(), parts.port or default
+
+    return origin(a) == origin(b)

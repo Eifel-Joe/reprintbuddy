@@ -137,3 +137,21 @@ def test_validate_returns_normalised_value():
         st.validate("port", 0)
     with pytest.raises(KeyError):
         st.validate("session_secret", "x")
+
+
+@pytest.mark.parametrize(
+    "a,b,same",
+    [
+        ("http://h:8000", "http://h:8000/", True),
+        ("http://H:8000", "http://h:8000", True),
+        ("http://h", "http://h:80", True),
+        ("https://h", "https://h:443", True),
+        ("http://h:8000", "http://h:9000", False),
+        ("http://h:8000", "https://h:8000", False),
+        ("http://h:8000", "http://other:8000", False),
+        ("http://h:8000", None, False),
+        (None, None, False),
+    ],
+)
+def test_same_address(a, b, same):
+    assert st.same_address(a, b) is same
