@@ -7,6 +7,7 @@ from typing import Callable
 
 import httpx
 from fastapi import FastAPI
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
@@ -55,7 +56,9 @@ def create_app(
         same_site="lax",
         https_only=https,
     )
+    app.middleware("http")(deps.security_headers)  # outermost: covers every response
 
+    app.add_exception_handler(StarletteHTTPException, deps.http_error_handler)
     app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
 
     @app.get("/healthz")

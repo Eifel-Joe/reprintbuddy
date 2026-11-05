@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hmac
+import ipaddress
 from typing import AsyncIterator
 from urllib.parse import quote
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse, Response
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from jinja2 import pass_context
 from sqlalchemy.orm import Session
 
@@ -92,6 +94,71 @@ def start_session(request: Request, user: User, session: Session) -> None:
     request.session[TOKEN_KEY] = _expected_token(request, session, user)
 
 
+SECURITY_HEADERS = {
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+}
+
+# Name endings that only occur inside a home network.
+_LOCAL_SUFFIXES = (".local", ".lan", ".home", ".internal", ".localdomain", ".home.arpa", ".fritz.box")
+
+
+async def security_headers(request: Request, call_next) -> Response:
+    response = await call_next(request)
+    for name, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    return response
+
+
+def host_allowed_for_setup(host_header: str | None) -> bool:
+    """Is this `Host` header plausible for someone on the home network?
+
+    While no account exists, anybody who reaches the page could create it. A web
+    page on the internet can make a visitor's browser talk to the home network by
+    pointing its own name at a private address (DNS rebinding); the request then
+    carries that name in `Host`. During setup only IP addresses, `localhost`,
+    names without a dot and typical home-network endings are accepted.
+    """
+    host = (host_header or "").strip().lower()
+    if not host:
+        return False
+    if host.startswith("["):  # IPv6 literal, possibly with a port
+        name = host[1 : host.find("]")] if "]" in host else host
+    elif host.count(":") == 1:
+        name = host.split(":", 1)[0]
+    else:
+        name = host
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        pass
+    return name == "localhost" or "." not in name or name.endswith(_LOCAL_SUFFIXES)
+
+
+def error_response(request: Request, status_code: int, kind: str) -> Response:
+    """A readable error page in the interface language, inside the layout when signed in."""
+    with request.app.state.sessionmaker() as session:
+        in_app = logged_in_user(request, session) is not None and st.bambuddy_configured(session)
+    return render(
+        request,
+        "error.html",
+        status_code=status_code,
+        layout="base.html" if in_app else "bare.html",
+        title_key=f"error.{kind}.title",
+        message_key=f"error.{kind}.message",
+    )
+
+
+async def http_error_handler(request: Request, exc: StarletteHTTPException) -> Response:
+    kind = {403: "forbidden", 404: "not_found"}.get(exc.status_code, "generic")
+    response = error_response(request, exc.status_code, kind)
+    for name, value in (exc.headers or {}).items():  # for example Allow on a 405
+        response.headers[name] = value
+    return response
+
+
 async def gate(request: Request, call_next) -> Response:
     """Redirect order (Spec 11.3): setup -> login -> Bambuddy step -> page."""
     path = request.url.path
@@ -100,6 +167,8 @@ async def gate(request: Request, call_next) -> Response:
 
     with request.app.state.sessionmaker() as session:
         if not auth.has_user(session):
+            if not host_allowed_for_setup(request.headers.get("host")):
+                return error_response(request, 400, "host")
             if path == "/setup":
                 return await call_next(request)
             return RedirectResponse("/setup", status_code=303)
@@ -110,8 +179,9 @@ async def gate(request: Request, call_next) -> Response:
 
         if logged_in_user(request, session) is None:
             if request.method == "GET":
-                return RedirectResponse(f"/login?next={quote(path, safe='')}", status_code=303)
-            return Response("Forbidden", status_code=403, media_type="text/plain")
+                target = path + (f"?{request.url.query}" if request.url.query else "")
+                return RedirectResponse(f"/login?next={quote(target, safe='')}", status_code=303)
+            return error_response(request, 403, "forbidden")
 
         if not st.bambuddy_configured(session) and path not in ("/setup/bambuddy", "/logout"):
             return RedirectResponse("/setup/bambuddy", status_code=303)

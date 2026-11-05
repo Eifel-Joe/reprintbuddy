@@ -91,6 +91,17 @@ def test_dynamic_message_keys_exist():
         if not m.group(1).endswith(".html")  # template file names, not message keys
     }
     used |= {f"bambuddy.reason.{reason}" for reason in get_args(Reason) if reason != "ok"}
+    used |= {
+        f"error.{kind}.{part}"
+        for kind in ("forbidden", "not_found", "host", "generic")
+        for part in ("title", "message")
+    } | {"error.back"}
     assert used, "scan found nothing: the pattern is wrong"
     assert used <= set(en), f"missing in en: {sorted(used - set(en))}"
     assert used <= set(de), f"missing in de: {sorted(used - set(de))}"
+
+
+def test_german_restart_hint_is_in_german():
+    de = i18n.load_locales()["de"]["settings.restart_needed"]
+    assert "Neustart" in de
+    assert "restart" not in de.lower()

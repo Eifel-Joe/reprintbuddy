@@ -1,0 +1,7 @@
+{% extends layout %}
+{% block title %}{{ t(title_key) }}{% endblock %}
+{% block content %}
+<h1>{{ t(title_key) }}</h1>
+<p class="muted">{{ t(message_key) }}</p>
+<p><a class="btn" href="/">{{ t('error.back') }}</a></p>
+{% endblock %}

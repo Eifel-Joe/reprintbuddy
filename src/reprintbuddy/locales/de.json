@@ -66,7 +66,7 @@
   "settings.server": "Server",
   "settings.host": "Lauschadresse",
   "settings.port": "Port",
-  "settings.restart_needed": "Änderungen an Adresse, Port und HTTPS wirken erst nach einem Neustart von Reprintbuddy (restart).",
+  "settings.restart_needed": "Änderungen an Adresse, Port und HTTPS wirken erst nach einem Neustart von Reprintbuddy.",
   "settings.https": "HTTPS (optional)",
   "settings.https_hint": "Zertifikat und privaten Schlüssel als Text einfügen oder als Dateien hochladen. Beide leer lassen, um das Gespeicherte zu behalten.",
   "settings.tls_cert": "Zertifikat (PEM)",
@@ -81,5 +81,14 @@
   "settings.tls_pair_required": "Bitte Zertifikat und privaten Schlüssel zusammen angeben.",
   "settings.key_required_new_address": "Die Adresse hat sich geändert. Bitte den API-Schlüssel erneut eingeben: ein gespeicherter Schlüssel wird nie an eine neue Adresse geschickt.",
   "settings.host_unbindable": "Dieser Rechner kann auf dieser Adresse nicht lauschen. Bitte prüfen: eine unbrauchbare Adresse würde dich aussperren.",
-  "bambuddy.key_invalid": "Der API-Schlüssel enthält unzulässige Zeichen (nur sichtbare ASCII-Zeichen, keine Leerzeichen oder Zeilenumbrüche). Bitte erneut kopieren."
+  "bambuddy.key_invalid": "Der API-Schlüssel enthält unzulässige Zeichen (nur sichtbare ASCII-Zeichen, keine Leerzeichen oder Zeilenumbrüche). Bitte erneut kopieren.",
+  "error.back": "Zurück zur Startseite",
+  "error.forbidden.title": "Nicht erlaubt",
+  "error.forbidden.message": "Diese Aktion war nicht erlaubt. Falls du angemeldet warst, ist die Sitzung vielleicht abgelaufen: Seite neu laden und noch einmal versuchen.",
+  "error.not_found.title": "Seite nicht gefunden",
+  "error.not_found.message": "Unter dieser Adresse gibt es nichts.",
+  "error.host.title": "Adresse nicht erlaubt",
+  "error.host.message": "Solange Reprintbuddy eingerichtet wird, öffne es über seine IP-Adresse (zum Beispiel http://<server-adresse>:8080) statt über einen Rechnernamen.",
+  "error.generic.title": "Etwas ist schiefgegangen",
+  "error.generic.message": "Die Anfrage konnte nicht abgeschlossen werden."
 }
