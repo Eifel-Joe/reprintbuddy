@@ -249,8 +249,9 @@ init_database() {
 # the (web-facing) service user can write to. The copies in install/ are kept equal by a test.
 write_system_files() {
     cat >"$1/reprintbuddy.sudoers" <<'RB_SUDOERS_EOF'
-# Lets the Reprintbuddy service restart itself and start its update unit; nothing else.
-reprintbuddy ALL=(root) NOPASSWD: /usr/bin/systemctl restart --no-block reprintbuddy.service, /usr/bin/systemctl restart reprintbuddy.service, /usr/bin/systemctl start --no-block reprintbuddy-update.service
+# Lets the Reprintbuddy service restart itself, stop and start itself (for a rollback) and
+# start its update unit; nothing else.
+reprintbuddy ALL=(root) NOPASSWD: /usr/bin/systemctl restart --no-block reprintbuddy.service, /usr/bin/systemctl restart reprintbuddy.service, /usr/bin/systemctl start --no-block reprintbuddy-update.service, /usr/bin/systemctl stop reprintbuddy.service, /usr/bin/systemctl start reprintbuddy.service
 RB_SUDOERS_EOF
     cat >"$1/reprintbuddy.service" <<'RB_SERVICE_EOF'
 [Unit]

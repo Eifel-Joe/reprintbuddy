@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from reprintbuddy.ops.service import RESTART_CMD, RESTART_WAIT_CMD, START_UPDATE_CMD
+from reprintbuddy.ops.service import (
+    RESTART_CMD,
+    RESTART_WAIT_CMD,
+    START_CMD,
+    START_UPDATE_CMD,
+    STOP_CMD,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 READMES = ("README.md", "README.de.md")
@@ -44,7 +50,7 @@ def test_ops_sections(name, headings):
 @pytest.mark.parametrize("name", READMES)
 def test_readme_sudoers_matches(name):
     text = read(name)
-    for command in (RESTART_CMD, RESTART_WAIT_CMD, START_UPDATE_CMD):
+    for command in (RESTART_CMD, RESTART_WAIT_CMD, START_UPDATE_CMD, STOP_CMD, START_CMD):
         assert " ".join(command[2:]) in text, (name, command)
 
 

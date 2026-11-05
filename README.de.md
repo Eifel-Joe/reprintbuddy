@@ -65,12 +65,15 @@ Das Skript
 - legt `/var/lib/reprintbuddy` (Rechte 700) mit Datenbank, Sicherungen und Update-Stand an,
 - richtet die systemd-Einheiten `reprintbuddy.service` und `reprintbuddy-update.service` ein,
 - installiert eine sudoers-Regel in `/etc/sudoers.d/reprintbuddy`, die dem Dienstbenutzer genau
-  diese drei Befehle als root erlaubt und nichts sonst:
+  genau diese Befehle als root erlaubt und nichts sonst (die letzten beiden braucht der Rückfall eines
+  gescheiterten Updates, der die Datenbank bei gestopptem Dienst zurückspielt):
 
   ```text
   /usr/bin/systemctl restart --no-block reprintbuddy.service
   /usr/bin/systemctl restart reprintbuddy.service
   /usr/bin/systemctl start --no-block reprintbuddy-update.service
+  /usr/bin/systemctl stop reprintbuddy.service
+  /usr/bin/systemctl start reprintbuddy.service
   ```
 
 - installiert den Befehl `/usr/local/bin/reprintbuddy` (siehe *Kommandozeile*),

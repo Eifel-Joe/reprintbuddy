@@ -11,10 +11,13 @@ SERVICE = "reprintbuddy.service"
 UPDATE_SERVICE = "reprintbuddy-update.service"
 SYSTEMCTL = "/usr/bin/systemctl"
 
-# These three command lines are the only ones install/reprintbuddy.sudoers allows.
+# These command lines are the only ones install/reprintbuddy.sudoers allows.
 RESTART_CMD = ("sudo", "-n", SYSTEMCTL, "restart", "--no-block", SERVICE)
 RESTART_WAIT_CMD = ("sudo", "-n", SYSTEMCTL, "restart", SERVICE)
 START_UPDATE_CMD = ("sudo", "-n", SYSTEMCTL, "start", "--no-block", UPDATE_SERVICE)
+# A rollback restores the database while the service is stopped.
+STOP_CMD = ("sudo", "-n", SYSTEMCTL, "stop", SERVICE)
+START_CMD = ("sudo", "-n", SYSTEMCTL, "start", SERVICE)
 
 
 def request_restart(runner: CommandRunner) -> CommandResult:

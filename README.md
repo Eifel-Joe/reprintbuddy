@@ -62,12 +62,15 @@ What the installer does:
 - creates `/var/lib/reprintbuddy` (mode 700) with the database, the backups and the update state,
 - installs the systemd units `reprintbuddy.service` and `reprintbuddy-update.service`,
 - installs a sudoers rule in `/etc/sudoers.d/reprintbuddy` that lets the service user run
-  exactly these three commands as root, and nothing else:
+  exactly these commands as root, and nothing else (the last two are for the rollback of a failed
+  update, which restores the database while the service is stopped):
 
   ```text
   /usr/bin/systemctl restart --no-block reprintbuddy.service
   /usr/bin/systemctl restart reprintbuddy.service
   /usr/bin/systemctl start --no-block reprintbuddy-update.service
+  /usr/bin/systemctl stop reprintbuddy.service
+  /usr/bin/systemctl start reprintbuddy.service
   ```
 
 - installs the command `/usr/local/bin/reprintbuddy` (see *Command line*),

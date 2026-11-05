@@ -29,7 +29,7 @@ from reprintbuddy.ops.backup import (
     restore_database,
 )
 from reprintbuddy.ops.runner import CommandResult, CommandRunner
-from reprintbuddy.ops.service import RESTART_WAIT_CMD
+from reprintbuddy.ops.service import RESTART_WAIT_CMD, START_CMD, STOP_CMD
 from reprintbuddy.ops.status import UpdateStatus, is_busy, mark_interrupted, read_status, write_status
 from reprintbuddy.ops.versions import is_newer, local_tags, newest_release, parse_release_tag
 
@@ -229,11 +229,14 @@ def run_update(
             old = info["from_tag"]
             shown = runner((py, "-m", "reprintbuddy", "--version"))
             ok &= bool(old) and shown.ok and shown.stdout.strip() == "reprintbuddy " + str(old)[1:]
+        # Restore the database while nothing has it open. If the service cannot be stopped it
+        # may still run the new code: then a restart (below) is the way back.
+        stopped = runner(STOP_CMD, timeout=120.0)
         try:
             restore_database(backup, db_path)
         except (OSError, sqlite3.Error):
             ok = False
-        done = runner(RESTART_WAIT_CMD, timeout=120.0)
+        done = runner(START_CMD if stopped.ok else RESTART_WAIT_CMD, timeout=120.0)
         ok &= done.ok
         return bool(wait_healthy()) and ok
 

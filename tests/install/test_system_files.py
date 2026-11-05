@@ -1,7 +1,13 @@
 import configparser
 from pathlib import Path
 
-from reprintbuddy.ops.service import RESTART_CMD, RESTART_WAIT_CMD, START_UPDATE_CMD
+from reprintbuddy.ops.service import (
+    RESTART_CMD,
+    RESTART_WAIT_CMD,
+    START_CMD,
+    START_UPDATE_CMD,
+    STOP_CMD,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 INSTALL = ROOT / "install"
@@ -66,7 +72,7 @@ def test_sudoers_matches_python_commands():
     assert lines[0].startswith(prefix)
     rest = lines[0][len(prefix):]
     assert {c.strip() for c in rest.split(", ")} == {
-        " ".join(c[2:]) for c in (RESTART_CMD, RESTART_WAIT_CMD, START_UPDATE_CMD)
+        " ".join(c[2:]) for c in (RESTART_CMD, RESTART_WAIT_CMD, START_UPDATE_CMD, STOP_CMD, START_CMD)
     }
     assert "*" not in rest
     assert "ALL" not in rest

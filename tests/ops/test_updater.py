@@ -7,7 +7,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.ops.backup import backup_dir_for
 from reprintbuddy.ops.runner import CommandResult
-from reprintbuddy.ops.service import RESTART_WAIT_CMD
+from reprintbuddy.ops.service import RESTART_WAIT_CMD, START_CMD, STOP_CMD
 from reprintbuddy.ops.status import UpdateStatus, read_status, write_status
 from reprintbuddy.ops.updater import run_update, venv_python
 
@@ -188,7 +188,7 @@ def test_pip_fails_rolls_back(update_env):
     result = e.update()
     assert ("git", "-C", e.d, "checkout", "--quiet", "--detach", REF) in e.runner.calls
     assert len(e.called(e.py, "-m", "pip")) == 2
-    assert RESTART_WAIT_CMD in e.runner.calls
+    assert STOP_CMD in e.runner.calls and START_CMD in e.runner.calls
     assert result.state == "rolled_back"
     assert result.message.startswith("install:")
 
@@ -239,12 +239,13 @@ def test_unhealthy_after_restart_rolls_back(update_env):
     result = e.update()
     assert result.state == "rolled_back"
     assert result.message.startswith("health:")
-    assert e.runner.calls.count(RESTART_WAIT_CMD) == 2
+    assert e.runner.calls.count(RESTART_WAIT_CMD) == 1  # the update's own restart
+    assert e.runner.calls[-1] == START_CMD or START_CMD in e.runner.calls
 
 
 def test_restart_command_failure_rolls_back(update_env):
     e = update_env
-    e.runner.on(RESTART_WAIT_CMD, CommandResult(1, "", "sudo: a password is required"), CommandResult(0))
+    e.runner.on(RESTART_WAIT_CMD, CommandResult(1, "", "sudo: a password is required"))
     result = e.update()
     assert result.state == "rolled_back" and result.message.startswith("restart:")
 
@@ -256,6 +257,44 @@ def test_rollback_fails(update_env):
     assert result.state == "rollback_failed"
     assert result.backup and result.backup in result.message
     assert " – backup: " in result.message
+
+
+def test_the_database_is_restored_while_the_service_is_stopped(update_env):
+    """Restoring under a running service leaves it with connections to a replaced database."""
+    e = update_env
+    seen = {}
+
+    def broken_migration(call):
+        with e.maker() as session:
+            st.set_setting(session, "queue_cap", 99)
+        return CommandResult(1, "", "migration failed")
+
+    e.runner.on((e.py, "-m", "reprintbuddy", "migrate"), broken_migration)
+    e.runner.on(STOP_CMD, lambda call: seen.setdefault("at_stop", e.queue_cap()) and CommandResult(0))
+    e.runner.on(START_CMD, lambda call: seen.setdefault("at_start", e.queue_cap()) and CommandResult(0))
+    assert e.update().state == "rolled_back"
+    assert seen == {"at_stop": 99, "at_start": 7}
+    calls = e.runner.calls
+    assert calls.index(STOP_CMD) < calls.index(START_CMD)
+
+
+def test_a_stop_that_fails_falls_back_to_a_restart(update_env):
+    """If the service cannot be stopped it may still run the new code: restart it."""
+    e = update_env
+    e.runner.on((e.py, "-m", "pip"), CommandResult(1, "", "ERROR: no network"))
+    e.runner.on(STOP_CMD, CommandResult(1, "", "sudo: not allowed"))
+    e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.1.0\n"))
+    result = e.update()
+    assert result.state == "rolled_back"
+    assert START_CMD not in e.runner.calls
+    assert RESTART_WAIT_CMD in e.runner.calls
+
+
+def test_a_start_that_fails_in_the_rollback_is_a_failed_rollback(update_env):
+    e = update_env
+    e.runner.on((e.py, "-m", "pip"), CommandResult(1, "", "no"), CommandResult(0))
+    e.runner.on(START_CMD, CommandResult(1, "", "Job failed"))
+    assert e.update().state == "rollback_failed"
 
 
 def test_rollback_checkout_failure_is_reported(update_env):
