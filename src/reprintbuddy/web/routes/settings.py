@@ -20,7 +20,7 @@ from reprintbuddy.ops.tls import validate_tls_pair
 from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.routes.ops import ops_view
-from reprintbuddy.web.deps import flash, get_db, logged_in_user, render, start_session
+from reprintbuddy.web.deps import flash, get_db, logged_in_user, render, start_session, take_verdict
 
 router = APIRouter()
 
@@ -117,7 +117,7 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
 
     # One transaction: a failure must not leave a new address with the old key.
     st.apply_check(db, url, api_key, check)
-    request.app.state.rights.record(check)  # a fixed key clears the notice at once
+    take_verdict(request, check)  # a fixed key clears the notice at once
     return _saved(request, "bambuddy.admin_warning" if check.owner_is_admin else "settings.saved")
 
 

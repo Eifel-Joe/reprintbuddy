@@ -156,6 +156,42 @@ def test_next_on_a_page_shown_by_get_is_that_page(missing_client):
     assert set(_nexts(missing_client.get("/settings?x=1").text)) == {"/settings?x=1"}
 
 
+def _other_right_goes_missing(client):
+    """A later start finds one more right missing: a new verdict about the rights."""
+    from reprintbuddy.bambuddy.connection import ConnectionCheck
+
+    client.app.state.rights.record(
+        ConnectionCheck(False, "missing_permissions", owner="reprintbuddy", missing=("inventory:read", "filaments:read"))
+    )
+
+
+def test_later_holds_only_for_the_rights_it_was_pressed_for(missing_client):
+    """M1 of the review: another right missing on a later start brings the dialog back."""
+    assert "rights-dialog" in missing_client.get("/").text
+    _post(missing_client, LATER, next="/")
+    assert "rights-banner" in missing_client.get("/").text
+    _other_right_goes_missing(missing_client)
+    page = missing_client.get("/").text
+    assert "rights-dialog" in page and "rights-banner" not in page
+    assert "Read Filaments" in page
+
+
+def test_later_is_forgotten_when_a_save_brings_every_right(missing_client, respx_mock):
+    assert "rights-dialog" in missing_client.get("/").text
+    _post(missing_client, LATER, next="/")
+    _everything_granted(respx_mock)
+    token = csrf_of(missing_client, "/settings")
+    saved = missing_client.post(
+        "/settings/bambuddy", data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": "bb_newkey123"}
+    )
+    assert saved.status_code == 303
+    assert "rights-banner" not in missing_client.get("/").text
+    mock_auth_me(respx_mock, permissions=WITHOUT_INVENTORY)
+    missing_client.app.state.rights.status = "unknown"  # the next start finds the same right missing
+    page = missing_client.get("/").text
+    assert "rights-dialog" in page and "rights-banner" not in page
+
+
 def test_dialog_is_on_every_page_of_the_interface(missing_client):
     for path in ("/", "/settings", "/articles"):
         assert "rights-dialog" in missing_client.get(path).text, path

@@ -16,7 +16,7 @@ from reprintbuddy.web.bambuddy_check import (
     validate_address,
     validate_key,
 )
-from reprintbuddy.web.deps import current_language, flash, get_db, render, start_session
+from reprintbuddy.web.deps import current_language, flash, get_db, render, start_session, take_verdict
 
 router = APIRouter()
 
@@ -148,7 +148,7 @@ async def bambuddy_connect_submit(request: Request, db: Session = Depends(get_db
         return fail(f"bambuddy.reason.{check.reason}", check)
 
     st.apply_check(db, url, api_key, check)  # one transaction
-    request.app.state.rights.record(check)  # this start has checked the new key
+    take_verdict(request, check)  # this start has checked the new key
     if check.owner_is_admin:
         flash(request, "bambuddy.admin_warning")  # saved, but the person is told
         return RedirectResponse("/settings", status_code=303)

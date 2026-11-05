@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy import auth
 from reprintbuddy.bambuddy.client import BambuddyClient
+from reprintbuddy.bambuddy.connection import ConnectionCheck
 from reprintbuddy import settings as st
 from reprintbuddy.models import User
 from reprintbuddy.web.csrf import csrf_token
@@ -21,6 +22,7 @@ from reprintbuddy.web.i18n import translate
 UID_KEY = "uid"
 SID_KEY = "sid"
 FLASH_KEY = "flash"
+RIGHTS_LATER_KEY = "rights_later"  # in the session: the missing rights "Later" was pressed for
 
 # Reachable by everyone, whatever the state of the installation.
 _OPEN_EXACT = {"/healthz", "/favicon.ico"}
@@ -113,9 +115,12 @@ def _add_rights_notice(request: Request, context: dict[str, object]) -> None:
     """What base.html needs to show the missing-rights dialog or, after "Later", the warning line."""
     notice = request.app.state.rights.notice
     context["rights_notice"] = notice
-    context["rights_later"] = bool(request.session.get("rights_later", False))
     if notice is None:
+        context["rights_later"] = False
         return
+    # "Later" holds for the rights it was pressed for. One more right missing after a later
+    # update is news: the dialog comes back.
+    context["rights_later"] = request.session.get(RIGHTS_LATER_KEY) == ",".join(notice.missing)
     from reprintbuddy.web.bambuddy_check import permission_context  # imports deps: not at the top
 
     tables = permission_context()
@@ -124,6 +129,14 @@ def _add_rights_notice(request: Request, context: dict[str, object]) -> None:
     labels = tables["editor_labels"]
     context["rights_names"] = ", ".join(str(labels[code]) for code in notice.missing)
     context["rights_next"] = _page_to_return_to(request)
+
+
+def take_verdict(request: Request, check: ConnectionCheck) -> None:
+    """A check was made with the stored key (settings, setup, "Check again"): the monitor takes
+    the verdict. A key that has every right also ends a "Later"."""
+    request.app.state.rights.record(check)
+    if check.ok:
+        request.session.pop(RIGHTS_LATER_KEY, None)
 
 
 def flash(request: Request, key: str) -> None:
