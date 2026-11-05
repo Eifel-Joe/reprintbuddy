@@ -19,12 +19,14 @@
   </form>
 </section>
 
-<section class="card section">
+<section class="card section" id="bambuddy">
   <h2>{{ t('settings.bambuddy') }}</h2>
   <p class="muted">{{ t('settings.bambuddy_hint') }}</p>
   {% if error and error_section == 'bambuddy' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
   {% if bambuddy_owner %}<p class="status">{{ t('settings.bambuddy_owner', owner=bambuddy_owner) }}</p>{% endif %}
-  {% if error_section == 'bambuddy' %}{% include "_bambuddy_result.html" %}{% endif %}
+  {# What the check found: the one just made, or else the one of the start (a missing right). The guides are open. #}
+  {% if error_section == 'bambuddy' %}{% with guide_link=True %}{% include "_bambuddy_result.html" %}{% endwith %}
+  {% elif rights_notice %}{% with check=rights_notice, guide_link=True %}{% include "_bambuddy_result.html" %}{% endwith %}{% endif %}
   <form method="post" action="/settings/bambuddy" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>{{ t('bambuddy.url') }}

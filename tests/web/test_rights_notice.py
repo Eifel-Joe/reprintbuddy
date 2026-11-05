@@ -100,6 +100,25 @@ def test_the_guide_links_of_the_dialog_lead_to_the_guide(missing_client):
         assert 'href="/settings"' in page.text, link  # the way back
 
 
+def test_details_link_leads_to_details(missing_client):
+    """I2 of the review: after "Later" the settings page still says which right, where, and the guide."""
+    _post(missing_client, LATER, next="/")
+    page = missing_client.get("/")
+    assert 'href="/settings#bambuddy"' in page.text  # the link of the warning line
+    settings = missing_client.get("/settings").text
+    assert 'id="bambuddy"' in settings
+    section = settings[settings.index('id="bambuddy"') : settings.index('action="/settings/bambuddy"')]
+    assert "<code>inventory:read</code>" in section and "Read Inventory" in section
+    assert "in the group" in section  # where it can be missing
+    assert 'href="/setup/bambuddy/user"' in section and 'href="/setup/bambuddy/key"' in section
+
+
+def test_settings_show_no_rights_list_when_nothing_is_missing(rights_client, respx_mock):
+    mock_auth_me(respx_mock)
+    section = rights_client.get("/settings").text
+    assert "<code>inventory:read</code>" not in section
+
+
 def test_dialog_is_on_every_page_of_the_interface(missing_client):
     for path in ("/", "/settings", "/articles"):
         assert "rights-dialog" in missing_client.get(path).text, path

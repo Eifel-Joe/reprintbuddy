@@ -492,7 +492,7 @@ def test_settings_list_has_bambuddys_label_purpose_and_where_to_fix(ready_client
     assert response.status_code == 200
     assert "Create Queue" in response.text and "so that Reprintbuddy can queue reprints" in response.text
     assert "Manage Queue" in response.text
-    assert 'href="/setup/bambuddy' not in response.text  # the guide pages are closed after the setup
+    assert 'href="/setup/bambuddy/user"' in response.text and 'href="/setup/bambuddy/key"' in response.text
     with ready_client.app.state.sessionmaker() as s:
         st.set_setting(s, "language", "de")
     response = post(ready_client, "/settings/bambuddy", **bambuddy_form())
