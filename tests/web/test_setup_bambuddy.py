@@ -126,3 +126,25 @@ def test_closed_once_configured(ready_client):
         response = method("/setup/bambuddy")
         assert response.status_code == 303
         assert response.headers["location"] == "/settings"
+
+
+def test_key_is_stripped_before_it_is_used_and_saved(admin_client, respx_mock):
+    route = respx_mock.get(QUEUE).respond(200, json=[])
+    token = csrf_of(admin_client, "/setup/bambuddy")
+    response = admin_client.post(
+        "/setup/bambuddy", data=_form(token, bambuddy_api_key="  " + KEY + " \r\n")
+    )
+    assert response.status_code == 303
+    assert route.calls.last.request.headers["x-api-key"] == KEY
+    assert _saved(admin_client, "bambuddy_api_key") == KEY
+
+
+@pytest.mark.parametrize("bad", ["bb key", "bbüber", "bb\x01key"])
+def test_key_with_unusable_characters_gets_its_own_message(admin_client, respx_mock, bad):
+    route = respx_mock.get(QUEUE).respond(200, json=[])
+    token = csrf_of(admin_client, "/setup/bambuddy")
+    response = admin_client.post("/setup/bambuddy", data=_form(token, bambuddy_api_key=bad))
+    assert response.status_code == 200  # no server error, no misleading "unreachable"
+    assert "API key contains characters" in response.text
+    assert not route.called
+    assert _saved(admin_client, "bambuddy_api_key") is None

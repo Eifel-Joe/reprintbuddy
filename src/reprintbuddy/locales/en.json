@@ -80,5 +80,6 @@
   "settings.invalid_pem": "The certificate or the private key could not be read. Expected PEM text, at most 64 KB.",
   "settings.tls_pair_required": "Please provide the certificate and the private key together.",
   "settings.key_required_new_address": "The address has changed. Please enter the API key again: a stored key is never sent to a new address.",
-  "settings.host_unbindable": "This machine cannot listen on this address. Check it: saving an unusable address would lock you out."
+  "settings.host_unbindable": "This machine cannot listen on this address. Check it: saving an unusable address would lock you out.",
+  "bambuddy.key_invalid": "The API key contains characters that are not allowed (only visible ASCII characters, no spaces or line breaks). Please copy it again."
 }

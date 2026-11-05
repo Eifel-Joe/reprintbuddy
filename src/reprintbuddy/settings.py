@@ -80,6 +80,24 @@ def _optional_nonempty(value: Any) -> str | None:
     return _nonempty_str(value)
 
 
+def _api_key(value: Any) -> str | None:
+    """Surrounding whitespace is dropped; the rest must be visible ASCII.
+
+    The key travels in an HTTP header, where anything else either fails with an
+    unrelated error or is silently altered (a pasted line break, a zero-width space).
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("expected text")
+    key = value.strip()
+    if not key:
+        raise ValueError("must not be empty")
+    if not all("!" <= char <= "~" for char in key):
+        raise ValueError("contains characters that are not allowed")
+    return key
+
+
 def _optional_url(value: Any) -> str | None:
     if value is None:
         return None
@@ -110,7 +128,7 @@ _VALIDATORS: dict[str, Callable[[Any], object]] = {
     "queue_running": _bool,
     "bambuddy_url": _optional_url,
     "bambuddy_username": _optional_nonempty,
-    "bambuddy_api_key": _optional_nonempty,
+    "bambuddy_api_key": _api_key,
     "bambuddy_review_confirmed": _bool,
     "host": _nonempty_str,
     "port": _int_range(1, 65535),

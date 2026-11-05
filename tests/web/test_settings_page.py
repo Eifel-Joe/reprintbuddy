@@ -318,3 +318,20 @@ def test_server_host_that_cannot_be_bound_is_refused(ready_client, host):
     assert response.status_code == 200
     assert "cannot listen on this address" in response.text
     assert saved(ready_client, "host") == "0.0.0.0"
+
+
+def test_settings_key_is_stripped(ready_client, respx_mock):
+    route = respx_mock.get(f"{OLD_URL}/api/v1/queue/").respond(200, json=[])
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_api_key=" bb_trimmed \n"))
+    assert route.calls.last.request.headers["x-api-key"] == "bb_trimmed"
+    assert saved(ready_client, "bambuddy_api_key") == "bb_trimmed"
+
+
+@pytest.mark.parametrize("bad", ["bb key", "bbüber", "bb\x01key"])
+def test_settings_key_with_unusable_characters(ready_client, respx_mock, bad):
+    route = respx_mock.get(f"{OLD_URL}/api/v1/queue/").respond(200, json=[])
+    response = post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_api_key=bad))
+    assert response.status_code == 200
+    assert "API key contains characters" in response.text
+    assert not route.called
+    assert saved(ready_client, "bambuddy_api_key") == "bb_testkey"

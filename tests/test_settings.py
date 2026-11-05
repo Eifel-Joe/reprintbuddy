@@ -155,3 +155,13 @@ def test_validate_returns_normalised_value():
 )
 def test_same_address(a, b, same):
     assert st.same_address(a, b) is same
+
+
+def test_api_key_is_stripped():
+    assert st.validate("bambuddy_api_key", "  bb_key\n") == "bb_key"
+
+
+@pytest.mark.parametrize("bad", ["bb key", "bb\tkey", "bb\x00key", "bb\x7fkey", "bbükey", "bb​key", "   "])
+def test_api_key_with_unusable_characters_is_refused(bad):
+    with pytest.raises(ValueError):
+        st.validate("bambuddy_api_key", bad)

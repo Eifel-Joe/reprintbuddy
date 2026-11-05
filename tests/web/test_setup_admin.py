@@ -103,3 +103,20 @@ def test_setup_rejects_foreign_csrf(client):
 def test_setup_closed_after_user(admin_client):
     assert admin_client.get("/setup").status_code == 404
     assert admin_client.post("/setup", data={}).status_code == 404
+
+
+def test_setup_preselects_the_language_chosen_at_install(db_path):
+    from conftest import make_client
+    from reprintbuddy.cli import main
+
+    assert main(["init", "--language", "de", "--db", str(db_path)]) == 0
+    client = make_client(db_path)
+    page = client.get("/setup").text
+    assert '<option value="de" selected>' in page
+    assert '<option value="en" selected>' not in page
+    assert "Willkommen" in page  # the page itself is German, too
+
+
+def test_setup_defaults_to_english(client):
+    page = client.get("/setup").text
+    assert '<option value="en" selected>' in page

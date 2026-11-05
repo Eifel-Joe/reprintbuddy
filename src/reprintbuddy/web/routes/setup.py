@@ -10,7 +10,7 @@ from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.connection import check_connection
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import get_db, render, start_session
+from reprintbuddy.web.deps import current_language, get_db, render, start_session
 
 router = APIRouter()
 
@@ -23,7 +23,9 @@ def _require_no_account(db: Session) -> None:
 @router.get("/setup")
 async def setup_form(request: Request, db: Session = Depends(get_db)):
     _require_no_account(db)
-    return render(request, "setup_admin.html", username="", chosen_language="en")
+    return render(
+        request, "setup_admin.html", username="", chosen_language=current_language(request)
+    )
 
 
 @router.post("/setup")
@@ -90,7 +92,7 @@ async def bambuddy_submit(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     url_input = str(form.get("bambuddy_url", "")).strip()
     username = str(form.get("bambuddy_username", "")).strip()
-    api_key = str(form.get("bambuddy_api_key", ""))
+    api_key = str(form.get("bambuddy_api_key", "")).strip()
     confirmed = form.get("bambuddy_review_confirmed") is not None
     shown = {"bambuddy_url": url_input, "bambuddy_username": username, "review_confirmed": confirmed}
 
@@ -102,6 +104,10 @@ async def bambuddy_submit(request: Request, db: Session = Depends(get_db)):
         url = st.validate("bambuddy_url", url_input)
     except ValueError:
         return _bambuddy_page(request, "bambuddy.invalid_url", **shown)
+    try:
+        api_key = str(st.validate("bambuddy_api_key", api_key))
+    except ValueError:
+        return _bambuddy_page(request, "bambuddy.key_invalid", **shown)
 
     async with request.app.state.http_client_factory() as client:
         result = await check_connection(str(url), api_key, client)

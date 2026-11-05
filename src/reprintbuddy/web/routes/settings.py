@@ -80,7 +80,7 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     url_input = str(form.get("bambuddy_url", "")).strip()
     username = str(form.get("bambuddy_username", "")).strip()
-    entered_key = str(form.get("bambuddy_api_key", ""))
+    entered_key = str(form.get("bambuddy_api_key", "")).strip()
     confirmed = form.get("bambuddy_review_confirmed") is not None
     typed = {"bambuddy_url": url_input, "bambuddy_username": username, "review_confirmed": confirmed}
 
@@ -95,6 +95,12 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
         url = st.validate("bambuddy_url", url_input)
     except ValueError:
         return fail("bambuddy.invalid_url")
+
+    if entered_key:
+        try:
+            entered_key = str(st.validate("bambuddy_api_key", entered_key))
+        except ValueError:
+            return fail("bambuddy.key_invalid")
 
     # An empty key field keeps the stored key, but only for the same address:
     # a stored key is never sent to a different scheme, host or port.
