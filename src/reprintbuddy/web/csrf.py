@@ -24,9 +24,11 @@ async def verify_csrf(request: Request) -> None:
     if not supplied:
         form = await request.form()
         supplied = form.get("csrf_token")
+    # Compare bytes: secrets.compare_digest raises TypeError for str with non-ASCII
+    # characters, which would turn a garbled token into a server error instead of a 403.
     if (
         not expected
         or not isinstance(supplied, str)
-        or not secrets.compare_digest(expected, supplied)
+        or not secrets.compare_digest(expected.encode(), supplied.encode("utf-8", "replace"))
     ):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
