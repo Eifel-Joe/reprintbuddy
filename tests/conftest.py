@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from reprintbuddy import settings as st
+from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.web.app import create_app
 
 ADMIN = "admin"
@@ -80,3 +81,12 @@ def ready_client(admin_client):
         st.set_setting(session, "bambuddy_api_key", "bb_testkey")
         st.set_setting(session, "bambuddy_review_confirmed", True)
     return admin_client
+
+
+@pytest.fixture
+def db(tmp_path):
+    """A fresh migrated database; yields a sessionmaker (use `with db.begin() as s:`)."""
+    engine = make_engine(tmp_path / "domain.db")
+    upgrade(engine)
+    yield make_sessionmaker(engine)
+    engine.dispose()
