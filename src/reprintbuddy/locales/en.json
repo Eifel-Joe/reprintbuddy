@@ -91,5 +91,17 @@
   "error.host.message": "While Reprintbuddy is being set up, open it by its IP address (for example http://<server-address>:8080) instead of a host name.",
   "error.generic.title": "Something went wrong",
   "error.generic.message": "The request could not be completed.",
-  "settings.privileged_port": "Saved. Note: ports below 1024 need extra rights and the service does not run as root, so it probably cannot use this port. Changes take effect after Reprintbuddy has been restarted; if it does not start, set another port with the command set-port."
+  "settings.privileged_port": "Saved. Note: ports below 1024 need extra rights and the service does not run as root, so it probably cannot use this port. Changes take effect after Reprintbuddy has been restarted; if it does not start, set another port with the command set-port.",
+  "ops.restart.title": "Restart",
+  "ops.restart.button": "Restart Reprintbuddy",
+  "ops.restart.in_progress": "Restarting … this page reloads when Reprintbuddy is back.",
+  "ops.restart.new_address": "After the restart Reprintbuddy is reachable at {url}.",
+  "ops.server.running": "Running at {url}",
+  "ops.server.pending": "Saved changes take effect after a restart.",
+  "ops.msg.restart_failed": "Restart failed. Is Reprintbuddy installed with the install script?",
+  "ops.msg.check_failed": "The check for updates failed. Is the server online?",
+  "ops.msg.busy": "An update is already running.",
+  "ops.msg.no_update": "There is no newer release to update to. Check for updates first.",
+  "ops.msg.start_failed": "The update could not be started.",
+  "ops.msg.not_git": "Updates from this page need an installation made with the install script."
 }

@@ -20,6 +20,8 @@ import uvicorn
 from reprintbuddy import auth
 from reprintbuddy import settings as st
 from reprintbuddy.netcheck import can_bind
+from reprintbuddy.ops.context import OpsContext
+from reprintbuddy.ops.server import effective_from_settings
 from reprintbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upgrade
 from reprintbuddy.web.app import create_app
 
@@ -57,11 +59,13 @@ def _pem_files(cert: str, key: str) -> Iterator[tuple[str, str]]:
 def _serve(args: argparse.Namespace) -> int:
     app = create_app(args.db)
     with app.state.sessionmaker() as session:
+        effective = effective_from_settings(session)
         host = str(st.get_setting(session, "host"))
         port = int(st.get_setting(session, "port"))
         tls = st.tls_enabled(session)
         cert = st.get_setting(session, "tls_cert")
         key = st.get_setting(session, "tls_key")
+    app.state.ops = OpsContext(effective=effective)
     if tls:
         with _pem_files(str(cert), str(key)) as (cert_file, key_file):
             uvicorn.run(app, host=host, port=port, ssl_certfile=cert_file, ssl_keyfile=key_file)

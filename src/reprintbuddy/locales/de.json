@@ -91,5 +91,17 @@
   "error.host.message": "Solange Reprintbuddy eingerichtet wird, öffne es über seine IP-Adresse (zum Beispiel http://<server-adresse>:8080) statt über einen Rechnernamen.",
   "error.generic.title": "Etwas ist schiefgegangen",
   "error.generic.message": "Die Anfrage konnte nicht abgeschlossen werden.",
-  "settings.privileged_port": "Gespeichert. Hinweis: Ports unter 1024 brauchen zusätzliche Rechte, und der Dienst läuft nicht als root, deshalb kann er diesen Port vermutlich nicht benutzen. Die Änderung wirkt nach einem Neustart von Reprintbuddy; startet er nicht, setze mit dem Befehl set-port einen anderen Port."
+  "settings.privileged_port": "Gespeichert. Hinweis: Ports unter 1024 brauchen zusätzliche Rechte, und der Dienst läuft nicht als root, deshalb kann er diesen Port vermutlich nicht benutzen. Die Änderung wirkt nach einem Neustart von Reprintbuddy; startet er nicht, setze mit dem Befehl set-port einen anderen Port.",
+  "ops.restart.title": "Neustart",
+  "ops.restart.button": "Reprintbuddy neu starten",
+  "ops.restart.in_progress": "Neustart läuft … die Seite lädt neu, sobald Reprintbuddy wieder da ist.",
+  "ops.restart.new_address": "Nach dem Neustart ist Reprintbuddy unter {url} erreichbar.",
+  "ops.server.running": "Läuft unter {url}",
+  "ops.server.pending": "Gespeicherte Änderungen werden nach einem Neustart wirksam.",
+  "ops.msg.restart_failed": "Neustart fehlgeschlagen. Ist Reprintbuddy mit dem Installationsskript installiert?",
+  "ops.msg.check_failed": "Die Suche nach Updates ist fehlgeschlagen. Ist der Server online?",
+  "ops.msg.busy": "Es läuft bereits ein Update.",
+  "ops.msg.no_update": "Es gibt keine neuere Version. Suchen Sie zuerst nach Updates.",
+  "ops.msg.start_failed": "Das Update ließ sich nicht starten.",
+  "ops.msg.not_git": "Updates aus der Oberfläche brauchen eine Installation mit dem Installationsskript."
 }

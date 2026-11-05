@@ -1,0 +1,11 @@
+{# Operations sections of the settings page: restart, update, export. #}
+<section class="card section" id="ops-restart">
+  <h2>{{ t('ops.restart.title') }}</h2>
+  {% if ops.message %}<p class="alert" role="alert">{{ t(ops.message) }}</p>{% endif %}
+  {% if ops.running_url %}<p class="status">{{ t('ops.server.running', url=ops.running_url) }}</p>{% endif %}
+  {% if ops.restart_pending %}<p class="notice" role="status">{{ t('ops.server.pending') }}</p>{% endif %}
+  <form method="post" action="/settings/restart">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn" type="submit">{{ t('ops.restart.button') }}</button>
+  </form>
+</section>

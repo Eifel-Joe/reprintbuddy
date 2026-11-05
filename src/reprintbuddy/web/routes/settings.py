@@ -18,6 +18,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.connection import check_connection
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.web.csrf import verify_csrf
+from reprintbuddy.web.routes.ops import ops_view
 from reprintbuddy.web.deps import flash, get_db, logged_in_user, release_connection, render, start_session
 
 router = APIRouter()
@@ -51,6 +52,7 @@ def _page(
         api_key_mask=st.display_value("bambuddy_api_key", st.get_setting(db, "bambuddy_api_key")),
         tls_key_mask=st.display_value("tls_key", st.get_setting(db, "tls_key")),
         tls_cert_set=bool(st.get_setting(db, "tls_cert")),
+        ops=ops_view(request, db),
         **values,
     )
 

@@ -302,6 +302,7 @@ def test_all_settings_posts_require_csrf(ready_client):
         "/settings/bambuddy",
         "/settings/language",
         "/settings/password",
+        "/settings/restart",
         "/settings/server",
     ]
     csrf_of(ready_client, "/settings")  # a session with a token exists

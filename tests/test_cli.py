@@ -219,3 +219,15 @@ def test_set_port_below_1024_is_allowed_but_warned_about(db, capsys):
 def test_set_port_above_1023_has_no_warning(db, capsys):
     assert main(["set-port", "8080", "--db", str(db)]) == 0
     assert "1024" not in capsys.readouterr().out
+
+
+def test_serve_passes_effective_server(db_path, monkeypatch):
+    import uvicorn
+
+    from reprintbuddy.cli import main
+    from reprintbuddy.ops.server import EffectiveServer
+
+    seen = {}
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: seen.update(app=app, **kwargs))
+    assert main(["serve", "--db", str(db_path)]) == 0
+    assert seen["app"].state.ops.effective == EffectiveServer("0.0.0.0", 8080, None)

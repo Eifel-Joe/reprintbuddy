@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ t('ops.restart.title') }}{% endblock %}
+{% block content %}
+<h1>{{ t('ops.restart.title') }}</h1>
+<section class="card section">
+  {% if new_url %}
+  <p>{{ t('ops.restart.new_address', url=new_url) }}</p>
+  <p><a href="{{ new_url }}/settings">{{ new_url }}/settings</a></p>
+  {% else %}
+  <meta http-equiv="refresh" content="60;url=/settings">
+  <div id="restart-wait" data-health-url="/healthz" data-return-url="/settings">
+    <p role="status">{{ t('ops.restart.in_progress') }}</p>
+  </div>
+  <script src="/static/js/ops.js" defer></script>
+  {% endif %}
+</section>
+{% endblock %}

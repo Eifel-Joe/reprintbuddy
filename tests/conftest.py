@@ -1,4 +1,6 @@
 import re
+from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 from fastapi.testclient import TestClient
@@ -36,8 +38,8 @@ def api_routes(app):
     return list(walk(app.routes))
 
 
-def make_client(db_path) -> TestClient:
-    app = create_app(db_path)
+def make_client(db_path, **create_kwargs) -> TestClient:
+    app = create_app(db_path, **create_kwargs)
     app.state.login_failure_delay = 0  # tests do not wait; some tests set these themselves
     app.state.login_brake.delay = 0
     return TestClient(app, follow_redirects=False)
@@ -53,9 +55,8 @@ def client(db_path):
     return make_client(db_path)
 
 
-@pytest.fixture
-def admin_client(client):
-    """First-run step 1 done: admin account exists and is logged in."""
+def finish_admin_setup(client):
+    """First-run step 1: admin account created and logged in."""
     token = csrf_of(client, "/setup")
     response = client.post(
         "/setup",
@@ -71,15 +72,25 @@ def admin_client(client):
     return client
 
 
-@pytest.fixture
-def ready_client(admin_client):
+def finish_bambuddy_setup(client):
     """Step 2 done as well: Bambuddy settings written straight into the DB."""
-    with admin_client.app.state.sessionmaker() as session:
+    with client.app.state.sessionmaker() as session:
         st.set_setting(session, "bambuddy_url", "http://bambuddy.test:8000")
         st.set_setting(session, "bambuddy_username", "reprintbuddy")
         st.set_setting(session, "bambuddy_api_key", "bb_testkey")
         st.set_setting(session, "bambuddy_review_confirmed", True)
-    return admin_client
+    return client
+
+
+@pytest.fixture
+def admin_client(client):
+    """First-run step 1 done: admin account exists and is logged in."""
+    return finish_admin_setup(client)
+
+
+@pytest.fixture
+def ready_client(admin_client):
+    return finish_bambuddy_setup(admin_client)
 
 
 class FakeRunner:
@@ -118,3 +129,28 @@ class FakeRunner:
 @pytest.fixture
 def fake_runner():
     return FakeRunner()
+
+
+class OpsEnv(NamedTuple):
+    client: TestClient
+    runner: "FakeRunner"
+    install_dir: Path
+    db_path: Path
+
+
+@pytest.fixture
+def ops_env(tmp_path, fake_runner):
+    """Like `ready_client`, but the app runs with a fake command runner and a fake install dir."""
+    from reprintbuddy.ops.context import OpsContext
+    from reprintbuddy.ops.server import EffectiveServer
+
+    db = tmp_path / "ops.db"
+    install_dir = tmp_path / "opt"
+    ops = OpsContext(
+        install_dir=install_dir,
+        runner=fake_runner,
+        effective=EffectiveServer("0.0.0.0", 8080, None),
+    )
+    client = make_client(db, ops=ops)
+    finish_bambuddy_setup(finish_admin_setup(client))
+    return OpsEnv(client, fake_runner, install_dir, db)

@@ -14,9 +14,11 @@ from starlette.templating import Jinja2Templates
 
 from reprintbuddy import settings as st
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
+from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.web import deps
 from reprintbuddy.web.throttle import FailureBrake, HashLimiter
 from reprintbuddy.web.routes import auth as auth_routes
+from reprintbuddy.web.routes import ops as ops_routes
 from reprintbuddy.web.routes import overview as overview_routes
 from reprintbuddy.web.routes import settings as settings_routes
 from reprintbuddy.web.routes import setup as setup_routes
@@ -28,6 +30,8 @@ SESSION_COOKIE = "reprintbuddy_session"
 def create_app(
     db_path: Path,
     http_client_factory: Callable[[], httpx.AsyncClient] | None = None,
+    *,
+    ops: OpsContext | None = None,
 ) -> FastAPI:
     engine = make_engine(db_path)
     upgrade(engine)
@@ -39,6 +43,8 @@ def create_app(
     # No interactive API docs: this is a browser application, not a public API.
     app = FastAPI(title="Reprintbuddy", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.engine = engine
+    app.state.db_path = db_path
+    app.state.ops = ops or OpsContext()
     app.state.sessionmaker = sessionmaker
     app.state.login_failure_delay = 0.5  # seconds of pause after a wrong password
     app.state.login_brake = FailureBrake()  # 10 failures in 60 s: every attempt waits 2 s
@@ -72,4 +78,5 @@ def create_app(
     app.include_router(auth_routes.router)
     app.include_router(overview_routes.router)
     app.include_router(settings_routes.router)
+    app.include_router(ops_routes.router)
     return app
