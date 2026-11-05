@@ -12,6 +12,7 @@ import contextlib
 import os
 import re
 import sqlite3
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 
@@ -66,8 +67,14 @@ def restore_database(backup: Path, db_path: Path) -> None:
     _copy(backup, db_path)
 
 
-def prune_backups(backup_dir: Path, keep: int = KEEP_BACKUPS) -> list[Path]:
-    """Keep the newest `keep` backups (by the time in the name); return the deleted ones."""
+def prune_backups(
+    backup_dir: Path, keep: int = KEEP_BACKUPS, *, protect: Iterable[Path] = ()
+) -> list[Path]:
+    """Keep the newest `keep` backups (by the time in the name); return the deleted ones.
+
+    A `protect`ed file is never deleted (a failed rollback names it as the one to restore).
+    """
+    protected = {Path(path).name for path in protect}
     found: list[tuple[str, Path]] = []
     if backup_dir.is_dir():
         for path in backup_dir.iterdir():
@@ -75,7 +82,7 @@ def prune_backups(backup_dir: Path, keep: int = KEEP_BACKUPS) -> list[Path]:
             if match and path.is_file():
                 found.append((match.group(1), path))
     found.sort(key=lambda item: (item[0], item[1].name))
-    doomed = [path for _, path in found[: max(0, len(found) - keep)]]
+    doomed = [path for _, path in found[: max(0, len(found) - keep)] if path.name not in protected]
     for path in doomed:
         with contextlib.suppress(OSError):
             path.unlink()

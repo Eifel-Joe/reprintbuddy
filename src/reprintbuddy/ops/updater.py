@@ -106,13 +106,20 @@ def run_update(
             message=message,
             backup=info["backup"],
         )
-        write_status(data_dir, status)
+        try:
+            write_status(data_dir, status)
+        except OSError as error:
+            # A full disk or a read-only file must not stop an update half way, least of all
+            # the rollback: the page just keeps the last state it could get.
+            print(f"update: cannot write the status file ({error})", flush=True)
         print(f"update: {step}: {state}" + (f" ({message})" if message else ""), flush=True)
         return status
 
     def finish(state: str, step: str, message: str) -> UpdateStatus:
         if info["backup"]:
-            prune_backups(backup_dir, keep_backups)
+            # After a failed rollback the message names this backup as the one to restore.
+            protect = [Path(info["backup"])] if state == "rollback_failed" else []
+            prune_backups(backup_dir, keep_backups, protect=protect)
         return put(state, step, message, finished=True)
 
     # --- before anything is changed: a failure leaves everything as it was -------------
@@ -267,7 +274,10 @@ def interrupt_handler(db_path: Path, *, now: Callable[[], datetime]) -> Callable
     """
 
     def handle(signum: int, frame: object) -> None:
-        mark_interrupted(db_path.parent, now())
+        try:
+            mark_interrupted(db_path.parent, now())
+        except OSError:
+            pass  # nothing more can be done about a status file that cannot be written
         raise SystemExit(128 + signum)
 
     return handle

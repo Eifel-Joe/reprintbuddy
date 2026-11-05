@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -534,3 +535,73 @@ def test_sigterm_handler_writes_the_final_state_and_exits(update_env):
         handler(15, None)
     assert stop.value.code == 143
     assert read_status(e.data).state == "rollback_failed"
+
+
+def test_the_backup_named_by_a_failed_rollback_is_not_pruned(update_env):
+    """The message tells the user to restore exactly this file; cleaning up must not delete it."""
+    e = update_env
+    folder = backup_dir_for(e.db)
+    folder.mkdir()
+    for i in range(1, 6):  # five newer backups: this run's backup is the oldest
+        (folder / f"reprintbuddy-v9.0.{i}-2027010{i}T000000Z.db").write_bytes(b"x")
+    e.health_answers = [False]
+    result = e.update()
+    assert result.state == "rollback_failed"
+    assert Path(result.backup).exists()
+
+
+def test_a_backup_is_pruned_normally_after_a_success(update_env):
+    e = update_env
+    folder = backup_dir_for(e.db)
+    folder.mkdir()
+    for i in range(1, 6):
+        (folder / f"reprintbuddy-v9.0.{i}-2027010{i}T000000Z.db").write_bytes(b"x")
+    result = e.update()
+    assert result.state == "succeeded" and not Path(result.backup).exists()
+
+
+def test_a_status_file_that_cannot_be_written_does_not_stop_the_rollback(update_env, monkeypatch):
+    from reprintbuddy.ops import updater as module
+
+    e = update_env
+    real = module.write_status
+
+    def flaky(data_dir, status):
+        if status.step in ("rollback", "health") or status.state == "rolled_back":
+            raise OSError("no space left on device")
+        real(data_dir, status)
+
+    monkeypatch.setattr(module, "write_status", flaky)
+    e.health_answers = [False, True]
+    result = e.update()
+    assert result.state == "rolled_back"
+    assert START_CMD in e.runner.calls or RESTART_WAIT_CMD in e.runner.calls
+    assert e.queue_cap() == 7
+
+
+def test_sigterm_handler_exits_even_if_the_status_cannot_be_written(update_env, monkeypatch):
+    from reprintbuddy.ops import status as status_module
+    from reprintbuddy.ops.updater import interrupt_handler
+
+    e = update_env
+    write_status(e.data, UpdateStatus(state="running", step="install", started_at=NOW))
+
+    def broken(data_dir, status):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(status_module, "write_status", broken)
+    with pytest.raises(SystemExit) as stop:
+        interrupt_handler(e.db, now=lambda: NOW)(15, None)
+    assert stop.value.code == 143
+
+
+def test_a_status_file_that_cannot_be_written_does_not_stop_the_update(update_env, monkeypatch):
+    from reprintbuddy.ops import updater as module
+
+    e = update_env
+
+    def broken(data_dir, status):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(module, "write_status", broken)
+    assert e.update().state == "succeeded"

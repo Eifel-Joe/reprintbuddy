@@ -139,3 +139,15 @@ def test_prune_sorts_by_timestamp_not_label(tmp_path):
     old.write_bytes(b"x")
     new.write_bytes(b"x")
     assert prune_backups(folder, keep=1) == [old]
+
+
+def test_prune_never_deletes_a_protected_backup(tmp_path):
+    folder = tmp_path / "backups"
+    folder.mkdir()
+    old = folder / "reprintbuddy-v0.1.0-20250101T000000Z.db"
+    old.write_bytes(b"x")
+    for i in range(1, 6):
+        (folder / f"reprintbuddy-v0.2.{i}-2026010{i}T000000Z.db").write_bytes(b"x")
+    assert prune_backups(folder, protect=[old]) == []
+    assert old.exists()
+    assert len(list(folder.iterdir())) == 6  # the protected one lives on top of the newest five
