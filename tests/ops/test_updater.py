@@ -306,6 +306,96 @@ def test_dev_build_without_tag_labels_backup_with_the_commit(update_env):
     assert "reprintbuddy-" + REF[:12] + "-" in result.backup
 
 
+def make_venv(e, content="old"):
+    folder = e.opt / ".venv" / "lib"
+    folder.mkdir(parents=True)
+    (folder / "marker.txt").write_text(content, encoding="utf-8")
+    return folder / "marker.txt"
+
+
+def pip_that_changes_the_environment(e, marker, *, ok):
+    def pip(call):
+        marker.write_text("new", encoding="utf-8")
+        return CommandResult(0 if ok else 1, "", "" if ok else "ERROR: half way")
+
+    e.runner.on((e.py, "-m", "pip"), pip)
+
+
+def test_the_rollback_restores_the_python_environment(update_env):
+    """pip that fails half way may leave the venv neither old nor new."""
+    e = update_env
+    marker = make_venv(e)
+    pip_that_changes_the_environment(e, marker, ok=False)
+    result = e.update()
+    assert result.state == "rolled_back", result.message
+    assert marker.read_text(encoding="utf-8") == "old"
+    assert not (e.opt / ".venv.rollback").exists()
+    assert len(e.called(e.py, "-m", "pip")) == 1  # the snapshot came back, no reinstall needed
+
+
+def test_a_version_mismatch_restores_the_python_environment_too(update_env):
+    e = update_env
+    marker = make_venv(e)
+    pip_that_changes_the_environment(e, marker, ok=True)
+    e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.1.9\n"))
+    assert e.update().state == "rolled_back"
+    assert marker.read_text(encoding="utf-8") == "old"
+
+
+def test_the_snapshot_is_removed_after_a_successful_update(update_env):
+    e = update_env
+    marker = make_venv(e)
+    pip_that_changes_the_environment(e, marker, ok=True)
+    assert e.update().state == "succeeded"
+    assert marker.read_text(encoding="utf-8") == "new"
+    assert not (e.opt / ".venv.rollback").exists()
+
+
+def test_a_leftover_snapshot_of_an_earlier_run_is_replaced(update_env):
+    e = update_env
+    marker = make_venv(e)
+    (e.opt / ".venv.rollback").mkdir()
+    (e.opt / ".venv.rollback" / "stale.txt").write_text("stale", encoding="utf-8")
+    seen = {}
+
+    def pip(call):
+        seen["files"] = sorted(p.name for p in (e.opt / ".venv.rollback").rglob("*") if p.is_file())
+        return CommandResult(0)
+
+    e.runner.on((e.py, "-m", "pip"), pip)
+    e.update()
+    assert seen["files"] == ["marker.txt"]
+
+
+def test_a_stale_snapshot_is_never_restored_over_an_untouched_environment(update_env):
+    """Checkout fails before this run took its own snapshot; an old leftover must not come back."""
+    e = update_env
+    marker = make_venv(e, "current")
+    stale = e.opt / ".venv.rollback" / "lib"
+    stale.mkdir(parents=True)
+    (stale / "marker.txt").write_text("stale", encoding="utf-8")
+    # the first checkout (forward) fails; the rollback's checkout then succeeds
+    e.runner.on(("git", "-C", e.d, "checkout"), CommandResult(1, "", "fatal: bad"), CommandResult(0))
+    result = e.update()
+    assert result.state == "rolled_back" and result.message.startswith("checkout:")
+    assert marker.read_text(encoding="utf-8") == "current"
+
+
+def test_a_failed_snapshot_stops_before_pip_touches_anything(update_env, monkeypatch):
+    e = update_env
+    make_venv(e)
+
+    def boom(*args, **kwargs):
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr("reprintbuddy.ops.updater.shutil.copytree", boom)
+    result = e.update()
+    assert result.state == "rolled_back"
+    assert result.message.startswith("install: cannot back up the Python environment")
+    forward_pip = [c for c in e.runner.calls if c[:3] == (e.py, "-m", "pip")]
+    assert len(forward_pip) == 1  # only the rollback's own reinstall; the update never ran pip
+
+
 def queue(e, to_tag):
     write_status(
         e.data,

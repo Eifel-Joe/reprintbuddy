@@ -86,6 +86,9 @@ def run_update(
     d = str(install_dir)
     py = str(venv_python(install_dir))
     git = ("git", "-C", d)
+    venv_dir = install_dir / ".venv"
+    snapshot_dir = install_dir / ".venv.rollback"
+    snapshot_taken: list[bool] = []  # only a snapshot of THIS run may be restored, never a leftover
     info: dict[str, str | None] = {
         "from_tag": None,
         "to_tag": target or (previous.to_tag if previous.state == "queued" else None),
@@ -162,6 +165,16 @@ def run_update(
 
         current = "install"
         put("running", "install")
+        # A pip that fails half way can leave the environment neither old nor new, and the
+        # reinstall of the old version needs the network that just failed. Keep a copy.
+        if venv_dir.is_dir():
+            try:
+                shutil.rmtree(snapshot_dir, ignore_errors=True)
+                shutil.copytree(venv_dir, snapshot_dir, symlinks=True)
+                snapshot_taken.append(True)
+            except OSError as error:
+                shutil.rmtree(snapshot_dir, ignore_errors=True)
+                return "install", f"cannot back up the Python environment: {str(error)[:200]}"
         shutil.rmtree(install_dir / "build", ignore_errors=True)  # old build leftovers would bring back deleted modules
         done = runner((py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", d), timeout=900.0)
         if not done.ok:
@@ -199,7 +212,16 @@ def run_update(
         done = runner((*git, "checkout", "--quiet", "--detach", from_ref))
         ok &= done.ok
         shutil.rmtree(install_dir / "build", ignore_errors=True)
-        done = runner((py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", d), timeout=900.0)
+        if snapshot_taken and snapshot_dir.is_dir():
+            # The environment as it was before pip: no network, no reinstall needed.
+            try:
+                shutil.rmtree(venv_dir, ignore_errors=True)
+                snapshot_dir.rename(venv_dir)
+            except OSError:
+                ok = False
+            done = CommandResult(0)
+        else:
+            done = runner((py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", d), timeout=900.0)
         if not done.ok:
             # No network for pip is the usual reason the update failed, so the reinstall of
             # the old version fails too. What matters is whether the old version is the one
@@ -220,6 +242,7 @@ def run_update(
     except Exception as error:  # noqa: BLE001 - whatever happened, the rollback must still run
         problem = (current, f"unexpected error: {type(error).__name__}")
     if problem is None:
+        shutil.rmtree(snapshot_dir, ignore_errors=True)
         return finish("succeeded", "done", "")
 
     cause = f"{problem[0]}: {problem[1]}"
