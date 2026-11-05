@@ -18,7 +18,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.connection import check_connection
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import flash, get_db, logged_in_user, render, start_session
+from reprintbuddy.web.deps import flash, get_db, logged_in_user, release_connection, render, start_session
 
 router = APIRouter()
 
@@ -112,6 +112,7 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     if not api_key:
         return fail("bambuddy.fields_required")
 
+    release_connection(db)  # nothing is pending; do not hold a connection while Bambuddy answers
     async with request.app.state.http_client_factory() as client:
         result = await check_connection(str(url), api_key, client)
     if not result.ok:

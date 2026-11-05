@@ -11,7 +11,7 @@ from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.connection import check_connection
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_db, render, start_session
+from reprintbuddy.web.deps import current_language, get_db, release_connection, render, start_session
 
 router = APIRouter()
 
@@ -110,6 +110,7 @@ async def bambuddy_submit(request: Request, db: Session = Depends(get_db)):
     except ValueError:
         return _bambuddy_page(request, "bambuddy.key_invalid", **shown)
 
+    release_connection(db)  # nothing is pending; do not hold a connection while Bambuddy answers
     async with request.app.state.http_client_factory() as client:
         result = await check_connection(str(url), api_key, client)
     if not result.ok:

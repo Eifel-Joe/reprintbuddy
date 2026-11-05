@@ -13,6 +13,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 DEFAULT_DB_PATH = Path("/var/lib/reprintbuddy/reprintbuddy.db")
 
@@ -63,6 +64,10 @@ def make_engine(db_path: Path) -> Engine:
         engine = create_engine(
             f"sqlite:///{db_path}",
             future=True,
+            # A pool only gets in the way with SQLite: opening a connection is cheap, and a
+            # fixed-size pool can be exhausted (and freeze every request) by many waiting
+            # requests. Each transaction opens its own connection and closes it afterwards.
+            poolclass=NullPool,
             connect_args={"check_same_thread": False},  # sessions are used from worker threads
         )
         _configure(engine, foreign_keys=True, transactional_ddl=False)
@@ -87,7 +92,7 @@ def upgrade(engine: Engine, script_location: Path | None = None) -> None:
     cfg = Config()
     cfg.set_main_option("script_location", str(script_location or _MIGRATIONS_DIR))
     migration_engine = create_engine(
-        engine.url, future=True, connect_args={"check_same_thread": False}
+        engine.url, future=True, poolclass=NullPool, connect_args={"check_same_thread": False}
     )
     _configure(migration_engine, foreign_keys=False, transactional_ddl=True)
     try:

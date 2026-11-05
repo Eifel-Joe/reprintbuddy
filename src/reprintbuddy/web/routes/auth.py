@@ -12,7 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import get_db, render, safe_next, start_session
+from reprintbuddy.web.deps import get_db, release_connection, render, safe_next, start_session
 
 router = APIRouter()
 
@@ -30,7 +30,8 @@ async def login(request: Request, db: Session = Depends(get_db)):
     # Hashing takes a noticeable time: keep it off the event loop.
     user = await run_in_threadpool(accounts.authenticate, db, username, str(form.get("password", "")))
     if user is None:
-        # A short pause per failed attempt slows down guessing.
+        # A short pause per failed attempt slows down guessing; no connection is held meanwhile.
+        release_connection(db)
         await asyncio.sleep(request.app.state.login_failure_delay)
         return render(request, "login.html", status_code=200, next=target, error="login.failed")
     start_session(request, user, db)

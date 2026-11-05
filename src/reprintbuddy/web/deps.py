@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hmac
 import ipaddress
-from typing import AsyncIterator
 from urllib.parse import quote
 
 from fastapi import Request
@@ -34,21 +33,50 @@ def t(context, key: str, **params: object) -> str:
     return translate(context.get("lang", "en"), key, min_length=auth.MIN_PASSWORD_LENGTH, **params)
 
 
-async def get_db(request: Request) -> AsyncIterator[Session]:
-    with request.app.state.sessionmaker() as session:
-        yield session
+def db_session(request: Request) -> Session:
+    """The one database session of this request, created on first use.
+
+    The gate, the route, the page rendering and the error pages all share it, so a
+    request never needs a second connection while it holds the first. The gate
+    closes it when the request is done.
+    """
+    db = getattr(request.state, "db", None)
+    if db is None:
+        db = request.app.state.sessionmaker()
+        request.state.db = db
+    elif not db.is_active:
+        db.rollback()  # a failed flush leaves the session unusable until rolled back
+    return db
+
+
+def release_connection(db: Session) -> None:
+    """Hand the database connection back before waiting (network, pause, queue).
+
+    Only for moments when nothing is pending: it ends the transaction by rolling back.
+    """
+    db.rollback()
+
+
+def close_request_session(request: Request) -> None:
+    db = getattr(request.state, "db", None)
+    if db is not None:
+        request.state.db = None
+        db.close()
+
+
+async def get_db(request: Request) -> Session:
+    return db_session(request)
 
 
 def current_language(request: Request) -> str:
-    with request.app.state.sessionmaker() as session:
-        return str(st.get_setting(session, "language"))
+    return str(st.get_setting(db_session(request), "language"))
 
 
 def render(request: Request, name: str, status_code: int = 200, **context: object) -> Response:
-    with request.app.state.sessionmaker() as session:
-        context.setdefault("lang", str(st.get_setting(session, "language")))
-        # Target of the "Open Bambuddy" link; the key is never part of it.
-        context["open_bambuddy_url"] = st.get_setting(session, "bambuddy_url")
+    session = db_session(request)
+    context.setdefault("lang", str(st.get_setting(session, "language")))
+    # Target of the "Open Bambuddy" link; the key is never part of it.
+    context["open_bambuddy_url"] = st.get_setting(session, "bambuddy_url")
     context.setdefault("active_nav", None)
     context["min_password_length"] = auth.MIN_PASSWORD_LENGTH
     context.setdefault("notice", request.session.pop(FLASH_KEY, None))
@@ -141,8 +169,8 @@ def host_allowed_for_setup(host_header: str | None) -> bool:
 
 def error_response(request: Request, status_code: int, kind: str) -> Response:
     """A readable error page in the interface language, inside the layout when signed in."""
-    with request.app.state.sessionmaker() as session:
-        in_app = logged_in_user(request, session) is not None and st.bambuddy_configured(session)
+    session = db_session(request)
+    in_app = logged_in_user(request, session) is not None and st.bambuddy_configured(session)
     return render(
         request,
         "error.html",
@@ -161,23 +189,24 @@ async def http_error_handler(request: Request, exc: StarletteHTTPException) -> R
     return response
 
 
-async def gate(request: Request, call_next) -> Response:
-    """Redirect order (Spec 11.3): setup -> login -> Bambuddy step -> page."""
+def _decide(request: Request) -> Response | None:
+    """The gate's decision: a response to send instead of the page, or None to let it through."""
     path = request.url.path
     if path in _OPEN_EXACT or path.startswith(_OPEN_PREFIX):
-        return await call_next(request)
+        return None
 
-    with request.app.state.sessionmaker() as session:
+    session = db_session(request)
+    try:
         if not auth.has_user(session):
             if not host_allowed_for_setup(request.headers.get("host")):
                 return error_response(request, 400, "host")
             if path == "/setup":
-                return await call_next(request)
+                return None
             return RedirectResponse("/setup", status_code=303)
 
         # With an account, /setup answers 404 itself; /login is always open.
         if path in ("/setup", "/login"):
-            return await call_next(request)
+            return None
 
         if logged_in_user(request, session) is None:
             if request.method == "GET":
@@ -187,5 +216,21 @@ async def gate(request: Request, call_next) -> Response:
 
         if not st.bambuddy_configured(session) and path not in ("/setup/bambuddy", "/logout"):
             return RedirectResponse("/setup/bambuddy", status_code=303)
+        return None
+    finally:
+        release_connection(session)  # the route starts without a connection held by the gate
 
-    return await call_next(request)
+
+async def gate(request: Request, call_next) -> Response:
+    """Redirect order (Spec 11.3): setup -> login -> Bambuddy step -> page.
+
+    The decision is taken first and the page runs afterwards; the request's database
+    session is closed when the request is over.
+    """
+    try:
+        early = _decide(request)
+        if early is not None:
+            return early
+        return await call_next(request)
+    finally:
+        close_request_session(request)
