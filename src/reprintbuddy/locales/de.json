@@ -90,5 +90,6 @@
   "error.host.title": "Adresse nicht erlaubt",
   "error.host.message": "Solange Reprintbuddy eingerichtet wird, öffne es über seine IP-Adresse (zum Beispiel http://<server-adresse>:8080) statt über einen Rechnernamen.",
   "error.generic.title": "Etwas ist schiefgegangen",
-  "error.generic.message": "Die Anfrage konnte nicht abgeschlossen werden."
+  "error.generic.message": "Die Anfrage konnte nicht abgeschlossen werden.",
+  "settings.privileged_port": "Gespeichert. Hinweis: Ports unter 1024 brauchen zusätzliche Rechte, und der Dienst läuft nicht als root, deshalb kann er diesen Port vermutlich nicht benutzen. Die Änderung wirkt nach einem Neustart von Reprintbuddy; startet er nicht, setze mit dem Befehl set-port einen anderen Port."
 }

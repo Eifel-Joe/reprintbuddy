@@ -83,15 +83,19 @@ def _init(args: argparse.Namespace) -> int:
 
 
 def _set_password(args: argparse.Namespace) -> int:
+    try:
+        username = auth.clean_username(args.username)
+    except ValueError:
+        return _error("the user name must not be empty")
     password = getpass.getpass("New password: ")
     if password != getpass.getpass("Repeat password: "):
         return _error("the two passwords do not match")
     with _session(args.db) as session:
         try:
-            auth.set_password(session, args.username, password)
+            auth.set_password(session, username, password)
         except ValueError:
             return _error(f"the password must have at least {auth.MIN_PASSWORD_LENGTH} characters")
-    print(f"Password set for {args.username}.")
+    print(f"Password set for {username}. All sessions have ended.")
     return 0
 
 
@@ -104,6 +108,11 @@ def _set_port(args: argparse.Namespace) -> int:
     with _session(args.db) as session:
         st.set_setting(session, "port", port)
     print(f"Port set to {port}. Restart Reprintbuddy for it to take effect.")
+    if port < 1024:
+        print(
+            "Note: ports below 1024 need extra rights and the service does not run as root, "
+            "so it probably cannot use this port. If it does not start, choose a higher one."
+        )
     return 0
 
 

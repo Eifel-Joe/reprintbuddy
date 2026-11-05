@@ -182,3 +182,40 @@ def test_serve_does_not_use_tls_with_a_certificate_alone(db, monkeypatch):
     monkeypatch.setattr(uvicorn, "run", lambda app, **kw: calls.append(kw))
     assert main(["serve", "--db", str(db)]) == 0
     assert calls[0].get("ssl_certfile") is None
+
+
+def test_set_password_trims_the_user_name(db, monkeypatch):
+    feed_passwords(monkeypatch, "new-password-1", "new-password-1")
+    assert main(["set-password", "--username", "  admin ", "--db", str(db)]) == 0
+    with open_session(db) as s:
+        assert auth.authenticate(s, "admin", "new-password-1") is not None
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_set_password_refuses_an_empty_user_name(db, monkeypatch, capsys, blank):
+    feed_passwords(monkeypatch, "new-password-1", "new-password-1")
+    assert main(["set-password", "--username", blank, "--db", str(db)]) == 2
+    assert "user name" in capsys.readouterr().err.lower()
+    with open_session(db) as s:
+        assert not auth.has_user(s)
+
+
+def test_set_password_asks_nothing_when_the_name_is_empty(db, monkeypatch):
+    def must_not_ask(prompt=""):
+        raise AssertionError("the password was asked although the user name is empty")
+
+    monkeypatch.setattr("getpass.getpass", must_not_ask)
+    assert main(["set-password", "--username", " ", "--db", str(db)]) == 2
+
+
+def test_set_port_below_1024_is_allowed_but_warned_about(db, capsys):
+    assert main(["set-port", "80", "--db", str(db)]) == 0
+    output = capsys.readouterr()
+    assert "1024" in output.out + output.err and "root" in output.out + output.err
+    with open_session(db) as s:
+        assert st.get_setting(s, "port") == 80
+
+
+def test_set_port_above_1023_has_no_warning(db, capsys):
+    assert main(["set-port", "8080", "--db", str(db)]) == 0
+    assert "1024" not in capsys.readouterr().out

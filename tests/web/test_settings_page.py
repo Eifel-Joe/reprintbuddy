@@ -349,3 +349,18 @@ def test_settings_a_bad_port_without_a_key_is_reported_too(ready_client):
     response = post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_url="http://bambuddy.test:99999"))
     assert response.status_code == 200
     assert saved(ready_client, "bambuddy_url") == OLD_URL
+
+
+def test_a_port_below_1024_is_saved_with_a_hint(ready_client):
+    response = post(ready_client, "/settings/server", host="127.0.0.1", port="80")
+    assert response.status_code == 303
+    assert saved(ready_client, "port") == 80
+    page = ready_client.get("/settings").text
+    assert "below 1024" in page and "root" in page and "set-port" in page
+
+
+def test_a_normal_port_has_no_privileged_hint(ready_client):
+    post(ready_client, "/settings/server", host="127.0.0.1", port="8081")
+    page = ready_client.get("/settings").text
+    assert "below 1024" not in page
+    assert "restarted" in page  # the usual restart hint is still there
