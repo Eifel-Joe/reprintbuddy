@@ -16,7 +16,7 @@ from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.connection import check_connection
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import flash, get_db, logged_in_user, render
+from reprintbuddy.web.deps import flash, get_db, logged_in_user, render, start_session
 
 router = APIRouter()
 
@@ -134,6 +134,8 @@ async def change_password(request: Request, db: Session = Depends(get_db)):
     if len(new) < accounts.MIN_PASSWORD_LENGTH:
         return fail("setup.too_short")
     accounts.set_password(db, user.username, new)
+    # Every other session ends with the old password; this one is issued anew.
+    start_session(request, user, db)
     return _saved(request, "settings.password_changed")
 
 

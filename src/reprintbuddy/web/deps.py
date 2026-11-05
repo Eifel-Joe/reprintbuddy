@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 from typing import AsyncIterator
 from urllib.parse import quote
 
@@ -17,6 +18,7 @@ from reprintbuddy.web.csrf import csrf_token
 from reprintbuddy.web.i18n import translate
 
 UID_KEY = "uid"
+TOKEN_KEY = "tok"
 FLASH_KEY = "flash"
 
 # Reachable by everyone, whatever the state of the installation.
@@ -64,15 +66,30 @@ def safe_next(value: str | None) -> str:
     return "/"
 
 
+def _expected_token(request: Request, session: Session, user: User) -> str:
+    return auth.session_token(
+        request.app.state.session_secret, user.password_hash, st.session_generation(session)
+    )
+
+
 def logged_in_user(request: Request, session: Session) -> User | None:
+    """The user of a valid session; None when the cookie is missing, forged or revoked."""
     uid = request.session.get(UID_KEY)
-    return session.get(User, uid) if uid is not None else None
+    supplied = request.session.get(TOKEN_KEY)
+    if uid is None or not isinstance(supplied, str):
+        return None
+    user = session.get(User, uid)
+    if user is None or not hmac.compare_digest(supplied, _expected_token(request, session, user)):
+        return None
+    return user
 
 
-def start_session(request: Request, user: User) -> None:
-    """Log in: drop whatever the old session held (incl. its CSRF token)."""
+def start_session(request: Request, user: User, session: Session) -> None:
+    """Log in: drop whatever the old session held (incl. its CSRF token) and bind
+    the new one to the current password and session generation."""
     request.session.clear()
     request.session[UID_KEY] = user.id
+    request.session[TOKEN_KEY] = _expected_token(request, session, user)
 
 
 async def gate(request: Request, call_next) -> Response:

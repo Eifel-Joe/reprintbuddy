@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from sqlalchemy import select
@@ -30,6 +33,16 @@ def verify_password(hash_: str, pw: str) -> bool:
 def _check_length(pw: str) -> None:
     if len(pw) < MIN_PASSWORD_LENGTH:
         raise ValueError("password too short")
+
+
+def session_token(secret: str, password_hash: str, generation: int) -> str:
+    """Short HMAC kept in the session cookie.
+
+    It changes with the password hash (password change, `set-password`) and with
+    the session generation (log out), so such events end every older session.
+    """
+    message = f"{generation}:{password_hash}".encode()
+    return hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()[:32]
 
 
 def has_user(session: Session) -> bool:

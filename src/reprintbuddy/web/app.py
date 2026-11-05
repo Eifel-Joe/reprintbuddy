@@ -38,6 +38,7 @@ def create_app(
     app = FastAPI(title="Reprintbuddy", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.engine = engine
     app.state.sessionmaker = sessionmaker
+    app.state.session_secret = secret
     app.state.http_client_factory = http_client_factory or httpx.AsyncClient
 
     templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))

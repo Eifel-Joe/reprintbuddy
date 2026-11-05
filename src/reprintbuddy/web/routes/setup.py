@@ -59,7 +59,7 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)):
 
     user = accounts.create_admin(db, username, password)
     st.set_setting(db, "language", language)
-    start_session(request, user)
+    start_session(request, user, db)
     return RedirectResponse("/setup/bambuddy", status_code=303)
 
 

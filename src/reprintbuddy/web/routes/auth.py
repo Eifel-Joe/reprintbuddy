@@ -7,6 +7,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from reprintbuddy import auth as accounts
+from reprintbuddy import settings as st
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render, safe_next, start_session
 
@@ -25,11 +26,13 @@ async def login(request: Request, db: Session = Depends(get_db)):
     user = accounts.authenticate(db, str(form.get("username", "")), str(form.get("password", "")))
     if user is None:
         return render(request, "login.html", status_code=200, next=target, error="login.failed")
-    start_session(request, user)
+    start_session(request, user, db)
     return RedirectResponse(target, status_code=303)
 
 
 @router.post("/logout", dependencies=[Depends(verify_csrf)])
-async def logout(request: Request):
+async def logout(request: Request, db: Session = Depends(get_db)):
+    # Raising the generation also ends copies of this session's cookie.
+    st.bump_session_generation(db)
     request.session.clear()
     return RedirectResponse("/login", status_code=303)
