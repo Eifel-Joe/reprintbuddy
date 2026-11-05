@@ -1,0 +1,16 @@
+{% extends "bare.html" %}
+{% block title %}{{ t('bambuddy.title') }}{% endblock %}
+{% block content %}
+<p class="progress">{{ t('bambuddy.progress', n=2) }}</p>
+<h1>{{ t('bambuddy.user.title') }}</h1>
+<p class="muted">{{ t('bambuddy.user.why') }}</p>
+<p>{{ t('bambuddy.user.group') }}</p>
+<ul class="perms">
+  {% for code in required_permissions %}
+  <li>{% include "_permission_label.html" %}</li>
+  {% endfor %}
+</ul>
+<p>{{ t('bambuddy.user.user') }}</p>
+<p class="muted">{{ t('bambuddy.user.password') }}</p>
+<p class="actions"><a class="btn" href="/setup/bambuddy/key">{{ t('bambuddy.next') }}</a></p>
+{% endblock %}

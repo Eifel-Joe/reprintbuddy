@@ -23,21 +23,16 @@
   <h2>{{ t('settings.bambuddy') }}</h2>
   <p class="muted">{{ t('settings.bambuddy_hint') }}</p>
   {% if error and error_section == 'bambuddy' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
-  <form method="post" action="/settings/bambuddy">
+  {% if bambuddy_owner %}<p class="status">{{ t('settings.bambuddy_owner', owner=bambuddy_owner) }}</p>{% endif %}
+  {% if error_section == 'bambuddy' %}{% include "_bambuddy_result.html" %}{% endif %}
+  <form method="post" action="/settings/bambuddy" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>{{ t('bambuddy.url') }}
-      <input name="bambuddy_url" value="{{ bambuddy_url }}" placeholder="{{ t('bambuddy.url_placeholder') }}" autocomplete="off" required>
-    </label>
-    <label>{{ t('bambuddy.username') }}
-      <input name="bambuddy_username" value="{{ bambuddy_username }}" autocomplete="off" required>
+      <input name="bambuddy_address" value="{{ bambuddy_address }}" placeholder="{{ t('bambuddy.url_placeholder') }}" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>
     </label>
     <label>{{ t('bambuddy.api_key') }}
-      <input name="bambuddy_api_key" type="password" value="" autocomplete="off"{% if api_key_mask %} placeholder="{{ api_key_mask }}"{% endif %}>
+      <input name="bambuddy_token" type="password" value="" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"{% if api_key_mask %} placeholder="{{ api_key_mask }}"{% endif %}>
       {% if api_key_mask %}<span class="hint">{{ t('settings.secret_stored') }}</span>{% endif %}
-    </label>
-    <label class="check">
-      <input name="bambuddy_review_confirmed" type="checkbox"{% if review_confirmed %} checked{% endif %}>
-      <span>{{ t('bambuddy.review_confirmed') }}</span>
     </label>
     <button class="btn" type="submit">{{ t('bambuddy.submit') }}</button>
   </form>
@@ -96,4 +91,5 @@
     <button class="btn" type="submit">{{ t('settings.save') }}</button>
   </form>
 </section>
+{% include "settings_ops.html" %}
 {% endblock %}

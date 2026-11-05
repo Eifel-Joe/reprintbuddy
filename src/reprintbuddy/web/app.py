@@ -15,6 +15,7 @@ from starlette.templating import Jinja2Templates
 
 from reprintbuddy import settings as st
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
+from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.web import deps
 from reprintbuddy.web.flash import pop_flashes
 from reprintbuddy.web.formatting import local_date, local_dt
@@ -25,6 +26,7 @@ from reprintbuddy.web.routes import auth as auth_routes
 from reprintbuddy.web.routes import bookings as bookings_routes
 from reprintbuddy.web.routes import journal as journal_routes
 from reprintbuddy.web.routes import orders as orders_routes
+from reprintbuddy.web.routes import ops as ops_routes
 from reprintbuddy.web.routes import overview as overview_routes
 from reprintbuddy.web.routes import parts as parts_routes
 from reprintbuddy.web.routes import settings as settings_routes
@@ -54,6 +56,8 @@ SESSION_COOKIE = "reprintbuddy_session"
 def create_app(
     db_path: Path,
     http_client_factory: Callable[[], httpx.AsyncClient] | None = None,
+    *,
+    ops: OpsContext | None = None,
 ) -> FastAPI:
     engine = make_engine(db_path)
     upgrade(engine)
@@ -65,6 +69,8 @@ def create_app(
     # No interactive API docs: this is a browser application, not a public API.
     app = FastAPI(title="Reprintbuddy", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.engine = engine
+    app.state.db_path = db_path
+    app.state.ops = ops or OpsContext()
     app.state.sessionmaker = sessionmaker
     app.state.login_failure_delay = 0.5  # seconds of pause after a wrong password
     app.state.login_brake = FailureBrake()  # 10 failures in 60 s: every attempt waits 2 s
@@ -83,6 +89,8 @@ def create_app(
 
     # Middleware added later wraps the earlier ones: the session must be the
     # outer layer so the gate can read it.
+    # Innermost: pauses writes while an update runs; the gate has already decided who may pass.
+    app.middleware("http")(ops_routes.update_guard)
     app.middleware("http")(deps.gate)
     app.add_middleware(
         SessionMiddleware,
@@ -111,4 +119,5 @@ def create_app(
     app.include_router(sets_routes.router)
     app.include_router(orders_routes.router)
     app.include_router(bookings_routes.router)
+    app.include_router(ops_routes.router)
     return app

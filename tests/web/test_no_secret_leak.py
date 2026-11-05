@@ -3,7 +3,9 @@
 import base64
 import json
 
-from conftest import PASSWORD, api_routes, csrf_of
+from conftest import api_routes, auth_me, csrf_of, PASSWORD
+
+from reprintbuddy import settings as st
 
 API_KEY = "bb_LEAKCHECK_123456"
 TLS_KEY = "-----BEGIN PRIVATE KEY-----LEAKCHECK"
@@ -13,34 +15,24 @@ SECRETS = ("LEAKCHECK", NEW_PASSWORD, PASSWORD)
 
 
 def _store_secrets(client, respx_mock):
-    respx_mock.get("http://bambuddy.test:8000/api/v1/queue/").respond(200, json=[])
+    respx_mock.get("http://bambuddy.test:8000/api/v1/auth/me").respond(200, json=auth_me())
     token = csrf_of(client, "/settings")
     assert (
         client.post(
             "/settings/bambuddy",
             data={
                 "csrf_token": token,
-                "bambuddy_url": "http://bambuddy.test:8000",
-                "bambuddy_username": "reprintbuddy",
-                "bambuddy_api_key": API_KEY,
-                "bambuddy_review_confirmed": "on",
+                "bambuddy_address": "http://bambuddy.test:8000",
+                "bambuddy_token": API_KEY,
             },
         ).status_code
         == 303
     )
-    assert (
-        client.post(
-            "/settings/server",
-            data={
-                "csrf_token": token,
-                "host": "0.0.0.0",
-                "port": "8443",
-                "tls_cert": CERT,
-                "tls_key": TLS_KEY + "\n-----END PRIVATE KEY-----\n",
-            },
-        ).status_code
-        == 303
-    )
+    # A valid pair cannot carry a marker, so the marked key goes into the database
+    # directly: no page may show it, whatever it contains.
+    with client.app.state.sessionmaker() as session:
+        st.set_setting(session, "tls_cert", CERT)
+        st.set_setting(session, "tls_key", TLS_KEY + "\n-----END PRIVATE KEY-----\n")
     assert (
         client.post(
             "/settings/password",
@@ -87,15 +79,13 @@ def test_pages_logged_out_leak_nothing(ready_client, respx_mock):
 
 def test_error_pages_do_not_echo_secrets(ready_client, respx_mock):
     token = csrf_of(ready_client, "/settings")
-    respx_mock.get("http://other.test:8000/api/v1/queue/").respond(401)
+    respx_mock.get("http://other.test:8000/api/v1/auth/me").respond(401)
     wrong_key = ready_client.post(
         "/settings/bambuddy",
         data={
             "csrf_token": token,
-            "bambuddy_url": "http://other.test:8000",
-            "bambuddy_username": "reprintbuddy",
-            "bambuddy_api_key": API_KEY,
-            "bambuddy_review_confirmed": "on",
+            "bambuddy_address": "http://other.test:8000",
+            "bambuddy_token": API_KEY,
         },
     )
     assert wrong_key.status_code == 200

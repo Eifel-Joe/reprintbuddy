@@ -91,6 +91,14 @@ def test_dynamic_message_keys_exist():
         if not m.group(1).endswith(".html")  # template file names, not message keys
     }
     used |= {f"bambuddy.reason.{reason}" for reason in get_args(Reason) if reason != "ok"}
+    from reprintbuddy.bambuddy.connection import REQUIRED_PERMISSIONS
+
+    used |= {f"permission.{code}" for code in REQUIRED_PERMISSIONS}  # built in the templates
+    used |= {f"keyright.{name}" for name in ("name", "status", "queue", "printers", "expiry")}
+    used |= {
+        f"keyright.off.{name}"
+        for name in ("control", "library", "inventory", "maintenance", "archives", "projects", "cloud", "electricity", "notifications")
+    }
     used |= {
         f"error.{kind}.{part}"
         for kind in ("forbidden", "not_found", "host", "generic")

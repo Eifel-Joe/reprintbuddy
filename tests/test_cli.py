@@ -211,7 +211,8 @@ def test_set_password_asks_nothing_when_the_name_is_empty(db, monkeypatch):
 def test_set_port_below_1024_is_allowed_but_warned_about(db, capsys):
     assert main(["set-port", "80", "--db", str(db)]) == 0
     output = capsys.readouterr()
-    assert "1024" in output.out + output.err and "root" in output.out + output.err
+    assert "1024" in output.out + output.err and "install script" in output.out + output.err
+    assert "does not run as root" not in output.out + output.err
     with open_session(db) as s:
         assert st.get_setting(s, "port") == 80
 
@@ -219,3 +220,99 @@ def test_set_port_below_1024_is_allowed_but_warned_about(db, capsys):
 def test_set_port_above_1023_has_no_warning(db, capsys):
     assert main(["set-port", "8080", "--db", str(db)]) == 0
     assert "1024" not in capsys.readouterr().out
+
+
+def test_serve_passes_effective_server(db_path, monkeypatch):
+    import uvicorn
+
+    from reprintbuddy.cli import main
+    from reprintbuddy.ops.server import EffectiveServer
+
+    seen = {}
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: seen.update(app=app, **kwargs))
+    assert main(["serve", "--db", str(db_path)]) == 0
+    assert seen["app"].state.ops.effective == EffectiveServer("0.0.0.0", 8080, None)
+
+
+def test_disable_https(db, capsys):
+    main(["migrate", "--db", str(db)])
+    with open_session(db) as s:
+        st.set_setting(s, "tls_cert", CERT)
+        st.set_setting(s, "tls_key", KEY)
+    assert main(["disable-https", "--db", str(db)]) == 0
+    with open_session(db) as s:
+        assert st.get_setting(s, "tls_cert") is None
+        assert st.get_setting(s, "tls_key") is None
+    assert "restart" in capsys.readouterr().out.lower()
+
+
+def test_cli_version(capsys):
+    with pytest.raises(SystemExit) as stop:
+        main(["--version"])
+    assert stop.value.code == 0
+    assert capsys.readouterr().out.strip() == "reprintbuddy 0.1.1"
+
+
+@pytest.mark.parametrize("state,code", [("succeeded", 0), ("rolled_back", 1), ("failed", 1), ("running", 3)])
+def test_cli_update_exit_codes(db, monkeypatch, state, code):
+    from reprintbuddy.ops.status import UpdateStatus
+
+    main(["migrate", "--db", str(db)])
+    calls = []
+
+    def fake(db_path, **kwargs):
+        calls.append((db_path, kwargs))
+        return UpdateStatus(state=state, step="done", message="m")
+
+    monkeypatch.setattr("reprintbuddy.cli.run_update", fake)
+    assert main(["update", "--db", str(db), "--target", "v0.2.0"]) == code
+    assert calls[0][0] == db
+    assert calls[0][1]["target"] == "v0.2.0"
+
+
+def test_cli_update_missing_db(db, capsys):
+    assert main(["update", "--db", str(db)]) == 1
+    assert not db.exists()
+
+
+def test_cli_url_local(db, capsys):
+    main(["migrate", "--db", str(db)])
+    assert main(["url", "--db", str(db)]) == 0
+    assert capsys.readouterr().out.strip() == "http://127.0.0.1:8080"
+
+
+def test_cli_url_next_fresh(db, capsys):
+    main(["migrate", "--db", str(db)])
+    assert main(["url", "--db", str(db), "--host", "203.0.113.10", "--next"]) == 0
+    assert capsys.readouterr().out.strip() == "http://203.0.113.10:8080/setup"
+
+
+def test_cli_url_next_after_setup(db, capsys):
+    main(["migrate", "--db", str(db)])
+    with open_session(db) as s:
+        auth.set_password(s, "admin", "password123")
+    assert main(["url", "--db", str(db), "--host", "203.0.113.10", "--next"]) == 0
+    assert capsys.readouterr().out.strip() == "http://203.0.113.10:8080/"
+
+
+def test_cli_url_tls(db, capsys):
+    main(["migrate", "--db", str(db)])
+    with open_session(db) as s:
+        st.set_setting(s, "tls_cert", CERT)
+        st.set_setting(s, "tls_key", KEY)
+        st.set_setting(s, "port", 8443)
+    assert main(["url", "--db", str(db)]) == 0
+    assert capsys.readouterr().out.strip() == "https://127.0.0.1:8443"
+
+
+def test_cli_url_uses_the_saved_host(db, capsys):
+    main(["migrate", "--db", str(db)])
+    with open_session(db) as s:
+        st.set_setting(s, "host", "203.0.113.5")  # stored directly: set-host would check it
+    main(["url", "--db", str(db)])
+    assert capsys.readouterr().out.strip() == "http://203.0.113.5:8080"
+
+
+def test_cli_url_missing_db(db, capsys):
+    assert main(["url", "--db", str(db)]) == 1
+    assert not db.exists()

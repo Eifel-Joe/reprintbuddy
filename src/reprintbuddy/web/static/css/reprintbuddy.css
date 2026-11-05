@@ -136,6 +136,9 @@ label.check input { margin-top: 0.25rem; accent-color: var(--accent); }
   cursor: pointer;
 }
 .btn:hover { filter: brightness(1.1); }
+a.btn { text-decoration: none; }
+.section form + form, .section form + .status { margin-top: 0.75rem; }
+.section div.alert, .section div.notice { margin-bottom: 0.75rem; }
 
 .alert {
   padding: 0.7rem 0.9rem;
@@ -225,12 +228,10 @@ td a:hover, .btn-link:hover { text-decoration: underline; }
 .props dd { margin: 0; overflow-wrap: anywhere; }
 
 .position { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 3fr); gap: 1rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }
-.btn.secondary { background: var(--bg); color: var(--text); border: 1px solid var(--line); }
 select[multiple] { height: auto; }
 @media (max-width: 899px) { .position { grid-template-columns: minmax(0, 1fr); gap: 0; } }
 
 .position .choice { grid-column: 1 / -1; }
-.actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .actions form { margin: 0; }
 .badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 .badge.ok { background: var(--accent-soft); color: var(--accent); }
@@ -242,3 +243,28 @@ select[multiple] { height: auto; }
 a.btn { text-decoration: none; }
 
 .default-submit { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+/* ---- Bambuddy setup pages and permission list ---------------------------- */
+
+.progress { margin: 0 0 0.25rem; color: var(--accent); font-size: 0.85rem; font-weight: 600; }
+.actions { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin: 1.25rem 0 1rem; }
+.actions .btn { flex: 0 0 auto; }
+.btn.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 0.85em; color: var(--text); }
+ul.perms { padding-left: 1.25rem; color: var(--text-2); }
+ul.perms li { margin-bottom: 0.3rem; }
+.result { margin: 0 0 1rem; padding: 0.8rem 0.9rem; border: 1px solid var(--line); border-radius: 8px; }
+.result p:last-child, .result ul:last-child { margin-bottom: 0; }
+ul.perms li.perm { list-style: none; margin-left: -1.25rem; }
+li.perm .mark { display: inline-block; width: 1.2rem; font-weight: 700; }
+li.perm.ok .mark { color: var(--accent); }
+li.perm.bad { color: var(--text); }
+li.perm.bad .mark { color: var(--danger); }
+.result a { color: var(--accent); }
+small.editor { display: block; color: var(--muted); font-size: 0.75rem; }
+.where { display: block; color: var(--text-2); font-size: 0.8rem; }
+table.keytable { width: 100%; margin: 0.5rem 0; border-collapse: collapse; font-size: 0.85rem; }
+table.keytable th, table.keytable td { padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+table.keytable th { font-weight: 400; color: var(--text-2); }
+table.keytable td.on { color: var(--accent); font-weight: 600; }
+table.keytable td.off { color: var(--muted); }

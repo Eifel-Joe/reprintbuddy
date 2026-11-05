@@ -104,10 +104,11 @@ def test_pages_without_sidebar_use_the_stylesheet(client):
         assert "sidebar-nav" not in html
 
 
-def test_setup_bambuddy_page_has_no_sidebar(admin_client):
-    html = admin_client.get("/setup/bambuddy").text
-    assert "/static/css/reprintbuddy.css" in html
-    assert "sidebar-nav" not in html
+def test_setup_bambuddy_pages_have_no_sidebar(admin_client):
+    for path in ("/setup/bambuddy/user", "/setup/bambuddy/key", "/setup/bambuddy/connect"):
+        html = admin_client.get(path).text
+        assert "/static/css/reprintbuddy.css" in html, path
+        assert "sidebar-nav" not in html, path
 
 
 def test_login_page_has_no_sidebar(admin_client):

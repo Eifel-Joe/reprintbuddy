@@ -84,10 +84,16 @@ def test_new_database_and_wal_files_are_private_from_the_start(tmp_path):
         upgrade(engine)
     finally:
         os.umask(previous)
+    # SQLite removes -wal and -shm when the last connection closes, so check
+    # them while a connection is open and has written something.
     names = [tmp_path / "private" / n for n in ("p.db", "p.db-wal", "p.db-shm")]
-    for path in names:
-        assert path.exists(), path
-        assert os.stat(path).st_mode & 0o077 == 0, f"{path.name} is readable by others"
+    with engine.connect() as conn:
+        conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS wal_probe (x INTEGER)")
+        conn.exec_driver_sql("INSERT INTO wal_probe VALUES (1)")
+        conn.commit()
+        for path in names:
+            assert path.exists(), path
+            assert os.stat(path).st_mode & 0o077 == 0, f"{path.name} is readable by others"
     assert os.stat(tmp_path / "private").st_mode & 0o077 == 0
 
 

@@ -96,7 +96,8 @@ def test_readme_covers_the_required_topics():
     text = _read("README.md")
     for topic in (
         "Bambuddy",
-        "Print without review",
+        "Print Without Review",
+        "queue:start_unreviewed",
         "Read Status",
         "Manage Queue",
         "Spoolman",

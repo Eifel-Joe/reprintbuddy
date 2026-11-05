@@ -1,7 +1,7 @@
 """Each save is one transaction: a failure half-way leaves nothing behind."""
 
 import pytest
-from conftest import ADMIN, PASSWORD, csrf_of, make_client
+from conftest import ADMIN, PASSWORD, auth_me, csrf_of, make_client, mock_auth_me
 from sqlalchemy import event
 
 from reprintbuddy import auth
@@ -38,19 +38,17 @@ class Commits:
 def bambuddy_form(token, **over):
     data = {
         "csrf_token": token,
-        "bambuddy_url": "http://other.test:8000",
-        "bambuddy_username": "other-user",
-        "bambuddy_api_key": "bb_for_other",
-        "bambuddy_review_confirmed": "on",
+        "bambuddy_address": "http://other.test:8000",
+        "bambuddy_token": "bb_for_other",
     }
     data.update(over)
     return data
 
 
 def test_settings_bambuddy_failure_half_way_changes_nothing(ready_client, respx_mock, monkeypatch):
-    respx_mock.get("http://other.test:8000/api/v1/queue/").respond(200, json=[])
+    respx_mock.get("http://other.test:8000/api/v1/auth/me").respond(200, json=auth_me(username="other-user"))
     token = csrf_of(ready_client, "/settings")
-    fail_when_saving(monkeypatch, "bambuddy_api_key")  # url and user name come first
+    fail_when_saving(monkeypatch, "bambuddy_api_key")  # url and owner come first
     with pytest.raises(RuntimeError):
         ready_client.post("/settings/bambuddy", data=bambuddy_form(token))
     monkeypatch.undo()
@@ -60,7 +58,7 @@ def test_settings_bambuddy_failure_half_way_changes_nothing(ready_client, respx_
 
 
 def test_settings_bambuddy_save_is_a_single_commit(ready_client, respx_mock):
-    respx_mock.get("http://other.test:8000/api/v1/queue/").respond(200, json=[])
+    respx_mock.get("http://other.test:8000/api/v1/auth/me").respond(200, json=auth_me())
     token = csrf_of(ready_client, "/settings")
     commits = Commits(ready_client.app.state.engine)
     response = ready_client.post("/settings/bambuddy", data=bambuddy_form(token))
@@ -69,7 +67,8 @@ def test_settings_bambuddy_save_is_a_single_commit(ready_client, respx_mock):
     assert saved(ready_client, "bambuddy_url") == "http://other.test:8000"
 
 
-def test_settings_server_failure_half_way_changes_nothing(ready_client, monkeypatch):
+def test_settings_server_failure_half_way_changes_nothing(ready_client, monkeypatch, tls_pair):
+    CERT, KEY_PEM = tls_pair
     token = csrf_of(ready_client, "/settings")
     fail_when_saving(monkeypatch, "tls_key")  # host, port and certificate come first
     with pytest.raises(RuntimeError):
@@ -83,7 +82,8 @@ def test_settings_server_failure_half_way_changes_nothing(ready_client, monkeypa
     assert saved(ready_client, "tls_cert") is None  # no half a TLS pair
 
 
-def test_settings_server_save_is_a_single_commit(ready_client):
+def test_settings_server_save_is_a_single_commit(ready_client, tls_pair):
+    CERT, KEY_PEM = tls_pair
     token = csrf_of(ready_client, "/settings")
     commits = Commits(ready_client.app.state.engine)
     response = ready_client.post(
@@ -94,22 +94,29 @@ def test_settings_server_save_is_a_single_commit(ready_client):
     assert commits.count == 1
 
 
+def connect_form(token, **over):
+    data = {"csrf_token": token, "bambuddy_address": "http://other.test:8000", "bambuddy_token": "bb_for_other"}
+    data.update(over)
+    return data
+
+
 def test_setup_bambuddy_failure_half_way_changes_nothing(admin_client, respx_mock, monkeypatch):
-    respx_mock.get("http://other.test:8000/api/v1/queue/").respond(200, json=[])
-    token = csrf_of(admin_client, "/setup/bambuddy")
+    mock_auth_me(respx_mock, "http://other.test:8000")
+    token = csrf_of(admin_client, "/setup/bambuddy/connect")
     fail_when_saving(monkeypatch, "bambuddy_review_confirmed")  # the last of the four
     with pytest.raises(RuntimeError):
-        admin_client.post("/setup/bambuddy", data=bambuddy_form(token))
+        admin_client.post("/setup/bambuddy/connect", data=connect_form(token))
     monkeypatch.undo()
     assert saved(admin_client, "bambuddy_url") is None
+    assert saved(admin_client, "bambuddy_username") is None
     assert saved(admin_client, "bambuddy_api_key") is None
 
 
 def test_setup_bambuddy_save_is_a_single_commit(admin_client, respx_mock):
-    respx_mock.get("http://other.test:8000/api/v1/queue/").respond(200, json=[])
-    token = csrf_of(admin_client, "/setup/bambuddy")
+    mock_auth_me(respx_mock, "http://other.test:8000")
+    token = csrf_of(admin_client, "/setup/bambuddy/connect")
     commits = Commits(admin_client.app.state.engine)
-    response = admin_client.post("/setup/bambuddy", data=bambuddy_form(token))
+    response = admin_client.post("/setup/bambuddy/connect", data=connect_form(token))
     assert response.status_code == 303
     assert commits.count == 1
 

@@ -1,0 +1,22 @@
+{# Result of the connection check: key owner and every required right with a check or a cross.
+   Needs `check` (ConnectionCheck) and the permission context; `guide_link` adds links to the guide pages. #}
+{% if check and check.owner %}
+<div class="result" role="status">
+  <p><strong>{{ t('bambuddy.result.owner', owner=check.owner) }}</strong></p>
+  {% if check.reason == 'missing_permissions' %}
+  <p>{{ t('bambuddy.result.rights') }}</p>
+  <ul class="perms">
+    {% for code in required_permissions %}
+    {% set bad = code in check.missing %}
+    <li class="perm {{ 'bad' if bad else 'ok' }}"><span class="mark" aria-label="{{ t('bambuddy.result.missing' if bad else 'bambuddy.result.granted') }}">{{ '✗' if bad else '✓' }}</span> {% include "_permission_label.html" %}
+      {% if bad %}
+      {% set right = 'bambuddy.right.' ~ key_right_for[code] %}
+      <span class="where">{{ t('bambuddy.where.group') }}{% if guide_link %} (<a href="/setup/bambuddy/user">{{ t('bambuddy.where.guide') }}</a>){% endif %}, {{ t('bambuddy.where.key', right=t(right)) }}{% if guide_link %} (<a href="/setup/bambuddy/key">{{ t('bambuddy.where.guide') }}</a>){% endif %}.</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="muted">{{ t('bambuddy.result.fix') }}</p>
+  {% endif %}
+</div>
+{% endif %}

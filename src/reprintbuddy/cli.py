@@ -1,4 +1,4 @@
-"""Command line: serve, migrate, init, set-password, set-port.
+"""Command line: serve, migrate, init, set-password, set-port, set-host, disable-https, update, url.
 
 Every command takes `--db PATH`; the database path is the only thing that
 does not live in the database itself (Spec 11.5a).
@@ -10,16 +10,23 @@ import argparse
 import contextlib
 import getpass
 import os
+import signal
 import sys
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterator
 
 import uvicorn
 
-from reprintbuddy import auth
+from reprintbuddy import __version__, auth
 from reprintbuddy import settings as st
 from reprintbuddy.netcheck import can_bind
+from reprintbuddy.ops.context import OpsContext
+from reprintbuddy.ops.runner import subprocess_runner
+from reprintbuddy.ops.server import base_url, connect_host, effective_from_settings
+from reprintbuddy.ops.service import INSTALL_DIR
+from reprintbuddy.ops.updater import http_health_waiter, interrupt_handler, run_update
 from reprintbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upgrade
 from reprintbuddy.web.app import create_app
 
@@ -57,11 +64,13 @@ def _pem_files(cert: str, key: str) -> Iterator[tuple[str, str]]:
 def _serve(args: argparse.Namespace) -> int:
     app = create_app(args.db)
     with app.state.sessionmaker() as session:
+        effective = effective_from_settings(session)
         host = str(st.get_setting(session, "host"))
         port = int(st.get_setting(session, "port"))
         tls = st.tls_enabled(session)
         cert = st.get_setting(session, "tls_cert")
         key = st.get_setting(session, "tls_key")
+    app.state.ops = OpsContext(effective=effective)
     if tls:
         with _pem_files(str(cert), str(key)) as (cert_file, key_file):
             uvicorn.run(app, host=host, port=port, ssl_certfile=cert_file, ssl_keyfile=key_file)
@@ -110,8 +119,9 @@ def _set_port(args: argparse.Namespace) -> int:
     print(f"Port set to {port}. Restart Reprintbuddy for it to take effect.")
     if port < 1024:
         print(
-            "Note: ports below 1024 need extra rights and the service does not run as root, "
-            "so it probably cannot use this port. If it does not start, choose a higher one."
+            "Note: ports below 1024 need the right to bind privileged ports. The service set up "
+            "by the install script has it; a service started another way may not. "
+            "If it does not start after the restart, choose a higher port."
         )
     return 0
 
@@ -126,8 +136,52 @@ def _set_host(args: argparse.Namespace) -> int:
     return 0
 
 
+def _update(args: argparse.Namespace) -> int:
+    """Update to the newest release (or `--target`); started by the update unit."""
+    if not args.db.is_file():
+        _error(f"database not found: {args.db}")
+        return 1
+    signal.signal(signal.SIGTERM, interrupt_handler(args.db, now=lambda: datetime.now(UTC)))
+    result = run_update(
+        args.db,
+        install_dir=INSTALL_DIR,
+        runner=subprocess_runner,
+        wait_healthy=http_health_waiter(args.db),
+        now=lambda: datetime.now(UTC),
+        target=args.target,
+    )
+    if result.state == "succeeded":
+        return 0
+    return 3 if result.state in ("running", "queued") else 1
+
+
+def _url(args: argparse.Namespace) -> int:
+    """Print the address Reprintbuddy answers on; the install script uses it."""
+    if not args.db.is_file():
+        _error(f"database not found: {args.db}")
+        return 1
+    with _session(args.db) as session:
+        host = args.host or connect_host(str(st.get_setting(session, "host")))
+        port = int(st.get_setting(session, "port"))
+        url = base_url(host, port, st.tls_enabled(session))
+        if args.next:
+            url += "/" if auth.has_user(session) else "/setup"
+    print(url)
+    return 0
+
+
+def _disable_https(args: argparse.Namespace) -> int:
+    with _session(args.db) as session:
+        st.set_setting(session, "tls_cert", None, commit=False)
+        st.set_setting(session, "tls_key", None, commit=False)
+        session.commit()
+    print("HTTPS turned off. Restart Reprintbuddy for it to take effect.")
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="reprintbuddy")
+    parser.add_argument("--version", action="version", version=f"reprintbuddy {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
 
     def command(name: str, handler, help_: str) -> argparse.ArgumentParser:
@@ -151,6 +205,12 @@ def _parser() -> argparse.ArgumentParser:
     set_port.add_argument("port", help="port number, 1 to 65535")
     set_host = command("set-host", _set_host, "set the listen address (emergency exit)")
     set_host.add_argument("host", help="address to listen on, for example 0.0.0.0")
+    update = command("update", _update, "update to the newest release (started from the settings page)")
+    update.add_argument("--target", help="release tag to update to, for example v0.2.0")
+    url = command("url", _url, "print the address of the web interface (for the installer)")
+    url.add_argument("--host", help="use this host instead of the saved listen address")
+    url.add_argument("--next", action="store_true", help="add the page to open next (/setup until there is an account)")
+    command("disable-https", _disable_https, "remove the HTTPS certificate (emergency exit)")
     return parser
 
 

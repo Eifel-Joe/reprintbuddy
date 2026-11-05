@@ -21,7 +21,7 @@ WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # carries a token in that state. Every other route is tested when fully set up.
 EARLY = {
     "/setup": ("fresh", "/setup"),
-    "/setup/bambuddy": ("admin", "/setup/bambuddy"),
+    "/setup/bambuddy/connect": ("admin", "/setup/bambuddy/connect"),
 }
 
 
@@ -63,7 +63,7 @@ def where(path):
 
 def test_the_discovery_finds_the_known_write_routes(ready_client):
     found = {path for _, path in write_routes(ready_client.app)}
-    assert {"/login", "/logout", "/setup", "/setup/bambuddy", "/settings/language"} <= found
+    assert {"/login", "/logout", "/setup", "/setup/bambuddy/connect", "/settings/language"} <= found
 
 
 def test_routes_with_path_parameters_are_included():

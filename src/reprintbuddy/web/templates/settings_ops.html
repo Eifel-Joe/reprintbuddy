@@ -1,0 +1,63 @@
+{# Operations sections of the settings page: restart, update, export. #}
+<section class="card section" id="ops-restart">
+  <h2>{{ t('ops.restart.title') }}</h2>
+  {% if ops.message and ops.message in ('ops.msg.restart_failed',) %}<p class="alert" role="alert">{{ t(ops.message) }}</p>{% endif %}
+  {% if ops.running_url %}<p class="status">{{ t('ops.server.running', url=ops.running_url) }}</p>{% endif %}
+  {% if ops.restart_pending %}<p class="notice" role="status">{{ t('ops.server.pending') }}</p>{% endif %}
+  <form method="post" action="/settings/restart">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn" type="submit">{{ t('ops.restart.button') }}</button>
+  </form>
+</section>
+
+<section class="card section" id="ops-update">
+  <h2>{{ t('ops.update.title') }}</h2>
+  {% if ops.message and ops.message != 'ops.msg.restart_failed' %}<p class="alert" role="alert">{{ t(ops.message) }}</p>{% endif %}
+  {% if not ops.git_install %}
+  <p class="muted">{{ t('ops.update.unavailable') }}</p>
+  {% else %}
+  <p>
+    {% if ops.installed and ops.installed[1:] != ops.dev_version %}{{ t('ops.update.installed_with_package', version=ops.installed, package=ops.dev_version) }}
+    {% elif ops.installed %}{{ t('ops.update.installed', version=ops.installed) }}
+    {% else %}{{ t('ops.update.dev_build', version=ops.dev_version) }}{% endif %}
+  </p>
+  <p class="status">
+    {% if ops.version_info and ops.version_info.newest %}{{ t('ops.update.newest', version=ops.version_info.newest) }}
+    {% else %}{{ t('ops.update.not_checked') }}{% endif %}
+  </p>
+  {% if ops.state_key %}
+  <div class="{% if ops.update.state in ('failed', 'rolled_back', 'rollback_failed') or ops.interrupted %}alert{% else %}notice{% endif %}" role="status">
+    <strong>{{ t(ops.state_key) }}</strong>
+    {% if ops.step_key %}<br>{{ t(ops.step_key) }}{% endif %}
+    {% if ops.update.message %}<br>{{ ops.update.message }}{% endif %}
+    {% if ops.update.backup %}<br><span class="hint">{{ ops.update.backup }}</span>{% endif %}
+  </div>
+  {% endif %}
+  {% if ops.busy %}
+  <div id="update-status" data-status-url="/settings/update/status" data-state="{{ ops.update.state }}" data-step="{{ ops.update.step }}"></div>
+  <script src="/static/js/ops.js" defer></script>
+  {% else %}
+  <form method="post" action="/settings/update/check">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn" type="submit">{{ t('ops.update.check_button') }}</button>
+  </form>
+  {% if ops.version_info %}
+    {% if ops.version_info.update_available %}
+  <form method="post" action="/settings/update">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn" type="submit">{{ t('ops.update.button', version=ops.version_info.newest) }}</button>
+  </form>
+    {% else %}
+  <p class="status">{{ t('ops.update.up_to_date') }}</p>
+    {% endif %}
+  {% endif %}
+  {% endif %}
+  <p class="hint">{{ t('ops.update.backup_note') }}</p>
+  {% endif %}
+</section>
+
+<section class="card section" id="ops-export">
+  <h2>{{ t('ops.export.title') }}</h2>
+  <p class="muted">{{ t('ops.export.text') }}</p>
+  <a class="btn" href="/settings/export">{{ t('ops.export.button') }}</a>
+</section>
