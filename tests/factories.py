@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.models import (
     Article,
+    Order,
     Part,
     ProductSet,
     SetPosition,
@@ -54,3 +57,12 @@ def make_set(s: Session, name: str, positions: list[tuple[int, list[int]]]) -> P
             s.add(SetPositionOption(position_id=position.id, article_id=article_id))
     s.flush()
     return product_set
+
+
+def make_order(s: Session, *, reference: str = "Order 1001", **fields) -> Order:
+    """A bare order row (no lines, no reservation), for tests of the stock bookings."""
+    fields.setdefault("order_date", date(2026, 1, 1))
+    order = Order(reference=reference, **fields)
+    s.add(order)
+    s.flush()
+    return order
