@@ -163,6 +163,16 @@ def default_article_input(file: LibraryFile) -> ArticleInput:
     return ArticleInput(name=suggest_name(file.filename), target_model=file.printer_model)
 
 
+def _linked_parts(session: Session, article_id: int | None) -> dict[int, int]:
+    """The parts an article already uses (part id -> quantity per unit)."""
+    if article_id is None:
+        return {}
+    rows = session.execute(
+        select(ArticlePart.part_id, ArticlePart.qty_per_unit).where(ArticlePart.article_id == article_id)
+    ).all()
+    return {part_id: qty for part_id, qty in rows}
+
+
 def _check_article_input(
     session: Session, data: ArticleInput, *, article_id: int | None = None
 ) -> ArticleInput:
@@ -175,12 +185,13 @@ def _check_article_input(
     if target_model is not None and printer_id is not None:
         raise ValidationError("articles.target_exclusive")
     parts: dict[int, int] = {}
+    linked = _linked_parts(session, article_id)
     for part_id, qty in data.parts.items():
         parts[part_id] = _int_in(qty, "articles.field.qty_per_unit", 1, 1000)
         part = session.get(Part, part_id)
         if part is None:
             raise NotFoundError("parts.not_found")
-        if part.archived_at is not None:
+        if part.archived_at is not None and part_id not in linked:
             raise ValidationError("parts.archived", name=part.name)
     return replace(
         data,
@@ -263,9 +274,18 @@ def update_article(session: Session, article_id: int, data: ArticleInput) -> Art
     article = session.get(Article, article_id)
     if article is None:
         raise NotFoundError("articles.not_found")
+    if article.archived_at is not None:
+        raise ConflictError("articles.edit_archived")
+    linked = _linked_parts(session, article_id)
     data = _check_article_input(session, data, article_id=article_id)
+    # The form only offers active parts: a link to an archived part is not the user's to drop.
+    archived_links = {
+        part_id: qty
+        for part_id, qty in linked.items()
+        if part_id not in data.parts and session.get(Part, part_id).archived_at is not None
+    }
     _apply_input(article, data)
-    _set_parts(session, article.id, data.parts)
+    _set_parts(session, article.id, {**archived_links, **data.parts})
     session.flush()
     return article
 

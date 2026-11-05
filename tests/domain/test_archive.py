@@ -323,3 +323,41 @@ def test_order_with_remaining_single_active_option_needs_no_choice(db):
         new_order(s, [SetItem(set_id, 1, {})])
     with db.begin() as s:
         assert s.get(Article, b).reserved == 1
+
+
+def test_archived_article_cannot_be_edited(db):
+    with db.begin() as s:
+        a = make_article(s, name="Template A").id
+        archive_article(s, a)
+    with pytest.raises(ConflictError) as info:
+        with db.begin() as s:
+            catalog.update_article(s, a, ArticleInput(name="Renamed"))
+    assert info.value.key == "articles.edit_archived"
+    with db.begin() as s:
+        assert s.get(Article, a).name == "Template A"
+
+
+def test_update_keeps_links_to_parts_that_are_not_offered(db):
+    """An active article that still links an archived part keeps the link when it is edited
+    (the form only offers active parts), and may name it again."""
+    with db.begin() as s:
+        a = make_article(s, name="Template A")
+        old = make_part(s, name="Old part", archived_at=__import__("datetime").datetime(2026, 1, 1))
+        new = make_part(s, name="New part")
+        s.add(ArticlePart(article_id=a.id, part_id=old.id, qty_per_unit=3))
+        ids = (a.id, old.id, new.id)
+    with db.begin() as s:
+        catalog.update_article(s, ids[0], ArticleInput(name="Template A", parts={ids[2]: 1}))
+    with db.begin() as s:
+        links = {l.part_id: l.qty_per_unit for l in s.scalars(select(ArticlePart))}
+        assert links == {ids[1]: 3, ids[2]: 1}
+        catalog.update_article(s, ids[0], ArticleInput(name="Template A", parts={ids[1]: 5}))  # already linked
+    with db.begin() as s:
+        assert {l.part_id: l.qty_per_unit for l in s.scalars(select(ArticlePart))} == {ids[1]: 5}
+    other = None
+    with db.begin() as s:
+        other = make_part(s, name="Other archived", archived_at=__import__("datetime").datetime(2026, 1, 1)).id
+    with pytest.raises(ValidationError) as info:
+        with db.begin() as s:
+            catalog.update_article(s, ids[0], ArticleInput(name="Template A", parts={other: 1}))  # new reference
+    assert info.value.key == "parts.archived"

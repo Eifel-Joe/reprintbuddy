@@ -472,9 +472,18 @@ def _article_values(db: Session, article: Article, part_ids: list[int]) -> dict[
     return values_of_input(data, part_ids)
 
 
+def _edit_refused(request: Request, db: Session, article: Article):
+    """An archived article is not edited: restore it first."""
+    return _detail_page(
+        request, db, article, error=translate(current_language(request), "articles.edit_archived")
+    )
+
+
 @router.get("/articles/{article_id:int}/edit")
 async def article_edit(request: Request, article_id: int, db: Session = Depends(get_db)):
     article = _get_article(db, article_id)
+    if article.archived_at is not None:
+        return _edit_refused(request, db, article)
     printers = await _printers_for_edit(request)
     part_ids = [p.id for p in active_parts(db)]
     return _edit_page(request, db, article, printers, _article_values(db, article, part_ids))
@@ -483,6 +492,8 @@ async def article_edit(request: Request, article_id: int, db: Session = Depends(
 @router.post("/articles/{article_id:int}/edit", dependencies=[Depends(verify_csrf)])
 async def article_update(request: Request, article_id: int, db: Session = Depends(get_db)):
     article = _get_article(db, article_id)
+    if article.archived_at is not None:
+        return _edit_refused(request, db, article)
     form = await request.form()
     part_ids = [p.id for p in active_parts(db)]
     stored = catalog.target_value(article.target_model, article.printer_id)

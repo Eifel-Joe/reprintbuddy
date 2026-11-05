@@ -271,3 +271,20 @@ def test_archive_german(bb_client):
     assert "Archiviert" in bb_client.get("/articles").text
     act(bb_client, f"/articles/{a}", "archive")
     assert "Wiederherstellen" in bb_client.get(f"/articles/{a}").text
+
+
+def test_archived_article_edit_is_refused(bb_client):
+    a = make(bb_client)
+    act(bb_client, f"/articles/{a}", "archive")
+    page = bb_client.get(f"/articles/{a}/edit")
+    assert page.status_code == 200 and en("articles.edit_archived") in page.text
+    assert 'name="units_per_print"' not in page.text
+    assert f'href="/articles/{a}/edit"' not in page.text
+    data = {"csrf_token": csrf_of(bb_client, f"/articles/{a}"), "name": "Renamed", "sku": "", "units_per_print": "1",
+            "min_stock": "0", "buffer": "0", "target": "model:A1"}
+    response = bb_client.post(f"/articles/{a}/edit", data=data)
+    assert response.status_code == 200 and en("articles.edit_archived") in response.text
+    with sm_of(bb_client).begin() as s:
+        assert s.get(Article, a).name == "Template A"
+    act(bb_client, f"/articles/{a}", "restore")
+    assert 'name="units_per_print"' in bb_client.get(f"/articles/{a}/edit").text

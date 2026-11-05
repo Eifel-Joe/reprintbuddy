@@ -312,5 +312,6 @@
   "parts.flash_archived": "Zukaufteil {name} archiviert.",
   "parts.flash_restored": "Zukaufteil {name} wiederhergestellt.",
   "sets.flash_archived": "Set {name} archiviert.",
-  "sets.flash_restored": "Set {name} wiederhergestellt."
+  "sets.flash_restored": "Set {name} wiederhergestellt.",
+  "articles.edit_archived": "Ein archivierter Artikel lässt sich nicht bearbeiten. Erst wiederherstellen."
 }
