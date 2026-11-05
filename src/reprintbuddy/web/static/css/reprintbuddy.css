@@ -297,5 +297,6 @@ table.keytable td.off { color: var(--muted); }
 @media (max-width: 899px) {
   .rights-overlay { align-items: stretch; padding: 0.5rem; }
   .rights-dialog { max-width: none; }
+  .rights-banner form { flex: 1 1 100%; }
   .rights-banner .btn { width: 100%; }
 }
