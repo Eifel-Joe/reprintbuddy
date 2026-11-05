@@ -1,11 +1,12 @@
 """The rights monitor: one check of the stored key per start (Spec 11.3, rights after an update)."""
 
 import asyncio
+import logging
 
 import httpx
 from conftest import REQUIRED, auth_me, mock_auth_me
 
-from reprintbuddy.bambuddy.connection import EDITOR_LABELS, KEY_RIGHT_FOR, REQUIRED_PERMISSIONS
+from reprintbuddy.bambuddy.connection import EDITOR_LABELS, KEY_RIGHT_FOR, REQUIRED_PERMISSIONS, ConnectionCheck
 from reprintbuddy.web.i18n import load_locales
 from reprintbuddy.web.rights import FIRST_WAIT_SECONDS, RightsMonitor
 
@@ -133,6 +134,51 @@ async def test_first_attempt_waits_at_most_the_first_wait(respx_mock, monkeypatc
     release.set()
     await settle(monitor)
     assert monitor.status == "ok"
+
+
+async def test_a_late_old_check_does_not_overwrite_a_newer_verdict(respx_mock, monkeypatch):
+    """M2 of the review: a slow check made with the old key must not undo what a save just found."""
+    monkeypatch.setattr("reprintbuddy.web.rights.FIRST_WAIT_SECONDS", 0.05)
+    release = asyncio.Event()
+
+    async def answer(request):
+        await release.wait()
+        return httpx.Response(200, json=auth_me(permissions=["printers:read"]))  # many rights missing
+
+    respx_mock.get(ME).mock(side_effect=answer)
+    monitor = RightsMonitor()
+    await monitor.ensure(credentials, httpx.AsyncClient)  # gives up waiting, the check goes on
+    assert monitor.status == "unknown"
+    monitor.record(ConnectionCheck(True, "ok", owner="reprintbuddy"))  # a new key was saved: all rights
+    release.set()
+    await settle(monitor)
+    assert monitor.status == "ok" and monitor.notice is None
+
+
+async def test_a_verdict_taken_before_the_check_starts_running_wins_too(respx_mock):
+    """The credentials were read in `ensure`: a verdict taken right after is newer than they are."""
+    respx_mock.get(ME).respond(200, json=auth_me(permissions=["printers:read"]))
+    monitor = RightsMonitor()
+    task = asyncio.create_task(monitor.ensure(credentials, httpx.AsyncClient))
+    await asyncio.sleep(0)  # `ensure` has read the credentials and created the check, which has not run yet
+    monitor.record(ConnectionCheck(True, "ok", owner="reprintbuddy"))
+    await task
+    await settle(monitor)
+    assert monitor.status == "ok"
+
+
+async def test_a_failing_check_is_logged_without_secrets(caplog):
+    """M3 of the review: a programming error must not make the monitor silently useless."""
+
+    def broken_factory():
+        raise RuntimeError("http://bambuddy.test:8000 bb_SECRETKEY_999")
+
+    monitor = RightsMonitor()
+    with caplog.at_level(logging.WARNING, logger="reprintbuddy.rights"):
+        await monitor.ensure(lambda: (URL, "bb_SECRETKEY_999"), broken_factory)
+    assert monitor.status == "unknown"
+    assert "rights check failed" in caplog.text and "RuntimeError" in caplog.text
+    assert "bb_SECRETKEY_999" not in caplog.text and "bambuddy.test" not in caplog.text
 
 
 async def test_without_setup_nothing_is_checked(respx_mock):

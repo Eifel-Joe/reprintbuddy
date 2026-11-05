@@ -10,11 +10,14 @@ and shows what is known by then. Bambuddy being down never blocks a page for lon
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Callable, Literal
 
 import httpx
 
 from reprintbuddy.bambuddy.connection import ConnectionCheck, check_connection
+
+log = logging.getLogger("reprintbuddy.rights")
 
 FIRST_WAIT_SECONDS = 3.0
 
@@ -28,13 +31,20 @@ class RightsMonitor:
         self.attempts = 0
         self._task: asyncio.Task[None] | None = None  # kept so it is not collected while it runs
         self._first_deadline: float | None = None  # until when the first page may wait
+        self._generation = 0  # counts the verdicts taken from outside: a check that began earlier is stale
 
     def record(self, check: ConnectionCheck) -> None:
         """Take over the result of a check made anywhere (this monitor, settings, setup).
 
         Only a verdict about the rights counts. An unreachable Bambuddy or a refused key
-        says nothing about the rights and leaves what is known as it is.
+        says nothing about the rights and leaves what is known as it is. A check of the
+        background that is still running was made with what was stored before and must not
+        undo this verdict later.
         """
+        self._generation += 1
+        self._apply(check)
+
+    def _apply(self, check: ConnectionCheck) -> None:
         if check.ok:
             self.status, self.check = "ok", None
         elif check.reason == "missing_permissions":
@@ -62,7 +72,8 @@ class RightsMonitor:
             if credentials is None:
                 return  # setup not finished: nothing to check yet
             self.attempts += 1
-            self._task = asyncio.create_task(self._run(credentials, client_factory))
+            # The generation is taken together with the credentials, before the task even starts.
+            self._task = asyncio.create_task(self._run(credentials, client_factory, self._generation))
             if self.attempts == 1:
                 self._first_deadline = loop.time() + FIRST_WAIT_SECONDS
         if self.attempts != 1 or self._first_deadline is None:
@@ -72,12 +83,18 @@ class RightsMonitor:
             await asyncio.wait({self._task}, timeout=remaining)
 
     async def _run(
-        self, credentials: tuple[str, str], client_factory: Callable[[], httpx.AsyncClient]
+        self,
+        credentials: tuple[str, str],
+        client_factory: Callable[[], httpx.AsyncClient],
+        generation: int,
     ) -> None:
         url, api_key = credentials
         try:
             async with client_factory() as client:
                 check = await check_connection(url, api_key, client)
-        except Exception:  # never let a failed check break a page; the next call tries again
+        except Exception as exc:  # never let a failed check break a page; the next call tries again
+            # Only the kind of error: its text may name the address, and the key is never logged.
+            log.warning("rights check failed: %s", type(exc).__name__)
             return
-        self.record(check)
+        if generation == self._generation:
+            self._apply(check)
