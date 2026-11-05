@@ -274,3 +274,18 @@ def test_sudoers_is_checked_before_it_is_installed(bash, tmp_path):
     os_release(tmp_path)
     out = lines(run(bash, tmp_path, "--repo", REPO))
     assert out.index("visudo -cf ") < out.index("/etc/sudoers.d/reprintbuddy")
+
+
+def test_rerun_after_an_aborted_first_install_switches_to_the_release(bash, tmp_path):
+    """First run died after the clone (no release yet): no database, default branch checked out."""
+    os_release(tmp_path)
+    (tmp_path / "opt/reprintbuddy/.git").mkdir(parents=True)
+    out = lines(run(bash, tmp_path, "--repo", REPO))
+    assert "Unfinished installation found" in out
+    assert "git -C /opt/reprintbuddy fetch --tags origin" in out
+    assert "checkout --quiet --detach vX.Y.Z" in out
+    assert "git clone" not in out
+    assert "Existing installation found, keeping version." not in out
+    for line in out.splitlines():
+        if "fetch --tags" in line or "checkout --quiet" in line:
+            assert line.startswith(RUNUSER), line

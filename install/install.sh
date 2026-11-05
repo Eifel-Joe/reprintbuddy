@@ -199,18 +199,32 @@ latest_release_tag() {
         grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1
 }
 
-fetch_code() {
-    if [ -e "${DESTDIR}${INSTALL_DIR}/.git" ]; then
-        say "Existing installation found, keeping version."
-        return 0
-    fi
-    as_service_user git clone "${REPO_URL}" "${INSTALL_DIR}"
+checkout_newest_release() {
     local tag="vX.Y.Z"
     if [ "${DRY_RUN}" -ne 1 ]; then
         tag="$(latest_release_tag || true)"
         [ -n "${tag}" ] || die 1 "No release found in the repository."
     fi
     as_service_user git -C "${INSTALL_DIR}" checkout --quiet --detach "${tag}"
+}
+
+fetch_code() {
+    if [ -e "${DESTDIR}${INSTALL_DIR}/.git" ]; then
+        # A first run that stopped after the clone (for example "No release found" before the
+        # first tag existed) leaves the default branch checked out and no database behind.
+        # Nothing is installed yet then, so move to the release instead of keeping that state.
+        if [ ! -e "${DESTDIR}${DB_FILE}" ] &&
+            ! capture_as_service_user git -C "${INSTALL_DIR}" describe --tags --exact-match HEAD >/dev/null 2>&1; then
+            say "Unfinished installation found, switching to the newest release."
+            as_service_user git -C "${INSTALL_DIR}" fetch --tags origin
+            checkout_newest_release
+            return 0
+        fi
+        say "Existing installation found, keeping version."
+        return 0
+    fi
+    as_service_user git clone "${REPO_URL}" "${INSTALL_DIR}"
+    checkout_newest_release
 }
 
 install_python() {
