@@ -99,6 +99,9 @@ reprintbuddy set-port 8080
 reprintbuddy set-host 0.0.0.0
 ```
 
+`set-password` also renames the account to the given `--username`, so a forgotten
+user name is no obstacle.
+
 Restart the service afterwards (`set-port` and `set-host` need it to take effect).
 `set-host` sets the listen address (for example `0.0.0.0`) if a wrong one locked you out.
 

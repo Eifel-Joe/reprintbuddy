@@ -103,6 +103,9 @@ reprintbuddy set-port 8080
 reprintbuddy set-host 0.0.0.0
 ```
 
+`set-password` benennt das Konto auch um, und zwar in den angegebenen `--username`;
+ein vergessener Benutzername ist also kein Hindernis.
+
 Danach den Dienst neu starten (`set-port` und `set-host` wirken erst dann).
 `set-host` setzt die Lauschadresse (zum Beispiel `0.0.0.0`), falls dich eine falsche ausgesperrt hat.
 

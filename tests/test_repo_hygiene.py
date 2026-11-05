@@ -210,3 +210,8 @@ def test_line_endings_are_pinned():
     lines = _read(".gitattributes").splitlines()
     assert "* text=auto" in lines
     assert "*.sh text eol=lf" in lines
+
+
+def test_readmes_say_that_set_password_renames_the_account():
+    assert "`set-password` also renames the account" in _read("README.md")
+    assert "`set-password` benennt das Konto auch um" in _read("README.de.md")
