@@ -138,5 +138,6 @@
   "ops.update.step.health": "Waiting for the new version to answer",
   "ops.update.step.rollback": "Restoring the previous version",
   "ops.update.step.done": "Done",
-  "ops.update.state.interrupted": "Update was interrupted"
+  "ops.update.state.interrupted": "Update was interrupted",
+  "ops.update.installed_with_package": "Installed version: {version} (package version {package})"
 }

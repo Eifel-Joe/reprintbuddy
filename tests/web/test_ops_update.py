@@ -356,3 +356,22 @@ def test_idle_page_asks_systemd_nothing(ops_env):
     git_env(ops_env)
     ops_env.client.get("/settings")
     assert not [c for c in ops_env.runner.calls if "systemctl" in c[0] or "show" in c]
+
+
+# --- the Git tag and the package version side by side -------------------------------------
+
+
+def test_package_version_is_shown_when_it_differs_from_the_tag(ops_env):
+    git_env(ops_env)  # tag v0.1.0, package 0.1.0.dev0 (the version before the first release)
+    page = ops_env.client.get("/settings").text
+    assert "Installed version: v0.1.0 (package version 0.1.0.dev0)" in page
+
+
+def test_package_version_is_not_repeated_when_it_matches(ops_env, monkeypatch):
+    from reprintbuddy.web.routes import ops as routes
+
+    monkeypatch.setattr(routes, "__version__", "0.1.0")
+    git_env(ops_env)
+    page = ops_env.client.get("/settings").text
+    assert "Installed version: v0.1.0" in page
+    assert "package version" not in page

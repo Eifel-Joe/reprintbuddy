@@ -138,5 +138,6 @@
   "ops.update.step.health": "Warten, bis die neue Version antwortet",
   "ops.update.step.rollback": "Vorige Version wird wiederhergestellt",
   "ops.update.step.done": "Fertig",
-  "ops.update.state.interrupted": "Update wurde unterbrochen"
+  "ops.update.state.interrupted": "Update wurde unterbrochen",
+  "ops.update.installed_with_package": "Installierte Version: {version} (Paketversion {package})"
 }

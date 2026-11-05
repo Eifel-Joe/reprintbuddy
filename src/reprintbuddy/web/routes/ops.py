@@ -112,6 +112,7 @@ def ops_view(request: Request, session: Session) -> OpsView:
     message = f"ops.msg.{code}" if code in OPS_MESSAGES else None
 
     view = OpsView(running_url=running_url, restart_pending=pending, message=message)
+    view.dev_version = __version__  # read now, so it is the version of the running code
     view.git_install = is_git_install(ops.install_dir)
     if view.git_install:
         view.installed = _installed(request)

@@ -17,7 +17,8 @@
   <p class="muted">{{ t('ops.update.unavailable') }}</p>
   {% else %}
   <p>
-    {% if ops.installed %}{{ t('ops.update.installed', version=ops.installed) }}
+    {% if ops.installed and ops.installed[1:] != ops.dev_version %}{{ t('ops.update.installed_with_package', version=ops.installed, package=ops.dev_version) }}
+    {% elif ops.installed %}{{ t('ops.update.installed', version=ops.installed) }}
     {% else %}{{ t('ops.update.dev_build', version=ops.dev_version) }}{% endif %}
   </p>
   <p class="status">

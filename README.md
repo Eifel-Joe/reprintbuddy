@@ -52,6 +52,13 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/mai
 
 *Available from the first release.*
 
+The command above takes the installer from the `main` branch. To install exactly one version, put its tag
+into the URL, for example `v0.1.0` for `<tag>`; installer and code are then guaranteed to belong together:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/<tag>/install/install.sh)"
+```
+
 What the installer does:
 
 - installs the packages it needs (`python3`, `python3-venv`, `git`, `curl`, `sudo`,
@@ -126,7 +133,12 @@ If anything fails, Reprintbuddy goes back to the previous version **and** restor
 database from the backup; the page says which step failed. Changes made while the update
 runs would be lost in that case, so every change is paused until it has finished.
 
-Backups are kept in `/var/lib/reprintbuddy/backups/` (the last 5). To start an update by hand:
+If the page says **Update was interrupted** or **Update failed and the previous version could not be restored**,
+run the installer again: it repairs packages, units and the service and keeps the database. If Reprintbuddy still
+does not start, restore the backup named on the page (see *Backup and export*) and run the installer again.
+The page shows the Git tag and, if it differs, the package version next to it.
+
+Backups are kept in `/var/lib/reprintbuddy/backups/` (the last 5; a backup named by a failed rollback is never deleted). To start an update by hand:
 `systemctl start reprintbuddy-update.service`; its log is `journalctl -u reprintbuddy-update`.
 
 Versions are git tags `vX.Y.Z`, and the package version equals the tag. If a release changes the

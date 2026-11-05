@@ -55,6 +55,13 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/mai
 
 *Verfügbar ab der ersten Version.*
 
+Der Befehl oben holt das Installationsskript vom Zweig `main`. Soll genau eine Version installiert werden,
+setze ihren Tag in die Adresse (für `<tag>` zum Beispiel `v0.1.0`); Skript und Code gehören dann sicher zusammen:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/<tag>/install/install.sh)"
+```
+
 Das Skript
 
 - installiert die nötigen Pakete (`python3`, `python3-venv`, `git`, `curl`, `sudo`,
@@ -130,7 +137,14 @@ Scheitert ein Schritt, geht Reprintbuddy auf die vorige Version zurück **und** 
 Datenbank aus der Sicherung zurück; die Seite nennt den gescheiterten Schritt. Änderungen aus
 der Zeit des Updates gingen dabei verloren, darum sind alle Änderungen gesperrt, bis es fertig ist.
 
-Die Sicherungen liegen in `/var/lib/reprintbuddy/backups/` (die letzten 5). Ein Update von Hand
+Zeigt die Seite **Update wurde unterbrochen** oder **Update fehlgeschlagen, vorige Version ließ sich nicht wiederherstellen**,
+führe das Installationsskript erneut aus: Es repariert Pakete, Einheiten und den Dienst und lässt die Datenbank
+stehen. Startet Reprintbuddy danach nicht, spiele die auf der Seite genannte Sicherung zurück (siehe
+*Sicherung und Export*) und führe das Skript noch einmal aus. Die Seite zeigt den Git-Tag und, wenn sie sich
+unterscheidet, daneben die Paketversion.
+
+Die Sicherungen liegen in `/var/lib/reprintbuddy/backups/` (die letzten 5; eine von einem gescheiterten Rückfall
+genannte Sicherung wird nie gelöscht). Ein Update von Hand
 startest du mit `systemctl start reprintbuddy-update.service`; das Protokoll steht in
 `journalctl -u reprintbuddy-update`.
 

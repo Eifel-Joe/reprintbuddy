@@ -84,3 +84,24 @@ def test_owner_placeholder_is_still_there(name):
     """Replaced by the real name only when the repository is published (three places)."""
     assert "<owner>" in read(name)
     assert "<owner>" in (ROOT / "install" / "install.sh").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("name", READMES)
+def test_install_command_bound_to_a_tag(name):
+    """Installer and code must be one version: the URL with the tag installs exactly that pair."""
+    assert (
+        'bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/reprintbuddy/<tag>/install/install.sh)"'
+        in read(name)
+    )
+
+
+@pytest.mark.parametrize("name,lang", [("README.md", "en"), ("README.de.md", "de")])
+def test_readme_explains_the_way_out_of_a_failed_update(name, lang):
+    """The page says 'interrupted' or 'could not be restored'; the README says what to do then."""
+    from reprintbuddy.web import i18n
+
+    texts = i18n.load_locales()[lang]
+    text = read(name)
+    assert texts["ops.update.state.interrupted"] in text
+    assert texts["ops.update.state.rollback_failed"] in text
+    assert "/var/lib/reprintbuddy/backups/" in text
