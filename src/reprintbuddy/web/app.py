@@ -21,6 +21,7 @@ from reprintbuddy.web import deps
 from reprintbuddy.web.flash import pop_flashes
 from reprintbuddy.web.formatting import local_date, local_dt
 from reprintbuddy.web.formtoken import issue_form_token
+from reprintbuddy.web.rights import RightsMonitor
 from reprintbuddy.web.throttle import FailureBrake, HashLimiter
 from reprintbuddy.web.routes import articles as articles_routes
 from reprintbuddy.web.routes import auth as auth_routes
@@ -79,6 +80,7 @@ def create_app(
     app.state.http_client_factory = http_client_factory or httpx.AsyncClient
     app.state.bambuddy_factory = None  # B2 sets the HTTP factory; tests set the fake
     app.state.session_secret = secret  # also signs the one-time form tokens
+    app.state.rights = RightsMonitor()  # what the stored key may do, checked once per start
 
     templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
     templates.env.globals["t"] = deps.t

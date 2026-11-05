@@ -136,6 +136,9 @@ def finish_bambuddy_setup(client):
         st.set_setting(session, "bambuddy_username", "reprintbuddy")
         st.set_setting(session, "bambuddy_api_key", "bb_testkey")
         st.set_setting(session, "bambuddy_review_confirmed", True)
+    # Tests that are not about the rights must not ask a Bambuddy that is not there (Spec 12):
+    # the key counts as checked. The rights tests set the state back to "unknown".
+    client.app.state.rights.status = "ok"
     return client
 
 

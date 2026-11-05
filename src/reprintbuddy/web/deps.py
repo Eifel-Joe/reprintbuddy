@@ -198,6 +198,17 @@ async def http_error_handler(request: Request, exc: StarletteHTTPException) -> R
     return response
 
 
+def stored_credentials(app) -> tuple[str, str] | None:
+    """The stored Bambuddy address and key, or None while the setup is not finished.
+
+    Reads in a session of its own and closes it before anybody asks Bambuddy.
+    """
+    with app.state.sessionmaker() as session:
+        if not st.bambuddy_configured(session):
+            return None
+        return str(st.get_setting(session, "bambuddy_url")), str(st.get_setting(session, "bambuddy_api_key"))
+
+
 def _decide(request: Request) -> Response | None:
     """The gate's decision: a response to send instead of the page, or None to let it through."""
     path = request.url.path
@@ -226,6 +237,9 @@ def _decide(request: Request) -> Response | None:
         in_bambuddy_setup = path == "/setup/bambuddy" or path.startswith("/setup/bambuddy/")
         if not st.bambuddy_configured(session) and not in_bambuddy_setup and path != "/logout":
             return RedirectResponse("/setup/bambuddy", status_code=303)
+        # Signed in and set up: a page of the interface. The first one after a start also
+        # checks what the stored key may do (Spec 11.3, "Rights after an update").
+        request.state.rights_due = st.bambuddy_configured(session) and not in_bambuddy_setup
         return None
     finally:
         release_connection(session)  # the route starts without a connection held by the gate
@@ -241,6 +255,10 @@ async def gate(request: Request, call_next) -> Response:
         early = _decide(request)
         if early is not None:
             return early
+        if getattr(request.state, "rights_due", False) and request.method == "GET":
+            await request.app.state.rights.ensure(
+                lambda: stored_credentials(request.app), request.app.state.http_client_factory
+            )
         return await call_next(request)
     finally:
         close_request_session(request)
