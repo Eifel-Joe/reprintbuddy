@@ -26,11 +26,9 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 
 - Bambuddy 1.3 or newer, running in **Spoolman mode** (Reprintbuddy reads filament
   stock through Bambuddy).
-- A **dedicated Bambuddy user** for Reprintbuddy (for example `reprintbuddy`) with the
-  permission **Print without review**, so queued prints start without
-  confirmation, and an **API key** for that user with the permissions
-  **Read Status** and **Manage Queue**. The dedicated user makes Reprintbuddy's
-  own jobs recognisable in Bambuddy.
+- A **dedicated Bambuddy user** `reprintbuddy` in its **own Bambuddy group** with the rights
+  listed under *First run*, and an **API key** of that user. The dedicated user makes
+  Reprintbuddy's own jobs recognisable in Bambuddy. The setup guides you through it.
 - A **Proxmox LXC container** (unprivileged is fine) or another machine with **Debian 12 or 13**.
   One CPU core, 1 GB RAM and 8 GB disk are enough. No Docker needed.
 - Outgoing network access from that machine to the Debian package sources (`apt`),
@@ -53,7 +51,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/m
 *Available from the first release.*
 
 The command above takes the installer from the `main` branch. To install exactly one version, put its tag
-into the URL, for example `v0.1.0` for `<tag>`; installer and code are then guaranteed to belong together:
+into the URL, for example `v0.1.1` for `<tag>`; installer and code are then guaranteed to belong together:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
@@ -107,9 +105,31 @@ open Reprintbuddy by its IP address (or a local name); names from public domains
 DNS names, are accepted only after setup.
 
 1. **Admin account:** choose a user name, a password and the language.
-2. **Connect Bambuddy:** enter the Bambuddy address, the user name and the API
-   key, and confirm that the user has the permission *Print without review*.
-   Reprintbuddy checks the connection before it opens the interface.
+2. **Group and user in Bambuddy:** in Bambuddy, under *Settings → Users*, create your own
+   group named `Reprintbuddy`. No system group fits: *Operators* only sees its own files and
+   queue entries, *Administrators* may do everything. Give the group these rights (the
+   internal names are in brackets):
+
+   - read library, all (`library:read_all`)
+   - read queue, all (`queue:read_all`)
+   - create queue entries (`queue:create`)
+   - print without review (`queue:start_unreviewed`, "Print Without Review")
+   - read printers (`printers:read`)
+   - read inventory (`inventory:read`)
+
+   Then create the user `reprintbuddy` in this group. Its password is needed only once, to
+   create the key; Reprintbuddy neither asks for it nor stores it.
+3. **API key:** sign out of Bambuddy and sign in as `reprintbuddy` (a key always belongs to
+   the user who is signed in). Open *Settings → API keys → Create key*, name it
+   "Reprintbuddy", tick the rights *Read Status* and *Manage Queue*, copy the key at once
+   (Bambuddy shows it only one time) and sign out again.
+4. **Connect Bambuddy:** enter the Bambuddy address and the key. Reprintbuddy asks Bambuddy
+   (`GET /api/v1/auth/me`) whom the key belongs to and which rights it can really use, and
+   shows the owner and each required right with a check or a cross. The interface opens only
+   when no right is missing. A key that belongs to an administrator is accepted, with a
+   warning that it may do more than needed. The same check is under *Settings*.
+
+   The two fields are marked so that password managers do not fill in your own credentials.
 
 ## Settings
 

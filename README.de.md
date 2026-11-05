@@ -27,12 +27,10 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 
 - Bambuddy 1.3 oder neuer im **Spoolman-Modus** (Reprintbuddy liest den
   Filamentbestand über Bambuddy).
-- Ein **eigener Bambuddy-Benutzer** für Reprintbuddy (zum Beispiel `reprintbuddy`) mit
-  dem Recht **„ohne Prüfung drucken“** (*Print without review*), damit eingereihte
-  Drucke ohne Bestätigung starten, und ein **API-Schlüssel** dieses Benutzers
-  mit den Rechten **„Status lesen“** (*Read Status*) und **„Warteschlange
-  verwalten“** (*Manage Queue*). Der eigene Benutzer macht Reprintbuddys Aufträge
-  in Bambuddy erkennbar.
+- Ein **eigener Bambuddy-Benutzer** `reprintbuddy` in einer **eigenen Bambuddy-Gruppe** mit den
+  Rechten, die unter *Erster Aufruf* stehen, und ein **API-Schlüssel** dieses Benutzers. Der
+  eigene Benutzer macht Reprintbuddys Aufträge in Bambuddy erkennbar. Die Einrichtung
+  führt dich Schritt für Schritt durch.
 - Ein **Proxmox-LXC-Container** (unprivilegiert genügt) oder ein anderer Rechner mit
   **Debian 12 oder 13**. Ein CPU-Kern, 1 GB RAM und 8 GB Platte reichen. Docker ist
   nicht nötig.
@@ -56,7 +54,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/m
 *Verfügbar ab der ersten Version.*
 
 Der Befehl oben holt das Installationsskript vom Zweig `main`. Soll genau eine Version installiert werden,
-setze ihren Tag in die Adresse (für `<tag>` zum Beispiel `v0.1.0`); Skript und Code gehören dann sicher zusammen:
+setze ihren Tag in die Adresse (für `<tag>` zum Beispiel `v0.1.1`); Skript und Code gehören dann sicher zusammen:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
@@ -111,9 +109,32 @@ lokalen Namen); Namen aus öffentlichen Domains, z. B. VPN-DNS-Namen, werden ers
 Einrichtung akzeptiert.
 
 1. **Admin-Konto:** Benutzername, Passwort und Sprache wählen.
-2. **Bambuddy anbinden:** Adresse, Benutzername und API-Schlüssel von Bambuddy
-   eintragen und bestätigen, dass der Benutzer das Recht *ohne Prüfung drucken*
-   hat. Reprintbuddy prüft die Verbindung, bevor die Oberfläche freigegeben wird.
+2. **Gruppe und Benutzer in Bambuddy:** Lege in Bambuddy unter *Einstellungen → Benutzer* eine
+   eigene Gruppe `Reprintbuddy` an. Keine Systemgruppe passt: *Operators* sieht nur eigene
+   Dateien und Aufträge, *Administrators* darf alles. Gib der Gruppe diese Rechte (in Klammern
+   der interne Name):
+
+   - Bibliothek lesen, alle (`library:read_all`)
+   - Warteschlange lesen, alle (`queue:read_all`)
+   - Warteschlange anlegen (`queue:create`)
+   - ohne Prüfung drucken (`queue:start_unreviewed`, „Print Without Review“)
+   - Drucker lesen (`printers:read`)
+   - Inventar lesen (`inventory:read`)
+
+   Lege dann den Benutzer `reprintbuddy` in dieser Gruppe an. Sein Passwort brauchst du nur
+   einmal, um den Schlüssel zu erzeugen; Reprintbuddy fragt es nicht ab und speichert es nicht.
+3. **API-Schlüssel:** Melde dich in Bambuddy ab und als `reprintbuddy` an (ein Schlüssel gehört
+   immer dem angemeldeten Benutzer). Öffne *Einstellungen → API-Schlüssel → Schlüssel erstellen*,
+   nenne ihn „Reprintbuddy“, hake die Rechte *Status lesen* und *Warteschlange verwalten* an,
+   kopiere den Schlüssel sofort (Bambuddy zeigt ihn nur einmal) und melde dich wieder ab.
+4. **Bambuddy anbinden:** Trage die Adresse von Bambuddy und den Schlüssel ein. Reprintbuddy
+   fragt Bambuddy (`GET /api/v1/auth/me`), wem der Schlüssel gehört und welche Rechte er wirklich
+   hat, und zeigt Besitzer und jedes nötige Recht mit Haken oder Kreuz. Die Oberfläche öffnet
+   sich erst, wenn kein Recht fehlt. Ein Schlüssel eines Administrators wird angenommen, mit der
+   Warnung, dass er mehr darf als nötig. Dieselbe Prüfung gibt es unter *Einstellungen*.
+
+   Die beiden Felder sind so gekennzeichnet, dass Passwort-Manager sie nicht mit deinen eigenen
+   Zugangsdaten füllen.
 
 ## Einstellungen
 

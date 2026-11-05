@@ -105,3 +105,27 @@ def test_readme_explains_the_way_out_of_a_failed_update(name, lang):
     assert texts["ops.update.state.interrupted"] in text
     assert texts["ops.update.state.rollback_failed"] in text
     assert "/var/lib/reprintbuddy/backups/" in text
+
+
+@pytest.mark.parametrize("name", READMES)
+def test_readme_tag_example_names_the_current_version(name):
+    import reprintbuddy
+
+    assert f"`v{reprintbuddy.__version__}`" in read(name)
+
+
+@pytest.mark.parametrize("name", READMES)
+def test_readme_first_run_has_four_steps_and_the_permission_list(name):
+    from reprintbuddy.bambuddy.connection import REQUIRED_PERMISSIONS
+
+    text = read(name)
+    for code in REQUIRED_PERMISSIONS:
+        assert f"`{code}`" in text, (name, code)
+    assert "Operators" in text and "Administrators" in text, name  # why no system group fits
+    assert "`reprintbuddy`" in text, name
+    # the old way (typing the user name, ticking a box) is gone
+    assert "confirm that the user has" not in text and "bestätigen, dass der Benutzer" not in text, name
+    first_run = text[text.index("## First run" if name == "README.md" else "## Erster Aufruf") :]
+    first_run = first_run[: first_run.index("\n## ", 5)]
+    for number in ("1.", "2.", "3.", "4."):
+        assert f"\n{number} " in first_run, (name, number)
