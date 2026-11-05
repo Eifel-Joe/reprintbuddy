@@ -250,7 +250,7 @@ def test_cli_version(capsys):
     with pytest.raises(SystemExit) as stop:
         main(["--version"])
     assert stop.value.code == 0
-    assert capsys.readouterr().out.strip() == "reprintbuddy 0.1.1"
+    assert capsys.readouterr().out.strip() == "reprintbuddy 0.2.0"
 
 
 @pytest.mark.parametrize("state,code", [("succeeded", 0), ("rolled_back", 1), ("failed", 1), ("running", 3)])
