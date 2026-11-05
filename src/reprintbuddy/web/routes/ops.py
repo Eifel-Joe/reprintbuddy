@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
@@ -24,7 +24,8 @@ from reprintbuddy.ops.server import (
     connect_host,
     effective_from_settings,
 )
-from reprintbuddy.ops.service import request_restart, start_update_unit, update_unit_state
+from reprintbuddy.ops.running import update_running
+from reprintbuddy.ops.service import request_restart, start_update_unit
 from reprintbuddy.ops.status import (
     BUSY_STATES,
     UPDATE_STEPS,
@@ -56,12 +57,6 @@ OPS_MESSAGES = frozenset(
 # meanwhile would be lost.
 UPDATE_EXEMPT_PATHS = frozenset({"/settings/update/check", "/settings/update", "/logout"})
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-
-# A "queued" or "running" state means something only while the update unit is alive. After a
-# container restart, or a unit that failed before it wrote anything, the state file would say
-# "running" for 30 minutes and block every change. systemd tells the truth.
-DEAD_UNIT_STATES = frozenset({"inactive", "failed"})
-QUEUE_GRACE = timedelta(seconds=15)  # between `start --no-block` and the unit showing as active
 
 
 @dataclass
@@ -95,20 +90,6 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def update_in_progress(request: Request, status: UpdateStatus, now: datetime) -> bool:
-    """Is an update really running (and not just recorded as running)?"""
-    if not is_busy(status, now):
-        return False
-    if (
-        status.state == "queued"
-        and status.started_at is not None
-        and now - status.started_at < QUEUE_GRACE
-    ):
-        return True
-    # Unknown (systemd silent or missing) counts as running: do not guess an update away.
-    return update_unit_state(request.app.state.ops.runner) not in DEAD_UNIT_STATES
-
-
 def _installed(request: Request) -> str | None:
     """The tag this process runs: asked once, because every update restarts the process."""
     app = request.app
@@ -136,7 +117,7 @@ def ops_view(request: Request, session: Session) -> OpsView:
         view.installed = _installed(request)
         view.version_info = getattr(app.state, "version_info", None)
     view.update = read_status(_data_dir(request))
-    view.busy = update_in_progress(request, view.update, _utc_now())
+    view.busy = update_running(_data_dir(request), request.app.state.ops.runner, _utc_now())
     view.interrupted = view.update.state in BUSY_STATES and not view.busy
     if view.interrupted:
         view.state_key = "ops.update.state.interrupted"
@@ -150,7 +131,7 @@ def ops_view(request: Request, session: Session) -> OpsView:
 async def update_guard(request: Request, call_next) -> Response:
     """Pause every write while an update runs (see `UPDATE_EXEMPT_PATHS`)."""
     if request.method in WRITE_METHODS and request.url.path not in UPDATE_EXEMPT_PATHS:
-        if update_in_progress(request, read_status(_data_dir(request)), _utc_now()):
+        if update_running(_data_dir(request), request.app.state.ops.runner, _utc_now()):
             return render(
                 request,
                 "error.html",
@@ -226,7 +207,7 @@ async def update_start(request: Request):
         return _back("not_git")
     data_dir = _data_dir(request)
     now = _utc_now()
-    if update_in_progress(request, read_status(data_dir), now):
+    if update_running(data_dir, ops.runner, now):
         return _back("busy")
     info: VersionInfo | None = getattr(app.state, "version_info", None)
     if info is None or not info.update_available:
