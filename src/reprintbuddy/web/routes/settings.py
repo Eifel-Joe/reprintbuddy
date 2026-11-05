@@ -117,6 +117,7 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
 
     # One transaction: a failure must not leave a new address with the old key.
     st.apply_check(db, url, api_key, check)
+    request.app.state.rights.record(check)  # a fixed key clears the notice at once
     return _saved(request, "bambuddy.admin_warning" if check.owner_is_admin else "settings.saved")
 
 
