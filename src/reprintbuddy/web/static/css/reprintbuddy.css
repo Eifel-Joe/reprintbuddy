@@ -136,6 +136,9 @@ label.check input { margin-top: 0.25rem; accent-color: var(--accent); }
   cursor: pointer;
 }
 .btn:hover { filter: brightness(1.1); }
+a.btn { text-decoration: none; }
+.section form + form, .section form + .status { margin-top: 0.75rem; }
+.section div.alert, .section div.notice { margin-bottom: 0.75rem; }
 
 .alert {
   padding: 0.7rem 0.9rem;

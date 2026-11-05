@@ -225,57 +225,120 @@ def test_server_saves_and_hints_restart(ready_client):
     assert "restart" in ready_client.get("/settings").text.lower()
 
 
-def test_server_tls_text_fields(ready_client):
+def test_server_tls_text_fields(ready_client, tls_pair):
+    cert, key = tls_pair
     response = post(
         ready_client,
         "/settings/server",
         host="0.0.0.0",
         port="8443",
-        tls_cert=CERT,
-        tls_key=KEY_PEM,
+        tls_cert=cert,
+        tls_key=key,
     )
     assert response.status_code == 303
-    assert saved(ready_client, "tls_cert") == CERT
-    assert saved(ready_client, "tls_key") == KEY_PEM
+    assert saved(ready_client, "tls_cert") == cert
+    assert saved(ready_client, "tls_key") == key
 
 
-def test_server_tls_file_upload(ready_client):
+def test_server_tls_file_upload(ready_client, tls_pair):
+    cert, key = tls_pair
     token = csrf_of(ready_client, "/settings")
     response = ready_client.post(
         "/settings/server",
         data={"csrf_token": token, "host": "0.0.0.0", "port": "8443"},
         files={
-            "tls_cert_file": ("cert.pem", CERT.encode(), "application/x-pem-file"),
-            "tls_key_file": ("key.pem", KEY_PEM.encode(), "application/x-pem-file"),
+            "tls_cert_file": ("cert.pem", cert.encode(), "application/x-pem-file"),
+            "tls_key_file": ("key.pem", key.encode(), "application/x-pem-file"),
         },
     )
     assert response.status_code == 303
-    assert saved(ready_client, "tls_cert") == CERT
-    assert saved(ready_client, "tls_key") == KEY_PEM
+    assert saved(ready_client, "tls_cert") == cert
+    assert saved(ready_client, "tls_key") == key
 
 
-def test_server_tls_needs_both_parts(ready_client):
+def test_server_tls_needs_both_parts(ready_client, tls_pair):
     response = post(
-        ready_client, "/settings/server", host="0.0.0.0", port="8443", tls_cert=CERT
+        ready_client, "/settings/server", host="0.0.0.0", port="8443", tls_cert=tls_pair[0]
     )
     assert response.status_code == 200
-    assert "certificate and the private key" in response.text
+    assert "needs both" in response.text
     assert saved(ready_client, "tls_cert") is None
+    assert saved(ready_client, "port") == 8080
 
 
-def test_server_empty_tls_fields_keep_stored_values(ready_client):
-    post(ready_client, "/settings/server", host="0.0.0.0", port="8443", tls_cert=CERT, tls_key=KEY_PEM)
+def test_server_empty_tls_fields_keep_stored_values(ready_client, tls_pair):
+    cert, key = tls_pair
+    post(ready_client, "/settings/server", host="0.0.0.0", port="8443", tls_cert=cert, tls_key=key)
     post(ready_client, "/settings/server", host="0.0.0.0", port="8444")
-    assert saved(ready_client, "tls_key") == KEY_PEM
-    assert saved(ready_client, "tls_cert") == CERT
+    assert saved(ready_client, "tls_key") == key
+    assert saved(ready_client, "tls_cert") == cert
     assert saved(ready_client, "port") == 8444
 
 
-def test_server_tls_can_be_removed(ready_client):
-    post(ready_client, "/settings/server", host="0.0.0.0", port="8443", tls_cert=CERT, tls_key=KEY_PEM)
+def test_server_tls_can_be_removed(ready_client, tls_pair):
+    cert, key = tls_pair
+    post(ready_client, "/settings/server", host="0.0.0.0", port="8443", tls_cert=cert, tls_key=key)
     post(ready_client, "/settings/server", host="0.0.0.0", port="8080", tls_remove="on")
     assert saved(ready_client, "tls_cert") is None
     assert saved(ready_client, "tls_key") is None
+
+
+def test_server_rejects_mismatched_tls(ready_client):
+    from conftest import make_tls_pair
+
+    cert_a, _ = make_tls_pair("a.test")
+    _, key_b = make_tls_pair("b.test")
+    response = post(
+        ready_client, "/settings/server", host="0.0.0.0", port="9090", tls_cert=cert_a, tls_key=key_b
+    )
+    assert response.status_code == 200
+    assert "do not match" in response.text
+    assert saved(ready_client, "tls_cert") is None
+    assert saved(ready_client, "tls_key") is None
+    assert saved(ready_client, "port") == 8080  # nothing at all is saved
+
+
+def test_server_rejects_mismatch_against_stored_half(ready_client, tls_pair):
+    """A new certificate with the stored key is checked as a pair, too."""
+    from conftest import make_tls_pair
+
+    cert, key = tls_pair
+    post(ready_client, "/settings/server", host="0.0.0.0", port="8443", tls_cert=cert, tls_key=key)
+    other_cert, _ = make_tls_pair("other.test")
+    response = post(ready_client, "/settings/server", host="0.0.0.0", port="9999", tls_cert=other_cert)
+    assert response.status_code == 200
+    assert "do not match" in response.text
+    assert saved(ready_client, "tls_cert") == cert
+    assert saved(ready_client, "port") == 8443
+
+
+def test_server_rejects_encrypted_key(ready_client, tls_pair):
+    cert, _ = tls_pair
+    encrypted = "-----BEGIN ENCRYPTED PRIVATE KEY-----\nAAAA\n-----END ENCRYPTED PRIVATE KEY-----\n"
+    response = post(
+        ready_client, "/settings/server", host="0.0.0.0", port="8443", tls_cert=cert, tls_key=encrypted
+    )
+    assert response.status_code == 200
+    assert "Password-protected private keys are not supported" in response.text
+    assert saved(ready_client, "tls_cert") is None
+
+
+def test_server_saves_valid_tls_and_masks_key(ready_client, tls_pair):
+    cert, key = tls_pair
+    post(ready_client, "/settings/server", host="0.0.0.0", port="8443", tls_cert=cert, tls_key=key)
+    page = ready_client.get("/settings").text
+    assert "********" in page
+    assert "PRIVATE KEY" not in page
+
+
+def test_server_tls_remove_requires_csrf(ready_client, tls_pair):
+    cert, key = tls_pair
+    post(ready_client, "/settings/server", host="0.0.0.0", port="8443", tls_cert=cert, tls_key=key)
+    response = ready_client.post(
+        "/settings/server", data={"host": "0.0.0.0", "port": "8080", "tls_remove": "on"}
+    )
+    assert response.status_code == 403
+    assert saved(ready_client, "tls_cert") == cert
 
 
 def test_server_tls_rejects_non_pem(ready_client):
@@ -302,7 +365,10 @@ def test_all_settings_posts_require_csrf(ready_client):
         "/settings/bambuddy",
         "/settings/language",
         "/settings/password",
+        "/settings/restart",
         "/settings/server",
+        "/settings/update",
+        "/settings/update/check",
     ]
     csrf_of(ready_client, "/settings")  # a session with a token exists
     for path in paths:
@@ -356,7 +422,9 @@ def test_a_port_below_1024_is_saved_with_a_hint(ready_client):
     assert response.status_code == 303
     assert saved(ready_client, "port") == 80
     page = ready_client.get("/settings").text
-    assert "below 1024" in page and "root" in page and "set-port" in page
+    assert "below 1024" in page and "set-port" in page
+    assert "install script" in page  # the installed service has the right to use such a port
+    assert "does not run as root" not in page  # it does bind low ports: CAP_NET_BIND_SERVICE
 
 
 def test_a_normal_port_has_no_privileged_hint(ready_client):

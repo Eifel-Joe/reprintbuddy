@@ -17,7 +17,9 @@ from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.connection import check_connection
 from reprintbuddy.netcheck import can_bind
+from reprintbuddy.ops.tls import validate_tls_pair
 from reprintbuddy.web.csrf import verify_csrf
+from reprintbuddy.web.routes.ops import ops_view
 from reprintbuddy.web.deps import flash, get_db, logged_in_user, release_connection, render, start_session
 
 router = APIRouter()
@@ -51,6 +53,7 @@ def _page(
         api_key_mask=st.display_value("bambuddy_api_key", st.get_setting(db, "bambuddy_api_key")),
         tls_key_mask=st.display_value("tls_key", st.get_setting(db, "tls_key")),
         tls_cert_set=bool(st.get_setting(db, "tls_cert")),
+        ops=ops_view(request, db),
         **values,
     )
 
@@ -200,7 +203,13 @@ async def save_server(request: Request, db: Session = Depends(get_db)):
         except ValueError:
             return fail("settings.invalid_pem")  # never echoes the input
         if (cert is None) != (key is None):
-            return fail("settings.tls_pair_required")
+            return fail("ops.tls.incomplete")
+        if cert is not None and key is not None:
+            # A pair that does not load would keep Reprintbuddy from starting after the restart.
+            try:
+                await run_in_threadpool(validate_tls_pair, str(cert), str(key))
+            except ValueError as problem:
+                return fail("ops.tls.encrypted" if str(problem) == "tls_encrypted" else "ops.tls.invalid")
 
     # One transaction: no half a TLS pair, no new address with an old port.
     st.set_setting(db, "host", host, commit=False)
@@ -208,5 +217,5 @@ async def save_server(request: Request, db: Session = Depends(get_db)):
     st.set_setting(db, "tls_cert", cert, commit=False)
     st.set_setting(db, "tls_key", key, commit=False)
     db.commit()
-    # Ports below 1024 need extra rights; the service does not run as root.
+    # Ports below 1024 need CAP_NET_BIND_SERVICE: the installed service has it, others may not.
     return _saved(request, "settings.privileged_port" if port < 1024 else "settings.restart_needed")
