@@ -19,6 +19,7 @@ import uvicorn
 
 from reprintbuddy import auth
 from reprintbuddy import settings as st
+from reprintbuddy.netcheck import can_bind
 from reprintbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upgrade
 from reprintbuddy.web.app import create_app
 
@@ -105,6 +106,16 @@ def _set_port(args: argparse.Namespace) -> int:
     return 0
 
 
+def _set_host(args: argparse.Namespace) -> int:
+    host = args.host.strip()
+    if not host or not can_bind(host):
+        return _error("host: this machine cannot listen on that address")
+    with _session(args.db) as session:
+        st.set_setting(session, "host", host)
+    print(f"Listen address set to {host}. Restart Reprintbuddy for it to take effect.")
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="reprintbuddy")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -128,6 +139,8 @@ def _parser() -> argparse.ArgumentParser:
     set_password.add_argument("--username", required=True)
     set_port = command("set-port", _set_port, "set the listen port (emergency exit)")
     set_port.add_argument("port", help="port number, 1 to 65535")
+    set_host = command("set-host", _set_host, "set the listen address (emergency exit)")
+    set_host.add_argument("host", help="address to listen on, for example 0.0.0.0")
     return parser
 
 

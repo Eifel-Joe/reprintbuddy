@@ -102,12 +102,13 @@ def test_readme_covers_the_required_topics():
         "Spoolman",
         "install.sh",
         "set-password",
+        "set-host",
         "never controls",
         "configuration file",
     ):
         assert topic in text, topic
     german = _read("README.de.md")
-    for topic in ("Bambuddy", "Spoolman", "set-password", "Konfigurationsdatei", "ohne Prüfung drucken"):
+    for topic in ("Bambuddy", "Spoolman", "set-password", "set-host", "Konfigurationsdatei", "ohne Prüfung drucken"):
         assert topic in german, topic
 
 

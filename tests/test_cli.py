@@ -158,3 +158,17 @@ def test_python_dash_m_runs_main(db):
     )
     assert result.returncode == 0, result.stderr
     assert db.exists()
+
+
+def test_set_host(db):
+    assert main(["set-host", "127.0.0.1", "--db", str(db)]) == 0
+    with open_session(db) as s:
+        assert st.get_setting(s, "host") == "127.0.0.1"
+
+
+@pytest.mark.parametrize("bad", ["203.0.113.77", "no-such-host.invalid", "", "  "])
+def test_set_host_refuses_an_address_that_cannot_be_bound(db, bad, capsys):
+    assert main(["set-host", bad, "--db", str(db)]) == 2
+    assert "host" in capsys.readouterr().err.lower()
+    with open_session(db) as s:
+        assert st.get_setting(s, "host") == "0.0.0.0"

@@ -309,3 +309,12 @@ def test_all_settings_posts_require_csrf(ready_client):
         assert ready_client.post(path, data={}).status_code == 403, path
         assert ready_client.post(path, data={"csrf_token": "forged"}).status_code == 403, path
     assert saved(ready_client, "language") == "en"
+
+
+@pytest.mark.parametrize("host", ["203.0.113.77", "no-such-host.invalid", "256.1.1.1"])
+def test_server_host_that_cannot_be_bound_is_refused(ready_client, host):
+    """Saving such an address would lock everybody out after the next restart."""
+    response = post(ready_client, "/settings/server", host=host, port="8080")
+    assert response.status_code == 200
+    assert "cannot listen on this address" in response.text
+    assert saved(ready_client, "host") == "0.0.0.0"

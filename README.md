@@ -96,9 +96,11 @@ On the machine running Reprintbuddy:
 ```bash
 reprintbuddy set-password --username admin
 reprintbuddy set-port 8080
+reprintbuddy set-host 0.0.0.0
 ```
 
-Restart the service afterwards (`set-port` needs it to take effect).
+Restart the service afterwards (`set-port` and `set-host` need it to take effect).
+`set-host` sets the listen address (for example `0.0.0.0`) if a wrong one locked you out.
 
 ## Contributing
 

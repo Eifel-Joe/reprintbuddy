@@ -79,5 +79,6 @@
   "settings.invalid_host": "Bitte eine Lauschadresse eintragen.",
   "settings.invalid_pem": "Zertifikat oder privater Schlüssel konnten nicht gelesen werden. Erwartet wird PEM-Text, höchstens 64 KB.",
   "settings.tls_pair_required": "Bitte Zertifikat und privaten Schlüssel zusammen angeben.",
-  "settings.key_required_new_address": "Die Adresse hat sich geändert. Bitte den API-Schlüssel erneut eingeben: ein gespeicherter Schlüssel wird nie an eine neue Adresse geschickt."
+  "settings.key_required_new_address": "Die Adresse hat sich geändert. Bitte den API-Schlüssel erneut eingeben: ein gespeicherter Schlüssel wird nie an eine neue Adresse geschickt.",
+  "settings.host_unbindable": "Dieser Rechner kann auf dieser Adresse nicht lauschen. Bitte prüfen: eine unbrauchbare Adresse würde dich aussperren."
 }

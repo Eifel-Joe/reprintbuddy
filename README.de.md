@@ -100,9 +100,11 @@ Auf dem Rechner, auf dem Reprintbuddy läuft:
 ```bash
 reprintbuddy set-password --username admin
 reprintbuddy set-port 8080
+reprintbuddy set-host 0.0.0.0
 ```
 
-Danach den Dienst neu starten (`set-port` wirkt erst dann).
+Danach den Dienst neu starten (`set-port` und `set-host` wirken erst dann).
+`set-host` setzt die Lauschadresse (zum Beispiel `0.0.0.0`), falls dich eine falsche ausgesperrt hat.
 
 ## Mitmachen
 

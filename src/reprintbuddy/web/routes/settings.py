@@ -10,11 +10,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
 from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.connection import check_connection
+from reprintbuddy.netcheck import can_bind
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import flash, get_db, logged_in_user, render, start_session
 
@@ -172,6 +174,9 @@ async def save_server(request: Request, db: Session = Depends(get_db)):
         host = str(st.validate("host", host))
     except ValueError:
         return fail("settings.invalid_host")
+    # An address this machine cannot listen on would lock everybody out after the restart.
+    if not await run_in_threadpool(can_bind, host):
+        return fail("settings.host_unbindable")
 
     remove_tls = form.get("tls_remove") is not None
     cert = key = None
