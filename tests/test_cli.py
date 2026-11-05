@@ -1,0 +1,160 @@
+import os
+import subprocess
+import sys
+
+import pytest
+import uvicorn
+
+from lagerbuddy import auth
+from lagerbuddy import settings as st
+from lagerbuddy.cli import main
+from lagerbuddy.db import make_engine, make_sessionmaker, upgrade
+
+CERT = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+KEY = "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n"
+
+
+@pytest.fixture
+def db(tmp_path):
+    return tmp_path / "cli.db"
+
+
+def open_session(db):
+    engine = make_engine(db)
+    upgrade(engine)  # a rejected command may not have created the database
+    return make_sessionmaker(engine)()
+
+
+def feed_passwords(monkeypatch, *answers):
+    """getpass reads the terminal, not stdin, on Windows: replace it."""
+    replies = iter(answers)
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": next(replies))
+
+
+def test_migrate_creates_db(db):
+    assert main(["migrate", "--db", str(db)]) == 0
+    assert db.exists()
+    with open_session(db) as s:
+        assert st.get_setting(s, "language") == "en"
+        assert not auth.has_user(s)
+
+
+def test_init_sets_language(db):
+    assert main(["init", "--language", "de", "--db", str(db)]) == 0
+    with open_session(db) as s:
+        assert st.get_setting(s, "language") == "de"
+
+
+def test_init_rejects_unknown_language(db):
+    with pytest.raises(SystemExit) as info:
+        main(["init", "--language", "fr", "--db", str(db)])
+    assert info.value.code == 2
+
+
+def test_set_password(db, monkeypatch):
+    feed_passwords(monkeypatch, "new-password-1", "new-password-1")
+    assert main(["set-password", "--username", "admin", "--db", str(db)]) == 0
+    with open_session(db) as s:
+        assert auth.authenticate(s, "admin", "new-password-1") is not None
+
+
+def test_set_password_replaces_existing_account(db, monkeypatch):
+    feed_passwords(monkeypatch, "first-password", "first-password")
+    main(["set-password", "--username", "admin", "--db", str(db)])
+    feed_passwords(monkeypatch, "second-password", "second-password")
+    assert main(["set-password", "--username", "admin", "--db", str(db)]) == 0
+    with open_session(db) as s:
+        assert auth.authenticate(s, "admin", "first-password") is None
+        assert auth.authenticate(s, "admin", "second-password") is not None
+
+
+def test_set_password_mismatch(db, monkeypatch, capsys):
+    feed_passwords(monkeypatch, "new-password-1", "different-pass-2")
+    assert main(["set-password", "--username", "admin", "--db", str(db)]) == 2
+    assert "do not match" in capsys.readouterr().err
+    with open_session(db) as s:
+        assert not auth.has_user(s)
+
+
+def test_set_password_short(db, monkeypatch, capsys):
+    feed_passwords(monkeypatch, "short", "short")
+    assert main(["set-password", "--username", "admin", "--db", str(db)]) == 2
+    assert "at least 8" in capsys.readouterr().err
+    with open_session(db) as s:
+        assert not auth.has_user(s)
+
+
+def test_set_port(db):
+    assert main(["set-port", "9090", "--db", str(db)]) == 0
+    with open_session(db) as s:
+        assert st.get_setting(s, "port") == 9090
+
+
+@pytest.mark.parametrize("bad", ["0", "70000", "abc", "-5"])
+def test_set_port_invalid(db, bad, capsys):
+    assert main(["set-port", bad, "--db", str(db)]) == 2
+    assert "port" in capsys.readouterr().err.lower()
+    with open_session(db) as s:
+        assert st.get_setting(s, "port") == 8080
+
+
+def test_serve_uses_stored_host_and_port(db, monkeypatch):
+    main(["set-port", "9191", "--db", str(db)])
+    calls = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: calls.append((app, kw)))
+    assert main(["serve", "--db", str(db)]) == 0
+    (app, kwargs), = calls
+    assert kwargs["host"] == "0.0.0.0"
+    assert kwargs["port"] == 9191
+    assert kwargs.get("ssl_certfile") is None and kwargs.get("ssl_keyfile") is None
+    assert app.title == "Lagerbuddy"
+
+
+def test_serve_writes_tls_to_private_temp_files_and_removes_them(db, monkeypatch):
+    main(["migrate", "--db", str(db)])
+    with open_session(db) as s:
+        st.set_setting(s, "tls_cert", CERT)
+        st.set_setting(s, "tls_key", KEY)
+    seen = {}
+
+    def fake_run(app, **kw):
+        cert, key = kw["ssl_certfile"], kw["ssl_keyfile"]
+        seen["paths"] = (cert, key)
+        seen["content"] = (open(cert).read(), open(key).read())
+        if os.name == "posix":
+            seen["modes"] = (os.stat(cert).st_mode & 0o777, os.stat(key).st_mode & 0o777)
+
+    monkeypatch.setattr(uvicorn, "run", fake_run)
+    assert main(["serve", "--db", str(db)]) == 0
+    assert seen["content"] == (CERT, KEY)
+    if os.name == "posix":
+        assert seen["modes"] == (0o600, 0o600)
+    assert not any(os.path.exists(p) for p in seen["paths"])
+
+
+def test_serve_removes_tls_files_even_if_server_crashes(db, monkeypatch):
+    main(["migrate", "--db", str(db)])
+    with open_session(db) as s:
+        st.set_setting(s, "tls_cert", CERT)
+        st.set_setting(s, "tls_key", KEY)
+    paths = []
+
+    def crashing_run(app, **kw):
+        paths.extend([kw["ssl_certfile"], kw["ssl_keyfile"]])
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(uvicorn, "run", crashing_run)
+    with pytest.raises(RuntimeError):
+        main(["serve", "--db", str(db)])
+    assert paths and not any(os.path.exists(p) for p in paths)
+
+
+def test_python_dash_m_runs_main(db):
+    result = subprocess.run(
+        [sys.executable, "-m", "lagerbuddy", "migrate", "--db", str(db)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    assert db.exists()
