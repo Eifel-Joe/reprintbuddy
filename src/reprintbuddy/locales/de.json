@@ -299,5 +299,18 @@
   "parts.archive_in_use": "Archivieren nicht möglich: der aktive Artikel {article} braucht dieses Zukaufteil.",
   "parts.archived": "Das Zukaufteil {name} ist archiviert und kann nicht verwendet werden.",
   "sets.article_archived": "Der Artikel {name} ist archiviert und lässt sich nicht in einem Set verwenden.",
-  "orders.item_archived": "{name} ist archiviert und lässt sich nicht bestellen."
+  "orders.item_archived": "{name} ist archiviert und lässt sich nicht bestellen.",
+  "catalog.archived": "Archiviert",
+  "catalog.archived_badge": "Archiviert",
+  "catalog.archive": "Archivieren",
+  "catalog.restore": "Wiederherstellen",
+  "catalog.show_active": "Aktive anzeigen",
+  "articles.choose_other_file": "Andere Datei wählen",
+  "articles.restore_with_plate": "Mit dieser Platte wiederherstellen",
+  "articles.flash_archived": "Artikel {name} archiviert.",
+  "articles.flash_restored": "Artikel {name} wiederhergestellt.",
+  "parts.flash_archived": "Zukaufteil {name} archiviert.",
+  "parts.flash_restored": "Zukaufteil {name} wiederhergestellt.",
+  "sets.flash_archived": "Set {name} archiviert.",
+  "sets.flash_restored": "Set {name} wiederhergestellt."
 }

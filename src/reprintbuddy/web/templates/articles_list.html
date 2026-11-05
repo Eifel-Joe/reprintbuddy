@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ t('articles.title') }}{% endblock %}
 {% block content %}
-<h1>{{ t('articles.title') }}</h1>
+<h1>{{ t('articles.title') }}{% if archived %} · {{ t('catalog.archived') }}{% endif %}</h1>
 <p>
   <a class="btn" href="/articles/new">{{ t('articles.new') }}</a>
   <a class="btn-link" href="/journal">{{ t('journal.title') }}</a>
+  {% if archived %}<a class="btn-link" href="/articles">{{ t('catalog.show_active') }}</a>{% else %}<a class="btn-link" href="/articles?view=archived">{{ t('catalog.archived') }}</a>{% endif %}
 </p>
 {% if rows %}
 <div class="card table-wrap">

@@ -14,6 +14,7 @@ from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.forms import (
     duplicate_redirect,
+    run_form_action,
     error_status,
     error_text,
     parse_int,
@@ -81,8 +82,12 @@ def _form_page(request: Request, *, part: Part | None, values: dict[str, str], e
 
 
 @router.get("/parts")
-async def parts_list(request: Request, db: Session = Depends(get_db)):
-    return render(request, "parts_list.html", active_nav="parts", parts=catalog.list_parts(db))
+async def parts_list(request: Request, view: str = "active", db: Session = Depends(get_db)):
+    archived = view == "archived"
+    return render(
+        request, "parts_list.html", active_nav="parts", archived=archived,
+        parts=catalog.list_parts(db, archived=archived),
+    )
 
 
 @router.get("/parts/new")
@@ -139,3 +144,34 @@ async def parts_update(request: Request, part_id: int, db: Session = Depends(get
             error=error_text(current_language(request), exc), status=error_status(exc),
         )
     return saved_redirect(request, "/parts", "parts.updated", name=data.name)
+
+
+def _archive_action(action, flash_key: str):
+    async def handler(request: Request, part_id: int, db: Session = Depends(get_db)):
+        part = _get_part(db, part_id)
+
+        def work(tx):
+            action(tx, part_id)
+            return {"name": part.name}
+
+        return await run_form_action(
+            request,
+            work=work,
+            success_url=f"/parts/{part_id}/edit",
+            flash_key=flash_key,
+            on_error=lambda text, status, exc: _form_page(
+                request, part=part, values=_values_of(part), error=text, status=status
+            ),
+        )
+
+    return handler
+
+
+router.add_api_route(
+    "/parts/{part_id:int}/archive", _archive_action(catalog.archive_part, "parts.flash_archived"),
+    methods=["POST"], dependencies=[Depends(verify_csrf)],
+)
+router.add_api_route(
+    "/parts/{part_id:int}/restore", _archive_action(catalog.restore_part, "parts.flash_restored"),
+    methods=["POST"], dependencies=[Depends(verify_csrf)],
+)

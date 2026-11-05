@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{% if part %}{{ t('parts.edit') }}{% else %}{{ t('parts.new') }}{% endif %}{% endblock %}
 {% block content %}
-<h1>{% if part %}{{ part.name }}{% else %}{{ t('parts.new') }}{% endif %}</h1>
+<h1>{% if part %}{{ part.name }}{% else %}{{ t('parts.new') }}{% endif %}{% if part and part.archived_at %} <span class="badge wait">{{ t('catalog.archived_badge') }}</span>{% endif %}</h1>
 <section class="card section">
   {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
   {% set action = '/parts/' ~ part.id ~ '/edit' if part else '/parts/new' %}
@@ -64,4 +64,13 @@
     <a class="btn-link" href="/parts">{{ t('common.cancel') }}</a>
   </form>
 </section>
+{% if part %}
+<div class="actions">
+  <form method="post" action="/parts/{{ part.id }}/{% if part.archived_at %}restore{% else %}archive{% endif %}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <button class="btn {% if not part.archived_at %}secondary{% endif %}" type="submit">{% if part.archived_at %}{{ t('catalog.restore') }}{% else %}{{ t('catalog.archive') }}{% endif %}</button>
+  </form>
+</div>
+{% endif %}
 {% endblock %}

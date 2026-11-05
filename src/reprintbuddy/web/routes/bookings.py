@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import catalog, stock
-from reprintbuddy.domain.errors import DomainError
+from reprintbuddy.domain.errors import DomainError, NotFoundError
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Article, Part
 from reprintbuddy.web.csrf import verify_csrf
@@ -68,6 +68,21 @@ def _note(form) -> str | None:
     return parse_text(form.get("note"), field="journal.field.note", max_len=stock.MAX_NOTE)
 
 
+def _active_article(tx: Session, article_id: int) -> Article:
+    """Bookings only take active articles; an archived one counts as unknown."""
+    article = tx.get(Article, article_id)
+    if article is None or article.archived_at is not None:
+        raise NotFoundError("articles.not_found")
+    return article
+
+
+def _active_part(tx: Session, part_id: int) -> Part:
+    part = tx.get(Part, part_id)
+    if part is None or part.archived_at is not None:
+        raise NotFoundError("parts.not_found")
+    return part
+
+
 def _shortages(tx: Session, shortages: list[stock.PartShortage]) -> list[tuple[str, dict[str, Any]]]:
     messages = []
     for shortage in shortages:
@@ -108,6 +123,7 @@ async def book_inventory(request: Request, db: Session = Depends(get_db)):
                 "counted": _counted(form), "note": _note(form)}
 
     def book(tx, p):
+        _active_article(tx, p["article_id"])
         diff = stock.count_article(tx, p["article_id"], p["field"], p["counted"], "user", p["note"])
         item = tx.get(Article, p["article_id"]).name
         return [("bookings.inventory_done", {"item": item, "counted": p["counted"], "diff": f"{diff:+d}"})]
@@ -121,6 +137,7 @@ async def book_part_inventory(request: Request, db: Session = Depends(get_db)):
         return {"part_id": _part_id(form), "counted": _counted(form), "note": _note(form)}
 
     def book(tx, p):
+        _active_part(tx, p["part_id"])
         diff = stock.count_part(tx, p["part_id"], p["counted"], "user", p["note"])
         item = tx.get(Part, p["part_id"]).name
         return [("bookings.inventory_done", {"item": item, "counted": p["counted"], "diff": f"{diff:+d}"})]
@@ -134,6 +151,7 @@ async def book_part_receipt(request: Request, db: Session = Depends(get_db)):
         return {"part_id": _part_id(form), "qty": _qty(form), "note": _note(form)}
 
     def book(tx, p):
+        _active_part(tx, p["part_id"])
         stock.receive_part(tx, p["part_id"], p["qty"], "user", p["note"])
         return [("bookings.part_receipt_done", {"item": tx.get(Part, p["part_id"]).name, "qty": p["qty"]})]
 
@@ -146,6 +164,7 @@ async def book_sale(request: Request, db: Session = Depends(get_db)):
         return {"article_id": _article_id(form), "qty": _qty(form), "note": _note(form)}
 
     def book(tx, p):
+        _active_article(tx, p["article_id"])
         stock.sell_unreserved(tx, p["article_id"], p["qty"], "user", p["note"])
         return [("bookings.sale_done", {"item": tx.get(Article, p["article_id"]).name, "qty": p["qty"]})]
 
@@ -159,6 +178,7 @@ async def book_stock_in(request: Request, db: Session = Depends(get_db)):
                 "consume_parts": parse_bool(form.get("consume_parts"))}
 
     def book(tx, p):
+        _active_article(tx, p["article_id"])
         shortages = stock.stock_in(
             tx, p["article_id"], p["qty"], "user", p["note"], consume_parts=p["consume_parts"]
         )

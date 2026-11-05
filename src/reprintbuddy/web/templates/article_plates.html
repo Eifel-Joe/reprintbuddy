@@ -2,6 +2,7 @@
 {% block title %}{{ t('articles.choose_plate') }}{% endblock %}
 {% block content %}
 <h1>{{ file.filename }}</h1>
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 <p class="muted">{{ t('articles.choose_plate') }}</p>
 <div class="plate-grid">
   {% for plate in plates %}
@@ -11,7 +12,15 @@
     {% if plate.index in taken %}
     <p class="muted">{{ t('articles.plate_taken_by', name=taken[plate.index]) }}</p>
     {% else %}
+    {% if relink_id %}
+    <form method="post" action="{{ file_base }}/{{ file.id }}/plate/{{ plate.index }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="form_token" value="{{ form_token() }}">
+      <button class="btn" type="submit">{{ t('articles.restore_with_plate') }}</button>
+    </form>
+    {% else %}
     <p><a class="btn" href="{{ file_base }}/{{ file.id }}/plate/{{ plate.index }}">{{ t('articles.use_plate') }}</a></p>
+    {% endif %}
     {% endif %}
   </div>
   {% endfor %}

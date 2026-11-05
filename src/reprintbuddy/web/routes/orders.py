@@ -98,7 +98,7 @@ def _choice_blocks(db: Session, form, items: list[dict[str, str]]) -> dict[int, 
             articles = db.execute(
                 select(Article.id, Article.name)
                 .join(SetPositionOption, SetPositionOption.article_id == Article.id)
-                .where(SetPositionOption.position_id == position.id)
+                .where(SetPositionOption.position_id == position.id, Article.archived_at.is_(None))
                 .order_by(Article.name, Article.id)
             ).all()
             if len(articles) > 1:
@@ -120,7 +120,7 @@ def _form_page(request, db, *, form_values, items, rows, blocks, error=None, sta
         rows=rows,
         blocks=blocks,
         articles=catalog.list_articles(db),
-        sets=catalog.list_sets(db),
+        sets=[row for row in catalog.list_sets(db) if row.orderable],
         error=error,
     )
 

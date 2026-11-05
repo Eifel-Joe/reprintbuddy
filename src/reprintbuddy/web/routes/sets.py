@@ -14,6 +14,7 @@ from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.forms import (
     duplicate_redirect,
+    run_form_action,
     error_status,
     error_text,
     parse_int,
@@ -84,8 +85,12 @@ def _form_page(request, db, *, product_set, values, rows_values, rows, error=Non
 
 
 @router.get("/sets")
-async def sets_list(request: Request, db: Session = Depends(get_db)):
-    return render(request, "sets_list.html", active_nav="sets", rows=catalog.list_sets(db))
+async def sets_list(request: Request, view: str = "active", db: Session = Depends(get_db)):
+    archived = view == "archived"
+    return render(
+        request, "sets_list.html", active_nav="sets", archived=archived,
+        rows=catalog.list_sets(db, archived=archived),
+    )
 
 
 @router.get("/sets/new")
@@ -130,23 +135,7 @@ def _get_set(db: Session, set_id: int) -> ProductSet:
 
 @router.get("/sets/{set_id:int}/edit")
 async def sets_edit(request: Request, set_id: int, db: Session = Depends(get_db)):
-    product_set = _get_set(db, set_id)
-    positions = db.scalars(
-        select(SetPosition).where(SetPosition.set_id == set_id).order_by(SetPosition.sort, SetPosition.id)
-    ).all()
-    rows_values = []
-    for position in positions:
-        selected = set(
-            db.scalars(select(SetPositionOption.article_id).where(SetPositionOption.position_id == position.id))
-        )
-        rows_values.append({"qty": str(position.qty), "selected": selected})
-    rows = max(DEFAULT_ROWS, len(rows_values) + 2)
-    rows_values += [{"qty": "1", "selected": set()} for _ in range(rows - len(rows_values))]
-    return _form_page(
-        request, db, product_set=product_set,
-        values={"name": product_set.name, "sku": product_set.sku or ""},
-        rows_values=rows_values, rows=rows,
-    )
+    return _edit_again(request, db, _get_set(db, set_id), None, 200)
 
 
 @router.post("/sets/{set_id:int}/edit", dependencies=[Depends(verify_csrf)])
@@ -170,3 +159,49 @@ async def sets_update(request: Request, set_id: int, db: Session = Depends(get_d
             error=error_text(current_language(request), exc), status=error_status(exc),
         )
     return saved_redirect(request, "/sets", "sets.saved", name=data.name)
+
+
+def _archive_action(action, flash_key: str):
+    async def handler(request: Request, set_id: int, db: Session = Depends(get_db)):
+        product_set = _get_set(db, set_id)
+
+        def work(tx):
+            action(tx, set_id)
+            return {"name": product_set.name}
+
+        return await run_form_action(
+            request,
+            work=work,
+            success_url=f"/sets/{set_id}/edit",
+            flash_key=flash_key,
+            on_error=lambda text, status, exc: _edit_again(request, db, product_set, text, status),
+        )
+
+    return handler
+
+
+def _edit_again(request, db, product_set, error, status):
+    positions = db.scalars(
+        select(SetPosition).where(SetPosition.set_id == product_set.id).order_by(SetPosition.sort, SetPosition.id)
+    ).all()
+    rows_values = []
+    for position in positions:
+        selected = set(db.scalars(select(SetPositionOption.article_id).where(SetPositionOption.position_id == position.id)))
+        rows_values.append({"qty": str(position.qty), "selected": selected})
+    rows = max(DEFAULT_ROWS, len(rows_values) + 2)
+    rows_values += [{"qty": "1", "selected": set()} for _ in range(rows - len(rows_values))]
+    return _form_page(
+        request, db, product_set=product_set,
+        values={"name": product_set.name, "sku": product_set.sku or ""},
+        rows_values=rows_values, rows=rows, error=error, status=status,
+    )
+
+
+router.add_api_route(
+    "/sets/{set_id:int}/archive", _archive_action(catalog.archive_set, "sets.flash_archived"),
+    methods=["POST"], dependencies=[Depends(verify_csrf)],
+)
+router.add_api_route(
+    "/sets/{set_id:int}/restore", _archive_action(catalog.restore_set, "sets.flash_restored"),
+    methods=["POST"], dependencies=[Depends(verify_csrf)],
+)

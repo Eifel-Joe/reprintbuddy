@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{% if product_set %}{{ t('sets.edit') }}{% else %}{{ t('sets.new') }}{% endif %}{% endblock %}
 {% block content %}
-<h1>{% if product_set %}{{ product_set.name }}{% else %}{{ t('sets.new') }}{% endif %}</h1>
+<h1>{% if product_set %}{{ product_set.name }}{% else %}{{ t('sets.new') }}{% endif %}{% if product_set and product_set.archived_at %} <span class="badge wait">{{ t('catalog.archived_badge') }}</span>{% endif %}</h1>
 <section class="card section">
   {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
   <form method="post" action="{% if product_set %}/sets/{{ product_set.id }}/edit{% else %}/sets/new{% endif %}">
@@ -38,4 +38,13 @@
     <a class="btn-link" href="/sets">{{ t('common.cancel') }}</a>
   </form>
 </section>
+{% if product_set %}
+<div class="actions">
+  <form method="post" action="/sets/{{ product_set.id }}/{% if product_set.archived_at %}restore{% else %}archive{% endif %}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <button class="btn {% if not product_set.archived_at %}secondary{% endif %}" type="submit">{% if product_set.archived_at %}{{ t('catalog.restore') }}{% else %}{{ t('catalog.archive') }}{% endif %}</button>
+  </form>
+</div>
+{% endif %}
 {% endblock %}

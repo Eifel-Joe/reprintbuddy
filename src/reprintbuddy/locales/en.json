@@ -299,5 +299,18 @@
   "parts.archive_in_use": "Cannot archive: the active article {article} needs this part.",
   "parts.archived": "The part {name} is archived and cannot be used.",
   "sets.article_archived": "The article {name} is archived and cannot be used in a set.",
-  "orders.item_archived": "{name} is archived and cannot be ordered."
+  "orders.item_archived": "{name} is archived and cannot be ordered.",
+  "catalog.archived": "Archived",
+  "catalog.archived_badge": "Archived",
+  "catalog.archive": "Archive",
+  "catalog.restore": "Restore",
+  "catalog.show_active": "Show active",
+  "articles.choose_other_file": "Choose another file",
+  "articles.restore_with_plate": "Restore with this plate",
+  "articles.flash_archived": "Article {name} archived.",
+  "articles.flash_restored": "Article {name} restored.",
+  "parts.flash_archived": "Part {name} archived.",
+  "parts.flash_restored": "Part {name} restored.",
+  "sets.flash_archived": "Set {name} archived.",
+  "sets.flash_restored": "Set {name} restored."
 }

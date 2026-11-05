@@ -1,8 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ t('parts.title') }}{% endblock %}
 {% block content %}
-<h1>{{ t('parts.title') }}</h1>
-<p><a class="btn" href="/parts/new">{{ t('parts.new') }}</a></p>
+<h1>{{ t('parts.title') }}{% if archived %} · {{ t('catalog.archived') }}{% endif %}</h1>
+<p>
+  <a class="btn" href="/parts/new">{{ t('parts.new') }}</a>
+  {% if archived %}<a class="btn-link" href="/parts">{{ t('catalog.show_active') }}</a>{% else %}<a class="btn-link" href="/parts?view=archived">{{ t('catalog.archived') }}</a>{% endif %}
+</p>
 {% if parts %}
 <div class="card table-wrap">
   <table>

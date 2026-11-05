@@ -27,6 +27,7 @@ from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, render
 from reprintbuddy.web.forms import (
     duplicate_redirect,
+    run_form_action,
     error_status,
     error_text,
     parse_bool,
@@ -153,15 +154,18 @@ async def _read_plate(client: BambuddyClient, file_id: int, index: int):
 
 
 @router.get("/articles")
-async def articles_list(request: Request, db: Session = Depends(get_db)):
-    return render(request, "articles_list.html", active_nav="articles", rows=catalog.list_articles(db))
+async def articles_list(request: Request, view: str = "active", db: Session = Depends(get_db)):
+    archived = view == "archived"
+    return render(
+        request, "articles_list.html", active_nav="articles", archived=archived,
+        rows=catalog.list_articles(db, archived=archived),
+    )
 
 
 # ---- creation: browse folders and files, choose a plate ------------------------------------------
 
 
-@router.get("/articles/new")
-async def articles_new(request: Request, folder: str | None = None):
+async def _browse(request: Request, folder: str | None, base: str, file_base: str):
     client = get_bambuddy(request)
     if client is None:
         return _problem(request, "articles.bambuddy_missing")
@@ -189,9 +193,14 @@ async def articles_new(request: Request, folder: str | None = None):
         in_folder=bool(crumbs),
         subfolders=subfolders,
         files=sorted(files, key=lambda f: f.filename.casefold()),
-        base="/articles/new",
-        file_base="/articles/new/file",
+        base=base,
+        file_base=file_base,
     )
+
+
+@router.get("/articles/new")
+async def articles_new(request: Request, folder: str | None = None):
+    return await _browse(request, folder, "/articles/new", "/articles/new/file")
 
 
 def _taken_plates(db: Session, file_id: int) -> dict[int, str]:
@@ -203,8 +212,10 @@ def _taken_plates(db: Session, file_id: int) -> dict[int, str]:
     return {plate_id: name for plate_id, name in rows}
 
 
-@router.get("/articles/new/file/{file_id:int}")
-async def articles_plates(request: Request, file_id: int, db: Session = Depends(get_db)):
+async def _plates_page(
+    request: Request, db: Session, file_id: int, *, file_base: str, back_base: str,
+    relink_id: int | None = None, error: str | None = None, status: int = 200,
+):
     client = get_bambuddy(request)
     if client is None:
         return _problem(request, "articles.bambuddy_missing")
@@ -218,13 +229,21 @@ async def articles_plates(request: Request, file_id: int, db: Session = Depends(
     return render(
         request,
         "article_plates.html",
+        status_code=status,
         active_nav="articles",
         file=file,
         plates=plates,
         taken=_taken_plates(db, file_id),
-        file_base="/articles/new/file",
-        back=f"/articles/new?folder={file.folder_id}" if file.folder_id is not None else "/articles/new",
+        file_base=file_base,
+        relink_id=relink_id,
+        error=error,
+        back=f"{back_base}?folder={file.folder_id}" if file.folder_id is not None else back_base,
     )
+
+
+@router.get("/articles/new/file/{file_id:int}")
+async def articles_plates(request: Request, file_id: int, db: Session = Depends(get_db)):
+    return await _plates_page(request, db, file_id, file_base="/articles/new/file", back_base="/articles/new")
 
 
 @router.get("/articles/new/file/{file_id:int}/plate/{index:int}/thumbnail")
@@ -251,6 +270,11 @@ def _requirement_row(r: FilamentRequirement) -> dict[str, object]:
         "color": r.color_hex or "",
         "swatch": r.color_hex if r.color_hex and _COLOR.fullmatch(r.color_hex) else None,
     }
+
+
+@router.get("/articles/{article_id:int}/relink/file/{file_id:int}/plate/{index:int}/thumbnail")
+async def relink_thumbnail(request: Request, article_id: int, file_id: int, index: int):
+    return await articles_thumbnail(request, file_id, index)
 
 
 # ---- creation: the form ----------------------------------------------------------------------
@@ -367,10 +391,10 @@ def _target_label(lang: str, article: Article) -> str:
     return translate(lang, "articles.target_printer_id", id=article.printer_id)
 
 
-@router.get("/articles/{article_id:int}")
-async def article_detail(request: Request, article_id: int, db: Session = Depends(get_db)):
-    article = _get_article(db, article_id)
+def _detail_page(request: Request, db: Session, article: Article, error: str | None = None, status: int = 200,
+                 relink_offer: bool = False):
     lang = current_language(request)
+    article_id = article.id
     filaments = db.scalars(
         select(ArticleFilament).where(ArticleFilament.article_id == article_id).order_by(ArticleFilament.slot)
     ).all()
@@ -384,6 +408,7 @@ async def article_detail(request: Request, article_id: int, db: Session = Depend
     return render(
         request,
         "article_detail.html",
+        status_code=status,
         active_nav="articles",
         article=article,
         available=article.stock - article.reserved,
@@ -392,7 +417,14 @@ async def article_detail(request: Request, article_id: int, db: Session = Depend
         filaments=[_requirement_row(FilamentRequirement(f.slot, f.grams, f.material, f.color_hex)) for f in filaments],
         parts=parts,
         rows=journal_rows(db, entries),
+        error=error,
+        relink_offer=relink_offer,
     )
+
+
+@router.get("/articles/{article_id:int}")
+async def article_detail(request: Request, article_id: int, db: Session = Depends(get_db)):
+    return _detail_page(request, db, _get_article(db, article_id))
 
 
 @router.get("/articles/{article_id:int}/thumbnail")
@@ -464,3 +496,95 @@ async def article_update(request: Request, article_id: int, db: Session = Depend
             error=error_text(current_language(request), exc), status=error_status(exc),
         )
     return saved_redirect(request, f"/articles/{article_id}", "articles.saved", name=data.name)
+
+
+# ---- archive, restore, restore with another file (Spec 5.5) ------------------------------------------
+
+
+def _archive_action(action, flash_key: str):
+    async def handler(request: Request, article_id: int, db: Session = Depends(get_db)):
+        article = _get_article(db, article_id)
+
+        def work(tx):
+            action(tx, article_id)
+            return {"name": article.name}
+
+        def on_error(text: str, status: int, exc: Exception):
+            # a taken plate offers the way out: restore with another file
+            offer = getattr(exc, "key", None) == "articles.restore_plate_taken"
+            return _detail_page(request, db, article, error=text, status=status, relink_offer=offer)
+
+        return await run_form_action(
+            request, work=work, success_url=f"/articles/{article_id}", flash_key=flash_key, on_error=on_error
+        )
+
+    return handler
+
+
+router.add_api_route(
+    "/articles/{article_id:int}/archive", _archive_action(catalog.archive_article, "articles.flash_archived"),
+    methods=["POST"], dependencies=[Depends(verify_csrf)],
+)
+router.add_api_route(
+    "/articles/{article_id:int}/restore", _archive_action(catalog.restore_article, "articles.flash_restored"),
+    methods=["POST"], dependencies=[Depends(verify_csrf)],
+)
+
+
+def _archived_article(db: Session, article_id: int) -> Article:
+    article = _get_article(db, article_id)
+    if article.archived_at is None:
+        raise HTTPException(status_code=404)
+    return article
+
+
+@router.get("/articles/{article_id:int}/relink")
+async def relink_browse(request: Request, article_id: int, folder: str | None = None, db: Session = Depends(get_db)):
+    _archived_article(db, article_id)
+    base = f"/articles/{article_id}/relink"
+    return await _browse(request, folder, base, f"{base}/file")
+
+
+@router.get("/articles/{article_id:int}/relink/file/{file_id:int}")
+async def relink_plates(request: Request, article_id: int, file_id: int, db: Session = Depends(get_db)):
+    _archived_article(db, article_id)
+    base = f"/articles/{article_id}/relink"
+    return await _plates_page(
+        request, db, file_id, file_base=f"{base}/file", back_base=base, relink_id=article_id
+    )
+
+
+@router.post(
+    "/articles/{article_id:int}/relink/file/{file_id:int}/plate/{index:int}",
+    dependencies=[Depends(verify_csrf)],
+)
+async def relink_restore(request: Request, article_id: int, file_id: int, index: int, db: Session = Depends(get_db)):
+    article = _archived_article(db, article_id)
+    base = f"/articles/{article_id}/relink"
+    client = get_bambuddy(request)
+    if client is None:
+        return _problem(request, "articles.bambuddy_missing")
+    try:  # read fresh from Bambuddy, outside of the write transaction
+        read = await _read_plate(client, file_id, index)
+    except BAMBUDDY_ERRORS:
+        return _problem(request, "articles.bambuddy_error")
+    if read is None:
+        return _problem(request, "articles.file_missing")
+    file, plate, requirements, thumbnail = read
+
+    def work(tx):
+        catalog.restore_article_with_plate(
+            tx, article_id, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail
+        )
+        return {"name": article.name}
+
+    return await run_form_action(
+        request,
+        work=work,
+        success_url=f"/articles/{article_id}",
+        flash_key="articles.flash_restored",
+        on_error=lambda text, status, exc: _plates_page(
+            request, db, file_id, file_base=f"{base}/file", back_base=base, relink_id=article_id,
+            error=text, status=status,
+        ),
+    )
