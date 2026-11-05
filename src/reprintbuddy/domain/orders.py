@@ -88,33 +88,46 @@ def _resolve(session: Session, items: Sequence[ArticleItem | SetItem]):
     for group_no, item in enumerate(items, start=1):
         qty = _qty(item.qty)
         if isinstance(item, ArticleItem):
-            if session.get(Article, item.article_id) is None:
+            article = session.get(Article, item.article_id)
+            if article is None:
                 raise NotFoundError("articles.not_found")
+            if article.archived_at is not None:
+                raise ValidationError("orders.item_archived", name=article.name)
             specs.append((group_no, item.article_id, qty, None, None))
             continue
         product_set = get_set(session, item.set_id)
+        if product_set.archived_at is not None:
+            raise ValidationError("orders.item_archived", name=product_set.name)
         positions = session.scalars(
             select(SetPosition)
             .where(SetPosition.set_id == product_set.id)
             .order_by(SetPosition.sort, SetPosition.id)
         ).all()
         for position in positions:
-            options = list(
-                session.scalars(
-                    select(SetPositionOption.article_id)
-                    .where(SetPositionOption.position_id == position.id)
-                    .order_by(SetPositionOption.article_id)
-                )
-            )
+            options = session.execute(
+                select(Article.id, Article.name, Article.archived_at)
+                .join(SetPositionOption, SetPositionOption.article_id == Article.id)
+                .where(SetPositionOption.position_id == position.id)
+                .order_by(Article.id)
+            ).all()
+            names = {a: n for a, n, _archived in options}
+            active = [a for a, _n, archived in options if archived is None]
+            if not active:
+                raise ValidationError("orders.item_archived", name=product_set.name)
             if len(options) == 1:
-                article_id = options[0]
+                article_id = active[0]
             else:
                 chosen = item.choices.get(position.id)
                 if chosen is None:
-                    raise ValidationError("orders.choice_required", set=product_set.name)
-                if chosen not in options:
+                    if len(active) > 1:
+                        raise ValidationError("orders.choice_required", set=product_set.name)
+                    article_id = active[0]  # only one article is left to choose from
+                elif chosen not in names:
                     raise ValidationError("orders.choice_invalid", set=product_set.name)
-                article_id = chosen
+                elif chosen not in active:
+                    raise ValidationError("orders.item_archived", name=names[chosen])
+                else:
+                    article_id = chosen
             specs.append((group_no, article_id, qty * position.qty, product_set.id, qty))
     return specs
 

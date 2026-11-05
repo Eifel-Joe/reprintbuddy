@@ -289,5 +289,15 @@
   "bookings.inventory_done": "{item}: counted {counted}, difference {diff}.",
   "bookings.part_receipt_done": "{item}: {qty} received.",
   "bookings.sale_done": "{item}: {qty} sold without order.",
-  "bookings.stock_in_done": "{item}: {qty} booked in."
+  "bookings.stock_in_done": "{item}: {qty} booked in.",
+  "catalog.already_archived": "This item is already archived.",
+  "catalog.not_archived": "This item is not archived.",
+  "articles.archive_open_orders": "Cannot archive: the article is in an open order.",
+  "articles.archive_provisional": "Cannot archive: there are provisional units that still have to be checked.",
+  "articles.archive_awaiting_assembly": "Cannot archive: there are units waiting for assembly.",
+  "articles.restore_plate_taken": "Cannot restore: the plate now belongs to the article {name}. Choose another file.",
+  "parts.archive_in_use": "Cannot archive: the active article {article} needs this part.",
+  "parts.archived": "The part {name} is archived and cannot be used.",
+  "sets.article_archived": "The article {name} is archived and cannot be used in a set.",
+  "orders.item_archived": "{name} is archived and cannot be ordered."
 }

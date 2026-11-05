@@ -18,10 +18,13 @@ from reprintbuddy.models import (
     Article,
     ArticleFilament,
     ArticlePart,
+    Order,
+    OrderLine,
     Part,
     ProductSet,
     SetPosition,
     SetPositionOption,
+    utcnow,
 )
 
 MAX_NAME = 200
@@ -174,8 +177,11 @@ def _check_article_input(
     parts: dict[int, int] = {}
     for part_id, qty in data.parts.items():
         parts[part_id] = _int_in(qty, "articles.field.qty_per_unit", 1, 1000)
-        if session.get(Part, part_id) is None:
+        part = session.get(Part, part_id)
+        if part is None:
             raise NotFoundError("parts.not_found")
+        if part.archived_at is not None:
+            raise ValidationError("parts.archived", name=part.name)
     return replace(
         data,
         name=name,
@@ -278,8 +284,13 @@ class ArticleRow:
     target: int
 
 
-def list_articles(session: Session) -> list[ArticleRow]:
-    articles = session.scalars(select(Article)).all()
+def _archive_filter(column, archived: bool):
+    return column.is_not(None) if archived else column.is_(None)
+
+
+def list_articles(session: Session, *, archived: bool = False) -> list[ArticleRow]:
+    """Active articles; with `archived=True` only the archived ones (Spec 5.5)."""
+    articles = session.scalars(select(Article).where(_archive_filter(Article.archived_at, archived))).all()
     rows = [
         ArticleRow(
             id=a.id,
@@ -372,8 +383,8 @@ def update_part(session: Session, part_id: int, data: PartInput) -> Part:
     return part
 
 
-def list_parts(session: Session) -> list[Part]:
-    parts = session.scalars(select(Part)).all()
+def list_parts(session: Session, *, archived: bool = False) -> list[Part]:
+    parts = session.scalars(select(Part).where(_archive_filter(Part.archived_at, archived))).all()
     return sorted(parts, key=lambda p: (p.name.casefold(), p.id))
 
 
@@ -409,6 +420,7 @@ class SetRow:
     sku: str | None
     available: int
     positions: list[PositionRow]
+    orderable: bool  # every position still has an active article
 
 
 def _check_set_input(
@@ -425,8 +437,11 @@ def _check_set_input(
         if not article_ids:
             raise ValidationError("sets.position_empty")
         for article_id in article_ids:
-            if session.get(Article, article_id) is None:
+            article = session.get(Article, article_id)
+            if article is None:
                 raise NotFoundError("articles.not_found")
+            if article.archived_at is not None:
+                raise ValidationError("sets.article_archived", name=article.name)
         positions.append((qty, article_ids))
     return name, sku, positions
 
@@ -483,7 +498,7 @@ def _set_row(session: Session, product_set: ProductSet) -> SetRow:
         articles = session.scalars(
             select(Article)
             .join(SetPositionOption, SetPositionOption.article_id == Article.id)
-            .where(SetPositionOption.position_id == position.id)
+            .where(SetPositionOption.position_id == position.id, Article.archived_at.is_(None))
             .order_by(Article.name, Article.id)
         ).all()
         rows.append(
@@ -506,9 +521,166 @@ def _set_row(session: Session, product_set: ProductSet) -> SetRow:
         sku=product_set.sku,
         available=rules.set_available(stocks),
         positions=rows,
+        orderable=bool(rows) and all(row.article_ids for row in rows),
     )
 
 
-def list_sets(session: Session) -> list[SetRow]:
-    sets = sorted(session.scalars(select(ProductSet)).all(), key=lambda s: (s.name.casefold(), s.id))
+def list_sets(session: Session, *, archived: bool = False) -> list[SetRow]:
+    found = session.scalars(select(ProductSet).where(_archive_filter(ProductSet.archived_at, archived))).all()
+    sets = sorted(found, key=lambda s: (s.name.casefold(), s.id))
     return [_set_row(session, s) for s in sets]
+
+
+# ---- archive instead of delete (Spec 5.5) ---------------------------------------------------
+
+
+def _article_or_404(session: Session, article_id: int) -> Article:
+    article = session.get(Article, article_id)
+    if article is None:
+        raise NotFoundError("articles.not_found")
+    return article
+
+
+def archive_article(session: Session, article_id: int) -> None:
+    """Only when nothing is running. B3 knows open orders, provisional and awaiting
+    assembly; B4 adds the queue and in-progress checks."""
+    article = _article_or_404(session, article_id)
+    if article.archived_at is not None:
+        raise ConflictError("catalog.already_archived")
+    in_open_order = session.scalar(
+        select(OrderLine.id)
+        .join(Order, Order.id == OrderLine.order_id)
+        .where(OrderLine.article_id == article_id, Order.status == "open")
+        .limit(1)
+    )
+    if in_open_order is not None:
+        raise ConflictError("articles.archive_open_orders")
+    if article.provisional > 0:
+        raise ConflictError("articles.archive_provisional")
+    if article.awaiting_assembly > 0:
+        raise ConflictError("articles.archive_awaiting_assembly")
+    article.archived_at = utcnow()
+    session.flush()
+
+
+def _plate_holder(session: Session, file_id: int, plate_index: int, *, besides: int) -> Article | None:
+    return session.scalar(
+        select(Article).where(
+            Article.library_file_id == file_id,
+            Article.plate_id == plate_index,
+            Article.archived_at.is_(None),
+            Article.id != besides,
+        )
+    )
+
+
+def _check_parts_active(session: Session, article_id: int) -> None:
+    archived = session.scalar(
+        select(Part)
+        .join(ArticlePart, ArticlePart.part_id == Part.id)
+        .where(ArticlePart.article_id == article_id, Part.archived_at.is_not(None))
+        .limit(1)
+    )
+    if archived is not None:
+        raise ValidationError("parts.archived", name=archived.name)
+
+
+def restore_article(session: Session, article_id: int) -> Article:
+    """Bring an article back. If its plate has been taken meanwhile, the caller offers
+    `restore_article_with_plate` with another file."""
+    article = _article_or_404(session, article_id)
+    if article.archived_at is None:
+        raise ConflictError("catalog.not_archived")
+    holder = _plate_holder(session, article.library_file_id, article.plate_id, besides=article.id)
+    if holder is not None:
+        raise ConflictError("articles.restore_plate_taken", name=holder.name)
+    _check_parts_active(session, article_id)
+    article.archived_at = None
+    session.flush()
+    return article
+
+
+def restore_article_with_plate(
+    session: Session,
+    article_id: int,
+    *,
+    file: LibraryFile,
+    plate: Plate,
+    requirements: Sequence[FilamentRequirement],
+    thumbnail: bytes | None,
+) -> Article:
+    """Restore with another file and plate; takes over the file data like `create_article`."""
+    article = _article_or_404(session, article_id)
+    if article.archived_at is None:
+        raise ConflictError("catalog.not_archived")
+    holder = _plate_holder(session, file.id, plate.index, besides=article.id)
+    if holder is not None:
+        raise ConflictError("articles.plate_taken", name=holder.name)
+    _check_parts_active(session, article_id)
+    article.library_file_id = file.id
+    article.plate_id = plate.index
+    article.file_name = file.filename
+    article.file_fingerprint = file.fingerprint
+    article.thumbnail = thumbnail
+    session.execute(delete(ArticleFilament).where(ArticleFilament.article_id == article_id))
+    for requirement in requirements:
+        session.add(
+            ArticleFilament(
+                article_id=article_id,
+                slot=requirement.slot,
+                grams=requirement.grams,
+                material=requirement.material,
+                color_hex=requirement.color_hex,
+            )
+        )
+    article.archived_at = None
+    session.flush()
+    return article
+
+
+def archive_part(session: Session, part_id: int) -> None:
+    part = session.get(Part, part_id)
+    if part is None:
+        raise NotFoundError("parts.not_found")
+    if part.archived_at is not None:
+        raise ConflictError("catalog.already_archived")
+    user = session.scalar(
+        select(Article)
+        .join(ArticlePart, ArticlePart.article_id == Article.id)
+        .where(ArticlePart.part_id == part_id, Article.archived_at.is_(None))
+        .order_by(Article.name)
+        .limit(1)
+    )
+    if user is not None:
+        raise ConflictError("parts.archive_in_use", article=user.name)
+    part.archived_at = utcnow()
+    session.flush()
+
+
+def restore_part(session: Session, part_id: int) -> Part:
+    part = session.get(Part, part_id)
+    if part is None:
+        raise NotFoundError("parts.not_found")
+    if part.archived_at is None:
+        raise ConflictError("catalog.not_archived")
+    part.archived_at = None
+    session.flush()
+    return part
+
+
+def archive_set(session: Session, set_id: int) -> None:
+    """A set can always be archived; open orders keep their lines and still ship."""
+    product_set = get_set(session, set_id)
+    if product_set.archived_at is not None:
+        raise ConflictError("catalog.already_archived")
+    product_set.archived_at = utcnow()
+    session.flush()
+
+
+def restore_set(session: Session, set_id: int) -> ProductSet:
+    product_set = get_set(session, set_id)
+    if product_set.archived_at is None:
+        raise ConflictError("catalog.not_archived")
+    product_set.archived_at = None
+    session.flush()
+    return product_set
