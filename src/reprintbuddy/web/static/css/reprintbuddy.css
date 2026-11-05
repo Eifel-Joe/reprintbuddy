@@ -238,3 +238,5 @@ select[multiple] { height: auto; }
 
 .forms-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 1rem; align-items: start; margin-bottom: 1.5rem; }
 .forms-grid .section { max-width: none; margin-bottom: 0; }
+
+a.btn { text-decoration: none; }
