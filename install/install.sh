@@ -146,6 +146,9 @@ choose_language() {
     if [ -n "${LANGUAGE_CHOICE}" ]; then
         return 0
     fi
+    if [ -e "${DESTDIR}${DB_FILE}" ]; then
+        return 0 # a re-run keeps the database; the language is only used to create it
+    fi
     LANGUAGE_CHOICE="en"
     if [ -t 0 ]; then
         local answer
@@ -161,6 +164,17 @@ choose_language() {
             esac
         done
     fi
+}
+
+# The update helper and this script both change the installation: never at the same time.
+refuse_during_update() {
+    local state
+    state="$(systemctl show --property=ActiveState --value reprintbuddy-update.service 2>/dev/null || true)"
+    case "${state}" in
+        active | activating | reloading | deactivating)
+            die 1 "An update is running. Run the installer again when it has finished."
+            ;;
+    esac
 }
 
 require_repo_url() {
@@ -186,6 +200,8 @@ prepare_dirs() {
     run mkdir -p "${DATA_DIR}"
     run chown "${APP_USER}:${APP_USER}" "${DATA_DIR}"
     run chmod 700 "${DATA_DIR}"
+    # Repair files that ended up with another owner (a manual command run as root, for example).
+    run find "${DATA_DIR}" -xdev ! -user "${APP_USER}" -exec chown -h "${APP_USER}:${APP_USER}" {} +
     if [ -d "${existing}" ] && [ ! -e "${existing}/.git" ] && [ -n "$(ls -A "${existing}")" ]; then
         die 1 "${INSTALL_DIR} exists but is not a Reprintbuddy installation."
     fi
@@ -325,7 +341,7 @@ start_service() {
     local url waited=0
     url="$(capture_as_service_user "${VENV_DIR}/bin/reprintbuddy" url --db "${DB_FILE}")"
     while [ "${waited}" -lt 30 ]; do
-        if curl -fsSk -o /dev/null "${url}/healthz"; then
+        if curl -fsSk --max-time 5 -o /dev/null "${url}/healthz"; then
             return 0
         fi
         sleep 1
@@ -342,7 +358,7 @@ print_next_steps() {
             url="http://${ip}:8080/setup"
         fi
     else
-        ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+        ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
         ip="${ip:-<container-ip>}"
         url="$(capture_as_service_user "${VENV_DIR}/bin/reprintbuddy" url --db "${DB_FILE}" --host "${ip}" --next)"
     fi
@@ -363,8 +379,9 @@ main() {
     parse_args "$@"
     require_root
     require_debian
-    choose_language
     require_repo_url
+    refuse_during_update
+    choose_language
     install_packages
     create_user
     prepare_dirs
