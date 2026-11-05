@@ -16,10 +16,12 @@ from reprintbuddy import settings as st
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.web import deps
 from reprintbuddy.web.flash import pop_flashes
+from reprintbuddy.web.formatting import local_dt
 from reprintbuddy.web.formtoken import issue_form_token
 from reprintbuddy.web.throttle import FailureBrake, HashLimiter
 from reprintbuddy.web.routes import articles as articles_routes
 from reprintbuddy.web.routes import auth as auth_routes
+from reprintbuddy.web.routes import journal as journal_routes
 from reprintbuddy.web.routes import overview as overview_routes
 from reprintbuddy.web.routes import parts as parts_routes
 from reprintbuddy.web.routes import settings as settings_routes
@@ -54,6 +56,7 @@ def create_app(
     templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
     templates.env.globals["t"] = deps.t
     templates.env.globals["pop_flashes"] = pop_flashes
+    templates.env.filters["local_dt"] = local_dt
     templates.env.globals["form_token"] = lambda: issue_form_token(secret)
     app.state.templates = templates
 
@@ -82,4 +85,5 @@ def create_app(
     app.include_router(settings_routes.router)
     app.include_router(parts_routes.router)
     app.include_router(articles_routes.router)
+    app.include_router(journal_routes.router)
     return app

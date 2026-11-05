@@ -1,0 +1,37 @@
+{# Journal rows (see web/journal_view.py). Used on the journal, the article detail and the bookings page. #}
+{% if rows %}
+<div class="card table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>{{ t('journal.col.time') }}</th>
+        <th>{{ t('journal.col.actor') }}</th>
+        <th>{{ t('journal.col.kind') }}</th>
+        <th>{{ t('journal.col.subject') }}</th>
+        <th class="num">{{ t('journal.col.qty') }}</th>
+        <th>{{ t('journal.col.changes') }}</th>
+        <th>{{ t('journal.col.note') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td class="nowrap">{{ row.at|local_dt }}</td>
+        <td>{{ t(row.actor_key) }}</td>
+        <td>{{ t(row.kind_key) }}</td>
+        <td>
+          {% if row.article %}<a href="/articles/{{ row.article[0] }}">{{ row.article[1] }}</a>{% endif %}
+          {% if row.part %}{{ row.part[1] }}{% endif %}
+          {% if row.order %}<br><a class="muted" href="/orders/{{ row.order[0] }}">{{ row.order[1] }}</a>{% endif %}
+        </td>
+        <td class="num">{{ row.qty }}</td>
+        <td>{% for change in row.changes %}{{ t(change.label) }} {{ change.before }} → {{ change.after }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+        <td>{{ row.note or '' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card"><p class="muted">{{ t('journal.empty') }}</p></div>
+{% endif %}

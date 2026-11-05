@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}{{ article.name }}{% endblock %}
+{% block content %}
+<h1>{{ article.name }}</h1>
+<p>
+  <a class="btn" href="/articles/{{ article.id }}/edit">{{ t('articles.edit') }}</a>
+  <a class="btn-link" href="/journal?article={{ article.id }}">{{ t('journal.title') }}</a>
+  <a class="btn-link" href="/articles">{{ t('articles.title') }}</a>
+</p>
+
+<section class="card section wide">
+  <div class="detail-head">
+    {% if article.thumbnail %}<img class="thumb" src="/articles/{{ article.id }}/thumbnail" alt="">{% endif %}
+    <div class="stats">
+      <div class="stat"><span class="stat-label">{{ t('articles.col.stock') }}</span><span class="stat-value">{{ article.stock }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.col.reserved') }}</span><span class="stat-value">{{ article.reserved }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.col.available') }}</span><span class="stat-value{% if available < 0 %} neg{% endif %}">{{ available }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.col.provisional') }}</span><span class="stat-value">{{ article.provisional }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.col.awaiting_assembly') }}</span><span class="stat-value">{{ article.awaiting_assembly }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.target_quantity') }}</span><span class="stat-value">{{ target }}</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="card section wide">
+  <h2>{{ t('articles.settings') }}</h2>
+  <dl class="props">
+    <dt>{{ t('catalog.field.sku') }}</dt><dd>{{ article.sku or '–' }}</dd>
+    <dt>{{ t('articles.field.units_per_print') }}</dt><dd>{{ article.units_per_print }}</dd>
+    <dt>{{ t('articles.field.min_stock') }}</dt><dd>{{ article.min_stock }}</dd>
+    <dt>{{ t('articles.field.buffer') }}</dt><dd>{{ article.buffer }}</dd>
+    <dt>{{ t('articles.field.target') }}</dt><dd>{{ target_label }}</dd>
+    <dt>{{ t('articles.field.needs_assembly') }}</dt><dd>{{ t('common.yes') if article.needs_assembly else t('common.no') }}</dd>
+    <dt>{{ t('articles.field.auto_enabled') }}</dt><dd>{{ t('common.yes') if article.auto_enabled else t('common.no') }}</dd>
+    <dt>{{ t('articles.file') }}</dt><dd>{{ article.file_name }} · {{ t('articles.plate') }} {{ article.plate_id }}</dd>
+  </dl>
+</section>
+
+<section class="card section wide">
+  <h2>{{ t('articles.filament_title') }}</h2>
+  {% if filaments %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>{{ t('articles.filament.slot') }}</th><th>{{ t('articles.filament.material') }}</th><th>{{ t('articles.filament.color') }}</th><th class="num">{{ t('articles.filament.grams') }}</th></tr></thead>
+      <tbody>
+      {% for r in filaments %}
+        <tr><td>{{ r.slot }}</td><td>{{ r.material }}</td><td>{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}{{ r.color }}</td><td class="num">{{ r.grams }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">{{ t('articles.filament_none') }}</p>
+  {% endif %}
+</section>
+
+<section class="card section wide">
+  <h2>{{ t('articles.parts_title') }}</h2>
+  {% if parts %}
+  <ul class="plain-list">
+    {% for name, qty, unit in parts %}<li>{{ qty }} × {{ name }}</li>{% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">{{ t('articles.no_parts') }}</p>
+  {% endif %}
+</section>
+
+<h2>{{ t('articles.recent_journal') }}</h2>
+{% include "_journal_table.html" %}
+<p><a class="btn-link" href="/journal?article={{ article.id }}">{{ t('articles.all_journal') }}</a></p>
+{% endblock %}

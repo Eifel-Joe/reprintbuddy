@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ t('articles.edit') }}{% endblock %}
+{% block content %}
+<h1>{{ article.name }}</h1>
+<section class="card section">
+  {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="/articles/{{ article.id }}/edit">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% include "_article_fields.html" %}
+    <button class="btn" type="submit">{{ t('common.save') }}</button>
+    <a class="btn-link" href="/articles/{{ article.id }}">{{ t('common.cancel') }}</a>
+  </form>
+</section>
+{% endblock %}

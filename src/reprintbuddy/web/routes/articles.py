@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,7 +21,8 @@ from reprintbuddy.domain import catalog
 from reprintbuddy.domain.catalog import ArticleInput, TargetOption
 from reprintbuddy.domain.errors import DomainError
 from reprintbuddy.domain.stock import MAX_QTY
-from reprintbuddy.models import Article, Part
+from reprintbuddy.domain import stock as stock_mod
+from reprintbuddy.models import Article, ArticleFilament, ArticlePart, Part
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, render
 from reprintbuddy.web.forms import (
@@ -33,7 +34,8 @@ from reprintbuddy.web.forms import (
     parse_text,
     saved_redirect,
 )
-from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
+from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
+from reprintbuddy.web.journal_view import journal_rows
 from reprintbuddy.web.i18n import translate
 
 router = APIRouter()
@@ -344,3 +346,121 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
             error=error_text(lang, exc), status=error_status(exc),
         )
     return saved_redirect(request, f"/articles/{article_id}", "articles.created", name=article_name)
+
+
+# ---- detail, thumbnail, settings -------------------------------------------------------------
+
+
+def _get_article(db: Session, article_id: int) -> Article:
+    article = db.get(Article, article_id)
+    if article is None:
+        raise HTTPException(status_code=404)
+    return article
+
+
+def _target_label(lang: str, article: Article) -> str:
+    value = catalog.target_value(article.target_model, article.printer_id)
+    if value == "":
+        return translate(lang, "articles.target_none")
+    if value.startswith("model:"):
+        return translate(lang, "articles.target_any", model=article.target_model)
+    return translate(lang, "articles.target_printer_id", id=article.printer_id)
+
+
+@router.get("/articles/{article_id:int}")
+async def article_detail(request: Request, article_id: int, db: Session = Depends(get_db)):
+    article = _get_article(db, article_id)
+    lang = current_language(request)
+    filaments = db.scalars(
+        select(ArticleFilament).where(ArticleFilament.article_id == article_id).order_by(ArticleFilament.slot)
+    ).all()
+    parts = db.execute(
+        select(Part.name, ArticlePart.qty_per_unit, Part.unit)
+        .join(ArticlePart, ArticlePart.part_id == Part.id)
+        .where(ArticlePart.article_id == article_id)
+        .order_by(Part.name)
+    ).all()
+    entries = stock_mod.journal_page(db, article_id=article_id, limit=50)
+    return render(
+        request,
+        "article_detail.html",
+        active_nav="articles",
+        article=article,
+        available=article.stock - article.reserved,
+        target=article.min_stock + article.buffer,
+        target_label=_target_label(lang, article),
+        filaments=[_requirement_row(FilamentRequirement(f.slot, f.grams, f.material, f.color_hex)) for f in filaments],
+        parts=parts,
+        rows=journal_rows(db, entries),
+    )
+
+
+@router.get("/articles/{article_id:int}/thumbnail")
+async def article_thumbnail(article_id: int, db: Session = Depends(get_db)):
+    article = db.get(Article, article_id)
+    if article is None or not article.thumbnail:
+        return Response(status_code=404)
+    return Response(article.thumbnail, media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
+
+
+async def _printers_for_edit(request: Request) -> list[Printer] | None:
+    """The printers for the print-target choice; None when Bambuddy cannot be asked."""
+    client = get_bambuddy(request)
+    return await _printers(client) if client is not None else None
+
+
+def _edit_page(request, db, article, printers, values, error=None, status=200):
+    lang = current_language(request)
+    selected = str(values["target"])
+    options = catalog.target_options(printers, None, current=selected)
+    parts = active_parts(db)
+    return render(
+        request,
+        "article_edit.html",
+        status_code=status,
+        active_nav="articles",
+        article=article,
+        target_choices=target_choices(lang, options, selected),
+        printers_unavailable=printers is None,
+        parts=parts,
+        values=values,
+        error=error,
+    )
+
+
+def _article_values(db: Session, article: Article, part_ids: list[int]) -> dict[str, object]:
+    links = dict(db.execute(select(ArticlePart.part_id, ArticlePart.qty_per_unit).where(ArticlePart.article_id == article.id)).all())
+    data = ArticleInput(
+        name=article.name, sku=article.sku, units_per_print=article.units_per_print,
+        min_stock=article.min_stock, buffer=article.buffer, target_model=article.target_model,
+        printer_id=article.printer_id, needs_assembly=article.needs_assembly,
+        auto_enabled=article.auto_enabled, parts=links,
+    )
+    return values_of_input(data, part_ids)
+
+
+@router.get("/articles/{article_id:int}/edit")
+async def article_edit(request: Request, article_id: int, db: Session = Depends(get_db)):
+    article = _get_article(db, article_id)
+    printers = await _printers_for_edit(request)
+    part_ids = [p.id for p in active_parts(db)]
+    return _edit_page(request, db, article, printers, _article_values(db, article, part_ids))
+
+
+@router.post("/articles/{article_id:int}/edit", dependencies=[Depends(verify_csrf)])
+async def article_update(request: Request, article_id: int, db: Session = Depends(get_db)):
+    article = _get_article(db, article_id)
+    form = await request.form()
+    part_ids = [p.id for p in active_parts(db)]
+    stored = catalog.target_value(article.target_model, article.printer_id)
+    try:
+        data = parse_article_form(form, part_ids, default_target=stored)
+        with write_transaction(request) as tx:
+            catalog.update_article(tx, article_id, data)
+    except DomainError as exc:
+        printers = await _printers_for_edit(request)
+        return _edit_page(
+            request, db, article, printers, typed_values(form, part_ids),
+            error=error_text(current_language(request), exc), status=error_status(exc),
+        )
+    return saved_redirect(request, f"/articles/{article_id}", "articles.saved", name=data.name)
