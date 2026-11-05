@@ -196,3 +196,4 @@ li.perm .mark { display: inline-block; width: 1.2rem; font-weight: 700; }
 li.perm.ok .mark { color: var(--accent); }
 li.perm.bad { color: var(--text); }
 li.perm.bad .mark { color: var(--danger); }
+.result a { color: var(--accent); }
