@@ -1,11 +1,11 @@
 import httpx
 import pytest
-from conftest import csrf_of
+from conftest import auth_me, csrf_of
 
 from reprintbuddy import settings as st
 
 URL = "http://bambuddy.test:8000"
-QUEUE = f"{URL}/api/v1/queue/"
+ME = f"{URL}/api/v1/auth/me"
 KEY = "bb_SETUPKEY_123456"
 
 
@@ -37,7 +37,7 @@ def test_after_admin_goes_to_bambuddy_step(admin_client):
 
 
 def test_save_on_success(admin_client, respx_mock):
-    respx_mock.get(QUEUE).respond(200, json=[])
+    respx_mock.get(ME).respond(200, json=auth_me())
     token = csrf_of(admin_client, "/setup/bambuddy")
     response = admin_client.post("/setup/bambuddy", data=_form(token))
     assert response.status_code == 303
@@ -50,7 +50,7 @@ def test_save_on_success(admin_client, respx_mock):
 
 
 def test_url_trailing_slash_is_normalised(admin_client, respx_mock):
-    respx_mock.get(QUEUE).respond(200, json=[])
+    respx_mock.get(ME).respond(200, json=auth_me())
     token = csrf_of(admin_client, "/setup/bambuddy")
     admin_client.post("/setup/bambuddy", data=_form(token, bambuddy_url=URL + "/"))
     assert _saved(admin_client, "bambuddy_url") == URL
@@ -61,7 +61,7 @@ def test_url_trailing_slash_is_normalised(admin_client, respx_mock):
     [(401, "API key was not accepted"), (403, "does not have the rights")],
 )
 def test_reject_on_refusal(admin_client, respx_mock, status, text):
-    respx_mock.get(QUEUE).respond(status)
+    respx_mock.get(ME).respond(status)
     token = csrf_of(admin_client, "/setup/bambuddy")
     response = admin_client.post("/setup/bambuddy", data=_form(token))
     assert response.status_code == 200
@@ -72,7 +72,7 @@ def test_reject_on_refusal(admin_client, respx_mock, status, text):
 
 
 def test_reject_when_unreachable(admin_client, respx_mock):
-    respx_mock.get(QUEUE).mock(side_effect=httpx.ConnectError("refused"))
+    respx_mock.get(ME).mock(side_effect=httpx.ConnectError("refused"))
     token = csrf_of(admin_client, "/setup/bambuddy")
     response = admin_client.post("/setup/bambuddy", data=_form(token))
     assert response.status_code == 200
@@ -98,7 +98,7 @@ def test_requires_csrf(admin_client):
 
 
 def test_key_not_echoed_on_error(admin_client, respx_mock):
-    respx_mock.get(QUEUE).respond(401)
+    respx_mock.get(ME).respond(401)
     token = csrf_of(admin_client, "/setup/bambuddy")
     response = admin_client.post("/setup/bambuddy", data=_form(token))
     assert KEY not in response.text
@@ -129,7 +129,7 @@ def test_closed_once_configured(ready_client):
 
 
 def test_key_is_stripped_before_it_is_used_and_saved(admin_client, respx_mock):
-    route = respx_mock.get(QUEUE).respond(200, json=[])
+    route = respx_mock.get(ME).respond(200, json=auth_me())
     token = csrf_of(admin_client, "/setup/bambuddy")
     response = admin_client.post(
         "/setup/bambuddy", data=_form(token, bambuddy_api_key="  " + KEY + " \r\n")
@@ -141,7 +141,7 @@ def test_key_is_stripped_before_it_is_used_and_saved(admin_client, respx_mock):
 
 @pytest.mark.parametrize("bad", ["bb key", "bbüber", "bb\x01key"])
 def test_key_with_unusable_characters_gets_its_own_message(admin_client, respx_mock, bad):
-    route = respx_mock.get(QUEUE).respond(200, json=[])
+    route = respx_mock.get(ME).respond(200, json=auth_me())
     token = csrf_of(admin_client, "/setup/bambuddy")
     response = admin_client.post("/setup/bambuddy", data=_form(token, bambuddy_api_key=bad))
     assert response.status_code == 200  # no server error, no misleading "unreachable"

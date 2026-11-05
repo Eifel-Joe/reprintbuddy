@@ -6,7 +6,7 @@ import time
 
 import httpx
 import pytest
-from conftest import ADMIN, PASSWORD
+from conftest import ADMIN, PASSWORD, auth_me
 
 from reprintbuddy import settings as st
 
@@ -29,7 +29,7 @@ def token_of(response: httpx.Response) -> str:
 
 async def slow_check(_request: httpx.Request) -> httpx.Response:
     await asyncio.sleep(0.6)
-    return httpx.Response(200, json=[])
+    return httpx.Response(200, json=auth_me())
 
 
 async def test_a_slow_bambuddy_save_and_a_parallel_language_save_both_land(ready_client):

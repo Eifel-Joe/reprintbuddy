@@ -3,7 +3,7 @@
 import base64
 import json
 
-from conftest import PASSWORD, api_routes, csrf_of
+from conftest import api_routes, auth_me, csrf_of, PASSWORD
 
 from reprintbuddy import settings as st
 
@@ -15,7 +15,7 @@ SECRETS = ("LEAKCHECK", NEW_PASSWORD, PASSWORD)
 
 
 def _store_secrets(client, respx_mock):
-    respx_mock.get("http://bambuddy.test:8000/api/v1/queue/").respond(200, json=[])
+    respx_mock.get("http://bambuddy.test:8000/api/v1/auth/me").respond(200, json=auth_me())
     token = csrf_of(client, "/settings")
     assert (
         client.post(
@@ -81,7 +81,7 @@ def test_pages_logged_out_leak_nothing(ready_client, respx_mock):
 
 def test_error_pages_do_not_echo_secrets(ready_client, respx_mock):
     token = csrf_of(ready_client, "/settings")
-    respx_mock.get("http://other.test:8000/api/v1/queue/").respond(401)
+    respx_mock.get("http://other.test:8000/api/v1/auth/me").respond(401)
     wrong_key = ready_client.post(
         "/settings/bambuddy",
         data={

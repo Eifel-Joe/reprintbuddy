@@ -23,6 +23,37 @@ def csrf_of(client: TestClient, path: str) -> str:
     return match.group(1)
 
 
+REQUIRED = (
+    "library:read_all",
+    "queue:read_all",
+    "queue:create",
+    "queue:start_unreviewed",
+    "printers:read",
+    "inventory:read",
+)
+
+
+def auth_me(username="reprintbuddy", permissions=REQUIRED, groups=("Reprintbuddy",), **extra):
+    """The body Bambuddy's /api/v1/auth/me answers with for a key."""
+    body = {
+        "id": 7,
+        "username": username,
+        "is_admin": False,
+        "groups": [{"id": n + 1, "name": name} for n, name in enumerate(groups)],
+        "permissions": list(permissions) if isinstance(permissions, (list, tuple)) else permissions,
+    }
+    body.update(extra)
+    return body
+
+
+def mock_auth_me(respx_mock, url="http://bambuddy.test:8000", status=200, **kwargs):
+    """Make Bambuddy's /auth/me answer; returns the route."""
+    route = respx_mock.get(f"{url}/api/v1/auth/me")
+    if status == 200:
+        return route.respond(200, json=auth_me(**kwargs))
+    return route.respond(status)
+
+
 def api_routes(app):
     """All path operations, also those hidden in included routers (FastAPI >= 0.16x)."""
     from fastapi.routing import APIRoute

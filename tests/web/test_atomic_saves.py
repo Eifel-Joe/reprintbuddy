@@ -1,7 +1,7 @@
 """Each save is one transaction: a failure half-way leaves nothing behind."""
 
 import pytest
-from conftest import ADMIN, PASSWORD, csrf_of, make_client
+from conftest import ADMIN, auth_me, csrf_of, make_client, PASSWORD
 from sqlalchemy import event
 
 from reprintbuddy import auth
@@ -48,7 +48,7 @@ def bambuddy_form(token, **over):
 
 
 def test_settings_bambuddy_failure_half_way_changes_nothing(ready_client, respx_mock, monkeypatch):
-    respx_mock.get("http://other.test:8000/api/v1/queue/").respond(200, json=[])
+    respx_mock.get("http://other.test:8000/api/v1/auth/me").respond(200, json=auth_me())
     token = csrf_of(ready_client, "/settings")
     fail_when_saving(monkeypatch, "bambuddy_api_key")  # url and user name come first
     with pytest.raises(RuntimeError):
@@ -60,7 +60,7 @@ def test_settings_bambuddy_failure_half_way_changes_nothing(ready_client, respx_
 
 
 def test_settings_bambuddy_save_is_a_single_commit(ready_client, respx_mock):
-    respx_mock.get("http://other.test:8000/api/v1/queue/").respond(200, json=[])
+    respx_mock.get("http://other.test:8000/api/v1/auth/me").respond(200, json=auth_me())
     token = csrf_of(ready_client, "/settings")
     commits = Commits(ready_client.app.state.engine)
     response = ready_client.post("/settings/bambuddy", data=bambuddy_form(token))
@@ -97,7 +97,7 @@ def test_settings_server_save_is_a_single_commit(ready_client, tls_pair):
 
 
 def test_setup_bambuddy_failure_half_way_changes_nothing(admin_client, respx_mock, monkeypatch):
-    respx_mock.get("http://other.test:8000/api/v1/queue/").respond(200, json=[])
+    respx_mock.get("http://other.test:8000/api/v1/auth/me").respond(200, json=auth_me())
     token = csrf_of(admin_client, "/setup/bambuddy")
     fail_when_saving(monkeypatch, "bambuddy_review_confirmed")  # the last of the four
     with pytest.raises(RuntimeError):
@@ -108,7 +108,7 @@ def test_setup_bambuddy_failure_half_way_changes_nothing(admin_client, respx_moc
 
 
 def test_setup_bambuddy_save_is_a_single_commit(admin_client, respx_mock):
-    respx_mock.get("http://other.test:8000/api/v1/queue/").respond(200, json=[])
+    respx_mock.get("http://other.test:8000/api/v1/auth/me").respond(200, json=auth_me())
     token = csrf_of(admin_client, "/setup/bambuddy")
     commits = Commits(admin_client.app.state.engine)
     response = admin_client.post("/setup/bambuddy", data=bambuddy_form(token))

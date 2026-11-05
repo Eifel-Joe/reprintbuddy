@@ -1,6 +1,6 @@
 import httpx
 import pytest
-from conftest import ADMIN, PASSWORD, api_routes, csrf_of
+from conftest import ADMIN, api_routes, auth_me, csrf_of, PASSWORD
 
 from reprintbuddy import settings as st
 
@@ -59,7 +59,7 @@ def test_language_invalid_is_rejected(ready_client):
 
 
 def test_bambuddy_change_checked(ready_client, respx_mock):
-    respx_mock.get(f"{NEW_URL}/api/v1/queue/").respond(401)
+    respx_mock.get(f"{NEW_URL}/api/v1/auth/me").respond(401)
     response = post(
         ready_client,
         "/settings/bambuddy",
@@ -73,7 +73,7 @@ def test_bambuddy_change_checked(ready_client, respx_mock):
 
 def test_bambuddy_empty_key_keeps_old(ready_client, respx_mock):
     # same address, another user name: the stored key is reused for the check and kept
-    route = respx_mock.get(f"{OLD_URL}/api/v1/queue/").respond(200, json=[])
+    route = respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me())
     response = post(
         ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_username="other-user")
     )
@@ -84,7 +84,7 @@ def test_bambuddy_empty_key_keeps_old(ready_client, respx_mock):
 
 
 def test_bambuddy_same_address_written_differently_keeps_key(ready_client, respx_mock):
-    route = respx_mock.get(f"{OLD_URL}/api/v1/queue/").respond(200, json=[])
+    route = respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me())
     response = post(
         ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_url=OLD_URL + "/")
     )
@@ -99,7 +99,7 @@ def test_bambuddy_same_address_written_differently_keeps_key(ready_client, respx
 )
 def test_bambuddy_new_address_needs_the_key_again(ready_client, respx_mock, new_url):
     """A stored key is never sent to a different address."""
-    route = respx_mock.get(f"{new_url}/api/v1/queue/").respond(200, json=[])
+    route = respx_mock.get(f"{new_url}/api/v1/auth/me").respond(200, json=auth_me())
     response = post(
         ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_url=new_url)
     )
@@ -111,7 +111,7 @@ def test_bambuddy_new_address_needs_the_key_again(ready_client, respx_mock, new_
 
 
 def test_bambuddy_new_address_with_new_key_is_saved(ready_client, respx_mock):
-    route = respx_mock.get(f"{NEW_URL}/api/v1/queue/").respond(200, json=[])
+    route = respx_mock.get(f"{NEW_URL}/api/v1/auth/me").respond(200, json=auth_me())
     response = post(
         ready_client,
         "/settings/bambuddy",
@@ -124,7 +124,7 @@ def test_bambuddy_new_address_with_new_key_is_saved(ready_client, respx_mock):
 
 
 def test_bambuddy_new_key_overwrites(ready_client, respx_mock):
-    route = respx_mock.get(f"{OLD_URL}/api/v1/queue/").respond(200, json=[])
+    route = respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me())
     response = post(
         ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_api_key="bb_new")
     )
@@ -134,7 +134,7 @@ def test_bambuddy_new_key_overwrites(ready_client, respx_mock):
 
 
 def test_bambuddy_unreachable_changes_nothing(ready_client, respx_mock):
-    respx_mock.get(f"{NEW_URL}/api/v1/queue/").mock(side_effect=httpx.ConnectError("x"))
+    respx_mock.get(f"{NEW_URL}/api/v1/auth/me").mock(side_effect=httpx.ConnectError("x"))
     response = post(
         ready_client,
         "/settings/bambuddy",
@@ -387,7 +387,7 @@ def test_server_host_that_cannot_be_bound_is_refused(ready_client, host):
 
 
 def test_settings_key_is_stripped(ready_client, respx_mock):
-    route = respx_mock.get(f"{OLD_URL}/api/v1/queue/").respond(200, json=[])
+    route = respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me())
     post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_api_key=" bb_trimmed \n"))
     assert route.calls.last.request.headers["x-api-key"] == "bb_trimmed"
     assert saved(ready_client, "bambuddy_api_key") == "bb_trimmed"
@@ -395,7 +395,7 @@ def test_settings_key_is_stripped(ready_client, respx_mock):
 
 @pytest.mark.parametrize("bad", ["bb key", "bbüber", "bb\x01key"])
 def test_settings_key_with_unusable_characters(ready_client, respx_mock, bad):
-    route = respx_mock.get(f"{OLD_URL}/api/v1/queue/").respond(200, json=[])
+    route = respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me())
     response = post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_api_key=bad))
     assert response.status_code == 200
     assert "API key contains characters" in response.text
