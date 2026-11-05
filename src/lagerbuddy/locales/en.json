@@ -47,5 +47,7 @@
   "bambuddy.reason.unauthorized": "The API key was not accepted by Bambuddy.",
   "bambuddy.reason.forbidden": "The API key does not have the rights Lagerbuddy needs (\"Read Status\", \"Manage Queue\").",
   "bambuddy.reason.unreachable": "Could not reach Bambuddy at this address. Check the address and that Bambuddy is running.",
-  "bambuddy.reason.not_bambuddy": "The address answered, but it does not look like Bambuddy."
+  "bambuddy.reason.not_bambuddy": "The address answered, but it does not look like Bambuddy.",
+  "overview.title": "Overview",
+  "overview.empty": "Nothing here yet. The overview is built in a later step."
 }

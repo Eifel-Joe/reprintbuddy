@@ -1,34 +1,26 @@
-<!doctype html>
-<html lang="{{ lang }}">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ t('setup.title') }}</title>
-</head>
-<body>
-  <main>
-    <h1>{{ t('setup.title') }}</h1>
-    <p>{{ t('setup.intro') }}</p>
-    {% if error %}<p role="alert">{{ t(error) }}</p>{% endif %}
-    <form method="post" action="/setup">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>{{ t('setup.username') }}
-        <input name="username" value="{{ username }}" autocomplete="username" required autofocus>
-      </label>
-      <label>{{ t('setup.password') }}
-        <input name="password" type="password" autocomplete="new-password" required minlength="8">
-      </label>
-      <label>{{ t('setup.password_repeat') }}
-        <input name="password_repeat" type="password" autocomplete="new-password" required minlength="8">
-      </label>
-      <label>{{ t('setup.language') }}
-        <select name="language">
-          <option value="en"{% if chosen_language == 'en' %} selected{% endif %}>{{ t('language.en') }}</option>
-          <option value="de"{% if chosen_language == 'de' %} selected{% endif %}>{{ t('language.de') }}</option>
-        </select>
-      </label>
-      <button type="submit">{{ t('setup.submit') }}</button>
-    </form>
-  </main>
-</body>
-</html>
+{% extends "bare.html" %}
+{% block title %}{{ t('setup.title') }}{% endblock %}
+{% block content %}
+<h1>{{ t('setup.title') }}</h1>
+<p class="muted">{{ t('setup.intro') }}</p>
+{% if error %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
+<form method="post" action="/setup">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>{{ t('setup.username') }}
+    <input name="username" value="{{ username }}" autocomplete="username" required autofocus>
+  </label>
+  <label>{{ t('setup.password') }}
+    <input name="password" type="password" autocomplete="new-password" required minlength="8">
+  </label>
+  <label>{{ t('setup.password_repeat') }}
+    <input name="password_repeat" type="password" autocomplete="new-password" required minlength="8">
+  </label>
+  <label>{{ t('setup.language') }}
+    <select name="language">
+      <option value="en"{% if chosen_language == 'en' %} selected{% endif %}>{{ t('language.en') }}</option>
+      <option value="de"{% if chosen_language == 'de' %} selected{% endif %}>{{ t('language.de') }}</option>
+    </select>
+  </label>
+  <button class="btn" type="submit">{{ t('setup.submit') }}</button>
+</form>
+{% endblock %}

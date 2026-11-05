@@ -1,13 +1,14 @@
-"""Start page. Placeholder until Task 7 adds the layout; B7 builds the real overview."""
+"""Start page. B7 builds the real overview; for now it only shows the layout."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Request
+
+from lagerbuddy.web.deps import render
 
 router = APIRouter()
 
 
 @router.get("/")
-async def overview() -> HTMLResponse:
-    return HTMLResponse("<!doctype html><title>Lagerbuddy</title><p>Lagerbuddy</p>")
+async def overview(request: Request):
+    return render(request, "overview.html", active_nav="overview")

@@ -1,0 +1,155 @@
+/* Lagerbuddy – dark slate theme in the style of Bambuddy (Spec 10.1).
+   No fonts or files from the internet: Inter is used only if installed. */
+
+:root {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --line: #334155;
+  --text: #f1f5f9;
+  --text-2: #94a3b8;
+  --muted: #64748b;
+  --accent: #00ae42;
+  --accent-soft: rgba(0, 174, 66, 0.16);
+  --danger: #ef4444;
+  --radius: 10.8px;
+  --sidebar-w: 230px;
+  --font: Inter, "Segoe UI", system-ui, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { color-scheme: dark; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 var(--font);
+  overflow-x: hidden;
+}
+
+h1 { margin: 0 0 1rem; font-size: 1.5rem; font-weight: 600; }
+p { margin: 0 0 1rem; }
+.muted { color: var(--text-2); }
+
+/* ---- shell: sidebar + content ------------------------------------------ */
+
+.app { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
+
+.sidebar {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1.25rem 0.75rem;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.content { grid-column: 2; grid-row: 1; padding: 2rem; min-width: 0; }
+
+.brand { font-weight: 700; font-size: 1.15rem; letter-spacing: 0.01em; padding: 0 0.75rem 1rem; }
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+
+.nav-link {
+  display: block;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  color: var(--text-2);
+  text-decoration: none;
+  font: inherit;
+  background: none;
+  border: 0;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+}
+.nav-link:hover { background: rgba(148, 163, 184, 0.1); color: var(--text); }
+.nav-link.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+.sidebar-footer { margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--line); }
+.sidebar-footer form { margin: 0; }
+
+/* The compact menu is only for narrow screens. */
+.mobile-menu { display: none; }
+
+@media (max-width: 899px) {
+  .app { display: block; }
+  .sidebar { display: none; }
+  .content { padding: 1rem; }
+  .mobile-menu {
+    display: block;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    padding: 0.5rem 0.75rem;
+  }
+  .mobile-menu summary { cursor: pointer; padding: 0.4rem 0; list-style: none; }
+  .mobile-menu summary::-webkit-details-marker { display: none; }
+  .mobile-menu summary::after { content: "\2630"; float: right; color: var(--text-2); }
+  .mobile-menu .brand { padding: 0; display: inline; }
+  .mobile-menu .sidebar-nav { padding: 0.5rem 0; }
+}
+
+/* ---- cards, forms ------------------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+}
+
+label { display: block; margin-bottom: 1rem; color: var(--text-2); font-size: 0.9rem; }
+
+input:not([type="checkbox"]), select, textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+input::placeholder { color: var(--muted); }
+
+label.check { display: flex; gap: 0.6rem; align-items: flex-start; color: var(--text); }
+label.check input { margin-top: 0.25rem; accent-color: var(--accent); }
+
+.btn {
+  display: inline-block;
+  padding: 0.6rem 1.1rem;
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn:hover { filter: brightness(1.1); }
+
+.alert {
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--danger);
+  background: rgba(239, 68, 68, 0.12);
+  border-radius: 8px;
+  color: var(--text);
+}
+
+.steps { padding-left: 1.25rem; color: var(--text-2); }
+.steps li { margin-bottom: 0.35rem; }
+
+/* ---- pages without sidebar (setup, login) ------------------------------- */
+
+.bare { min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
+.bare-card { width: 100%; max-width: 520px; }
+.bare-card .brand { padding: 0 0 1rem; color: var(--accent); }

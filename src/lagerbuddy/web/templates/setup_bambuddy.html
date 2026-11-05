@@ -1,37 +1,29 @@
-<!doctype html>
-<html lang="{{ lang }}">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ t('bambuddy.title') }}</title>
-</head>
-<body>
-  <main>
-    <h1>{{ t('bambuddy.title') }}</h1>
-    <p>{{ t('bambuddy.intro') }}</p>
-    <ol>
-      <li>{{ t('bambuddy.step_user') }}</li>
-      <li>{{ t('bambuddy.step_permission') }}</li>
-      <li>{{ t('bambuddy.step_key') }}</li>
-    </ol>
-    {% if error %}<p role="alert">{{ t(error) }}</p>{% endif %}
-    <form method="post" action="/setup/bambuddy">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>{{ t('bambuddy.url') }}
-        <input name="bambuddy_url" value="{{ bambuddy_url }}" placeholder="{{ t('bambuddy.url_placeholder') }}" autocomplete="off" required>
-      </label>
-      <label>{{ t('bambuddy.username') }}
-        <input name="bambuddy_username" value="{{ bambuddy_username }}" autocomplete="off" required>
-      </label>
-      <label>{{ t('bambuddy.api_key') }}
-        <input name="bambuddy_api_key" type="password" autocomplete="off" required>
-      </label>
-      <label>
-        <input name="bambuddy_review_confirmed" type="checkbox"{% if review_confirmed %} checked{% endif %}>
-        {{ t('bambuddy.review_confirmed') }}
-      </label>
-      <button type="submit">{{ t('bambuddy.submit') }}</button>
-    </form>
-  </main>
-</body>
-</html>
+{% extends "bare.html" %}
+{% block title %}{{ t('bambuddy.title') }}{% endblock %}
+{% block content %}
+<h1>{{ t('bambuddy.title') }}</h1>
+<p class="muted">{{ t('bambuddy.intro') }}</p>
+<ol class="steps">
+  <li>{{ t('bambuddy.step_user') }}</li>
+  <li>{{ t('bambuddy.step_permission') }}</li>
+  <li>{{ t('bambuddy.step_key') }}</li>
+</ol>
+{% if error %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
+<form method="post" action="/setup/bambuddy">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>{{ t('bambuddy.url') }}
+    <input name="bambuddy_url" value="{{ bambuddy_url }}" placeholder="{{ t('bambuddy.url_placeholder') }}" autocomplete="off" required>
+  </label>
+  <label>{{ t('bambuddy.username') }}
+    <input name="bambuddy_username" value="{{ bambuddy_username }}" autocomplete="off" required>
+  </label>
+  <label>{{ t('bambuddy.api_key') }}
+    <input name="bambuddy_api_key" type="password" autocomplete="off" required>
+  </label>
+  <label class="check">
+    <input name="bambuddy_review_confirmed" type="checkbox"{% if review_confirmed %} checked{% endif %}>
+    <span>{{ t('bambuddy.review_confirmed') }}</span>
+  </label>
+  <button class="btn" type="submit">{{ t('bambuddy.submit') }}</button>
+</form>
+{% endblock %}

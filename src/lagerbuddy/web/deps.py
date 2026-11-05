@@ -39,7 +39,11 @@ def current_language(request: Request) -> str:
 
 
 def render(request: Request, name: str, status_code: int = 200, **context: object) -> Response:
-    context.setdefault("lang", current_language(request))
+    with request.app.state.sessionmaker() as session:
+        context.setdefault("lang", str(st.get_setting(session, "language")))
+        # Target of the "Open Bambuddy" link; the key is never part of it.
+        context["open_bambuddy_url"] = st.get_setting(session, "bambuddy_url")
+    context.setdefault("active_nav", None)
     context["csrf_token"] = csrf_token(request)
     return request.app.state.templates.TemplateResponse(
         request, name, context, status_code=status_code
