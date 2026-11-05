@@ -248,7 +248,10 @@ def test_recheck_still_missing_keeps_dialog_and_says_so(missing_client):
     assert response.status_code == 303
     page = missing_client.get("/").text
     assert "rights-dialog" in page
-    assert "Checked again: Bambuddy still reports a missing right." in page
+    message = "Checked again: Bambuddy still reports a missing right."
+    # The overlay covers the page: the message must stand inside the dialog, and only there.
+    assert message in page[page.index('class="rights-dialog"') :]
+    assert page.count(message) == 1
 
 
 def test_recheck_still_missing_says_so_in_german(missing_client):

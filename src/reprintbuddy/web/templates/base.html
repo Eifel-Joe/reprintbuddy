@@ -44,6 +44,10 @@
 {% endmacro %}
 
 {% block shell %}
+{# Messages for the next page. While the dialog about a missing right covers the page they are
+   shown inside it, where the person can see them. #}
+{% set pending = pop_flashes(request) %}
+{% set dialog_open = rights_notice and not rights_later %}
 <div class="app">
   <details class="mobile-menu">
     <summary><span class="brand">{{ brand() }}</span></summary>
@@ -67,12 +71,12 @@
       </form>
     </div>
     {% endif %}
-    {% for message in pop_flashes(request) %}<p class="flash" role="status">{{ message }}</p>{% endfor %}
+    {% if not dialog_open %}{% for message in pending %}<p class="flash" role="status">{{ message }}</p>{% endfor %}{% endif %}
     {% block content %}{% endblock %}
   </main>
 </div>
-{% if rights_notice and not rights_later %}
-{% include "_rights_notice.html" %}
+{% if dialog_open %}
+{% with flashes=pending %}{% include "_rights_notice.html" %}{% endwith %}
 {% endif %}
 {% endblock %}
 </body>
