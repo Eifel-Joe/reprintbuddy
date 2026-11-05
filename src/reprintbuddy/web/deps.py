@@ -122,8 +122,10 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "same-origin",
 }
 
-# Name endings that only occur inside a home network.
-_LOCAL_SUFFIXES = (".local", ".lan", ".home", ".internal", ".localdomain", ".home.arpa", ".fritz.box")
+# Name endings that are reserved or unused on the public internet. Names under a public
+# top-level domain (for example .box, used by some routers) are not on this list: anybody
+# can register such a name and point it at a private address.
+_LOCAL_SUFFIXES = (".local", ".lan", ".home", ".internal", ".localdomain", ".home.arpa")
 
 
 async def security_headers(request: Request, call_next) -> Response:

@@ -60,7 +60,6 @@ def test_headers_before_setup(client):
         "reprintbuddy:8080",
         "box.local",
         "box.lan:8080",
-        "reprintbuddy.fritz.box",
     ],
 )
 def test_setup_accepts_local_looking_hosts(client, host):
@@ -69,7 +68,14 @@ def test_setup_accepts_local_looking_hosts(client, host):
 
 @pytest.mark.parametrize(
     "host",
-    ["evil.example.com", "evil.example.com:8080", "localhost.evil.example.com", "box.local.evil.example"],
+    [
+        "evil.example.com",
+        "evil.example.com:8080",
+        "localhost.evil.example.com",
+        "box.local.evil.example",
+        "reprintbuddy.fritz.box",  # .box is a public top-level domain: anybody can register one
+        "anything.box",
+    ],
 )
 def test_setup_refuses_other_host_names(client, host):
     response = client.get("/setup", headers={"host": host})
