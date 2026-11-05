@@ -25,7 +25,7 @@
     {% else %}{{ t('ops.update.not_checked') }}{% endif %}
   </p>
   {% if ops.state_key %}
-  <div class="{% if ops.update.state in ('failed', 'rolled_back', 'rollback_failed') %}alert{% else %}notice{% endif %}" role="status">
+  <div class="{% if ops.update.state in ('failed', 'rolled_back', 'rollback_failed') or ops.interrupted %}alert{% else %}notice{% endif %}" role="status">
     <strong>{{ t(ops.state_key) }}</strong>
     {% if ops.step_key %}<br>{{ t(ops.step_key) }}{% endif %}
     {% if ops.update.message %}<br>{{ ops.update.message }}{% endif %}

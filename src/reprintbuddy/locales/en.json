@@ -137,5 +137,6 @@
   "ops.update.step.restart": "Restarting",
   "ops.update.step.health": "Waiting for the new version to answer",
   "ops.update.step.rollback": "Restoring the previous version",
-  "ops.update.step.done": "Done"
+  "ops.update.step.done": "Done",
+  "ops.update.state.interrupted": "Update was interrupted"
 }

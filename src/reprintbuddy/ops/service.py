@@ -25,3 +25,12 @@ def request_restart(runner: CommandRunner) -> CommandResult:
 def start_update_unit(runner: CommandRunner) -> CommandResult:
     """Start the update helper as its own unit; it survives the restart of the service."""
     return runner(START_UPDATE_CMD, timeout=15.0)
+
+
+def update_unit_state(runner: CommandRunner) -> str:
+    """systemd's ActiveState of the update unit ("active", "activating", "inactive", "failed" …).
+
+    Read-only, needs no sudo. Empty when systemd cannot be asked.
+    """
+    result = runner((SYSTEMCTL, "show", "--property=ActiveState", "--value", UPDATE_SERVICE), timeout=5.0)
+    return result.stdout.strip() if result.ok else ""

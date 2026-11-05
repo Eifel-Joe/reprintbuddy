@@ -231,7 +231,7 @@ def test_state_and_step_keys_exist():
     locales = i18n.load_locales()
     wanted = {f"ops.update.state.{state}" for state in get_args(UpdateState)}
     wanted |= {f"ops.update.step.{step}" for step in UPDATE_STEPS}
-    wanted |= {"ops.update.in_progress"}
+    wanted |= {"ops.update.in_progress", "ops.update.state.interrupted"}
     for lang in ("en", "de"):
         assert wanted <= set(locales[lang]), (lang, sorted(wanted - set(locales[lang])))
 
@@ -266,7 +266,7 @@ def test_writes_blocked_during_update(ops_env):
     with ops_env.client.app.state.sessionmaker() as session:
         assert st.get_setting(session, "language") == "en"
     assert START_UPDATE_CMD not in ops_env.runner.calls
-    assert not [c for c in ops_env.runner.calls if "systemctl" in c]  # no restart either
+    assert not [c for c in ops_env.runner.calls if "restart" in c or "start" in c]  # no restart, no start either
 
 
 def test_writes_allowed_again_after_the_update(ops_env):
@@ -287,3 +287,72 @@ def test_logout_still_works_during_update(ops_env):
     token = csrf_of(ops_env.client, "/settings")
     write_status(data_dir(ops_env), UpdateStatus(state="running", started_at=now() - timedelta(minutes=1)))
     assert ops_env.client.post("/logout", data={"csrf_token": token}).status_code == 303
+
+
+# --- an update whose helper is gone must not block everything -------------------------
+
+SHOW_STATE = ("/usr/bin/systemctl", "show")
+
+
+def unit_state(env, state):
+    env.runner.on(SHOW_STATE, CommandResult(0, state + "\n"))
+
+
+def test_dead_unit_releases_a_stale_busy_state(ops_env):
+    """The container restarted mid-update, or the unit failed before it wrote anything."""
+    git_env(ops_env)
+    token = csrf_of(ops_env.client, "/settings")
+    write_status(data_dir(ops_env), UpdateStatus(state="running", step="install", started_at=now() - timedelta(minutes=5)))
+    unit_state(ops_env, "inactive")
+    page = ops_env.client.get("/settings").text
+    assert "Update was interrupted" in page
+    assert "Installing packages" in page  # the step it stopped at
+    assert "update-status" not in page  # no polling for something that is gone
+    assert ops_env.client.post("/settings/language", data={"csrf_token": token, "language": "de"}).status_code == 303
+
+
+def test_failed_unit_releases_a_queued_state(ops_env):
+    git_env(ops_env)
+    check(ops_env)
+    write_status(data_dir(ops_env), UpdateStatus(state="queued", step="start", from_tag="v0.1.0", to_tag="v0.2.0", started_at=now() - timedelta(minutes=2)))
+    unit_state(ops_env, "failed")
+    response = post(ops_env, "/settings/update")
+    assert response.headers["location"] == "/settings#ops-update"  # not "busy": a new update starts
+    assert ops_env.runner.calls[-1] == START_UPDATE_CMD
+
+
+def test_freshly_queued_update_is_busy_before_the_unit_shows_as_active(ops_env):
+    token = csrf_of(ops_env.client, "/settings")
+    write_status(data_dir(ops_env), UpdateStatus(state="queued", step="start", started_at=now() - timedelta(seconds=2)))
+    unit_state(ops_env, "inactive")
+    assert ops_env.client.post("/settings/language", data={"csrf_token": token, "language": "de"}).status_code == 503
+
+
+@pytest.mark.parametrize("state", ["activating", "active", "deactivating"])
+def test_a_running_unit_keeps_the_block(ops_env, state):
+    token = csrf_of(ops_env.client, "/settings")
+    write_status(data_dir(ops_env), UpdateStatus(state="running", step="install", started_at=now() - timedelta(minutes=5)))
+    unit_state(ops_env, state)
+    assert ops_env.client.post("/settings/language", data={"csrf_token": token, "language": "de"}).status_code == 503
+
+
+def test_unknown_unit_state_keeps_the_block(ops_env):
+    """systemctl missing or silent: do not guess that the update is gone."""
+    token = csrf_of(ops_env.client, "/settings")
+    write_status(data_dir(ops_env), UpdateStatus(state="running", step="install", started_at=now() - timedelta(minutes=5)))
+    ops_env.runner.on(SHOW_STATE, CommandResult(127, "", "not found"))
+    assert ops_env.client.post("/settings/language", data={"csrf_token": token, "language": "de"}).status_code == 503
+
+
+def test_stale_running_state_is_shown_as_interrupted_not_as_running(ops_env):
+    git_env(ops_env)
+    write_status(data_dir(ops_env), UpdateStatus(state="running", step="health", started_at=now() - timedelta(minutes=45)))
+    page = ops_env.client.get("/settings").text
+    assert "Update was interrupted" in page
+    assert "Update is running" not in page
+
+
+def test_idle_page_asks_systemd_nothing(ops_env):
+    git_env(ops_env)
+    ops_env.client.get("/settings")
+    assert not [c for c in ops_env.runner.calls if "systemctl" in c[0] or "show" in c]
