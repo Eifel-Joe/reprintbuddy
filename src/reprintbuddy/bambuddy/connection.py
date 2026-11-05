@@ -54,10 +54,12 @@ EDITOR_LABELS: dict[str, str] = {
 }
 
 # Needed only while the key is created (the user must open the API keys page and create a key).
+# All three may be removed from the group again afterwards.
 # Reprintbuddy does not check them: its own key does not need them.
 KEY_CREATION_LABELS: dict[str, str] = {
     "api_keys:read": "Read Api Keys",
     "api_keys:create": "Create Api Keys",
+    "settings:read": "Read Settings",  # without it Bambuddy hides the whole Settings menu
 }
 
 # The effective rights come from the group and the key together. Which key right

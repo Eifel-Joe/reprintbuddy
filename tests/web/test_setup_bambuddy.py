@@ -322,12 +322,13 @@ def test_german_texts(admin_client, respx_mock):
     user = admin_client.get(USER_PAGE).text
     for code in REQUIRED:
         assert f"<code>{code}</code>" in user
-    assert "Alle Dateien der Bibliothek lesen" in user and "Systemgruppe" in user
+    assert "Read All Library" in user and "damit Reprintbuddy deine Druckdateien sieht" in user
+    assert "Systemgruppe" in user
     permissions = [p for p in REQUIRED if p != "inventory:read"]
     mock_auth_me(respx_mock, permissions=permissions)
     token = csrf_of(admin_client, CONNECT)
     response = admin_client.post(CONNECT, data=_form(token))
-    assert "Filamentbestand lesen" in response.text and "fehlen" in response.text
+    assert "Read Inventory" in response.text and "fehlen" in response.text
     for raw_key in ("bambuddy.reason", "bambuddy.result", "permission."):
         assert raw_key not in response.text  # no untranslated keys
 
@@ -340,21 +341,26 @@ EDITOR = {
     "printers:read": "Read Printers",
     "inventory:read": "Read Inventory",
 }
-DE = {
-    "library:read_all": "Alle Dateien der Bibliothek lesen",
-    "queue:read_all": "Ganze Warteschlange lesen",
-    "queue:create": "Druckaufträge einreihen",
-    "queue:start_unreviewed": "Ohne Prüfung drucken",
-    "printers:read": "Drucker lesen",
-    "inventory:read": "Filamentbestand lesen",
+KEY_CREATION = {
+    "api_keys:read": "Read Api Keys",
+    "api_keys:create": "Create Api Keys",
+    "settings:read": "Read Settings",
 }
-EN = {
-    "library:read_all": "Read all library files",
-    "queue:read_all": "Read the whole queue",
-    "queue:create": "Add print jobs",
-    "queue:start_unreviewed": "Print without review",
-    "printers:read": "Read printers",
-    "inventory:read": "Read inventory",
+PURPOSE_DE = {
+    "library:read_all": "damit Reprintbuddy deine Druckdateien sieht",
+    "queue:read_all": "damit Reprintbuddy die ganze Warteschlange sieht",
+    "queue:create": "damit Reprintbuddy Nachdrucke einreihen kann",
+    "queue:start_unreviewed": "damit Nachdrucke ohne Freigabe starten",
+    "printers:read": "damit Reprintbuddy die Drucker und ihren Zustand sieht",
+    "inventory:read": "damit Reprintbuddy den Filamentbestand liest",
+}
+PURPOSE_EN = {
+    "library:read_all": "so that Reprintbuddy sees your print files",
+    "queue:read_all": "so that Reprintbuddy sees the whole queue",
+    "queue:create": "so that Reprintbuddy can queue reprints",
+    "queue:start_unreviewed": "so that reprints start without approval",
+    "printers:read": "so that Reprintbuddy sees the printers and their state",
+    "inventory:read": "so that Reprintbuddy reads the filament stock",
 }
 
 
@@ -364,7 +370,8 @@ def test_editor_labels_are_a_fixed_table_in_the_code():
     assert EDITOR_LABELS == EDITOR
 
 
-def test_permission_labels_follow_ui_language(admin_client, respx_mock):
+def test_permission_labels_as_in_bambuddy(admin_client, respx_mock):
+    """Bambuddy shows its rights in English only: so does Reprintbuddy; the purpose follows the language."""
     permissions = [p for p in REQUIRED if p != "queue:start_unreviewed"]
     mock_auth_me(respx_mock, permissions=permissions)
 
@@ -374,17 +381,20 @@ def test_permission_labels_follow_ui_language(admin_client, respx_mock):
         return admin_client.get(USER_PAGE).text, result.text
 
     en_user, en_result = pages()
-    for page in (en_user, en_result):
-        for code in REQUIRED:
-            assert EN[code] in page and EDITOR[code] in page, code
-        assert "Ohne Prüfung drucken" not in page
     _german(admin_client)
     de_user, de_result = pages()
+    for page in (en_user, de_user, en_result, de_result):
+        for code in REQUIRED:
+            assert EDITOR[code] in page and f"<code>{code}</code>" in page, code
+        assert "Start Unreviewed Queue" in page
+    for page in (en_user, en_result):
+        for code in REQUIRED:
+            assert PURPOSE_EN[code] in page, code
+            assert PURPOSE_DE[code] not in page, code
     for page in (de_user, de_result):
         for code in REQUIRED:
-            assert DE[code] in page and EDITOR[code] in page, code  # the Bambuddy label stays English
-        assert "Print without review" not in page
-    assert "Ohne Prüfung drucken" in de_user and "Start Unreviewed Queue" in de_user
+            assert PURPOSE_DE[code] in page, code
+            assert PURPOSE_EN[code] not in page, code
 
 
 KEY_OFF = (
@@ -411,16 +421,27 @@ def test_key_guide_is_a_table_of_the_settings_with_bambuddys_labels(admin_client
     for label in KEY_OFF:
         assert any(label in r for r in off_rows), label
     assert "Reprintbuddy" in table
-    assert "no restriction" in page and "no expiry" in page.lower()
+    assert len(rows) == 1 + 2 + len(KEY_OFF)  # name, two on, the rest off: nothing else
 
 
-def test_key_guide_in_german_names_both_languages(admin_client):
+def test_key_guide_has_no_printer_or_expiry_row(admin_client):
+    """The Bambuddy dialog has no such fields."""
+    for language in ("en", "de"):
+        with admin_client.app.state.sessionmaker() as s:
+            st.set_setting(s, "language", language)
+        page = admin_client.get(KEY_PAGE).text
+        for word in ("expiry", "Expiry", "Ablaufdatum", "no restriction", "keine Einschränkung"):
+            assert word not in page, (language, word)
+        assert "<th scope=\"row\">Printers" not in page and "<th scope=\"row\">Drucker<" not in page
+
+
+def test_key_guide_in_german_has_bambuddys_labels_and_german_purposes(admin_client):
     _german(admin_client)
     page = admin_client.get(KEY_PAGE).text
-    assert "Status lesen" in page and "Read Status" in page
-    assert "Warteschlange verwalten" in page and "Manage Queue" in page
-    assert "Ablaufdatum" in page and "keine Einschränkung" in page
-    assert "Drucker steuern" in page and "Control Printer" in page
+    assert "Read Status" in page and "Manage Queue" in page
+    assert "Status lesen" not in page and "Warteschlange verwalten" not in page  # no translated right names
+    assert "damit Reprintbuddy" in page
+    assert "Control Printer" in page and "Drucker steuern" not in page
 
 
 def _item(html, code):
@@ -456,32 +477,32 @@ def test_which_key_right_covers_which_permission(admin_client, respx_mock):
     _german(admin_client)
     token = csrf_of(admin_client, CONNECT)
     page = admin_client.post(CONNECT, data=_form(token)).text
-    assert "Status lesen" in _item(page, "printers:read")
-    assert "Warteschlange verwalten" in _item(page, "queue:create")
+    assert "Read Status" in _item(page, "printers:read")
+    assert "Manage Queue" in _item(page, "queue:create")
+    assert "Wo es fehlen kann" in _item(page, "queue:create")
 
 
 def test_guide_names_the_rights_for_creating_the_key(admin_client):
     page = admin_client.get(USER_PAGE).text
-    for code, label, editor in (
-        ("api_keys:read", "Read API keys", "Read Api Keys"),
-        ("api_keys:create", "Create API keys", "Create Api Keys"),
-    ):
+    for code, label in KEY_CREATION.items():
         assert f"<code>{code}</code>" in page, code
-        assert label in page and f"Bambuddy: {editor}" in page, code
-    assert "only to create the key" in page.lower()
+        assert label in page, code
+    assert page.lower().count("only to create the key") >= 4  # the sentence and one note per right
+    assert "may be removed again" in page and "does not need them" in page
 
 
 def test_guide_names_the_rights_for_creating_the_key_in_german(admin_client):
     _german(admin_client)
     page = admin_client.get(USER_PAGE).text
-    assert "API-Schlüssel lesen" in page and "API-Schlüssel anlegen" in page
-    assert "Bambuddy: Read Api Keys" in page and "Bambuddy: Create Api Keys" in page
-    assert "nur zum erzeugen des schlüssels" in page.lower()
+    for code, label in KEY_CREATION.items():
+        assert f"<code>{code}</code>" in page and label in page, code
+    assert page.lower().count("nur zum erzeugen des schlüssels") >= 4
+    assert "Nach dem Erzeugen des Schlüssels dürfen diese drei Rechte wieder weg; der Schlüssel braucht sie nicht." in page
 
 
 def test_the_key_creation_rights_are_not_checked(admin_client, respx_mock):
     """A key without them passes: Reprintbuddy needs them only while the key is created."""
-    mock_auth_me(respx_mock)  # exactly the six required rights, no api_keys:*
+    mock_auth_me(respx_mock)  # exactly the six required rights, no api_keys:*, no settings:read
     token = csrf_of(admin_client, CONNECT)
     response = admin_client.post(CONNECT, data=_form(token))
     assert response.status_code == 303
@@ -492,4 +513,4 @@ def test_the_key_creation_rights_are_not_in_the_result_list(admin_client, respx_
     mock_auth_me(respx_mock, permissions=[])
     token = csrf_of(admin_client, CONNECT)
     page = admin_client.post(CONNECT, data=_form(token)).text
-    assert "api_keys" not in page
+    assert "api_keys" not in page and "settings:read" not in page

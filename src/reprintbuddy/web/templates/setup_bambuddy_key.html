@@ -12,15 +12,12 @@
       <tbody>
         <tr><th scope="row">{{ t('keyright.name') }}</th><td>Reprintbuddy</td></tr>
         {% for id, english in key_settings_on %}
-        {% set label = 'keyright.' ~ id %}
-        <tr><th scope="row">{{ t(label) }}<small class="editor">Bambuddy: {{ english }}</small></th><td class="on">{{ t('bambuddy.key.on') }}</td></tr>
+        {% set purpose = 'keyright.' ~ id %}
+        <tr><th scope="row">{{ english }}<small class="editor">{{ t(purpose) }}</small></th><td class="on">{{ t('bambuddy.key.on') }}</td></tr>
         {% endfor %}
         {% for id, english in key_settings_off %}
-        {% set label = 'keyright.off.' ~ id %}
-        <tr><th scope="row">{{ t(label) }}<small class="editor">Bambuddy: {{ english }}</small></th><td class="off">{{ t('bambuddy.key.off') }}</td></tr>
+        <tr><th scope="row">{{ english }}</th><td class="off">{{ t('bambuddy.key.off') }}</td></tr>
         {% endfor %}
-        <tr><th scope="row">{{ t('keyright.printers') }}</th><td>{{ t('bambuddy.key.no_restriction') }}</td></tr>
-        <tr><th scope="row">{{ t('keyright.expiry') }}</th><td>{{ t('bambuddy.key.no_expiry') }}</td></tr>
       </tbody>
     </table>
   </li>
