@@ -104,3 +104,21 @@ def test_connections_can_be_used_from_worker_threads(tmp_path):
 
     with ThreadPoolExecutor(1) as pool:
         assert pool.submit(other_thread).result() == 1
+
+
+def test_a_read_does_not_pin_a_snapshot_that_breaks_a_later_write(tmp_path):
+    """Read, wait, write: a commit by someone else in between must not make the write fail."""
+    from reprintbuddy import settings as st
+
+    engine = make_engine(tmp_path / "s.db")
+    upgrade(engine)
+    Session = make_sessionmaker(engine)
+    waiting = Session()
+    assert st.get_setting(waiting, "language") == "en"  # the read that starts the wait
+    with Session() as other:
+        st.set_setting(other, "language", "de")  # somebody else commits meanwhile
+    st.set_setting(waiting, "queue_cap", 25)  # the real change comes afterwards
+    waiting.close()
+    with Session() as check:
+        assert st.get_setting(check, "language") == "de"
+        assert st.get_setting(check, "queue_cap") == 25

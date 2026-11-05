@@ -19,26 +19,35 @@ DEFAULT_DB_PATH = Path("/var/lib/reprintbuddy/reprintbuddy.db")
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 
-def _configure(engine: Engine, *, foreign_keys: bool) -> None:
+def _configure(engine: Engine, *, foreign_keys: bool, transactional_ddl: bool) -> None:
     """Connection setup shared by the application engine and the migration engine.
 
     pysqlite does not emit BEGIN before DDL and so runs it outside any
-    transaction. Taking transaction control away from the driver
-    (isolation_level=None plus an explicit BEGIN) makes DDL transactional: a
-    failing migration then leaves nothing behind.
+    transaction. For the migration engine, transaction control is taken away from
+    the driver (isolation_level=None plus an explicit BEGIN), which makes DDL
+    transactional: a failing migration then leaves nothing behind.
+
+    The application engine must NOT do this. There every session would open a real
+    transaction at its first read and keep that snapshot while it waits, for
+    example for a slow answer from Bambuddy; a write after another request has
+    committed then fails with "database is locked". With the driver's default
+    behaviour a transaction only begins at the first write.
     """
 
     @event.listens_for(engine, "connect")
     def _connect(dbapi_connection, _record):  # pragma: no cover - trivial
-        dbapi_connection.isolation_level = None
+        if transactional_ddl:
+            dbapi_connection.isolation_level = None
         cursor = dbapi_connection.cursor()
         cursor.execute(f"PRAGMA foreign_keys={'ON' if foreign_keys else 'OFF'}")
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.close()
 
-    @event.listens_for(engine, "begin")
-    def _begin(connection):  # pragma: no cover - trivial
-        connection.exec_driver_sql("BEGIN")
+    if transactional_ddl:
+
+        @event.listens_for(engine, "begin")
+        def _begin(connection):  # pragma: no cover - trivial
+            connection.exec_driver_sql("BEGIN")
 
 
 def make_engine(db_path: Path) -> Engine:
@@ -56,7 +65,7 @@ def make_engine(db_path: Path) -> Engine:
             future=True,
             connect_args={"check_same_thread": False},  # sessions are used from worker threads
         )
-        _configure(engine, foreign_keys=True)
+        _configure(engine, foreign_keys=True, transactional_ddl=False)
         with engine.connect() as conn:  # connect once so the file exists
             conn.execute(text("select 1"))
     finally:
@@ -80,7 +89,7 @@ def upgrade(engine: Engine, script_location: Path | None = None) -> None:
     migration_engine = create_engine(
         engine.url, future=True, connect_args={"check_same_thread": False}
     )
-    _configure(migration_engine, foreign_keys=False)
+    _configure(migration_engine, foreign_keys=False, transactional_ddl=True)
     try:
         with migration_engine.begin() as connection:
             cfg.attributes["connection"] = connection
