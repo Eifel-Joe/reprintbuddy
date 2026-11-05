@@ -7,7 +7,8 @@ import reprintbuddy
 from reprintbuddy.domain import stock
 from reprintbuddy.web import i18n
 
-DOMAIN = Path(reprintbuddy.__file__).parent / "domain"
+ROOT = Path(reprintbuddy.__file__).parent
+SCANNED = [ROOT / "domain", ROOT / "web"]
 ERROR_KEY = re.compile(
     r"""(?:Validation|Conflict|NotFound|StockLimit|Domain)Error\(\s*["']([a-z_]+(?:\.[a-z_]+)+)["']"""
 )
@@ -17,7 +18,7 @@ FIELD_KEY = re.compile(r"""["']([a-z_]+\.field\.[a-z_]+)["']""")
 def test_domain_error_and_field_keys_have_texts():
     en, de = i18n.load_locales()["en"], i18n.load_locales()["de"]
     used = set()
-    for path in DOMAIN.glob("*.py"):
+    for path in (p for folder in SCANNED for p in folder.rglob("*.py")):
         text = path.read_text(encoding="utf-8")
         used |= set(ERROR_KEY.findall(text)) | set(FIELD_KEY.findall(text))
     used |= {f"stock.limit.{f}" for f in ("stock", "reserved", "provisional", "awaiting_assembly", "part")}

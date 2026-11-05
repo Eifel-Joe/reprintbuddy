@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ order.reference }}{% endblock %}
+{% block content %}
+<h1>{{ order.reference }}</h1>
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+<section class="card section">
+  <dl class="props">
+    <dt>{{ t('orders.field.date') }}</dt><dd>{{ order.order_date|local_date }}</dd>
+    <dt>{{ t('orders.state') }}</dt>
+    <dd>
+      {% if order.status == 'open' %}
+        {% if order.ready %}<span class="badge ok">{{ t('orders.ready') }}</span>{% else %}<span class="badge wait">{{ t('orders.not_ready_badge') }}</span>{% endif %}
+      {% elif order.status == 'shipped' %}{{ t('orders.status.shipped') }}
+      {% else %}{{ t('orders.status.cancelled') }}{% endif %}
+    </dd>
+    {% if order.note %}<dt>{{ t('orders.field.note') }}</dt><dd>{{ order.note }}</dd>{% endif %}
+  </dl>
+</section>
+<section class="card section">
+  <h2>{{ t('orders.items') }}</h2>
+  {% for group in order.groups %}
+    {% if group.set_name %}
+    <p><strong>{{ group.set_name }} × {{ group.set_qty }}</strong></p>
+    <ul class="plain-list">{% for name, qty in group.lines %}<li>{{ qty }} × {{ name }}</li>{% endfor %}</ul>
+    {% else %}
+    <ul class="plain-list">{% for name, qty in group.lines %}<li>{{ qty }} × {{ name }}</li>{% endfor %}</ul>
+    {% endif %}
+  {% endfor %}
+</section>
+{% if order.status == 'open' %}
+<div class="actions">
+  {% if order.ready %}
+  <form method="post" action="/orders/{{ order.id }}/ship">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <button class="btn" type="submit">{{ t('orders.ship') }}</button>
+  </form>
+  {% endif %}
+  <form method="post" action="/orders/{{ order.id }}/cancel">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <button class="btn secondary" type="submit">{{ t('orders.cancel') }}</button>
+  </form>
+</div>
+{% endif %}
+<p><a class="btn-link" href="/orders">{{ t('orders.title') }}</a></p>
+{% endblock %}

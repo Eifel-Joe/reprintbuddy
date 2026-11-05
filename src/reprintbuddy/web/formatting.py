@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 from jinja2 import pass_context
@@ -28,3 +28,13 @@ def format_local(dt: datetime, lang: str) -> str:
 def local_dt(context, dt: datetime | None) -> str:
     """Jinja filter `local_dt`, in the language of the request."""
     return format_local(dt, context.get("lang", "en")) if dt is not None else ""
+
+
+def format_date(day: date, lang: str) -> str:
+    return day.strftime("%d.%m.%Y" if lang == "de" else "%Y-%m-%d")
+
+
+@pass_context
+def local_date(context, day: date | None) -> str:
+    """Jinja filter `local_date`: a calendar date (no time zone involved)."""
+    return format_date(day, context.get("lang", "en")) if day is not None else ""

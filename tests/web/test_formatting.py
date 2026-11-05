@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from reprintbuddy.web.formatting import format_local
+from reprintbuddy.web.formatting import format_date, format_local
 
 
 def test_format_local_winter():
@@ -14,3 +14,8 @@ def test_format_local_summer():
 
 def test_format_local_unknown_language_uses_english_style():
     assert format_local(datetime(2026, 7, 15, 12, 0), "xx") == "2026-07-15 14:00"
+
+
+def test_format_date():
+    assert format_date(date(2026, 1, 5), "de") == "05.01.2026"
+    assert format_date(date(2026, 1, 5), "en") == "2026-01-05"

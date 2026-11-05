@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ t('orders.new') }}{% endblock %}
+{% block content %}
+<h1>{{ t('orders.new') }}</h1>
+<section class="card section">
+  {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="/orders/new">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <input type="hidden" name="rows" value="{{ rows }}">
+    <div class="row">
+      <label>{{ t('orders.field.reference') }}
+        <input name="reference" value="{{ values.reference }}" maxlength="100" required>
+        <span class="hint">{{ t('orders.reference_hint') }}</span>
+      </label>
+      <label>{{ t('orders.field.date') }}
+        <input name="order_date" type="date" value="{{ values.order_date }}" required>
+      </label>
+    </div>
+    <label>{{ t('orders.field.note') }}
+      <input name="note" value="{{ values.note }}" maxlength="500">
+    </label>
+    <h3>{{ t('orders.items') }}</h3>
+    {% for row in items %}
+    {% set i = loop.index0 %}
+    <div class="position">
+      <label>{{ t('orders.field.qty') }}
+        <input name="qty_{{ i }}" inputmode="numeric" value="{{ row.qty }}">
+      </label>
+      <label>{{ t('orders.item') }}
+        <select name="item_{{ i }}">
+          <option value=""{% if not row.item %} selected{% endif %}>–</option>
+          <optgroup label="{{ t('nav.articles') }}">
+            {% for article in articles %}
+            <option value="article:{{ article.id }}"{% if row.item == 'article:' ~ article.id %} selected{% endif %}>{{ article.name }}</option>
+            {% endfor %}
+          </optgroup>
+          <optgroup label="{{ t('nav.sets') }}">
+            {% for set in sets %}
+            <option value="set:{{ set.id }}"{% if row.item == 'set:' ~ set.id %} selected{% endif %}>{{ set.name }}</option>
+            {% endfor %}
+          </optgroup>
+        </select>
+      </label>
+      {% for block in blocks.get(i, []) %}
+      <label class="choice">{{ t('orders.choose_for_position', qty=block.qty) }}
+        <select name="choice_{{ i }}_{{ block.position_id }}">
+          <option value="">–</option>
+          {% for article_id, article_name in block.options %}
+          <option value="{{ article_id }}"{% if block.chosen == article_id|string %} selected{% endif %}>{{ article_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endfor %}
+    </div>
+    {% endfor %}
+    <p>
+      <button class="btn secondary" type="submit" name="action" value="more">{{ t('sets.more_rows') }}</button>
+    </p>
+    <button class="btn" type="submit">{{ t('orders.create') }}</button>
+    <a class="btn-link" href="/orders">{{ t('common.cancel') }}</a>
+  </form>
+</section>
+{% endblock %}

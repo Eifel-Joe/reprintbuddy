@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ t('orders.title') }}{% endblock %}
+{% block content %}
+<h1>{{ t('orders.title') }}</h1>
+<p>
+  <a class="btn" href="/orders/new">{{ t('orders.new') }}</a>
+  {% if closed %}
+  <a class="btn-link" href="/orders">{{ t('orders.show_open') }}</a>
+  {% else %}
+  <a class="btn-link" href="/orders?view=closed">{{ t('orders.show_closed') }}</a>
+  {% endif %}
+</p>
+{% if rows %}
+<div class="card table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>{{ t('orders.field.reference') }}</th>
+        <th>{{ t('orders.field.date') }}</th>
+        <th>{{ t('orders.items') }}</th>
+        <th>{{ t('orders.state') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for order in rows %}
+      <tr>
+        <td><a href="/orders/{{ order.id }}">{{ order.reference }}</a></td>
+        <td class="nowrap">{{ order.order_date|local_date }}</td>
+        <td>
+          {% for group in order.groups %}
+            {% if group.set_name %}{{ group.set_name }} × {{ group.set_qty }}{% else %}{% for name, qty in group.lines %}{{ qty }} × {{ name }}{% endfor %}{% endif %}{% if not loop.last %}<br>{% endif %}
+          {% endfor %}
+        </td>
+        <td>
+          {% if order.status == 'open' %}
+            {% if order.ready %}<span class="badge ok">{{ t('orders.ready') }}</span>{% else %}<span class="badge wait">{{ t('orders.not_ready_badge') }}</span>{% endif %}
+          {% elif order.status == 'shipped' %}{{ t('orders.status.shipped') }}
+          {% else %}{{ t('orders.status.cancelled') }}{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card"><p class="muted">{% if closed %}{{ t('orders.empty_closed') }}{% else %}{{ t('orders.empty_list') }}{% endif %}</p></div>
+{% endif %}
+{% endblock %}

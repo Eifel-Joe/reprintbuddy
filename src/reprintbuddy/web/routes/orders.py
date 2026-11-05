@@ -1,0 +1,236 @@
+"""Orders: open list, new order (also with set choices), ship, cancel (Spec 6.7)."""
+
+from __future__ import annotations
+
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from reprintbuddy.domain import catalog, orders
+from reprintbuddy.domain.errors import DomainError, ValidationError
+from reprintbuddy.domain.orders import ArticleItem, SetItem
+from reprintbuddy.domain.stock import MAX_QTY
+from reprintbuddy.models import Article, SetPosition, SetPositionOption, utcnow
+from reprintbuddy.web.csrf import verify_csrf
+from reprintbuddy.web.deps import current_language, get_db, render
+from reprintbuddy.web.formatting import to_local
+from reprintbuddy.web.forms import (
+    duplicate_redirect,
+    error_status,
+    error_text,
+    parse_int,
+    saved_redirect,
+)
+from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
+from reprintbuddy.web.i18n import translate
+
+router = APIRouter()
+
+DEFAULT_ROWS = 5
+MORE_ROWS = 5
+MAX_ROWS = 50
+MAX_ID = 2**31 - 1
+
+
+# ---- list ------------------------------------------------------------------------------
+
+
+@router.get("/orders")
+async def orders_list(request: Request, view: str = "open", db: Session = Depends(get_db)):
+    closed = view == "closed"
+    return render(
+        request,
+        "orders_list.html",
+        active_nav="orders",
+        closed=closed,
+        rows=orders.list_orders(db, "closed" if closed else "open"),
+    )
+
+
+# ---- new order -----------------------------------------------------------------------------
+
+
+def _rows_of(form, *, more: bool) -> int:
+    raw = str(form.get("rows", "")).strip()
+    rows = int(raw) if raw.isdigit() and 1 <= int(raw) <= MAX_ROWS else DEFAULT_ROWS
+    return min(rows + MORE_ROWS, MAX_ROWS) if more else rows
+
+
+def _today() -> str:
+    return to_local(utcnow()).date().isoformat()
+
+
+def _parse_date(raw: str | None) -> date:
+    try:
+        return date.fromisoformat((raw or "").strip())
+    except ValueError:
+        raise ValidationError("form.invalid_date", field="orders.field.date") from None
+
+
+def _typed_items(form, rows: int) -> list[dict[str, str]]:
+    return [
+        {"item": str(form.get(f"item_{i}", "")), "qty": str(form.get(f"qty_{i}", "1"))}
+        for i in range(rows)
+    ]
+
+
+def _parse_item(raw: str) -> tuple[str, int]:
+    kind, _, ident = raw.partition(":")
+    if kind not in ("article", "set") or not ident.isdigit() or int(ident) > MAX_ID:
+        raise ValidationError("orders.invalid_item")
+    return kind, int(ident)
+
+
+def _choice_blocks(db: Session, form, items: list[dict[str, str]]) -> dict[int, list[dict[str, object]]]:
+    """For each set row: the positions with a choice and what was chosen so far."""
+    blocks: dict[int, list[dict[str, object]]] = {}
+    for i, row in enumerate(items):
+        kind, _, ident = row["item"].partition(":")
+        if kind != "set" or not ident.isdigit() or int(ident) > MAX_ID:
+            continue
+        positions = db.scalars(
+            select(SetPosition).where(SetPosition.set_id == int(ident)).order_by(SetPosition.sort, SetPosition.id)
+        ).all()
+        found = []
+        for position in positions:
+            articles = db.execute(
+                select(Article.id, Article.name)
+                .join(SetPositionOption, SetPositionOption.article_id == Article.id)
+                .where(SetPositionOption.position_id == position.id)
+                .order_by(Article.name, Article.id)
+            ).all()
+            if len(articles) > 1:
+                chosen = str(form.get(f"choice_{i}_{position.id}", ""))
+                found.append({"position_id": position.id, "qty": position.qty, "options": articles, "chosen": chosen})
+        if found:
+            blocks[i] = found
+    return blocks
+
+
+def _form_page(request, db, *, form_values, items, rows, blocks, error=None, status=200):
+    return render(
+        request,
+        "order_new.html",
+        status_code=status,
+        active_nav="orders",
+        values=form_values,
+        items=items,
+        rows=rows,
+        blocks=blocks,
+        articles=catalog.list_articles(db),
+        sets=catalog.list_sets(db),
+        error=error,
+    )
+
+
+@router.get("/orders/new")
+async def orders_new(request: Request, db: Session = Depends(get_db)):
+    values = {"reference": "", "order_date": _today(), "note": ""}
+    items = [{"item": "", "qty": "1"} for _ in range(DEFAULT_ROWS)]
+    return _form_page(request, db, form_values=values, items=items, rows=DEFAULT_ROWS, blocks={})
+
+
+@router.post("/orders/new", dependencies=[Depends(verify_csrf)])
+async def orders_create(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    more = form.get("action") == "more"
+    rows = _rows_of(form, more=more)
+    values = {
+        "reference": str(form.get("reference", "")),
+        "order_date": str(form.get("order_date", "")),
+        "note": str(form.get("note", "")),
+    }
+    items = _typed_items(form, rows)
+    lang = current_language(request)
+
+    def page(error=None, status=200):
+        return _form_page(
+            request, db, form_values=values, items=items, rows=rows,
+            blocks=_choice_blocks(db, form, items), error=error, status=status,
+        )
+
+    if more:  # show more rows; nothing is booked and the token stays unused
+        return page()
+    try:
+        order_date = _parse_date(form.get("order_date"))
+        parsed: list[tuple[int, str, int, int]] = []  # (row, kind, id, qty)
+        for i, row in enumerate(items):
+            if not row["item"].strip():
+                continue
+            kind, ident = _parse_item(row["item"].strip())
+            qty = parse_int(row["qty"], field="orders.field.qty", min=1, max=MAX_QTY)
+            parsed.append((i, kind, ident, qty))
+        blocks = _choice_blocks(db, form, items)
+        missing = any(
+            not block["chosen"] for i, kind, _id, _q in parsed if kind == "set" for block in blocks.get(i, [])
+        )
+        if missing:
+            return page(error=translate(lang, "orders.choose"))
+        order_items: list[ArticleItem | SetItem] = []
+        for i, kind, ident, qty in parsed:
+            if kind == "article":
+                order_items.append(ArticleItem(ident, qty))
+            else:
+                choices = {}
+                for block in blocks.get(i, []):
+                    chosen = str(block["chosen"])
+                    choices[int(block["position_id"])] = int(chosen) if chosen.isdigit() and int(chosen) <= MAX_ID else -1
+                order_items.append(SetItem(ident, qty, choices))
+        with form_transaction(request, str(form.get("form_token", ""))) as tx:
+            order = orders.create_order(
+                tx, reference=values["reference"], order_date=order_date, items=order_items,
+                actor="user", note=values["note"],
+            )
+            order_id, reference = order.id, order.reference
+    except FormTokenUsed:
+        return duplicate_redirect(request, "/orders")
+    except (DomainError, FormTokenInvalid) as exc:
+        return page(error=error_text(lang, exc), status=error_status(exc))
+    return saved_redirect(request, f"/orders/{order_id}", "orders.created", reference=reference)
+
+
+# ---- detail, ship, cancel ---------------------------------------------------------------------
+
+
+def _detail_page(request: Request, db: Session, order_id: int, error: str | None = None, status: int = 200):
+    try:
+        view = orders.get_order(db, order_id)
+    except DomainError:
+        raise HTTPException(status_code=404) from None
+    return render(request, "order_detail.html", status_code=status, active_nav="orders", order=view, error=error)
+
+
+@router.get("/orders/{order_id:int}")
+async def order_detail(request: Request, order_id: int, db: Session = Depends(get_db)):
+    return _detail_page(request, db, order_id)
+
+
+async def _act(request: Request, order_id: int, db: Session, action, flash_key: str):
+    form = await request.form()
+    try:
+        orders.get_order(db, order_id)
+    except DomainError:
+        raise HTTPException(status_code=404) from None
+    try:
+        with form_transaction(request, str(form.get("form_token", ""))) as tx:
+            action(tx, order_id, "user")
+            reference = orders.get_order(tx, order_id).reference
+    except FormTokenUsed:
+        return duplicate_redirect(request, f"/orders/{order_id}")
+    except (DomainError, FormTokenInvalid) as exc:
+        return _detail_page(
+            request, db, order_id, error=error_text(current_language(request), exc), status=error_status(exc)
+        )
+    return saved_redirect(request, f"/orders/{order_id}", flash_key, reference=reference)
+
+
+@router.post("/orders/{order_id:int}/ship", dependencies=[Depends(verify_csrf)])
+async def order_ship(request: Request, order_id: int, db: Session = Depends(get_db)):
+    return await _act(request, order_id, db, orders.ship_order, "orders.shipped")
+
+
+@router.post("/orders/{order_id:int}/cancel", dependencies=[Depends(verify_csrf)])
+async def order_cancel(request: Request, order_id: int, db: Session = Depends(get_db)):
+    return await _act(request, order_id, db, orders.cancel_order, "orders.cancelled")
