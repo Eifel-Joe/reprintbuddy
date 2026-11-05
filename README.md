@@ -1,4 +1,8 @@
-# Reprintbuddy
+<p align="center">
+  <img src="src/reprintbuddy/web/static/img/logo.svg" alt="Reprintbuddy" width="96" height="96">
+</p>
+
+<h1 align="center">Reprintbuddy</h1>
 
 [Deutsch: README.de.md](README.de.md)
 

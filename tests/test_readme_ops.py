@@ -192,3 +192,13 @@ def test_readme_uses_bambuddys_labels_and_has_no_printer_or_expiry_setting(name)
         assert label in text, (name, label)
     for word in ("expiry date", "no restriction", "Ablaufdatum", "keine Einschränkung"):
         assert word not in text, (name, word)  # the Bambuddy dialog has no such fields
+
+
+@pytest.mark.parametrize("name", READMES)
+def test_readme_starts_with_the_centred_symbol_and_the_name(name):
+    text = read(name)
+    head = text[:600]
+    assert '<p align="center">' in head
+    assert '<img src="src/reprintbuddy/web/static/img/logo.svg" alt="Reprintbuddy" width="96" height="96">' in head
+    assert '<h1 align="center">Reprintbuddy</h1>' in head
+    assert (ROOT / "src/reprintbuddy/web/static/img/logo.svg").is_file()
