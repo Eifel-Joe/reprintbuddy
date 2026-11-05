@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import stock
 from reprintbuddy.web.deps import get_db, render
-from reprintbuddy.web.forms import ascii_digits
+from reprintbuddy.web.forms import bounded_int
 from reprintbuddy.web.journal_view import journal_rows
 
 router = APIRouter()
@@ -17,10 +17,8 @@ PAGE_SIZE = 100
 
 def _opt_int(raw: str | None, *, low: int = 1) -> int | None:
     """A positive whole number from the query string; anything else counts as absent."""
-    if raw is None or not ascii_digits(raw.strip()):
-        return None
-    value = int(raw)
-    return value if low <= value < 2**31 else None
+    value = bounded_int(raw.strip()) if raw is not None else None
+    return value if value is not None and low <= value < 2**31 else None
 
 
 @router.get("/journal")

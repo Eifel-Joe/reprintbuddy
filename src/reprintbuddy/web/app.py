@@ -8,6 +8,7 @@ from typing import Callable
 import httpx
 from fastapi import FastAPI
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.convertors import Convertor, register_url_convertor
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
@@ -31,6 +32,22 @@ from reprintbuddy.web.routes import sets as sets_routes
 from reprintbuddy.web.routes import setup as setup_routes
 
 WEB_DIR = Path(__file__).resolve().parent
+
+
+class BoundedInt(Convertor[int]):
+    """`{id:int}` in a path: at most 18 digits. Longer numbers name nothing that exists (404),
+    instead of raising in `int()` (above 4300 digits) or in SQLite (from 2**63)."""
+
+    regex = "[0-9]{1,18}"
+
+    def convert(self, value: str) -> int:
+        return int(value)
+
+    def to_string(self, value: int) -> str:
+        return str(int(value))
+
+
+register_url_convertor("int", BoundedInt())
 SESSION_COOKIE = "reprintbuddy_session"
 
 

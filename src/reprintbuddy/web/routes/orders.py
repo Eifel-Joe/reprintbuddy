@@ -17,7 +17,7 @@ from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.formatting import to_local
 from reprintbuddy.web.forms import (
-    ascii_digits,
+    bounded_int,
     duplicate_redirect,
     error_status,
     error_text,
@@ -55,7 +55,8 @@ async def orders_list(request: Request, view: str = "open", db: Session = Depend
 
 def _rows_of(form, *, more: bool) -> int:
     raw = str(form.get("rows", "")).strip()
-    rows = int(raw) if ascii_digits(raw) and 1 <= int(raw) <= MAX_ROWS else DEFAULT_ROWS
+    value = bounded_int(raw)
+    rows = value if value is not None and 1 <= value <= MAX_ROWS else DEFAULT_ROWS
     return min(rows + MORE_ROWS, MAX_ROWS) if more else rows
 
 
@@ -79,9 +80,10 @@ def _typed_items(form, rows: int) -> list[dict[str, str]]:
 
 def _parse_item(raw: str) -> tuple[str, int]:
     kind, _, ident = raw.partition(":")
-    if kind not in ("article", "set") or not ascii_digits(ident) or int(ident) > MAX_ID:
+    number = bounded_int(ident)
+    if kind not in ("article", "set") or number is None or number > MAX_ID:
         raise ValidationError("orders.invalid_item")
-    return kind, int(ident)
+    return kind, number
 
 
 def _choice_blocks(db: Session, form, items: list[dict[str, str]]) -> dict[int, list[dict[str, object]]]:
@@ -89,10 +91,11 @@ def _choice_blocks(db: Session, form, items: list[dict[str, str]]) -> dict[int, 
     blocks: dict[int, list[dict[str, object]]] = {}
     for i, row in enumerate(items):
         kind, _, ident = row["item"].partition(":")
-        if kind != "set" or not ascii_digits(ident) or int(ident) > MAX_ID:
+        set_id = bounded_int(ident)
+        if kind != "set" or set_id is None or set_id > MAX_ID:
             continue
         positions = db.scalars(
-            select(SetPosition).where(SetPosition.set_id == int(ident)).order_by(SetPosition.sort, SetPosition.id)
+            select(SetPosition).where(SetPosition.set_id == set_id).order_by(SetPosition.sort, SetPosition.id)
         ).all()
         found = []
         for position in positions:
@@ -176,8 +179,8 @@ async def orders_create(request: Request, db: Session = Depends(get_db)):
             else:
                 choices = {}
                 for block in blocks.get(i, []):
-                    chosen = str(block["chosen"])
-                    choices[int(block["position_id"])] = int(chosen) if ascii_digits(chosen) and int(chosen) <= MAX_ID else -1
+                    chosen = bounded_int(str(block["chosen"]))
+                    choices[int(block["position_id"])] = chosen if chosen is not None and chosen <= MAX_ID else -1
                 order_items.append(SetItem(ident, qty, choices))
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
             order = orders.create_order(

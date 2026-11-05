@@ -16,11 +16,19 @@ from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_tra
 from reprintbuddy.web.i18n import translate
 
 _INT = re.compile(r"-?[0-9]{1,18}", re.ASCII)
+_BOUNDED = re.compile(r"[0-9]{1,18}", re.ASCII)
 
 
-def ascii_digits(raw: str) -> bool:
-    """Only the digits 0-9 (str.isdigit also accepts characters like the superscript two)."""
-    return raw.isascii() and raw.isdigit()
+def bounded_int(raw: str | None) -> int | None:
+    """A non-negative whole number of at most 18 ASCII digits, else None.
+
+    No `str.isdigit` (it accepts characters like the superscript two, which `int` then rejects)
+    and no unbounded `int()` (Python raises ValueError above 4300 digits, SQLite cannot store
+    2**63 or more). Same bound as `parse_int`.
+    """
+    if raw is None or not _BOUNDED.fullmatch(raw):
+        return None
+    return int(raw)
 
 
 def parse_int(

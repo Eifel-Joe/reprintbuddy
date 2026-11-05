@@ -26,7 +26,7 @@ from reprintbuddy.models import Article, ArticleFilament, ArticlePart, Part
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, render
 from reprintbuddy.web.forms import (
-    ascii_digits,
+    bounded_int,
     duplicate_redirect,
     run_form_action,
     error_status,
@@ -171,7 +171,7 @@ async def _browse(request: Request, folder: str | None, base: str, file_base: st
     if client is None:
         return _problem(request, "articles.bambuddy_missing")
     try:
-        folder_id = int(folder) if folder and ascii_digits(folder) else None
+        folder_id = bounded_int(folder)
         folders = await client.list_folders()
         files = await client.list_files(folder_id)
     except BAMBUDDY_ERRORS:

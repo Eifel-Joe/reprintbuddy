@@ -13,7 +13,7 @@ from reprintbuddy.models import Article, ProductSet, SetPosition, SetPositionOpt
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.forms import (
-    ascii_digits,
+    bounded_int,
     duplicate_redirect,
     run_form_action,
     error_status,
@@ -39,7 +39,8 @@ MAX_ID = 2**31 - 1
 
 def _rows_of(form, *, more: bool) -> int:
     raw = str(form.get("rows", "")).strip()
-    rows = int(raw) if ascii_digits(raw) and 1 <= int(raw) <= MAX_ROWS else DEFAULT_ROWS
+    value = bounded_int(raw)
+    rows = value if value is not None and 1 <= value <= MAX_ROWS else DEFAULT_ROWS
     return min(rows + MORE_ROWS, MAX_ROWS) if more else rows
 
 
@@ -48,8 +49,9 @@ def _typed_rows(form, rows: int) -> list[dict[str, object]]:
     for i in range(rows):
         selected = set()
         for raw in form.getlist(f"pos_{i}_articles"):
-            if ascii_digits(str(raw).strip()) and int(raw) <= MAX_ID:
-                selected.add(int(raw))
+            number = bounded_int(str(raw).strip())
+            if number is not None and number <= MAX_ID:
+                selected.add(number)
         result.append({"qty": str(form.get(f"pos_{i}_qty", "1")), "selected": selected})
     return result
 
