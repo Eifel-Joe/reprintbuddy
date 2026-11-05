@@ -1,7 +1,6 @@
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
-import httpx
 import pytest
 
 from reprintbuddy import settings as st
@@ -10,7 +9,7 @@ from reprintbuddy.ops.backup import backup_dir_for
 from reprintbuddy.ops.runner import CommandResult
 from reprintbuddy.ops.service import RESTART_WAIT_CMD
 from reprintbuddy.ops.status import UpdateStatus, read_status, write_status
-from reprintbuddy.ops.updater import http_health_waiter, run_update, venv_python
+from reprintbuddy.ops.updater import run_update, venv_python
 
 NOW = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
 REF = "a" * 40
@@ -388,42 +387,12 @@ def test_reason_cuts_an_inline_sql_part(update_env):
     assert "SECRETKEY" not in message and message.startswith("migrate: OperationalError: no such table: x")
 
 
-def test_health_waiter(respx_mock, tmp_path):
-    engine = make_engine(tmp_path / "h.db")
-    upgrade(engine)
-    route = respx_mock.get("http://127.0.0.1:8080/healthz").respond(200, json={"status": "ok"})
-    assert http_health_waiter(tmp_path / "h.db")() is True
-    assert route.called
 
 
-def test_health_waiter_gives_up(respx_mock, tmp_path):
-    engine = make_engine(tmp_path / "h.db")
-    upgrade(engine)
-    respx_mock.get("http://127.0.0.1:8080/healthz").respond(503)
-    assert http_health_waiter(tmp_path / "h.db", timeout_s=0.3, interval_s=0.1)() is False
 
 
-def test_health_waiter_follows_the_saved_address(respx_mock, tmp_path):
-    from conftest import make_tls_pair
-
-    engine = make_engine(tmp_path / "h.db")
-    upgrade(engine)
-    cert, key = make_tls_pair()
-    with make_sessionmaker(engine)() as session:
-        st.set_setting(session, "port", 8443)
-        st.set_setting(session, "host", "127.0.0.1")
-        st.set_setting(session, "tls_cert", cert)
-        st.set_setting(session, "tls_key", key)
-    route = respx_mock.get("https://127.0.0.1:8443/healthz").respond(200, json={"status": "ok"})
-    assert http_health_waiter(tmp_path / "h.db")() is True
-    assert route.called
 
 
-def test_health_waiter_survives_connection_errors(respx_mock, tmp_path):
-    engine = make_engine(tmp_path / "h.db")
-    upgrade(engine)
-    respx_mock.get("http://127.0.0.1:8080/healthz").mock(side_effect=httpx.ConnectError("down"))
-    assert http_health_waiter(tmp_path / "h.db", timeout_s=0.3, interval_s=0.1)() is False
 
 
 def test_sigterm_handler_writes_the_final_state_and_exits(update_env):

@@ -10,18 +10,17 @@ while the helper runs, and the rollback must not load any new code.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import sqlite3
+import ssl
 import time
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-import httpx
-
-from reprintbuddy import settings as st
-from reprintbuddy.db import make_engine, make_sessionmaker
 from reprintbuddy.ops.backup import (
     KEEP_BACKUPS,
     backup_database,
@@ -30,7 +29,6 @@ from reprintbuddy.ops.backup import (
     restore_database,
 )
 from reprintbuddy.ops.runner import CommandResult, CommandRunner
-from reprintbuddy.ops.server import base_url, connect_host
 from reprintbuddy.ops.service import RESTART_WAIT_CMD
 from reprintbuddy.ops.status import UpdateStatus, is_busy, mark_interrupted, read_status, write_status
 from reprintbuddy.ops.versions import is_newer, local_tags, newest_release, parse_release_tag
@@ -249,28 +247,55 @@ def interrupt_handler(db_path: Path, *, now: Callable[[], datetime]) -> Callable
     return handle
 
 
+def _read_address(db_path: Path) -> str:
+    """The address the service listens on, from the database (plain sqlite3, no packages)."""
+    if not db_path.is_file():
+        raise FileNotFoundError(str(db_path))  # sqlite3.connect would create an empty database
+    connection = sqlite3.connect(str(db_path), timeout=5)
+    try:
+        rows = dict(
+            connection.execute(
+                "SELECT key, value FROM settings WHERE key IN ('host', 'port', 'tls_cert', 'tls_key')"
+            ).fetchall()
+        )
+    finally:
+        connection.close()
+    saved = {key: json.loads(value) for key, value in rows.items()}
+    host = saved.get("host") or "0.0.0.0"
+    port = int(saved.get("port") or 8080)
+    tls = bool(saved.get("tls_cert") and saved.get("tls_key"))
+    if host in ("0.0.0.0", "::", ""):
+        host = "127.0.0.1"  # a wildcard means "this machine"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    return f"{'https' if tls else 'http'}://{host}:{port}"
+
+
 def http_health_waiter(
     db_path: Path, *, timeout_s: float = 90.0, interval_s: float = 2.0
 ) -> Callable[[], bool]:
     """A function that waits until the service answers `/healthz`, or gives up.
 
-    Host, port and HTTPS are read from the database on every try: the update may
-    have just migrated or restored it.
+    Only the standard library is used (no SQLAlchemy, no httpx): pip replaces the
+    installed packages while the helper runs, and a module imported lazily afterwards
+    could be a different version than the ones the helper started with.
+    Host, port and HTTPS are read from the database on every try: the update may have
+    just migrated or restored it.
     """
+    # Our own service on this machine, usually with a self-made certificate: not verified.
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    # No proxy for a request to ourselves, whatever the environment says.
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context)
+    )
 
     def healthy_once() -> bool:
         try:
-            engine = make_engine(db_path)
-            try:
-                with make_sessionmaker(engine)() as session:
-                    host = str(st.get_setting(session, "host"))
-                    port = int(st.get_setting(session, "port"))  # type: ignore[arg-type]
-                    tls = st.tls_enabled(session)
-            finally:
-                engine.dispose()
-            url = base_url(connect_host(host), port, tls) + "/healthz"
-            response = httpx.get(url, verify=False, timeout=5.0)  # noqa: S501 - our own service, on this machine
-            return response.status_code == 200 and response.json() == {"status": "ok"}
+            url = _read_address(db_path) + "/healthz"
+            with opener.open(url, timeout=5.0) as response:
+                return response.status == 200 and json.loads(response.read()) == {"status": "ok"}
         except Exception:  # noqa: BLE001 - not reachable yet is the normal case here
             return False
 
