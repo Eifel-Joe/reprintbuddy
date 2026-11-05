@@ -26,7 +26,9 @@ async def recheck(request: Request, db: Session = Depends(get_db)):
     take_verdict(request, check)
     if check.ok:
         flash(request, "rights.ok")
-    elif check.reason != "missing_permissions":
+    elif check.reason == "missing_permissions":
+        flash(request, "rights.still_missing")  # so the person sees that Bambuddy was asked
+    else:
         flash(request, f"bambuddy.reason.{check.reason}")  # nothing could be checked: say why
     return RedirectResponse(target, status_code=303)
 

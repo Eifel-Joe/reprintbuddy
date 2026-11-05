@@ -9,7 +9,7 @@
       <form method="post" action="/bambuddy/rights/recheck">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="next" value="{{ rights_next }}">
-        <button class="btn" type="submit">{{ t('rights.recheck') }}</button>
+        <button class="btn" type="submit" autofocus>{{ t('rights.recheck') }}</button>
       </form>
       <form method="post" action="/bambuddy/rights/later">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

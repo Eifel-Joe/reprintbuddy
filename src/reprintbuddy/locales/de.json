@@ -317,6 +317,7 @@
   "rights.banner": "Ein Bambuddy-Recht fehlt: {rights}.",
   "rights.details": "Einzelheiten in den Einstellungen",
   "rights.ok": "Bambuddy: alle Rechte sind da.",
+  "rights.still_missing": "Erneut geprüft: Bambuddy meldet weiterhin ein fehlendes Recht.",
   "permission.settings:read": "nur zum Erzeugen des Schlüssels",
   "bambuddy.user.key_rights_after": "Nach dem Erzeugen des Schlüssels dürfen diese drei Rechte wieder weg; der Schlüssel braucht sie nicht.",
   "permission.api_keys:read": "nur zum Erzeugen des Schlüssels",

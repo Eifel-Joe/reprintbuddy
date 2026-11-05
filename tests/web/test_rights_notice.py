@@ -241,11 +241,31 @@ def test_recheck_after_fix_clears_notice(missing_client, respx_mock):
     assert "Bambuddy: all rights are there." in page
 
 
-def test_recheck_still_missing_keeps_dialog(missing_client):
+def test_recheck_still_missing_keeps_dialog_and_says_so(missing_client):
+    """M5 of the review: the person sees that Bambuddy was asked again."""
     assert "rights-dialog" in missing_client.get("/").text
     response = _post(missing_client, RECHECK, next="/")
     assert response.status_code == 303
+    page = missing_client.get("/").text
+    assert "rights-dialog" in page
+    assert "Checked again: Bambuddy still reports a missing right." in page
+
+
+def test_recheck_still_missing_says_so_in_german(missing_client):
+    with missing_client.app.state.sessionmaker() as s:
+        st.set_setting(s, "language", "de")
     assert "rights-dialog" in missing_client.get("/").text
+    _post(missing_client, RECHECK, next="/")
+    assert "Erneut geprüft: Bambuddy meldet weiterhin ein fehlendes Recht." in missing_client.get("/").text
+
+
+def test_the_dialog_puts_the_focus_on_check_again(missing_client):
+    """M6 of the review: without JavaScript, so a keyboard user starts in the dialog."""
+    html = missing_client.get("/").text
+    dialog = html[html.index('class="rights-dialog"') :]
+    recheck = dialog[dialog.index('action="/bambuddy/rights/recheck"') : dialog.index('action="/bambuddy/rights/later"')]
+    later = dialog[dialog.index('action="/bambuddy/rights/later"') :]
+    assert "autofocus" in recheck and "autofocus" not in later
 
 
 def test_recheck_with_bambuddy_down_says_so_and_keeps_the_dialog(missing_client, respx_mock):
