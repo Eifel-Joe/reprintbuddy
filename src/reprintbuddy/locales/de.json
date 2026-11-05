@@ -313,5 +313,8 @@
   "parts.flash_restored": "Zukaufteil {name} wiederhergestellt.",
   "sets.flash_archived": "Set {name} archiviert.",
   "sets.flash_restored": "Set {name} wiederhergestellt.",
-  "articles.edit_archived": "Ein archivierter Artikel lässt sich nicht bearbeiten. Erst wiederherstellen."
+  "articles.edit_archived": "Ein archivierter Artikel lässt sich nicht bearbeiten. Erst wiederherstellen.",
+  "orders.cancel_confirm": "Bestellung {reference} stornieren? Die reservierten Mengen werden freigegeben.",
+  "orders.cancel_yes": "Ja, Bestellung stornieren",
+  "orders.cancel_keep": "Bestellung behalten"
 }

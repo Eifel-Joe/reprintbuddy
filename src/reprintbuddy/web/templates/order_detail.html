@@ -33,12 +33,14 @@
   <form method="post" action="/orders/{{ order.id }}/ship">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <label>{{ t('journal.field.note') }} <input name="note" maxlength="500"></label>
     <button class="btn" type="submit">{{ t('orders.ship') }}</button>
   </form>
   {% endif %}
   <form method="post" action="/orders/{{ order.id }}/cancel">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <label>{{ t('journal.field.note') }} <input name="note" maxlength="500"></label>
     <button class="btn secondary" type="submit">{{ t('orders.cancel') }}</button>
   </form>
 </div>

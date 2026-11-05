@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import catalog, orders
+from reprintbuddy.domain import catalog, orders, stock
 from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.domain.orders import ArticleItem, SetItem
 from reprintbuddy.domain.stock import MAX_QTY
@@ -22,6 +22,7 @@ from reprintbuddy.web.forms import (
     error_status,
     error_text,
     parse_int,
+    parse_text,
     saved_redirect,
 )
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
@@ -198,11 +199,15 @@ async def orders_create(request: Request, db: Session = Depends(get_db)):
 # ---- detail, ship, cancel ---------------------------------------------------------------------
 
 
-def _detail_page(request: Request, db: Session, order_id: int, error: str | None = None, status: int = 200):
+def _detail_view(db: Session, order_id: int):
     try:
-        view = orders.get_order(db, order_id)
+        return orders.get_order(db, order_id)
     except DomainError:
         raise HTTPException(status_code=404) from None
+
+
+def _detail_page(request: Request, db: Session, order_id: int, error: str | None = None, status: int = 200):
+    view = _detail_view(db, order_id)
     return render(request, "order_detail.html", status_code=status, active_nav="orders", order=view, error=error)
 
 
@@ -218,8 +223,9 @@ async def _act(request: Request, order_id: int, db: Session, action, flash_key: 
     except DomainError:
         raise HTTPException(status_code=404) from None
     try:
+        note = parse_text(form.get("note"), field="journal.field.note", max_len=stock.MAX_NOTE)
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            action(tx, order_id, "user")
+            action(tx, order_id, "user", note)
             reference = orders.get_order(tx, order_id).reference
     except FormTokenUsed:
         return duplicate_redirect(request, f"/orders/{order_id}")
@@ -237,4 +243,17 @@ async def order_ship(request: Request, order_id: int, db: Session = Depends(get_
 
 @router.post("/orders/{order_id:int}/cancel", dependencies=[Depends(verify_csrf)])
 async def order_cancel(request: Request, order_id: int, db: Session = Depends(get_db)):
+    """Cancelling takes two steps without JavaScript: the first post shows a confirmation
+    (nothing is booked, the one-time token stays unused); the second one carries `confirm`."""
+    form = await request.form()
+    if form.get("confirm") != "yes":
+        view = _detail_view(db, order_id)
+        if view.status != "open":
+            return _detail_page(
+                request, db, order_id, error=translate(current_language(request), "orders.not_open")
+            )
+        return render(
+            request, "order_cancel.html", active_nav="orders", order=view,
+            note=str(form.get("note", "")), form_token_value=str(form.get("form_token", "")),
+        )
     return await _act(request, order_id, db, orders.cancel_order, "orders.cancelled")

@@ -313,5 +313,8 @@
   "parts.flash_restored": "Part {name} restored.",
   "sets.flash_archived": "Set {name} archived.",
   "sets.flash_restored": "Set {name} restored.",
-  "articles.edit_archived": "An archived article cannot be edited. Restore it first."
+  "articles.edit_archived": "An archived article cannot be edited. Restore it first.",
+  "orders.cancel_confirm": "Cancel the order {reference}? The reserved quantities are released.",
+  "orders.cancel_yes": "Yes, cancel the order",
+  "orders.cancel_keep": "Keep the order"
 }

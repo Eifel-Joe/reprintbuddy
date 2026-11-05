@@ -195,7 +195,7 @@ def test_ship_not_ready_post_rejected(ready_client):
 def test_cancel_releases(ready_client):
     a = one_article(ready_client, stock=5)
     o = place(ready_client, a, 2)
-    data = {"csrf_token": csrf_of(ready_client, f"/orders/{o}"), "form_token": form_token_of(ready_client, f"/orders/{o}", f"/orders/{o}/cancel")}
+    data = {"csrf_token": csrf_of(ready_client, f"/orders/{o}"), "form_token": form_token_of(ready_client, f"/orders/{o}", f"/orders/{o}/cancel"), "confirm": "yes"}
     assert ready_client.post(f"/orders/{o}/cancel", data=data).status_code == 303
     assert reserved(ready_client, a) == 0
     assert en("orders.empty_list") in ready_client.get("/orders").text  # no longer open
@@ -206,7 +206,7 @@ def test_cancel_releases(ready_client):
 def test_closed_order_has_no_buttons(ready_client):
     a = one_article(ready_client, stock=5)
     o = place(ready_client, a, 2)
-    data = {"csrf_token": csrf_of(ready_client, f"/orders/{o}"), "form_token": form_token_of(ready_client, f"/orders/{o}", f"/orders/{o}/cancel")}
+    data = {"csrf_token": csrf_of(ready_client, f"/orders/{o}"), "form_token": form_token_of(ready_client, f"/orders/{o}", f"/orders/{o}/cancel"), "confirm": "yes"}
     ready_client.post(f"/orders/{o}/cancel", data=data)
     page = ready_client.get(f"/orders/{o}").text
     assert f"/orders/{o}/ship" not in page and f"/orders/{o}/cancel" not in page
@@ -261,3 +261,77 @@ def test_enter_in_a_field_places_the_order_instead_of_adding_rows(ready_client):
     form = re.search(r'<form[^>]*action="/orders/new"[^>]*>(.*?)</form>', ready_client.get("/orders/new").text, re.S).group(1)
     first = re.search(r"<button[^>]*>", form).group(0)
     assert 'name="action"' not in first and 'type="submit"' in first
+
+
+def test_ship_and_cancel_forms_have_a_note_field(ready_client):
+    a = one_article(ready_client, stock=5)
+    o = place(ready_client, a, 1)
+    page = ready_client.get(f"/orders/{o}").text
+    for action in ("ship", "cancel"):
+        form = re.search(rf'<form[^>]*action="/orders/{o}/{action}"[^>]*>(.*?)</form>', page, re.S).group(1)
+        assert 'name="note"' in form, action
+
+
+def test_ship_with_note(ready_client):  # Spec 6.2: every booking has an optional note
+    a = one_article(ready_client, stock=5)
+    o = place(ready_client, a, 2)
+    data = {"csrf_token": csrf_of(ready_client, f"/orders/{o}"),
+            "form_token": form_token_of(ready_client, f"/orders/{o}", f"/orders/{o}/ship"), "note": "  parcel 4711 "}
+    assert ready_client.post(f"/orders/{o}/ship", data=data).status_code == 303
+    with sm_of(ready_client).begin() as s:
+        row = s.scalars(select(JournalEntry).where(JournalEntry.kind == "order_shipped")).one()
+        assert row.note == "parcel 4711"
+
+
+def test_cancel_asks_for_confirmation_first(ready_client):
+    a = one_article(ready_client, stock=5)
+    o = place(ready_client, a, 2)
+    data = {"csrf_token": csrf_of(ready_client, f"/orders/{o}"),
+            "form_token": form_token_of(ready_client, f"/orders/{o}", f"/orders/{o}/cancel"), "note": "customer withdrew"}
+    first = ready_client.post(f"/orders/{o}/cancel", data=data)
+    assert first.status_code == 200
+    assert en("orders.cancel_confirm", reference="Order 1001") in first.text
+    assert 'name="confirm"' in first.text and 'value="customer withdrew"' in first.text
+    with sm_of(ready_client).begin() as s:
+        assert s.get(Order, o).status == "open" and s.get(Article, a).reserved == 2
+        assert len(s.scalars(select(JournalEntry)).all()) == 1  # only the reservation
+    second = ready_client.post(f"/orders/{o}/cancel", data={**data, "confirm": "yes"})
+    assert second.status_code == 303
+    with sm_of(ready_client).begin() as s:
+        assert s.get(Order, o).status == "cancelled" and s.get(Article, a).reserved == 0
+        row = s.scalars(select(JournalEntry).where(JournalEntry.kind == "order_cancelled")).one()
+        assert row.note == "customer withdrew"
+
+
+def test_cancel_confirmation_is_one_time(ready_client):
+    a = one_article(ready_client, stock=5)
+    o = place(ready_client, a, 2)
+    data = {"csrf_token": csrf_of(ready_client, f"/orders/{o}"), "confirm": "yes",
+            "form_token": form_token_of(ready_client, f"/orders/{o}", f"/orders/{o}/cancel")}
+    assert ready_client.post(f"/orders/{o}/cancel", data=data).status_code == 303
+    second = ready_client.post(f"/orders/{o}/cancel", data=data)
+    assert second.status_code == 303
+    with sm_of(ready_client).begin() as s:
+        assert len(s.scalars(select(JournalEntry).where(JournalEntry.kind == "order_cancelled")).all()) == 1
+
+
+def test_cancel_confirmation_of_a_closed_order(ready_client):
+    a = one_article(ready_client, stock=5)
+    o = place(ready_client, a, 2)
+    data = {"csrf_token": csrf_of(ready_client, f"/orders/{o}"), "confirm": "yes",
+            "form_token": form_token_of(ready_client, f"/orders/{o}", f"/orders/{o}/cancel")}
+    ready_client.post(f"/orders/{o}/cancel", data=data)
+    step_one = ready_client.post(f"/orders/{o}/cancel", data={"csrf_token": data["csrf_token"], "form_token": issue_form_token(ready_client.app.state.session_secret)})
+    assert step_one.status_code == 200 and en("orders.not_open") in step_one.text
+
+
+def test_too_long_note_is_rejected(ready_client):
+    a = one_article(ready_client, stock=5)
+    o = place(ready_client, a, 2)
+    for action in ("ship", "cancel"):
+        data = {"csrf_token": csrf_of(ready_client, f"/orders/{o}"), "confirm": "yes", "note": "x" * 501,
+                "form_token": form_token_of(ready_client, f"/orders/{o}", f"/orders/{o}/cancel")}
+        response = ready_client.post(f"/orders/{o}/{action}", data=data)
+        assert response.status_code == 200, action
+    with sm_of(ready_client).begin() as s:
+        assert s.get(Order, o).status == "open"
