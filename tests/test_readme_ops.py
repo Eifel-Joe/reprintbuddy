@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 
+import reprintbuddy
+
 from reprintbuddy.ops.service import (
     RESTART_CMD,
     RESTART_WAIT_CMD,
@@ -14,9 +16,16 @@ from reprintbuddy.ops.service import (
 
 ROOT = Path(__file__).resolve().parents[1]
 READMES = ("README.md", "README.de.md")
-INSTALL_COMMAND = (
-    'bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/main/install/install.sh)"'
-)
+PREFIX = "apt-get update && apt-get install -y curl && "
+URL_TEMPLATE = "https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/{ref}/install/install.sh"
+
+
+def install_command(ref: str) -> str:
+    return PREFIX + 'bash -c "$(curl -fsSL ' + URL_TEMPLATE.format(ref=ref) + ')"'
+
+
+# the main command installs exactly the version this code carries (installer and code belong together)
+INSTALL_COMMAND = install_command("v" + reprintbuddy.__version__)
 
 
 def read(name: str) -> str:
@@ -89,10 +98,7 @@ def test_install_points_at_the_published_repository(name):
 @pytest.mark.parametrize("name", READMES)
 def test_install_command_bound_to_a_tag(name):
     """Installer and code must be one version: the URL with the tag installs exactly that pair."""
-    assert (
-        'bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"'
-        in read(name)
-    )
+    assert install_command("<tag>") in read(name)
 
 
 @pytest.mark.parametrize("name,lang", [("README.md", "en"), ("README.de.md", "de")])
@@ -129,3 +135,41 @@ def test_readme_first_run_has_four_steps_and_the_permission_list(name):
     first_run = first_run[: first_run.index("\n## ", 5)]
     for number in ("1.", "2.", "3.", "4."):
         assert f"\n{number} " in first_run, (name, number)
+
+
+@pytest.mark.parametrize(
+    "name,sentence",
+    [
+        ("README.md", "Fresh Debian containers often come without curl; the first part installs it."),
+        ("README.de.md", "Frische Debian-Container bringen oft kein curl mit; der erste Teil installiert es."),
+    ],
+)
+def test_readme_says_why_the_install_command_installs_curl(name, sentence):
+    assert sentence in read(name)
+
+
+@pytest.mark.parametrize("name", READMES)
+def test_every_install_command_in_the_readme_installs_curl_first(name):
+    """A bare `bash -c "$(curl ...` line would fail on a fresh container."""
+    for line in read(name).splitlines():
+        if "curl -fsSL" in line and line.lstrip().startswith("bash -c"):
+            raise AssertionError(f"{name}: install command without the curl installation: {line}")
+
+
+@pytest.mark.parametrize("name", READMES)
+def test_readme_names_every_key_setting(name):
+    text = read(name)
+    for label in (
+        "Read Status",
+        "Manage Queue",
+        "Control Printer",
+        "Manage Library",
+        "Manage Inventory",
+        "Manage Maintenance",
+        "Manage Archives",
+        "Manage Projects",
+        "Allow Cloud Access",
+        "Update Electricity Price",
+        "Send Notifications",
+    ):
+        assert label in text, (name, label)

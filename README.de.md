@@ -42,22 +42,21 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 ## Installation
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/main/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.1.1/install/install.sh)"
 ```
 
-Als root im Container ausführen. Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
+Als root im Container ausführen. Frische Debian-Container bringen oft kein curl mit; der erste Teil installiert es.
+Der Tag in der Adresse (`v0.1.1`) ist die Version, die installiert wird; Skript und Code gehören sicher zusammen.
+Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/main/install/install.sh)" _ --language de
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.1.1/install/install.sh)" _ --language de
 ```
 
-*Verfügbar ab der ersten Version.*
-
-Der Befehl oben holt das Installationsskript vom Zweig `main`. Soll genau eine Version installiert werden,
-setze ihren Tag in die Adresse (für `<tag>` zum Beispiel `v0.1.1`); Skript und Code gehören dann sicher zusammen:
+Für eine andere Version setze ihren Tag in die Adresse (für `<tag>` zum Beispiel `v0.1.1`):
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
 ```
 
 Das Skript
@@ -124,9 +123,14 @@ Einrichtung akzeptiert.
    Lege dann den Benutzer `reprintbuddy` in dieser Gruppe an. Sein Passwort brauchst du nur
    einmal, um den Schlüssel zu erzeugen; Reprintbuddy fragt es nicht ab und speichert es nicht.
 3. **API-Schlüssel:** Melde dich in Bambuddy ab und als `reprintbuddy` an (ein Schlüssel gehört
-   immer dem angemeldeten Benutzer). Öffne *Einstellungen → API-Schlüssel → Schlüssel erstellen*,
-   nenne ihn „Reprintbuddy“, hake die Rechte *Status lesen* und *Warteschlange verwalten* an,
-   kopiere den Schlüssel sofort (Bambuddy zeigt ihn nur einmal) und melde dich wieder ab.
+   immer dem angemeldeten Benutzer). Öffne *Einstellungen → API-Schlüssel → Schlüssel erstellen*
+   und stelle ihn genau so ein: Name „Reprintbuddy“; *Status lesen* (*Read Status*) **an**;
+   *Warteschlange verwalten* (*Manage Queue*) **an**; alle anderen **aus** (*Control Printer*,
+   *Manage Library*, *Manage Inventory*, *Manage Maintenance*, *Manage Archives*,
+   *Manage Projects*, *Allow Cloud Access*, *Update Electricity Price*, *Send Notifications*);
+   Drucker: **keine Einschränkung** (sonst sieht Reprintbuddy nur einen Teil der Drucker);
+   Ablaufdatum: **keins** (sonst hört Reprintbuddy an dem Tag still auf). Kopiere den Schlüssel
+   sofort (Bambuddy zeigt ihn nur einmal) und melde dich wieder ab.
 4. **Bambuddy anbinden:** Trage die Adresse von Bambuddy und den Schlüssel ein. Reprintbuddy
    fragt Bambuddy (`GET /api/v1/auth/me`), wem der Schlüssel gehört und welche Rechte er wirklich
    hat, und zeigt Besitzer und jedes nötige Recht mit Haken oder Kreuz. Die Oberfläche öffnet

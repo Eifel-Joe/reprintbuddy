@@ -39,22 +39,21 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 ## Installation
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/main/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.1.1/install/install.sh)"
 ```
 
-Run it as root inside the container. To skip the language question, add the language:
+Run it as root inside the container. Fresh Debian containers often come without curl; the first part installs it.
+The tag in the address (`v0.1.1`) is the version that gets installed; installer and code are guaranteed to belong
+together. To skip the language question, add the language:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/main/install/install.sh)" _ --language de
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.1.1/install/install.sh)" _ --language de
 ```
 
-*Available from the first release.*
-
-The command above takes the installer from the `main` branch. To install exactly one version, put its tag
-into the URL, for example `v0.1.1` for `<tag>`; installer and code are then guaranteed to belong together:
+To install another version, put its tag into the address, for example `v0.1.1` for `<tag>`:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
 ```
 
 What the installer does:
@@ -120,9 +119,13 @@ DNS names, are accepted only after setup.
    Then create the user `reprintbuddy` in this group. Its password is needed only once, to
    create the key; Reprintbuddy neither asks for it nor stores it.
 3. **API key:** sign out of Bambuddy and sign in as `reprintbuddy` (a key always belongs to
-   the user who is signed in). Open *Settings → API keys → Create key*, name it
-   "Reprintbuddy", tick the rights *Read Status* and *Manage Queue*, copy the key at once
-   (Bambuddy shows it only one time) and sign out again.
+   the user who is signed in). Open *Settings → API keys → Create key* and set it exactly like this:
+   name "Reprintbuddy"; *Read Status* **on**; *Manage Queue* **on**; all others **off**
+   (*Control Printer*, *Manage Library*, *Manage Inventory*, *Manage Maintenance*,
+   *Manage Archives*, *Manage Projects*, *Allow Cloud Access*, *Update Electricity Price*,
+   *Send Notifications*); printers: **no restriction** (otherwise Reprintbuddy sees only some
+   printers); expiry date: **none** (otherwise Reprintbuddy stops working silently on that day).
+   Copy the key at once (Bambuddy shows it only one time) and sign out again.
 4. **Connect Bambuddy:** enter the Bambuddy address and the key. Reprintbuddy asks Bambuddy
    (`GET /api/v1/auth/me`) whom the key belongs to and which rights it can really use, and
    shows the owner and each required right with a check or a cross. The interface opens only
