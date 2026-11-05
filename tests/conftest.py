@@ -37,7 +37,9 @@ def api_routes(app):
 
 
 def make_client(db_path) -> TestClient:
-    return TestClient(create_app(db_path), follow_redirects=False)
+    app = create_app(db_path)
+    app.state.login_failure_delay = 0  # tests do not wait; one test checks the delay itself
+    return TestClient(app, follow_redirects=False)
 
 
 @pytest.fixture

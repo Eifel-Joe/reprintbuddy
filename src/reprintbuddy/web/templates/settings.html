@@ -52,10 +52,10 @@
       <input name="current_password" type="password" autocomplete="current-password" required>
     </label>
     <label>{{ t('settings.password_new') }}
-      <input name="new_password" type="password" autocomplete="new-password" required minlength="8">
+      <input name="new_password" type="password" autocomplete="new-password" required minlength="{{ min_password_length }}">
     </label>
     <label>{{ t('setup.password_repeat') }}
-      <input name="new_password_repeat" type="password" autocomplete="new-password" required minlength="8">
+      <input name="new_password_repeat" type="password" autocomplete="new-password" required minlength="{{ min_password_length }}">
     </label>
     <button class="btn" type="submit">{{ t('settings.password_submit') }}</button>
   </form>

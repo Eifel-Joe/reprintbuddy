@@ -30,7 +30,8 @@ _OPEN_PREFIX = ("/static/",)
 
 @pass_context
 def t(context, key: str, **params: object) -> str:
-    return translate(context.get("lang", "en"), key, **params)
+    # {min_length} may be used in any text; it follows the one password-length constant.
+    return translate(context.get("lang", "en"), key, min_length=auth.MIN_PASSWORD_LENGTH, **params)
 
 
 async def get_db(request: Request) -> AsyncIterator[Session]:
@@ -49,6 +50,7 @@ def render(request: Request, name: str, status_code: int = 200, **context: objec
         # Target of the "Open Bambuddy" link; the key is never part of it.
         context["open_bambuddy_url"] = st.get_setting(session, "bambuddy_url")
     context.setdefault("active_nav", None)
+    context["min_password_length"] = auth.MIN_PASSWORD_LENGTH
     context.setdefault("notice", request.session.pop(FLASH_KEY, None))
     context["csrf_token"] = csrf_token(request)
     return request.app.state.templates.TemplateResponse(

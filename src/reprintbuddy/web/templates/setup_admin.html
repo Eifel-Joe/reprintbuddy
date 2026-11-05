@@ -10,10 +10,10 @@
     <input name="username" value="{{ username }}" autocomplete="username" required autofocus>
   </label>
   <label>{{ t('setup.password') }}
-    <input name="password" type="password" autocomplete="new-password" required minlength="8">
+    <input name="password" type="password" autocomplete="new-password" required minlength="{{ min_password_length }}">
   </label>
   <label>{{ t('setup.password_repeat') }}
-    <input name="password_repeat" type="password" autocomplete="new-password" required minlength="8">
+    <input name="password_repeat" type="password" autocomplete="new-password" required minlength="{{ min_password_length }}">
   </label>
   <label>{{ t('setup.language') }}
     <select name="language">

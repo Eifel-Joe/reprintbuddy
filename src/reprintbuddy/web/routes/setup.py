@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
@@ -59,7 +60,7 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)):
             lang=language,
         )
 
-    user = accounts.create_admin(db, username, password)
+    user = await run_in_threadpool(accounts.create_admin, db, username, password)
     st.set_setting(db, "language", language)
     start_session(request, user, db)
     return RedirectResponse("/setup/bambuddy", status_code=303)

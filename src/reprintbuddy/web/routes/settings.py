@@ -135,13 +135,13 @@ async def change_password(request: Request, db: Session = Depends(get_db)):
     def fail(error: str):
         return _page(request, db, error, "password")
 
-    if user is None or accounts.authenticate(db, user.username, current) is None:
+    if user is None or await run_in_threadpool(accounts.authenticate, db, user.username, current) is None:
         return fail("settings.password_wrong")
     if new != repeat:
         return fail("setup.mismatch")
     if len(new) < accounts.MIN_PASSWORD_LENGTH:
         return fail("setup.too_short")
-    accounts.set_password(db, user.username, new)
+    await run_in_threadpool(accounts.set_password, db, user.username, new)
     # Every other session ends with the old password; this one is issued anew.
     start_session(request, user, db)
     return _saved(request, "settings.password_changed")

@@ -40,6 +40,7 @@ def create_app(
     app.state.engine = engine
     app.state.sessionmaker = sessionmaker
     app.state.session_secret = secret
+    app.state.login_failure_delay = 0.5  # seconds of pause after a wrong password
     app.state.http_client_factory = http_client_factory or httpx.AsyncClient
 
     templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
