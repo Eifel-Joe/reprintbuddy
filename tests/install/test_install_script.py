@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 INSTALL_SH = ROOT / "install" / "install.sh"
 CLI_SH = ROOT / "install" / "reprintbuddy-cli.sh"
 REPO = "https://example.invalid/reprintbuddy.git"
-RUNUSER = "+ runuser -u reprintbuddy -- env HOME=/var/lib/reprintbuddy"
+RUNUSER = "+ setsid --wait runuser -u reprintbuddy -- env HOME=/var/lib/reprintbuddy"
 
 
 @pytest.fixture

@@ -61,19 +61,21 @@ run() {
         printf ' %q' "$@"
         printf '\n'
     else
-        "$@"
+        "$@" </dev/null # nothing here is interactive: no command may read from the terminal
     fi
 }
 
 # git, venv, pip and the command line run as the service user: the service must be able to
 # update itself later, and git refuses a repository owned by somebody else.
+# `setsid --wait` gives the command a session without a controlling terminal: a process of the
+# less privileged user cannot push keystrokes into root's terminal (TIOCSTI).
 as_service_user() {
-    run runuser -u "${APP_USER}" -- env "HOME=${DATA_DIR}" "$@"
+    run setsid --wait runuser -u "${APP_USER}" -- env "HOME=${DATA_DIR}" "$@"
 }
 
 # The same, but the output is wanted (reading commands also run in a dry run).
 capture_as_service_user() {
-    runuser -u "${APP_USER}" -- env "HOME=${DATA_DIR}" "$@"
+    setsid --wait runuser -u "${APP_USER}" -- env "HOME=${DATA_DIR}" "$@" </dev/null
 }
 
 parse_args() {
@@ -313,7 +315,13 @@ set -euo pipefail
 
 if [ "$(id -u)" -eq 0 ]; then
     cd /
-    exec runuser -u reprintbuddy -- env HOME=/var/lib/reprintbuddy /opt/reprintbuddy/.venv/bin/reprintbuddy "$@"
+    if [ "${1:-}" = "set-password" ]; then
+        # Reads the password from the terminal, so it needs the terminal.
+        exec runuser -u reprintbuddy -- env HOME=/var/lib/reprintbuddy /opt/reprintbuddy/.venv/bin/reprintbuddy "$@"
+    fi
+    # Everything else needs no terminal. A new session without one keeps the less privileged
+    # process from pushing keystrokes into root's terminal (TIOCSTI).
+    exec setsid --wait runuser -u reprintbuddy -- env HOME=/var/lib/reprintbuddy /opt/reprintbuddy/.venv/bin/reprintbuddy "$@" </dev/null
 fi
 exec /opt/reprintbuddy/.venv/bin/reprintbuddy "$@"
 RB_CLI_EOF

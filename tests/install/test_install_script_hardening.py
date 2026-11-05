@@ -75,3 +75,53 @@ def test_the_installer_goes_on_when_no_update_runs(bash, tmp_path, answer):
 def test_the_installer_goes_on_without_systemctl(bash, tmp_path):
     os_release(tmp_path)
     assert run(bash, tmp_path, "--repo", REPO).returncode == 0
+
+
+# --- the less privileged process must not get at root's terminal (TIOCSTI) ---------------
+
+CLI_SH = INSTALL_SH.parent / "reprintbuddy-cli.sh"
+SERVICE_USER_PREFIX = "+ setsid --wait runuser -u reprintbuddy -- env HOME=/var/lib/reprintbuddy"
+
+
+def test_service_user_commands_run_in_a_new_session(bash, tmp_path):
+    os_release(tmp_path)
+    out = lines(run(bash, tmp_path, "--repo", REPO))
+    service_user_lines = [l for l in out.splitlines() if " runuser " in l]
+    assert service_user_lines, "no command ran as the service user?"
+    for line in service_user_lines:
+        assert line.startswith(SERVICE_USER_PREFIX), line
+    assert not [l for l in out.splitlines() if l.startswith("+ runuser")]
+
+
+def test_the_installer_cuts_stdin_of_every_command():
+    assert '"$@" </dev/null' in function_body("run")
+    assert "</dev/null" in function_body("capture_as_service_user")
+    assert "setsid --wait runuser" in function_body("capture_as_service_user")
+
+
+def wrapper(bash, tmp_path, *args):
+    """Run the wrapper as 'root' with stubs that print what they would run."""
+    folder = tmp_path / "stubs"
+    folder.mkdir(exist_ok=True)
+    for name, body in (("id", "echo 0"), ("runuser", 'echo "runuser $*"'), ("setsid", 'echo "setsid $*"')):
+        stub = folder / name
+        stub.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8", newline="\n")
+        stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+    env = dict(os.environ, PATH=f"{folder.as_posix()}{os.pathsep}{os.environ['PATH']}")
+    done = subprocess.run([bash, CLI_SH.as_posix(), *args], capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL)
+    assert done.returncode == 0, done.stderr
+    return done.stdout.strip()
+
+
+@pytest.mark.parametrize("command", [["set-port", "8081"], ["set-host", "0.0.0.0"], ["disable-https"], ["--version"]])
+def test_wrapper_runs_non_interactive_commands_in_a_new_session(bash, tmp_path, command):
+    out = wrapper(bash, tmp_path, *command)
+    assert out.startswith("setsid --wait runuser -u reprintbuddy -- env HOME=/var/lib/reprintbuddy ")
+    assert out.endswith(" ".join(command))
+
+
+def test_wrapper_keeps_the_terminal_for_the_password_prompt(bash, tmp_path):
+    """getpass needs the controlling terminal; a new session would show the password."""
+    out = wrapper(bash, tmp_path, "set-password", "--username", "admin")
+    assert out.startswith("runuser -u reprintbuddy -- env HOME=/var/lib/reprintbuddy ")
+    assert "setsid" not in out
