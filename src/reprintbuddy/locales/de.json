@@ -328,6 +328,7 @@
   "permission.queue:start_unreviewed": "damit Nachdrucke ohne Freigabe starten",
   "permission.printers:read": "damit Reprintbuddy die Drucker und ihren Zustand sieht",
   "permission.inventory:read": "damit Reprintbuddy den Filamentbestand liest",
+  "permission.filaments:read": "um zu erkennen, ob Bambuddy die Spulen selbst führt oder in Spoolman",
   "bambuddy.right.status": "„Read Status“",
   "bambuddy.right.queue": "„Manage Queue“",
   "bambuddy.where.group": "Wo es fehlen kann: an der Gruppe „Reprintbuddy“",

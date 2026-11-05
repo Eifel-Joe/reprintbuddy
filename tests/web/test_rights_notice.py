@@ -73,6 +73,17 @@ def test_missing_right_shows_dialog_with_place_and_guide(missing_client):
     assert "rights-banner" not in html
 
 
+def test_update_adds_a_right_shows_dialog(rights_client, respx_mock):
+    """The case this is built for: a key made for the version before needs `filaments:read` now."""
+    mock_auth_me(respx_mock, permissions=[p for p in REQUIRED if p != "filaments:read"])
+    html = rights_client.get("/").text
+    assert "rights-dialog" in html
+    assert "Read Filaments" in html and "filaments:read" in html
+    assert "in the group" in html  # where it can be added
+    assert "Read Inventory" in html and "inventory:read" in html  # the others are listed, as granted
+    assert html.count('aria-label="missing"') == 1 and html.count('aria-label="granted"') == 6
+
+
 def test_dialog_is_on_every_page_of_the_interface(missing_client):
     for path in ("/", "/settings", "/articles"):
         assert "rights-dialog" in missing_client.get(path).text, path

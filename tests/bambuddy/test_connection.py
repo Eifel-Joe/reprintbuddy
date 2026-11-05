@@ -12,8 +12,26 @@ async def run(url=URL, key="bb_testkey"):
         return await check_connection(url, key, client)
 
 
-def test_required_permissions_are_the_six_from_the_spec():
+def test_required_permissions_are_the_seven_from_the_spec():
     assert REQUIRED_PERMISSIONS == REQUIRED
+    assert len(REQUIRED_PERMISSIONS) == 7
+
+
+async def test_filaments_read_is_required(respx_mock):
+    """Spec 9.1, 11.3 a: the mode of the spool management is read with it."""
+    old_six = [p for p in REQUIRED if p != "filaments:read"]
+    respx_mock.get(ME).respond(200, json=auth_me(permissions=old_six))
+    result = await run()
+    assert (result.ok, result.reason) == (False, "missing_permissions")
+    assert result.missing == ("filaments:read",)
+
+
+def test_labels_as_bambuddy_shows_them():
+    from reprintbuddy.bambuddy.connection import EDITOR_LABELS, KEY_RIGHT_FOR
+
+    assert EDITOR_LABELS["queue:start_unreviewed"] == "Print Without Review (else jobs wait for someone to start them)"
+    assert EDITOR_LABELS["filaments:read"] == "Read Filaments"
+    assert KEY_RIGHT_FOR["filaments:read"] == "status"  # at the key it is covered by "Read Status"
 
 
 async def test_ok_with_all_permissions(respx_mock):

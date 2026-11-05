@@ -56,6 +56,7 @@ REQUIRED = (
     "queue:start_unreviewed",
     "printers:read",
     "inventory:read",
+    "filaments:read",
 )
 
 

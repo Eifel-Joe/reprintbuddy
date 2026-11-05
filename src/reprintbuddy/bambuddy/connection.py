@@ -32,6 +32,7 @@ REQUIRED_PERMISSIONS: tuple[str, ...] = (
     "queue:start_unreviewed",
     "printers:read",
     "inventory:read",
+    "filaments:read",  # to tell which spool management Bambuddy runs (Spec 9.1)
 )
 
 # Assumption until the first live test shows the names Bambuddy really reports (Spec 14):
@@ -48,9 +49,12 @@ EDITOR_LABELS: dict[str, str] = {
     "library:read_all": "Read All Library",
     "queue:read_all": "Read All Queue",
     "queue:create": "Create Queue",
-    "queue:start_unreviewed": "Start Unreviewed Queue",
+    # Bambuddy has special labels for a few rights (groups.py): this is the one for the right
+    # to print without review.
+    "queue:start_unreviewed": "Print Without Review (else jobs wait for someone to start them)",
     "printers:read": "Read Printers",
     "inventory:read": "Read Inventory",
+    "filaments:read": "Read Filaments",
 }
 
 # Needed only while the key is created (the user must open the API keys page and create a key).
@@ -69,6 +73,7 @@ KEY_RIGHT_FOR: dict[str, str] = {
     "queue:read_all": "status",
     "printers:read": "status",
     "inventory:read": "status",
+    "filaments:read": "status",
     "queue:create": "queue",
     "queue:start_unreviewed": "queue",
 }

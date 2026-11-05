@@ -41,8 +41,9 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 
 ## Requirements
 
-- Bambuddy 1.3 or newer, running in **Spoolman mode** (Reprintbuddy reads filament
-  stock through Bambuddy).
+- Bambuddy 1.3 or newer, with its own spool management or with Spoolman (**Spoolman is
+  optional**). Reprintbuddy reads the filament stock through Bambuddy and never talks to
+  Spoolman itself.
 - A **dedicated Bambuddy user** `reprintbuddy` in its **own Bambuddy group** with the rights
   listed under *First run*, and an **API key** of that user. The dedicated user makes
   Reprintbuddy's own jobs recognisable in Bambuddy. The setup guides you through it.
@@ -130,9 +131,11 @@ DNS names, are accepted only after setup.
    - Read All Library (`library:read_all`): so that Reprintbuddy sees your print files
    - Read All Queue (`queue:read_all`): so that Reprintbuddy sees the whole queue
    - Create Queue (`queue:create`): so that Reprintbuddy can queue reprints
-   - Start Unreviewed Queue (`queue:start_unreviewed`): so that reprints start without approval
+   - Print Without Review (`queue:start_unreviewed`): so that reprints start without approval
    - Read Printers (`printers:read`): so that Reprintbuddy sees the printers and their state
    - Read Inventory (`inventory:read`): so that Reprintbuddy reads the filament stock
+   - Read Filaments (`filaments:read`): to tell whether Bambuddy keeps the spools itself or in
+     Spoolman
 
    Only to create the key in the next step, the group also needs these three rights; Reprintbuddy
    does not check them, and they may be removed again afterwards: Read Api Keys

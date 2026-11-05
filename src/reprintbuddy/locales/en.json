@@ -328,6 +328,7 @@
   "permission.queue:start_unreviewed": "so that reprints start without approval",
   "permission.printers:read": "so that Reprintbuddy sees the printers and their state",
   "permission.inventory:read": "so that Reprintbuddy reads the filament stock",
+  "permission.filaments:read": "to tell whether Bambuddy keeps the spools itself or in Spoolman",
   "bambuddy.right.status": "\"Read Status\"",
   "bambuddy.right.queue": "\"Manage Queue\"",
   "bambuddy.where.group": "Where it can be missing: in the group \"Reprintbuddy\"",

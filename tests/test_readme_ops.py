@@ -182,9 +182,10 @@ def test_readme_uses_bambuddys_labels_and_has_no_printer_or_expiry_setting(name)
         "Read All Library",
         "Read All Queue",
         "Create Queue",
-        "Start Unreviewed Queue",
+        "Print Without Review",
         "Read Printers",
         "Read Inventory",
+        "Read Filaments",
         "Read Settings",
         "Read Api Keys",
         "Create Api Keys",
@@ -192,6 +193,17 @@ def test_readme_uses_bambuddys_labels_and_has_no_printer_or_expiry_setting(name)
         assert label in text, (name, label)
     for word in ("expiry date", "no restriction", "Ablaufdatum", "keine Einschränkung"):
         assert word not in text, (name, word)  # the Bambuddy dialog has no such fields
+    assert "Start Unreviewed Queue" not in text, name  # Bambuddy shows "Print Without Review"
+
+
+@pytest.mark.parametrize("name", READMES)
+def test_readme_spoolman_is_optional(name):
+    """Spec 9.1, 11.8: Bambuddy runs with its own spool management or with Spoolman."""
+    text = read(name)
+    requirements = text[text.index("## Requirements" if name == "README.md" else "## Voraussetzungen") :]
+    first = requirements.split(chr(10) + "- ", 2)[1]  # the Bambuddy line
+    assert "optional" in first and "Spoolman" in first, name
+    assert "Spoolman mode" not in text and "Spoolman-Modus**" not in text, name
 
 
 REPO ="https://github.com/Eifel-Joe/reprintbuddy"

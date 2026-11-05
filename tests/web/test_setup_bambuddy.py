@@ -337,9 +337,10 @@ EDITOR = {
     "library:read_all": "Read All Library",
     "queue:read_all": "Read All Queue",
     "queue:create": "Create Queue",
-    "queue:start_unreviewed": "Start Unreviewed Queue",
+    "queue:start_unreviewed": "Print Without Review (else jobs wait for someone to start them)",
     "printers:read": "Read Printers",
     "inventory:read": "Read Inventory",
+    "filaments:read": "Read Filaments",
 }
 KEY_CREATION = {
     "api_keys:read": "Read Api Keys",
@@ -353,6 +354,7 @@ PURPOSE_DE = {
     "queue:start_unreviewed": "damit Nachdrucke ohne Freigabe starten",
     "printers:read": "damit Reprintbuddy die Drucker und ihren Zustand sieht",
     "inventory:read": "damit Reprintbuddy den Filamentbestand liest",
+    "filaments:read": "um zu erkennen, ob Bambuddy die Spulen selbst führt oder in Spoolman",
 }
 PURPOSE_EN = {
     "library:read_all": "so that Reprintbuddy sees your print files",
@@ -361,6 +363,7 @@ PURPOSE_EN = {
     "queue:start_unreviewed": "so that reprints start without approval",
     "printers:read": "so that Reprintbuddy sees the printers and their state",
     "inventory:read": "so that Reprintbuddy reads the filament stock",
+    "filaments:read": "to tell whether Bambuddy keeps the spools itself or in Spoolman",
 }
 
 
@@ -386,7 +389,7 @@ def test_permission_labels_as_in_bambuddy(admin_client, respx_mock):
     for page in (en_user, de_user, en_result, de_result):
         for code in REQUIRED:
             assert EDITOR[code] in page and f"<code>{code}</code>" in page, code
-        assert "Start Unreviewed Queue" in page
+        assert "Print Without Review" in page and "Start Unreviewed Queue" not in page
     for page in (en_user, en_result):
         for code in REQUIRED:
             assert PURPOSE_EN[code] in page, code

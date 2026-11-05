@@ -42,8 +42,9 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 
 ## Voraussetzungen
 
-- Bambuddy 1.3 oder neuer im **Spoolman-Modus** (Reprintbuddy liest den
-  Filamentbestand über Bambuddy).
+- Bambuddy 1.3 oder neuer, mit eigener Spulenverwaltung oder mit Spoolman (**Spoolman ist
+  optional**). Reprintbuddy liest den Filamentbestand über Bambuddy und spricht nie selbst
+  mit Spoolman.
 - Ein **eigener Bambuddy-Benutzer** `reprintbuddy` in einer **eigenen Bambuddy-Gruppe** mit den
   Rechten, die unter *Erster Aufruf* stehen, und ein **API-Schlüssel** dieses Benutzers. Der
   eigene Benutzer macht Reprintbuddys Aufträge in Bambuddy erkennbar. Die Einrichtung
@@ -133,9 +134,11 @@ Einrichtung akzeptiert.
    - Read All Library (`library:read_all`): damit Reprintbuddy deine Druckdateien sieht
    - Read All Queue (`queue:read_all`): damit Reprintbuddy die ganze Warteschlange sieht
    - Create Queue (`queue:create`): damit Reprintbuddy Nachdrucke einreihen kann
-   - Start Unreviewed Queue (`queue:start_unreviewed`): damit Nachdrucke ohne Freigabe starten
+   - Print Without Review (`queue:start_unreviewed`): damit Nachdrucke ohne Freigabe starten
    - Read Printers (`printers:read`): damit Reprintbuddy die Drucker und ihren Zustand sieht
    - Read Inventory (`inventory:read`): damit Reprintbuddy den Filamentbestand liest
+   - Read Filaments (`filaments:read`): um zu erkennen, ob Bambuddy die Spulen selbst führt oder
+     in Spoolman
 
    Nur zum Erzeugen des Schlüssels im nächsten Schritt braucht die Gruppe zusätzlich diese drei
    Rechte; Reprintbuddy prüft sie nicht, und sie dürfen danach wieder weg: Read Api Keys

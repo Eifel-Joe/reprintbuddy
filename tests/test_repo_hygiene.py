@@ -96,7 +96,7 @@ def test_readme_covers_the_required_topics():
     text = _read("README.md")
     for topic in (
         "Bambuddy",
-        "Start Unreviewed Queue",
+        "Print Without Review",
         "queue:start_unreviewed",
         "Read Status",
         "Manage Queue",
@@ -109,7 +109,7 @@ def test_readme_covers_the_required_topics():
     ):
         assert topic in text, topic
     german = _read("README.de.md")
-    for topic in ("Bambuddy", "Spoolman", "set-password", "set-host", "Konfigurationsdatei", "Start Unreviewed Queue"):
+    for topic in ("Bambuddy", "Spoolman", "set-password", "set-host", "Konfigurationsdatei", "Print Without Review"):
         assert topic in german, topic
 
 
