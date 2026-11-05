@@ -40,6 +40,9 @@ def _configure(engine: Engine, *, foreign_keys: bool, transactional_ddl: bool) -
         if transactional_ddl:
             dbapi_connection.isolation_level = None
         cursor = dbapi_connection.cursor()
+        if not transactional_ddl:
+            # A writer that meets another writer waits instead of failing at once.
+            cursor.execute("PRAGMA busy_timeout=5000")
         cursor.execute(f"PRAGMA foreign_keys={'ON' if foreign_keys else 'OFF'}")
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.close()
@@ -49,6 +52,21 @@ def _configure(engine: Engine, *, foreign_keys: bool, transactional_ddl: bool) -
         @event.listens_for(engine, "begin")
         def _begin(connection):  # pragma: no cover - trivial
             connection.exec_driver_sql("BEGIN")
+    else:
+
+        @event.listens_for(engine, "begin")
+        def _begin_immediate(connection):
+            """Write transactions (execution option `immediate`, see `begin_immediate`) take
+            the write lock at BEGIN, so a read-then-write sequence cannot lose an update
+            and a one-time form token is used up atomically with its booking (Spec 6.4).
+            Reading sessions are untouched: they keep the driver's lazy BEGIN.
+
+            The pool is a NullPool, so taking transaction control from the driver for
+            this one connection leaves nothing behind when it is closed.
+            """
+            if connection.get_execution_options().get("immediate"):
+                connection.connection.dbapi_connection.isolation_level = None
+                connection.exec_driver_sql("BEGIN IMMEDIATE")
 
 
 def make_engine(db_path: Path) -> Engine:
@@ -105,5 +123,26 @@ def upgrade(engine: Engine, script_location: Path | None = None) -> None:
         migration_engine.dispose()
 
 
+def begin_immediate(session: Session) -> None:
+    """Make the transaction of this session a write transaction from its first statement."""
+    session.connection(execution_options={"immediate": True})
+
+
+class WriteSessionMaker(sessionmaker):
+    """`sessionmaker()` gives an ordinary session; `.begin()` gives a write transaction."""
+
+    def begin(self):  # type: ignore[override]
+        from contextlib import contextmanager
+
+        @contextmanager
+        def transaction():
+            with self() as session:
+                with session.begin():
+                    begin_immediate(session)
+                    yield session
+
+        return transaction()
+
+
 def make_sessionmaker(engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(engine, expire_on_commit=False)
+    return WriteSessionMaker(engine, expire_on_commit=False)

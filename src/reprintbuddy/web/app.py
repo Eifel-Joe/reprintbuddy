@@ -15,6 +15,7 @@ from starlette.templating import Jinja2Templates
 from reprintbuddy import settings as st
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.web import deps
+from reprintbuddy.web.formtoken import issue_form_token
 from reprintbuddy.web.throttle import FailureBrake, HashLimiter
 from reprintbuddy.web.routes import auth as auth_routes
 from reprintbuddy.web.routes import overview as overview_routes
@@ -44,9 +45,11 @@ def create_app(
     app.state.login_brake = FailureBrake()  # 10 failures in 60 s: every attempt waits 2 s
     app.state.hash_limiter = HashLimiter(capacity=2)  # at most two argon2 runs at once
     app.state.http_client_factory = http_client_factory or httpx.AsyncClient
+    app.state.session_secret = secret  # also signs the one-time form tokens
 
     templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
     templates.env.globals["t"] = deps.t
+    templates.env.globals["form_token"] = lambda: issue_form_token(secret)
     app.state.templates = templates
 
     # Middleware added later wraps the earlier ones: the session must be the

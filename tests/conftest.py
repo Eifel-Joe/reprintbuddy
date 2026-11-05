@@ -22,6 +22,29 @@ def csrf_of(client: TestClient, path: str) -> str:
     return match.group(1)
 
 
+_FORM_TOKEN = re.compile(r'name="form_token" value="([^"]+)"')
+
+
+def form_token_of(client: TestClient, path: str, action: str | None = None) -> str:
+    """The hidden one-time token of the form on `path` whose action is `action`
+    (None: the first form with a token)."""
+    response = client.get(path)
+    assert response.status_code == 200, (path, response.status_code)
+    html = response.text
+    if action is not None:
+        forms = re.findall(rf'<form[^>]*action="{re.escape(action)}"[^>]*>(.*?)</form>', html, re.S)
+        assert forms, f"no form with action {action} on {path}"
+        html = forms[0]
+    match = _FORM_TOKEN.search(html)
+    assert match, f"no form token on {path} ({action})"
+    return match.group(1)
+
+
+def sm_of(client: TestClient):
+    """The application's sessionmaker (`with sm_of(client).begin() as s:` writes immediately)."""
+    return client.app.state.sessionmaker
+
+
 def api_routes(app):
     """All path operations, also those hidden in included routers (FastAPI >= 0.16x)."""
     from fastapi.routing import APIRoute
