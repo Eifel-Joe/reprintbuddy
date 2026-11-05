@@ -208,7 +208,8 @@ def _decide(request: Request) -> Response | None:
                 return RedirectResponse(f"/login?next={quote(target, safe='')}", status_code=303)
             return error_response(request, 403, "forbidden")
 
-        if not st.bambuddy_configured(session) and path not in ("/setup/bambuddy", "/logout"):
+        in_bambuddy_setup = path == "/setup/bambuddy" or path.startswith("/setup/bambuddy/")
+        if not st.bambuddy_configured(session) and not in_bambuddy_setup and path != "/logout":
             return RedirectResponse("/setup/bambuddy", status_code=303)
         return None
     finally:

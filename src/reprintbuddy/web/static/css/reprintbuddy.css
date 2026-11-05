@@ -179,3 +179,20 @@ input[type="file"] { margin-top: 0.5rem; color: var(--text-2); max-width: 100%; 
 @media (max-width: 899px) {
   .row { grid-template-columns: minmax(0, 1fr); gap: 0; }
 }
+
+/* ---- Bambuddy setup pages and permission list ---------------------------- */
+
+.progress { margin: 0 0 0.25rem; color: var(--accent); font-size: 0.85rem; font-weight: 600; }
+.actions { display: flex; gap: 0.75rem; align-items: center; margin: 1.25rem 0 0; }
+.actions .btn { flex: 0 0 auto; }
+.btn.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 0.85em; color: var(--text); }
+ul.perms { padding-left: 1.25rem; color: var(--text-2); }
+ul.perms li { margin-bottom: 0.3rem; }
+.result { margin: 0 0 1rem; padding: 0.8rem 0.9rem; border: 1px solid var(--line); border-radius: 8px; }
+.result p:last-child, .result ul:last-child { margin-bottom: 0; }
+ul.perms li.perm { list-style: none; margin-left: -1.25rem; }
+li.perm .mark { display: inline-block; width: 1.2rem; font-weight: 700; }
+li.perm.ok .mark { color: var(--accent); }
+li.perm.bad { color: var(--text); }
+li.perm.bad .mark { color: var(--danger); }

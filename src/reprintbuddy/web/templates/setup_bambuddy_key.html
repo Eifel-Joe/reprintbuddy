@@ -1,0 +1,18 @@
+{% extends "bare.html" %}
+{% block title %}{{ t('bambuddy.title') }}{% endblock %}
+{% block content %}
+<p class="progress">{{ t('bambuddy.progress', n=3) }}</p>
+<h1>{{ t('bambuddy.key.title') }}</h1>
+<p class="muted">{{ t('bambuddy.key.intro') }}</p>
+<ol class="steps">
+  <li>{{ t('bambuddy.key.step1') }}</li>
+  <li>{{ t('bambuddy.key.step2') }}</li>
+  <li>{{ t('bambuddy.key.step3') }}</li>
+  <li>{{ t('bambuddy.key.step4') }}</li>
+  <li>{{ t('bambuddy.key.step5') }}</li>
+</ol>
+<p class="actions">
+  <a class="btn secondary" href="/setup/bambuddy/user">{{ t('bambuddy.back') }}</a>
+  <a class="btn" href="/setup/bambuddy/connect">{{ t('bambuddy.next') }}</a>
+</p>
+{% endblock %}

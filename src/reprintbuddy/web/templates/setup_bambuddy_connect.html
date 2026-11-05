@@ -1,0 +1,23 @@
+{% extends "bare.html" %}
+{% block title %}{{ t('bambuddy.title') }}{% endblock %}
+{% block content %}
+<p class="progress">{{ t('bambuddy.progress', n=4) }}</p>
+<h1>{{ t('bambuddy.connect.title') }}</h1>
+<p class="muted">{{ t('bambuddy.connect.intro') }}</p>
+{% if error %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
+{% set guide_link = '/setup/bambuddy/user' %}
+{% include "_bambuddy_result.html" %}
+<form method="post" action="/setup/bambuddy/connect" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>{{ t('bambuddy.url') }}
+    <input name="bambuddy_address" value="{{ bambuddy_address }}" placeholder="{{ t('bambuddy.url_placeholder') }}" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>
+  </label>
+  <label>{{ t('bambuddy.api_key') }}
+    <input name="bambuddy_token" type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>
+  </label>
+  <p class="actions">
+    <a class="btn secondary" href="/setup/bambuddy/key">{{ t('bambuddy.back') }}</a>
+    <button class="btn" type="submit">{{ t('bambuddy.submit') }}</button>
+  </p>
+</form>
+{% endblock %}

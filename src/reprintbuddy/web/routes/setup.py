@@ -1,4 +1,4 @@
-"""First-run setup. Step 1: the admin account. (Step 2 is added in Task 6.)"""
+"""First-run setup. Step 1: the admin account. Steps 2 to 4: connect Bambuddy (three pages)."""
 
 from __future__ import annotations
 
@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
-from reprintbuddy.bambuddy.connection import check_connection
+from reprintbuddy.bambuddy.connection import REQUIRED_PERMISSIONS
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_db, release_connection, render, start_session
+from reprintbuddy.web.bambuddy_check import result_context, run_check, validate_address, validate_key
+from reprintbuddy.web.deps import current_language, flash, get_db, render, start_session
 
 router = APIRouter()
 
@@ -69,60 +70,77 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse("/setup/bambuddy", status_code=303)
 
 
-# --- Step 2: connect Bambuddy ------------------------------------------------
+# --- Steps 2 to 4: connect Bambuddy (Spec 11.3) -------------------------------
+
+BASE = "/setup/bambuddy"
 
 
-def _bambuddy_page(request: Request, error: str | None = None, **values: object):
-    values.setdefault("bambuddy_url", "")
-    values.setdefault("bambuddy_username", "reprintbuddy")
-    values.setdefault("review_confirmed", False)
+def _closed(db: Session) -> RedirectResponse | None:
+    """Once Bambuddy is connected the pages are closed; the settings page takes over."""
+    if st.bambuddy_configured(db):
+        return RedirectResponse("/settings", status_code=303)
+    return None
+
+
+@router.get(BASE)
+async def bambuddy_start(db: Session = Depends(get_db)):
+    return _closed(db) or RedirectResponse(f"{BASE}/user", status_code=303)
+
+
+@router.get(f"{BASE}/user")
+async def bambuddy_user_guide(request: Request, db: Session = Depends(get_db)):
+    return _closed(db) or render(request, "setup_bambuddy_user.html", required_permissions=REQUIRED_PERMISSIONS)
+
+
+@router.get(f"{BASE}/key")
+async def bambuddy_key_guide(request: Request, db: Session = Depends(get_db)):
+    return _closed(db) or render(request, "setup_bambuddy_key.html")
+
+
+def _connect_page(request: Request, error: str | None = None, address: str = "", check=None):
     # The API key is never put back into the form.
-    return render(request, "setup_bambuddy.html", error=error, **values)
+    return render(
+        request,
+        "setup_bambuddy_connect.html",
+        error=error,
+        bambuddy_address=address,
+        **result_context(check),
+    )
 
 
-@router.get("/setup/bambuddy")
-async def bambuddy_form(request: Request, db: Session = Depends(get_db)):
-    if st.bambuddy_configured(db):
-        return RedirectResponse("/settings", status_code=303)
-    return _bambuddy_page(request)
+@router.get(f"{BASE}/connect")
+async def bambuddy_connect_form(request: Request, db: Session = Depends(get_db)):
+    return _closed(db) or _connect_page(request)
 
 
-@router.post("/setup/bambuddy")
-async def bambuddy_submit(request: Request, db: Session = Depends(get_db)):
-    if st.bambuddy_configured(db):
-        return RedirectResponse("/settings", status_code=303)
+@router.post(f"{BASE}/connect")
+async def bambuddy_connect_submit(request: Request, db: Session = Depends(get_db)):
+    if (closed := _closed(db)) is not None:
+        return closed
     await verify_csrf(request)
 
     form = await request.form()
-    url_input = str(form.get("bambuddy_url", "")).strip()
-    username = str(form.get("bambuddy_username", "")).strip()
-    api_key = str(form.get("bambuddy_api_key", "")).strip()
-    confirmed = form.get("bambuddy_review_confirmed") is not None
-    shown = {"bambuddy_url": url_input, "bambuddy_username": username, "review_confirmed": confirmed}
+    address_input = str(form.get("bambuddy_address", "")).strip()
+    key_input = str(form.get("bambuddy_token", "")).strip()
 
-    if not confirmed:
-        return _bambuddy_page(request, "bambuddy.review_required", **shown)
-    if not (url_input and username and api_key):
-        return _bambuddy_page(request, "bambuddy.fields_required", **shown)
-    try:
-        url = st.validate("bambuddy_url", url_input)
-    except ValueError:
-        return _bambuddy_page(request, "bambuddy.invalid_url", **shown)
-    try:
-        api_key = str(st.validate("bambuddy_api_key", api_key))
-    except ValueError:
-        return _bambuddy_page(request, "bambuddy.key_invalid", **shown)
+    def fail(error: str, check=None):
+        return _connect_page(request, error, address_input, check)
 
-    release_connection(db)  # nothing is pending; do not hold a connection while Bambuddy answers
-    async with request.app.state.http_client_factory() as client:
-        result = await check_connection(str(url), api_key, client)
-    if not result.ok:
-        return _bambuddy_page(request, f"bambuddy.reason.{result.reason}", **shown)
+    if not (address_input and key_input):
+        return fail("bambuddy.fields_required")
+    url, error = validate_address(address_input)
+    if error:
+        return fail(error)
+    api_key, error = validate_key(key_input)
+    if error:
+        return fail(error)
 
-    # One transaction: address, user, key and confirmation are saved together or not at all.
-    st.set_setting(db, "bambuddy_url", url, commit=False)
-    st.set_setting(db, "bambuddy_username", username, commit=False)
-    st.set_setting(db, "bambuddy_api_key", api_key, commit=False)
-    st.set_setting(db, "bambuddy_review_confirmed", True, commit=False)
-    db.commit()
+    check = await run_check(request, db, url, api_key)
+    if not check.ok:
+        return fail(f"bambuddy.reason.{check.reason}", check)
+
+    st.apply_check(db, url, api_key, check)  # one transaction
+    if check.owner_is_admin:
+        flash(request, "bambuddy.admin_warning")  # saved, but the person is told
+        return RedirectResponse("/settings", status_code=303)
     return RedirectResponse("/", status_code=303)
