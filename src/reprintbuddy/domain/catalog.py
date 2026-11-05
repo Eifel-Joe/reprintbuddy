@@ -20,6 +20,8 @@ from reprintbuddy.models import (
     ArticlePart,
     Part,
     ProductSet,
+    SetPosition,
+    SetPositionOption,
 )
 
 MAX_NAME = 200
@@ -371,3 +373,140 @@ def update_part(session: Session, part_id: int, data: PartInput) -> Part:
 def list_parts(session: Session) -> list[Part]:
     parts = session.scalars(select(Part)).all()
     return sorted(parts, key=lambda p: (p.name.casefold(), p.id))
+
+
+# ---- sets ----------------------------------------------------------------------------------
+
+
+@dataclass
+class PositionInput:
+    qty: int
+    article_ids: list[int]  # one article: fixed; several: a choice (Spec 5.4)
+
+
+@dataclass
+class SetInput:
+    name: str
+    sku: str | None
+    positions: list[PositionInput]
+
+
+@dataclass(frozen=True)
+class PositionRow:
+    id: int
+    qty: int
+    article_ids: list[int]
+    article_names: list[str]
+    is_choice: bool
+
+
+@dataclass(frozen=True)
+class SetRow:
+    id: int
+    name: str
+    sku: str | None
+    available: int
+    positions: list[PositionRow]
+
+
+def _check_set_input(
+    session: Session, data: SetInput, *, set_id: int | None = None
+) -> tuple[str, str | None, list[tuple[int, list[int]]]]:
+    name = _required_name(data.name, "sets.field.name")
+    sku = validate_sku(session, data.sku, set_id=set_id)
+    if not data.positions:
+        raise ValidationError("sets.no_positions")
+    positions: list[tuple[int, list[int]]] = []
+    for position in data.positions:
+        qty = _int_in(position.qty, "sets.field.qty", 1, 1000)
+        article_ids = list(dict.fromkeys(position.article_ids))
+        if not article_ids:
+            raise ValidationError("sets.position_empty")
+        for article_id in article_ids:
+            if session.get(Article, article_id) is None:
+                raise NotFoundError("articles.not_found")
+        positions.append((qty, article_ids))
+    return name, sku, positions
+
+
+def _write_positions(
+    session: Session, set_id: int, positions: list[tuple[int, list[int]]]
+) -> None:
+    for sort, (qty, article_ids) in enumerate(positions):
+        position = SetPosition(set_id=set_id, sort=sort, qty=qty)
+        session.add(position)
+        session.flush()
+        for article_id in article_ids:
+            session.add(SetPositionOption(position_id=position.id, article_id=article_id))
+    session.flush()
+
+
+def create_set(session: Session, data: SetInput) -> ProductSet:
+    name, sku, positions = _check_set_input(session, data)
+    product_set = ProductSet(name=name, sku=sku)
+    session.add(product_set)
+    session.flush()
+    _write_positions(session, product_set.id, positions)
+    return product_set
+
+
+def get_set(session: Session, set_id: int) -> ProductSet:
+    product_set = session.get(ProductSet, set_id)
+    if product_set is None:
+        raise NotFoundError("sets.not_found")
+    return product_set
+
+
+def update_set(session: Session, set_id: int, data: SetInput) -> ProductSet:
+    """Replace name, number and all positions. Open orders keep their own lines."""
+    product_set = get_set(session, set_id)
+    name, sku, positions = _check_set_input(session, data, set_id=set_id)
+    old = session.scalars(select(SetPosition.id).where(SetPosition.set_id == set_id)).all()
+    if old:
+        session.execute(delete(SetPositionOption).where(SetPositionOption.position_id.in_(old)))
+        session.execute(delete(SetPosition).where(SetPosition.id.in_(old)))
+    product_set.name = name
+    product_set.sku = sku
+    _write_positions(session, set_id, positions)
+    return product_set
+
+
+def _set_row(session: Session, product_set: ProductSet) -> SetRow:
+    positions = session.scalars(
+        select(SetPosition).where(SetPosition.set_id == product_set.id).order_by(SetPosition.sort, SetPosition.id)
+    ).all()
+    rows: list[PositionRow] = []
+    stocks: list[rules.PositionStock] = []
+    for position in positions:
+        articles = session.scalars(
+            select(Article)
+            .join(SetPositionOption, SetPositionOption.article_id == Article.id)
+            .where(SetPositionOption.position_id == position.id)
+            .order_by(Article.name, Article.id)
+        ).all()
+        rows.append(
+            PositionRow(
+                id=position.id,
+                qty=position.qty,
+                article_ids=[a.id for a in articles],
+                article_names=[a.name for a in articles],
+                is_choice=len(articles) > 1,
+            )
+        )
+        stocks.append(
+            rules.PositionStock(
+                position.qty, tuple(rules.available(a.stock, a.reserved) for a in articles)
+            )
+        )
+    return SetRow(
+        id=product_set.id,
+        name=product_set.name,
+        sku=product_set.sku,
+        available=rules.set_available(stocks),
+        positions=rows,
+    )
+
+
+def list_sets(session: Session) -> list[SetRow]:
+    sets = sorted(session.scalars(select(ProductSet)).all(), key=lambda s: (s.name.casefold(), s.id))
+    return [_set_row(session, s) for s in sets]
