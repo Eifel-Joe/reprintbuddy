@@ -17,6 +17,7 @@ from lagerbuddy.web.csrf import csrf_token
 from lagerbuddy.web.i18n import translate
 
 UID_KEY = "uid"
+FLASH_KEY = "flash"
 
 # Reachable by everyone, whatever the state of the installation.
 _OPEN_EXACT = {"/healthz"}
@@ -44,10 +45,16 @@ def render(request: Request, name: str, status_code: int = 200, **context: objec
         # Target of the "Open Bambuddy" link; the key is never part of it.
         context["open_bambuddy_url"] = st.get_setting(session, "bambuddy_url")
     context.setdefault("active_nav", None)
+    context.setdefault("notice", request.session.pop(FLASH_KEY, None))
     context["csrf_token"] = csrf_token(request)
     return request.app.state.templates.TemplateResponse(
         request, name, context, status_code=status_code
     )
+
+
+def flash(request: Request, key: str) -> None:
+    """Remember a message (a translation key) for the next page shown."""
+    request.session[FLASH_KEY] = key
 
 
 def safe_next(value: str | None) -> str:

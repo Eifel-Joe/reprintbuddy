@@ -21,6 +21,21 @@ def csrf_of(client: TestClient, path: str) -> str:
     return match.group(1)
 
 
+def api_routes(app):
+    """All path operations, also those hidden in included routers (FastAPI >= 0.16x)."""
+    from fastapi.routing import APIRoute
+
+    def walk(routes):
+        for route in routes:
+            nested = getattr(route, "original_router", None)
+            if nested is not None:
+                yield from walk(nested.routes)
+            elif isinstance(route, APIRoute):
+                yield route
+
+    return list(walk(app.routes))
+
+
 def make_client(db_path) -> TestClient:
     return TestClient(create_app(db_path), follow_redirects=False)
 
