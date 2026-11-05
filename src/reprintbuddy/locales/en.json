@@ -343,6 +343,7 @@
   "bambuddy.progress": "Step {n} of 4",
   "bambuddy.back": "Back",
   "bambuddy.next": "Next",
+  "bambuddy.guide.back": "Back to the settings",
   "bambuddy.user.title": "Create a group and a user in Bambuddy",
   "bambuddy.user.why": "Reprintbuddy needs its own group in Bambuddy, because none of the system groups fits: \"Operators\" only sees its own files and queue entries, and \"Administrators\" may do everything.",
   "bambuddy.user.group": "In Bambuddy open Settings → Users and create a group named \"Reprintbuddy\" with exactly these rights (the internal name is in brackets):",

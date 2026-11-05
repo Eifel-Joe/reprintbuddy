@@ -92,14 +92,17 @@ async def bambuddy_start(db: Session = Depends(get_db)):
     return _closed(db) or RedirectResponse(f"{BASE}/user", status_code=303)
 
 
+# The two guide pages stay readable after the setup: the notice about a missing right
+# links to them (Spec 11.3). Then they are a plain guide, without step counter and
+# without a way on into the setup; entering the key (step c) stays closed.
 @router.get(f"{BASE}/user")
 async def bambuddy_user_guide(request: Request, db: Session = Depends(get_db)):
-    return _closed(db) or render(request, "setup_bambuddy_user.html", **permission_context())
+    return render(request, "setup_bambuddy_user.html", guide_only=st.bambuddy_configured(db), **permission_context())
 
 
 @router.get(f"{BASE}/key")
 async def bambuddy_key_guide(request: Request, db: Session = Depends(get_db)):
-    return _closed(db) or render(request, "setup_bambuddy_key.html", **permission_context())
+    return render(request, "setup_bambuddy_key.html", guide_only=st.bambuddy_configured(db), **permission_context())
 
 
 def _connect_page(request: Request, error: str | None = None, address: str = "", check=None):

@@ -1,5 +1,7 @@
 """Rights after an update: the first page after a start checks the stored key (Spec 11.3)."""
 
+import re
+
 import httpx
 import pytest
 from conftest import ADMIN, PASSWORD, REQUIRED, auth_me, csrf_of, finish_bambuddy_setup, mock_auth_me
@@ -82,6 +84,20 @@ def test_update_adds_a_right_shows_dialog(rights_client, respx_mock):
     assert "in the group" in html  # where it can be added
     assert "Read Inventory" in html and "inventory:read" in html  # the others are listed, as granted
     assert html.count('aria-label="missing"') == 1 and html.count('aria-label="granted"') == 6
+
+
+def test_the_guide_links_of_the_dialog_lead_to_the_guide(missing_client):
+    """C1 of the review: the links must not end in a loop back to the dialog."""
+    html = missing_client.get("/").text
+    dialog = html[html.index('class="rights-dialog"') :]
+    links = sorted(set(re.findall(r'href="(/setup/bambuddy/[a-z]+)"', dialog)))
+    assert links == ["/setup/bambuddy/key", "/setup/bambuddy/user"]
+    for link in links:
+        page = missing_client.get(link)
+        assert page.status_code == 200, link
+        assert "rights-dialog" not in page.text and "rights-banner" not in page.text, link
+        assert "Read Filaments" in page.text or "Read Status" in page.text, link
+        assert 'href="/settings"' in page.text, link  # the way back
 
 
 def test_dialog_is_on_every_page_of_the_interface(missing_client):

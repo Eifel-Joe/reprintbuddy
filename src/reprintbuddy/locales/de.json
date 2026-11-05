@@ -343,6 +343,7 @@
   "bambuddy.progress": "Schritt {n} von 4",
   "bambuddy.back": "Zurück",
   "bambuddy.next": "Weiter",
+  "bambuddy.guide.back": "Zurück zu den Einstellungen",
   "bambuddy.user.title": "Gruppe und Benutzer in Bambuddy anlegen",
   "bambuddy.user.why": "Reprintbuddy braucht in Bambuddy eine eigene Gruppe, weil keine Systemgruppe passt: „Operators“ sieht nur eigene Dateien und Aufträge, „Administrators“ darf alles.",
   "bambuddy.user.group": "Öffne in Bambuddy Einstellungen → Benutzer und lege eine Gruppe „Reprintbuddy“ an, mit genau diesen Rechten (in Klammern der interne Name):",

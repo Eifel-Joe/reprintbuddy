@@ -85,12 +85,35 @@ def test_key_guide_names_the_steps(admin_client):
         assert needle in page, needle
 
 
-def test_guide_pages_close_after_setup(ready_client):
-    for path in (USER_PAGE, KEY_PAGE, CONNECT):
+def test_setup_steps_close_after_setup(ready_client):
+    """Entering the key (step c) and the start page stay closed once Bambuddy is connected."""
+    for path in ("/setup/bambuddy", CONNECT):
         closed = ready_client.get(path)
         assert closed.status_code == 303 and closed.headers["location"] == "/settings", path
     response = ready_client.post(CONNECT, data={})
     assert response.status_code == 303 and response.headers["location"] == "/settings"
+
+
+def test_guide_pages_stay_readable_after_setup_as_a_plain_guide(ready_client):
+    """Spec 11.3: the notice about a missing right links here. Only the guide: no step counter,
+    no way on into the setup, a way back to the settings."""
+    for path in (USER_PAGE, KEY_PAGE):
+        page = ready_client.get(path)
+        assert page.status_code == 200, path
+        html = page.text
+        assert "of 4" not in html and "Next" not in html, path  # no step counter, no way on
+        assert f'href="{CONNECT}"' not in html, path
+        assert 'href="/settings"' in html and "Back to the settings" in html, path
+    assert "Read Filaments" in ready_client.get(USER_PAGE).text
+    assert "Read Status" in ready_client.get(KEY_PAGE).text
+
+
+def test_guide_pages_stay_readable_after_setup_in_german(ready_client):
+    _german(ready_client)
+    for path in (USER_PAGE, KEY_PAGE):
+        html = ready_client.get(path).text
+        assert "von 4" not in html and "Weiter" not in html, path  # no step counter, no way on
+        assert "Zurück zu den Einstellungen" in html, path
 
 
 def test_guide_pages_need_the_setup_of_the_account_first(client):
