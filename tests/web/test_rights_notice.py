@@ -274,7 +274,8 @@ def test_recheck_with_bambuddy_down_says_so_and_keeps_the_dialog(missing_client,
     _post(missing_client, RECHECK, next="/")
     page = missing_client.get("/").text
     assert "rights-dialog" in page
-    assert "Bambuddy" in page and 'class="flash"' in page  # one line says why nothing changed
+    flash = page[page.index('class="flash"') :].split("</p>")[0]  # one line says why nothing changed
+    assert "Could not reach Bambuddy at this address." in flash
 
 
 def test_later_switches_to_banner(missing_client):
@@ -307,10 +308,24 @@ def test_rights_posts_need_csrf(missing_client, path):
 
 
 @pytest.mark.parametrize("path", [RECHECK, LATER])
-def test_rights_posts_need_a_login(missing_client, path):
+def test_rights_posts_need_a_login(missing_client, respx_mock, path):
+    """With a valid CSRF token in the cookie, so that only the missing login can be the reason."""
     token = csrf_of(missing_client, "/")
-    missing_client.cookies.clear()
-    assert missing_client.post(path, data={"csrf_token": token}).status_code == 403
+    cookie = missing_client.cookies.get("reprintbuddy_session")
+    _post(missing_client, "/logout", token=token)  # ends the session on the server
+    missing_client.cookies.set("reprintbuddy_session", cookie)  # the old cookie, token and all
+    calls = respx_mock.calls.call_count
+    response = missing_client.post(path, data={"csrf_token": token, "next": "/"})
+    assert response.status_code == 403
+    assert respx_mock.calls.call_count == calls  # nothing asked Bambuddy
+
+
+def test_a_post_does_not_start_the_check(rights_client, respx_mock):
+    """Only a page shown for a GET starts the check of the start."""
+    route = mock_auth_me(respx_mock)
+    token = csrf_of(rights_client, "/login")  # a page that does not start the check itself
+    assert _post(rights_client, "/settings/language", token=token, language="en").status_code == 303
+    assert route.call_count == 0 and rights_client.app.state.rights.status == "unknown"
 
 
 @pytest.mark.parametrize("path", [RECHECK, LATER])
