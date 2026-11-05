@@ -169,7 +169,7 @@ def test_api_key_with_unusable_characters_is_refused(bad):
 
 def test_never_export_covers_secrets_and_internal_values():
     assert st.SENSITIVE <= st.NEVER_EXPORT
-    assert {"session_secret", "session_generation"} <= st.NEVER_EXPORT
+    assert "session_secret" in st.NEVER_EXPORT
     assert "language" not in st.NEVER_EXPORT
 
 

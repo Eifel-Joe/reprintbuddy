@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from sqlalchemy import String
+from datetime import datetime
+
+from sqlalchemy import DateTime, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -27,3 +29,13 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String, unique=True)
     password_hash: Mapped[str] = mapped_column(String)
+
+
+class LoginSession(Base):
+    """One signed-in browser. The cookie carries a random id; only its hash is stored."""
+
+    __tablename__ = "sessions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)  # UTC
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime)  # UTC

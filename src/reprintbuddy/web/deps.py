@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hmac
 import ipaddress
 from urllib.parse import quote
 
@@ -19,7 +18,7 @@ from reprintbuddy.web.csrf import csrf_token
 from reprintbuddy.web.i18n import translate
 
 UID_KEY = "uid"
-TOKEN_KEY = "tok"
+SID_KEY = "sid"
 FLASH_KEY = "flash"
 
 # Reachable by everyone, whatever the state of the installation.
@@ -98,30 +97,23 @@ def safe_next(value: str | None) -> str:
     return "/"
 
 
-def _expected_token(request: Request, session: Session, user: User) -> str:
-    return auth.session_token(
-        request.app.state.session_secret, user.password_hash, st.session_generation(session)
-    )
-
-
 def logged_in_user(request: Request, session: Session) -> User | None:
-    """The user of a valid session; None when the cookie is missing, forged or revoked."""
+    """The user of a live session; None when the cookie is missing, forged or the session ended."""
     uid = request.session.get(UID_KEY)
-    supplied = request.session.get(TOKEN_KEY)
-    if uid is None or not isinstance(supplied, str):
+    if uid is None:
         return None
     user = session.get(User, uid)
-    if user is None or not hmac.compare_digest(supplied, _expected_token(request, session, user)):
+    if user is None or not auth.session_valid(session, request.session.get(SID_KEY)):
         return None
     return user
 
 
-def start_session(request: Request, user: User, session: Session) -> None:
-    """Log in: drop whatever the old session held (incl. its CSRF token) and bind
-    the new one to the current password and session generation."""
+def start_session(request: Request, user: User, session: Session, *, commit: bool = True) -> None:
+    """Log in: drop whatever the old cookie held (incl. its CSRF token) and start a
+    new server-side session."""
     request.session.clear()
     request.session[UID_KEY] = user.id
-    request.session[TOKEN_KEY] = _expected_token(request, session, user)
+    request.session[SID_KEY] = auth.create_session(session, commit=commit)
 
 
 SECURITY_HEADERS = {

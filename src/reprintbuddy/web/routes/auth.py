@@ -10,9 +10,8 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from reprintbuddy import auth as accounts
-from reprintbuddy import settings as st
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import get_db, release_connection, render, safe_next, start_session
+from reprintbuddy.web.deps import SID_KEY, get_db, release_connection, render, safe_next, start_session
 
 router = APIRouter()
 
@@ -40,7 +39,8 @@ async def login(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/logout", dependencies=[Depends(verify_csrf)])
 async def logout(request: Request, db: Session = Depends(get_db)):
-    # Raising the generation also ends copies of this session's cookie.
-    st.bump_session_generation(db)
+    # Ends this session on the server, so copies of its cookie stop working too;
+    # other browsers stay signed in.
+    accounts.end_session(db, request.session.get(SID_KEY))
     request.session.clear()
     return RedirectResponse("/login", status_code=303)

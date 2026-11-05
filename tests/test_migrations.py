@@ -25,19 +25,19 @@ def scripts(tmp_path) -> Path:
 @pytest.fixture
 def engine(tmp_path):
     engine = make_engine(tmp_path / "m.db")
-    upgrade(engine)  # real revision 0001
+    upgrade(engine)  # the real revisions
     return engine
 
 
 def add_revision(scripts: Path, body: str) -> None:
-    (scripts / "versions" / "0002_test.py").write_text(
+    (scripts / "versions" / "0900_test.py").write_text(
         textwrap.dedent(
             '''\
             from alembic import op
             import sqlalchemy as sa
 
-            revision = "0002"
-            down_revision = "0001"
+            revision = "0900"
+            down_revision = "0002"
             branch_labels = None
             depends_on = None
 
@@ -68,7 +68,7 @@ def test_failing_revision_leaves_nothing_behind(engine, scripts):
     with pytest.raises(RuntimeError, match="boom"):
         upgrade(engine, script_location=scripts)
     assert "junk" not in inspect(engine).get_table_names()
-    assert version(engine) == "0001"
+    assert version(engine) == "0002"
 
 
 def test_revision_that_breaks_foreign_keys_is_rolled_back(engine, scripts):
@@ -88,7 +88,7 @@ def test_revision_that_breaks_foreign_keys_is_rolled_back(engine, scripts):
         upgrade(engine, script_location=scripts)
     names = inspect(engine).get_table_names()
     assert "parent" not in names and "child" not in names
-    assert version(engine) == "0001"
+    assert version(engine) == "0002"
 
 
 def test_batch_alter_keeps_rows_that_other_tables_reference(engine, scripts):
@@ -109,7 +109,7 @@ def test_batch_alter_keeps_rows_that_other_tables_reference(engine, scripts):
         """,
     )
     upgrade(engine, script_location=scripts)
-    assert version(engine) == "0002"
+    assert version(engine) == "0900"
     with engine.connect() as conn:
         assert conn.execute(text("select count(*) from users")).scalar() == 1
         assert conn.execute(text("select user_id from child")).scalar() == 1
@@ -136,3 +136,19 @@ def test_session_rollback_discards_changes(engine):
         s.rollback()
     with Session() as s:
         assert s.get(Setting, "k") is None
+
+
+def test_the_sessions_migration_adds_the_table_to_a_version_one_database(tmp_path, scripts):
+    """An installation that ran revision 0001 gets the sessions table with 0002."""
+    engine = make_engine(tmp_path / "old.db")
+    only_first = tmp_path / "first_only"
+    shutil.copytree(scripts, only_first)
+    for path in (only_first / "versions").glob("0002*"):
+        path.unlink()
+    upgrade(engine, script_location=only_first)
+    assert version(engine) == "0001"
+    assert "sessions" not in inspect(engine).get_table_names()
+    upgrade(engine)  # the real scripts
+    assert version(engine) == "0002"
+    columns = {c["name"] for c in inspect(engine).get_columns("sessions")}
+    assert columns == {"id", "created_at", "last_seen_at"}

@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
+import secrets
+from datetime import datetime, timedelta, timezone
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.models import User
+from reprintbuddy.models import LoginSession, User
 
 MIN_PASSWORD_LENGTH = 8
 
@@ -35,14 +36,68 @@ def _check_length(pw: str) -> None:
         raise ValueError("password too short")
 
 
-def session_token(secret: str, password_hash: str, generation: int) -> str:
-    """Short HMAC kept in the session cookie.
+# --- sessions ------------------------------------------------------------------------------
+# The cookie holds a random session id; the table holds its SHA-256 and the times.
+# Logging out deletes the own row, a password change deletes all rows.
 
-    It changes with the password hash (password change, `set-password`) and with
-    the session generation (log out), so such events end every older session.
-    """
-    message = f"{generation}:{password_hash}".encode()
-    return hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()[:32]
+SESSION_MAX_IDLE = timedelta(days=14)  # as long as the cookie lives
+TOUCH_INTERVAL = timedelta(minutes=1)  # last_seen_at is written at most this often
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def session_id_hash(sid: str) -> str:
+    return hashlib.sha256(sid.encode()).hexdigest()
+
+
+def prune_sessions(session: Session) -> None:
+    session.execute(delete(LoginSession).where(LoginSession.last_seen_at < _utcnow() - SESSION_MAX_IDLE))
+
+
+def create_session(session: Session, *, commit: bool = True) -> str:
+    """Start a session and return the id for the cookie. Old idle sessions are removed."""
+    prune_sessions(session)
+    sid = secrets.token_urlsafe(32)
+    now = _utcnow()
+    session.add(LoginSession(id=session_id_hash(sid), created_at=now, last_seen_at=now))
+    if commit:
+        session.commit()
+    else:
+        session.flush()
+    return sid
+
+
+def session_valid(session: Session, sid: object) -> bool:
+    """Is this a live session? Refreshes `last_seen_at` (at most once a minute)."""
+    if not isinstance(sid, str):
+        return False
+    row = session.get(LoginSession, session_id_hash(sid))
+    if row is None:
+        return False
+    now = _utcnow()
+    if row.last_seen_at < now - SESSION_MAX_IDLE:
+        session.delete(row)
+        session.commit()
+        return False
+    if now - row.last_seen_at > TOUCH_INTERVAL:
+        row.last_seen_at = now
+        session.commit()
+    return True
+
+
+def end_session(session: Session, sid: object) -> None:
+    """Log out one browser: its session id stops working, copies of the cookie included."""
+    if isinstance(sid, str):
+        session.execute(delete(LoginSession).where(LoginSession.id == session_id_hash(sid)))
+        session.commit()
+
+
+def end_all_sessions(session: Session, *, commit: bool = True) -> None:
+    session.execute(delete(LoginSession))
+    if commit:
+        session.commit()
 
 
 def has_user(session: Session) -> bool:
@@ -82,6 +137,7 @@ def set_password(session: Session, username: str, pw: str) -> None:
     else:
         user.username = username
         user.password_hash = hash_password(pw)
+    end_all_sessions(session, commit=False)  # every session ends with the old password
     session.commit()
 
 

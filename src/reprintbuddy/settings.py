@@ -38,10 +38,9 @@ SENSITIVE: frozenset[str] = frozenset({"bambuddy_api_key", "tls_key"})
 
 # Never part of an export, a log line or any page: the sensitive settings plus the
 # values Reprintbuddy keeps for itself.
-NEVER_EXPORT: frozenset[str] = SENSITIVE | {"session_secret", "session_generation"}
+NEVER_EXPORT: frozenset[str] = SENSITIVE | {"session_secret"}
 
 _SECRET_KEY = "session_secret"
-_GENERATION_KEY = "session_generation"
 LANGUAGES = ("en", "de")
 
 
@@ -186,17 +185,6 @@ def ensure_session_secret(session: Session) -> str:
     session.add(Setting(key=_SECRET_KEY, value=json.dumps(secret)))
     session.commit()
     return secret
-
-
-def session_generation(session: Session) -> int:
-    """Counter that ends all sessions when it is raised (log out)."""
-    row = session.get(Setting, _GENERATION_KEY)
-    return int(json.loads(row.value)) if row is not None else 0
-
-
-def bump_session_generation(session: Session) -> None:
-    session.merge(Setting(key=_GENERATION_KEY, value=json.dumps(session_generation(session) + 1)))
-    session.commit()
 
 
 def display_value(key: str, value: object) -> str:

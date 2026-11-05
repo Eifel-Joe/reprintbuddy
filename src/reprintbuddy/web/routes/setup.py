@@ -65,8 +65,8 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)):
     # The account and the language are saved together or not at all.
     user = await run_in_threadpool(partial(accounts.create_admin, db, username, password, commit=False))
     st.set_setting(db, "language", language, commit=False)
+    start_session(request, user, db, commit=False)
     db.commit()
-    start_session(request, user, db)
     return RedirectResponse("/setup/bambuddy", status_code=303)
 
 
