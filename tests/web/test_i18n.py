@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from lagerbuddy.web import i18n
+from reprintbuddy.web import i18n
 
 TEMPLATES = Path(i18n.__file__).parent / "templates"
 
@@ -72,3 +72,25 @@ def test_templates_use_known_keys():
     for path in TEMPLATES.rglob("*.html"):
         used |= {m.group(2) for m in pattern.finditer(path.read_text(encoding="utf-8"))}
     assert used <= keys, f"unknown keys: {sorted(used - keys)}"
+
+
+def test_dynamic_message_keys_exist():
+    """Keys built at runtime (t(error), reason codes) are invisible to the template scan."""
+    from typing import get_args
+
+    from reprintbuddy.bambuddy.connection import Reason
+
+    en = i18n.load_locales()["en"]
+    de = i18n.load_locales()["de"]
+    routes = Path(i18n.__file__).parent / "routes"
+    literal = re.compile(r"""["']((?:setup|login|bambuddy|settings)\.[a-z_.]+)["']""")
+    used = {
+        m.group(1)
+        for p in routes.glob("*.py")
+        for m in literal.finditer(p.read_text(encoding="utf-8"))
+        if not m.group(1).endswith(".html")  # template file names, not message keys
+    }
+    used |= {f"bambuddy.reason.{reason}" for reason in get_args(Reason) if reason != "ok"}
+    assert used, "scan found nothing: the pattern is wrong"
+    assert used <= set(en), f"missing in en: {sorted(used - set(en))}"
+    assert used <= set(de), f"missing in de: {sorted(used - set(de))}"

@@ -21,7 +21,7 @@ def _store_secrets(client, respx_mock):
             data={
                 "csrf_token": token,
                 "bambuddy_url": "http://bambuddy.test:8000",
-                "bambuddy_username": "lagerbuddy",
+                "bambuddy_username": "reprintbuddy",
                 "bambuddy_api_key": API_KEY,
                 "bambuddy_review_confirmed": "on",
             },
@@ -93,7 +93,7 @@ def test_error_pages_do_not_echo_secrets(ready_client, respx_mock):
         data={
             "csrf_token": token,
             "bambuddy_url": "http://other.test:8000",
-            "bambuddy_username": "lagerbuddy",
+            "bambuddy_username": "reprintbuddy",
             "bambuddy_api_key": API_KEY,
             "bambuddy_review_confirmed": "on",
         },
@@ -123,7 +123,7 @@ def test_error_pages_do_not_echo_secrets(ready_client, respx_mock):
 
 def test_session_cookie_holds_no_secret(ready_client, respx_mock):
     _store_secrets(ready_client, respx_mock)
-    cookie = ready_client.cookies.get("lagerbuddy_session")
+    cookie = ready_client.cookies.get("reprintbuddy_session")
     payload = cookie.split(".")[0]
     decoded = base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)).decode()
     assert set(json.loads(decoded)) <= {"uid", "csrf", "flash"}

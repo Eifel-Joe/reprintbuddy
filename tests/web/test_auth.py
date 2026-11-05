@@ -1,9 +1,9 @@
 import pytest
 from conftest import ADMIN, PASSWORD, csrf_of, make_client
 
-from lagerbuddy import auth
-from lagerbuddy import settings as st
-from lagerbuddy.db import make_engine, make_sessionmaker, upgrade
+from reprintbuddy import auth
+from reprintbuddy import settings as st
+from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 
 
 def login(client, password=PASSWORD, token=None, **extra):
@@ -151,10 +151,10 @@ def test_create_admin_refuses_second_account(fresh_db):
 
 def test_session_survives_restart(logged_out, db_path):
     login(logged_out)
-    cookie = logged_out.cookies.get("lagerbuddy_session")
+    cookie = logged_out.cookies.get("reprintbuddy_session")
     assert cookie
     second = make_client(db_path)  # a new app object on the same database
-    second.cookies.set("lagerbuddy_session", cookie)
+    second.cookies.set("reprintbuddy_session", cookie)
     response = second.get("/")
     assert response.status_code == 303
     assert response.headers["location"] == "/setup/bambuddy"  # recognised as logged in

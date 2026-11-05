@@ -4,11 +4,11 @@ import sys
 import pytest
 from sqlalchemy import inspect, text
 
-from lagerbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upgrade
+from reprintbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upgrade
 
 
 def test_default_path_is_fixed():
-    assert str(DEFAULT_DB_PATH).replace("\\", "/") == "/var/lib/lagerbuddy/lagerbuddy.db"
+    assert str(DEFAULT_DB_PATH).replace("\\", "/") == "/var/lib/reprintbuddy/reprintbuddy.db"
 
 
 def test_upgrade_creates_tables(tmp_path):
@@ -54,7 +54,7 @@ def test_file_mode_600(tmp_path):
 
 
 def test_sessionmaker_roundtrip(tmp_path):
-    from lagerbuddy.models import Setting
+    from reprintbuddy.models import Setting
 
     engine = make_engine(tmp_path / "t.db")
     upgrade(engine)

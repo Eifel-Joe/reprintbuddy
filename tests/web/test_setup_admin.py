@@ -1,7 +1,7 @@
 from conftest import csrf_of
 
-from lagerbuddy import auth
-from lagerbuddy import settings as st
+from reprintbuddy import auth
+from reprintbuddy import settings as st
 
 
 def _form(token, **over):

@@ -3,8 +3,8 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 
-from lagerbuddy import settings as st
-from lagerbuddy.web.app import create_app
+from reprintbuddy import settings as st
+from reprintbuddy.web.app import create_app
 
 ADMIN = "admin"
 PASSWORD = "password123"
@@ -73,7 +73,7 @@ def ready_client(admin_client):
     """Step 2 done as well: Bambuddy settings written straight into the DB."""
     with admin_client.app.state.sessionmaker() as session:
         st.set_setting(session, "bambuddy_url", "http://bambuddy.test:8000")
-        st.set_setting(session, "bambuddy_username", "lagerbuddy")
+        st.set_setting(session, "bambuddy_username", "reprintbuddy")
         st.set_setting(session, "bambuddy_api_key", "bb_testkey")
         st.set_setting(session, "bambuddy_review_confirmed", True)
     return admin_client

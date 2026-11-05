@@ -1,7 +1,7 @@
 import pytest
 
-from lagerbuddy import settings as st
-from lagerbuddy.db import make_engine, make_sessionmaker, upgrade
+from reprintbuddy import settings as st
+from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 
 
 @pytest.fixture
@@ -124,7 +124,7 @@ def test_secret_value_not_in_error_message(session):
 
 def test_bambuddy_configured(session):
     st.set_setting(session, "bambuddy_url", "http://h:8000")
-    st.set_setting(session, "bambuddy_username", "lagerbuddy")
+    st.set_setting(session, "bambuddy_username", "reprintbuddy")
     st.set_setting(session, "bambuddy_api_key", "bb_key")
     assert st.bambuddy_configured(session) is False  # checkbox missing
     st.set_setting(session, "bambuddy_review_confirmed", True)

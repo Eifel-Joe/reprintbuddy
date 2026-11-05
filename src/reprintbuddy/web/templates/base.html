@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} · Reprintbuddy</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/css/reprintbuddy.css">
+</head>
+<body>
+{% macro nav_links(active) %}
+  {% set items = [
+    ('overview', '/', t('nav.overview')),
+    ('articles', '/', t('nav.articles')),
+    ('sets', '/', t('nav.sets')),
+    ('orders', '/', t('nav.orders')),
+    ('bookings', '/', t('nav.bookings')),
+    ('inspection', '/', t('nav.inspection')),
+    ('assembly', '/', t('nav.assembly')),
+    ('queue', '/', t('nav.queue')),
+    ('filament', '/', t('nav.filament')),
+    ('parts', '/', t('nav.parts')),
+    ('reorder', '/', t('nav.reorder')),
+    ('settings', '/settings', t('nav.settings')),
+  ] %}
+  {% for id, href, label in items %}
+    <a class="nav-link{% if id == active %} active{% endif %}" href="{{ href }}">{{ label }}</a>
+  {% endfor %}
+{% endmacro %}
+
+{% macro nav_footer() %}
+  {% if open_bambuddy_url %}
+    <a class="nav-link nav-external" href="{{ open_bambuddy_url }}" target="_blank" rel="noopener noreferrer">{{ t('nav.open_bambuddy') }}</a>
+  {% endif %}
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="nav-link nav-button" type="submit">{{ t('nav.logout') }}</button>
+  </form>
+{% endmacro %}
+
+{% block shell %}
+<div class="app">
+  <details class="mobile-menu">
+    <summary><span class="brand">Reprintbuddy</span></summary>
+    <nav class="sidebar-nav">{{ nav_links(active_nav) }}</nav>
+    <div class="sidebar-footer">{{ nav_footer() }}</div>
+  </details>
+  <aside class="sidebar">
+    <div class="brand">Reprintbuddy</div>
+    <nav class="sidebar-nav">{{ nav_links(active_nav) }}</nav>
+    <div class="sidebar-footer">{{ nav_footer() }}</div>
+  </aside>
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% endblock %}
+</body>
+</html>

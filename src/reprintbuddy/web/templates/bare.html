@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{# Pages without sidebar: first-run setup and login. #}
+{% block shell %}
+<main class="bare">
+  <div class="card bare-card">
+    <div class="brand">Reprintbuddy</div>
+    {% block content %}{% endblock %}
+  </div>
+</main>
+{% endblock %}

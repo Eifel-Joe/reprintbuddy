@@ -5,10 +5,10 @@ import sys
 import pytest
 import uvicorn
 
-from lagerbuddy import auth
-from lagerbuddy import settings as st
-from lagerbuddy.cli import main
-from lagerbuddy.db import make_engine, make_sessionmaker, upgrade
+from reprintbuddy import auth
+from reprintbuddy import settings as st
+from reprintbuddy.cli import main
+from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 
 CERT = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
 KEY = "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n"
@@ -107,7 +107,7 @@ def test_serve_uses_stored_host_and_port(db, monkeypatch):
     assert kwargs["host"] == "0.0.0.0"
     assert kwargs["port"] == 9191
     assert kwargs.get("ssl_certfile") is None and kwargs.get("ssl_keyfile") is None
-    assert app.title == "Lagerbuddy"
+    assert app.title == "Reprintbuddy"
 
 
 def test_serve_writes_tls_to_private_temp_files_and_removes_them(db, monkeypatch):
@@ -151,7 +151,7 @@ def test_serve_removes_tls_files_even_if_server_crashes(db, monkeypatch):
 
 def test_python_dash_m_runs_main(db):
     result = subprocess.run(
-        [sys.executable, "-m", "lagerbuddy", "migrate", "--db", str(db)],
+        [sys.executable, "-m", "reprintbuddy", "migrate", "--db", str(db)],
         capture_output=True,
         text=True,
         timeout=120,

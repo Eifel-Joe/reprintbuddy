@@ -2,7 +2,7 @@ import httpx
 import pytest
 from conftest import csrf_of
 
-from lagerbuddy import settings as st
+from reprintbuddy import settings as st
 
 URL = "http://bambuddy.test:8000"
 QUEUE = f"{URL}/api/v1/queue/"
@@ -13,7 +13,7 @@ def _form(token, **over):
     data = {
         "csrf_token": token,
         "bambuddy_url": URL,
-        "bambuddy_username": "lagerbuddy",
+        "bambuddy_username": "reprintbuddy",
         "bambuddy_api_key": KEY,
         "bambuddy_review_confirmed": "on",
     }
@@ -43,7 +43,7 @@ def test_save_on_success(admin_client, respx_mock):
     assert response.status_code == 303
     assert response.headers["location"] == "/"
     assert _saved(admin_client, "bambuddy_url") == URL
-    assert _saved(admin_client, "bambuddy_username") == "lagerbuddy"
+    assert _saved(admin_client, "bambuddy_username") == "reprintbuddy"
     assert _saved(admin_client, "bambuddy_api_key") == KEY
     assert _saved(admin_client, "bambuddy_review_confirmed") is True
     assert admin_client.get("/").status_code == 200
@@ -103,7 +103,7 @@ def test_key_not_echoed_on_error(admin_client, respx_mock):
     response = admin_client.post("/setup/bambuddy", data=_form(token))
     assert KEY not in response.text
     assert URL in response.text  # address and user name stay in the form
-    assert 'value="lagerbuddy"' in response.text
+    assert 'value="reprintbuddy"' in response.text
 
 
 def test_invalid_url_is_reported(admin_client):

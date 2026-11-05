@@ -1,12 +1,14 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lagerbuddy"
+name = "reprintbuddy"
 dynamic = ["version"]
 description = "Stock keeping for 3D-printed items, with reprints through Bambuddy's queue."
 readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.110",
@@ -29,16 +31,16 @@ dev = [
 ]
 
 [project.scripts]
-lagerbuddy = "lagerbuddy.cli:main"
+reprintbuddy = "reprintbuddy.cli:main"
 
 [tool.setuptools.dynamic]
-version = { attr = "lagerbuddy.__version__" }
+version = { attr = "reprintbuddy.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-lagerbuddy = [
+reprintbuddy = [
     "web/templates/**/*",
     "web/static/**/*",
     "locales/*.json",

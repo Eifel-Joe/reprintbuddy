@@ -1,0 +1,27 @@
+name: Feature request / Wunsch
+description: Suggest an improvement / Eine Verbesserung vorschlagen
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reprintbuddy does not control printers and does not depend on Docker or cloud services.
+        Reprintbuddy steuert keine Drucker und hängt nicht von Docker oder Cloud-Diensten ab.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem do you want to solve? / Welches Problem willst du lösen?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Your idea / Dein Vorschlag
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered / Erwogene Alternativen
+    validations:
+      required: false

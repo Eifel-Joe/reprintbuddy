@@ -1,0 +1,57 @@
+name: Bug report / Fehlerbericht
+description: Something does not work as expected / Etwas funktioniert nicht wie erwartet
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not include API keys or passwords. Security problems: see SECURITY.md, not an issue.
+        Bitte keine API-Schlüssel oder Passwörter angeben. Sicherheitsprobleme: siehe SECURITY.md, nicht als Issue.
+  - type: input
+    id: reprintbuddy_version
+    attributes:
+      label: Reprintbuddy version / Reprintbuddy-Version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: bambuddy_version
+    attributes:
+      label: Bambuddy version / Bambuddy-Version
+    validations:
+      required: true
+  - type: dropdown
+    id: spoolman
+    attributes:
+      label: Do you use Spoolman? / Benutzt du Spoolman?
+      options:
+        - "Yes / Ja"
+        - "No / Nein"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Schritte zum Nachstellen
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour / Erwartetes Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour / Tatsächliches Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log excerpt / Protokollauszug
+      description: Remove API keys and passwords first. / Zuerst API-Schlüssel und Passwörter entfernen.
+      render: text
+    validations:
+      required: false

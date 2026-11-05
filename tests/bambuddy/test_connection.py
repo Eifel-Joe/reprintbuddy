@@ -1,6 +1,6 @@
 import httpx
 
-from lagerbuddy.bambuddy.connection import ConnectionCheck, check_connection
+from reprintbuddy.bambuddy.connection import ConnectionCheck, check_connection
 
 URL = "http://bambuddy.test:8000"
 QUEUE = f"{URL}/api/v1/queue/"

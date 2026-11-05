@@ -2,7 +2,7 @@ import httpx
 import pytest
 from conftest import ADMIN, PASSWORD, api_routes, csrf_of
 
-from lagerbuddy import settings as st
+from reprintbuddy import settings as st
 
 OLD_URL = "http://bambuddy.test:8000"
 NEW_URL = "http://other.test:8000"
@@ -23,7 +23,7 @@ def post(client, path, **data):
 def bambuddy_form(**over):
     data = {
         "bambuddy_url": OLD_URL,
-        "bambuddy_username": "lagerbuddy",
+        "bambuddy_username": "reprintbuddy",
         "bambuddy_api_key": "",
         "bambuddy_review_confirmed": "on",
     }

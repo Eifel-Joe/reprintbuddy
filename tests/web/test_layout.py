@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from conftest import csrf_of
 
-from lagerbuddy import settings as st
-from lagerbuddy.web import i18n
+from reprintbuddy import settings as st
+from reprintbuddy.web import i18n
 
 WEB = Path(i18n.__file__).parent
 
@@ -54,7 +54,7 @@ def test_active_nav_item_is_marked(ready_client):
 
 
 def test_css_served(ready_client):
-    response = ready_client.get("/static/css/lagerbuddy.css")
+    response = ready_client.get("/static/css/reprintbuddy.css")
     assert response.status_code == 200
     assert "#00ae42" in response.text
     for token in ("#0f172a", "#1e293b", "#334155", "#f1f5f9", "#94a3b8", "#64748b"):
@@ -62,7 +62,7 @@ def test_css_served(ready_client):
 
 
 def test_css_is_reachable_without_login(client):
-    assert client.get("/static/css/lagerbuddy.css").status_code == 200
+    assert client.get("/static/css/reprintbuddy.css").status_code == 200
 
 
 def test_no_external_urls():
@@ -100,20 +100,20 @@ def test_mobile_menu_without_javascript(ready_client):
 def test_pages_without_sidebar_use_the_stylesheet(client):
     for path in ("/setup",):
         html = client.get(path).text
-        assert "/static/css/lagerbuddy.css" in html
+        assert "/static/css/reprintbuddy.css" in html
         assert "sidebar-nav" not in html
 
 
 def test_setup_bambuddy_page_has_no_sidebar(admin_client):
     html = admin_client.get("/setup/bambuddy").text
-    assert "/static/css/lagerbuddy.css" in html
+    assert "/static/css/reprintbuddy.css" in html
     assert "sidebar-nav" not in html
 
 
 def test_login_page_has_no_sidebar(admin_client):
     admin_client.cookies.clear()
     html = admin_client.get("/login").text
-    assert "/static/css/lagerbuddy.css" in html
+    assert "/static/css/reprintbuddy.css" in html
     assert "sidebar-nav" not in html
 
 
