@@ -10,6 +10,7 @@ while the helper runs, and the rollback must not load any new code.
 
 from __future__ import annotations
 
+import re
 import shutil
 import sqlite3
 import time
@@ -41,12 +42,27 @@ def venv_python(install_dir: Path) -> Path:
     return install_dir / ".venv" / "bin" / "python"
 
 
+_NOISE_LINES = ("[SQL:", "[parameters:", "(Background on this error")
+_HEADLINE = re.compile(r"^(fatal|error)\b", re.IGNORECASE)
+
+
 def _reason(result: CommandResult, fallback: str) -> str:
-    """The first line the command complained with, short enough for a page."""
+    """The line that says what went wrong, short enough for a page.
+
+    Not the first line: git starts with "From https://...", pip with retry warnings,
+    Python with "Traceback". The last line that starts with fatal/error is meant; without
+    one, the last line. SQLAlchemy appends the statement and its bound parameters (which
+    can be setting values, even secrets): those never reach a page.
+    """
     for text in (result.stderr, result.stdout):
-        lines = (text or "").strip().splitlines()
-        if lines:
-            return lines[0][:MAX_REASON]
+        lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+        lines = [line for line in lines if not line.startswith(_NOISE_LINES)]
+        if not lines:
+            continue
+        line = ([line for line in lines if _HEADLINE.match(line)] or lines)[-1]
+        line = line.split("[SQL:")[0].split("[parameters:")[0].strip()
+        if line:
+            return line[:MAX_REASON]
     return fallback or f"exit code {result.returncode}"
 
 

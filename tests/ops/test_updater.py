@@ -307,6 +307,50 @@ def test_dev_build_without_tag_labels_backup_with_the_commit(update_env):
     assert "reprintbuddy-" + REF[:12] + "-" in result.backup
 
 
+def test_reason_is_the_line_that_says_what_went_wrong(update_env):
+    """git prints 'From https://...' first, pip a retry warning, Python a Traceback header."""
+    e = update_env
+    e.runner.on(
+        ("git", "-C", e.d, "fetch"),
+        CommandResult(128, "", "From https://example.invalid/r\n * [new tag] v0.3.0\nfatal: unable to access 'x': Could not resolve host"),
+    )
+    assert e.update().message == "fetch: fatal: unable to access 'x': Could not resolve host"
+
+
+def test_reason_of_a_pip_failure_skips_the_retry_warnings(update_env):
+    e = update_env
+    e.runner.on(
+        (e.py, "-m", "pip"),
+        CommandResult(1, "", "WARNING: Retrying (Retry(total=4)) after connection broken\nERROR: Could not find a version that satisfies the requirement x\nWARNING: later noise"),
+    )
+    assert e.update().message.startswith("install: ERROR: Could not find a version")
+
+
+def test_reason_of_a_failed_migration_has_no_sql_and_no_parameters(update_env):
+    e = update_env
+    trace = (
+        "Traceback (most recent call last):\n  File \"x.py\", line 1, in <module>\n"
+        "sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: widgets\n"
+        "[SQL: INSERT INTO settings (key, value) VALUES (?, ?)]\n"
+        "[parameters: ('bambuddy_api_key', 'bb_SECRETKEY')]\n"
+        "(Background on this error at: https://sqlalche.me/e/20/e3q8)"
+    )
+    e.runner.on((e.py, "-m", "reprintbuddy", "migrate"), CommandResult(1, "", trace))
+    message = e.update().message
+    assert message.startswith("migrate: sqlalchemy.exc.OperationalError")
+    assert "SECRETKEY" not in message and "[SQL" not in message and "parameters" not in message
+
+
+def test_reason_cuts_an_inline_sql_part(update_env):
+    e = update_env
+    e.runner.on(
+        (e.py, "-m", "reprintbuddy", "migrate"),
+        CommandResult(1, "", "OperationalError: no such table: x [SQL: SELECT 'bb_SECRETKEY']"),
+    )
+    message = e.update().message
+    assert "SECRETKEY" not in message and message.startswith("migrate: OperationalError: no such table: x")
+
+
 def test_health_waiter(respx_mock, tmp_path):
     engine = make_engine(tmp_path / "h.db")
     upgrade(engine)
