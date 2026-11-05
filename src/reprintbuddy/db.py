@@ -61,12 +61,20 @@ def _configure(engine: Engine, *, foreign_keys: bool, transactional_ddl: bool) -
             and a one-time form token is used up atomically with its booking (Spec 6.4).
             Reading sessions are untouched: they keep the driver's lazy BEGIN.
 
-            The pool is a NullPool, so taking transaction control from the driver for
-            this one connection leaves nothing behind when it is closed.
+            Taking transaction control from the driver is undone when the connection goes
+            back to the pool (see `_restore_isolation_level`), so this does not depend on
+            the pool being a NullPool.
             """
             if connection.get_execution_options().get("immediate"):
-                connection.connection.dbapi_connection.isolation_level = None
+                dbapi_connection = connection.connection.dbapi_connection
+                connection.connection.info.setdefault("isolation_level_before", dbapi_connection.isolation_level)
+                dbapi_connection.isolation_level = None
                 connection.exec_driver_sql("BEGIN IMMEDIATE")
+
+        @event.listens_for(engine, "checkin")
+        def _restore_isolation_level(dbapi_connection, record):
+            if "isolation_level_before" in record.info:
+                dbapi_connection.isolation_level = record.info.pop("isolation_level_before")
 
 
 def make_engine(db_path: Path) -> Engine:
@@ -125,7 +133,11 @@ def upgrade(engine: Engine, script_location: Path | None = None) -> None:
 
 def begin_immediate(session: Session) -> None:
     """Make the transaction of this session a write transaction from its first statement."""
-    session.connection(execution_options={"immediate": True})
+    connection = session.connection(execution_options={"immediate": True})
+    if not connection.get_execution_options().get("immediate"):
+        # SQLAlchemy only warns and ignores the option when the session already holds a
+        # connection; a write transaction that is silently not immediate loses updates.
+        raise RuntimeError("begin_immediate must be the first statement of the transaction")
 
 
 class WriteSessionMaker(sessionmaker):
