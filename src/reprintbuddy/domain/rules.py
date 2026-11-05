@@ -22,6 +22,7 @@ class PositionStock:
 
     qty: int
     option_available: tuple[int, ...]
+    article_ids: tuple[int, ...] = ()  # the same order as option_available
 
 
 def _position_available(position: PositionStock) -> int:
@@ -35,10 +36,25 @@ def _position_available(position: PositionStock) -> int:
 
 
 def set_available(positions: Sequence[PositionStock]) -> int:
-    """Set availability: the minimum over its positions (Spec 5.4); 0 without positions."""
+    """Set availability: the minimum over its positions (Spec 5.4); 0 without positions.
+
+    Fixed positions that use the same article need it at the same time, so their quantities
+    are added up before dividing (A once in two positions needs 2 A per set).
+    """
     if not positions:
         return 0
-    return min(_position_available(p) for p in positions)
+    needed: dict[int, int] = {}
+    in_stock: dict[int, int] = {}
+    values: list[int] = []
+    for position in positions:
+        if len(position.option_available) == 1 and len(position.article_ids) == 1:
+            article_id = position.article_ids[0]
+            needed[article_id] = needed.get(article_id, 0) + position.qty
+            in_stock[article_id] = position.option_available[0]
+        else:
+            values.append(_position_available(position))
+    values += [in_stock[a] // needed[a] for a in needed]
+    return min(values)
 
 
 def order_ready(needed: Mapping[int, int], stock: Mapping[int, int]) -> bool:

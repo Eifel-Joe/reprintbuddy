@@ -42,3 +42,11 @@ def test_order_ready():  # Spec 6.7
     assert order_ready({1: 2}, {1: 2}) is True
     assert order_ready({1: 3}, {1: 2}) is False
     assert order_ready({1: 1}, {}) is False
+
+
+def test_set_same_article_in_two_fixed_positions_adds_up():  # Spec 5.4 "gleichzeitig"
+    positions = [PositionStock(1, (3,), (7,)), PositionStock(1, (3,), (7,))]
+    assert set_available(positions) == 1
+    assert set_available([PositionStock(2, (7,), (7,)), PositionStock(1, (7,), (7,))]) == 2  # 7 // 3
+    assert set_available([PositionStock(1, (3,), (7,)), PositionStock(1, (9,), (8,))]) == 3  # different articles
+    assert set_available([PositionStock(1, (-1,), (7,)), PositionStock(1, (-1,), (7,))]) == -1

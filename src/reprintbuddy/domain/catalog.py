@@ -541,7 +541,9 @@ def _set_row(session: Session, product_set: ProductSet) -> SetRow:
         )
         stocks.append(
             rules.PositionStock(
-                position.qty, tuple(rules.available(a.stock, a.reserved) for a in articles)
+                position.qty,
+                tuple(rules.available(a.stock, a.reserved) for a in articles),
+                tuple(a.id for a in articles),
             )
         )
     return SetRow(

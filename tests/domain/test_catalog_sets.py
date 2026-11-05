@@ -117,3 +117,11 @@ def test_article_sku_conflicts_with_set(db):
     with pytest.raises(ConflictError):
         with db.begin() as s:
             catalog.update_article(s, a, ArticleInput(name="Template A", sku="X-1"))
+
+
+def test_set_with_the_same_article_in_two_positions(db):
+    with db.begin() as s:
+        a = make_article(s, name="Template A", stock=3).id
+        catalog.create_set(s, SetInput("Double Set", None, [PositionInput(1, [a]), PositionInput(1, [a])]))
+    with db.begin() as s:
+        assert catalog.list_sets(s)[0].available == 1
