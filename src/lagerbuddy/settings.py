@@ -126,10 +126,15 @@ def get_setting(session: Session, key: str) -> object:
     return json.loads(row.value)
 
 
-def set_setting(session: Session, key: str, value: object) -> None:
+def validate(key: str, value: object) -> object:
+    """Check `value` for `key` and return what would be stored (normalised)."""
     if key not in _VALIDATORS:
         raise KeyError(key)
-    checked = _VALIDATORS[key](value)
+    return _VALIDATORS[key](value)
+
+
+def set_setting(session: Session, key: str, value: object) -> None:
+    checked = validate(key, value)
     session.merge(Setting(key=key, value=json.dumps(checked)))
     session.commit()
 

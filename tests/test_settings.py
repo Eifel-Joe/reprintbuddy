@@ -129,3 +129,11 @@ def test_bambuddy_configured(session):
     assert st.bambuddy_configured(session) is False  # checkbox missing
     st.set_setting(session, "bambuddy_review_confirmed", True)
     assert st.bambuddy_configured(session) is True
+
+
+def test_validate_returns_normalised_value():
+    assert st.validate("bambuddy_url", "http://h:8000/") == "http://h:8000"
+    with pytest.raises(ValueError):
+        st.validate("port", 0)
+    with pytest.raises(KeyError):
+        st.validate("session_secret", "x")

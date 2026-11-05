@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from lagerbuddy import auth as accounts
 from lagerbuddy import settings as st
+from lagerbuddy.bambuddy.connection import check_connection
 from lagerbuddy.web.csrf import verify_csrf
 from lagerbuddy.web.deps import get_db, render, start_session
 
@@ -60,3 +61,55 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)):
     st.set_setting(db, "language", language)
     start_session(request, user)
     return RedirectResponse("/setup/bambuddy", status_code=303)
+
+
+# --- Step 2: connect Bambuddy ------------------------------------------------
+
+
+def _bambuddy_page(request: Request, error: str | None = None, **values: object):
+    values.setdefault("bambuddy_url", "")
+    values.setdefault("bambuddy_username", "lagerbuddy")
+    values.setdefault("review_confirmed", False)
+    # The API key is never put back into the form.
+    return render(request, "setup_bambuddy.html", error=error, **values)
+
+
+@router.get("/setup/bambuddy")
+async def bambuddy_form(request: Request, db: Session = Depends(get_db)):
+    if st.bambuddy_configured(db):
+        return RedirectResponse("/settings", status_code=303)
+    return _bambuddy_page(request)
+
+
+@router.post("/setup/bambuddy")
+async def bambuddy_submit(request: Request, db: Session = Depends(get_db)):
+    if st.bambuddy_configured(db):
+        return RedirectResponse("/settings", status_code=303)
+    await verify_csrf(request)
+
+    form = await request.form()
+    url_input = str(form.get("bambuddy_url", "")).strip()
+    username = str(form.get("bambuddy_username", "")).strip()
+    api_key = str(form.get("bambuddy_api_key", ""))
+    confirmed = form.get("bambuddy_review_confirmed") is not None
+    shown = {"bambuddy_url": url_input, "bambuddy_username": username, "review_confirmed": confirmed}
+
+    if not confirmed:
+        return _bambuddy_page(request, "bambuddy.review_required", **shown)
+    if not (url_input and username and api_key):
+        return _bambuddy_page(request, "bambuddy.fields_required", **shown)
+    try:
+        url = st.validate("bambuddy_url", url_input)
+    except ValueError:
+        return _bambuddy_page(request, "bambuddy.invalid_url", **shown)
+
+    async with request.app.state.http_client_factory() as client:
+        result = await check_connection(str(url), api_key, client)
+    if not result.ok:
+        return _bambuddy_page(request, f"bambuddy.reason.{result.reason}", **shown)
+
+    st.set_setting(db, "bambuddy_url", url)
+    st.set_setting(db, "bambuddy_username", username)
+    st.set_setting(db, "bambuddy_api_key", api_key)
+    st.set_setting(db, "bambuddy_review_confirmed", True)
+    return RedirectResponse("/", status_code=303)

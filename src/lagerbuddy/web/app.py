@@ -15,6 +15,7 @@ from lagerbuddy import settings as st
 from lagerbuddy.db import make_engine, make_sessionmaker, upgrade
 from lagerbuddy.web import deps
 from lagerbuddy.web.routes import auth as auth_routes
+from lagerbuddy.web.routes import overview as overview_routes
 from lagerbuddy.web.routes import setup as setup_routes
 
 WEB_DIR = Path(__file__).resolve().parent
@@ -61,4 +62,5 @@ def create_app(
 
     app.include_router(setup_routes.router)
     app.include_router(auth_routes.router)
+    app.include_router(overview_routes.router)
     return app
