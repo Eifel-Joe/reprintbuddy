@@ -335,3 +335,17 @@ def test_settings_key_with_unusable_characters(ready_client, respx_mock, bad):
     assert "API key contains characters" in response.text
     assert not route.called
     assert saved(ready_client, "bambuddy_api_key") == "bb_testkey"
+
+
+@pytest.mark.parametrize("bad", ["http://h:99999", "http://h:abc", "http://h:0", "http://h:-1", "http://:8000", "http://", "https://[::1", "http://h:8000x"])
+def test_settings_a_bad_port_is_reported_not_a_server_error(ready_client, bad):
+    response = post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_url=bad, bambuddy_api_key="bb_x"))
+    assert response.status_code == 200
+    assert "must start with http" in response.text
+    assert saved(ready_client, "bambuddy_url") == OLD_URL
+
+
+def test_settings_a_bad_port_without_a_key_is_reported_too(ready_client):
+    response = post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_url="http://bambuddy.test:99999"))
+    assert response.status_code == 200
+    assert saved(ready_client, "bambuddy_url") == OLD_URL

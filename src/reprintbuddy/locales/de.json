@@ -43,7 +43,7 @@
   "bambuddy.submit": "Verbindung prüfen und speichern",
   "bambuddy.review_required": "Bitte bestätige, dass der Bambuddy-Benutzer das Recht „ohne Prüfung drucken“ hat (Print without review).",
   "bambuddy.fields_required": "Bitte Adresse, Benutzername und API-Schlüssel ausfüllen.",
-  "bambuddy.invalid_url": "Die Adresse muss mit http:// oder https:// beginnen.",
+  "bambuddy.invalid_url": "Die Adresse muss mit http:// oder https:// beginnen und einen gültigen Rechner und Port (1 bis 65535) haben.",
   "bambuddy.reason.unauthorized": "Bambuddy hat den API-Schlüssel nicht akzeptiert.",
   "bambuddy.reason.forbidden": "Der API-Schlüssel hat nicht die Rechte, die Reprintbuddy braucht („Status lesen“, „Warteschlange verwalten“).",
   "bambuddy.reason.unreachable": "Bambuddy ist unter dieser Adresse nicht erreichbar. Prüfe die Adresse und ob Bambuddy läuft.",

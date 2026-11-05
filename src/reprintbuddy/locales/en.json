@@ -43,7 +43,7 @@
   "bambuddy.submit": "Check connection and save",
   "bambuddy.review_required": "Please confirm that the Bambuddy user has the permission \"Print without review\".",
   "bambuddy.fields_required": "Please fill in the address, the user name and the API key.",
-  "bambuddy.invalid_url": "The address must start with http:// or https://.",
+  "bambuddy.invalid_url": "The address must start with http:// or https:// and have a valid host and port (1 to 65535).",
   "bambuddy.reason.unauthorized": "The API key was not accepted by Bambuddy.",
   "bambuddy.reason.forbidden": "The API key does not have the rights Reprintbuddy needs (\"Read Status\", \"Manage Queue\").",
   "bambuddy.reason.unreachable": "Could not reach Bambuddy at this address. Check the address and that Bambuddy is running.",

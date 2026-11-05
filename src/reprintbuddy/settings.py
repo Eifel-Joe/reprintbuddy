@@ -110,6 +110,13 @@ def _optional_url(value: Any) -> str | None:
     text = value.strip().rstrip("/")
     for scheme in ("http://", "https://"):
         if text.startswith(scheme) and len(text) > len(scheme):
+            try:
+                parts = urlsplit(text)
+                port = parts.port  # raises ValueError for a non-numeric or out-of-range port
+            except ValueError:
+                raise ValueError("address has an invalid host or port") from None
+            if not parts.hostname or port == 0:
+                raise ValueError("address has an invalid host or port")
             return text
     raise ValueError("address must start with http:// or https://")
 
@@ -229,4 +236,7 @@ def same_address(a: str | None, b: str | None) -> bool:
         default = {"http": 80, "https": 443}.get(parts.scheme)
         return parts.scheme, (parts.hostname or "").lower(), parts.port or default
 
-    return origin(a) == origin(b)
+    try:
+        return origin(a) == origin(b)
+    except ValueError:  # an invalid port or address is never "the same"
+        return False

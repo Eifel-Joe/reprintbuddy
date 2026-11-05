@@ -148,3 +148,12 @@ def test_key_with_unusable_characters_gets_its_own_message(admin_client, respx_m
     assert "API key contains characters" in response.text
     assert not route.called
     assert _saved(admin_client, "bambuddy_api_key") is None
+
+
+@pytest.mark.parametrize("bad", ["http://h:99999", "http://h:abc", "http://h:0", "http://h:-1", "http://:8000", "http://", "https://[::1", "http://h:8000x"])
+def test_a_bad_port_is_reported_not_a_server_error(admin_client, respx_mock, bad):
+    token = csrf_of(admin_client, "/setup/bambuddy")
+    response = admin_client.post("/setup/bambuddy", data=_form(token, bambuddy_url=bad))
+    assert response.status_code == 200
+    assert "must start with http" in response.text
+    assert _saved(admin_client, "bambuddy_url") is None

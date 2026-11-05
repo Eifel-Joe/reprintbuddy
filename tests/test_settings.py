@@ -196,3 +196,19 @@ def test_tls_is_enabled_only_with_certificate_and_key(session):
     assert st.tls_enabled(session) is True
     st.set_setting(session, "tls_cert", None)
     assert st.tls_enabled(session) is False
+
+
+@pytest.mark.parametrize("bad", ["http://h:99999", "http://h:abc", "http://h:0", "http://h:-1", "http://:8000", "http://", "https://[::1", "http://h:8000x"])
+def test_url_with_a_bad_host_or_port_is_refused(bad):
+    with pytest.raises(ValueError):
+        st.validate("bambuddy_url", bad)
+
+
+@pytest.mark.parametrize("good", ["http://h:1", "http://h:65535", "https://[::1]:8000", "http://h"])
+def test_url_with_a_good_port_is_accepted(good):
+    assert st.validate("bambuddy_url", good) == good
+
+
+def test_same_address_does_not_fail_on_bad_input():
+    assert st.same_address("http://h:99999", "http://h:80") is False
+    assert st.same_address("http://h:80", "http://h:abc") is False
