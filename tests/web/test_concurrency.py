@@ -29,7 +29,7 @@ def token_of(response: httpx.Response) -> str:
 
 async def slow_check(_request: httpx.Request) -> httpx.Response:
     await asyncio.sleep(0.6)
-    return httpx.Response(200, json=auth_me())
+    return httpx.Response(200, json=auth_me(username="other-user"))
 
 
 async def test_a_slow_bambuddy_save_and_a_parallel_language_save_both_land(ready_client):
@@ -44,10 +44,8 @@ async def test_a_slow_bambuddy_save_and_a_parallel_language_save_both_land(ready
                 data={
                     "csrf_token": token,
                     # the same address written differently: the first write is a real change
-                    "bambuddy_url": "http://BAMBUDDY.test:8000",
-                    "bambuddy_username": "other-user",
-                    "bambuddy_api_key": "",
-                    "bambuddy_review_confirmed": "on",
+                    "bambuddy_address": "http://BAMBUDDY.test:8000",
+                    "bambuddy_token": "",
                 },
             )
         )
@@ -197,10 +195,8 @@ async def test_no_connection_is_held_while_bambuddy_answers(ready_client):
                 "/settings/bambuddy",
                 data={
                     "csrf_token": token,
-                    "bambuddy_url": "http://bambuddy.test:8000",
-                    "bambuddy_username": "other-user",
-                    "bambuddy_api_key": "",
-                    "bambuddy_review_confirmed": "on",
+                    "bambuddy_address": "http://bambuddy.test:8000",
+                    "bambuddy_token": "",
                 },
             )
         )

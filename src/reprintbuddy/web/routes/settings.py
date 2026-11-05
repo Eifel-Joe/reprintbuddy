@@ -15,12 +15,12 @@ from starlette.datastructures import UploadFile
 
 from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
-from reprintbuddy.bambuddy.connection import check_connection
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops.tls import validate_tls_pair
+from reprintbuddy.web.bambuddy_check import result_context, run_check, validate_address, validate_key
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.routes.ops import ops_view
-from reprintbuddy.web.deps import flash, get_db, logged_in_user, release_connection, render, start_session
+from reprintbuddy.web.deps import flash, get_db, logged_in_user, render, start_session
 
 router = APIRouter()
 
@@ -32,14 +32,14 @@ def _page(
     db: Session,
     error: str | None = None,
     section: str | None = None,
+    check=None,
     **typed: object,
 ):
     """Render the page from the stored values; `typed` keeps what was just entered."""
     values: dict[str, object] = {
         "language": st.get_setting(db, "language"),
-        "bambuddy_url": st.get_setting(db, "bambuddy_url") or "",
-        "bambuddy_username": st.get_setting(db, "bambuddy_username") or "",
-        "review_confirmed": st.get_setting(db, "bambuddy_review_confirmed"),
+        "bambuddy_address": st.get_setting(db, "bambuddy_url") or "",
+        "bambuddy_owner": st.get_setting(db, "bambuddy_username") or "",
         "host": st.get_setting(db, "host"),
         "port": st.get_setting(db, "port"),
     }
@@ -54,6 +54,7 @@ def _page(
         tls_key_mask=st.display_value("tls_key", st.get_setting(db, "tls_key")),
         tls_cert_set=bool(st.get_setting(db, "tls_cert")),
         ops=ops_view(request, db),
+        **result_context(check),
         **values,
     )
 
@@ -81,29 +82,23 @@ async def save_language(request: Request, db: Session = Depends(get_db)):
 @router.post("/settings/bambuddy", dependencies=[Depends(verify_csrf)])
 async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
-    url_input = str(form.get("bambuddy_url", "")).strip()
-    username = str(form.get("bambuddy_username", "")).strip()
-    entered_key = str(form.get("bambuddy_api_key", "")).strip()
-    confirmed = form.get("bambuddy_review_confirmed") is not None
-    typed = {"bambuddy_url": url_input, "bambuddy_username": username, "review_confirmed": confirmed}
+    address_input = str(form.get("bambuddy_address", "")).strip()
+    entered_key = str(form.get("bambuddy_token", "")).strip()
+    typed = {"bambuddy_address": address_input}
 
-    def fail(error: str):
-        return _page(request, db, error, "bambuddy", **typed)
+    def fail(error: str, check=None):
+        return _page(request, db, error, "bambuddy", check, **typed)
 
-    if not confirmed:
-        return fail("bambuddy.review_required")
-    if not (url_input and username):
+    if not address_input:
         return fail("bambuddy.fields_required")
-    try:
-        url = st.validate("bambuddy_url", url_input)
-    except ValueError:
-        return fail("bambuddy.invalid_url")
+    url, error = validate_address(address_input)
+    if error:
+        return fail(error)
 
     if entered_key:
-        try:
-            entered_key = str(st.validate("bambuddy_api_key", entered_key))
-        except ValueError:
-            return fail("bambuddy.key_invalid")
+        entered_key, error = validate_key(entered_key)
+        if error:
+            return fail(error)
 
     # An empty key field keeps the stored key, but only for the same address:
     # a stored key is never sent to a different scheme, host or port.
@@ -115,19 +110,13 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     if not api_key:
         return fail("bambuddy.fields_required")
 
-    release_connection(db)  # nothing is pending; do not hold a connection while Bambuddy answers
-    async with request.app.state.http_client_factory() as client:
-        result = await check_connection(str(url), api_key, client)
-    if not result.ok:
-        return fail(f"bambuddy.reason.{result.reason}")
+    check = await run_check(request, db, url, api_key)
+    if not check.ok:
+        return fail(f"bambuddy.reason.{check.reason}", check)
 
     # One transaction: a failure must not leave a new address with the old key.
-    st.set_setting(db, "bambuddy_url", url, commit=False)
-    st.set_setting(db, "bambuddy_username", username, commit=False)
-    st.set_setting(db, "bambuddy_api_key", api_key, commit=False)
-    st.set_setting(db, "bambuddy_review_confirmed", True, commit=False)
-    db.commit()
-    return _saved(request)
+    st.apply_check(db, url, api_key, check)
+    return _saved(request, "bambuddy.admin_warning" if check.owner_is_admin else "settings.saved")
 
 
 @router.post("/settings/password", dependencies=[Depends(verify_csrf)])

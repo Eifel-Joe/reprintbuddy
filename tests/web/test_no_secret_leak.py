@@ -22,10 +22,8 @@ def _store_secrets(client, respx_mock):
             "/settings/bambuddy",
             data={
                 "csrf_token": token,
-                "bambuddy_url": "http://bambuddy.test:8000",
-                "bambuddy_username": "reprintbuddy",
-                "bambuddy_api_key": API_KEY,
-                "bambuddy_review_confirmed": "on",
+                "bambuddy_address": "http://bambuddy.test:8000",
+                "bambuddy_token": API_KEY,
             },
         ).status_code
         == 303
@@ -86,10 +84,8 @@ def test_error_pages_do_not_echo_secrets(ready_client, respx_mock):
         "/settings/bambuddy",
         data={
             "csrf_token": token,
-            "bambuddy_url": "http://other.test:8000",
-            "bambuddy_username": "reprintbuddy",
-            "bambuddy_api_key": API_KEY,
-            "bambuddy_review_confirmed": "on",
+            "bambuddy_address": "http://other.test:8000",
+            "bambuddy_token": API_KEY,
         },
     )
     assert wrong_key.status_code == 200

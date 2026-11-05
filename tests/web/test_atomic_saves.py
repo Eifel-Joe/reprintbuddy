@@ -38,19 +38,17 @@ class Commits:
 def bambuddy_form(token, **over):
     data = {
         "csrf_token": token,
-        "bambuddy_url": "http://other.test:8000",
-        "bambuddy_username": "other-user",
-        "bambuddy_api_key": "bb_for_other",
-        "bambuddy_review_confirmed": "on",
+        "bambuddy_address": "http://other.test:8000",
+        "bambuddy_token": "bb_for_other",
     }
     data.update(over)
     return data
 
 
 def test_settings_bambuddy_failure_half_way_changes_nothing(ready_client, respx_mock, monkeypatch):
-    respx_mock.get("http://other.test:8000/api/v1/auth/me").respond(200, json=auth_me())
+    respx_mock.get("http://other.test:8000/api/v1/auth/me").respond(200, json=auth_me(username="other-user"))
     token = csrf_of(ready_client, "/settings")
-    fail_when_saving(monkeypatch, "bambuddy_api_key")  # url and user name come first
+    fail_when_saving(monkeypatch, "bambuddy_api_key")  # url and owner come first
     with pytest.raises(RuntimeError):
         ready_client.post("/settings/bambuddy", data=bambuddy_form(token))
     monkeypatch.undo()
