@@ -173,3 +173,22 @@ def test_readme_names_every_key_setting(name):
         "Send Notifications",
     ):
         assert label in text, (name, label)
+
+
+@pytest.mark.parametrize("name", READMES)
+def test_readme_uses_bambuddys_labels_and_has_no_printer_or_expiry_setting(name):
+    text = read(name)
+    for label in (
+        "Read All Library",
+        "Read All Queue",
+        "Create Queue",
+        "Start Unreviewed Queue",
+        "Read Printers",
+        "Read Inventory",
+        "Read Settings",
+        "Read Api Keys",
+        "Create Api Keys",
+    ):
+        assert label in text, (name, label)
+    for word in ("expiry date", "no restriction", "Ablaufdatum", "keine Einschränkung"):
+        assert word not in text, (name, word)  # the Bambuddy dialog has no such fields
