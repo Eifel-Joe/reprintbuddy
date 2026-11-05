@@ -31,7 +31,7 @@ from reprintbuddy.ops.backup import (
 from reprintbuddy.ops.runner import CommandResult, CommandRunner
 from reprintbuddy.ops.server import base_url, connect_host
 from reprintbuddy.ops.service import RESTART_WAIT_CMD
-from reprintbuddy.ops.status import UpdateStatus, is_busy, read_status, write_status
+from reprintbuddy.ops.status import UpdateStatus, is_busy, mark_interrupted, read_status, write_status
 from reprintbuddy.ops.versions import is_newer, local_tags, newest_release, parse_release_tag
 
 MAX_REASON = 300
@@ -179,7 +179,13 @@ def run_update(
         ok &= done.ok
         shutil.rmtree(install_dir / "build", ignore_errors=True)
         done = runner((py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", d), timeout=900.0)
-        ok &= done.ok
+        if not done.ok:
+            # No network for pip is the usual reason the update failed, so the reinstall of
+            # the old version fails too. What matters is whether the old version is the one
+            # installed and answering, not pip's exit code.
+            old = info["from_tag"]
+            shown = runner((py, "-m", "reprintbuddy", "--version"))
+            ok &= bool(old) and shown.ok and shown.stdout.strip() == "reprintbuddy " + str(old)[1:]
         try:
             restore_database(backup, db_path)
         except (OSError, sqlite3.Error):
@@ -204,6 +210,20 @@ def run_update(
     if restored:
         return finish("rolled_back", "rollback", cause)
     return finish("rollback_failed", "rollback", f"{cause} – backup: {backup}")
+
+
+def interrupt_handler(db_path: Path, *, now: Callable[[], datetime]) -> Callable[[int, object], None]:
+    """A SIGTERM handler for the helper: systemd stops a unit that runs past its timeout.
+
+    Without it the state file would stay at "running" and the page would never say what
+    happened. The handler records the final state and exits.
+    """
+
+    def handle(signum: int, frame: object) -> None:
+        mark_interrupted(db_path.parent, now())
+        raise SystemExit(128 + signum)
+
+    return handle
 
 
 def http_health_waiter(

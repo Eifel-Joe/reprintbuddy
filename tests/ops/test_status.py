@@ -91,3 +91,30 @@ def test_is_busy(state, age_minutes, expected):
 
 def test_running_without_start_time_is_not_busy():
     assert not is_busy(UpdateStatus(state="running"), NOW)
+
+
+@pytest.mark.parametrize("step,state", [("backup", "failed"), ("fetch", "failed"), ("install", "rollback_failed"), ("rollback", "rollback_failed")])
+def test_interrupted_update_leaves_a_final_state(tmp_path, step, state):
+    from reprintbuddy.ops.status import mark_interrupted
+
+    write_status(
+        tmp_path,
+        UpdateStatus(state="running", step=step, from_tag="v0.1.0", to_tag="v0.2.0", started_at=NOW, backup="/b/x.db"),
+    )
+    result = mark_interrupted(tmp_path, NOW + timedelta(minutes=30))
+    assert result is not None and result.state == state
+    assert result.step == step
+    assert f"{step}: interrupted" in result.message
+    assert result.finished_at == NOW + timedelta(minutes=30)
+    assert read_status(tmp_path) == result
+    if state == "rollback_failed":
+        assert "/b/x.db" in result.message
+
+
+def test_interrupt_leaves_finished_states_alone(tmp_path):
+    from reprintbuddy.ops.status import mark_interrupted
+
+    done = UpdateStatus(state="succeeded", step="done", started_at=NOW, finished_at=NOW)
+    write_status(tmp_path, done)
+    assert mark_interrupted(tmp_path, NOW) is None
+    assert read_status(tmp_path) == done

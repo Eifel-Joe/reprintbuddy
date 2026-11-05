@@ -10,6 +10,7 @@ import argparse
 import contextlib
 import getpass
 import os
+import signal
 import sys
 import tempfile
 from datetime import UTC, datetime
@@ -25,7 +26,7 @@ from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.runner import subprocess_runner
 from reprintbuddy.ops.server import base_url, connect_host, effective_from_settings
 from reprintbuddy.ops.service import INSTALL_DIR
-from reprintbuddy.ops.updater import http_health_waiter, run_update
+from reprintbuddy.ops.updater import http_health_waiter, interrupt_handler, run_update
 from reprintbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upgrade
 from reprintbuddy.web.app import create_app
 
@@ -139,6 +140,7 @@ def _update(args: argparse.Namespace) -> int:
     if not args.db.is_file():
         _error(f"database not found: {args.db}")
         return 1
+    signal.signal(signal.SIGTERM, interrupt_handler(args.db, now=lambda: datetime.now(UTC)))
     result = run_update(
         args.db,
         install_dir=INSTALL_DIR,

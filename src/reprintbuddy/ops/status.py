@@ -105,3 +105,37 @@ def is_busy(status: UpdateStatus, now: datetime) -> bool:
         and status.started_at is not None
         and now - status.started_at < STALE_AFTER
     )
+
+
+# Steps before the checkout change nothing; from the checkout on the installation may be half switched.
+_UNTOUCHED_STEPS = frozenset({"start", "backup", "fetch"})
+
+
+def mark_interrupted(data_dir: Path, now: datetime) -> UpdateStatus | None:
+    """Write a final state for an update that was stopped from outside (systemd timeout).
+
+    Returns the new state, or None when no update was in progress.
+    """
+    current = read_status(data_dir)
+    if current.state not in BUSY_STATES:
+        return None
+    step = current.step or "start"
+    if step in _UNTOUCHED_STEPS:
+        state, message = "failed", f"{step}: interrupted, nothing was changed"
+    else:
+        state = "rollback_failed"
+        message = f"{step}: interrupted, the installation may be incomplete"
+        if current.backup:
+            message += f" \u2013 backup: {current.backup}"
+    final = UpdateStatus(
+        state=state,  # type: ignore[arg-type]
+        step=step,
+        from_tag=current.from_tag,
+        to_tag=current.to_tag,
+        started_at=current.started_at,
+        finished_at=now,
+        message=message,
+        backup=current.backup,
+    )
+    write_status(data_dir, final)
+    return final

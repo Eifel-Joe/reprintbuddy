@@ -194,6 +194,24 @@ def test_pip_fails_rolls_back(update_env):
     assert result.message.startswith("install:")
 
 
+def test_pip_offline_in_the_rollback_too_is_still_a_rollback(update_env):
+    """No PyPI: the reinstall of the old version fails as well, but the old code is
+    checked out, still installed, and answers. That is a working rollback."""
+    e = update_env
+    e.runner.on((e.py, "-m", "pip"), CommandResult(1, "", "ERROR: no network"))
+    e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.1.0\n"))
+    result = e.update()
+    assert result.state == "rolled_back", result.message
+    assert result.message.startswith("install:")
+
+
+def test_rollback_with_an_unverifiable_old_version_is_reported_as_failed(update_env):
+    e = update_env
+    e.runner.on((e.py, "-m", "pip"), CommandResult(1, "", "ERROR: no network"))
+    e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.2.0\n"))
+    assert e.update().state == "rollback_failed"
+
+
 def test_version_mismatch_rolls_back(update_env):
     e = update_env
     e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.1.9\n"))
@@ -325,3 +343,15 @@ def test_health_waiter_survives_connection_errors(respx_mock, tmp_path):
     upgrade(engine)
     respx_mock.get("http://127.0.0.1:8080/healthz").mock(side_effect=httpx.ConnectError("down"))
     assert http_health_waiter(tmp_path / "h.db", timeout_s=0.3, interval_s=0.1)() is False
+
+
+def test_sigterm_handler_writes_the_final_state_and_exits(update_env):
+    from reprintbuddy.ops.updater import interrupt_handler
+
+    e = update_env
+    write_status(e.data, UpdateStatus(state="running", step="install", started_at=NOW, backup="/b/x.db"))
+    handler = interrupt_handler(e.db, now=lambda: NOW + timedelta(minutes=30))
+    with pytest.raises(SystemExit) as stop:
+        handler(15, None)
+    assert stop.value.code == 143
+    assert read_status(e.data).state == "rollback_failed"
