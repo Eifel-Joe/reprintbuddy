@@ -223,3 +223,8 @@ td a:hover, .btn-link:hover { text-decoration: underline; }
 .props { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 0.4rem 1rem; margin: 0; }
 .props dt { color: var(--text-2); }
 .props dd { margin: 0; overflow-wrap: anywhere; }
+
+.position { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 3fr); gap: 1rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }
+.btn.secondary { background: var(--bg); color: var(--text); border: 1px solid var(--line); }
+select[multiple] { height: auto; }
+@media (max-width: 899px) { .position { grid-template-columns: minmax(0, 1fr); gap: 0; } }

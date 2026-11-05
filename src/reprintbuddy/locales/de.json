@@ -234,5 +234,15 @@
   "journal.col.changes": "Änderungen",
   "journal.col.note": "Notiz",
   "journal.actor.user": "Von Hand",
-  "journal.actor.auto": "Automatik"
+  "journal.actor.auto": "Automatik",
+  "sets.title": "Sets",
+  "sets.empty": "Noch keine Sets.",
+  "sets.new": "Neues Set",
+  "sets.edit": "Set bearbeiten",
+  "sets.created": "Set {name} angelegt.",
+  "sets.saved": "Set {name} gespeichert.",
+  "sets.positions": "Positionen",
+  "sets.positions_hint": "Ein Artikel je Position ist fest. Mehrere Artikel auswählen, damit bei der Bestellung einer gewählt wird (Strg oder Cmd gedrückt halten). Zeilen ohne Artikel werden übergangen.",
+  "sets.more_rows": "Mehr Zeilen",
+  "sets.field.articles": "Artikel"
 }

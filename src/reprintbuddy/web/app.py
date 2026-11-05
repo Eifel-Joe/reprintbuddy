@@ -25,6 +25,7 @@ from reprintbuddy.web.routes import journal as journal_routes
 from reprintbuddy.web.routes import overview as overview_routes
 from reprintbuddy.web.routes import parts as parts_routes
 from reprintbuddy.web.routes import settings as settings_routes
+from reprintbuddy.web.routes import sets as sets_routes
 from reprintbuddy.web.routes import setup as setup_routes
 
 WEB_DIR = Path(__file__).resolve().parent
@@ -86,4 +87,5 @@ def create_app(
     app.include_router(parts_routes.router)
     app.include_router(articles_routes.router)
     app.include_router(journal_routes.router)
+    app.include_router(sets_routes.router)
     return app

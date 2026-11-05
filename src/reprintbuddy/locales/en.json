@@ -234,5 +234,15 @@
   "journal.col.changes": "Changes",
   "journal.col.note": "Note",
   "journal.actor.user": "Manual",
-  "journal.actor.auto": "Automation"
+  "journal.actor.auto": "Automation",
+  "sets.title": "Sets",
+  "sets.empty": "No sets yet.",
+  "sets.new": "New set",
+  "sets.edit": "Edit set",
+  "sets.created": "Set {name} created.",
+  "sets.saved": "Set {name} saved.",
+  "sets.positions": "Positions",
+  "sets.positions_hint": "One article per position is fixed. Select several articles to let the customer choose one when ordering (hold Ctrl or Cmd). Rows without an article are ignored.",
+  "sets.more_rows": "More rows",
+  "sets.field.articles": "Articles"
 }

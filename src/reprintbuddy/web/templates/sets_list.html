@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ t('sets.title') }}{% endblock %}
+{% block content %}
+<h1>{{ t('sets.title') }}</h1>
+<p><a class="btn" href="/sets/new">{{ t('sets.new') }}</a></p>
+{% if rows %}
+<div class="card table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>{{ t('sets.field.name') }}</th>
+        <th>{{ t('catalog.field.sku') }}</th>
+        <th class="num">{{ t('articles.col.available') }}</th>
+        <th>{{ t('sets.positions') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td><a href="/sets/{{ row.id }}/edit">{{ row.name }}</a></td>
+        <td>{{ row.sku or '' }}</td>
+        <td class="num{% if row.available < 0 %} neg{% endif %}">{{ row.available }}</td>
+        <td>
+          {% for position in row.positions %}
+            {{ position.qty }} × {% if position.is_choice %}({{ position.article_names|join(' | ') }}){% else %}{{ position.article_names[0] if position.article_names else '–' }}{% endif %}{% if not loop.last %}<br>{% endif %}
+          {% endfor %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card"><p class="muted">{{ t('sets.empty') }}</p></div>
+{% endif %}
+{% endblock %}
