@@ -171,7 +171,7 @@ def test_region_names_are_valid_and_unique_per_template():
 # Pages with regions, as the signed-in browser sees them. Add each page that gets regions.
 # "{article}" stands for the id of an article the test creates first.
 PAGES_WITH_REGIONS = [
-    "/journal",
+    "/journal", "/bookings",
     "/articles", "/articles/{article}", "/articles/{article}/edit",
     "/parts", "/sets", "/sets/new",
     "/orders", "/orders?view=closed", "/orders/new",
