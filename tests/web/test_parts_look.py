@@ -105,6 +105,7 @@ def test_parts_list_and_tiles(ready_client):
     assert f'<a href="/parts/{part_id}/edit">Spring 5mm</a>' in table
     assert "3 box" in table and f'href="/journal?part={part_id}"' in table
     assert "Example Supplier" in table
+    assert '<th class="num">Order unit</th>' in table  # short header; the form keeps the long label
     tiles = re.search(r'<div class="tiles">.*', listing, re.S).group(0)
     tile = re.search(rf'<a class="tile" href="/parts/{part_id}/edit">.*?</a>', tiles, re.S).group(0)
     assert "Spring 5mm" in tile and '<span class="badge tone-bad">below minimum</span>' in tile
