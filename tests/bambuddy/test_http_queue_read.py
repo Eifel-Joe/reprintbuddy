@@ -93,3 +93,10 @@ def test_label_weight_int_still_works():
     data = load("spools_builtin.json")
     data[0]["label_weight"] = 1000
     assert parse_spools(data)[0].label_g == 1000
+
+
+async def test_one_bad_entry_fails_the_whole_queue_list(respx_mock):
+    data = load("queue_open.json") + [{"id": 1}]
+    respx_mock.get(f"{API}/queue/", params={"status": "pending,printing"}).respond(200, json=data)
+    with pytest.raises(BambuddyUnexpected):
+        await client().list_queue()

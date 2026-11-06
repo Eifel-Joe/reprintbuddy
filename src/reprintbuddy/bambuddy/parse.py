@@ -8,6 +8,7 @@ not know are ignored, so a newer Bambuddy with more fields keeps working.
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
@@ -35,6 +36,10 @@ def _matches(value: object, types: _Types) -> bool:
         return False
     if float in wanted and isinstance(value, int):
         return True  # JSON writes 42.0 as 42
+    # Python's json reads the non-standard NaN/Infinity/-Infinity as floats; a number that
+    # is not finite is a wrong answer, not a weight (it would give remaining 0.0 or inf).
+    if isinstance(value, float) and not math.isfinite(value):
+        return False
     return isinstance(value, wanted)
 
 
@@ -284,13 +289,18 @@ def parse_spools(data: object) -> list[Spool]:
         d = _object(entry, "spool")
         label = _req(d, "label_weight", int)  # Bambuddy's schema types it as int
         used = _req(d, "weight_used", (int, float))
+        # In Spoolman mode Bambuddy fills a missing colour name from the subtype and sets
+        # `color_name_is_synthesized` (`_spoolman_helpers.py` `_map_spoolman_spool`). That is
+        # no colour: B6 builds the variety from the subtype already. Only a real `true`
+        # counts; missing, `false` or any other form means the name is as delivered.
+        synthesized = d.get("color_name_is_synthesized") is True
         out.append(
             Spool(
                 id=_req(d, "id", int),
                 material=_req(d, "material", str),
                 subtype=_opt(d, "subtype", str) or None,
                 brand=_opt(d, "brand", str) or None,
-                color_name=_opt(d, "color_name", str) or None,
+                color_name=None if synthesized else (_opt(d, "color_name", str) or None),
                 color_hex=normalize_color(d.get("rgba")),
                 label_g=label,
                 remaining_g=max(0.0, float(label) - float(used)),

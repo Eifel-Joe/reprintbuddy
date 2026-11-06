@@ -169,3 +169,40 @@ async def test_spools_error_passes_through(respx_mock, path, status):
     with pytest.raises(BambuddyRejected) as info:
         await client().list_spools()
     assert info.value.detail == "bad"
+
+
+def test_synthesized_color_name_is_dropped():
+    # Spoolman mode fills color_name from the subtype when none is stored and flags it
+    # (`_spoolman_helpers.py` `color_name_is_synthesized`); B6 must not see it as a colour.
+    spools = {s.id: s for s in parse_spools(load("spools_spoolman.json"))}
+    assert spools[9].color_name is None
+    assert spools[9].subtype == "Basic"
+    assert spools[9].color_hex == "#808080"  # the colour value itself is unaffected
+    assert spools[4].color_name == "Color 1"
+    assert spools[7].color_name == "Color 2"
+
+
+def test_color_name_kept_without_the_flag():
+    data = load("spools_builtin.json")
+    assert all("color_name_is_synthesized" not in e for e in data)
+    expected = [e.get("color_name") or None for e in data]
+    assert [s.color_name for s in parse_spools(data)] == expected
+    assert any(expected)
+
+
+@pytest.mark.parametrize("flag", [False, None, "true", 1, "yes"])
+def test_color_name_flag_other_than_true_means_not_synthesized(flag):
+    data = load("spools_spoolman.json")
+    data[2]["color_name_is_synthesized"] = flag
+    assert parse_spools(data)[2].color_name == "Basic"
+
+
+@pytest.mark.parametrize("bad", ["NaN", "Infinity", "-Infinity"])
+def test_non_finite_float_is_unexpected(bad):
+    # json.loads accepts these non-standard literals; they must not become numbers.
+    import json
+
+    data = load("spools_builtin.json")
+    data[0]["weight_used"] = json.loads(f'{{"v": {bad}}}')["v"]
+    with pytest.raises(BambuddyUnexpected):
+        parse_spools(data)
