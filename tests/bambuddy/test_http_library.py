@@ -75,6 +75,7 @@ async def test_list_files_root(respx_mock):
     root = respx_mock.get(f"{API}/library/files/").respond(200, json=load("files_root.json"))
     files = await client().list_files(None)
     assert root.calls.last.request.url.query == b""  # no query parameter at the top level
+    assert len(root.calls) == 1
     assert [f.id for f in files] == [e["id"] for e in load("files_root.json")]
     assert all(isinstance(f, LibraryFile) for f in files)
 
@@ -86,12 +87,20 @@ async def test_list_files_folder(respx_mock):
     )
     files = await client().list_files(folder_id)
     assert inside.call_count == 1
+    assert dict(inside.calls.last.request.url.params) == {"folder_id": str(folder_id)}  # exactly this
     assert [f.id for f in files] == [e["id"] for e in load("files_folder.json")]
     first = files[0]
     assert first.filename == "Template A.gcode.3mf"
     assert first.printer_model == "A1"
     assert first.fingerprint is None  # the list has no file_hash (Decision 7)
     assert first.folder_id == folder_id
+
+
+async def test_list_entry_with_file_hash_has_no_fingerprint(respx_mock):
+    respx_mock.get(f"{API}/library/files/").respond(200, json=[_file(file_hash="abc")])
+    files = await client().list_files(None)
+    assert files[0].fingerprint is None
+    assert parse_file(_file(file_hash="abc")).fingerprint == "abc"  # one file keeps its hash
 
 
 async def test_get_file_has_fingerprint(respx_mock):
@@ -189,6 +198,7 @@ async def test_requirements(respx_mock):
     route.respond(200, json=answer)
     needs = await client().filament_requirements(5, 1)
     assert route.call_count == 1
+    assert dict(route.calls.last.request.url.params) == {"plate_id": "1"}  # exactly this
     assert len(needs) == len(answer["filaments"])
     for need, source in zip(needs, answer["filaments"], strict=True):
         assert need.slot == source["slot_id"]

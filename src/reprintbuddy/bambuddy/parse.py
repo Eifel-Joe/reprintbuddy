@@ -8,6 +8,7 @@ not know are ignored, so a newer Bambuddy with more fields keeps working.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -176,7 +177,8 @@ def parse_file(data: object) -> LibraryFile:
 
 
 def parse_files(data: object) -> list[LibraryFile]:
-    return [parse_file(entry) for entry in _list(data, "file list")]
+    # List entries never carry a fingerprint (Decision 7), whatever the entry holds.
+    return [replace(parse_file(entry), fingerprint=None) for entry in _list(data, "file list")]
 
 
 def parse_plates(data: object) -> list[Plate]:
