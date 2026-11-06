@@ -1,9 +1,13 @@
 """The connection check and `ping` inside `HttpBambuddyClient` (B2 Task 2, Decisions 2 and 5)."""
 
+import asyncio
+from contextlib import nullcontext
+
 import httpx
 import pytest
 from fixtures import API, KEY, URL, client, load
 
+from reprintbuddy.bambuddy.client import HttpBambuddyClient
 from reprintbuddy.bambuddy.connection import check_connection
 
 ME = f"{API}/auth/me"
@@ -92,3 +96,33 @@ async def test_wrapper_keeps_the_callers_client_open(respx_mock):
         result = await check_connection(URL, KEY, c)
         assert result.ok is True
         assert not c.is_closed
+
+
+async def test_201_is_not_bambuddy(respx_mock):
+    respx_mock.get(ME).respond(201, json=load("auth_me.json"))
+    assert (await client().check_connection()).reason == "not_bambuddy"
+
+
+async def test_ping_false_for_non_ascii_key(respx_mock):
+    respx_mock.get(ME).respond(200, json=load("auth_me.json"))
+    c = HttpBambuddyClient(URL, "schlüssel-ä", lambda: httpx.AsyncClient())
+    assert await c.ping() is False
+
+
+async def test_ping_false_for_closed_client():
+    closed = httpx.AsyncClient()
+    await closed.aclose()
+    c = HttpBambuddyClient(URL, KEY, lambda: nullcontext(closed))
+    assert await c.ping() is False
+
+
+async def test_cancelled_ping_still_raises(respx_mock):
+    async def slow(request):
+        await asyncio.sleep(30)
+
+    respx_mock.get(ME).mock(side_effect=slow)
+    task = asyncio.ensure_future(client().ping())
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task

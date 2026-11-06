@@ -244,7 +244,11 @@ class HttpBambuddyClient:
         before `BambuddyUnavailable`, its parent (Decision 5).
         """
         try:
-            body = await self._get("/auth/me")
+            response = await self._send("GET", "/auth/me")
+            if response.status_code != 200:
+                # 404 and any other 2xx: B1 and the brief send only 200 to `_evaluate`.
+                return ConnectionCheck(False, "not_bambuddy")
+            body = self._json(response, "GET", "/auth/me")
         except BambuddyRejected as exc:
             if exc.status == 401:
                 return ConnectionCheck(False, "unauthorized")
@@ -258,5 +262,14 @@ class HttpBambuddyClient:
         return _evaluate(body)
 
     async def ping(self) -> bool:
-        """True when Bambuddy answers and accepts the key; missing rights do not matter here."""
-        return (await self.check_connection()).reason in ("ok", "missing_permissions")
+        """True when Bambuddy answers and accepts the key; missing rights do not matter here.
+
+        Never raises: anything unexpected (e.g. a key that cannot be sent as a header, a closed
+        client from the factory) is False. Only the type is logged, never the key. `CancelledError`
+        is a `BaseException`, so it still propagates.
+        """
+        try:
+            return (await self.check_connection()).reason in ("ok", "missing_permissions")
+        except Exception as exc:
+            log.debug("Bambuddy ping failed: %s", type(exc).__name__)
+            return False
