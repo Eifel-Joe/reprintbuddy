@@ -20,6 +20,8 @@ from reprintbuddy.bambuddy.types import (
     Plate,
     Printer,
     QueueItem,
+    Spool,
+    SpoolMode,
 )
 
 _Types = type | tuple[type, ...]
@@ -80,7 +82,10 @@ def _utc(value: object) -> datetime | None:
     except ValueError:
         raise BambuddyUnexpected("a time is not in ISO format") from None
     if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        try:
+            parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        except OverflowError:  # e.g. 0001-01-01T00:00:00+01:00 lies before year 1 in UTC
+            raise BambuddyUnexpected("a time is out of range") from None
     return parsed
 
 
@@ -244,4 +249,45 @@ def parse_printers(data: object) -> list[Printer]:
         if not model:
             continue
         out.append(Printer(printer_id, name, model, active))
+    return out
+
+
+def parse_spool_mode(data: object) -> SpoolMode:
+    """The running inventory mode from `GET /spoolman/status` (Decision 17).
+
+    Bambuddy resolves every spool route by `enabled` and a non-empty `url`
+    (`api/routes/spoolman.py` `get_spoolman_status`); `connected` is a live check of
+    Spoolman and does not decide the mode, so an unreachable Spoolman is still Spoolman mode.
+    """
+    d = _object(data, "Spoolman status")
+    enabled = _req(d, "enabled", bool)
+    url = _opt(d, "url", str)
+    return "spoolman" if enabled and url else "builtin"
+
+
+def parse_spools(data: object) -> list[Spool]:
+    """The spools of either list (`GET /inventory/spools`, `GET /spoolman/inventory/spools`).
+
+    Both routes send the same `InventorySpool` shape (Decision 12; Bambuddy
+    `schemas/spool.py` `SpoolResponse`, `_spoolman_helpers.py` `_map_spoolman_spool`).
+    """
+    out: list[Spool] = []
+    for entry in _list(data, "spool list"):
+        d = _object(entry, "spool")
+        label = _req(d, "label_weight", (int, float))
+        used = _req(d, "weight_used", (int, float))
+        out.append(
+            Spool(
+                id=_req(d, "id", int),
+                material=_req(d, "material", str),
+                subtype=_opt(d, "subtype", str) or None,
+                brand=_opt(d, "brand", str) or None,
+                color_name=_opt(d, "color_name", str) or None,
+                color_hex=normalize_color(d.get("rgba")),
+                label_g=int(label),
+                remaining_g=max(0.0, float(label) - float(used)),
+                archived=bool(d.get("archived_at")),
+                created_at=_utc(d.get("created_at")),
+            )
+        )
     return out

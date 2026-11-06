@@ -12,12 +12,14 @@ from reprintbuddy.bambuddy.types import (
     Printer,
     QueueItem,
     Spool,
+    SpoolMode,
 )
 
 
 class FakeBambuddy:
     def __init__(self) -> None:
         self.unavailable = False
+        self.spoolman_enabled = False
         self.calls: list[str] = []
         self._folders: list[LibraryFolder] = []
         self._files: dict[int, LibraryFile] = {}
@@ -106,6 +108,10 @@ class FakeBambuddy:
     async def list_printers(self) -> list[Printer]:
         self._enter("list_printers")
         return list(self._printers)
+
+    async def spool_mode(self) -> SpoolMode:
+        self._enter("spool_mode")
+        return "spoolman" if self.spoolman_enabled else "builtin"
 
     # ---- left to B2 --------------------------------------------------------
     async def ensure_batch(self, name: str, external_ref: str, library_file_id: int) -> int:

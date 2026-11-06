@@ -1,9 +1,10 @@
-"""Data classes of Bambuddy's answers. B2 completes `QueueItem` and `Spool`."""
+"""Data classes of Bambuddy's answers."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -85,8 +86,21 @@ class QueueItem:
     error_message: str | None
 
 
+# Which spool management Bambuddy runs: its own ("builtin") or Spoolman ("spoolman").
+SpoolMode = Literal["builtin", "spoolman"]
+
+
 @dataclass(frozen=True)
 class Spool:
-    """Placeholder; B2 adds the fields after the experiment B0."""
+    """One spool of the running inventory mode; the same fields for both lists (Decision 12)."""
 
     id: int
+    material: str
+    subtype: str | None
+    brand: str | None
+    color_name: str | None
+    color_hex: str | None  # `#RRGGBB`, from `rgba`
+    label_g: int  # nominal filament weight of a full spool (`label_weight`)
+    remaining_g: float  # `label_weight - weight_used`, never below 0
+    archived: bool  # `archived_at` is set
+    created_at: datetime | None  # naive UTC

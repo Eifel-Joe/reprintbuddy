@@ -19,6 +19,7 @@ from reprintbuddy.bambuddy.types import (
     Printer,
     QueueItem,
     Spool,
+    SpoolMode,
 )
 
 log = logging.getLogger(__name__)
@@ -94,6 +95,8 @@ class BambuddyClient(Protocol):
     async def list_spools(self) -> list[Spool]: ...
 
     async def list_printers(self) -> list[Printer]: ...
+
+    async def spool_mode(self) -> SpoolMode: ...
 
 
 BambuddyFactory = Callable[[], BambuddyClient | None]
@@ -229,6 +232,20 @@ class HttpBambuddyClient:
     async def list_printers(self) -> list[Printer]:
         """Every printer with a model; `active` is False for one in maintenance."""
         return _parse.parse_printers(await self._get("/printers/"))
+
+    async def spool_mode(self) -> SpoolMode:
+        """Which spool management Bambuddy runs right now (Decision 17)."""
+        return _parse.parse_spool_mode(await self._get("/spoolman/status"))
+
+    async def list_spools(self) -> list[Spool]:
+        """The spools of the running mode, and only of it (Decision 12).
+
+        An unreachable Spoolman or a refused status is an error, never a reason to read the
+        other list: its numbers would be stale or foreign.
+        """
+        mode = await self.spool_mode()
+        path = "/spoolman/inventory/spools" if mode == "spoolman" else "/inventory/spools"
+        return _parse.parse_spools(await self._get(path))
 
     async def get_queue_item(self, item_id: int) -> QueueItem | None:
         """`None`: the entry is gone (deleted, or removed with the history; Decision 3)."""

@@ -21,7 +21,7 @@ def test_protocol_matches_master_plan():
         "ping", "list_folders", "list_files", "get_file", "list_plates",
         "plate_thumbnail", "filament_requirements", "ensure_batch", "enqueue",
         "get_queue_item", "list_queue", "find_items_by_batch", "list_spools",
-        "list_printers",
+        "list_printers", "spool_mode",
     }
     for name in names:
         assert inspect.iscoroutinefunction(getattr(BambuddyClient, name)), name
@@ -105,3 +105,13 @@ async def test_calls_recorded():
     await fake.ping()
     await fake.list_folders()
     assert fake.calls == ["ping", "list_folders"]
+
+
+async def test_spool_mode_follows_spoolman_enabled():
+    fake = FakeBambuddy()
+    assert await fake.spool_mode() == "builtin"
+    fake.spoolman_enabled = True
+    assert await fake.spool_mode() == "spoolman"
+    fake.unavailable = True
+    with pytest.raises(BambuddyUnavailable):
+        await fake.spool_mode()

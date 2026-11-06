@@ -123,6 +123,12 @@ def test_utc_formats(text):
     assert value.tzinfo is None
 
 
+@pytest.mark.parametrize("text", ["0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-05:00"])
+def test_utc_out_of_range_is_unexpected(text):
+    with pytest.raises(BambuddyUnexpected):
+        _utc(text)
+
+
 def test_utc_keeps_fractions_and_none():
     assert _utc("2026-11-05T09:13:52.640917Z") == datetime(2026, 11, 5, 9, 13, 52, 640917)
     assert _utc(None) is None
