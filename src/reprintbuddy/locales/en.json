@@ -445,6 +445,7 @@
   "list.layout_list": "List",
   "list.layout_tiles": "Tiles",
   "list.no_match": "Nothing matches the search or filter.",
+  "list.col.status": "Status",
   "tile.to_check": "{n} to check",
   "tile.to_assemble": "{n} to assemble"
 }

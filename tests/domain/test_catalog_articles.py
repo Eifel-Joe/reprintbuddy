@@ -235,3 +235,23 @@ def test_list_sorted_by_name_ignoring_case(db):
         make_article(s, name="C Template")
     with db.begin() as s:
         assert [r.name for r in catalog.list_articles(s)] == ["A Template", "b Template", "C Template"]
+
+
+def test_article_row_status_and_coverage(db):
+    with db.begin() as s:
+        article = make_article(s, stock=1, min_stock=4, provisional=2, awaiting_assembly=1)
+        row = catalog.article_row(article)
+        assert row.coverage == 4 and row.status == "low"
+        assert row.has_thumbnail is False and row.paused is False
+    with db.begin() as s:
+        listed = catalog.list_articles(s)[0]
+        assert (listed.coverage, listed.status) == (4, "low")
+
+
+def test_article_row_thumbnail_and_pause(db):
+    with db.begin() as s:
+        make_article(s, thumbnail=b"x", paused=True, stock=0, reserved=1)
+    with db.begin() as s:
+        row = catalog.list_articles(s)[0]
+        assert row.has_thumbnail is True and row.paused is True
+        assert row.status == "overbooked"
