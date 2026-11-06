@@ -172,6 +172,8 @@ def test_part_mark_closed_by_receipt(db):
     with db.begin() as s:
         part = part_with_demand(s)
         mark = reorder.mark_ordered(s, "part", part.id, 1)
+        mark.marked_at -= timedelta(seconds=1)  # the clock may not advance between the two
+        s.flush()
         assert reorder.close_arrived_marks(s, None, NOW) == 0
         stock.receive_part(s, part.id, 50, "user")
         assert reorder.close_arrived_marks(s, None, NOW) == 1
