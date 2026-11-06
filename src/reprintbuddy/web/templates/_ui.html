@@ -39,7 +39,8 @@
 {%- endmacro %}
 
 {# Search field of an overview page (GET). `keep` is a list of (name, value) pairs that stay in the
-   query, e.g. [("view", "archived")]; the status filter and the layout are left out on purpose:
+   query, e.g. [("view", "archived")] (a list of pairs, not a dict; the values are strings, a None
+   would render as "None"; they are escaped by the macro); the status filter and the layout are left out on purpose:
    a new search starts from all entries. #}
 {% macro search_form(q, placeholder, keep=[]) -%}
 <form class="search" method="get" role="search">

@@ -33,19 +33,12 @@ def layout_of(request: Request, page: str) -> Layout:
 
 
 def url_with(request: Request, **params: str | None) -> str:
-    """Path and query of the request with `params` replaced (`None` removes one). The other
-    parameters keep their order; new ones are appended."""
-    pending = dict(params)
-    pairs: list[tuple[str, str]] = []
-    for key, value in request.query_params.multi_items():
-        if key in pending:
-            new = pending.pop(key)
-            if new is not None:
-                pairs.append((key, new))
-        else:
-            pairs.append((key, value))
-    pairs.extend((key, value) for key, value in pending.items() if value is not None)
-    path = quote(request.url.path, safe="/")
+    """Path and query of the request with `params` replaced (`None` removes one). Every
+    occurrence of a named key is dropped, the new value is appended once; the other parameters keep
+    their order. The path always starts with exactly one `/` (never protocol-relative)."""
+    pairs = [(k, v) for k, v in request.query_params.multi_items() if k not in params]
+    pairs.extend((key, value) for key, value in params.items() if value is not None)
+    path = "/" + quote(request.url.path, safe="/").lstrip("/")
     return f"{path}?{urlencode(pairs)}" if pairs else path
 
 

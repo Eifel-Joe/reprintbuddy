@@ -22,7 +22,7 @@ from reprintbuddy.domain import status
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.web import deps
 from reprintbuddy.web.flash import pop_flashes
-from reprintbuddy.web.formatting import local_date, local_dt
+from reprintbuddy.web.formatting import fill_percent, local_date, local_dt
 from reprintbuddy.web.formtoken import issue_form_token
 from reprintbuddy.web.i18n import load_locales
 from reprintbuddy.web.live import LiveBroker
@@ -105,6 +105,7 @@ def create_app(
     templates.env.globals["t"] = deps.t
     templates.env.globals["tc"] = deps.tc
     templates.env.globals["status_tone"] = status.tone
+    templates.env.globals["fill_percent"] = fill_percent
     templates.env.globals["pop_flashes"] = pop_flashes
     # In the address of every file under /static/: a new version is a new address, so the browser
     # fetches the new style sheet instead of using the copy it kept from the old version.

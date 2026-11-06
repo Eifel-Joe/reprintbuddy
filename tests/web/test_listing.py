@@ -71,6 +71,29 @@ def test_url_with_replaces_and_drops():
     assert listing.url_with(request, status="low") == "/parts?view=archived&status=low"
 
 
+def test_url_with_drops_every_repeated_key_and_appends_the_new_value_once():
+    request = make_request("/articles", "layout=grid&q=a&layout=tiles")
+    assert listing.url_with(request, layout=None) == "/articles?q=a"
+    assert listing.url_with(request, layout="list") == "/articles?q=a&layout=list"
+    request = make_request("/articles", "status=a&status=b")
+    assert listing.url_with(request, status=None) == "/articles"
+
+
+def test_remember_layout_with_repeated_parameter_redirects_cleanly():
+    response = listing.remember_layout(make_request(query="layout=grid&layout=tiles"), "articles")
+    assert response.headers["location"] == "/articles"
+
+
+def test_url_with_never_gives_a_protocol_relative_path():
+    assert listing.url_with(make_request("//evil.example", "q=a"), q="b") == "/evil.example?q=b"
+    assert listing.url_with(make_request("//evil.example"), q=None) == "/evil.example"
+
+
+def test_the_app_offers_fill_percent_to_templates(client):
+    env = client.app.state.templates.env
+    assert env.from_string("{{ fill_percent(3, 6) }}|{{ fill_percent(3, 0) }}").render() == "50|None"
+
+
 def test_url_with_encodes_values():
     assert listing.url_with(make_request("/parts"), q="a b&c") == "/parts?q=a+b%26c"
 
@@ -100,7 +123,7 @@ def test_filter_links_all_first_and_only_present_states():
         ("ok", 1, False),
     ]
     assert links[0].href == "/articles?q=a"
-    assert links[1].href == "/articles?status=low&q=a"
+    assert links[1].href == "/articles?q=a&status=low"
     links = listing.filter_links(request, states, {"low": 2, "ok": 1}, 3, "below_min")
     assert links[0] == FilterLink(None, 3, "/articles?q=a", False)
     assert (links[1].state, links[1].count, links[1].active) == ("below_min", 0, True)
@@ -133,7 +156,7 @@ def _render(source, **context):
 def test_macros_render_the_markup_the_pages_rely_on():
     html = _render(
         '{% import "_ui.html" as ui with context %}'
-        '{{ ui.search_form(q, "ph", [("view", "archived")]) }}'
+        '{{ ui.search_form(q, "ph", [("view", "a<b")]) }}'
         '{{ ui.filter_bar("article", links) }}'
         '{{ ui.layout_toggle(toggles) }}'
         '{{ ui.bar(50, "low") }}{{ ui.bar(None, "low") }}'
@@ -144,7 +167,7 @@ def test_macros_render_the_markup_the_pages_rely_on():
     )
     assert '<form class="search" method="get" role="search">' in html
     assert 'name="q"' in html and 'value="a&lt;b"' in html
-    assert '<input type="hidden" name="view" value="archived">' in html
+    assert '<input type="hidden" name="view" value="a&lt;b">' in html
     assert '<nav class="filters"' in html
     assert 'class="filter active"' in html and 'list.filter_all' in html
     assert 'status.article.low' in html and '<span class="count">2</span>' in html
