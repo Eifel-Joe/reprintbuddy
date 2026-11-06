@@ -19,6 +19,14 @@ from reprintbuddy.bambuddy.types import (
 )
 
 
+_EFFECT_METHODS = frozenset({"ensure_batch", "enqueue"})
+_FAILABLE_METHODS = _EFFECT_METHODS | {
+    "list_folders", "list_files", "get_file", "list_plates", "plate_thumbnail",
+    "filament_requirements", "list_printers", "get_queue_item", "list_queue",
+    "find_items_by_batch",
+}
+
+
 class FakeBambuddy:
     def __init__(self) -> None:
         self.unavailable = False
@@ -81,6 +89,10 @@ class FakeBambuddy:
         self.calls.append(name)
         if self.unavailable:
             raise BambuddyUnavailable("fake Bambuddy is switched off")
+        if name not in _EFFECT_METHODS:  # those two handle their queued failure themselves
+            failure = self._failures.pop(name, None)
+            if failure:
+                raise failure[0]
 
     async def ping(self) -> bool:
         self.calls.append("ping")
@@ -122,7 +134,12 @@ class FakeBambuddy:
 
     # ---- print queue -------------------------------------------------------
     def fail_next(self, method: str, exc: Exception, *, after_effect: bool = False) -> None:
-        """The next call of `method` raises `exc`; with `after_effect` the effect happens first."""
+        """The next call of `method` raises `exc`; with `after_effect` the effect happens first.
+
+        `after_effect` only matters for the two writing methods (`ensure_batch`, `enqueue`).
+        """
+        if method not in _FAILABLE_METHODS:
+            raise ValueError(f"cannot inject a failure into {method!r}")
         self._failures[method] = (exc, after_effect)
 
     def _pending(self) -> list[QueueItem]:
@@ -208,12 +225,13 @@ class FakeBambuddy:
         return batch_id
 
     async def enqueue(self, req: EnqueueRequest) -> QueueItem:
-        await asyncio.sleep(self.delay)
-        self._enter("enqueue")
+        # like the HTTP client: refuse before any (simulated) network call
         if (req.target_model is None) == (req.printer_id is None):
             raise ValueError("exactly one of target_model and printer_id")
         if req.insert_position is not None and req.insert_position < 1:
             raise ValueError("insert_position must be at least 1")
+        await asyncio.sleep(self.delay)
+        self._enter("enqueue")
         failure = self._failures.pop("enqueue", None)
         if failure and not failure[1]:
             raise failure[0]
@@ -260,9 +278,6 @@ class FakeBambuddy:
     async def _queue_read(self, name: str, read):
         await asyncio.sleep(self.delay)
         self._enter(name)
-        failure = self._failures.pop(name, None)
-        if failure:
-            raise failure[0]
         return read()
 
     async def get_queue_item(self, item_id: int) -> QueueItem | None:
