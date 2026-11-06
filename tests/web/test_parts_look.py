@@ -107,10 +107,13 @@ def test_parts_list_and_tiles(ready_client):
     assert "Example Supplier" in table
     assert '<th class="num">Order unit</th>' in table  # short header; the form keeps the long label
     tiles = re.search(r'<div class="tiles">.*', listing, re.S).group(0)
-    tile = re.search(rf'<a class="tile" href="/parts/{part_id}/edit">.*?</a>', tiles, re.S).group(0)
-    assert "Spring 5mm" in tile and '<span class="badge tone-bad">below minimum</span>' in tile
+    by_name = {re.search(r'class="tile-link"[^>]*>([^<]*)</a>', t).group(1): t
+               for t in tiles.split('<div class="tile">')[1:]}  # one piece per tile
+    tile = by_name["Spring 5mm"]
+    assert f'<a class="tile-link" href="/parts/{part_id}/edit">Spring 5mm</a>' in tile
+    assert '<span class="badge tone-bad">below minimum</span>' in tile
     assert 'aria-valuenow="50"' in tile  # 3 of 6
-    supplier_tile = re.search(r'<a class="tile"[^>]*>(?:(?!</a>).)*Insert M4.*?</a>', tiles, re.S).group(0)
+    supplier_tile = by_name["Insert M4"]
     assert 'class="tile-foot"' in supplier_tile and "Example Supplier" in supplier_tile
     assert 'class="tile-foot"' not in tile  # no supplier, no footer
 
@@ -215,3 +218,57 @@ def test_part_edit_region_follows_a_booking_made_elsewhere(ready_client):
         stock.count_part(s, part_id, 12, "user")
     piece = ready_client.get(f"/parts/{part_id}/edit", headers={regions.HEADER: "form"}).text
     assert re.search(r"<strong>12</strong>\s*pcs", piece)
+
+
+SUPPLIER_LINK = ('<a href="https://shop.example/insert-m4" target="_blank" rel="noopener noreferrer">'
+                 'Example Supplier</a>')
+
+
+def nested_links(html):
+    """Links inside links, which browsers do not allow (they split the outer one)."""
+    from html.parser import HTMLParser
+
+    found, depth = [], [0]
+
+    class Walk(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            if tag == "a":
+                if depth[0]:
+                    found.append(dict(attrs).get("href"))
+                depth[0] += 1
+
+        def handle_endtag(self, tag):
+            if tag == "a":
+                depth[0] -= 1
+
+    Walk().feed(html)
+    return found
+
+
+def test_supplier_links_to_the_order_page_in_list_and_tile(ready_client):  # Spec 5.3
+    part_id = add(ready_client, name="Insert M4", supplier="Example Supplier",
+                  order_url="https://shop.example/insert-m4")
+    listing = list_of(ready_client.get("/parts").text)
+    table = re.search(r"<table>.*?</table>", listing, re.S).group(0)
+    tiles = re.search(r'<div class="tiles">.*', listing, re.S).group(0)
+    assert SUPPLIER_LINK in table and SUPPLIER_LINK in tiles
+    assert nested_links(listing) == []
+    assert re.search(rf'<div class="tile">.*?<a class="tile-link" href="/parts/{part_id}/edit">Insert M4</a>',
+                     tiles, re.S)
+
+
+def test_supplier_without_order_link_is_plain_text(ready_client):
+    add(ready_client, name="Insert M4", supplier="Example Supplier")
+    listing = list_of(ready_client.get("/parts").text)
+    assert "Example Supplier" in listing
+    assert not re.search(r"<a [^>]*>\s*Example Supplier", listing)
+    assert nested_links(listing) == []
+
+
+def test_part_form_head_has_a_button_back_to_the_parts(ready_client):
+    part_id = add(ready_client, name="Insert M4")
+    for path in (f"/parts/{part_id}/edit", "/parts/new"):
+        head = re.search(r'<header class="page-head">.*?</header>\s*<div class="toolbar">.*?</div>\s*</div>',
+                         ready_client.get(path).text, re.S)
+        assert head, path
+        assert re.search(r'<a class="btn secondary" href="/parts">.*?#puzzle.*?Parts</a>', head.group(0), re.S), path

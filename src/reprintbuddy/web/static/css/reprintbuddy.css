@@ -506,3 +506,11 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
 
 /* The buttons under a live table (the latest bookings) keep a gap to its card. */
 .live-region + .toolbar-actions { margin-top: 0.75rem; }
+/* A tile with a second link (the supplier of a part) is a div: its name link stretches over the
+   whole tile, so the tile stays one target like a link tile, and the other link lies above it. */
+div.tile { position: relative; }
+.tile-link { color: inherit; text-decoration: none; }
+.tile-link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.tile-foot a { position: relative; z-index: 1; color: var(--accent); text-decoration: none; }
+.tile-foot a:hover { text-decoration: underline; }
+div.tile:hover, div.tile:focus-within { border-color: var(--accent); }

@@ -203,3 +203,12 @@ def test_set_badge_sits_in_the_badges_wrapper_like_the_articles(ready_client):
     set_with(ready_client, "Starter Set", stock=1)
     listing = list_of(ready_client.get("/sets").text)
     assert listing.count('<span class="badges"><span class="badge tone-ok">deliverable</span></span>') == 2
+
+
+def test_set_form_head_has_a_button_back_to_the_sets(ready_client):
+    set_id, _ = set_with(ready_client, "Starter Set", stock=1)
+    for path in (f"/sets/{set_id}/edit", "/sets/new"):
+        head = re.search(r'<header class="page-head">.*?</header>\s*<div class="toolbar">.*?</div>\s*</div>',
+                         ready_client.get(path).text, re.S)
+        assert head, path
+        assert re.search(r'<a class="btn secondary" href="/sets">.*?#boxes.*?Sets</a>', head.group(0), re.S), path
