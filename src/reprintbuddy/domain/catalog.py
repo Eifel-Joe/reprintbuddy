@@ -14,6 +14,7 @@ from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate,
 from reprintbuddy.domain import rules
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.domain.status import ArticleStatus, article_status
+from reprintbuddy.domain.status import SetStatus, set_status
 from reprintbuddy.domain.stock import MAX_QTY, Actor, count_part
 from reprintbuddy.models import (
     Article,
@@ -463,6 +464,7 @@ class SetRow:
     available: int
     positions: list[PositionRow]
     orderable: bool  # every position still has an active article
+    status: SetStatus  # deliverable when at least one set comes together (Spec 10.1)
 
 
 def _check_set_input(
@@ -569,13 +571,15 @@ def _set_row(session: Session, product_set: ProductSet) -> SetRow:
                 tuple(a.id for a in articles),
             )
         )
+    available = rules.set_available(stocks)
     return SetRow(
         id=product_set.id,
         name=product_set.name,
         sku=product_set.sku,
-        available=rules.set_available(stocks),
+        available=available,
         positions=rows,
         orderable=bool(rows) and all(row.article_ids for row in rows),
+        status=set_status(available=available),
     )
 
 

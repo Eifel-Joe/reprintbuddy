@@ -1,10 +1,16 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{% if product_set %}{{ t('sets.edit') }}{% else %}{{ t('sets.new') }}{% endif %}{% endblock %}
 {% block content %}
-<h1>{% if product_set %}{{ product_set.name }}{% else %}{{ t('sets.new') }}{% endif %}{% if product_set and product_set.archived_at %} <span class="badge wait">{{ t('catalog.archived_badge') }}</span>{% endif %}</h1>
+{% call ui.page_head("boxes", product_set.name if product_set else t('sets.new')) %}
+{% if product_set and product_set.archived_at %}<p class="summary">{{ ui.badge('set', 'archived') }}</p>{% endif %}
+{% endcall %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{#- The form follows the articles it offers; the edit form also watches its set (Design 4.6). -#}
+{% call ui.region("form", ("set:" ~ product_set.id ~ " article") if product_set else "article") %}
 <section class="card section">
-  {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
-  <form method="post" action="{% if product_set %}/sets/{{ product_set.id }}/edit{% else %}/sets/new{% endif %}">
+  <form method="post" action="{% if product_set %}/sets/{{ product_set.id }}/edit{% else %}/sets/new{% endif %}"{% if product_set %} data-live-watch="set:{{ product_set.id }}"{% endif %}>
+    {% if product_set %}{{ ui.live_stale() }}{% endif %}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if not product_set %}<input type="hidden" name="form_token" value="{{ form_token() }}">{% endif %}
     <input type="hidden" name="rows" value="{{ rows }}">
@@ -40,6 +46,7 @@
     <a class="btn-link" href="/sets">{{ t('common.cancel') }}</a>
   </form>
 </section>
+{% endcall %}
 {% if product_set %}
 <div class="actions">
   <form method="post" action="/sets/{{ product_set.id }}/{% if product_set.archived_at %}restore{% else %}archive{% endif %}">
