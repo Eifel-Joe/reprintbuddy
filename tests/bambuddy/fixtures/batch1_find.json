@@ -1,0 +1,53 @@
+[
+  {
+    "id": 12,
+    "name": "Template A",
+    "archive_id": null,
+    "library_file_id": 5,
+    "quantity": 1,
+    "status": "active",
+    "created_at": "2026-11-05T09:12:43Z",
+    "completed_at": null,
+    "created_by_id": 3,
+    "created_by_username": "reprintbuddy",
+    "project_id": null,
+    "due_date": null,
+    "notes": null,
+    "external_source": "reprintbuddy",
+    "external_ref": "00000000-0000-4000-8000-000000000001",
+    "pending_count": 1,
+    "printing_count": 0,
+    "completed_count": 0,
+    "failed_count": 0,
+    "cancelled_count": 0,
+    "skipped_count": 0,
+    "has_targets": false,
+    "target_count": 1,
+    "remaining_count": 0,
+    "dispatchable_count": 0,
+    "actual_cost": null,
+    "estimated_remaining_cost": null,
+    "filament_used_grams": null,
+    "print_time_seconds": 3720,
+    "plates": [
+      {
+        "plate_id": 1,
+        "plate_name": null,
+        "quantity_target": 1,
+        "dispatched": 1,
+        "remaining": 0,
+        "pending_count": 1,
+        "printing_count": 0,
+        "completed_count": 0,
+        "failed_count": 0,
+        "cancelled_count": 0,
+        "skipped_count": 0,
+        "actual_cost": null,
+        "estimated_remaining_cost": null,
+        "filament_used_grams": null,
+        "print_time_seconds": 3720,
+        "can_dispatch": false
+      }
+    ]
+  }
+]

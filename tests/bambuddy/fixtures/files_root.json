@@ -1,0 +1,27 @@
+[
+  {
+    "id": 2,
+    "folder_id": null,
+    "is_external": false,
+    "filename": "Template A.gcode.3mf",
+    "file_type": "gcode.3mf",
+    "file_size": 1790112,
+    "thumbnail_path": null,
+    "print_count": 0,
+    "duplicate_count": 0,
+    "created_by_id": 1,
+    "created_by_username": "admin",
+    "created_at": "2026-10-12T09:10:44",
+    "fs_modified_at": null,
+    "print_name": null,
+    "print_time_seconds": 3650,
+    "filament_used_grams": 46.9,
+    "sliced_for_model": "A1",
+    "tags": [],
+    "variant_group_id": null,
+    "variant_count": 0,
+    "external_url": null,
+    "has_notes": false,
+    "photo_count": 0
+  }
+]
