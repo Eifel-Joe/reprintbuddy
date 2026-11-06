@@ -94,7 +94,7 @@ def test_rule_triggered_by_order(db):
 
 
 @pytest.mark.parametrize(
-    "case", ["setting_off", "not_auto", "paused", "archived", "no_minimum"]
+    "case", ["setting_off", "not_auto", "paused", "archived", "no_minimum", "no_minimum_negative"]
 )
 def test_rule_switches(db, case):
     from reprintbuddy.models import utcnow
@@ -110,6 +110,8 @@ def test_rule_switches(db, case):
             fields["archived_at"] = utcnow()
         if case == "no_minimum":
             fields.update(min_stock=0, buffer=0)
+        if case == "no_minimum_negative":
+            fields.update(min_stock=0, buffer=0, stock=0, reserved=2)
         make_article(s, **fields)
         assert workqueue.apply_rule(s) == []
         assert entries(s) == []
@@ -163,3 +165,29 @@ def test_counts_for_pages(db):
         assert workqueue.queued_prints(s) == {a.id: 5, b.id: 1}
         assert workqueue.in_progress_prints(s) == {a.id: 2}
         assert workqueue.in_progress_units(s) == {a.id: 5}
+
+
+def test_rule_caps_at_max_prints(db):
+    with db.begin() as s:
+        automation(s)
+        big = make_article(s, name="Template A", auto_enabled=True, min_stock=1500, stock=0)
+        other = make_article(s, name="Template B", auto_enabled=True, min_stock=2, stock=0)
+        created = workqueue.apply_rule(s)
+        assert [(e.article_id, e.prints) for e in created] == [(big.id, 1000), (other.id, 2)]
+        rows = list(
+            s.scalars(
+                select(JournalEntry)
+                .where(JournalEntry.kind == "queue_entry_created")
+                .order_by(JournalEntry.id)
+            )
+        )
+        assert rows[0].details["capped"] is True
+        assert "capped" not in rows[1].details
+        again = workqueue.apply_rule(s)
+        assert [(e.article_id, e.prints) for e in again] == [(big.id, 500)]
+        last = s.scalars(
+            select(JournalEntry)
+            .where(JournalEntry.kind == "queue_entry_created")
+            .order_by(JournalEntry.id.desc())
+        ).first()
+        assert "capped" not in last.details

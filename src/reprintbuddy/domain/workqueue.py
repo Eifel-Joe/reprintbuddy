@@ -346,6 +346,13 @@ def apply_rule(session: Session, actor: Actor = "auto") -> list[WorkQueueEntry]:
             units_per_print=article.units_per_print,
         )
         if n > 0:
+            # One entry holds at most MAX_PRINTS; the capped entry counts into the
+            # coverage, so the next run tops up the rest. Raising here would stop the
+            # rule for every other article.
+            details = {"coverage": c.total, "target": article.min_stock + article.buffer}
+            if n > MAX_PRINTS:
+                n = MAX_PRINTS
+                details["capped"] = True
             created.append(
                 add_entry(
                     session,
@@ -354,7 +361,7 @@ def apply_rule(session: Session, actor: Actor = "auto") -> list[WorkQueueEntry]:
                     "rule",
                     actor,
                     where="end",
-                    details={"coverage": c.total, "target": article.min_stock + article.buffer},
+                    details=details,
                 )
             )
     return created
