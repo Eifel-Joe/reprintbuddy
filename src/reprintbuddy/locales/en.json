@@ -449,5 +449,6 @@
   "nav.collapse": "Fold menu",
   "nav.expand": "Unfold menu",
   "nav.menu": "Menu",
-  "nav.version": "Version"
+  "nav.version": "Version",
+  "list.col.actions": "Actions"
 }

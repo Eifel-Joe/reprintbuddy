@@ -83,9 +83,9 @@ def test_collapse_needs_login(ready_client):
     assert "rb_sidebar" not in response.headers.get("set-cookie", "")
 
 
-def test_burger_glyph_is_an_escape_not_bytes(ready_client):
+def test_burger_is_the_menu_symbol_not_a_glyph(ready_client):
     css = css_text(ready_client)
-    assert chr(92) + "2630" in css
+    assert chr(92) + "2630" not in css  # the menu symbol of the sprite replaced the glyph
     assert chr(0xB3) not in css
 
 

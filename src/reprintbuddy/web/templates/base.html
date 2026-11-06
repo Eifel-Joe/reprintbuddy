@@ -67,7 +67,7 @@
    space, every page of a version like 0.3.0+local.1 would reload without end). #}
 <div class="app{% if sidebar_collapsed %} sidebar-collapsed{% endif %}" id="app" data-live="/live?v={{ app_version|urlencode }}" data-live-state="{{ live_state }}" data-live-src="{{ live_src or '' }}">
   <details class="mobile-menu">
-    <summary><span class="brand">{{ brand() }}</span><span class="sr-only">{{ t('nav.menu') }}</span></summary>
+    <summary><span class="brand">{{ brand() }}</span><span class="menu-button">{{ ui.icon('menu') }}</span><span class="sr-only">{{ t('nav.menu') }}</span></summary>
     <nav class="sidebar-nav">{{ nav_links(active_nav) }}</nav>
     <div class="sidebar-footer">{{ nav_footer() }}{{ nav_version(false) }}</div>
   </details>

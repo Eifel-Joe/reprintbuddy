@@ -106,4 +106,4 @@ def test_macros_render_icon_badge_and_summary(ready_client):
     assert '<p class="summary">3 articles' in html
     assert '<span class="dot tone-bad"></span>2 below minimum' in html
     assert '<header class="page-head"><span class="page-icon">' in html
-    assert "<h1>Title</h1><p>sub</p>" in html
+    assert '<h1>Title</h1></div><div class="page-actions"><p>sub</p></div></header>' in html

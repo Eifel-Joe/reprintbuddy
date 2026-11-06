@@ -449,5 +449,6 @@
   "nav.collapse": "Menü einklappen",
   "nav.expand": "Menü ausklappen",
   "nav.menu": "Menü",
-  "nav.version": "Version"
+  "nav.version": "Version",
+  "list.col.actions": "Aktionen"
 }

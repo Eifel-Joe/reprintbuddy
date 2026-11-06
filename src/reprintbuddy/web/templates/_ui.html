@@ -22,9 +22,11 @@
 <svg class="icon {{ cls }}" aria-hidden="true" focusable="false"><use href="/static/icons/icons.svg?v={{ app_version }}#{{ name }}"></use></svg>
 {%- endmacro %}
 
-{# Head of a page: symbol, title, and (inside the call block) the short summary or other lines. #}
-{% macro page_head(icon_name, title) -%}
-<header class="page-head"><span class="page-icon">{{ icon(icon_name) }}</span><div><h1>{{ title }}</h1>{{ caller() }}</div></header>
+{# Head of a page: symbol, title, optional subtitle (text is escaped, Markup passes). What the call
+   block holds (the main button) goes to the right in `.page-actions`; a blank block leaves it out. #}
+{% macro page_head(icon_name, title, subtitle="") -%}
+{%- set actions = caller()|trim -%}
+<header class="page-head"><span class="page-icon">{{ icon(icon_name) }}</span><div class="page-titles"><h1>{{ title }}</h1>{% if subtitle %}<p class="page-sub">{{ subtitle }}</p>{% endif %}</div>{% if actions %}<div class="page-actions">{{ actions }}</div>{% endif %}</header>
 {%- endmacro %}
 
 {# Short summary under the title: the total, then a dot and a count per state
@@ -83,4 +85,57 @@
    `<div class="tiles">…</div>` (tiles); see the CSS for what shows with which layout. #}
 {% macro collection(layout) -%}
 <div class="collection layout-{{ layout }}">{{ caller() }}</div>
+{%- endmacro %}
+
+
+{# ---- look like Bambuddy: building blocks (Spec 10.1) ---- #}
+
+{# One key figure card (kpis.Kpi): symbol in the colour of its tone, number, label. #}
+{% macro kpi(card) -%}
+<div class="kpi"><span class="kpi-icon tone-{{ card.tone }}">{{ icon(card.icon) }}</span><div><span class="kpi-value">{{ card.value }}</span><span class="kpi-label">{{ card.label }}</span></div></div>
+{%- endmacro %}
+
+{# The row of key figure cards (kpis.state_cards); fine inside ui.region("summary", …). #}
+{% macro kpi_row(cards) -%}
+<div class="kpis">{% for card in cards %}{{ kpi(card) }}{% endfor %}</div>
+{%- endmacro %}
+
+{# Symbol button as a link (edit, view, journal): 44 px target, name in title and aria-label. #}
+{% macro icon_button(icon_name, label, href) -%}
+<a class="icon-btn" href="{{ href }}" title="{{ label }}" aria-label="{{ label }}">{{ icon(icon_name) }}</a>
+{%- endmacro %}
+
+{# Symbol button that posts (archive, restore, cancel): a small form with both tokens. #}
+{% macro icon_post(icon_name, label, action) -%}
+<form class="icon-form" method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="form_token" value="{{ form_token() }}"><button type="submit" class="icon-btn" title="{{ label }}" aria-label="{{ label }}">{{ icon(icon_name) }}</button></form>
+{%- endmacro %}
+
+{# The symbols at the end of a table row: {% call ui.row_actions() %}…{% endcall %}. The column
+   head is <th class="actions-col"><span class="sr-only">{{ t('list.col.actions') }}</span></th>. #}
+{% macro row_actions() -%}
+<div class="row-actions">{{ caller() }}</div>
+{%- endmacro %}
+
+{# On/off switch: a checkbox that sends "on" like any other. `id` is optional. #}
+{% macro switch(name, checked, label, id="") -%}
+<input type="checkbox" class="switch" role="switch" name="{{ name }}"{% if id %} id="{{ id }}"{% endif %}{% if checked %} checked{% endif %} aria-label="{{ label }}">
+{%- endmacro %}
+
+{# Tabs as links (work without JavaScript). `items`: (key, icon, label, href); `current`: the key. #}
+{% macro tabs(items, current) -%}
+<nav class="tabs">
+  {%- for key, icon_name, label, href in items %}
+  <a class="tab{% if key == current %} active{% endif %}" href="{{ href }}"{% if key == current %} aria-current="page"{% endif %}>{{ icon(icon_name) }}<span>{{ label }}</span></a>
+  {%- endfor %}
+</nav>
+{%- endmacro %}
+
+{# Head of a settings card: symbol and title left, what the call block holds (Save) right. #}
+{% macro card_head(icon_name, title) -%}
+<div class="card-head"><h2>{{ icon(icon_name) }}{{ title }}</h2><div>{{ caller() }}</div></div>
+{%- endmacro %}
+
+{# One line of a settings card: label and grey hint left, the control (call block) right. #}
+{% macro setting_row(label, hint="", for_id="") -%}
+<div class="setting-row"><div class="setting-text"><label{% if for_id %} for="{{ for_id }}"{% endif %}>{{ label }}</label>{% if hint %}<span>{{ hint }}</span>{% endif %}</div><div class="setting-control">{{ caller() }}</div></div>
 {%- endmacro %}
