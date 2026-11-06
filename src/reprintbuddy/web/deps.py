@@ -86,19 +86,22 @@ def current_language(request: Request) -> str:
 def render(request: Request, name: str, status_code: int = 200, **context: object) -> Response:
     """The page `name`; or, when the page asks for regions of itself, only those regions.
 
-    Region mode (Spec 10.5.3): a GET with `X-Live-Regions` that would answer 200. The whole page
-    is rendered with the same template and the named pieces are cut out. No message is used up:
-    with two tabs on one cookie, the message "booked" belongs to the tab that booked and
-    follows its redirect, not to the other tab that happens to fetch its regions first.
+    Region mode (Spec 10.5.3): a GET with `X-Live-Regions`. No message is used up, whatever the
+    answer: with two tabs on one cookie, the message "booked" belongs to the tab that booked and
+    follows its redirect, not to the other tab that happens to fetch its regions first, nor to
+    an error page that tab gets because the thing was deleted meanwhile. Only a page that
+    answers 200 is cut: the whole page is rendered with the same template and the named
+    pieces are returned.
     """
     session = db_session(request)
-    wanted = regions.requested(request) if status_code == 200 else []
+    asked = regions.requested(request)
+    wanted = asked if status_code == 200 else []
     context.setdefault("lang", str(st.get_setting(session, "language")))
     # Target of the "Open Bambuddy" link; the key is never part of it.
     context["open_bambuddy_url"] = st.get_setting(session, "bambuddy_url")
     context.setdefault("active_nav", None)
     context["min_password_length"] = auth.MIN_PASSWORD_LENGTH
-    if wanted:
+    if asked:
         context.setdefault("notice", None)
         context.setdefault("notice_warning", False)
     else:
@@ -110,7 +113,7 @@ def render(request: Request, name: str, status_code: int = 200, **context: objec
     context["live_state"] = live_state if live_state is not None else request.app.state.live.state
     # Where the page fetches its regions: its own address. A page that answers a POST has none.
     context["live_src"] = _own_address(request) if request.method == "GET" else None
-    context["live_region_mode"] = bool(wanted)
+    context["live_region_mode"] = bool(asked)  # base.html then leaves the queued messages
     _add_rights_notice(request, context)
     response = request.app.state.templates.TemplateResponse(
         request, name, context, status_code=status_code

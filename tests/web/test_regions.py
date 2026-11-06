@@ -2,6 +2,7 @@
 
 import re
 
+import pytest
 from starlette.requests import Request
 
 from conftest import csrf_of, form_token_of, sm_of
@@ -93,15 +94,42 @@ def test_region_request_keeps_the_messages(ready_client):  # Review Focus 3: two
     assert en("bookings.part_receipt_done", item="Insert M4", qty=50) in page
 
 
+def queue_both_kinds_of_message(client):
+    """One message in the queued list (flash.py) and one single notice (deps.flash).
+
+    The tokens are fetched first: every page shown afterwards would use the messages up.
+    """
+    part_id = insert(client)
+    csrf = csrf_of(client, "/bookings")
+    token = form_token_of(client, "/bookings", "/bookings/part-receipt")
+    receipt = {"csrf_token": csrf, "form_token": token, "part_id": part_id, "qty": "50"}
+    assert client.post("/bookings/part-receipt", data=receipt).status_code == 303
+    language = {"csrf_token": csrf, "language": "en"}
+    assert client.post("/settings/language", data=language).status_code == 303
+
+
+def assert_both_messages_shown(client):
+    page = client.get("/settings").text  # shows the list and the single notice
+    assert en("bookings.part_receipt_done", item="Insert M4", qty=50) in page
+    assert en("settings.saved") in page
+
+
+def test_region_request_for_an_error_page_keeps_the_messages(ready_client):  # Review Focus 3
+    # The article was deleted in the meantime: the region request ends in a 404 page.
+    queue_both_kinds_of_message(ready_client)
+    response = ready_client.get("/articles/999999", headers=REGIONS)
+    assert response.status_code == 404 and "x-live-regions" not in response.headers
+    assert "set-cookie" not in response.headers
+    assert_both_messages_shown(ready_client)
+
+
 def test_region_request_does_not_touch_the_session(ready_client):
     # Messages of both kinds are waiting; a region request uses up neither.
-    assert part_receipt(ready_client, part_id=insert(ready_client), qty="50").status_code == 303
-    language = {"csrf_token": csrf_of(ready_client, "/bookings"), "language": "en"}
-    assert ready_client.post("/settings/language", data=language).status_code == 303
+    queue_both_kinds_of_message(ready_client)
     response = ready_client.get("/journal", headers=REGIONS)
     assert response.status_code == 200 and "x-live-regions" in response.headers
     assert "set-cookie" not in response.headers
-    assert en("settings.saved") in ready_client.get("/settings").text
+    assert_both_messages_shown(ready_client)
 
 
 def test_region_request_signed_out_brings_no_regions(ready_client):  # Review Focus 1
@@ -127,11 +155,38 @@ def test_post_rendered_page_has_no_region_source(ready_client):  # Review Focus 
 
 def test_region_names_are_valid_and_unique_per_template():
     call = re.compile(r"""ui\.region\(\s*["']([^"']*)["']""")
-    seen_any = False
+    found = {}
     for path in sorted(TEMPLATES_DIR.rglob("*.html")):
+        if path.name == "_ui.html":  # defines the macro; its comment shows an example call
+            continue
         names = call.findall(path.read_text(encoding="utf-8"))
-        seen_any = seen_any or bool(names)
+        if names:
+            found[path.name] = names
         for name in names:
             assert regions.NAME.fullmatch(name), (path.name, name)
         assert len(names) == len(set(names)), (path.name, names)
-    assert seen_any
+    assert found["journal.html"] == ["journal"]
+
+
+# Pages with regions, as the signed-in browser sees them. Add each page that gets regions.
+PAGES_WITH_REGIONS = ["/journal"]
+_MARK = re.compile(r"<!--(/?)live:([^>]*?)-->")
+
+
+@pytest.mark.parametrize("path", PAGES_WITH_REGIONS)
+def test_rendered_regions_are_balanced_unnested_and_unique(ready_client, path):
+    page = ready_client.get(path)
+    assert page.status_code == 200, path
+    open_name, seen = None, []
+    for closing, name in _MARK.findall(page.text):
+        if not closing:
+            assert open_name is None, f"{path}: region {name!r} inside region {open_name!r}"
+            assert name not in seen, f"{path}: region {name!r} twice"
+            assert regions.NAME.fullmatch(name), (path, name)
+            open_name = name
+            seen.append(name)
+        else:
+            assert name == open_name, f"{path}: end of {name!r} while {open_name!r} is open"
+            open_name = None
+    assert open_name is None, f"{path}: region {open_name!r} never ends"
+    assert seen, f"{path}: no region"
