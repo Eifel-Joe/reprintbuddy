@@ -8,7 +8,7 @@ from reprintbuddy.bambuddy.client import (
     BambuddyUnavailable,
 )
 from reprintbuddy.bambuddy.fake import FakeBambuddy
-from reprintbuddy.bambuddy.types import EnqueueRequest, FilamentRequirement, Printer
+from reprintbuddy.bambuddy.types import FilamentRequirement, Printer
 
 
 def test_fake_is_client():
@@ -94,10 +94,10 @@ async def test_removed_file():
         await fake.list_plates(f.id)
 
 
-async def test_write_methods_left_to_b2():
+async def test_spools_left_to_b2():
     fake = FakeBambuddy()
     with pytest.raises(NotImplementedError):
-        await fake.enqueue(EnqueueRequest(1, 1, "A1", None, 1, False, None))
+        await fake.list_spools()
 
 
 async def test_calls_recorded():

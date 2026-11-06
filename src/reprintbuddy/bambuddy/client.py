@@ -17,11 +17,34 @@ from reprintbuddy.bambuddy.types import (
 
 
 class BambuddyUnavailable(Exception):
-    """Network error, 5xx or timeout: nothing is known about the outcome."""
+    """Network error, 5xx, timeout or an invalid address: nothing is known about the outcome."""
+
+
+class BambuddyUnexpected(BambuddyUnavailable):
+    """An answer that does not fit Bambuddy's source: no JSON, wrong form, 3xx.
+
+    A subclass of `BambuddyUnavailable`, so every caller treats it as "outcome unclear".
+    """
 
 
 class BambuddyRejected(Exception):
-    """Bambuddy answered with a 4xx."""
+    """Bambuddy answered with a 4xx.
+
+    `detail` is Bambuddy's `detail` (as JSON text when it is not a text), `status` the code.
+    `BambuddyRejected("…")` without a status stays valid.
+    """
+
+    def __init__(self, detail: str = "", *, status: int | None = None) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.status = status
+
+    def __str__(self) -> str:
+        return self.detail if self.status is None else f"{self.status}: {self.detail}"
+
+
+class BatchRefLost(BambuddyRejected):
+    """409 for the batch reference, but no batch with it can be found (Decision 10)."""
 
 
 @runtime_checkable
