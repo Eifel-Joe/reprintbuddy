@@ -215,16 +215,20 @@ def confirm_dispatch(session: Session, dispatch_id: int, item: QueueItem) -> Non
     )
 
 
-def return_print(session: Session, dispatch_id: int, reason: str) -> None:
+def return_print(
+    session: Session, dispatch_id: int, reason: str, *, rejected: bool = False
+) -> None:
     """Put a print that is certainly not in Bambuddy back where it came from (decision 4).
 
-    Allowed for a print never sent, or for a `sending` one whose `enqueue` Bambuddy
-    rejected (4xx). An `unclear` print that was sent, or any later state, is refused:
-    putting it back could print it twice.
+    Allowed for a print never sent, or - with `rejected=True` - for a `sending` one whose
+    `enqueue` Bambuddy rejected (4xx). A sent `sending` print without the flag may come
+    from a crash or cancel after the mark (outcome unknown), so it is refused like an
+    `unclear` or later one: putting it back could print it twice.
     """
     row = _dispatch(session, dispatch_id)
     never_sent = row.status in ("sending", "unclear") and row.enqueue_sent_at is None
-    if not (never_sent or row.status == "sending"):
+    refused_after_send = rejected and row.status == "sending"
+    if not (never_sent or refused_after_send):
         raise ValueError(f"dispatch {dispatch_id} cannot be returned ({row.status})")
     row.status = "returned"
     row.message = reason
@@ -269,9 +273,11 @@ def _recreate_entry(session: Session, row: Dispatch) -> WorkQueueEntry:
 # ---- the hand-over ---------------------------------------------------------------------
 
 
-def _put_back(sm: sessionmaker, res: Reservation, reason: str) -> None:
+def _put_back(
+    sm: sessionmaker, res: Reservation, reason: str, *, rejected: bool = False
+) -> None:
     with sm.begin() as session:
-        return_print(session, res.dispatch_id, reason)
+        return_print(session, res.dispatch_id, reason, rejected=rejected)
 
 
 async def hand_over(
@@ -309,7 +315,7 @@ async def hand_over(
     try:
         item = await client.enqueue(request)
     except BambuddyRejected as exc:
-        _put_back(sm, res, str(exc)[:MAX_MESSAGE])
+        _put_back(sm, res, str(exc)[:MAX_MESSAGE], rejected=True)
         return "rejected"
     except BambuddyUnavailable:
         with sm.begin() as session:

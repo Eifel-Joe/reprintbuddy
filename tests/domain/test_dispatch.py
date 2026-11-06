@@ -399,7 +399,13 @@ def test_return_ignores_reused_entry_id(db):
 
 @pytest.mark.parametrize(
     ("status", "sent"),
-    [("unclear", True), ("queued", True), ("printing", True), ("returned", False)],
+    [
+        ("sending", True),  # crash or cancel after the mark: outcome unknown
+        ("unclear", True),
+        ("queued", True),
+        ("printing", True),
+        ("returned", False),
+    ],
 )
 def test_return_refuses_print_that_may_be_in_bambuddy(db, status, sent):
     with db.begin() as s:
@@ -409,6 +415,18 @@ def test_return_refuses_print_that_may_be_in_bambuddy(db, status, sent):
             dispatch.return_print(s, row.id, "not_sent")
         assert row.status == status
         assert wq.list_entries(s) == []
+
+
+def test_return_sent_print_only_when_rejected(db):
+    with db.begin() as s:
+        a = article(s).id
+        unclear = make_dispatch(s, a, status="unclear", enqueue_sent_at=utcnow())
+        with pytest.raises(ValueError):
+            dispatch.return_print(s, unclear.id, "422: invalid", rejected=True)
+        row = make_dispatch(s, a, status="sending", enqueue_sent_at=utcnow())
+        dispatch.return_print(s, row.id, "422: invalid", rejected=True)
+        assert row.status == "returned" and row.message == "422: invalid"
+        assert [(e.article_id, e.prints) for e in wq.list_entries(s)] == [(a, 1)]
 
 
 def test_mark_sent_only_once(db):
