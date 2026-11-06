@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
 from reprintbuddy.domain import rules
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
+from reprintbuddy.domain.workqueue import OPEN_STATES
 from reprintbuddy.domain.status import ArticleStatus, article_status
 from reprintbuddy.domain.status import SetStatus, set_status
 from reprintbuddy.domain.stock import MAX_QTY, Actor, count_part
@@ -20,12 +21,14 @@ from reprintbuddy.models import (
     Article,
     ArticleFilament,
     ArticlePart,
+    Dispatch,
     Order,
     OrderLine,
     Part,
     ProductSet,
     SetPosition,
     SetPositionOption,
+    WorkQueueEntry,
     utcnow,
 )
 
@@ -617,6 +620,16 @@ def archive_article(session: Session, article_id: int) -> None:
         raise ConflictError("articles.archive_provisional")
     if article.awaiting_assembly > 0:
         raise ConflictError("articles.archive_awaiting_assembly")
+    if session.scalar(
+        select(WorkQueueEntry.id).where(WorkQueueEntry.article_id == article_id).limit(1)
+    ):
+        raise ConflictError("articles.archive_in_queue")
+    if session.scalar(
+        select(Dispatch.id)
+        .where(Dispatch.article_id == article_id, Dispatch.status.in_(OPEN_STATES))
+        .limit(1)
+    ):
+        raise ConflictError("articles.archive_in_progress")
     article.archived_at = utcnow()
     session.flush()
 

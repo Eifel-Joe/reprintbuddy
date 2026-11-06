@@ -282,6 +282,8 @@
   "articles.archive_open_orders": "Archivieren nicht möglich: der Artikel steckt in einer offenen Bestellung.",
   "articles.archive_provisional": "Archivieren nicht möglich: es gibt vorläufige Einheiten, die noch geprüft werden müssen.",
   "articles.archive_awaiting_assembly": "Archivieren nicht möglich: es gibt Einheiten, die auf Montage warten.",
+  "articles.archive_in_queue": "Erst die Einträge in der Warteschlange entfernen.",
+  "articles.archive_in_progress": "Ein Druck dieses Artikels liegt noch in Bambuddy.",
   "articles.restore_plate_taken": "Wiederherstellen nicht möglich: die Platte gehört jetzt zum Artikel {name}. Wähle eine andere Datei.",
   "parts.archive_in_use": "Archivieren nicht möglich: der aktive Artikel {article} braucht dieses Zukaufteil.",
   "parts.archived": "Das Zukaufteil {name} ist archiviert und kann nicht verwendet werden.",

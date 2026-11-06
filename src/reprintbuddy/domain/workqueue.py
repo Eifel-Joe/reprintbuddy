@@ -10,16 +10,20 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from reprintbuddy import settings
+from reprintbuddy.domain import rules
 from reprintbuddy.domain.errors import NotFoundError, ValidationError
 from reprintbuddy.domain.pauses import pause_article
 from reprintbuddy.domain.stock import Actor, write_journal
-from reprintbuddy.models import Article, WorkQueueEntry
+from reprintbuddy.models import Article, Dispatch, WorkQueueEntry
 
 Origin = Literal["rule", "scrap", "failure", "manual"]
 MAX_PRINTS = 1000
+# Dispatch states that still occupy Bambuddy (Spec 7.1 "in Arbeit").
+OPEN_STATES: frozenset[str] = frozenset({"sending", "unclear", "queued", "printing"})
 
 
 @dataclass(frozen=True)
@@ -232,3 +236,125 @@ def delete_entry(session: Session, entry_id: int, actor: Actor) -> None:
     )
     if origin == "rule":
         pause_article(session, article_id, "queue_reduced", actor)
+
+
+# ---- coverage and rule 7.1 -------------------------------------------------------------
+
+
+def queued_prints(session: Session) -> dict[int, int]:
+    """Sum of `prints` per article, held entries included."""
+    rows = session.execute(
+        select(WorkQueueEntry.article_id, func.sum(WorkQueueEntry.prints)).group_by(
+            WorkQueueEntry.article_id
+        )
+    )
+    return {article_id: int(total) for article_id, total in rows}
+
+
+def in_progress_prints(session: Session) -> dict[int, int]:
+    """Number of open prints per article."""
+    rows = session.execute(
+        select(Dispatch.article_id, func.count())
+        .where(Dispatch.status.in_(OPEN_STATES))
+        .group_by(Dispatch.article_id)
+    )
+    return {article_id: int(total) for article_id, total in rows}
+
+
+def in_progress_units(session: Session) -> dict[int, int]:
+    """Sum of `units` of the open prints per article (as reserved at dispatch time)."""
+    rows = session.execute(
+        select(Dispatch.article_id, func.sum(Dispatch.units))
+        .where(Dispatch.status.in_(OPEN_STATES))
+        .group_by(Dispatch.article_id)
+    )
+    return {article_id: int(total) for article_id, total in rows}
+
+
+@dataclass(frozen=True)
+class Coverage:
+    available: int
+    queued_units: int
+    in_progress_units: int
+    provisional: int
+    awaiting_assembly: int
+
+    @property
+    def total(self) -> int:
+        return rules.coverage(
+            self.available,
+            self.queued_units,
+            self.in_progress_units,
+            self.provisional,
+            self.awaiting_assembly,
+        )
+
+
+def _coverage(article: Article, queued: int, in_progress: int) -> Coverage:
+    return Coverage(
+        available=rules.available(article.stock, article.reserved),
+        queued_units=queued * article.units_per_print,
+        in_progress_units=in_progress,
+        provisional=article.provisional,
+        awaiting_assembly=article.awaiting_assembly,
+    )
+
+
+def coverage_of(session: Session, article: Article) -> Coverage:
+    queued = session.scalar(
+        select(func.coalesce(func.sum(WorkQueueEntry.prints), 0)).where(
+            WorkQueueEntry.article_id == article.id
+        )
+    )
+    units = session.scalar(
+        select(func.coalesce(func.sum(Dispatch.units), 0)).where(
+            Dispatch.article_id == article.id, Dispatch.status.in_(OPEN_STATES)
+        )
+    )
+    return _coverage(article, int(queued), int(units))
+
+
+def coverage_all(session: Session) -> dict[int, Coverage]:
+    """Coverage of every non-archived article: one query per table."""
+    queued = queued_prints(session)
+    units = in_progress_units(session)
+    articles = session.scalars(select(Article).where(Article.archived_at.is_(None)))
+    return {a.id: _coverage(a, queued.get(a.id, 0), units.get(a.id, 0)) for a in articles}
+
+
+def apply_rule(session: Session, actor: Actor = "auto") -> list[WorkQueueEntry]:
+    """Rule 7.1: queue reprints for articles whose coverage is below the minimum stock."""
+    if not settings.get_setting(session, "automation"):
+        return []
+    coverages = coverage_all(session)
+    articles = session.scalars(
+        select(Article)
+        .where(
+            Article.auto_enabled.is_(True),
+            Article.paused.is_(False),
+            Article.archived_at.is_(None),
+        )
+        .order_by(Article.id)
+    ).all()
+    created: list[WorkQueueEntry] = []
+    for article in articles:
+        c = coverages[article.id]
+        n = rules.prints_needed(
+            min_stock=article.min_stock,
+            buffer=article.buffer,
+            coverage=c.total,
+            units_per_print=article.units_per_print,
+        )
+        if n > 0:
+            created.append(
+                add_entry(
+                    session,
+                    article.id,
+                    n,
+                    "rule",
+                    actor,
+                    where="end",
+                    details={"coverage": c.total, "target": article.min_stock + article.buffer},
+                )
+            )
+    return created
