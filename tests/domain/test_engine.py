@@ -1,0 +1,798 @@
+"""The engine's tick: rule 7.1, hand-over and polling under one lock (plan B4 Task 10).
+
+Decisions 4, 5, 12, 14-17; review focus 2, 3, 5. Two ticks never interleave; an unclear,
+unreachable or rejecting Bambuddy gets nothing new; during an update nothing happens.
+"""
+
+import asyncio
+import contextlib
+import time
+
+from sqlalchemy import select
+
+from factories import make_article, make_dispatch, make_entry
+from reprintbuddy import settings as st
+from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable
+from reprintbuddy.bambuddy.types import EnqueueRequest
+from reprintbuddy.domain import workqueue as wq
+from reprintbuddy.domain.engine import (
+    Engine,
+    EngineStatus,
+    EngineWarning,
+    TickResult,
+    collect_warnings,
+)
+from reprintbuddy.domain.pauses import pause_article
+from reprintbuddy.models import Article, Dispatch
+from reprintbuddy.i18n import translate
+
+
+# ---- helpers ---------------------------------------------------------------------------
+
+
+def setting(sm, key, value):
+    with sm() as s:
+        st.set_setting(s, key, value)
+
+
+def queue_of(sm):
+    with sm() as s:
+        return [(e.article_id, e.prints, e.origin) for e in wq.list_entries(s)]
+
+
+def statuses(sm):
+    with sm() as s:
+        return [d.status for d in s.scalars(select(Dispatch).order_by(Dispatch.id))]
+
+
+def item_ids(sm):
+    with sm() as s:
+        return [d.bambuddy_item_id for d in s.scalars(select(Dispatch).order_by(Dispatch.id))]
+
+
+def warnings(sm, status):
+    with sm() as s:
+        return collect_warnings(s, status)
+
+
+def keys(sm, status):
+    return [w.key for w in warnings(sm, status)]
+
+
+def update_article(sm, article_id, **fields):
+    with sm.begin() as s:
+        article = s.get(Article, article_id)
+        for name, value in fields.items():
+            setattr(article, name, value)
+
+
+def second_article(sm):
+    """Template B (file 2 of the fake, plate 1), same rule as Template A."""
+    with sm.begin() as s:
+        return make_article(
+            s,
+            name="Template B",
+            library_file_id=2,
+            plate_id=1,
+            file_name="Template B.gcode.3mf",
+            file_fingerprint="v1",
+            target_model="A1",
+            auto_enabled=True,
+            min_stock=1,
+        ).id
+
+
+def never_sent(sm, article_id):
+    """A print reserved but never sent (`sending`, no `enqueue_sent_at`), e.g. after a crash."""
+    with sm.begin() as s:
+        return make_dispatch(s, article_id, status="sending").id
+
+
+async def wait_until(condition, timeout=1.0):
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "condition not met in time"
+        await asyncio.sleep(0.002)
+
+
+@contextlib.asynccontextmanager
+async def running(engine, poll_seconds):
+    task = asyncio.create_task(engine.run(poll_seconds))
+    try:
+        yield task
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+def record_ticks(engine, monkeypatch, *, fail_first=False):
+    calls = []
+
+    async def tick(*, poll):
+        calls.append(poll)
+        if fail_first and len(calls) == 1:
+            raise RuntimeError("boom")
+        return TickResult(None, 0, 0)
+
+    monkeypatch.setattr(engine, "tick", tick)
+    return calls
+
+
+# ---- rule and hand-over ----------------------------------------------------------------
+
+
+async def test_tick_rule_and_dispatch(engine_env):
+    env = engine_env
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 1, 1)
+    assert queue_of(env.sm) == []
+    assert statuses(env.sm) == ["queued"]
+    assert len(await env.fake.list_queue()) == 1
+    assert env.engine.status.reachable is True
+    assert env.engine.status.configured is True
+    assert env.engine.status.last_tick_at is not None
+
+
+async def test_second_tick_adds_nothing(engine_env):
+    env = engine_env
+    await env.engine.tick(poll=False)
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 0, 0)
+    assert len(env.fake.enqueued) == 1
+    assert queue_of(env.sm) == []
+
+
+async def test_completion_no_reprint(engine_env):
+    env = engine_env
+    await env.engine.tick(poll=False)
+    (item_id,) = item_ids(env.sm)
+    env.fake.set_status(item_id, "completed")
+
+    result = await env.engine.tick(poll=True)
+
+    assert result == TickResult(None, 0, 0)
+    assert statuses(env.sm) == ["completed"]
+    with env.sm() as s:
+        assert s.get(Article, env.article_id).provisional == 1
+    assert queue_of(env.sm) == []
+    assert len(env.fake.enqueued) == 1
+    assert env.engine.status.last_poll_at is not None
+
+
+async def test_queue_stopped_creates_but_does_not_dispatch(engine_env):
+    env = engine_env
+    setting(env.sm, "queue_running", False)
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 1, 0)
+    assert "enqueue" not in env.fake.calls
+    assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
+    assert "warning.queue_stopped" in keys(env.sm, env.engine.status)
+    assert env.engine.status.cap_reached is False
+
+
+async def test_cap_one(engine_env):
+    env = engine_env
+    b = second_article(env.sm)
+    setting(env.sm, "queue_cap", 1)
+
+    first = await env.engine.tick(poll=False)
+    assert first == TickResult(None, 2, 1)
+    assert len(await env.fake.list_queue()) == 1
+    assert env.engine.status.cap_reached is True
+
+    again = await env.engine.tick(poll=False)
+    assert again == TickResult(None, 0, 0)
+    assert len(env.fake.enqueued) == 1
+    assert env.engine.status.cap_reached is True
+    assert EngineWarning("warning.cap_reached", {"cap": 1}) in warnings(
+        env.sm, env.engine.status
+    )
+
+    (item_id,) = item_ids(env.sm)
+    env.fake.set_status(item_id, "completed")
+    last = await env.engine.tick(poll=True)
+
+    assert last == TickResult(None, 0, 1)
+    assert len(env.fake.enqueued) == 2
+    assert statuses(env.sm) == ["completed", "queued"]
+    assert queue_of(env.sm) == []
+    with env.sm() as s:
+        assert s.get(Dispatch, 2).article_id == b
+    assert env.engine.status.cap_reached is False
+
+
+async def test_cap_lowered_recalls_nothing(engine_env):
+    env = engine_env
+    update_article(env.sm, env.article_id, min_stock=3)
+    await env.engine.tick(poll=False)
+    assert statuses(env.sm) == ["queued"] * 3
+    setting(env.sm, "queue_cap", 1)
+    update_article(env.sm, env.article_id, min_stock=4)
+    env.fake.calls.clear()
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 1, 0)
+    assert "enqueue" not in env.fake.calls
+    assert "ensure_batch" not in env.fake.calls
+    assert statuses(env.sm) == ["queued"] * 3
+    assert len(await env.fake.list_queue()) == 3
+    assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
+    assert env.engine.status.cap_reached is True
+
+
+async def test_concurrent_ticks_hand_over_once(engine_env):
+    env = engine_env
+    env.fake.delay = 0.05
+
+    await asyncio.gather(env.engine.tick(poll=False), env.engine.tick(poll=False))
+
+    assert len(env.fake.enqueued) == 1
+    assert queue_of(env.sm) == []
+    assert statuses(env.sm) == ["queued"]
+
+
+async def test_concurrent_ticks_respect_cap(engine_env):
+    env = engine_env
+    update_article(env.sm, env.article_id, min_stock=5)
+    setting(env.sm, "queue_cap", 2)
+    env.fake.delay = 0.01
+
+    await asyncio.gather(*(env.engine.tick(poll=False) for _ in range(3)))
+
+    assert statuses(env.sm) == ["queued", "queued"]
+    assert len(env.fake.enqueued) == 2
+    assert queue_of(env.sm) == [(env.article_id, 3, "rule")]
+
+
+async def test_tick_skipped_during_update(engine_env):
+    env = engine_env
+    env.updating = True
+
+    result = await env.engine.tick(poll=True)
+
+    assert result == TickResult("update", 0, 0)
+    assert env.fake.calls == []
+    assert queue_of(env.sm) == []
+    assert env.engine.status.skipped_for_update is True
+    assert "warning.update_running" in keys(env.sm, env.engine.status)
+
+    env.updating = False
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 1, 1)
+    assert env.engine.status.skipped_for_update is False
+
+
+# ---- Bambuddy unreachable, unclear or refusing -----------------------------------------
+
+
+async def test_unreachable_warns_and_keeps_stock(engine_env):
+    env = engine_env
+    env.fake.unavailable = True
+
+    result = await env.engine.tick(poll=True)
+
+    assert result == TickResult(None, 1, 0)
+    assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
+    assert statuses(env.sm) == []
+    assert env.fake.enqueued == []
+    with env.sm() as s:
+        article = s.get(Article, env.article_id)
+        assert (article.stock, article.provisional) == (0, 0)
+    assert env.engine.status.reachable is False
+    assert env.engine.status.last_poll_at is None
+    assert "warning.bambuddy_unreachable" in keys(env.sm, env.engine.status)
+
+    env.fake.unavailable = False
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 0, 1)
+    assert env.engine.status.reachable is True
+
+
+async def test_unclear_blocks_new_dispatch(engine_env):
+    env = engine_env
+    env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"))
+    await env.engine.tick(poll=False)
+    assert statuses(env.sm) == ["unclear"]
+    assert env.engine.status.reachable is False
+    with env.sm.begin() as s:
+        make_entry(s, env.article_id, 1, origin="manual")
+    env.fake.fail_next("find_items_by_batch", BambuddyUnavailable("timeout"))
+    env.fake.calls.clear()
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 0, 0)
+    assert "ensure_batch" not in env.fake.calls and "enqueue" not in env.fake.calls
+    assert statuses(env.sm) == ["unclear"]
+    assert queue_of(env.sm) == [(env.article_id, 1, "manual")]
+    assert env.engine.status.unresolved == 1
+    assert EngineWarning("warning.unclear_prints", {"count": 1}) in warnings(
+        env.sm, env.engine.status
+    )
+
+
+async def test_rejected_waits_for_regular_tick(engine_env):
+    env = engine_env
+    env.fake.fail_next(
+        "enqueue", BambuddyRejected("No active printers for model: A1", status=400)
+    )
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 1, 0)
+    assert env.engine.status.rejected == "400: No active printers for model: A1"
+    assert statuses(env.sm) == ["returned"]
+    assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
+    assert EngineWarning(
+        "warning.bambuddy_rejected", {"message": "400: No active printers for model: A1"}
+    ) in warnings(env.sm, env.engine.status)
+
+    env.fake.calls.clear()
+    result = await env.engine.tick(poll=False)
+    assert result == TickResult(None, 0, 0)
+    assert "enqueue" not in env.fake.calls and "ensure_batch" not in env.fake.calls
+
+    result = await env.engine.tick(poll=True)
+    assert result == TickResult(None, 0, 1)
+    assert len(env.fake.enqueued) == 1
+    assert env.engine.status.rejected is None
+
+
+async def test_queue_stopped_unclear_not_resent(engine_env):
+    env = engine_env
+    d = never_sent(env.sm, env.article_id)
+    setting(env.sm, "queue_running", False)
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 0, 0)
+    assert env.fake.enqueued == []
+    with env.sm() as s:
+        assert s.get(Dispatch, d).status == "returned"
+    assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
+
+    setting(env.sm, "queue_running", True)
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 0, 1)
+    assert len(env.fake.enqueued) == 1
+
+
+async def test_paused_article_unclear_not_resent(engine_env):
+    env = engine_env
+    d = never_sent(env.sm, env.article_id)
+    with env.sm.begin() as s:
+        pause_article(s, env.article_id, "two_failures", "auto")
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 0, 0)
+    assert env.fake.enqueued == []
+    with env.sm() as s:
+        assert s.get(Dispatch, d).status == "returned"
+    assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
+
+
+async def test_poll_rejection_blocks_dispatch(engine_env):
+    env = engine_env
+    await env.engine.tick(poll=False)
+    with env.sm.begin() as s:
+        make_entry(s, env.article_id, 1, origin="manual")
+    env.fake.fail_next("get_queue_item", BambuddyRejected("Forbidden", status=403))
+    env.fake.calls.clear()
+
+    result = await env.engine.tick(poll=True)
+
+    assert result == TickResult(None, 0, 0)
+    assert "enqueue" not in env.fake.calls and "ensure_batch" not in env.fake.calls
+    assert env.engine.status.poll_error == "403: Forbidden"
+    assert EngineWarning("warning.poll_rejected", {"message": "403: Forbidden"}) in warnings(
+        env.sm, env.engine.status
+    )
+    # A tick after a booking does not ask again: still nothing handed over.
+    result = await env.engine.tick(poll=False)
+    assert result == TickResult(None, 0, 0)
+    # The next regular tick is answered: the error is gone and the entry goes out.
+    result = await env.engine.tick(poll=True)
+    assert env.engine.status.poll_error is None
+    assert result == TickResult(None, 0, 1)
+
+
+async def test_poll_refusal_survives_cut_short_poll(engine_env):
+    """Decision 15: only a poll that reaches its end clears a refusal (fix round 1)."""
+    env = engine_env
+    await env.engine.tick(poll=False)
+    with env.sm.begin() as s:
+        make_entry(s, env.article_id, 1, origin="manual")
+    env.fake.fail_next("get_queue_item", BambuddyRejected("Forbidden", status=403))
+    await env.engine.tick(poll=True)
+    assert env.engine.status.poll_error == "403: Forbidden"
+
+    env.fake.unavailable = True
+    await env.engine.tick(poll=True)
+    assert env.engine.status.reachable is False
+    assert env.engine.status.poll_error == "403: Forbidden"
+
+    env.fake.unavailable = False
+    env.fake.calls.clear()
+    result = await env.engine.tick(poll=False)
+
+    assert env.engine.status.reachable is True
+    assert result == TickResult(None, 0, 0)
+    assert "enqueue" not in env.fake.calls and "ensure_batch" not in env.fake.calls
+    assert env.engine.status.poll_error == "403: Forbidden"
+
+    result = await env.engine.tick(poll=True)
+    assert env.engine.status.poll_error is None
+    assert result == TickResult(None, 0, 1)
+
+
+async def test_refusal_in_a_cut_short_poll_is_kept(engine_env):
+    """A refusal found before the poll is cut short still blocks (no complete poll ran)."""
+    env = engine_env
+    await env.engine.tick(poll=False)
+    env.fake.fail_next("list_printers", BambuddyRejected("Forbidden", status=403))
+    env.fake.fail_next("list_queue", BambuddyUnavailable("timeout"))
+
+    await env.engine.tick(poll=True)
+
+    assert env.engine.status.reachable is False
+    assert env.engine.status.poll_error == "403: Forbidden"
+
+
+async def test_duplicates_kept_after_settling(engine_env):
+    env = engine_env
+    env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
+    await env.engine.tick(poll=False)
+    with env.sm() as s:
+        batch_id = s.get(Dispatch, 1).bambuddy_batch_id
+    (first,) = await env.fake.find_items_by_batch(batch_id)
+    second = await env.fake.enqueue(EnqueueRequest(1, 1, "A1", None, batch_id, False, None))
+
+    await env.engine.tick(poll=False)
+    assert env.engine.status.duplicates == [[first.id, second.id]]
+    await env.engine.tick(poll=False)
+
+    assert env.engine.status.duplicates == [[first.id, second.id]]
+    assert EngineWarning("warning.duplicates", {"ids": [[first.id, second.id]]}) in warnings(
+        env.sm, env.engine.status
+    )
+
+
+async def test_printer_in_maintenance_waits_without_pause(engine_env):
+    env = engine_env
+    printer = env.fake.add_printer("Printer 4", "A1", active=False)
+    update_article(env.sm, env.article_id, printer_id=printer.id)
+
+    result = await env.engine.tick(poll=True)
+
+    assert result == TickResult(None, 1, 0)
+    assert env.fake.enqueued == []
+    with env.sm() as s:
+        assert s.get(Article, env.article_id).paused is False
+    assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
+    assert env.engine.status.waiting_for_printer == [env.article_id]
+    assert EngineWarning("warning.waiting_for_printer", {"names": ["Template A"]}) in warnings(
+        env.sm, env.engine.status
+    )
+
+    # A tick after a booking keeps the last answer and still skips it.
+    assert await env.engine.tick(poll=False) == TickResult(None, 0, 0)
+    assert env.fake.enqueued == []
+
+
+# ---- no Bambuddy, hooks, warnings ------------------------------------------------------
+
+
+async def test_no_client_rule_still_runs(engine_env):
+    env = engine_env
+    engine = Engine(env.sm, lambda: None)
+
+    result = await engine.tick(poll=True)
+
+    assert result == TickResult(None, 1, 0)
+    assert env.fake.calls == []
+    assert engine.status.configured is False
+    assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
+    found = keys(env.sm, engine.status)
+    assert "warning.bambuddy_not_configured" in found
+    assert "warning.bambuddy_unreachable" not in found
+
+
+async def test_configured_known_before_first_tick(engine_env):
+    env = engine_env
+    assert env.engine.status.configured is True
+    assert Engine(env.sm, lambda: None).status.configured is False
+
+    def broken():
+        raise RuntimeError("settings unreadable")
+
+    assert Engine(env.sm, broken).status.configured is False
+    assert "warning.bambuddy_not_configured" not in keys(env.sm, env.engine.status)
+
+
+def test_domain_does_not_import_web():
+    """Layering: the domain uses the neutral `reprintbuddy.i18n`, never the web package."""
+    from pathlib import Path
+
+    import reprintbuddy
+    from reprintbuddy import i18n
+    from reprintbuddy.web import i18n as web_i18n
+
+    domain = Path(reprintbuddy.__file__).parent / "domain"
+    offenders = [
+        p.name for p in domain.rglob("*.py") if "reprintbuddy.web" in p.read_text("utf-8")
+    ]
+    assert offenders == []
+    assert web_i18n.translate is i18n.translate
+    assert web_i18n.load_locales is i18n.load_locales
+
+
+async def test_poll_hook(engine_env):
+    env = engine_env
+    seen = []
+
+    async def recorder(client, sm, now):
+        seen.append((client, sm, now))
+
+    async def broken(client, sm, now):
+        raise RuntimeError("scale offline")
+
+    env.engine.add_poll_hook("recorder", recorder)
+    env.engine.add_poll_hook("filament", broken)
+    assert set(env.engine.hooks) == {"recorder", "filament"}
+
+    result = await env.engine.tick(poll=True)
+
+    assert result == TickResult(None, 1, 1)
+    assert len(seen) == 1 and seen[0][0] is env.fake and seen[0][1] is env.sm
+    assert set(env.engine.status.hook_errors) == {"filament"}
+    assert "scale offline" in env.engine.status.hook_errors["filament"]
+
+    await env.engine.tick(poll=False)
+    assert len(seen) == 1
+
+    env.fake.unavailable = True
+    await env.engine.tick(poll=True)
+    assert len(seen) == 1
+
+
+async def test_errors_become_warnings(engine_env):
+    status = EngineStatus(
+        configured=True, reachable=True, error="boom", hook_errors={"filament": "x"}
+    )
+
+    found = warnings(engine_env.sm, status)
+
+    assert EngineWarning("warning.tick_error", {"message": "boom"}) in found
+    assert EngineWarning("warning.hook_error", {"names": ["filament"]}) in found
+
+
+async def test_collect_warnings(engine_env):
+    env = engine_env
+    with env.sm.begin() as s:
+        pause_article(s, env.article_id, "two_failures", "auto")
+    setting(env.sm, "queue_running", False)
+    status = EngineStatus(configured=True, reachable=True, cap_reached=True)
+
+    found = warnings(env.sm, status)
+
+    assert [w.key for w in found] == [
+        "warning.queue_stopped",
+        "warning.cap_reached",
+        "warning.article_paused",
+    ]
+    assert found[-1] == EngineWarning(
+        "warning.article_paused",
+        {"name": "Template A", "reason": translate("en", "pause.reason.two_failures")},
+    )
+
+
+async def test_collect_warnings_order(engine_env):
+    env = engine_env
+    with env.sm.begin() as s:
+        pause_article(s, env.article_id, "unclear", "auto")
+        make_dispatch(s, env.article_id, status="unclear")
+    setting(env.sm, "queue_running", False)
+    status = EngineStatus(
+        configured=False,
+        reachable=False,
+        poll_error="403: Forbidden",
+        unexpected=["paused"],
+        waiting_review=[7, 8],
+        rejected="400: No",
+        duplicates=[[1, 2]],
+        error="boom",
+        hook_errors={"b": "x", "a": "y"},
+        skipped_for_update=True,
+        cap_reached=True,
+        waiting_for_printer=[env.article_id],
+    )
+
+    found = warnings(env.sm, status)
+
+    assert found == [
+        EngineWarning("warning.bambuddy_not_configured", {}),
+        EngineWarning("warning.poll_rejected", {"message": "403: Forbidden"}),
+        EngineWarning("warning.unexpected_answer", {"statuses": ["paused"]}),
+        EngineWarning("warning.waiting_for_review", {"count": 2}),
+        EngineWarning("warning.bambuddy_rejected", {"message": "400: No"}),
+        EngineWarning("warning.unclear_prints", {"count": 1}),
+        EngineWarning("warning.duplicates", {"ids": [[1, 2]]}),
+        EngineWarning("warning.tick_error", {"message": "boom"}),
+        EngineWarning("warning.hook_error", {"names": ["a", "b"]}),
+        EngineWarning("warning.update_running", {}),
+        EngineWarning("warning.queue_stopped", {}),
+        EngineWarning("warning.cap_reached", {"cap": 10}),
+        EngineWarning("warning.waiting_for_printer", {"names": ["Template A"]}),
+        EngineWarning(
+            "warning.article_paused",
+            {"name": "Template A", "reason": translate("en", "pause.reason.unclear")},
+        ),
+    ]
+
+
+async def test_warning_texts_exist_and_format(engine_env):
+    """Every warning key has an English and a German text that takes its parameters."""
+    from reprintbuddy.domain.engine import warning_text
+
+    env = engine_env
+    with env.sm.begin() as s:
+        pause_article(s, env.article_id, "unclear", "auto")
+        make_dispatch(s, env.article_id, status="unclear")
+    setting(env.sm, "queue_running", False)
+    status = EngineStatus(
+        configured=True, reachable=False, poll_error="403: Forbidden", unexpected=["paused"],
+        waiting_review=[7], rejected="400: No", duplicates=[[1, 2], [5, 6]], error="boom",
+        hook_errors={"a": "x"}, skipped_for_update=True, cap_reached=True,
+        waiting_for_printer=[env.article_id],
+    )
+    found = warnings(env.sm, status)
+    assert len(found) == 14
+    for lang in ("en", "de"):
+        for warning in found:
+            text = warning_text(lang, warning)
+            assert "{" not in text and "[" not in text, (lang, warning.key, text)
+    groups = EngineWarning("warning.duplicates", {"ids": [[1, 2], [5, 6]]})
+    assert "(entries 1, 2; 5, 6)" in warning_text("en", groups)
+    assert warning_text("de", EngineWarning("warning.cap_reached", {"cap": 3})) == (
+        "Obergrenze von 3 offenen Drucken in Bambuddy erreicht; der Rest wartet in Reprintbuddy."
+    )
+    review = warning_text("en", EngineWarning("warning.waiting_for_review", {"count": 1}))
+    assert "Print Without Review" in review and "queue:start_unreviewed" in review
+
+
+# ---- the loop --------------------------------------------------------------------------
+
+
+async def test_run_loop_requested_and_regular(engine_env, monkeypatch):
+    engine = engine_env.engine
+    calls = record_ticks(engine, monkeypatch)
+
+    async with running(engine, lambda: 0.05):
+        await wait_until(lambda: calls == [True])
+        engine.request_tick()
+        await wait_until(lambda: len(calls) >= 2)
+        assert calls[1] is False
+
+        start = time.monotonic()
+        before = calls.count(True)
+        while time.monotonic() - start < 0.3:
+            engine.request_tick()
+            await asyncio.sleep(0.01)
+
+    assert calls.count(True) - before >= 2
+    assert calls.count(False) >= 5
+
+
+async def test_run_loop_survives_errors(engine_env, monkeypatch):
+    engine = engine_env.engine
+    calls = record_ticks(engine, monkeypatch, fail_first=True)
+
+    async with running(engine, lambda: 60):
+        await wait_until(lambda: engine.status.error is not None)
+        assert engine.status.error == repr(RuntimeError("boom"))
+        engine.request_tick()
+        await wait_until(lambda: len(calls) == 2)
+        await wait_until(lambda: engine.status.error is None)
+
+    assert calls == [True, False]
+
+
+async def test_run_loop_survives_poll_seconds_error(engine_env, monkeypatch, caplog):
+    engine = engine_env.engine
+    calls = record_ticks(engine, monkeypatch)
+    asked = []
+
+    def poll_seconds():
+        asked.append(1)
+        if len(asked) == 1:
+            raise RuntimeError("database is locked")
+        return 0.05
+
+    async with running(engine, poll_seconds) as task:
+        await wait_until(lambda: calls == [True] and engine.status.error is not None)
+        assert engine.status.error == repr(RuntimeError("database is locked"))
+        # The first interval fell back to the default: no second poll soon, but the loop lives.
+        engine.request_tick()
+        await wait_until(lambda: len(calls) == 2)
+        await wait_until(lambda: engine.status.error is None)
+        assert not task.done()
+
+    assert calls[:2] == [True, False]
+    assert "database is locked" in caplog.text
+
+
+async def test_poll_seconds_error_keeps_last_interval(engine_env, monkeypatch):
+    engine = engine_env.engine
+    calls = record_ticks(engine, monkeypatch)
+    asked = []
+
+    def poll_seconds():
+        asked.append(1)
+        if len(asked) == 2:
+            raise RuntimeError("database is locked")
+        return 0.03
+
+    async with running(engine, poll_seconds) as task:
+        await wait_until(lambda: calls.count(True) >= 4)
+        assert not task.done()
+
+
+# ---- Nachtrag: change feed and an early poll -------------------------------------------
+
+
+async def test_status_change_published(engine_env):
+    env = engine_env
+    published = []
+    engine = Engine(env.sm, lambda: env.fake, publish=published.append)
+    await engine.tick(poll=False)
+    assert published == [frozenset({"bambuddy"})]
+    published.clear()
+
+    env.fake.unavailable = True
+    await engine.tick(poll=True)
+    assert engine.status.reachable is False
+    assert published == [frozenset({"bambuddy"})]
+
+    published.clear()
+    await engine.tick(poll=True)
+    assert published == []
+
+
+async def test_publish_error_does_not_break_tick(engine_env, caplog):
+    env = engine_env
+
+    def publish(topics):
+        raise RuntimeError("broker gone")
+
+    engine = Engine(env.sm, lambda: env.fake, publish=publish)
+
+    result = await engine.tick(poll=False)
+
+    assert result == TickResult(None, 1, 1)
+    assert "broker gone" in caplog.text
+
+
+async def test_request_poll_runs_regular_tick(engine_env, monkeypatch):
+    engine = engine_env.engine
+    calls = record_ticks(engine, monkeypatch)
+
+    async with running(engine, lambda: 60):
+        await wait_until(lambda: calls == [True])
+        engine.request_tick()
+        await wait_until(lambda: len(calls) == 2)
+        engine.request_poll()
+        await wait_until(lambda: len(calls) == 3, timeout=0.1)
+
+    assert calls == [True, False, True]

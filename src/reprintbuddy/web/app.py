@@ -43,6 +43,7 @@ from reprintbuddy.web.routes import parts as parts_routes
 from reprintbuddy.web.routes import settings as settings_routes
 from reprintbuddy.web.routes import sets as sets_routes
 from reprintbuddy.web.routes import setup as setup_routes
+from reprintbuddy.web.routes import ui as ui_routes
 
 WEB_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = WEB_DIR / "templates"
@@ -157,4 +158,5 @@ def create_app(
     app.include_router(bookings_routes.router)
     app.include_router(ops_routes.router)
     app.include_router(live_routes.router)
+    app.include_router(ui_routes.router)
     return app

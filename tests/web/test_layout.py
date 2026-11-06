@@ -58,7 +58,7 @@ def test_css_served(ready_client):
     response = ready_client.get("/static/css/reprintbuddy.css")
     assert response.status_code == 200
     assert "#00ae42" in response.text
-    for token in ("#0f172a", "#1e293b", "#334155", "#f1f5f9", "#94a3b8", "#64748b"):
+    for token in ("#161718", "#222326", "#2c2d31", "#ececec", "#a1a1aa", "#8b8d93"):
         assert token in response.text
 
 
@@ -100,8 +100,11 @@ def test_logout_form_posts_with_csrf(ready_client):
 def test_mobile_menu_without_javascript(ready_client):
     html = ready_client.get("/").text
     assert "<details" in html
-    # The menu opens without a script; the only script is the one that keeps the page live.
-    assert re.findall(r"<script[^>]*>", html) == [f'<script src="/static/js/live.js?v={__version__}" defer>']
+    # The menu opens without a script; the scripts only keep the page live and fold the menu faster.
+    assert re.findall(r"<script[^>]*>", html) == [
+        f'<script src="/static/js/live.js?v={__version__}" defer>',
+        f'<script src="/static/js/sidebar.js?v={__version__}" defer>',
+    ]
 
 
 def test_pages_without_sidebar_use_the_stylesheet(client):

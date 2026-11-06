@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from reprintbuddy import i18n as core_i18n
 from reprintbuddy.web import i18n
 
 TEMPLATES = Path(i18n.__file__).parent / "templates"
@@ -23,7 +24,7 @@ def test_translate_en():
 
 def test_fallback_to_en(monkeypatch):
     monkeypatch.setattr(
-        i18n,
+        core_i18n,
         "load_locales",
         lambda: {"en": {"only.en": "English"}, "de": {}},
     )
@@ -31,14 +32,14 @@ def test_fallback_to_en(monkeypatch):
 
 
 def test_missing_raises(monkeypatch):
-    monkeypatch.setattr(i18n, "load_locales", lambda: {"en": {}, "de": {}})
+    monkeypatch.setattr(core_i18n, "load_locales", lambda: {"en": {}, "de": {}})
     with pytest.raises(KeyError):
         i18n.translate("en", "does.not.exist")
 
 
 def test_params(monkeypatch):
     monkeypatch.setattr(
-        i18n, "load_locales", lambda: {"en": {"hello": "Hello {name}"}, "de": {}}
+        core_i18n, "load_locales", lambda: {"en": {"hello": "Hello {name}"}, "de": {}}
     )
     assert i18n.translate("en", "hello", name="Anna") == "Hello Anna"
 
