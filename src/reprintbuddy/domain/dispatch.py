@@ -33,7 +33,7 @@ from reprintbuddy.domain.pauses import pause_article
 from reprintbuddy.domain.stock import write_journal
 from reprintbuddy.domain.tracking import apply_outcome, classify
 from reprintbuddy.domain.workqueue import OPEN_STATES, _ordered, _renumber
-from reprintbuddy.models import Article, Dispatch, WorkQueueEntry, utcnow
+from reprintbuddy.models import Article, Dispatch, JournalEntry, WorkQueueEntry, utcnow
 
 HandOverResult = Literal["queued", "unclear", "not_sent", "rejected"]
 MAX_MESSAGE = 500
@@ -190,16 +190,22 @@ def mark_unclear(session: Session, dispatch_id: int) -> None:
 
 
 def confirm_dispatch(session: Session, dispatch_id: int, item: QueueItem) -> None:
+    """Bambuddy answered `enqueue` with `item`: the print is handed over (see `adopt`)."""
+    adopt(session, dispatch_id, item)
+
+
+def adopt(session: Session, dispatch_id: int, item: QueueItem) -> None:
     """Bambuddy holds the print as `item`; its state follows `tracking.classify`.
 
-    The print becomes `queued` and is handed over (journal), then Bambuddy's state is
-    applied like a poll answer: `printing`, or - for an entry found already finished -
-    provisional stock, replacement or pause. An unknown state leaves it `queued`; the
-    next poll reports it.
+    Used for `enqueue`'s answer and for an entry found by its batch after an unclear
+    hand-over (decision 5). The print becomes `queued` and is handed over (journal,
+    once per print), then Bambuddy's state is applied like a poll answer: `printing`,
+    or - for an entry found already finished - provisional stock, replacement or pause.
+    An unknown state leaves it `queued`; the next poll reports it.
     """
     row = _dispatch(session, dispatch_id)
     if row.status not in ("sending", "unclear"):
-        raise ValueError(f"dispatch {dispatch_id} cannot be confirmed ({row.status})")
+        raise ValueError(f"dispatch {dispatch_id} cannot be adopted ({row.status})")
     row.bambuddy_item_id = item.id
     if row.bambuddy_batch_id is None:
         row.bambuddy_batch_id = item.batch_id
@@ -207,19 +213,59 @@ def confirm_dispatch(session: Session, dispatch_id: int, item: QueueItem) -> Non
     row.dispatched_at = utcnow()
     row.status = "queued"
     session.flush()
+    if not _dispatched_noted(session, row):
+        write_journal(
+            session,
+            kind="print_dispatched",
+            actor="auto",
+            qty=row.units,
+            article_id=row.article_id,
+            details={
+                "dispatch_id": row.id,
+                "item_id": item.id,
+                "batch_id": row.bambuddy_batch_id,
+            },
+        )
+    apply_outcome(session, row.id, classify(item), item.status)
+
+
+def _dispatched_noted(session: Session, row: Dispatch) -> bool:
+    """Whether the journal already says this print was handed over."""
+    lines = session.scalars(
+        select(JournalEntry.details).where(
+            JournalEntry.kind == "print_dispatched", JournalEntry.article_id == row.article_id
+        )
+    )
+    return any((details or {}).get("dispatch_id") == row.id for details in lines)
+
+
+def mark_lost(session: Session, dispatch_id: int) -> None:
+    """A sent print Bambuddy does not have: `missing`, article paused `unclear` (decision 5).
+
+    Not `tracking.apply_outcome(..., "missing")`: that is for an entry deleted in
+    Bambuddy (pause `missing_in_bambuddy`). Here it is unknown whether Bambuddy ever
+    took the print - or printed it and its history was cleared - so a person has to look.
+    The print is never sent again; it is finished and stays out of the work queue.
+    """
+    row = _dispatch(session, dispatch_id)
+    if row.status not in ("sending", "unclear") or row.enqueue_sent_at is None:
+        raise ValueError(f"dispatch {dispatch_id} cannot be lost ({row.status})")
+    row.status = "missing"
+    row.finished_at = utcnow()
+    session.flush()
     write_journal(
         session,
-        kind="print_dispatched",
+        kind="print_missing",
         actor="auto",
         qty=row.units,
         article_id=row.article_id,
         details={
             "dispatch_id": row.id,
-            "item_id": item.id,
+            "reason": "not_found_after_send",
             "batch_id": row.bambuddy_batch_id,
         },
     )
-    apply_outcome(session, row.id, classify(item), item.status)
+    pause_article(session, row.article_id, "unclear", "auto", details={"dispatch_id": row.id})
 
 
 def return_print(
@@ -331,3 +377,80 @@ async def hand_over(
     with sm.begin() as session:
         confirm_dispatch(session, res.dispatch_id, item)
     return "queued"
+
+
+# ---- settling unclear hand-overs -------------------------------------------------------
+
+
+@dataclass
+class ResolveReport:
+    reachable: bool
+    resolved: int  # sent prints found in Bambuddy and adopted
+    unresolved: int  # sent prints left `unclear` because the search failed
+    duplicates: list[list[int]]  # Bambuddy ids per print found more than once
+    lost: list[int]  # dispatch ids of sent prints Bambuddy does not have
+
+
+async def resolve_pending(client: BambuddyClient, sm: sessionmaker) -> ResolveReport:
+    """Settle every print in `sending`/`unclear` (decision 5); never sends anything.
+
+    1. Never sent (`enqueue_sent_at` empty): back to the work queue, without the network.
+       Newest first, so prints reserved one after another land where they were.
+    2. Sent, oldest first: search Bambuddy by the print's batch. One entry is adopted;
+       several: the smallest id is adopted and the article paused (`unclear`); none: the
+       print is lost (`mark_lost`), never re-enqueued.
+
+    Unreachable or refused while searching: this and every later sent print stays (or
+    becomes) `unclear`; what was settled before stays. Every step is its own short
+    transaction, and no Bambuddy call runs inside one.
+    """
+    report = ResolveReport(reachable=True, resolved=0, unresolved=0, duplicates=[], lost=[])
+    with sm() as session:
+        rows = session.execute(
+            select(Dispatch.id, Dispatch.enqueue_sent_at, Dispatch.bambuddy_batch_id)
+            .where(Dispatch.status.in_(("sending", "unclear")))
+            .order_by(Dispatch.id)
+        ).all()
+    never_sent = [d for d, sent_at, _ in rows if sent_at is None]
+    sent = sorted(
+        ((sent_at, d, batch_id) for d, sent_at, batch_id in rows if sent_at is not None)
+    )
+
+    for dispatch_id in reversed(never_sent):
+        with sm.begin() as session:
+            return_print(session, dispatch_id, "not_sent")
+
+    for index, (_, dispatch_id, batch_id) in enumerate(sent):
+        if batch_id is None:
+            # The mark is set only after the batch exists; without one, enqueue never ran.
+            items: list[QueueItem] = []
+        else:
+            try:
+                items = await client.find_items_by_batch(batch_id)
+            except (BambuddyUnavailable, BambuddyRejected) as exc:
+                report.reachable = not isinstance(exc, BambuddyUnavailable)
+                rest = [d for _, d, _ in sent[index:]]
+                with sm.begin() as session:
+                    for d in rest:
+                        mark_unclear(session, d)
+                report.unresolved = len(rest)
+                break
+        with sm.begin() as session:
+            if not items:
+                mark_lost(session, dispatch_id)
+                report.lost.append(dispatch_id)
+                continue
+            items = sorted(items, key=lambda i: i.id)
+            adopt(session, dispatch_id, items[0])
+            report.resolved += 1
+            if len(items) > 1:
+                ids = [i.id for i in items]
+                pause_article(
+                    session,
+                    _dispatch(session, dispatch_id).article_id,
+                    "unclear",
+                    "auto",
+                    details={"dispatch_id": dispatch_id, "item_ids": ids},
+                )
+                report.duplicates.append(ids)
+    return report
