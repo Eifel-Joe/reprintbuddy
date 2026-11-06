@@ -2,26 +2,23 @@
 
 from __future__ import annotations
 
-import re
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.bambuddy.client import BambuddyUnavailable
 from reprintbuddy.domain import filament, reorder
 from reprintbuddy.domain.errors import DomainError
 from reprintbuddy.domain.filament import FilamentSettingsInput
 from reprintbuddy.models import FilamentSettings, FilamentSort, utcnow
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, render
+from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.formatting import format_date
 from reprintbuddy.web.forms import error_status, error_text, parse_int, parse_text, saved_redirect
+from reprintbuddy.web.filament_view import COLOR, spools_or_none
 from reprintbuddy.web.formtoken import write_transaction
 
 router = APIRouter()
 
-_COLOR = re.compile(r"#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?")
 TEXT_FIELDS = ("supplier", "order_url", "safety_unit")
 NUMBER_FIELDS = ("lead_time_days", "safety_value", "pack_grams", "min_order_packs")
 DEFAULTS = {
@@ -30,20 +27,9 @@ DEFAULTS = {
 }
 
 
-async def _spools_or_none(request: Request):
-    """The spools now; None when Bambuddy is not configured or cannot be reached (never a 500)."""
-    client = get_bambuddy(request)
-    if client is None:
-        return None
-    try:
-        return await client.list_spools()
-    except BambuddyUnavailable:
-        return None
-
-
 @router.get("/filament")
 async def filament_list(request: Request):
-    spools = await _spools_or_none(request)  # before any write transaction
+    spools = await spools_or_none(request)  # before any write transaction
     lang = current_language(request)
     today = utcnow().date()
     with write_transaction(request) as tx:  # entering new sorts is the one write (Entscheidung 4)
@@ -59,7 +45,7 @@ async def filament_list(request: Request):
                 "id": sort.id,
                 "label": sort.label,
                 "material": sort.material or "",
-                "swatch": sort.color_hex if sort.color_hex and _COLOR.fullmatch(sort.color_hex) else None,
+                "swatch": sort.color_hex if sort.color_hex and COLOR.fullmatch(sort.color_hex) else None,
                 "stock": f"{entry.stock_g:.0f}" if entry is not None else None,
                 "spools": entry.spools if entry is not None else None,
                 "per_day": f"{per_day:.1f}" if days else None,

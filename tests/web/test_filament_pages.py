@@ -52,9 +52,12 @@ def test_filament_page_unknown_without_record(bb_client, fake_bambuddy):  # Anti
     fake_bambuddy.unavailable = True
     page = bb_client.get("/filament")
     assert page.status_code == 200
-    assert "not known right now" in page.text
+    assert "nothing has been recorded yet" in page.text
+    assert "saved assignment" not in page.text  # that sentence belongs to the mapping page
     line = [r for r in rows_of(page.text) if "Example Brand PLA Black" in r][0]
-    assert "—" in line and ">0<" not in line and f'/filament/{sort.id}"' in line
+    cells = re.findall(r"<td[^>]*>(.*?)</td>", line, re.S)
+    assert cells[2].strip() == "—" and cells[3].strip() == "—"  # stock and spools, never "0 g"
+    assert f'/filament/{sort.id}"' in cells[6]
 
 
 def test_unmapped_slot_hint(bb_client, fake_bambuddy):

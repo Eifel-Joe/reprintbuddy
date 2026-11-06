@@ -513,5 +513,6 @@
   "filament.field.supplier": "Lieferant",
   "filament.field.order_url": "Bestell-Link",
   "filament.safety_unit.days": "Tage",
-  "filament.safety_unit.grams": "Gramm"
+  "filament.safety_unit.grams": "Gramm",
+  "filament.stock_unknown": "Der Filamentbestand ist gerade nicht bekannt: Bambuddy ist nicht erreichbar und es wurde noch nichts aufgezeichnet."
 }

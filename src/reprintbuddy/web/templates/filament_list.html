@@ -5,7 +5,7 @@
 {% call ui.page_head("disc-3", t('nav.filament')) %}{% endcall %}
 {% if live %}<p class="muted" role="status">{{ t('filament.live') }}</p>
 {% elif stale_day %}<p class="alert" role="status">{{ t('filament.stale', day=stale_day) }}</p>
-{% else %}<p class="alert" role="status">{{ t('filament.unknown') }}</p>{% endif %}
+{% else %}<p class="alert" role="status">{{ t('filament.stock_unknown') }}</p>{% endif %}
 <section class="card section wide">
   {% if rows %}
   <div class="table-wrap">

@@ -40,6 +40,7 @@ from reprintbuddy.web.forms import (
     saved_redirect,
 )
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
+from reprintbuddy.web.filament_view import COLOR, spools_or_none
 from reprintbuddy.web.journal_view import journal_rows
 from reprintbuddy.web.i18n import translate
 
@@ -291,7 +292,6 @@ async def articles_thumbnail(request: Request, file_id: int, index: int):
     return Response(data, media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
 
 
-_COLOR = re.compile(r"#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?")
 
 
 def _requirement_row(r: FilamentRequirement) -> dict[str, object]:
@@ -301,7 +301,7 @@ def _requirement_row(r: FilamentRequirement) -> dict[str, object]:
         "material": r.material or "",
         "grams": f"{r.grams:.1f}",
         "color": r.color_hex or "",
-        "swatch": r.color_hex if r.color_hex and _COLOR.fullmatch(r.color_hex) else None,
+        "swatch": r.color_hex if r.color_hex and COLOR.fullmatch(r.color_hex) else None,
     }
 
 
@@ -557,17 +557,6 @@ async def article_update(request: Request, article_id: int, db: Session = Depend
 _SLOT_FIELD = re.compile(r"slot_([0-9]{1,9})", re.ASCII)
 
 
-async def _spools_or_none(request: Request):
-    """The spools now; None when Bambuddy is not configured or cannot be reached (never a 500)."""
-    client = get_bambuddy(request)
-    if client is None:
-        return None
-    try:
-        return await client.list_spools()
-    except BambuddyUnavailable:
-        return None
-
-
 def _filament_page(request: Request, spools, article_id: int, typed: Mapping[int, str] | None = None,
                    error: str | None = None, status: int = 200):
     """The mapping form. Reads (and enters new sorts, Entscheidung 4) in one write transaction;
@@ -599,7 +588,7 @@ def _filament_page(request: Request, spools, article_id: int, typed: Mapping[int
             "grams": f"{r.grams:.1f}",
             "material": r.material or "",
             "color": r.color_hex or "",
-            "swatch": r.color_hex if r.color_hex and _COLOR.fullmatch(r.color_hex) else None,
+            "swatch": r.color_hex if r.color_hex and COLOR.fullmatch(r.color_hex) else None,
             "options": [(str(i), labels.get(i, str(i)), str(i) == chosen) for i in ids],
             "none_selected": chosen == "",
             "is_suggestion": r.mapped is None and r.suggested is not None and chosen == str(r.suggested),
@@ -616,7 +605,7 @@ def _filament_page(request: Request, spools, article_id: int, typed: Mapping[int
 @router.get("/articles/{article_id:int}/filaments")
 async def article_filaments(request: Request, article_id: int, db: Session = Depends(get_db)):
     _get_article(db, article_id)
-    spools = await _spools_or_none(request)  # before any write transaction
+    spools = await spools_or_none(request)  # before any write transaction
     return _filament_page(request, spools, article_id)
 
 
@@ -629,7 +618,7 @@ async def article_filaments_save(request: Request, article_id: int, db: Session 
         m = _SLOT_FIELD.fullmatch(key)
         if m and isinstance(value, str):
             typed[int(m.group(1))] = value
-    spools = await _spools_or_none(request)  # before any write transaction
+    spools = await spools_or_none(request)  # before any write transaction
     lang = current_language(request)
     try:
         mapping: dict[int, int | None] = {}
