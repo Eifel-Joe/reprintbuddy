@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% block title %}{{ t('nav.assembly') }}{% endblock %}
+{% block content %}
+{% call ui.page_head("wrench", t('nav.assembly')) %}{% endcall %}
+{% call ui.region("list", "article part") %}
+{# An error for an article that has no card (unknown, archived, nothing waiting any more) shows on top. #}
+{% if error and not rows|selectattr('article_id', 'equalto', error_article)|list %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% if not rows %}
+<section class="card section"><p class="muted">{{ t('assembly.empty') }}</p></section>
+{% endif %}
+{% for row in rows %}
+<section class="card section">
+  <h2>{{ row.name }}</h2>
+  <p>{{ t('articles.col.awaiting_assembly') }}: <strong>{{ row.awaiting }}</strong></p>
+  {% if row.parts %}
+  <h3>{{ t('articles.parts_title') }}</h3>
+  <ul class="plain-list">
+    {% for need in row.parts %}
+    <li{% if need.stock < need.qty_per_unit * row.awaiting %} class="neg"{% endif %}>{{ need.name }}: {{ t('assembly.part_line', qty=need.qty_per_unit, stock=need.stock) }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if error_article == row.article_id and error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+  {% set v = values if error_article == row.article_id else {} %}
+  <form method="post" action="/assembly/{{ row.article_id }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <label>{{ t('bookings.field.qty') }}
+      <input name="qty" inputmode="numeric" value="{{ v.get('qty', row.awaiting) }}" required>
+    </label>
+    <label>{{ t('journal.field.note') }} <input name="note" value="{{ v.get('note', '') }}" maxlength="500"></label>
+    <button class="btn" type="submit">{{ t('assembly.book') }}</button>
+  </form>
+</section>
+{% endfor %}
+{% endcall %}
+{% endblock %}

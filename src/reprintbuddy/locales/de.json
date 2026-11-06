@@ -485,5 +485,9 @@
   "bookings.subtitle": "Inventur, Eingang und Verkauf ohne Bestellung buchen",
   "journal.subtitle": "Jede Änderung am Bestand, mit Zeit und Herkunft",
   "articles.edit_subtitle": "Mindestbestand, Ziel und Automatik dieses Artikels",
-  "articles.new_subtitle": "Neuen Artikel aus einer Druckdatei in Bambuddy anlegen"
+  "articles.new_subtitle": "Neuen Artikel aus einer Druckdatei in Bambuddy anlegen",
+  "assembly.empty": "Kein Artikel wartet auf Montage.",
+  "assembly.book": "Montiert buchen",
+  "assembly.done": "{name}: {n} montiert.",
+  "assembly.part_line": "{qty} je Einheit, Bestand {stock}"
 }

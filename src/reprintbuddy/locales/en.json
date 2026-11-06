@@ -485,5 +485,9 @@
   "bookings.subtitle": "Book stocktaking, receipts and sales without an order",
   "journal.subtitle": "Every change to the stock, with time and origin",
   "articles.edit_subtitle": "Minimum stock, target and automation of this article",
-  "articles.new_subtitle": "Create an article from a print file in Bambuddy"
+  "articles.new_subtitle": "Create an article from a print file in Bambuddy",
+  "assembly.empty": "No articles are waiting for assembly.",
+  "assembly.book": "Book assembled",
+  "assembly.done": "{name}: {n} assembled.",
+  "assembly.part_line": "{qty} per unit, stock {stock}"
 }

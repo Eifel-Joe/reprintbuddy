@@ -663,3 +663,5 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
   .setting-control input:not([type="checkbox"]):not([type="file"]), .setting-control select { width: 100%; }
   .setting-row:has(input.switch) .setting-control { width: auto; flex: 0 0 auto; }
 }
+/* A button is at least 44 px high, so it can be hit with a thumb (assembly page on the phone). */
+.btn { min-height: 2.75rem; }

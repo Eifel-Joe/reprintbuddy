@@ -160,6 +160,7 @@ def test_login_setup_and_password_change_all_go_through_the_limiter(db_path):
         st.set_setting(s, "bambuddy_username", "reprintbuddy")
         st.set_setting(s, "bambuddy_api_key", "bb_testkey")
         st.set_setting(s, "bambuddy_review_confirmed", True)
+    client.app.state.rights.status = "ok"  # not about the rights: no question to a Bambuddy (Spec 12)
     limiter.calls.clear()
     token = csrf_of(client, "/settings")
     client.post(

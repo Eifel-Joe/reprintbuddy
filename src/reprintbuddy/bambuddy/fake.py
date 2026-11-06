@@ -58,8 +58,8 @@ class FakeBambuddy:
         self._files.pop(file_id, None)
         self._plates.pop(file_id, None)
 
-    def add_printer(self, name: str, model: str) -> Printer:
-        printer = Printer(len(self._printers) + 1, name, model)
+    def add_printer(self, name: str, model: str, *, active: bool = True) -> Printer:
+        printer = Printer(len(self._printers) + 1, name, model, active)
         self._printers.append(printer)
         return printer
 
