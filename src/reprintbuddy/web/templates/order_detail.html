@@ -4,6 +4,8 @@
 {% block content %}
 {#- Data and forms are separate regions (plan decision 4): a note typed into a form does not
     freeze the numbers above it. The head is part of `main`, so its badge follows the order. -#}
+{#- Outside the regions and above the order, so a long order on a phone does not hide it. -#}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {% call ui.region("main", "order:" ~ order.id ~ " article") %}
 {% call ui.page_head("receipt", order.reference) %}
 <p class="summary">{{ order.order_date|local_date }} · {{ ui.badge('order', order.display_status) }}</p>
@@ -25,7 +27,6 @@
   {% endfor %}
 </section>
 {% endcall %}
-{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {#- The forms watch their order: if it is shipped or cancelled elsewhere while a note is typed,
     the note stays and "This has changed in the meantime" appears (Design 4.6). -#}
 {% call ui.region("actions", "order:" ~ order.id ~ " article") %}

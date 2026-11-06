@@ -280,8 +280,7 @@ def list_orders(session: Session, view: Literal["open", "closed"]) -> list[Order
             select(Order)
             .where(Order.status != "open")
             .order_by(Order.closed_at.desc(), Order.id.desc())
-            .limit(100)
-        )
+        )  # all of them: the page searches and counts the whole view (Spec 10.1)
     return [_view(session, o) for o in session.scalars(query)]
 
 

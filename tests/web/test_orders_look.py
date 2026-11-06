@@ -147,6 +147,22 @@ def test_closed_view_filters_shipped_and_cancelled(ready_client):
     assert other_view.status_code == 200 and en("orders.empty_list") in region(other_view.text, "list")
 
 
+def test_closed_view_sees_every_closed_order(ready_client):
+    """Search and summary cover all closed orders, not only the newest hundred."""
+    a = article(ready_client, stock_=0)
+    with sm_of(ready_client).begin() as s:
+        for n in range(1, 102):  # Order 0001 is closed first, so it is the oldest
+            order = orders.create_order(
+                s, reference=f"Order {n:04d}", order_date=date(2026, 1, 15),
+                items=[ArticleItem(a, 1)], actor="user",
+            )
+            orders.cancel_order(s, order.id, "user")
+    page = ready_client.get("/orders?view=closed").text
+    assert text_of(summary_of(page)) == "101 closed orders · 101 cancelled"
+    found = region(ready_client.get("/orders?view=closed&q=0001").text, "list")
+    assert "Order 0001" in found and "Order 0101" not in found
+
+
 def test_orders_search_by_reference(ready_client):
     open_pair(ready_client)
     page = ready_client.get("/orders?q=1002").text
@@ -244,12 +260,31 @@ def test_order_detail_splits_data_and_forms(ready_client):
         assert '<p class="live-stale" hidden role="status">' in form
 
 
-def test_order_detail_error_stays_outside_the_regions(ready_client):
+def test_order_detail_regions_are_balanced(ready_client):  # like test_regions for the static pages
+    page = ready_client.get(f"/orders/{place(ready_client, article(ready_client))}").text
+    marks = re.findall(r"<!--(/?)live:([^>]*?)-->", page)
+    assert marks == [("", "main"), ("/", "main"), ("", "actions"), ("/", "actions")]
+
+
+def test_stock_elsewhere_offers_shipping_on_the_detail_page(ready_client):  # topic "article"
+    a = article(ready_client)
+    o = place(ready_client, a, 1)
+    assert f'action="/orders/{o}/ship"' not in ready_client.get(f"/orders/{o}").text
+    with sm_of(ready_client).begin() as s:
+        stock.stock_in(s, a, 1, "user", consume_parts=False)
+    found = regions_of(ready_client, f"/orders/{o}", "main", "actions")
+    assert '<span class="badge tone-ok">ready to ship</span>' in found["main"]
+    assert f'action="/orders/{o}/ship"' in found["actions"]
+
+
+def test_order_detail_error_stays_outside_the_regions_and_on_top(ready_client):
     o = place(ready_client, article(ready_client, stock_=1), 2)
     page = ready_client.post(f"/orders/{o}/ship", data=with_tokens(ready_client, o)).text
     alert = f'<p class="alert" role="alert">{en("orders.not_ready")}</p>'
     assert alert in page
     assert alert not in region(page, "main") and alert not in region(page, "actions")
+    # above the order: on a phone a long order would push it out of sight
+    assert page.index(alert) < page.index("<!--live:main-->")
 
 
 def test_failed_ship_page_has_no_region_source(ready_client):  # Review Focus 2
