@@ -75,10 +75,14 @@ MAX_PART_ROWS = 200  # more rows than any article has parts; a forged form canno
 _ROW_INDEX = re.compile(r"[0-9]{1,3}")
 
 
-def part_rows(form) -> list[dict[str, str]]:
-    """The rows of the parts list as typed: chosen part and quantity, in the order of the form."""
+def _all_part_rows(form) -> list[dict[str, str]]:
     pairs = zip_longest(form.getlist("parts_part"), form.getlist("parts_qty"), fillvalue="")
-    return [{"part": str(part).strip(), "qty": str(qty).strip()} for part, qty in pairs][:MAX_PART_ROWS]
+    return [{"part": str(part).strip(), "qty": str(qty).strip()} for part, qty in pairs]
+
+
+def part_rows(form) -> list[dict[str, str]]:
+    """The rows of the parts list as typed, to show the form again: at most MAX_PART_ROWS."""
+    return _all_part_rows(form)[:MAX_PART_ROWS]
 
 
 def parse_parts(form, parts: list[Part]) -> dict[int, int]:
@@ -90,7 +94,10 @@ def parse_parts(form, parts: list[Part]) -> dict[int, int]:
         return {}
     names = {str(part.id): part.name for part in parts}
     chosen: dict[int, int] = {}
-    for row in part_rows(form):
+    rows = _all_part_rows(form)
+    if len(rows) > MAX_PART_ROWS:  # not cut off: a part in a later row would be lost quietly
+        raise ValidationError("articles.part_too_many", max=MAX_PART_ROWS)
+    for row in rows:
         if not row["part"]:
             continue
         name = names.get(row["part"])

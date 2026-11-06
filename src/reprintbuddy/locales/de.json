@@ -204,6 +204,7 @@
   "articles.part_qty_head": "Menge",
   "articles.part_add": "Teil hinzufügen",
   "articles.part_remove": "Entfernen",
+  "articles.part_too_many": "Die Liste hat mehr als {max} Zeilen. Entferne die leeren.",
   "articles.part_twice": "{name} ist zweimal gewählt. Jedes Teil nur einmal wählen.",
   "articles.part_qty_invalid": "{name}: Die Menge je Einheit muss eine ganze Zahl von {min} bis {max} sein.",
   "articles.filament_title": "Filamentbedarf je Druck",

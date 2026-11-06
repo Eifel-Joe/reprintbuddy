@@ -334,3 +334,24 @@ def test_edit_unticked_rows_are_kept_in_the_form_after_an_error(ready_client):
     assert response.status_code == 200
     assert not has_parts_checked(response.text)
     assert [(c, q) for c, q, _ in rows_of(response.text)] == [(str(insert), "2")]
+
+
+# ---- limits ---------------------------------------------------------------------------------
+
+
+def test_too_many_rows_are_refused_and_not_cut_off(bb_client):
+    """A part in row 201 must not be lost quietly: the save says no."""
+    insert, _ = two_parts(bb_client)
+    response = bb_client.post(FORM, data=create_fields(
+        bb_client, has_parts="on",
+        parts_part=[""] * 200 + [str(insert)], parts_qty=[""] * 200 + ["1"]))
+    assert response.status_code == 200
+    assert en("articles.part_too_many", max=200) in response.text
+    assert article_count(bb_client) == 0
+
+
+def test_add_stops_at_the_row_limit(bb_client):
+    insert, _ = two_parts(bb_client)
+    response = bb_client.post(FORM, data=create_fields(
+        bb_client, has_parts="on", parts_part=[""] * 200, parts_qty=[""] * 200, parts_add="1"))
+    assert response.status_code == 200 and len(rows_of(response.text)) == 200
