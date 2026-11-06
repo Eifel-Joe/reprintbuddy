@@ -210,7 +210,7 @@ B6_REGIONS = [
     ("/filament/{sort}", "form", "filament-settings:{sort}"),
     ("/articles/{article}/filaments", "form", "article-settings:{article} filament"),
     ("/reorder", "suggestions", "filament reorder part article queue journal"),
-    ("/reorder", "under-way", "reorder part journal"),
+    ("/reorder", "under-way", "reorder part journal filament"),
 ]
 
 
@@ -247,3 +247,16 @@ def test_article_detail_main_region_follows_filament(ready_client):
     ids = b6_ids(ready_client)
     page = ready_client.get(f"/articles/{ids['article']}").text
     assert f'data-live-topics="article:{ids["article"]} part filament"' in page
+
+
+@pytest.mark.parametrize("path", ["/filament/{sort}", "/articles/{article}/filaments"])
+def test_b6_region_response_contains_the_watched_form(ready_client, path):
+    ids = b6_ids(ready_client)
+    piece = ready_client.get(path.format(**ids), headers={regions.HEADER: "form"}).text
+    assert "data-live-watch=" in piece and 'class="live-stale"' in piece
+
+
+def test_unknown_sorts_notice_is_inside_the_region(ready_client):  # no Bambuddy: the stock is unknown
+    ids = b6_ids(ready_client)
+    piece = ready_client.get(f"/articles/{ids['article']}/filaments", headers={regions.HEADER: "form"}).text
+    assert en("filament.unknown") in piece

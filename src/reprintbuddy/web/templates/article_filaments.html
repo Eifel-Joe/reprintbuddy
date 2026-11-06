@@ -5,8 +5,8 @@
 {% call ui.page_head("package", article_name) %}{% endcall %}
 <h2>{{ t('filament.title') }}</h2>
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
-{% if sorts_unknown %}<p class="alert" role="status">{{ t('filament.unknown') }}</p>{% endif %}
 {% call ui.region("form", "article-settings:" ~ article_id ~ " filament") %}
+{% if sorts_unknown %}<p class="alert" role="status">{{ t('filament.unknown') }}</p>{% endif %}
 <section class="card section wide">
   <p class="muted">{{ t('filament.intro') }}</p>
   <form method="post" action="/articles/{{ article_id }}/filaments" data-live-watch="article-settings:{{ article_id }}">

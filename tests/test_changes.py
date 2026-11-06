@@ -314,3 +314,17 @@ def test_filament_settings_report_their_own_topic(db, published):
     with db.begin() as s:
         make_sort(s, color_hex="#ffffff")  # another sort or a snapshot does not touch this form
     assert all(f"filament-settings:{sort_id}" not in topics for topics in published)
+
+
+def test_saving_filament_settings_reports_only_a_real_change(db, published):
+    with db.begin() as s:
+        sort_id = make_sort(s).id
+        s.add(FilamentSettings(spool_filament_id=sort_id))
+    published.clear()
+    with db.begin() as s:
+        s.get(FilamentSettings, sort_id).supplier = "Example Supplier"
+    assert published == [frozenset({"filament", f"filament-settings:{sort_id}"})]
+    published.clear()
+    with db.begin() as s:
+        s.get(FilamentSettings, sort_id).supplier = "Example Supplier"  # same value
+    assert published == []
