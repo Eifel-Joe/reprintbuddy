@@ -203,3 +203,20 @@ def test_part_receipt_closes_mark_without_bambuddy(bb_client, fake_bambuddy):  #
     html = bb_client.get("/reorder").text
     assert "On its way" not in html
     assert marks(bb_client)[0].received_at is not None
+
+
+def test_long_supplier_sits_in_the_detail_line_and_css_wraps_it(bb_client):
+    long_name = "Supplier" + "x" * 80
+    add_part(bb_client, supplier=long_name)
+    html = bb_client.get("/reorder").text
+    detail = re.search(r'<p class="reorder-detail">(.*?)</p>', html, re.S).group(1)
+    assert long_name in detail
+    css = bb_client.get("/static/css/reprintbuddy.css").text
+    assert re.search(r"\.reorder-detail \{[^}]*overflow-wrap: anywhere", css)
+    assert re.search(r"\.reorder-detail a \{[^}]*var\(--accent\)", css)
+
+
+def test_under_way_row_has_no_stray_slot_select_class(bb_client):
+    part_id = add_part(bb_client)
+    mark_form(bb_client, "part", part_id, "1")
+    assert "slot-select" not in bb_client.get("/reorder").text

@@ -495,6 +495,9 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
 .table-card td.positions { white-space: nowrap; }
 /* A long supplier or article name without spaces wraps inside the tile instead of widening the page. */
 .tile-foot span { min-width: 0; overflow-wrap: anywhere; }
+/* Reorder tile: the detail line (amount, supplier, order link) wraps a long supplier name too. */
+.reorder-detail { overflow-wrap: anywhere; }
+.reorder-detail a { color: var(--accent); text-decoration: none; }
 
 /* ---- orders (Bestellungen) ------------------------------------------------- */
 /* What an order holds, in its tile: one line per set or article. */

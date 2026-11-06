@@ -47,3 +47,7 @@ async def test_hook_runs_in_engine_tick(engine_env):
     with env.sm() as s:
         assert s.query(FilamentSort).count() == 2
         assert s.query(FilamentSnapshot).count() == 2
+
+
+def test_hook_registered(ready_client):
+    assert "filament" in ready_client.app.state.ticker.hooks

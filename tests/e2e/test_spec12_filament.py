@@ -1,15 +1,12 @@
 """Walk-through of the acceptance step Spec 12 step 9 (filament reorder) over the B6 pages.
 
-Only the in-memory Bambuddy fake is used. The ticker test builds an `Engine` on the app's
-sessionmaker by hand; once the engine is wired into the app, it becomes `client.app.state.ticker`.
+Only the in-memory Bambuddy fake is used. The ticker test runs the app's own `app.state.ticker`.
 """
 
 import re
 
 from conftest import csrf_of, run_tick, sm_of
 from factories import make_article, make_filament_settings, make_sort
-from reprintbuddy.domain import filament
-from reprintbuddy.domain.engine import Engine
 from reprintbuddy.models import ArticleFilament, FilamentSettings, FilamentSnapshot, FilamentSort, utcnow
 
 
@@ -96,12 +93,10 @@ def test_spec12_step_9(bb_client, fake_bambuddy):
     assert "Suggestion: 1 × 1000 g" in only_tile(bb_client, sort_id)
 
 
-# The ticker is built by hand here; it becomes `client.app.state.ticker` once the engine is wired in.
 def test_daily_record_through_ticker(bb_client, fake_bambuddy):
     fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
     fake_bambuddy.add_spool("PETG", color_hex="#FFFFFF", color_name="White")
-    engine = Engine(sm_of(bb_client), lambda: fake_bambuddy)
-    engine.add_poll_hook("filament", filament.poll_hook)
+    engine = bb_client.app.state.ticker
     today = utcnow().date()
 
     run_tick(engine, poll=True)

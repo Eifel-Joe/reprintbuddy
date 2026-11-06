@@ -44,7 +44,7 @@
           <td>{{ m.label }}: {{ m.packs }} × {{ m.size }} {{ m.unit }}</td>
           <td>{{ m.day }}</td>
         </tr>
-        <tr class="slot-select">
+        <tr>
           <td colspan="2">
             <form method="post" action="/reorder/marks/{{ m.id }}/received">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

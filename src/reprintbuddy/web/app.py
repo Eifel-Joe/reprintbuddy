@@ -22,7 +22,7 @@ from reprintbuddy import __version__
 from reprintbuddy import settings as st
 from reprintbuddy.changes import install_change_feed
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
-from reprintbuddy.domain import status
+from reprintbuddy.domain import filament, status
 from reprintbuddy.domain.engine import Engine
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.running import update_running
@@ -160,6 +160,7 @@ def create_app(
         update_running=lambda: update_running(db_path.parent, app.state.ops.runner, datetime.now(UTC)),
         publish=live.publish,
     )
+    app.state.ticker.add_poll_hook("filament", filament.poll_hook)  # the daily record and receipt check (B6)
     app.state.run_engine = run_engine
     app.state.ticker_task = None  # the background loop while the app runs (see _lifespan)
 
