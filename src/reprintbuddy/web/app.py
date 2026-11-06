@@ -22,6 +22,8 @@ from reprintbuddy.web import deps
 from reprintbuddy.web.flash import pop_flashes
 from reprintbuddy.web.formatting import local_date, local_dt
 from reprintbuddy.web.formtoken import issue_form_token
+from reprintbuddy.web.i18n import load_locales
+from reprintbuddy.web.preload import PreloadedLoader
 from reprintbuddy.web.rights import RightsMonitor
 from reprintbuddy.web.throttle import FailureBrake, HashLimiter
 from reprintbuddy.web.routes import articles as articles_routes
@@ -38,6 +40,7 @@ from reprintbuddy.web.routes import sets as sets_routes
 from reprintbuddy.web.routes import setup as setup_routes
 
 WEB_DIR = Path(__file__).resolve().parent
+TEMPLATES_DIR = WEB_DIR / "templates"
 
 
 class BoundedInt(Convertor[int]):
@@ -84,7 +87,12 @@ def create_app(
     app.state.session_secret = secret  # also signs the one-time form tokens
     app.state.rights = RightsMonitor()  # what the stored key may do, checked once per start
 
-    templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
+    # Templates and texts are read now and never again: an update replaces the files while this
+    # process still answers, and it must go on rendering what it started with.
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+    templates.env.loader = PreloadedLoader(TEMPLATES_DIR)
+    templates.env.auto_reload = False
+    load_locales()
     templates.env.globals["t"] = deps.t
     templates.env.globals["pop_flashes"] = pop_flashes
     # In the address of every file under /static/: a new version is a new address, so the browser
