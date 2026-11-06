@@ -7,6 +7,7 @@ and never logged.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -155,27 +156,11 @@ def _evaluate(body: object) -> ConnectionCheck:
 
 
 async def check_connection(url: str, api_key: str, client: httpx.AsyncClient) -> ConnectionCheck:
-    """Can Reprintbuddy reach Bambuddy, and may this key do everything Reprintbuddy needs?"""
-    try:
-        response = await client.get(
-            f"{url.rstrip('/')}/api/v1/auth/me",
-            headers={"X-API-Key": api_key},
-            timeout=TIMEOUT_SECONDS,
-        )
-    except (httpx.HTTPError, httpx.InvalidURL):
-        return ConnectionCheck(False, "unreachable")
+    """Can Reprintbuddy reach Bambuddy, and may this key do everything Reprintbuddy needs?
 
-    status = response.status_code
-    if status == 401:
-        return ConnectionCheck(False, "unauthorized")
-    if status == 403:
-        return ConnectionCheck(False, "forbidden")
-    if status >= 500:
-        return ConnectionCheck(False, "unreachable")
-    if status == 200:
-        try:
-            body = response.json()
-        except ValueError:
-            return ConnectionCheck(False, "not_bambuddy")
-        return _evaluate(body)
-    return ConnectionCheck(False, "not_bambuddy")
+    A thin wrapper around `HttpBambuddyClient.check_connection`; the caller's `client` stays open.
+    """
+    # Imported here: `client` itself imports from this module.
+    from reprintbuddy.bambuddy.client import HttpBambuddyClient
+
+    return await HttpBambuddyClient(url, api_key, lambda: nullcontext(client)).check_connection()

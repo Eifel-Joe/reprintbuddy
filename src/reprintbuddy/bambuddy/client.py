@@ -9,7 +9,7 @@ from typing import Callable, Protocol, runtime_checkable
 
 import httpx
 
-from reprintbuddy.bambuddy.connection import TIMEOUT_SECONDS
+from reprintbuddy.bambuddy.connection import TIMEOUT_SECONDS, ConnectionCheck, _evaluate
 from reprintbuddy.bambuddy.types import (
     EnqueueRequest,
     FilamentRequirement,
@@ -234,3 +234,29 @@ class HttpBambuddyClient:
         """`None`: the entry is gone (deleted, or removed with the history; Decision 3)."""
         data = await self._get(f"/queue/{item_id}", none_on_404=True)
         return None if data is None else _parse.parse_queue_item(data)
+
+    async def check_connection(self) -> ConnectionCheck:
+        """Who owns the key and may it do everything Reprintbuddy needs? Never raises.
+
+        Mapping as in B1: network error, timeout, invalid address and 5xx are `unreachable`;
+        401 `unauthorized`; 403 `forbidden`; 200 goes to `_evaluate`; everything else (HTML,
+        no JSON, 3xx, 404, any other status) is `not_bambuddy`. `BambuddyUnexpected` is caught
+        before `BambuddyUnavailable`, its parent (Decision 5).
+        """
+        try:
+            body = await self._get("/auth/me")
+        except BambuddyRejected as exc:
+            if exc.status == 401:
+                return ConnectionCheck(False, "unauthorized")
+            if exc.status == 403:
+                return ConnectionCheck(False, "forbidden")
+            return ConnectionCheck(False, "not_bambuddy")
+        except BambuddyUnexpected:
+            return ConnectionCheck(False, "not_bambuddy")
+        except BambuddyUnavailable:
+            return ConnectionCheck(False, "unreachable")
+        return _evaluate(body)
+
+    async def ping(self) -> bool:
+        """True when Bambuddy answers and accepts the key; missing rights do not matter here."""
+        return (await self.check_connection()).reason in ("ok", "missing_permissions")
