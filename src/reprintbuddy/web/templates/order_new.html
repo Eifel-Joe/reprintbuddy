@@ -1,7 +1,11 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ t('orders.new') }}{% endblock %}
 {% block content %}
-<h1>{{ t('orders.new') }}</h1>
+{% call ui.page_head("receipt", t('orders.new')) %}{% endcall %}
+{#- The choice lists follow new articles and sets. The form has no data of its own to watch: while
+    something is typed it is not swapped, and no notice is shown (Design 4.6). -#}
+{% call ui.region("form", "article set") %}
 <section class="card section">
   {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
   <form method="post" action="/orders/new">
@@ -63,4 +67,5 @@
     <a class="btn-link" href="/orders">{{ t('common.cancel') }}</a>
   </form>
 </section>
+{% endcall %}
 {% endblock %}

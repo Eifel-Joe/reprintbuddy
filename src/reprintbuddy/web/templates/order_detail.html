@@ -1,43 +1,48 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ order.reference }}{% endblock %}
 {% block content %}
-<h1>{{ order.reference }}</h1>
+{#- Data and forms are separate regions (plan decision 4): a note typed into a form does not
+    freeze the numbers above it. The head is part of `main`, so its badge follows the order. -#}
+{#- Outside the regions and above the order, so a long order on a phone does not hide it. -#}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% call ui.region("main", "order:" ~ order.id ~ " article") %}
+{% call ui.page_head("receipt", order.reference) %}
+<p class="summary">{{ order.order_date|local_date }} · {{ ui.badge('order', order.display_status) }}</p>
+{% endcall %}
+{% if order.note %}
 <section class="card section">
   <dl class="props">
-    <dt>{{ t('orders.field.date') }}</dt><dd>{{ order.order_date|local_date }}</dd>
-    <dt>{{ t('orders.state') }}</dt>
-    <dd>
-      {% if order.status == 'open' %}
-        {% if order.ready %}<span class="badge ok">{{ t('orders.ready') }}</span>{% else %}<span class="badge wait">{{ t('orders.not_ready_badge') }}</span>{% endif %}
-      {% elif order.status == 'shipped' %}{{ t('orders.status.shipped') }}
-      {% else %}{{ t('orders.status.cancelled') }}{% endif %}
-    </dd>
-    {% if order.note %}<dt>{{ t('orders.field.note') }}</dt><dd>{{ order.note }}</dd>{% endif %}
+    <dt>{{ t('orders.field.note') }}</dt><dd>{{ order.note }}</dd>
   </dl>
 </section>
+{% endif %}
 <section class="card section">
   <h2>{{ t('orders.items') }}</h2>
   {% for group in order.groups %}
     {% if group.set_name %}
     <p><strong>{{ group.set_name }} × {{ group.set_qty }}</strong></p>
-    <ul class="plain-list">{% for name, qty in group.lines %}<li>{{ qty }} × {{ name }}</li>{% endfor %}</ul>
-    {% else %}
-    <ul class="plain-list">{% for name, qty in group.lines %}<li>{{ qty }} × {{ name }}</li>{% endfor %}</ul>
     {% endif %}
+    <ul class="plain-list">{% for name, qty in group.lines %}<li>{{ qty }} × {{ name }}</li>{% endfor %}</ul>
   {% endfor %}
 </section>
+{% endcall %}
+{#- The forms watch their order: if it is shipped or cancelled elsewhere while a note is typed,
+    the note stays and "This has changed in the meantime" appears (Design 4.6). -#}
+{% call ui.region("actions", "order:" ~ order.id ~ " article") %}
 {% if order.status == 'open' %}
 <div class="actions">
   {% if order.ready %}
-  <form method="post" action="/orders/{{ order.id }}/ship">
+  <form method="post" action="/orders/{{ order.id }}/ship" data-live-watch="order:{{ order.id }}">
+    {{ ui.live_stale() }}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="form_token" value="{{ form_token() }}">
     <label>{{ t('journal.field.note') }} <input name="note" maxlength="500"></label>
     <button class="btn" type="submit">{{ t('orders.ship') }}</button>
   </form>
   {% endif %}
-  <form method="post" action="/orders/{{ order.id }}/cancel">
+  <form method="post" action="/orders/{{ order.id }}/cancel" data-live-watch="order:{{ order.id }}">
+    {{ ui.live_stale() }}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="form_token" value="{{ form_token() }}">
     <label>{{ t('journal.field.note') }} <input name="note" maxlength="500"></label>
@@ -45,5 +50,6 @@
   </form>
 </div>
 {% endif %}
+{% endcall %}
 <p><a class="btn-link" href="/orders">{{ t('orders.title') }}</a></p>
 {% endblock %}

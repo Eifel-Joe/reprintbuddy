@@ -267,3 +267,16 @@ def test_list_orders(db):
         closed = orders.list_orders(s, "closed")
         assert [o.reference for o in closed] == ["Order 3", "Order 1"]
         assert {o.status for o in closed} == {"shipped", "cancelled"}
+
+
+def test_display_status_follows_the_rules(db):  # Spec 10.1: open yellow, ready green, closed grey
+    with db.begin() as s:
+        a = make_article(s, stock=1).id
+        waiting = new_order(s, [ArticleItem(a, 2)], reference="Order 1001").id
+        ready = new_order(s, [ArticleItem(a, 1)], reference="Order 1002").id
+        cancelled = new_order(s, [ArticleItem(a, 1)], reference="Order 1003").id
+        orders.cancel_order(s, cancelled, "user")
+    with db.begin() as s:
+        assert orders.get_order(s, waiting).display_status == "open"
+        assert orders.get_order(s, ready).display_status == "ready"
+        assert orders.get_order(s, cancelled).display_status == "cancelled"

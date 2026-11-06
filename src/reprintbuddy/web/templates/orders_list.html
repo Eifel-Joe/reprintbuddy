@@ -1,24 +1,45 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ t('orders.title') }}{% endblock %}
 {% block content %}
-<h1>{{ t('orders.title') }}</h1>
-<p>
-  <a class="btn" href="/orders/new">{{ t('orders.new') }}</a>
-  {% if closed %}
-  <a class="btn-link" href="/orders">{{ t('orders.show_open') }}</a>
-  {% else %}
-  <a class="btn-link" href="/orders?view=closed">{{ t('orders.show_closed') }}</a>
-  {% endif %}
-</p>
-{% if rows %}
-<div class="card table-wrap">
+{#- What an order holds: a set with its quantity, or the articles one by one. -#}
+{% macro items(order) -%}
+{% for group in order.groups %}
+  {%- if group.set_name %}{{ group.set_name }} × {{ group.set_qty }}{% else %}{% for name, qty in group.lines %}{{ qty }} × {{ name }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% endif %}{% if not loop.last %}<br>{% endif %}
+{%- endfor %}
+{%- endmacro %}
+
+{#- The summary names the view ("open orders" or "closed orders"), the title stays the same. -#}
+{% call ui.page_head("receipt", t('orders.title')) %}
+{% call ui.region("summary", "order article") %}{{ ui.summary("order", tc('summary.orders_closed' if closed else 'summary.orders_open', total), summary_items) }}{% endcall %}
+{% endcall %}
+
+<div class="toolbar">
+  {{ ui.search_form(q, t('orders.field.reference'), keep=search_keep) }}
+  {% call ui.region("filters", "order article") %}{{ ui.filter_bar("order", filters) }}{% endcall %}
+  {{ ui.layout_toggle(layout_links) }}
+  <div class="toolbar-actions">
+    <a class="btn" href="/orders/new">{{ ui.icon('plus') }}{{ t('orders.new') }}</a>
+    {% if closed %}<a class="btn secondary" href="/orders">{{ ui.icon('archive') }}{{ t('orders.show_open') }}</a>
+    {%- else %}<a class="btn secondary" href="/orders?view=closed">{{ ui.icon('archive') }}{{ t('orders.show_closed') }}</a>{% endif %}
+  </div>
+</div>
+
+{% call ui.region("list", "order article") %}
+{% if not total %}
+<div class="card"><p class="muted">{% if closed %}{{ t('orders.empty_closed') }}{% else %}{{ t('orders.empty_list') }}{% endif %}</p></div>
+{% elif not rows %}
+<div class="card"><p class="muted">{{ t('list.no_match') }}</p></div>
+{% else %}
+{% call ui.collection(layout) %}
+<div class="card table-wrap table-card">
   <table>
     <thead>
       <tr>
         <th>{{ t('orders.field.reference') }}</th>
         <th>{{ t('orders.field.date') }}</th>
         <th>{{ t('orders.items') }}</th>
-        <th>{{ t('orders.state') }}</th>
+        <th>{{ t('list.col.status') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -26,23 +47,22 @@
       <tr>
         <td><a href="/orders/{{ order.id }}">{{ order.reference }}</a></td>
         <td class="nowrap">{{ order.order_date|local_date }}</td>
-        <td>
-          {% for group in order.groups %}
-            {% if group.set_name %}{{ group.set_name }} × {{ group.set_qty }}{% else %}{% for name, qty in group.lines %}{{ qty }} × {{ name }}{% endfor %}{% endif %}{% if not loop.last %}<br>{% endif %}
-          {% endfor %}
-        </td>
-        <td>
-          {% if order.status == 'open' %}
-            {% if order.ready %}<span class="badge ok">{{ t('orders.ready') }}</span>{% else %}<span class="badge wait">{{ t('orders.not_ready_badge') }}</span>{% endif %}
-          {% elif order.status == 'shipped' %}{{ t('orders.status.shipped') }}
-          {% else %}{{ t('orders.status.cancelled') }}{% endif %}
-        </td>
+        <td>{{ items(order) }}</td>
+        <td>{{ ui.badge('order', order.display_status) }}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
 </div>
-{% else %}
-<div class="card"><p class="muted">{% if closed %}{{ t('orders.empty_closed') }}{% else %}{{ t('orders.empty_list') }}{% endif %}</p></div>
+<div class="tiles">
+  {% for order in rows %}
+  <a class="tile" href="/orders/{{ order.id }}">
+    <div class="tile-head"><span class="thumb-placeholder">{{ ui.icon('receipt') }}</span><div>{{ order.reference }}<br><span class="muted">{{ order.order_date|local_date }}</span></div>{{ ui.badge('order', order.display_status) }}</div>
+    <div class="tile-items">{{ items(order) }}</div>
+  </a>
+  {% endfor %}
+</div>
+{% endcall %}
 {% endif %}
+{% endcall %}
 {% endblock %}

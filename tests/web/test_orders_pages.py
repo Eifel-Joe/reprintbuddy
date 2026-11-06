@@ -148,11 +148,11 @@ def test_ship_button_only_when_ready(ready_client):  # Spec 6.7
     o = place(ready_client, a, 2)
     page = ready_client.get(f"/orders/{o}").text
     assert f'action="/orders/{o}/ship"' not in page and f'action="/orders/{o}/cancel"' in page
-    assert en("orders.not_ready_badge") in page
+    assert f'<span class="badge tone-warn">{en("status.order.open")}</span>' in page
     with sm_of(ready_client).begin() as s:
         stock.stock_in(s, a, 2, "user", consume_parts=False)
     page = ready_client.get(f"/orders/{o}").text
-    assert f'action="/orders/{o}/ship"' in page and en("orders.ready") in page
+    assert f'action="/orders/{o}/ship"' in page and en("status.order.ready") in page
 
 
 def test_ship_books_and_flashes(ready_client):
@@ -200,7 +200,7 @@ def test_cancel_releases(ready_client):
     assert reserved(ready_client, a) == 0
     assert en("orders.empty_list") in ready_client.get("/orders").text  # no longer open
     closed = ready_client.get("/orders?view=closed").text
-    assert "Order 1001" in closed and en("orders.status.cancelled") in closed
+    assert "Order 1001" in closed and en("status.order.cancelled") in closed
 
 
 def test_closed_order_has_no_buttons(ready_client):
@@ -227,7 +227,7 @@ def test_open_list_shows_ready_badge_and_set_group(ready_client):
         set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a])])).id
         orders.create_order(s, reference="Order 1001", order_date=date(2026, 1, 15), items=[orders.SetItem(set_id, 1, {})], actor="user")
     page = ready_client.get("/orders").text
-    assert "Order 1001" in page and en("orders.ready") in page and "Starter Set" in page
+    assert "Order 1001" in page and en("status.order.ready") in page and "Starter Set" in page
     assert "view=closed" in page
 
 

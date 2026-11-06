@@ -24,6 +24,7 @@ from reprintbuddy.domain.errors import (
     StockLimitError,
     ValidationError,
 )
+from reprintbuddy.domain.status import OrderStatus, order_status
 from reprintbuddy.domain.stock import (
     MAX_QTY,
     Actor,
@@ -74,6 +75,7 @@ class OrderView:
     note: str | None
     ready: bool
     groups: list[OrderGroup]
+    display_status: OrderStatus  # the state of the badge: open, ready, shipped or cancelled (Spec 10.1)
 
 
 def _qty(value: object) -> int:
@@ -257,6 +259,7 @@ def _view(session: Session, order: Order) -> OrderView:
         note=order.note,
         ready=ready,
         groups=[groups[k] for k in sorted(groups)],
+        display_status=order_status(status=order.status, ready=ready),
     )
 
 
@@ -277,8 +280,7 @@ def list_orders(session: Session, view: Literal["open", "closed"]) -> list[Order
             select(Order)
             .where(Order.status != "open")
             .order_by(Order.closed_at.desc(), Order.id.desc())
-            .limit(100)
-        )
+        )  # all of them: the page searches and counts the whole view (Spec 10.1)
     return [_view(session, o) for o in session.scalars(query)]
 
 

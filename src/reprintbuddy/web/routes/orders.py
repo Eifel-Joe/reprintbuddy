@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -11,8 +12,10 @@ from sqlalchemy.orm import Session
 from reprintbuddy.domain import catalog, orders, stock
 from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.domain.orders import ArticleItem, SetItem
+from reprintbuddy.domain.status import summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Article, SetPosition, SetPositionOption, utcnow
+from reprintbuddy.web import listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.formatting import to_local
@@ -39,15 +42,43 @@ MAX_ID = 2**31 - 1
 # ---- list ------------------------------------------------------------------------------
 
 
+# The states of each view, in the order of the filters; the summary names the ones after the total.
+_OPEN_STATES = ("open", "ready")
+_CLOSED_STATES = ("shipped", "cancelled")
+
+
 @router.get("/orders")
-async def orders_list(request: Request, view: str = "open", db: Session = Depends(get_db)):
+async def orders_list(
+    request: Request, view: str = "open", q: str | None = None, db: Session = Depends(get_db)
+):
+    """Overview with short summary, search on the reference, status filter and tiles or list
+    (Spec 10.1). The summary counts all orders of the view; the filter counts follow the search;
+    the list shows what passes both."""
+    if (redirect := listing.remember_layout(request, "orders")) is not None:
+        return redirect  # ?layout=... only sets the cookie
     closed = view == "closed"
+    states = _CLOSED_STATES if closed else _OPEN_STATES
+    status = listing.pick(request.query_params.get("status"), states)
+    every = orders.list_orders(db, "closed" if closed else "open")
+    found = [row for row in every if listing.matches(q, row.reference)]
+    counts = Counter(row.display_status for row in found)
+    shown = _CLOSED_STATES if closed else ("ready",)  # "open" is the total itself
+    keep = (("status", status), ("view", "closed" if closed else None))
+    layout = listing.layout_of(request, "orders")
     return render(
         request,
         "orders_list.html",
         active_nav="orders",
         closed=closed,
-        rows=orders.list_orders(db, "closed" if closed else "open"),
+        rows=[row for row in found if status is None or row.display_status == status],
+        total=len(every),
+        summary_items=summarize((row.display_status for row in every), shown),
+        filters=listing.filter_links(request, states, counts, len(found), status),
+        layout=layout,
+        layout_links=listing.layout_links(request, layout),
+        q=q,
+        status=status,
+        search_keep=[(name, value) for name, value in keep if value],  # a new search keeps these
     )
 
 
