@@ -58,6 +58,8 @@ class BatchRefLost(BambuddyRejected):
 # After the error classes: `parse` imports them from here.
 from reprintbuddy.bambuddy import parse as _parse  # noqa: E402
 
+_PNG_HEAD = bytes([0x89]) + b"PNG" + bytes([0x0D, 0x0A, 0x1A, 0x0A])
+
 HttpFactory = Callable[[], AbstractAsyncContextManager[httpx.AsyncClient]]
 
 
@@ -193,6 +195,37 @@ class HttpBambuddyClient:
         return self._json(response, "POST", path)
 
     # ---- the interface -----------------------------------------------------------------
+    async def list_folders(self) -> list[LibraryFolder]:
+        return _parse.parse_folders(await self._get("/library/folders/"))
+
+    async def list_files(self, folder_id: int | None) -> list[LibraryFile]:
+        """`None`: the top level only; a number: that folder, not its sub-folders (Decision 1)."""
+        params = None if folder_id is None else {"folder_id": folder_id}
+        return _parse.parse_files(await self._get("/library/files/", params))
+
+    async def get_file(self, file_id: int) -> LibraryFile | None:
+        """`None`: the file is gone."""
+        data = await self._get(f"/library/files/{file_id}", none_on_404=True)
+        return None if data is None else _parse.parse_file(data)
+
+    async def list_plates(self, file_id: int) -> list[Plate]:
+        return _parse.parse_plates(await self._get(f"/library/files/{file_id}/plates"))
+
+    async def plate_thumbnail(self, file_id: int, plate_index: int) -> bytes:
+        """The plate image as PNG bytes; anything else with a 2xx is unexpected."""
+        path = f"/library/files/{file_id}/plate-thumbnail/{plate_index}"
+        content_type, content = await self._get_bytes(path)
+        kind = content_type.split(";", 1)[0].strip().lower()
+        if kind not in ("", "image/png") or not content.startswith(_PNG_HEAD):
+            raise BambuddyUnexpected(f"GET {path}: answer is no PNG image")
+        return content
+
+    async def filament_requirements(self, file_id: int, plate_id: int) -> list[FilamentRequirement]:
+        data = await self._get(
+            f"/library/files/{file_id}/filament-requirements", {"plate_id": plate_id}
+        )
+        return _parse.parse_requirements(data)
+
     async def get_queue_item(self, item_id: int) -> QueueItem | None:
         """`None`: the entry is gone (deleted, or removed with the history; Decision 3)."""
         data = await self._get(f"/queue/{item_id}", none_on_404=True)

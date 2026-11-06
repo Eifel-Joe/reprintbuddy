@@ -12,7 +12,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from reprintbuddy.bambuddy.client import BambuddyUnexpected
-from reprintbuddy.bambuddy.types import QueueItem
+from reprintbuddy.bambuddy.types import (
+    FilamentRequirement,
+    LibraryFile,
+    LibraryFolder,
+    Plate,
+    QueueItem,
+)
 
 _Types = type | tuple[type, ...]
 
@@ -115,3 +121,104 @@ def parse_queue_item(data: object) -> QueueItem:
         completed_at=_utc(d.get("completed_at")),
         error_message=_opt(d, "error_message", str),
     )
+
+
+# ---- library ---------------------------------------------------------------------------
+
+
+def _list(data: object, what: str) -> list:
+    if not isinstance(data, list):
+        raise BambuddyUnexpected(f"{what} is not a list")
+    return data
+
+
+def parse_folders(data: object) -> list[LibraryFolder]:
+    """The folder tree (`LibraryFolderTreeResponse`, Bambuddy `library.py:1135-1158`) as a flat list.
+
+    Pre-order, in the order of the answer (Decision 6). `parent_id` is the field of the
+    entry; a child that lacks it gets the id of the folder it sits in.
+    """
+    out: list[LibraryFolder] = []
+
+    def walk(level: object, enclosing: int | None) -> None:
+        for entry in _list(level, "folder list"):
+            d = _object(entry, "folder")
+            folder_id = _req(d, "id", int)
+            parent = _opt(d, "parent_id", int)
+            out.append(
+                LibraryFolder(
+                    id=folder_id,
+                    name=_req(d, "name", str),
+                    parent_id=enclosing if parent is None else parent,
+                )
+            )
+            children = d.get("children")
+            if children is not None:
+                walk(children, folder_id)
+
+    walk(data, None)
+    return out
+
+
+def parse_file(data: object) -> LibraryFile:
+    """One library file (`FileListResponse` / `FileResponse`, Bambuddy `schemas/library.py`).
+
+    `fingerprint` is `file_hash` (Decision 7): the list has none, an external file has none.
+    """
+    d = _object(data, "library file")
+    return LibraryFile(
+        id=_req(d, "id", int),
+        filename=_req(d, "filename", str),
+        folder_id=_opt(d, "folder_id", int),
+        fingerprint=_opt(d, "file_hash", str) or None,
+        printer_model=_opt(d, "sliced_for_model", str) or None,
+    )
+
+
+def parse_files(data: object) -> list[LibraryFile]:
+    return [parse_file(entry) for entry in _list(data, "file list")]
+
+
+def parse_plates(data: object) -> list[Plate]:
+    """The plates of a file, from `data["plates"]` (Bambuddy `library.py:3761-3787`)."""
+    plates = _list(_object(data, "plate answer").get("plates"), "field 'plates'")
+    out: list[Plate] = []
+    for entry in plates:
+        d = _object(entry, "plate")
+        out.append(Plate(index=_req(d, "index", int), name=_opt(d, "name", str)))
+    return out
+
+
+_HEX = frozenset("0123456789abcdefABCDEF")
+
+
+def normalize_color(value: object) -> str | None:
+    """`#RRGGBB` in capitals from `#RRGGBB`, `RRGGBB`, `#RRGGBBAA` or `RRGGBBAA`; else `None`.
+
+    The alpha part is dropped (Decision 8).
+    """
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if text.startswith("#"):
+        text = text[1:]
+    if len(text) not in (6, 8) or not set(text) <= _HEX:
+        return None
+    return "#" + text[:6].upper()
+
+
+def parse_requirements(data: object) -> list[FilamentRequirement]:
+    """The filament needs of one plate, from `data["filaments"]` (Bambuddy `library.py:3958-3973`)."""
+    entries = _list(_object(data, "requirements answer").get("filaments"), "field 'filaments'")
+    out: list[FilamentRequirement] = []
+    for entry in entries:
+        d = _object(entry, "filament")
+        out.append(
+            FilamentRequirement(
+                slot=_req(d, "slot_id", int),
+                grams=_req(d, "used_grams", float),
+                material=_opt(d, "type", str) or None,
+                color_hex=normalize_color(d.get("color")),
+            )
+        )
+    return out
