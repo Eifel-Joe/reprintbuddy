@@ -461,6 +461,8 @@ a.tile:hover { border-color: var(--accent); }
 .tile-head .badge { flex: 0 0 auto; }
 .tile-stats { display: flex; flex-wrap: wrap; gap: 0.3rem 1.1rem; color: var(--text-2); font-size: 0.88rem; }
 .tile-stats strong { color: var(--text); font-variant-numeric: tabular-nums; }
+/* A negative number stays red in any tile (Spec 6.4); `.neg` alone loses against the line above. */
+.tile-stats strong.neg { color: var(--danger); }
 .tile-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; margin-top: auto; color: var(--text-2); font-size: 0.85rem; }
 
 /* Main and side-page buttons of the toolbar, each with its symbol. */

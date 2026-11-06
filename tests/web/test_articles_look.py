@@ -217,3 +217,27 @@ def test_toolbar_buttons(ready_client):
     assert button("/articles", "btn secondary", "archive").search(ready_client.get("/articles?view=archived").text)
     head = page.split('class="page-head"')[1].split("</header>")[0]
     assert "#package" in head and "<h1>Articles</h1>" in head
+
+
+def test_negative_available_is_red_in_tiles_too(ready_client):  # Spec 6.4
+    # `.tile-stats strong` sets the text colour; `.neg` alone would lose against it.
+    css = ready_client.get("/static/css/reprintbuddy.css").text
+    assert ".tile-stats strong.neg { color: var(--danger); }" in css
+
+
+def test_search_narrows_the_filter_counts_not_the_summary(ready_client):
+    four_states(ready_client)
+    page = ready_client.get("/articles?q=Template%20B").text
+    filters = regions.extract(page, ["filters"])["filters"]
+    assert 'All <span class="count">1</span>' in filters
+    assert re.findall(r'href="([^"]*)"', filters) == ["/articles?q=Template+B", "/articles?q=Template+B&amp;status=low"]
+    assert "Template B" in list_of(page) and "Template A" not in list_of(page)
+    assert "4 articles" in text_of(summary_of(page))
+
+
+def test_name_and_number_are_escaped_in_list_and_tile(ready_client):
+    article = add(ready_client, name="Template <A>", sku="A<100")
+    listed = list_of(ready_client.get("/articles").text)
+    assert f'<a href="/articles/{article}">Template &lt;A&gt;</a><br><span class="muted">A&lt;100</span>' in listed
+    assert '<div>Template &lt;A&gt;<br><span class="muted">A&lt;100</span></div>' in listed
+    assert "<A>" not in listed and "A<100" not in listed
