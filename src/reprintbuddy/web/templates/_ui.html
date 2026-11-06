@@ -1,0 +1,10 @@
+{# Building blocks of the pages. Import at the top of a page, outside the blocks:
+   {% import "_ui.html" as ui with context %} #}
+
+{# A part of the page that follows changes (Spec 10.5.3): {% call ui.region("list", "article") %}…{% endcall %}.
+   The comments mark where web/regions.py cuts the region out of the whole page; `topics` (space
+   separated) are the live topics that make the page fetch it again. A region holds whole cards or
+   sections, never parts of a table, and no other region. #}
+{% macro region(name, topics) -%}
+<!--live:{{ name }}--><div class="live-region" data-live-region="{{ name }}" data-live-topics="{{ topics }}">{{ caller() }}</div><!--/live:{{ name }}-->
+{%- endmacro %}

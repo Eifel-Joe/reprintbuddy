@@ -35,6 +35,8 @@ p { margin: 0 0 1rem; }
 /* ---- shell: sidebar + content ------------------------------------------ */
 
 .app { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
+/* A live region only marks a part of the page; the layout goes on as if it were not there. */
+.live-region { display: contents; }
 
 .sidebar {
   grid-column: 1;

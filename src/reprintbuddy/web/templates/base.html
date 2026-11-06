@@ -45,10 +45,11 @@
 
 {% block shell %}
 {# Messages for the next page. While the dialog about a missing right covers the page they are
-   shown inside it, where the person can see them. #}
-{% set pending = pop_flashes(request) %}
+   shown inside it, where the person can see them. A request for regions of the page leaves them
+   for the page that is shown next (two tabs, one cookie). #}
+{% set pending = [] if live_region_mode else pop_flashes(request) %}
 {% set dialog_open = rights_notice and not rights_later %}
-<div class="app">
+<div class="app" id="app" data-live="/live?v={{ app_version }}" data-live-state="{{ live_state }}" data-live-src="{{ live_src or '' }}">
   <details class="mobile-menu">
     <summary><span class="brand">{{ brand() }}</span></summary>
     <nav class="sidebar-nav">{{ nav_links(active_nav) }}</nav>

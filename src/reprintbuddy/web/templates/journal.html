@@ -1,10 +1,13 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ t('journal.title') }}{% endblock %}
 {% block content %}
 <h1>{{ t('journal.title') }}</h1>
+{% call ui.region("journal", "journal") %}
 {% include "_journal_table.html" %}
 <p>
   {% if has_prev %}<a class="btn-link" href="{{ prev_url }}">{{ t('journal.newer') }}</a>{% endif %}
   {% if has_next %}<a class="btn-link" href="{{ next_url }}">{{ t('journal.older') }}</a>{% endif %}
 </p>
+{% endcall %}
 {% endblock %}
