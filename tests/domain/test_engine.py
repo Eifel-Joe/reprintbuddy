@@ -24,7 +24,7 @@ from reprintbuddy.domain.engine import (
 )
 from reprintbuddy.domain.pauses import pause_article
 from reprintbuddy.models import Article, Dispatch
-from reprintbuddy.web.i18n import translate
+from reprintbuddy.i18n import translate
 
 
 # ---- helpers ---------------------------------------------------------------------------
@@ -408,6 +408,48 @@ async def test_poll_rejection_blocks_dispatch(engine_env):
     assert result == TickResult(None, 0, 1)
 
 
+async def test_poll_refusal_survives_cut_short_poll(engine_env):
+    """Decision 15: only a poll that reaches its end clears a refusal (fix round 1)."""
+    env = engine_env
+    await env.engine.tick(poll=False)
+    with env.sm.begin() as s:
+        make_entry(s, env.article_id, 1, origin="manual")
+    env.fake.fail_next("get_queue_item", BambuddyRejected("Forbidden", status=403))
+    await env.engine.tick(poll=True)
+    assert env.engine.status.poll_error == "403: Forbidden"
+
+    env.fake.unavailable = True
+    await env.engine.tick(poll=True)
+    assert env.engine.status.reachable is False
+    assert env.engine.status.poll_error == "403: Forbidden"
+
+    env.fake.unavailable = False
+    env.fake.calls.clear()
+    result = await env.engine.tick(poll=False)
+
+    assert env.engine.status.reachable is True
+    assert result == TickResult(None, 0, 0)
+    assert "enqueue" not in env.fake.calls and "ensure_batch" not in env.fake.calls
+    assert env.engine.status.poll_error == "403: Forbidden"
+
+    result = await env.engine.tick(poll=True)
+    assert env.engine.status.poll_error is None
+    assert result == TickResult(None, 0, 1)
+
+
+async def test_refusal_in_a_cut_short_poll_is_kept(engine_env):
+    """A refusal found before the poll is cut short still blocks (no complete poll ran)."""
+    env = engine_env
+    await env.engine.tick(poll=False)
+    env.fake.fail_next("list_printers", BambuddyRejected("Forbidden", status=403))
+    env.fake.fail_next("list_queue", BambuddyUnavailable("timeout"))
+
+    await env.engine.tick(poll=True)
+
+    assert env.engine.status.reachable is False
+    assert env.engine.status.poll_error == "403: Forbidden"
+
+
 async def test_duplicates_kept_after_settling(engine_env):
     env = engine_env
     env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
@@ -465,6 +507,35 @@ async def test_no_client_rule_still_runs(engine_env):
     found = keys(env.sm, engine.status)
     assert "warning.bambuddy_not_configured" in found
     assert "warning.bambuddy_unreachable" not in found
+
+
+async def test_configured_known_before_first_tick(engine_env):
+    env = engine_env
+    assert env.engine.status.configured is True
+    assert Engine(env.sm, lambda: None).status.configured is False
+
+    def broken():
+        raise RuntimeError("settings unreadable")
+
+    assert Engine(env.sm, broken).status.configured is False
+    assert "warning.bambuddy_not_configured" not in keys(env.sm, env.engine.status)
+
+
+def test_domain_does_not_import_web():
+    """Layering: the domain uses the neutral `reprintbuddy.i18n`, never the web package."""
+    from pathlib import Path
+
+    import reprintbuddy
+    from reprintbuddy import i18n
+    from reprintbuddy.web import i18n as web_i18n
+
+    domain = Path(reprintbuddy.__file__).parent / "domain"
+    offenders = [
+        p.name for p in domain.rglob("*.py") if "reprintbuddy.web" in p.read_text("utf-8")
+    ]
+    assert offenders == []
+    assert web_i18n.translate is i18n.translate
+    assert web_i18n.load_locales is i18n.load_locales
 
 
 async def test_poll_hook(engine_env):
@@ -636,6 +707,46 @@ async def test_run_loop_survives_errors(engine_env, monkeypatch):
         await wait_until(lambda: engine.status.error is None)
 
     assert calls == [True, False]
+
+
+async def test_run_loop_survives_poll_seconds_error(engine_env, monkeypatch, caplog):
+    engine = engine_env.engine
+    calls = record_ticks(engine, monkeypatch)
+    asked = []
+
+    def poll_seconds():
+        asked.append(1)
+        if len(asked) == 1:
+            raise RuntimeError("database is locked")
+        return 0.05
+
+    async with running(engine, poll_seconds) as task:
+        await wait_until(lambda: calls == [True] and engine.status.error is not None)
+        assert engine.status.error == repr(RuntimeError("database is locked"))
+        # The first interval fell back to the default: no second poll soon, but the loop lives.
+        engine.request_tick()
+        await wait_until(lambda: len(calls) == 2)
+        await wait_until(lambda: engine.status.error is None)
+        assert not task.done()
+
+    assert calls[:2] == [True, False]
+    assert "database is locked" in caplog.text
+
+
+async def test_poll_seconds_error_keeps_last_interval(engine_env, monkeypatch):
+    engine = engine_env.engine
+    calls = record_ticks(engine, monkeypatch)
+    asked = []
+
+    def poll_seconds():
+        asked.append(1)
+        if len(asked) == 2:
+            raise RuntimeError("database is locked")
+        return 0.03
+
+    async with running(engine, poll_seconds) as task:
+        await wait_until(lambda: calls.count(True) >= 4)
+        assert not task.done()
 
 
 # ---- Nachtrag: change feed and an early poll -------------------------------------------

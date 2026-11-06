@@ -38,7 +38,7 @@ from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, Bambu
 from reprintbuddy.bambuddy.types import QueueItem
 from reprintbuddy.domain import dispatch, tracking, workqueue
 from reprintbuddy.models import Article, Dispatch, WorkQueueEntry, utcnow
-from reprintbuddy.web.i18n import translate
+from reprintbuddy.i18n import translate
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +46,8 @@ PollHook = Callable[[BambuddyClient, sessionmaker, datetime], Awaitable[None]]
 Publish = Callable[[frozenset[str]], None]
 
 TOPIC = "bambuddy"
+# Poll interval until `poll_seconds()` could be read once (it reads the settings).
+DEFAULT_POLL_SECONDS = 60.0
 
 
 @dataclass
@@ -105,6 +107,12 @@ class Engine:
         self.now = now
         self.publish = publish
         self.status = EngineStatus()
+        # Known before the first tick, so a page right after the start does not say
+        # "not configured" wrongly. A provider that fails leaves it False; the tick tells.
+        try:
+            self.status.configured = client_provider() is not None
+        except Exception:
+            log.warning("engine: the Bambuddy client could not be made", exc_info=True)
         self.hooks: dict[str, PollHook] = {}
         self._lock = asyncio.Lock()
         self._wake = asyncio.Event()
@@ -188,26 +196,37 @@ class Engine:
             status.duplicates = report.duplicates
 
     async def _poll(self, client: BambuddyClient) -> None:
-        """Step 5: ask Bambuddy about everything; a refusal ends only its own part."""
+        """Step 5: ask Bambuddy about everything; a refusal ends only its own part.
+
+        Decision 15: only a poll that reaches its end clears `poll_error`. A poll cut short
+        (Bambuddy unreachable) keeps the previous refusal - or records a new one found
+        before the cut - so a later short tick with a good ping hands nothing over until
+        a complete poll has run.
+        """
         status = self.status
-        status.poll_error = None
+        error: str | None = None
+
+        def cut_short() -> None:
+            status.reachable = False
+            if error is not None:
+                status.poll_error = error
 
         report = await tracking.poll_dispatches(client, self.sm)
+        if report.error is not None:
+            error = report.error
         if not report.reachable:
-            # A poll cut short: keep the last complete answer for display.
-            status.reachable = False
+            # Also keeps the last complete `unexpected`/`waiting_review` for display.
+            cut_short()
             return
         status.unexpected = report.unexpected
         status.waiting_review = report.waiting_review
-        if report.error is not None:
-            status.poll_error = report.error
 
         check = await tracking.check_articles(client, self.sm)
         if check.error == "unavailable":
-            status.reachable = False
+            cut_short()
             return
         if check.error is not None:
-            status.poll_error = check.error
+            error = check.error
         else:
             status.waiting_for_printer = sorted(check.waiting_for_printer)
 
@@ -215,10 +234,11 @@ class Engine:
             status.bambuddy_queue = await client.list_queue()
             status.bambuddy_queue_at = self.now()
         except BambuddyUnavailable:
-            status.reachable = False
+            cut_short()
             return
         except BambuddyRejected as exc:
-            status.poll_error = str(exc)
+            error = str(exc)
+        status.poll_error = error  # the poll reached its end
 
         for name, hook in list(self.hooks.items()):
             try:
@@ -311,6 +331,7 @@ class Engine:
         one on `request_tick()`. Requests never push the next poll back."""
         loop = asyncio.get_running_loop()
         next_poll_at = loop.time()
+        interval = DEFAULT_POLL_SECONDS
         while True:
             wait = next_poll_at - loop.time()
             if wait > 0 and not self._poll_requested:
@@ -320,16 +341,23 @@ class Engine:
                     pass
             self._wake.clear()
             poll = self._poll_requested or loop.time() >= next_poll_at
+            problem: str | None = None
             if poll:
                 self._poll_requested = False
-                next_poll_at = loop.time() + poll_seconds()
+                # Read from the settings: a locked database must not end the loop. The
+                # last interval (at first the default) holds until it can be read again.
+                try:
+                    interval = float(poll_seconds())
+                except Exception as exc:
+                    log.exception("engine: the poll interval could not be read")
+                    problem = repr(exc)
+                next_poll_at = loop.time() + interval
             try:
                 await self.tick(poll=poll)
             except Exception as exc:
                 log.exception("engine: tick failed")
-                self.status.error = repr(exc)
-            else:
-                self.status.error = None
+                problem = repr(exc)
+            self.status.error = problem
             self._announce()
 
 

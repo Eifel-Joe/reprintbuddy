@@ -13,6 +13,7 @@ import pytest
 from conftest import make_client
 
 from reprintbuddy.web import app as app_module
+from reprintbuddy import i18n as core_i18n
 from reprintbuddy.web import i18n
 
 REAL_TEMPLATES = app_module.TEMPLATES_DIR
@@ -27,7 +28,7 @@ def copied_files(tmp_path, monkeypatch):
     shutil.copytree(REAL_TEMPLATES, templates)
     shutil.copytree(REAL_LOCALES, locales)
     monkeypatch.setattr(app_module, "TEMPLATES_DIR", templates)
-    monkeypatch.setattr(i18n, "LOCALES_DIR", locales)
+    monkeypatch.setattr(core_i18n, "LOCALES_DIR", locales)  # where `_read` looks
     i18n._read.cache_clear()  # the texts of a process are read once: this "process" starts now
     yield templates, locales
     i18n._read.cache_clear()  # the next test reads the real texts again
