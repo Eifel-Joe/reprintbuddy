@@ -248,6 +248,16 @@ def test_article_row_status_and_coverage(db):
         assert (listed.coverage, listed.status) == (4, "low")
 
 
+def test_article_row_full_coverage(db):  # Spec 7.1 coverage, Spec 10.1 status
+    with db.begin() as s:
+        article = make_article(s, stock=0, min_stock=3, provisional=1)
+        row = catalog.article_row(article, queued_units=1, in_progress_units=1, in_progress_prints=1)
+        assert (row.queued_units, row.in_progress_units, row.in_progress_prints) == (1, 1, 1)
+        assert row.coverage == 3 and row.status == "low"
+        bare = catalog.article_row(article)
+        assert bare.coverage == 1 and bare.status == "below_min"
+
+
 def test_article_row_thumbnail_and_pause(db):
     with db.begin() as s:
         make_article(s, thumbnail=b"x", paused=True, stock=0, reserved=1)

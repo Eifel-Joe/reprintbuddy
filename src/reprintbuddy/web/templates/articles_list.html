@@ -53,7 +53,7 @@
     {% for row in rows %}
       <tr>
         <td><div class="item">{{ thumb(row) }}<div><a href="/articles/{{ row.id }}">{{ row.name }}</a>{% if row.sku %}<br><span class="muted">{{ row.sku }}</span>{% endif %}</div></div></td>
-        <td>{{ badges(row) }}</td>
+        <td>{{ badges(row) }}{% if row.in_progress_prints and not archived %}<br><span class="muted">{{ t('tile.in_bambuddy', n=row.in_progress_prints) }}</span>{% endif %}</td>
         <td class="num">{{ row.stock }}</td>
         <td class="num{% if row.available < 0 %} neg{% endif %}">{{ row.available }}</td>
         <td class="num target">{{ row.target }}{{ target_bar(row) }}</td>
@@ -72,10 +72,11 @@
       <span>{{ t('articles.target_quantity') }} <strong>{{ row.target }}</strong></span>
     </div>
     {{ target_bar(row) }}
-    {% if row.provisional or row.awaiting_assembly %}
+    {% if row.provisional or row.awaiting_assembly or row.in_progress_prints %}
     <div class="tile-foot">
       {%- if row.provisional %}<span>{{ t('tile.to_check', n=row.provisional) }}</span>{% endif %}
       {%- if row.awaiting_assembly %}<span>{{ t('tile.to_assemble', n=row.awaiting_assembly) }}</span>{% endif -%}
+      {%- if row.in_progress_prints %}<span>{{ t('tile.in_bambuddy', n=row.in_progress_prints) }}</span>{% endif -%}
     </div>
     {% endif %}
   </a>

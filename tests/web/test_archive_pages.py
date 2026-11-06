@@ -121,9 +121,10 @@ def test_relink_plate_taken_and_missing_file(bb_client, fake_bambuddy):
         assert s.get(Article, a).archived_at is not None
 
 
-def test_relink_only_for_archived_articles(bb_client):
+def test_relink_for_active_and_archived_articles(bb_client):
+    # plan B4 decision 10: an active article chooses its file again on the same pages
     a = make(bb_client)
-    assert bb_client.get(f"/articles/{a}/relink").status_code == 404
+    assert bb_client.get(f"/articles/{a}/relink").status_code == 200
     assert bb_client.get("/articles/999/relink").status_code == 404
 
 

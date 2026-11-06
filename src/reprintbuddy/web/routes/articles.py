@@ -18,16 +18,16 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
-from reprintbuddy.domain import catalog
+from reprintbuddy.domain import catalog, pauses, workqueue
 from reprintbuddy.domain.catalog import ArticleInput, TargetOption
 from reprintbuddy.domain.errors import DomainError
 from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.domain import stock as stock_mod
-from reprintbuddy.models import Article, ArticleFilament, ArticlePart, Part
+from reprintbuddy.models import Article, ArticleFilament, ArticlePart, Dispatch, Part, WorkQueueEntry
 from reprintbuddy.web import listing
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, render
+from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, release_connection, render
 from reprintbuddy.web.forms import (
     bounded_int,
     duplicate_redirect,
@@ -41,6 +41,7 @@ from reprintbuddy.web.forms import (
 )
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
 from reprintbuddy.web.journal_view import journal_rows
+from reprintbuddy.web.routes.queue import DISPATCH_TONES
 from reprintbuddy.web.i18n import translate
 
 router = APIRouter()
@@ -247,7 +248,7 @@ def _taken_plates(db: Session, file_id: int) -> dict[int, str]:
 
 async def _plates_page(
     request: Request, db: Session, file_id: int, *, file_base: str, back_base: str,
-    relink_id: int | None = None, error: str | None = None, status: int = 200,
+    relink_id: int | None = None, relink_archived: bool = True, error: str | None = None, status: int = 200,
 ):
     client = get_bambuddy(request)
     if client is None:
@@ -269,6 +270,7 @@ async def _plates_page(
         taken=_taken_plates(db, file_id),
         file_base=file_base,
         relink_id=relink_id,
+        relink_archived=relink_archived,
         error=error,
         back=f"{back_base}?folder={file.folder_id}" if file.folder_id is not None else back_base,
     )
@@ -438,13 +440,35 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         .order_by(Part.name)
     ).all()
     entries = stock_mod.journal_page(db, article_id=article_id, limit=50)
+    coverage = workqueue.coverage_of(db, article)
+    queue_entries = db.scalars(
+        select(WorkQueueEntry)
+        .where(WorkQueueEntry.article_id == article_id)
+        .order_by(WorkQueueEntry.position, WorkQueueEntry.id)
+    ).all()
+    open_prints = db.scalars(
+        select(Dispatch)
+        .where(Dispatch.article_id == article_id, Dispatch.status.in_(workqueue.OPEN_STATES))
+        .order_by(Dispatch.id)
+    ).all()
+    # numbers and state, the same as in the list (full coverage, Spec 7.1 and 10.1)
+    row = catalog.article_row(
+        article,
+        queued_units=coverage.queued_units,
+        in_progress_units=coverage.in_progress_units,
+        in_progress_prints=len(open_prints),
+    )
     return render(
         request,
         "article_detail.html",
         status_code=status,
         active_nav="articles",
         article=article,
-        row=catalog.article_row(article),  # numbers and state, the same as in the list
+        row=row,
+        queue_entries=queue_entries,
+        open_prints=open_prints,
+        dispatch_tones=DISPATCH_TONES,
+        has_target=bool(article.target_model or article.printer_id),
         target_label=_target_label(lang, article),
         filaments=[_requirement_row(FilamentRequirement(f.slot, f.grams, f.material, f.color_hex)) for f in filaments],
         parts=parts,
@@ -574,26 +598,26 @@ router.add_api_route(
 )
 
 
-def _archived_article(db: Session, article_id: int) -> Article:
-    article = _get_article(db, article_id)
-    if article.archived_at is None:
-        raise HTTPException(status_code=404)
-    return article
+# Choosing the file again: an archived article is restored with it (Spec 5.5), an active one
+# keeps its numbers and only changes file and plate (Spec 5.1, plan B4 decision 10).
 
 
 @router.get("/articles/{article_id:int}/relink")
 async def relink_browse(request: Request, article_id: int, folder: str | None = None, db: Session = Depends(get_db)):
-    _archived_article(db, article_id)
+    _get_article(db, article_id)
+    release_connection(db)  # nothing is pending; no connection is held while Bambuddy answers
     base = f"/articles/{article_id}/relink"
     return await _browse(request, folder, base, f"{base}/file")
 
 
 @router.get("/articles/{article_id:int}/relink/file/{file_id:int}")
 async def relink_plates(request: Request, article_id: int, file_id: int, db: Session = Depends(get_db)):
-    _archived_article(db, article_id)
+    archived = _get_article(db, article_id).archived_at is not None
+    release_connection(db)  # nothing is pending; no connection is held while Bambuddy answers
     base = f"/articles/{article_id}/relink"
     return await _plates_page(
-        request, db, file_id, file_base=f"{base}/file", back_base=base, relink_id=article_id
+        request, db, file_id, file_base=f"{base}/file", back_base=base, relink_id=article_id,
+        relink_archived=archived,
     )
 
 
@@ -602,8 +626,10 @@ async def relink_plates(request: Request, article_id: int, file_id: int, db: Ses
     dependencies=[Depends(verify_csrf)],
 )
 async def relink_restore(request: Request, article_id: int, file_id: int, index: int, db: Session = Depends(get_db)):
-    article = _archived_article(db, article_id)
+    article = _get_article(db, article_id)
+    archived, name = article.archived_at is not None, article.name
     base = f"/articles/{article_id}/relink"
+    release_connection(db)  # nothing is pending; no connection is held while Bambuddy answers
     client = get_bambuddy(request)
     if client is None:
         return _problem(request, "articles.bambuddy_missing")
@@ -616,18 +642,80 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
     file, plate, requirements, thumbnail = read
 
     def work(tx):
-        catalog.restore_article_with_plate(
-            tx, article_id, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail
-        )
-        return {"name": article.name}
+        if archived:
+            catalog.restore_article_with_plate(
+                tx, article_id, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail
+            )
+        else:
+            catalog.relink_article(
+                tx, article_id, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail,
+                actor="user",
+            )
+        return {"name": name}
 
     return await run_form_action(
         request,
         work=work,
         success_url=f"/articles/{article_id}",
-        flash_key="articles.flash_restored",
+        flash_key="articles.flash_restored" if archived else "articles.relinked",
         on_error=lambda text, status, exc: _plates_page(
             request, db, file_id, file_base=f"{base}/file", back_base=base, relink_id=article_id,
-            error=text, status=status,
+            relink_archived=archived, error=text, status=status,
         ),
+    )
+
+
+# ---- pause of the automation and the print file (Spec 5.1, plan B4 decision 8) ----------------
+
+
+def _detail_refused(request: Request, db: Session, article_id: int, text: str, status: int = 200):
+    return _detail_page(request, db, _get_article(db, article_id), error=text, status=status)
+
+
+@router.post("/articles/{article_id:int}/resume", dependencies=[Depends(verify_csrf)])
+async def article_resume(request: Request, article_id: int, db: Session = Depends(get_db)):
+    """Lift the pause. A file pause or a missing print target refuses (`pauses.lift_pause`)."""
+    name = _get_article(db, article_id).name
+
+    def work(tx):
+        pauses.lift_pause(tx, article_id, "user")
+        return {"name": name}
+
+    return await run_form_action(
+        request, work=work, success_url=f"/articles/{article_id}", flash_key="articles.resumed",
+        on_error=lambda text, status, exc: _detail_refused(request, db, article_id, text, status),
+    )
+
+
+@router.post("/articles/{article_id:int}/confirm-file", dependencies=[Depends(verify_csrf)])
+async def article_confirm_file(request: Request, article_id: int, db: Session = Depends(get_db)):
+    """Accept the changed print file as it is now (Spec 5.1): file, filament need and preview
+    are read from Bambuddy first, outside of the write transaction."""
+    article = _get_article(db, article_id)
+    name, file_id, plate_index = article.name, article.library_file_id, article.plate_id
+    release_connection(db)  # nothing is pending; no connection is held while Bambuddy answers
+
+    def refused(key: str):
+        return _detail_refused(request, db, article_id, translate(current_language(request), key))
+
+    client = get_bambuddy(request)
+    if client is None:
+        return refused("articles.bambuddy_missing")
+    try:
+        read = await _read_plate(client, file_id, plate_index)
+    except BAMBUDDY_ERRORS:
+        return refused("articles.bambuddy_error")
+    if read is None:  # the file or its plate is gone: only choosing again helps
+        return refused("articles.file_missing")
+    file, _plate, requirements, thumbnail = read
+
+    def work(tx):
+        catalog.confirm_article_file(
+            tx, article_id, file=file, requirements=requirements, thumbnail=thumbnail, actor="user"
+        )
+        return {"name": name}
+
+    return await run_form_action(
+        request, work=work, success_url=f"/articles/{article_id}", flash_key="articles.file_confirmed",
+        on_error=lambda text, status, exc: _detail_refused(request, db, article_id, text, status),
     )
