@@ -70,10 +70,22 @@ def _text_active():
     return d
 
 
+def _no_active():
+    d = load("printers.json")
+    del d[0]["is_active"]
+    return d
+
+
+def _null_active():
+    d = load("printers.json")
+    d[0]["is_active"] = None
+    return d
+
+
 @pytest.mark.parametrize(
     "answer",
-    [{}, _no_id(), _text_id(), _text_active()],
-    ids=["not-a-list", "no-id", "text-id", "text-is-active"],
+    [{}, _no_id(), _text_id(), _text_active(), _no_active(), _null_active()],
+    ids=["not-a-list", "no-id", "text-id", "text-is-active", "no-is-active", "null-is-active"],
 )
 async def test_printers_unexpected(respx_mock, answer):
     respx_mock.get(f"{API}/printers/").respond(200, json=answer)
@@ -81,12 +93,14 @@ async def test_printers_unexpected(respx_mock, answer):
         await client().list_printers()
 
 
-async def test_printers_errors(respx_mock):
+async def test_printers_rejected(respx_mock):
     respx_mock.get(f"{API}/printers/").respond(403, json={"detail": "no"})
     with pytest.raises(BambuddyRejected) as rejected:
         await client().list_printers()
     assert rejected.value.status == 403
 
+
+async def test_printers_server_error(respx_mock):
     respx_mock.get(f"{API}/printers/").respond(500)
     with pytest.raises(BambuddyUnavailable):
         await client().list_printers()
