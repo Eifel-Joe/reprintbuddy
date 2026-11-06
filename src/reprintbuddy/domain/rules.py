@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import math
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 
 
 def available(stock: int, reserved: int) -> int:
@@ -93,3 +95,60 @@ def prints_for_units(units: int, units_per_print: int) -> int:
 def _ceil_div(numerator: int, denominator: int) -> int:
     # Integer ceil without floats: -(-n // d) rounds towards +infinity for d > 0.
     return -(-numerator // denominator)
+
+
+def consumption_per_day(
+    series: Mapping[Hashable, Sequence[tuple[date, float]]],
+) -> tuple[float, int]:
+    """Verbrauch je Tag and the days of history (Spec 9.2).
+
+    The caller passes only the points of the window. Per series only the decreases between
+    consecutive points count (increases, new and vanished spools add nothing); the sum is
+    divided by the days between the earliest and latest day over all series, at most 30.
+    Under two distinct days: (0.0, 0).
+    """
+    days = {day for points in series.values() for day, _ in points}
+    if len(days) < 2:
+        return 0.0, 0
+    span = min((max(days) - min(days)).days, 30)
+    used = 0.0
+    for points in series.values():
+        ordered = sorted(points, key=lambda point: point[0])
+        for (_, before), (_, after) in zip(ordered, ordered[1:]):
+            if after < before:
+                used += before - after
+    return used / span, span
+
+
+def safety_amount(value: float, unit: str, per_day: float) -> float:
+    """Sicherheitspolster: unit "days" -> Verbrauch je Tag x value, else the value itself (Spec 9.3)."""
+    if unit == "days":
+        return per_day * value
+    return float(value)
+
+
+def needs_reorder(
+    *, stock: float, demand: float, per_day: float, lead_days: int, safety: float
+) -> bool:
+    """Reorder when Bestand − Bedarf − Verbrauch × Lieferzeit < Polster (Spec 9.3)."""
+    return stock - demand - per_day * lead_days < safety
+
+
+def suggest_packs(
+    *,
+    stock: float,
+    demand: float,
+    per_day: float,
+    lead_days: int,
+    safety: float,
+    pack: float,
+    min_packs: int,
+) -> int:
+    """Bestelleinheiten = max(Mindestmenge, ceil(Fehlmenge / Bestelleinheit)) (Spec 9.3).
+
+    The ceiling tolerates float residue of 1e-9; no shortfall gives the minimum order.
+    """
+    shortfall = safety + demand + per_day * lead_days - stock
+    if shortfall <= 0:
+        return min_packs
+    return max(min_packs, math.ceil(shortfall / pack - 1e-9))
