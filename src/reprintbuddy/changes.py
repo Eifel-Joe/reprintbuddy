@@ -8,7 +8,8 @@ transaction and `after_rollback` discards. Raw SQL is not seen; tests forbid it 
 the migrations.
 
 Topics: `article`, `article:<id>`, `article-settings:<id>`, `part`, `part:<id>`,
-`part-settings:<id>`, `set`, `set:<id>`, `order`, `order:<id>`, `journal`, `settings`.
+`part-settings:<id>`, `set`, `set:<id>`, `order`, `order:<id>`, `journal`, `settings`,
+`queue`, `inspection`, `bambuddy`.
 `…-settings:<id>` only when a column of the edit form changes, so a booking does not tell
 an open edit form that its article changed when only the stock did.
 
@@ -30,7 +31,9 @@ from reprintbuddy.models import (
     Article,
     ArticleFilament,
     ArticlePart,
+    Dispatch,
     FormToken,
+    Inspection,
     JournalEntry,
     LoginSession,
     Order,
@@ -41,6 +44,7 @@ from reprintbuddy.models import (
     SetPositionOption,
     Setting,
     User,
+    WorkQueueEntry,
 )
 
 log = logging.getLogger(__name__)
@@ -63,6 +67,9 @@ _KIND: dict[type, str] = {
     OrderLine: "order",
     JournalEntry: "journal",
     Setting: "settings",
+    WorkQueueEntry: "queue",
+    Dispatch: "queue",
+    Inspection: "inspection",
 }
 
 CLASSIFIED: frozenset[type] = frozenset(_KIND) | IGNORED
@@ -133,6 +140,9 @@ def topics_of(obj: object, change: Change) -> set[str]:
         return {"order", f"order:{obj.id}"}
     if cls is OrderLine:
         return {"order", f"order:{obj.order_id}"}
+    if cls in (WorkQueueEntry, Dispatch, Inspection):
+        # Cover and status of an article hang on these rows (Spec 10.1).
+        return {_KIND[cls], "article", f"article:{obj.article_id}"}
     return {_KIND[cls]}
 
 

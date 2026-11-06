@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import date
 
 from sqlalchemy import func, select
@@ -9,11 +10,13 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.models import (
     Article,
+    Dispatch,
     Order,
     Part,
     ProductSet,
     SetPosition,
     SetPositionOption,
+    WorkQueueEntry,
 )
 
 
@@ -66,3 +69,32 @@ def make_order(s: Session, *, reference: str = "Order 1001", **fields) -> Order:
     s.add(order)
     s.flush()
     return order
+
+
+def make_entry(
+    s: Session, article_id: int, prints: int = 1, *, origin: str = "rule", **fields
+) -> WorkQueueEntry:
+    """A work queue entry at the end of the queue (position = highest so far + 1)."""
+    if "position" not in fields:
+        fields["position"] = (s.scalar(select(func.max(WorkQueueEntry.position))) or 0) + 1
+    entry = WorkQueueEntry(article_id=article_id, prints=prints, origin=origin, **fields)
+    s.add(entry)
+    s.flush()
+    return entry
+
+
+def make_dispatch(
+    s: Session,
+    article_id: int,
+    *,
+    status: str = "queued",
+    units: int = 1,
+    origin: str = "rule",
+    **fields,
+) -> Dispatch:
+    fields.setdefault("external_ref", uuid.uuid4().hex)
+    fields.setdefault("queue_position", 0)
+    dispatch = Dispatch(article_id=article_id, status=status, units=units, origin=origin, **fields)
+    s.add(dispatch)
+    s.flush()
+    return dispatch

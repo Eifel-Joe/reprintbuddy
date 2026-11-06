@@ -15,9 +15,9 @@ from reprintbuddy.changes import CLASSIFIED, install_change_feed
 from reprintbuddy.domain import catalog, orders, stock
 from reprintbuddy.domain.catalog import ArticleInput, PositionInput, SetInput
 from reprintbuddy.domain.errors import StockLimitError
-from reprintbuddy.models import Article, Base, Part
+from reprintbuddy.models import Article, Base, Inspection, Part
 from reprintbuddy.web.formtoken import consume_form_token, issue_form_token
-from factories import make_article, make_order, make_part, make_set
+from factories import make_article, make_dispatch, make_entry, make_order, make_part, make_set
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "reprintbuddy"
 
@@ -195,6 +195,34 @@ def test_a_savepoint_neither_reports_nor_discards(db, published):
                 raise RuntimeError("boom")
     assert len(published) == 1
     assert {f"article:{a}", f"part:{p}", "journal"} <= published[0]
+
+
+def test_queue_entry_reports_queue_and_article(db, published):
+    with db.begin() as s:
+        a = make_article(s).id
+    published.clear()
+    with db.begin() as s:
+        make_entry(s, a)
+    assert published == [frozenset({"queue", "article", f"article:{a}"})]
+
+
+def test_dispatch_reports_queue_and_article(db, published):
+    with db.begin() as s:
+        a = make_article(s).id
+    published.clear()
+    with db.begin() as s:
+        make_dispatch(s, a)
+    assert published == [frozenset({"queue", "article", f"article:{a}"})]
+
+
+def test_inspection_reports_article(db, published):
+    with db.begin() as s:
+        a = make_article(s).id
+        d = make_dispatch(s, a).id
+    published.clear()
+    with db.begin() as s:
+        s.add(Inspection(dispatch_id=d, article_id=a, units=1))
+    assert published == [frozenset({"inspection", "article", f"article:{a}"})]
 
 
 def test_every_table_is_classified():

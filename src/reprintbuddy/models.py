@@ -250,3 +250,86 @@ class FormToken(Base):
 
     token: Mapped[str] = mapped_column(String, primary_key=True)
     used_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+# ---- B4: work queue, dispatches, inspections -----------------------------------------
+
+
+class WorkQueueEntry(Base):
+    """Prints that are wanted but not yet handed to Bambuddy (Spec 10)."""
+
+    __tablename__ = "work_queue"
+    __table_args__ = (
+        CheckConstraint("prints >= 1", name="ck_work_queue_prints"),
+        CheckConstraint(
+            "origin IN ('rule', 'scrap', 'failure', 'manual')", name="ck_work_queue_origin"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    article_id: Mapped[int] = mapped_column(ForeignKey("articles.id"))
+    prints: Mapped[int]
+    origin: Mapped[str] = mapped_column(String)
+    position: Mapped[int] = mapped_column(index=True)
+    held: Mapped[bool] = _flag()
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
+    )
+
+
+class Dispatch(Base):
+    """One print handed to Bambuddy, followed until it is finished (Spec 10)."""
+
+    __tablename__ = "dispatches"
+    __table_args__ = (
+        CheckConstraint(
+            "origin IN ('rule', 'scrap', 'failure', 'manual')", name="ck_dispatches_origin"
+        ),
+        CheckConstraint(
+            "status IN ('sending', 'unclear', 'queued', 'printing', 'completed', 'failed',"
+            " 'cancelled', 'missing', 'returned')",
+            name="ck_dispatches_status",
+        ),
+        CheckConstraint("units >= 1", name="ck_dispatches_units"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    article_id: Mapped[int] = mapped_column(ForeignKey("articles.id"))
+    origin: Mapped[str] = mapped_column(String)
+    external_ref: Mapped[str] = mapped_column(String, unique=True)
+    bambuddy_batch_id: Mapped[int | None] = mapped_column(default=None)
+    bambuddy_item_id: Mapped[int | None] = mapped_column(index=True, default=None)
+    status: Mapped[str] = mapped_column(String, index=True)
+    units: Mapped[int]  # pieces per print, as reserved
+    enqueue_sent_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    queue_entry_id: Mapped[int | None] = mapped_column(default=None)  # no FK: the entry may be gone
+    queue_position: Mapped[int]
+    last_status: Mapped[str | None] = mapped_column(String, default=None)  # Bambuddy's raw state
+    message: Mapped[str | None] = mapped_column(String, default=None)  # why it was put back
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
+    )
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+
+
+class Inspection(Base):
+    """A finished print waiting for the count of good pieces (Spec 10)."""
+
+    __tablename__ = "inspections"
+    __table_args__ = (
+        CheckConstraint("units >= 1", name="ck_inspections_units"),
+        CheckConstraint(
+            "good_units IS NULL OR good_units BETWEEN 0 AND units", name="ck_inspections_good_units"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    dispatch_id: Mapped[int] = mapped_column(ForeignKey("dispatches.id"), unique=True)
+    article_id: Mapped[int] = mapped_column(ForeignKey("articles.id"))
+    units: Mapped[int]
+    good_units: Mapped[int | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
