@@ -156,3 +156,16 @@ def test_nav_filament_active(bb_client, path):
     active = re.findall(r'class="nav-link active"[^>]*>.*?<span class="nav-label">(.*?)</span>', html, re.S)
     assert set(active) == {"Filament"}
     assert 'href="/filament"' in html
+
+
+def test_sort_label_links_to_settings_and_hint_links_are_cell_links(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    with sm_of(bb_client).begin() as s:
+        art = make_article(s, name="Template A")
+        s.add(ArticleFilament(article_id=art.id, slot=1, grams=10.0, material="PETG", color_hex="#FFFFFF"))
+        art_id = art.id
+    html = bb_client.get("/filament").text
+    sid = re.search(r'<a href="/filament/(\d+)">Example Brand PLA Black</a>', html).group(1)
+    assert f'href="/filament/{sid}"' in html
+    # in a table cell, where the app styles links green (td a)
+    assert re.search(rf'<td><a href="/articles/{art_id}/filaments">', html)

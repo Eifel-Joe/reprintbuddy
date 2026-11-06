@@ -170,3 +170,11 @@ def test_filaments_german(bb_client, fake_bambuddy):
         st.set_setting(s, "language", "de", commit=False)
     assert "Vorschlag" in bb_client.get(f"/articles/{a}/filaments").text
     assert "Filamentsorte" in bb_client.get(f"/articles/{a}").text
+
+
+def test_select_sits_in_its_own_full_width_row(bb_client, fake_bambuddy):  # phone: no sideways scrolling
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    a = make(bb_client)
+    html = bb_client.get(f"/articles/{a}/filaments").text
+    assert re.search(r'<tr class="slot-select">\s*<td colspan="4">\s*<select[^>]*name="slot_1"', html)
+    assert len(re.findall(r"<th[ >]", html)) == 4

@@ -19,7 +19,7 @@
       <tbody>
       {% for r in rows %}
         <tr>
-          <td>{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}{{ r.label }}</td>
+          <td>{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}<a href="/filament/{{ r.id }}">{{ r.label }}</a></td>
           <td>{{ r.material }}</td>
           <td class="num">{% if r.stock is not none %}{{ r.stock }} g{% else %}—{% endif %}</td>
           <td class="num">{% if r.spools is not none %}{{ r.spools }}{% else %}—{% endif %}</td>
@@ -36,11 +36,15 @@
 {% if unmapped %}
 <section class="card section wide">
   <p>{{ t('filament.unmapped_hint') }}</p>
-  <ul>
-  {% for article_id, name, slot in unmapped %}
-    <li><a href="/articles/{{ article_id }}/filaments">{{ t('filament.unmapped_item', name=name, slot=slot) }}</a></li>
-  {% endfor %}
-  </ul>
+  <div class="table-wrap">
+    <table>
+      <tbody>
+      {% for article_id, name, slot in unmapped %}
+        <tr><td><a href="/articles/{{ article_id }}/filaments">{{ t('filament.unmapped_item', name=name, slot=slot) }}</a></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endif %}
 {% endblock %}
