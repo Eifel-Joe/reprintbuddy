@@ -142,3 +142,27 @@ def test_known_sorts(db):
         assert day == DAY
         assert stock[other].spools == 0
         assert sorted(e.stock_g for e in stock.values()) == [0.0, 1100.0]
+
+
+def test_snapshot_drops_rows_of_spools_no_longer_live(db):
+    fake, spools = _two_spools()
+    with db.begin() as s:
+        filament.record_snapshot(s, spools, DAY)
+    with db.begin() as s:
+        assert filament.record_snapshot(s, spools[:1], DAY) == 1
+    with db.begin() as s:
+        stock, day = filament.stock_from_snapshots(s)
+        (entry,) = stock.values()
+        assert (day, entry.stock_g, entry.spools) == (DAY, 800.0, 1)
+
+
+def test_blank_color_name_keeps_known_label(db):
+    fake = FakeBambuddy()
+    named = fake.add_spool("PLA", color_name="Black")
+    unnamed = fake.add_spool("PLA")
+    for order in ([named, unnamed], [unnamed, named]):
+        with db.begin() as s:
+            ids = filament.sync_sorts(s, order)
+            sort = s.get(FilamentSort, ids[filament.sort_key(named)])
+            assert sort.label == "Example Brand PLA Black"
+            assert sort.color_name == "Black"

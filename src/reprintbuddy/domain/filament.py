@@ -76,9 +76,8 @@ def sync_sorts(session: Session, spools: Sequence[Spool]) -> dict[str, int]:
             session.add(sort)
             session.flush()
         else:
-            if sort.label != label:
+            if _text(spool.color_name):  # a spool without a name never erases a known one
                 sort.label = label
-            if sort.color_name != spool.color_name:
                 sort.color_name = spool.color_name
             session.flush()
         ids[key] = sort.id
@@ -139,6 +138,12 @@ def record_snapshot(session: Session, spools: Sequence[Spool], day: date) -> int
         row.remaining_g = spool.remaining_g
         row.label_g = spool.label_g
         row.spool_created_at = spool.created_at
+    # a spool recorded earlier today that is archived or gone now must not count any more
+    gone = select(FilamentSnapshot).where(FilamentSnapshot.day == day)
+    if live:
+        gone = gone.where(FilamentSnapshot.spool_id.not_in([s.id for s in live]))
+    for row in session.scalars(gone).all():
+        session.delete(row)
     session.flush()
     return len(live)
 
