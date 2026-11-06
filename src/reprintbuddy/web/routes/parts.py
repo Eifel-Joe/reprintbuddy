@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+from collections import Counter
+from typing import NamedTuple
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import catalog
 from reprintbuddy.domain.catalog import PartInput
 from reprintbuddy.domain.errors import DomainError
+from reprintbuddy.domain.status import STATES, PartStatus, part_status, summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Part
+from reprintbuddy.web import listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
+from reprintbuddy.web.formatting import fill_percent
 from reprintbuddy.web.forms import (
     duplicate_redirect,
     run_form_action,
@@ -81,12 +87,52 @@ def _form_page(request: Request, *, part: Part | None, values: dict[str, str], e
     )
 
 
+class PartItem(NamedTuple):
+    """A part of the list with its state and how full it is towards its minimum stock."""
+
+    part: Part
+    status: PartStatus
+    fill: int | None
+
+
+def _item(part: Part) -> PartItem:
+    return PartItem(
+        part,
+        part_status(stock=part.stock, min_stock=part.min_stock),
+        fill_percent(part.stock, part.min_stock),
+    )
+
+
 @router.get("/parts")
-async def parts_list(request: Request, view: str = "active", db: Session = Depends(get_db)):
+async def parts_list(
+    request: Request, view: str = "active", q: str | None = None, db: Session = Depends(get_db)
+):
+    """Overview with short summary, search, status filter and tiles or list (Spec 10.1).
+
+    Same rules as the article list: the summary counts all parts of the view, the filter counts
+    follow the search, the list shows what passes both. The archive has no status filter.
+    """
+    if (redirect := listing.remember_layout(request, "parts")) is not None:
+        return redirect  # ?layout=... only sets the cookie
     archived = view == "archived"
+    states = STATES["part"]
+    status = None if archived else listing.pick(request.query_params.get("status"), states)
+    every = [_item(part) for part in catalog.list_parts(db, archived=archived)]
+    found = [item for item in every if listing.matches(q, item.part.name)]
+    counts = Counter(item.status for item in found)
+    summary_items = [] if archived else summarize((item.status for item in every), ("below_min",))
+    keep = (("status", status), ("view", "archived" if archived else None))
+    layout = listing.layout_of(request, "parts")
     return render(
         request, "parts_list.html", active_nav="parts", archived=archived,
-        parts=catalog.list_parts(db, archived=archived),
+        items=[item for item in found if status is None or item.status == status],
+        total=len(every),
+        summary_items=summary_items,
+        filters=listing.filter_links(request, states, counts, len(found), status),
+        layout=layout,
+        layout_links=listing.layout_links(request, layout),
+        q=q,
+        search_keep=[(name, value) for name, value in keep if value],  # a new search keeps these
     )
 
 

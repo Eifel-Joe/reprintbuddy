@@ -169,7 +169,7 @@ def test_region_names_are_valid_and_unique_per_template():
 
 
 # Pages with regions, as the signed-in browser sees them. Add each page that gets regions.
-PAGES_WITH_REGIONS = ["/journal", "/articles"]
+PAGES_WITH_REGIONS = ["/journal", "/articles", "/parts"]
 _MARK = re.compile(r"<!--(/?)live:([^>]*?)-->")
 
 
