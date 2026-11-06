@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('orders.cancel') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("receipt", order.reference) %}<p class="summary">{{ order.order_date|local_date }} · {{ ui.badge('order', order.display_status) }}</p>{% endcall %}
+{% call ui.page_head("receipt", order.reference, t('orders.cancel_subtitle')) %}{% endcall %}
 <section class="card section">
   <p>{{ t('orders.cancel_confirm', reference=order.reference) }}</p>
   {#- An answer to a POST: no region is fetched, but the form notices when its order changes. -#}

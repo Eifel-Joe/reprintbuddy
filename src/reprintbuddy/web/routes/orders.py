@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -15,7 +16,7 @@ from reprintbuddy.domain.orders import ArticleItem, SetItem
 from reprintbuddy.domain.status import summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Article, SetPosition, SetPositionOption, utcnow
-from reprintbuddy.web import listing
+from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.formatting import to_local
@@ -51,8 +52,8 @@ _CLOSED_STATES = ("shipped", "cancelled")
 async def orders_list(
     request: Request, view: str = "open", q: str | None = None, db: Session = Depends(get_db)
 ):
-    """Overview with short summary, search on the reference, status filter and tiles or list
-    (Spec 10.1). The summary counts all orders of the view; the filter counts follow the search;
+    """Overview with key figure cards, search on the reference, status filter and tiles or list
+    (Spec 10.1). The cards count all orders of the view; the filter counts follow the search;
     the list shows what passes both."""
     if (redirect := listing.remember_layout(request, "orders")) is not None:
         return redirect  # ?layout=... only sets the cookie
@@ -63,6 +64,15 @@ async def orders_list(
     found = [row for row in every if listing.matches(q, row.reference)]
     counts = Counter(row.display_status for row in found)
     shown = _CLOSED_STATES if closed else ("ready",)  # "open" is the total itself
+    lang = current_language(request)
+    t = lambda key: translate(lang, key)  # noqa: E731
+    cards = kpis.state_cards(
+        t, "order", "receipt", len(every),
+        t("kpi.orders_closed" if closed else "kpi.orders_open"),
+        summarize((row.display_status for row in every), shown),
+    )
+    if not closed:  # open orders wait for something: the total is a warning, not the accent
+        cards[0] = replace(cards[0], tone="warn")
     keep = (("status", status), ("view", "closed" if closed else None))
     layout = listing.layout_of(request, "orders")
     return render(
@@ -72,7 +82,7 @@ async def orders_list(
         closed=closed,
         rows=[row for row in found if status is None or row.display_status == status],
         total=len(every),
-        summary_items=summarize((row.display_status for row in every), shown),
+        kpis=cards,
         filters=listing.filter_links(request, states, counts, len(found), status),
         layout=layout,
         layout_links=listing.layout_links(request, layout),

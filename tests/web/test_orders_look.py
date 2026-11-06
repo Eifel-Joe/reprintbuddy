@@ -62,8 +62,15 @@ def closed_pair(client):
     return shipped, cancelled
 
 
-def summary_of(page):
-    return re.search(r'<p class="summary">(.*?)</p>', page, re.S).group(1)
+def cards_of(page):
+    """The cards of the summary region (a whole page or the refetched piece) as (tone, value, label)."""
+    block = page if page.startswith("<div") else regions.extract(page, ["summary"])["summary"]
+    return [
+        (tone, int(value), label)
+        for tone, value, label in re.findall(
+            r'<span class="kpi-icon tone-(\w+)">.*?</span><div><span class="kpi-value">(\d+)</span>'
+            r'<span class="kpi-label">(.*?)</span>', block, re.S)
+    ]
 
 
 def text_of(html):
@@ -110,20 +117,28 @@ def test_order_badges_follow_the_rules(ready_client):  # Spec 10.1
     assert '<span class="badge tone-neutral">cancelled</span>' in closed
 
 
-def test_orders_summary_open_and_closed(ready_client):
+def test_orders_cards_open_and_closed(ready_client):
     open_pair(ready_client)
     closed_pair(ready_client)
-    summary = summary_of(ready_client.get("/orders").text)
-    assert text_of(summary) == "2 open orders · 1 ready to ship"
-    assert summary.count('class="dot ') == 1
-    assert text_of(summary_of(ready_client.get("/orders?view=closed").text)) == (
-        "2 closed orders · 1 shipped · 1 cancelled"
-    )
+    assert cards_of(ready_client.get("/orders").text) == [
+        ("warn", 2, "Open orders"), ("ok", 1, "ready to ship"),
+    ]
+    assert cards_of(ready_client.get("/orders?view=closed").text) == [
+        ("accent", 2, "Closed orders"), ("neutral", 1, "shipped"), ("neutral", 1, "cancelled"),
+    ]
     with sm_of(ready_client).begin() as s:
         st.set_setting(s, "language", "de", commit=False)
-    assert text_of(summary_of(ready_client.get("/orders").text)) == (
-        "2 offene Bestellungen · 1 versandbereit"
-    )
+    assert cards_of(ready_client.get("/orders").text) == [
+        ("warn", 2, "Offene Bestellungen"), ("ok", 1, "versandbereit"),
+    ]
+    assert cards_of(ready_client.get("/orders?view=closed").text)[0] == ("accent", 2, "Abgeschlossene Bestellungen")
+
+
+def test_orders_cards_skip_states_without_entries(ready_client):
+    place(ready_client, article(ready_client), 1)
+    assert cards_of(ready_client.get("/orders").text) == [("warn", 1, "Open orders")]
+    assert cards_of(ready_client.get("/orders?view=closed").text) == [("accent", 0, "Closed orders")]
+    assert '<p class="summary">' not in ready_client.get("/orders").text
 
 
 def test_order_filter_shows_only_that_state_and_the_counts_stay(ready_client):
@@ -133,7 +148,7 @@ def test_order_filter_shows_only_that_state_and_the_counts_stay(ready_client):
     assert "Order 1002" in listed and "Order 1001" not in listed
     assert '<a class="filter active" href="/orders?status=ready" aria-current="true">' in page
     assert 'All <span class="count">2</span>' in page
-    assert "2 open orders" in text_of(summary_of(page))
+    assert cards_of(page) == [("warn", 2, "Open orders"), ("ok", 1, "ready to ship")]  # not narrowed
 
 
 def test_closed_view_filters_shipped_and_cancelled(ready_client):
@@ -158,7 +173,7 @@ def test_closed_view_sees_every_closed_order(ready_client):
             )
             orders.cancel_order(s, order.id, "user")
     page = ready_client.get("/orders?view=closed").text
-    assert text_of(summary_of(page)) == "101 closed orders · 101 cancelled"
+    assert cards_of(page) == [("accent", 101, "Closed orders"), ("neutral", 101, "cancelled")]
     found = region(ready_client.get("/orders?view=closed&q=0001").text, "list")
     assert "Order 0001" in found and "Order 0101" not in found
 
@@ -221,7 +236,7 @@ def test_order_placed_elsewhere_reaches_the_list_region(ready_client):  # Design
     ready_client.get("/orders")
     place(ready_client, article(ready_client), 1, "Order 3001")
     found = regions_of(ready_client, "/orders", "list", "summary")
-    assert "Order 3001" in found["list"] and "1 open order" in text_of(found["summary"])
+    assert "Order 3001" in found["list"] and cards_of(found["summary"]) == [("warn", 1, "Open orders")]
 
 
 def test_stock_elsewhere_makes_the_order_ready_in_the_list(ready_client):  # topic "article"
@@ -338,3 +353,106 @@ def test_order_pages_have_the_head(ready_client, path):
     page = ready_client.get(path).text
     head = re.search(r'<header class="page-head">.*?</header>', page, re.S).group(0)
     assert "#receipt" in head
+
+
+# ---- head, subtitles, row actions --------------------------------------------------------------
+
+
+def head_of(page):
+    return re.search(r'<header class="page-head">.*?</header>', page, re.S).group(0)
+
+
+def test_orders_head_has_subtitle_and_new_button(ready_client):
+    page = ready_client.get("/orders").text
+    head = head_of(page)
+    assert f'<p class="page-sub">{en("orders.subtitle")}</p>' in head
+    assert en("orders.subtitle") == "Orders reserve stock until they are shipped or cancelled"
+    assert 'href="/orders/new"' in head[head.index('<div class="page-actions">') :]
+    assert 'href="/orders/new"' not in page[page.index('<div class="toolbar">') : page.index("<!--live:list-->")]
+    assert 'href="/orders?view=closed"' in page[page.index('<div class="toolbar">') :]
+    with sm_of(ready_client).begin() as s:
+        st.set_setting(s, "language", "de", commit=False)
+    assert "Bestellungen reservieren Bestand, bis sie versandt oder storniert sind" in ready_client.get("/orders").text
+
+
+def row_cell(page):
+    block = region(page, "list")
+    return block[block.index('<td class="actions-col">') :].split("</td>")[0]
+
+
+def row_token(page, order_id):
+    form = re.search(rf'<form class="icon-form"[^>]*action="/orders/{order_id}/cancel">(.*?)</form>', page, re.S).group(1)
+    return re.search(r'name="form_token" value="([^"]+)"', form).group(1)
+
+
+def test_open_row_has_view_and_cancel(ready_client):
+    open_pair(ready_client)
+    page = ready_client.get("/orders").text
+    cell = row_cell(page)
+    assert 'href="/orders/' in cell and f'title="{en("orders.view")}"' in cell
+    assert '<form class="icon-form" method="post" action="/orders/' in cell and cell.count("/cancel") == 1
+    assert 'name="csrf_token"' in cell and 'name="form_token"' in cell and 'name="confirm"' not in cell
+    assert f'title="{en("orders.cancel")}"' in cell and "/ship" not in region(page, "list")
+    assert f'<span class="sr-only">{en("list.col.actions")}</span>' in region(page, "list")
+    assert region(page, "list").count("/cancel") == 2  # one per row; tiles have no actions
+    assert en("orders.view") == "View"
+
+
+def test_closed_row_has_view_only(ready_client):
+    shipped, _cancelled = closed_pair(ready_client)
+    page = ready_client.get("/orders?view=closed").text
+    assert f'href="/orders/{shipped}"' in region(page, "list") and f'title="{en("orders.view")}"' in row_cell(page)
+    assert "/cancel" not in region(page, "list")
+
+
+def test_cancel_from_the_row_asks_first_then_cancels(ready_client):
+    o = place(ready_client, article(ready_client, stock_=5))
+    page = ready_client.get("/orders").text
+    first = ready_client.post(
+        f"/orders/{o}/cancel", data={"csrf_token": csrf_of(ready_client, "/orders"), "form_token": row_token(page, o)}
+    )
+    assert first.status_code == 200 and en("orders.cancel_yes") in first.text  # the confirmation page
+    assert en("orders.cancel_confirm", reference="Order 1001") in first.text
+    with sm_of(ready_client).begin() as s:
+        assert orders.get_order(s, o).status == "open"
+    passed = re.search(r'name="form_token" value="([^"]+)"', forms_in(first.text)[-1]).group(1)
+    assert passed == row_token(page, o)
+    second = ready_client.post(
+        f"/orders/{o}/cancel",
+        data={"csrf_token": csrf_of(ready_client, "/orders"), "form_token": passed, "confirm": "yes"},
+    )
+    assert second.status_code == 303
+    with sm_of(ready_client).begin() as s:
+        assert orders.get_order(s, o).status == "cancelled"
+
+
+def test_list_regions_carry_cards_and_fresh_form_tokens(ready_client):
+    o = place(ready_client, article(ready_client, stock_=5))
+    response = ready_client.get("/orders", headers={regions.HEADER: "summary list"})
+    assert 'data-live-region="summary"' in response.text and 'class="kpis"' in response.text
+    token = row_token(response.text, o)
+    asked = ready_client.post(
+        f"/orders/{o}/cancel", data={"csrf_token": csrf_of(ready_client, "/orders"), "form_token": token}
+    )
+    assert asked.status_code == 200 and en("orders.cancel_yes") in asked.text  # the refetched token is valid
+
+
+def test_detail_new_and_cancel_heads_have_subtitles(ready_client):
+    o = place(ready_client, article(ready_client, stock_=5))
+    detail = head_of(ready_client.get(f"/orders/{o}").text)
+    sub = re.search(r'<p class="page-sub">(.*?)</p>', detail, re.S).group(1)
+    assert "2026" in sub and '<span class="badge tone-' in sub
+    assert '<div class="page-actions">' not in detail
+    new = head_of(ready_client.get("/orders/new").text)
+    assert f'<p class="page-sub">{en("orders.new_subtitle")}</p>' in new
+    assert en("orders.new_subtitle") == "Record an order; its stock is reserved"
+    asked = ready_client.post(f"/orders/{o}/cancel", data=with_tokens(ready_client, o)).text
+    assert f'<p class="page-sub">{en("orders.cancel_subtitle")}</p>' in head_of(asked)
+    assert en("orders.cancel_subtitle") == "Confirm the cancellation; the reservation is released"
+
+
+def test_no_order_template_uses_the_old_summary():
+    from pathlib import Path
+    root = Path(regions.__file__).parent / "templates"
+    for name in ("orders_list.html", "order_detail.html", "order_new.html", "order_cancel.html"):
+        assert "ui.summary" not in (root / name).read_text(encoding="utf-8"), name

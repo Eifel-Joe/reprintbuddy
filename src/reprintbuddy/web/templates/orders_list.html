@@ -9,17 +9,15 @@
 {%- endfor %}
 {%- endmacro %}
 
-{#- The summary names the view ("open orders" or "closed orders"), the title stays the same. -#}
-{% call ui.page_head("receipt", t('orders.title')) %}
-{% call ui.region("summary", "order article") %}{{ ui.summary("order", tc('summary.orders_closed' if closed else 'summary.orders_open', total), summary_items) }}{% endcall %}
-{% endcall %}
+{#- The first card names the view ("open orders" or "closed orders"), the title stays the same. -#}
+{% call ui.page_head("receipt", t('orders.title'), t('orders.subtitle')) %}<a class="btn" href="/orders/new">{{ ui.icon('plus') }}{{ t('orders.new') }}</a>{% endcall %}
+{% call ui.region("summary", "order article") %}{{ ui.kpi_row(kpis) }}{% endcall %}
 
 <div class="toolbar">
   {{ ui.search_form(q, t('orders.field.reference'), keep=search_keep) }}
   {% call ui.region("filters", "order article") %}{{ ui.filter_bar("order", filters) }}{% endcall %}
   {{ ui.layout_toggle(layout_links) }}
   <div class="toolbar-actions">
-    <a class="btn" href="/orders/new">{{ ui.icon('plus') }}{{ t('orders.new') }}</a>
     {% if closed %}<a class="btn secondary" href="/orders">{{ ui.icon('archive') }}{{ t('orders.show_open') }}</a>
     {%- else %}<a class="btn secondary" href="/orders?view=closed">{{ ui.icon('archive') }}{{ t('orders.show_closed') }}</a>{% endif %}
   </div>
@@ -40,6 +38,7 @@
         <th>{{ t('orders.field.date') }}</th>
         <th>{{ t('orders.items') }}</th>
         <th>{{ t('list.col.status') }}</th>
+        <th class="actions-col"><span class="sr-only">{{ t('list.col.actions') }}</span></th>
       </tr>
     </thead>
     <tbody>
@@ -49,6 +48,10 @@
         <td class="nowrap">{{ order.order_date|local_date }}</td>
         <td>{{ items(order) }}</td>
         <td>{{ ui.badge('order', order.display_status) }}</td>
+        <td class="actions-col">{% call ui.row_actions() %}
+          {{- ui.icon_button('eye', t('orders.view'), '/orders/' ~ order.id) }}
+          {%- if not closed %}{{ ui.icon_post('x', t('orders.cancel'), '/orders/' ~ order.id ~ '/cancel') }}{% endif %}
+        {% endcall %}</td>
       </tr>
     {% endfor %}
     </tbody>

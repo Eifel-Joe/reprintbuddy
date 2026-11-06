@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('orders.new') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("receipt", t('orders.new')) %}{% endcall %}
+{% call ui.page_head("receipt", t('orders.new'), t('orders.new_subtitle')) %}{% endcall %}
 {#- The choice lists follow new articles and sets. The form has no data of its own to watch: while
     something is typed it is not swapped, and no notice is shown (Design 4.6). -#}
 {% call ui.region("form", "article set") %}

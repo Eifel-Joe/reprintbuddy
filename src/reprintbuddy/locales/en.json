@@ -461,5 +461,11 @@
   "parts.subtitle": "Bought parts built into articles: stock, minimum stock, supplier",
   "parts.form_subtitle": "Stock, minimum stock and supplier of the part",
   "sets.subtitle": "Bundles of articles sold together",
-  "sets.form_subtitle": "Name and positions of the set"
+  "sets.form_subtitle": "Name and positions of the set",
+  "kpi.orders_open": "Open orders",
+  "kpi.orders_closed": "Closed orders",
+  "orders.subtitle": "Orders reserve stock until they are shipped or cancelled",
+  "orders.new_subtitle": "Record an order; its stock is reserved",
+  "orders.cancel_subtitle": "Confirm the cancellation; the reservation is released",
+  "orders.view": "View"
 }

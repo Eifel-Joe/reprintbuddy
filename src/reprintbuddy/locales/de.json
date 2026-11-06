@@ -461,5 +461,11 @@
   "parts.subtitle": "Gekaufte Teile, die in Artikel verbaut werden: Bestand, Mindestbestand, Lieferant",
   "parts.form_subtitle": "Bestand, Mindestbestand und Lieferant des Teils",
   "sets.subtitle": "Zusammenstellungen aus Artikeln, die zusammen verkauft werden",
-  "sets.form_subtitle": "Name und Positionen des Sets"
+  "sets.form_subtitle": "Name und Positionen des Sets",
+  "kpi.orders_open": "Offene Bestellungen",
+  "kpi.orders_closed": "Abgeschlossene Bestellungen",
+  "orders.subtitle": "Bestellungen reservieren Bestand, bis sie versandt oder storniert sind",
+  "orders.new_subtitle": "Bestellung erfassen; der Bestand wird reserviert",
+  "orders.cancel_subtitle": "Storno bestätigen; die Reservierung wird frei",
+  "orders.view": "Ansehen"
 }
