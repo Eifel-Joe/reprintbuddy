@@ -75,7 +75,7 @@ def test_detail_regions_and_topics(ready_client):
     a = add(ready_client)
     page = ready_client.get(f"/articles/{a}").text
     topics = topics_of(page)
-    assert topics["main"] == f"article:{a} part"
+    assert topics["main"] == f"article:{a} part filament"  # the sort column shows filament labels
     assert topics["journal"] == "journal"
     main = regions.extract(page, ["main"])["main"]
     for label in ("articles.col.stock", "articles.col.reserved", "articles.col.available",
