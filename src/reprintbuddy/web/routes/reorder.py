@@ -15,6 +15,7 @@ from reprintbuddy.web.formatting import format_date, to_local
 from reprintbuddy.web.forms import (
     bounded_int, duplicate_redirect, error_status, error_text, saved_redirect,
 )
+from reprintbuddy.web.i18n import translate
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
 
 router = APIRouter()
@@ -24,14 +25,17 @@ def _number(value: float) -> str:
     return f"{value:.0f}"
 
 
-async def _page(request: Request, db: Session, *, error: str | None = None, status: int = 200):
+async def _page(
+    request: Request, db: Session, *, error: str | None = None, status: int = 200,
+    typed: tuple[str, str, str] | None = None,
+):
     spools = await spools_or_none(request)  # before any write transaction, never inside one
     lang = current_language(request)
     now = utcnow()
     with write_transaction(request) as tx:
         # Closing arrived marks is the page's one write; a part receipt booked while Bambuddy
         # was down still ends "on its way" (controller ruling R7).
-        sorts, _day = filament.known_sorts(tx, spools)
+        sorts, day = filament.known_sorts(tx, spools)
         reorder.close_arrived_marks(tx, spools, now)
     rows = []
     for sug in reorder.suggestions(db, sorts=sorts, today=now.date()):
@@ -42,9 +46,13 @@ async def _page(request: Request, db: Session, *, error: str | None = None, stat
             "item_type": sug.item_type, "item_id": sug.item_id, "label": sug.label,
             "swatch": swatch if swatch and COLOR.fullmatch(swatch) else None,
             "stock": _number(sug.stock), "demand": _number(sug.demand),
-            "per_day": f"{sug.per_day:.1f}", "lead_days": sug.lead_days,
+            "per_day": f"{sug.per_day:.1f}",
+            "packs_value": typed[2] if typed and typed[:2] == (sug.item_type, str(sug.item_id)) else sug.packs, "lead_days": sug.lead_days,
             "safety": _number(sug.safety), "packs": sug.packs, "size": _number(sug.pack_size),
-            "total": _number(total), "unit": sug.unit, "supplier": sug.supplier,
+            "total": _number(total),
+            "suggestion": translate(lang, "reorder.suggest_part", packs=sug.packs, size=_number(sug.pack_size), total=_number(total), unit=sug.unit)
+            if sug.item_type == "part"
+            else translate(lang, "reorder.suggest_filament", packs=sug.packs, size=_number(sug.pack_size), unit=sug.unit), "unit": sug.unit, "supplier": sug.supplier,
             "order_url": sug.order_url,
         })
     under_way = [
@@ -57,6 +65,7 @@ async def _page(request: Request, db: Session, *, error: str | None = None, stat
     return render(
         request, "reorder.html", status_code=status, active_nav="reorder", rows=rows,
         under_way=under_way, filament_unknown=sorts is None, error=error,
+        stale_day=format_date(day, lang) if day else None,
     )
 
 
@@ -65,7 +74,7 @@ async def reorder_page(request: Request, db: Session = Depends(get_db)):
     return await _page(request, db)
 
 
-async def _act(request: Request, db: Session, work, flash_key: str):
+async def _act(request: Request, db: Session, work, flash_key: str, typed_keys: bool = False):
     form = await request.form()
     try:
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
@@ -74,7 +83,9 @@ async def _act(request: Request, db: Session, work, flash_key: str):
         return duplicate_redirect(request, "/reorder")
     except (DomainError, FormTokenInvalid) as exc:
         return await _page(
-            request, db, error=error_text(current_language(request), exc), status=error_status(exc)
+            request, db, error=error_text(current_language(request), exc), status=error_status(exc),
+            typed=(str(form.get("item_type", "")), str(form.get("item_id", "")), str(form.get("packs", "")))
+            if typed_keys else None,
         )
     return saved_redirect(request, "/reorder", flash_key, item=item)
 
@@ -89,9 +100,9 @@ async def reorder_mark(request: Request, db: Session = Depends(get_db)):
         if item_id is None:
             raise NotFoundError("reorder.item_not_found")
         mark = reorder.mark_ordered(tx, str(form.get("item_type", "")), item_id, packs)
-        return next(m.label for m in reorder.open_marks(tx) if m.id == mark.id)
+        return next((m.label for m in reorder.open_marks(tx) if m.id == mark.id), "")
 
-    return await _act(request, db, work, "reorder.marked")
+    return await _act(request, db, work, "reorder.marked", typed_keys=True)
 
 
 @router.post("/reorder/marks/{mark_id:int}/received", dependencies=[Depends(verify_csrf)])

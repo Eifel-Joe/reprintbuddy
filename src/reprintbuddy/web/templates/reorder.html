@@ -4,6 +4,7 @@
 {% block content %}
 {% call ui.page_head("shopping-bag", t('reorder.title'), t('reorder.sub')) %}{% endcall %}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% if stale_day %}<p class="alert" role="status">{{ t('filament.stale', day=stale_day) }}</p>{% endif %}
 {% if filament_unknown %}<p class="alert" role="status">{{ t('reorder.filament_unknown') }}</p>{% endif %}
 <section class="card section wide">
   {% if rows %}
@@ -21,20 +22,21 @@
           <td>{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}{{ r.label }}</td>
           <td class="num">{{ r.stock }} {{ r.unit }}</td>
           <td class="num">{{ r.demand }} {{ r.unit }}</td>
-          <td class="num">{{ t('reorder.per_day_days', per_day=r.per_day, days=r.lead_days) }}</td>
+          <td class="num">{{ t('reorder.per_day_days', per_day=r.per_day, unit=r.unit, days=r.lead_days) }}</td>
           <td class="num">{{ r.safety }} {{ r.unit }}</td>
-          <td>{% if r.item_type == 'part' %}{{ t('reorder.suggest_part', packs=r.packs, size=r.size, total=r.total, unit=r.unit) }}{% else %}{{ t('reorder.suggest_filament', packs=r.packs, size=r.size, unit=r.unit) }}{% endif %}</td>
+          <td>{{ r.suggestion }}</td>
           <td>{{ r.supplier or '' }}</td>
           <td>{% if r.order_url %}<a href="{{ r.order_url }}" target="_blank" rel="noopener noreferrer">{{ t('reorder.open_link') }}</a>{% endif %}</td>
         </tr>
         <tr class="slot-select">
           <td colspan="8">
+            <p class="reorder-detail">{{ t('reorder.detail', suggestion=r.suggestion) }}{% if r.supplier %} · {{ r.supplier }}{% endif %}{% if r.order_url %} · <a href="{{ r.order_url }}" target="_blank" rel="noopener noreferrer">{{ t('reorder.open_link') }}</a>{% endif %}</p>
             <form method="post" action="/reorder/mark">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input type="hidden" name="form_token" value="{{ form_token() }}">
               <input type="hidden" name="item_type" value="{{ r.item_type }}">
               <input type="hidden" name="item_id" value="{{ r.item_id }}">
-              <label>{{ t('reorder.pack_label') }} <input type="number" name="packs" value="{{ r.packs }}" min="1" max="1000" inputmode="numeric" required></label>
+              <label>{{ t('reorder.pack_label') }} <input type="number" name="packs" value="{{ r.packs_value }}" min="1" max="1000" inputmode="numeric" style="width: 6rem" required></label>
               <button class="btn" type="submit">{{ t('reorder.mark') }}</button>
             </form>
           </td>

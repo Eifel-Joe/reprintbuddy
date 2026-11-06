@@ -1,13 +1,16 @@
 """The reorder page: suggestions, "ordered" marks, "under way" and "arrived" (Spec 9.3, 9.4; B6 Task 10)."""
 
 import re
+from datetime import timedelta
+from html import escape as html_escape
 
 import pytest
 
 from reprintbuddy import settings as st
 from conftest import csrf_of, form_token_of, sm_of
-from factories import make_article, make_filament_settings, make_part, make_sort
-from reprintbuddy.models import ArticlePart, ReorderMark
+from factories import make_article, make_filament_settings, make_part, make_snapshot, make_sort
+from reprintbuddy.domain import stock
+from reprintbuddy.models import ArticlePart, ReorderMark, utcnow
 
 
 def add_part(client, **fields):
@@ -82,13 +85,12 @@ def test_mark_double_submit(bb_client):  # Review Focus 4
     second = bb_client.post("/reorder/mark", data=data)
     assert first.status_code == 303 and second.status_code == 303
     assert len(marks(bb_client)) == 1
-    assert "already" in bb_client.get("/reorder").text.lower()
+    assert "Already submitted" in bb_client.get("/reorder").text
 
 
 def test_received_button(bb_client):
     pid = add_part(bb_client)
     mark_form(bb_client, "part", pid, "1")
-    token = form_token_of(bb_client, "/reorder")
     html = bb_client.get("/reorder").text
     action = re.search(r'action="(/reorder/marks/\d+/received)"', html).group(1)
     token = form_token_of(bb_client, "/reorder", action)
@@ -105,6 +107,8 @@ def test_mark_invalid_packs(bb_client, bad):
     assert response.status_code == 200 and "Enter a number of order units" in response.text
     assert marks(bb_client) == []
     assert 'action="/reorder/mark"' in response.text  # the form is shown again
+    shown = html_escape(bad) if bad else ""
+    assert re.search(rf'name="packs"[^>]*value="{re.escape(shown)}"', response.text)  # the input is kept
 
 
 def test_mark_unknown_item(bb_client):
@@ -156,3 +160,37 @@ def test_nav_reorder_active(bb_client):
     active = re.findall(r'class="nav-link active"[^>]*>.*?<span class="nav-label">(.*?)</span>', html, re.S)
     assert set(active) == {"Reorder"}
     assert 'href="/reorder"' in html
+
+
+def test_stale_filament_suggestion_shows_the_day(bb_client, fake_bambuddy):  # Entscheidung 5
+    yesterday = utcnow().date() - timedelta(days=1)
+    with sm_of(bb_client).begin() as s:
+        sort = make_sort(s)
+        make_filament_settings(s, sort.id, pack_grams=1000, safety_value=2000, safety_unit="grams")
+        make_snapshot(s, yesterday, 1, sort.id, 100.0)
+    fake_bambuddy.unavailable = True
+    response = bb_client.get("/reorder")
+    assert response.status_code == 200
+    assert f"Stock as of {yesterday:%Y-%m-%d}" in response.text
+    assert "Example Brand PLA Black" in response.text and "2 × 1000 g" in response.text
+
+
+def test_suggestion_details_sit_in_the_form_row(bb_client):  # phone: nothing important off-screen
+    add_part(bb_client)
+    html = bb_client.get("/reorder").text
+    row = re.search(r'<tr class="slot-select">(.*?)</tr>', html, re.S).group(1)
+    assert "1 × 50 (50 pcs)" in row and "Example Supplier" in row
+    assert 'href="https://shop.example/insert-m4"' in row
+    assert "days" in html and "0.0 pcs/day" in html
+
+
+def test_part_receipt_closes_mark_without_bambuddy(bb_client, fake_bambuddy):  # ruling R7
+    pid = add_part(bb_client)
+    mark_form(bb_client, "part", pid, "1")
+    with sm_of(bb_client).begin() as s:
+        s.query(ReorderMark).one().marked_at -= timedelta(seconds=1)
+        stock.receive_part(s, pid, 50, "user")
+    fake_bambuddy.unavailable = True
+    html = bb_client.get("/reorder").text
+    assert "On its way" not in html
+    assert marks(bb_client)[0].received_at is not None

@@ -553,7 +553,7 @@
   "reorder.col.suggestion": "Vorschlag",
   "reorder.col.supplier": "Lieferant",
   "reorder.col.link": "Bestell-Link",
-  "reorder.per_day_days": "{per_day}/Tag × {days} T",
+  "reorder.per_day_days": "{per_day} {unit}/Tag × {days} Tage",
   "reorder.suggest_filament": "{packs} × {size} {unit}",
   "reorder.suggest_part": "{packs} × {size} ({total} {unit})",
   "reorder.pack_label": "Bestelleinheiten",
@@ -563,5 +563,6 @@
   "reorder.col.ordered": "Bestellt am",
   "reorder.received": "eingetroffen",
   "reorder.marked": "{item} als bestellt markiert.",
-  "reorder.arrived": "{item} als eingetroffen markiert."
+  "reorder.arrived": "{item} als eingetroffen markiert.",
+  "reorder.detail": "Vorschlag: {suggestion}"
 }
