@@ -288,3 +288,83 @@ def test_lift_no_target_with_printer_id(db):
         a = make_article(s, paused=True, pause_reason="no_target", printer_id=1).id
         pauses.lift_pause(s, a, "user")
         assert not s.get(Article, a).paused
+
+
+# ---- fix round 1: re-check before pausing ----------------------------------------------
+
+
+class Racing:
+    """A client whose `get_file` first lets something else change the article (a web POST)."""
+
+    def __init__(self, inner, change):
+        self._inner, self._change, self._done = inner, change, False
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    async def get_file(self, file_id):
+        result = await self._inner.get_file(file_id)
+        if not self._done:
+            self._done = True
+            self._change()
+        return result
+
+
+async def test_concurrent_confirm_is_not_overwritten(db, fake_bambuddy):
+    a = article(db)
+    fake_bambuddy.update_file(1, fingerprint="v2")
+
+    def confirm():
+        with db.begin() as s:
+            s.get(Article, a).file_fingerprint = "v2"
+
+    await check_articles(Racing(fake_bambuddy, confirm), db)
+    assert state(db, a) == (False, None)
+    with db() as s:
+        assert journal(s, "automation_paused") == []
+
+
+async def test_concurrent_target_change_is_not_overwritten(db, fake_bambuddy):
+    a = article(db, target_model="X1")
+
+    def choose():
+        with db.begin() as s:
+            s.get(Article, a).target_model = "A1"
+
+    await check_articles(Racing(fake_bambuddy, choose), db)
+    assert state(db, a) == (False, None)
+
+
+async def test_concurrent_archive_is_not_overwritten(db, fake_bambuddy):
+    a = article(db)
+    fake_bambuddy.remove_file(1)
+
+    def archive():
+        with db.begin() as s:
+            s.get(Article, a).archived_at = utcnow()
+
+    await check_articles(Racing(fake_bambuddy, archive), db)
+    assert state(db, a) == (False, None)
+
+
+async def test_paused_or_paused_by_verdict_is_not_waiting(db):
+    fake = FakeBambuddy()
+    fake.add_file("Template A.gcode.3mf", None)
+    fake.add_printer("Printer 1", "A1", active=False)
+    paused = article(db, paused=True, pause_reason="two_failures")
+    changed = article(db, name="Other", plate_id=2, file_fingerprint="old")
+    result = await check_articles(fake, db)
+    assert result.waiting_for_printer == frozenset()
+    assert state(db, changed) == (True, "file_changed")
+    assert state(db, paused) == (True, "two_failures")
+
+
+async def test_confirm_with_other_file_refused(db, fake_bambuddy):
+    a = article(db)
+    file_b = await fake_bambuddy.get_file(2)
+    with db.begin() as s:
+        with pytest.raises(ConflictError) as err:
+            catalog.confirm_article_file(
+                s, a, file=file_b, requirements=[], thumbnail=None, actor="user"
+            )
+        assert err.value.key == "articles.confirm_other_file"

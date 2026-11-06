@@ -302,6 +302,7 @@
   "parts.flash_restored": "Zukaufteil {name} wiederhergestellt.",
   "sets.flash_archived": "Set {name} archiviert.",
   "sets.flash_restored": "Set {name} wiederhergestellt.",
+  "articles.confirm_other_file": "Bestätigen geht nur für die eigene Druckdatei des Artikels. Stattdessen die Datei neu wählen.",
   "articles.edit_archived": "Ein archivierter Artikel lässt sich nicht bearbeiten. Erst wiederherstellen.",
   "orders.cancel_confirm": "Bestellung {reference} stornieren? Die reservierten Mengen werden freigegeben.",
   "orders.cancel_yes": "Ja, Bestellung stornieren",

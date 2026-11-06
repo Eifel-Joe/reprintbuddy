@@ -302,6 +302,7 @@
   "parts.flash_restored": "Part {name} restored.",
   "sets.flash_archived": "Set {name} archived.",
   "sets.flash_restored": "Set {name} restored.",
+  "articles.confirm_other_file": "Only the article's own print file can be confirmed. Choose the file again instead.",
   "articles.edit_archived": "An archived article cannot be edited. Restore it first.",
   "orders.cancel_confirm": "Cancel the order {reference}? The reserved quantities are released.",
   "orders.cancel_yes": "Yes, cancel the order",

@@ -201,6 +201,7 @@ async def check_articles(client: BambuddyClient, sm: sessionmaker) -> ArticleChe
             select(
                 Article.id, Article.library_file_id, Article.file_name,
                 Article.file_fingerprint, Article.target_model, Article.printer_id,
+                Article.paused,
             )
             .where(Article.archived_at.is_(None))
             .order_by(Article.id)
@@ -243,9 +244,28 @@ async def check_articles(client: BambuddyClient, sm: sessionmaker) -> ArticleChe
             target, matching = {}, []
         if not matching:
             verdicts.append(("no_target", target))
-        elif not any(p.active for p in matching):
+        elif not any(p.active for p in matching) and not verdicts and not row.paused:
             waiting.add(row.id)
         for reason, details in verdicts:
             with sm.begin() as session:
+                # The answer is minutes old by now and web requests run without the tick
+                # lock: a confirm, relink, target change or archive in between wins.
+                current = session.get(Article, row.id)
+                if current is None or (
+                    current.archived_at,
+                    current.library_file_id,
+                    current.file_fingerprint,
+                    current.file_name,
+                    current.printer_id,
+                    current.target_model,
+                ) != (
+                    None,
+                    row.library_file_id,
+                    row.file_fingerprint,
+                    row.file_name,
+                    row.printer_id,
+                    row.target_model,
+                ):
+                    break
                 pause_article(session, row.id, reason, "auto", details=details)
     return ArticleCheck(None, frozenset(waiting))

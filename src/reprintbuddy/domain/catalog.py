@@ -770,6 +770,8 @@ def confirm_article_file(
     A `file_missing` pause stays (the file is not there); other pauses stay too.
     """
     article = _active_article(session, article_id)
+    if file.id != article.library_file_id:
+        raise ConflictError("articles.confirm_other_file")
     details = {
         "old_name": article.file_name,
         "old_fingerprint": article.file_fingerprint,
