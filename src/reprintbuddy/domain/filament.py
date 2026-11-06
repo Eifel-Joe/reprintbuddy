@@ -6,7 +6,7 @@ Functions never commit; the caller owns the transaction.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.bambuddy.types import Spool
 from reprintbuddy.domain import rules
-from reprintbuddy.models import FilamentSnapshot, FilamentSort
+from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
+from reprintbuddy.models import Article, ArticleFilament, FilamentSnapshot, FilamentSort
 
 WINDOW_DAYS = 30
 
@@ -182,3 +183,79 @@ def known_sorts(
         if sort.id not in stock:
             stock[sort.id] = _entry(sort, 0.0, 0)
     return stock, day
+
+
+@dataclass(frozen=True)
+class SlotRow:
+    slot: int
+    grams: float
+    material: str | None
+    color_hex: str | None
+    mapped: int | None
+    suggested: int | None
+
+
+def suggest_sort(
+    material: str | None, color_hex: str | None, sorts: Mapping[int, SortStock]
+) -> int | None:
+    """The one sort with the same material and colour; none or several give no suggestion (Spec 5.2)."""
+    if not _norm(material) or not _norm(color_hex):
+        return None
+    hits = [
+        sort_id
+        for sort_id, sort in sorts.items()
+        if _norm(sort.material) == _norm(material) and _norm(sort.color_hex) == _norm(color_hex)
+    ]
+    return hits[0] if len(hits) == 1 else None
+
+
+def slot_rows(session: Session, article_id: int, sorts: Mapping[int, SortStock]) -> list[SlotRow]:
+    """The filament slots of an article by slot number, with stored mapping and suggestion."""
+    rows = session.scalars(
+        select(ArticleFilament)
+        .where(ArticleFilament.article_id == article_id)
+        .order_by(ArticleFilament.slot)
+    )
+    return [
+        SlotRow(
+            r.slot,
+            r.grams,
+            r.material,
+            r.color_hex,
+            r.spool_filament_id,
+            suggest_sort(r.material, r.color_hex, sorts),
+        )
+        for r in rows
+    ]
+
+
+def set_mapping(session: Session, article_id: int, mapping: Mapping[int, int | None]) -> None:
+    """Store `slot -> sort id` (None clears); validates everything first, other slots stay."""
+    article = session.get(Article, article_id)
+    if article is None:
+        raise NotFoundError("articles.not_found")
+    if article.archived_at is not None:
+        raise ConflictError("articles.edit_archived")
+    slots = {
+        r.slot: r
+        for r in session.scalars(select(ArticleFilament).where(ArticleFilament.article_id == article_id))
+    }
+    for slot, sort_id in mapping.items():
+        if slot not in slots:
+            raise ValidationError("filament.unknown_slot")
+        if sort_id is not None and session.get(FilamentSort, sort_id) is None:
+            raise NotFoundError("filament.sort_not_found")
+    for slot, sort_id in mapping.items():
+        slots[slot].spool_filament_id = sort_id
+    session.flush()
+
+
+def unmapped_slots(session: Session) -> list[tuple[int, str, int]]:
+    """(article id, name, slot) of every slot without a sort, active articles only."""
+    stmt = (
+        select(Article.id, Article.name, ArticleFilament.slot)
+        .join(ArticleFilament, ArticleFilament.article_id == Article.id)
+        .where(Article.archived_at.is_(None), ArticleFilament.spool_filament_id.is_(None))
+        .order_by(Article.name, ArticleFilament.slot)
+    )
+    return [(a, n, s) for a, n, s in session.execute(stmt)]

@@ -476,5 +476,7 @@
   "articles.pause_needs_target": "Set a print target first.",
   "queue.article_archived": "{name} is archived and cannot be queued.",
   "queue.entry_not_found": "This queue entry does not exist.",
-  "queue.field.prints": "Prints"
+  "queue.field.prints": "Prints",
+  "filament.unknown_slot": "Unknown filament slot for this article.",
+  "filament.sort_not_found": "This filament sort does not exist."
 }
