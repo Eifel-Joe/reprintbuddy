@@ -100,7 +100,7 @@ p { margin: 0 0 1rem; }
 }
 .nav-label { min-width: 0; overflow-wrap: anywhere; }
 
-/* Head of a page: symbol, title, short summary. */
+/* Head of a page: symbol, title, subtitle. */
 .page-head { display: flex; align-items: flex-start; gap: 0.75rem; margin-bottom: 1.25rem; }
 .page-head h1 { margin: 0; }
 .page-icon {
@@ -315,9 +315,9 @@ td a:hover, .btn-link:hover { text-decoration: underline; }
 .detail-head { display: flex; gap: 1.25rem; align-items: flex-start; flex-wrap: wrap; }
 .detail-head .thumb { width: 160px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr)); gap: 0.75rem; flex: 1; min-width: 0; }
-.stat { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 0.8rem; }
-.stat-label { display: block; color: var(--text-2); font-size: 0.8rem; }
-.stat-value { display: block; font-size: 1.4rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.stat-label { display: block; color: var(--muted); font-size: 12px; }
+.stat-value { display: block; font-size: 20px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .props { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 0.4rem 1rem; margin: 0; }
 .props dt { color: var(--text-2); }
 .props dd { margin: 0; overflow-wrap: anywhere; }
@@ -663,8 +663,3 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
   .setting-control input:not([type="checkbox"]):not([type="file"]), .setting-control select { width: 100%; }
   .setting-row:has(input.switch) .setting-control { width: auto; flex: 0 0 auto; }
 }
-
-/* ---- Task 7: the six numbers of the article detail in the look of the key figure cards ---- */
-.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 11px; padding: 0.8rem 1rem; }
-.stat-label { color: var(--text-3); font-size: 12.5px; }
-.stat-value { font-size: 1.7rem; margin-top: 0.15rem; }

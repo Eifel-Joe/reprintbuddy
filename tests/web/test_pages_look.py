@@ -184,6 +184,7 @@ def test_bare_pages_keep_logo_and_no_menu(tmp_path, ready_client):
     [
         "/", "/articles", "/articles/{article}", "/articles/{article}/edit", "/sets", "/parts",
         "/orders", "/orders/{order}", "/orders/new", "/bookings", "/journal", "/settings", "/nosuch",
+        "/parts/new", "/parts/{part}/edit", "/sets/new", "/sets/{set}/edit",
     ],
 )
 def test_every_page_with_the_menu_has_a_subtitle(ready_client, ids, path):
@@ -234,3 +235,41 @@ def test_article_detail_head_has_edit_as_main_button(ready_client, ids):
     head = page.split("</header>")[0]
     assert re.search(r'<div class="page-actions"><a class="btn" href="/articles/\d+/edit">.*?#pencil', head, re.S)
     assert "article:" in page and 'data-live-region="head"' in page
+
+
+def test_order_cancel_confirmation_page_has_a_subtitle(ready_client, ids):
+    order = ids["order"]
+    data = {
+        "csrf_token": csrf_of(ready_client, f"/orders/{order}"),
+        "form_token": form_token_of(ready_client, f"/orders/{order}", f"/orders/{order}/cancel"),
+    }
+    page = ready_client.post(f"/orders/{order}/cancel", data=data)
+    assert page.status_code == 200
+    assert "sidebar-nav" in page.text and page.text.count('class="page-sub"') == 1
+
+
+def _detail_head(client, article_id):
+    page = client.get(f"/articles/{article_id}").text
+    return page, regions.extract(page, ["head"])["head"]
+
+
+def test_article_detail_number_and_badges_sit_in_the_subtitle(ready_client):
+    from reprintbuddy.models import utcnow
+
+    with sm_of(ready_client).begin() as s:
+        a = make_article(s, name="Template A", sku="A-100", paused=True, archived_at=utcnow()).id
+    _page, head = _detail_head(ready_client, a)
+    sub = re.search(r'<p class="page-sub">(.*?)</p>', head, re.S).group(1)
+    assert "A-100" in sub and sub.count('class="badge') == 3
+
+
+def test_article_detail_edit_is_in_the_head_region_unless_archived(ready_client):
+    from reprintbuddy.models import utcnow
+
+    with sm_of(ready_client).begin() as s:
+        live = make_article(s, name="Template A").id
+        gone = make_article(s, name="Template B", archived_at=utcnow()).id
+    _page, head = _detail_head(ready_client, live)
+    assert f'href="/articles/{live}/edit"' in head
+    _page, head = _detail_head(ready_client, gone)
+    assert "/edit" not in head

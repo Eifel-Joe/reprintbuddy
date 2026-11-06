@@ -88,7 +88,7 @@ def test_status_colours_in_the_style_sheet(ready_client):
     assert ".badge.flag" in css
 
 
-def test_macros_render_icon_badge_and_summary(ready_client):
+def test_macros_render_icon_badge_and_page_head(ready_client):
     env = ready_client.app.state.templates.env
     source = (
         '{% import "_ui.html" as ui with context %}'
