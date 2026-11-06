@@ -453,5 +453,13 @@
   "list.col.actions": "Aktionen",
   "articles.subtitle": "Gedruckte Artikel: Bestand, Mindestbestand und Ziel",
   "kpi.articles": "Artikel",
-  "kpi.articles_archived": "Archivierte Artikel"
+  "kpi.articles_archived": "Archivierte Artikel",
+  "kpi.parts": "Zukaufteile",
+  "kpi.parts_archived": "Archivierte Zukaufteile",
+  "kpi.sets": "Sets",
+  "kpi.sets_archived": "Archivierte Sets",
+  "parts.subtitle": "Gekaufte Teile, die in Artikel verbaut werden: Bestand, Mindestbestand, Lieferant",
+  "parts.form_subtitle": "Bestand, Mindestbestand und Lieferant des Teils",
+  "sets.subtitle": "Zusammenstellungen aus Artikeln, die zusammen verkauft werden",
+  "sets.form_subtitle": "Name und Positionen des Sets"
 }

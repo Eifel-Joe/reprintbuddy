@@ -2,8 +2,8 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{% if part %}{{ t('parts.edit') }}{% else %}{{ t('parts.new') }}{% endif %}{% endblock %}
 {% block content %}
-{% call ui.page_head("puzzle", part.name if part else t('parts.new')) %}
-{% if part and part.archived_at %}<p class="summary">{{ ui.badge('part', 'archived') }}</p>{% endif %}
+{% call ui.page_head("puzzle", part.name if part else t('parts.new'), t('parts.form_subtitle')) %}
+{% if part and part.archived_at %}{{ ui.badge('part', 'archived') }}{% endif %}
 {% endcall %}
 <div class="toolbar">
   <div class="toolbar-actions">

@@ -453,5 +453,13 @@
   "list.col.actions": "Actions",
   "articles.subtitle": "Printed articles: stock, minimum stock and target",
   "kpi.articles": "Articles",
-  "kpi.articles_archived": "Archived articles"
+  "kpi.articles_archived": "Archived articles",
+  "kpi.parts": "Parts",
+  "kpi.parts_archived": "Archived parts",
+  "kpi.sets": "Sets",
+  "kpi.sets_archived": "Archived sets",
+  "parts.subtitle": "Bought parts built into articles: stock, minimum stock, supplier",
+  "parts.form_subtitle": "Stock, minimum stock and supplier of the part",
+  "sets.subtitle": "Bundles of articles sold together",
+  "sets.form_subtitle": "Name and positions of the set"
 }

@@ -175,17 +175,12 @@ async def articles_list(
     found = [row for row in every if listing.matches(q, row.name, row.sku)]
     counts = Counter(row.status for row in found)
     lang = current_language(request)
-    if archived:
-        cards = kpis.state_cards(
-            lambda key: translate(lang, key), "article", "archive", len(every),
-            translate(lang, "kpi.articles_archived"), [],
-        )
-    else:  # "enough" and "paused" get no card: the cards name what needs attention
-        cards = kpis.state_cards(
-            lambda key: translate(lang, key), "article", "package", len(every),
-            translate(lang, "kpi.articles"),
-            summarize((row.status for row in every), ("overbooked", "below_min", "low")),
-        )
+    t = lambda key: translate(lang, key)  # noqa: E731
+    # "enough" and "paused" get no card: the cards name what needs attention
+    icon, label, named = ("archive", "kpi.articles_archived", []) if archived else (
+        "package", "kpi.articles", summarize((row.status for row in every), ("overbooked", "below_min", "low"))
+    )
+    cards = kpis.state_cards(t, "article", icon, len(every), t(label), named)
     keep = (("status", status), ("view", "archived" if archived else None))
     layout = listing.layout_of(request, "articles")
     return render(

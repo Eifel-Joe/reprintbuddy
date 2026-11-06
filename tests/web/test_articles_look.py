@@ -158,7 +158,9 @@ def test_archive_from_the_row_is_refused_with_an_open_order(ready_client):
         f"/articles/{a}/archive",
         data={"csrf_token": csrf_of(ready_client, "/articles"), "form_token": row_token(page, a)},
     )
+    assert response.status_code != 303 and response.status_code == 200  # the status the route uses for a refusal
     assert en("articles.archive_open_orders") in response.text
+    assert 'data-live-region="list"' not in response.text and "Template A" in response.text  # the detail page, not the list
     with sm_of(ready_client).begin() as s:
         assert s.get(Article, a).archived_at is None
 
@@ -172,7 +174,12 @@ def test_summary_region_carries_cards_and_fresh_form_tokens(ready_client):
     a = add(ready_client, name="Template A", stock=0, reserved=1)
     response = ready_client.get("/articles", headers={regions.HEADER: "summary list"})
     assert 'data-live-region="summary"' in response.text and 'class="kpis"' in response.text
-    assert row_token(response.text, a)
+    token = row_token(response.text, a)
+    again = ready_client.post(
+        f"/articles/{a}/archive",
+        data={"csrf_token": csrf_of(ready_client, "/articles"), "form_token": token},
+    )
+    assert again.status_code == 303  # the token of the refetched region is valid
 
 
 def test_filter_shows_only_that_state_and_the_counts_stay(ready_client):
