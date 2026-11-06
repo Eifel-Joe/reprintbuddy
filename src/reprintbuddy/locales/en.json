@@ -467,5 +467,18 @@
   "orders.subtitle": "Orders reserve stock until they are shipped or cancelled",
   "orders.new_subtitle": "Record an order; its stock is reserved",
   "orders.cancel_subtitle": "Confirm the cancellation; the reservation is released",
-  "orders.view": "View"
+  "orders.view": "View",
+  "settings.subtitle": "Set up Reprintbuddy: language, server, Bambuddy, account and updates",
+  "settings.tab.general": "General",
+  "settings.tab.bambuddy": "Bambuddy",
+  "settings.tab.account": "Account",
+  "settings.tab.maintenance": "Update and backup",
+  "settings.language_hint": "Language of the pages",
+  "settings.host_hint": "Address Reprintbuddy listens on; 0.0.0.0 means every address",
+  "settings.port_hint": "Port of the web interface",
+  "settings.bambuddy_address_hint": "Address of Bambuddy including http:// or https:// and the port",
+  "settings.bambuddy_key_hint": "Key of the Bambuddy account Reprintbuddy works with",
+  "settings.password_repeat_hint": "Enter the new password once more",
+  "settings.tls_cert_hint": "Paste the text or choose the file",
+  "settings.tls_key_hint": "Paste the text or choose the file; it is never shown again"
 }

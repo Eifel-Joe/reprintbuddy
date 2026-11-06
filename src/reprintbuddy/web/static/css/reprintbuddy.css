@@ -645,3 +645,24 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
   .settings-grid { grid-template-columns: minmax(0, 1fr); }
   .setting-row { flex-wrap: wrap; }
 }
+
+/* ---- settings page in tabs (Task 6) -------------------------------------- */
+.settings-grid .card > .muted, .settings-grid .card > .status { margin: 0 0 0.6rem; font-size: 12.5px; }
+.settings-grid .card > .alert, .settings-grid .card > .notice, .settings-grid .card > .result { margin: 0 0 0.75rem; }
+.settings-grid .card .card-sub { margin: 0.9rem 0 0.25rem; font-size: 13.5px; font-weight: 600; }
+.settings-grid .card form { margin: 0; }
+.setting-control input:not([type="checkbox"]):not([type="file"]), .setting-control select {
+  width: min(18rem, 100%); margin-top: 0;
+}
+.setting-control input[type="checkbox"] { margin: 0; }
+/* Wide fields (PEM text, files): under their label, across the whole card. */
+.setting-row.stack { flex-direction: column; align-items: stretch; gap: 6px; }
+.setting-row.stack .setting-control { width: 100%; flex: none; }
+.setting-row.stack .setting-control textarea { width: 100%; margin-top: 0; }
+.setting-row.stack .setting-control input[type="file"] { margin-top: 6px; }
+.facts p { margin: 0 0 0.25rem; font-size: 13px; }
+@media (max-width: 899px) {
+  .setting-row .setting-control { width: 100%; flex: 1 1 100%; }
+  .setting-control input:not([type="checkbox"]):not([type="file"]), .setting-control select { width: 100%; }
+  .setting-row:has(input.switch) .setting-control { width: auto; flex: 0 0 auto; }
+}

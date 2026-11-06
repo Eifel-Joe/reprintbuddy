@@ -83,7 +83,7 @@
     {% if rights_notice and rights_later %}
     {# After "Later": the notice shrinks to one line until the person signs out. #}
     <div class="rights-banner" role="status">
-      <span>{{ t('rights.banner', rights=rights_names) }} <a href="/settings#bambuddy">{{ t('rights.details') }}</a></span>
+      <span>{{ t('rights.banner', rights=rights_names) }} <a href="/settings?tab=bambuddy#bambuddy">{{ t('rights.details') }}</a></span>
       <form method="post" action="/bambuddy/rights/recheck">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="next" value="{{ rights_next }}">

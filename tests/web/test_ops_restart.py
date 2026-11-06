@@ -43,8 +43,8 @@ def test_restart_failure_reported(ops_env):
     ops_env.runner.on(RESTART_CMD, CommandResult(1, stderr="sudo: a password is required"))
     response = post_restart(ops_env)
     assert response.status_code == 303
-    assert response.headers["location"] == "/settings?ops=restart_failed#ops-restart"
-    page = ops_env.client.get("/settings?ops=restart_failed")
+    assert response.headers["location"] == "/settings?tab=general&ops=restart_failed#ops-restart"
+    page = ops_env.client.get("/settings?tab=general&ops=restart_failed")
     assert "Restart failed" in page.text
     assert "password is required" not in page.text
 
