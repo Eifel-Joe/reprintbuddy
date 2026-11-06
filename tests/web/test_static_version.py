@@ -45,7 +45,11 @@ def test_a_rendered_page_names_the_running_version(ready_client):
     assert f"/static/css/reprintbuddy.css?v={__version__}" in html
     assert f"/static/img/logo.svg?v={__version__}" in html
     assert f"/static/img/favicon.svg?v={__version__}" in html
-    assert not re.search(r'/static/[^"\s]*(?<!' + re.escape(__version__) + r')"', html)
+    assert f"/static/icons/icons.svg?v={__version__}#layout-dashboard" in html
+    # every /static/ address carries the version; an anchor (#name) may follow it
+    addresses = re.findall(r'/static/[^"\s]*', html)
+    assert addresses
+    assert [a for a in addresses if not re.search(r"\?v=" + re.escape(__version__) + r"(#[\w-]+)?$", a)] == []
 
 
 def test_the_pages_without_sidebar_name_the_version_too(client):

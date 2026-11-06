@@ -18,7 +18,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.models import User
 from reprintbuddy.web import regions
 from reprintbuddy.web.csrf import csrf_token
-from reprintbuddy.web.i18n import translate
+from reprintbuddy.web.i18n import translate, translate_count
 
 UID_KEY = "uid"
 SID_KEY = "sid"
@@ -35,6 +35,12 @@ _OPEN_PREFIX = ("/static/",)
 def t(context, key: str, **params: object) -> str:
     # {min_length} may be used in any text; it follows the one password-length constant.
     return translate(context.get("lang", "en"), key, min_length=auth.MIN_PASSWORD_LENGTH, **params)
+
+
+@pass_context
+def tc(context, key: str, n: int, **params: object) -> str:
+    """`t` for a count: the text for one or for several (`<key>.one` / `<key>.other`)."""
+    return translate_count(context.get("lang", "en"), key, n, **params)
 
 
 def db_session(request: Request) -> Session:

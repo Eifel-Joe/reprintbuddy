@@ -18,6 +18,7 @@ from reprintbuddy import __version__
 from reprintbuddy import settings as st
 from reprintbuddy.changes import install_change_feed
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
+from reprintbuddy.domain import status
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.web import deps
 from reprintbuddy.web.flash import pop_flashes
@@ -102,6 +103,8 @@ def create_app(
     templates.env.auto_reload = False
     load_locales()
     templates.env.globals["t"] = deps.t
+    templates.env.globals["tc"] = deps.tc
+    templates.env.globals["status_tone"] = status.tone
     templates.env.globals["pop_flashes"] = pop_flashes
     # In the address of every file under /static/: a new version is a new address, so the browser
     # fetches the new style sheet instead of using the copy it kept from the old version.

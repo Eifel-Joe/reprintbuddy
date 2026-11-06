@@ -32,3 +32,8 @@ def translate(lang: str, key: str, **params: object) -> str:
     if text is None:
         text = locales[FALLBACK][key]
     return text.format(**params) if params else text
+
+
+def translate_count(lang: str, key: str, n: int, **params: object) -> str:
+    """Text for a count: `<key>.one` for exactly one, otherwise `<key>.other`; `{n}` is the count."""
+    return translate(lang, f"{key}.{'one' if n == 1 else 'other'}", n=n, **params)

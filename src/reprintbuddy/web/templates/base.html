@@ -10,36 +10,37 @@
   <link rel="stylesheet" href="/static/css/reprintbuddy.css?v={{ app_version }}">
 </head>
 <body>
+{% import "_ui.html" as ui with context %}
 {# The symbol and the two-colour word mark ("Reprint" in the text colour, "buddy" in green); no image for the text. #}
 {% macro brand() %}<img class="brand-mark" src="/static/img/logo.svg?v={{ app_version }}" alt="" width="30" height="30"><span class="brand-text"><span class="brand-reprint">Reprint</span><span class="brand-buddy">buddy</span></span>{% endmacro %}
 
 {% macro nav_links(active) %}
   {% set items = [
-    ('overview', '/', t('nav.overview')),
-    ('articles', '/articles', t('nav.articles')),
-    ('sets', '/sets', t('nav.sets')),
-    ('orders', '/orders', t('nav.orders')),
-    ('bookings', '/bookings', t('nav.bookings')),
-    ('inspection', '/', t('nav.inspection')),
-    ('assembly', '/', t('nav.assembly')),
-    ('queue', '/', t('nav.queue')),
-    ('filament', '/', t('nav.filament')),
-    ('parts', '/parts', t('nav.parts')),
-    ('reorder', '/', t('nav.reorder')),
-    ('settings', '/settings', t('nav.settings')),
+    ('overview', 'layout-dashboard', '/', t('nav.overview')),
+    ('articles', 'package', '/articles', t('nav.articles')),
+    ('sets', 'boxes', '/sets', t('nav.sets')),
+    ('orders', 'receipt', '/orders', t('nav.orders')),
+    ('bookings', 'arrow-left-right', '/bookings', t('nav.bookings')),
+    ('inspection', 'clipboard-check', '/', t('nav.inspection')),
+    ('assembly', 'wrench', '/', t('nav.assembly')),
+    ('queue', 'list-ordered', '/', t('nav.queue')),
+    ('filament', 'disc-3', '/', t('nav.filament')),
+    ('parts', 'puzzle', '/parts', t('nav.parts')),
+    ('reorder', 'shopping-bag', '/', t('nav.reorder')),
+    ('settings', 'settings', '/settings', t('nav.settings')),
   ] %}
-  {% for id, href, label in items %}
-    <a class="nav-link{% if id == active %} active{% endif %}" href="{{ href }}">{{ label }}</a>
+  {% for id, icon_name, href, label in items %}
+    <a class="nav-link{% if id == active %} active{% endif %}" href="{{ href }}">{{ ui.icon(icon_name) }}<span class="nav-label">{{ label }}</span></a>
   {% endfor %}
 {% endmacro %}
 
 {% macro nav_footer() %}
   {% if open_bambuddy_url %}
-    <a class="nav-link nav-external" href="{{ open_bambuddy_url }}" target="_blank" rel="noopener noreferrer">{{ t('nav.open_bambuddy') }}</a>
+    <a class="nav-link nav-external" href="{{ open_bambuddy_url }}" target="_blank" rel="noopener noreferrer">{{ ui.icon('external-link') }}<span class="nav-label">{{ t('nav.open_bambuddy') }}</span></a>
   {% endif %}
   <form method="post" action="/logout">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="nav-link nav-button" type="submit">{{ t('nav.logout') }}</button>
+    <button class="nav-link nav-button" type="submit">{{ ui.icon('log-out') }}<span class="nav-label">{{ t('nav.logout') }}</span></button>
   </form>
 {% endmacro %}
 

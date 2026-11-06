@@ -28,7 +28,7 @@ NAV_EN = [
 
 def _nav_labels(html):
     sidebar = re.search(r'<nav class="sidebar-nav".*?</nav>', html, re.S).group(0)
-    return re.findall(r'<a [^>]*class="nav-link[^"]*"[^>]*>\s*(.*?)\s*</a>', sidebar, re.S)
+    return re.findall(r'<span class="nav-label">(.*?)</span>', sidebar, re.S)
 
 
 def test_overview_english(ready_client):
@@ -50,7 +50,7 @@ def test_overview_german(ready_client):
 
 def test_active_nav_item_is_marked(ready_client):
     html = ready_client.get("/").text
-    active = re.findall(r'class="nav-link active"[^>]*>\s*(.*?)\s*</a>', html, re.S)
+    active = re.findall(r'class="nav-link active"[^>]*>.*?<span class="nav-label">(.*?)</span>', html, re.S)
     assert active and set(active) == {"Overview"}
 
 

@@ -15,3 +15,24 @@
 {% macro live_stale() -%}
 <p class="live-stale" hidden role="status">{{ t('live.changed') }} <button type="button" class="btn-link" data-live-reload>{{ t('live.reload') }}</button></p>
 {%- endmacro %}
+
+{# A symbol of the sprite (Lucide, ISC; icons folder of the static files). Decorative: the text next to it says it. #}
+{% macro icon(name, cls="") -%}
+<svg class="icon {{ cls }}" aria-hidden="true" focusable="false"><use href="/static/icons/icons.svg?v={{ app_version }}#{{ name }}"></use></svg>
+{%- endmacro %}
+
+{# Head of a page: symbol, title, and (inside the call block) the short summary or other lines. #}
+{% macro page_head(icon_name, title) -%}
+<header class="page-head"><span class="page-icon">{{ icon(icon_name) }}</span><div><h1>{{ title }}</h1>{{ caller() }}</div></header>
+{%- endmacro %}
+
+{# Short summary under the title: the total, then a dot and a count per state
+   (`items` is a list of (state, n) in the order of status.summarize). #}
+{% macro summary(kind, total_text, items) -%}
+<p class="summary">{{ total_text }}{% for state, n in items %} · <span class="dot tone-{{ status_tone(state) }}"></span>{{ n }} {{ t('status.paused' if state == 'paused' else 'status.' ~ kind ~ '.' ~ state) }}{% endfor %}</p>
+{%- endmacro %}
+
+{# The badge of a state; "overbooked" carries a red mark (flag). #}
+{% macro badge(kind, state) -%}
+<span class="badge tone-{{ status_tone(state) }}{% if state == 'overbooked' %} flag{% endif %}">{{ t('status.paused' if state == 'paused' else ('catalog.archived_badge' if state == 'archived' else 'status.' ~ kind ~ '.' ~ state)) }}</span>
+{%- endmacro %}

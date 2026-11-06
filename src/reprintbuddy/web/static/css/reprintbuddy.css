@@ -11,6 +11,10 @@
   --accent: #00ae42;
   --accent-soft: rgba(0, 174, 66, 0.16);
   --danger: #ef4444;
+  --warn: #f59e0b;
+  --warn-soft: rgba(245, 158, 11, 0.16);
+  --danger-soft: rgba(239, 68, 68, 0.14);
+  --neutral-soft: rgba(148, 163, 184, 0.15);
   --radius: 10.8px;
   --sidebar-w: 230px;
   --font: Inter, "Segoe UI", system-ui, sans-serif;
@@ -63,7 +67,9 @@ p { margin: 0 0 1rem; }
 .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
 
 .nav-link {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
   padding: 0.55rem 0.75rem;
   border-radius: 8px;
   color: var(--text-2);
@@ -77,6 +83,77 @@ p { margin: 0 0 1rem; }
 }
 .nav-link:hover { background: rgba(148, 163, 184, 0.1); color: var(--text); }
 .nav-link.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+/* Symbols of the sprite (static/icons/icons.svg); they take the colour of the text. */
+.icon {
+  width: 1.15em;
+  height: 1.15em;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.nav-label { min-width: 0; overflow-wrap: anywhere; }
+
+/* Head of a page: symbol, title, short summary. */
+.page-head { display: flex; align-items: flex-start; gap: 0.75rem; margin-bottom: 1.25rem; }
+.page-head h1 { margin: 0; }
+.page-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 1.2rem;
+}
+.summary { margin: 0.25rem 0 0; color: var(--text-2); }
+.dot {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-right: 0.3em;
+  border-radius: 50%;
+  background: var(--text-2);
+}
+.dot.tone-ok { background: var(--accent); }
+.dot.tone-warn { background: var(--warn); }
+.dot.tone-bad { background: var(--danger); }
+
+/* Badges of a state (Spec 10.1): the colour follows the tone, never the text. */
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.badge.tone-ok { background: var(--accent-soft); color: var(--accent); }
+.badge.tone-warn { background: var(--warn-soft); color: var(--warn); }
+.badge.tone-bad { background: var(--danger-soft); color: var(--danger); }
+.badge.tone-neutral { background: var(--neutral-soft); color: var(--text-2); }
+.badge.flag { position: relative; }
+.badge.flag::after {
+  content: "!";
+  position: absolute;
+  top: -0.4rem;
+  right: -0.4rem;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.7rem;
+  line-height: 1rem;
+  text-align: center;
+}
 
 .sidebar-footer { margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--line); }
 .sidebar-footer form { margin: 0; }
