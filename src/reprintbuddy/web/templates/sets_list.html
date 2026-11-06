@@ -1,18 +1,45 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ t('sets.title') }}{% endblock %}
 {% block content %}
-<h1>{{ t('sets.title') }}{% if archived %} · {{ t('catalog.archived') }}{% endif %}</h1>
-<p>
-  <a class="btn" href="/sets/new">{{ t('sets.new') }}</a>
-  {% if archived %}<a class="btn-link" href="/sets">{{ t('catalog.show_active') }}</a>{% else %}<a class="btn-link" href="/sets?view=archived">{{ t('catalog.archived') }}</a>{% endif %}
-</p>
-{% if rows %}
-<div class="card table-wrap">
+{#- The state badge; in the archive "archived" instead. -#}
+{% macro badge(row) -%}
+<span class="badges">{{ ui.badge('set', 'archived' if archived else row.status) }}</span>
+{%- endmacro %}
+{#- One position: "2 × Template A" or, with a choice, "2 × (Template B | Template C)". -#}
+{% macro position_text(position) -%}
+{{ position.qty }} × {% if position.is_choice %}({{ position.article_names|join(' | ') }}){% else %}{{ position.article_names[0] if position.article_names else '–' }}{% endif %}
+{%- endmacro %}
+
+{% call ui.page_head("boxes", t('sets.title') ~ (' · ' ~ t('catalog.archived') if archived else '')) %}
+{% call ui.region("summary", "set article") %}{{ ui.summary("set", tc('summary.sets', total), summary_items) }}{% endcall %}
+{% endcall %}
+
+<div class="toolbar">
+  {{ ui.search_form(q, t('list.search_placeholder'), keep=search_keep) }}
+  {% if not archived %}{% call ui.region("filters", "set article") %}{{ ui.filter_bar("set", filters) }}{% endcall %}{% endif %}
+  {{ ui.layout_toggle(layout_links) }}
+  <div class="toolbar-actions">
+    <a class="btn" href="/sets/new">{{ ui.icon('plus') }}{{ t('sets.new') }}</a>
+    {% if archived %}<a class="btn secondary" href="/sets">{{ ui.icon('archive') }}{{ t('catalog.show_active') }}</a>
+    {%- else %}<a class="btn secondary" href="/sets?view=archived">{{ ui.icon('archive') }}{{ t('catalog.archived') }}</a>{% endif %}
+  </div>
+</div>
+
+{% call ui.region("list", "set article") %}
+{% if not total %}
+<div class="card"><p class="muted">{{ t('sets.empty') }}</p></div>
+{% elif not rows %}
+<div class="card"><p class="muted">{{ t('list.no_match') }}</p></div>
+{% else %}
+{% call ui.collection(layout) %}
+<div class="card table-wrap table-card">
   <table>
     <thead>
       <tr>
         <th>{{ t('sets.field.name') }}</th>
         <th>{{ t('catalog.field.sku') }}</th>
+        <th>{{ t('list.col.status') }}</th>
         <th class="num">{{ t('articles.col.available') }}</th>
         <th>{{ t('sets.positions') }}</th>
       </tr>
@@ -20,12 +47,12 @@
     <tbody>
     {% for row in rows %}
       <tr>
-        <td><a href="/sets/{{ row.id }}/edit">{{ row.name }}</a></td>
+        <td class="name"><a href="/sets/{{ row.id }}/edit">{{ row.name }}</a></td>
         <td>{{ row.sku or '' }}</td>
+        <td>{{ badge(row) }}</td>
         <td class="num{% if row.available < 0 %} neg{% endif %}">{{ row.available }}</td>
-        <td>
-          {% for position in row.positions %}
-            {{ position.qty }} × {% if position.is_choice %}({{ position.article_names|join(' | ') }}){% else %}{{ position.article_names[0] if position.article_names else '–' }}{% endif %}{% if not loop.last %}<br>{% endif %}
+        <td class="positions">
+          {% for position in row.positions %}{{ position_text(position) }}{% if not loop.last %}<br>{% endif %}
           {% endfor %}
         </td>
       </tr>
@@ -33,7 +60,22 @@
     </tbody>
   </table>
 </div>
-{% else %}
-<div class="card"><p class="muted">{{ t('sets.empty') }}</p></div>
+<div class="tiles">
+  {% for row in rows %}
+  <a class="tile" href="/sets/{{ row.id }}/edit">
+    <div class="tile-head"><span class="thumb-placeholder">{{ ui.icon('boxes') }}</span><div>{{ row.name }}{% if row.sku %}<br><span class="muted">{{ row.sku }}</span>{% endif %}</div>{{ badge(row) }}</div>
+    <div class="tile-stats">
+      <span>{{ t('articles.col.available') }} <strong{% if row.available < 0 %} class="neg"{% endif %}>{{ row.available }}</strong></span>
+    </div>
+    {% if row.positions %}
+    <div class="tile-foot">
+      {%- for position in row.positions %}<span>{{ position_text(position) }}</span>{% endfor -%}
+    </div>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endcall %}
 {% endif %}
+{% endcall %}
 {% endblock %}

@@ -1,30 +1,59 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ t('parts.title') }}{% endblock %}
 {% block content %}
-<h1>{{ t('parts.title') }}{% if archived %} · {{ t('catalog.archived') }}{% endif %}</h1>
-<p>
-  <a class="btn" href="/parts/new">{{ t('parts.new') }}</a>
-  {% if archived %}<a class="btn-link" href="/parts">{{ t('catalog.show_active') }}</a>{% else %}<a class="btn-link" href="/parts?view=archived">{{ t('catalog.archived') }}</a>{% endif %}
-</p>
-{% if parts %}
-<div class="card table-wrap">
+{#- The state badge; in the archive "archived" instead. -#}
+{% macro badge(item) -%}
+<span class="badges">{{ ui.badge('part', 'archived' if archived else item.status) }}</span>
+{%- endmacro %}
+{#- Fill bar towards the minimum stock; grey in the archive. -#}
+{% macro min_bar(item) -%}
+{{ ui.bar(item.fill, 'archived' if archived else item.status) }}
+{%- endmacro %}
+
+{% call ui.page_head("puzzle", t('parts.title') ~ (' · ' ~ t('catalog.archived') if archived else '')) %}
+{% call ui.region("summary", "part") %}{{ ui.summary("part", tc('summary.parts', total), summary_items) }}{% endcall %}
+{% endcall %}
+
+<div class="toolbar">
+  {{ ui.search_form(q, t('parts.field.name'), keep=search_keep) }}
+  {% if not archived %}{% call ui.region("filters", "part") %}{{ ui.filter_bar("part", filters) }}{% endcall %}{% endif %}
+  {{ ui.layout_toggle(layout_links) }}
+  <div class="toolbar-actions">
+    <a class="btn" href="/parts/new">{{ ui.icon('plus') }}{{ t('parts.new') }}</a>
+    {% if archived %}<a class="btn secondary" href="/parts">{{ ui.icon('archive') }}{{ t('catalog.show_active') }}</a>
+    {%- else %}<a class="btn secondary" href="/parts?view=archived">{{ ui.icon('archive') }}{{ t('catalog.archived') }}</a>{% endif %}
+  </div>
+</div>
+
+{% call ui.region("list", "part") %}
+{% if not total %}
+<div class="card"><p class="muted">{{ t('parts.empty') }}</p></div>
+{% elif not items %}
+<div class="card"><p class="muted">{{ t('list.no_match') }}</p></div>
+{% else %}
+{% call ui.collection(layout) %}
+<div class="card table-wrap table-card">
   <table>
     <thead>
       <tr>
         <th>{{ t('parts.field.name') }}</th>
+        <th>{{ t('list.col.status') }}</th>
         <th class="num">{{ t('parts.stock') }}</th>
         <th class="num">{{ t('parts.field.min_stock') }}</th>
-        <th class="num">{{ t('parts.field.pack_size') }}</th>
+        <th class="num">{{ t('parts.col.pack') }}</th>
         <th>{{ t('parts.field.supplier') }}</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
-    {% for part in parts %}
+    {% for item in items %}
+    {% set part = item.part %}
       <tr>
-        <td><a href="/parts/{{ part.id }}/edit">{{ part.name }}</a></td>
+        <td class="name"><a href="/parts/{{ part.id }}/edit">{{ part.name }}</a></td>
+        <td>{{ badge(item) }}</td>
         <td class="num">{{ part.stock }} {{ part.unit }}</td>
-        <td class="num">{{ part.min_stock }}</td>
+        <td class="num target">{{ part.min_stock }}{{ min_bar(item) }}</td>
         <td class="num">{{ part.pack_size }}</td>
         <td>{{ part.supplier or '' }}</td>
         <td><a href="/journal?part={{ part.id }}">{{ t('journal.title') }}</a></td>
@@ -33,7 +62,22 @@
     </tbody>
   </table>
 </div>
-{% else %}
-<div class="card"><p class="muted">{{ t('parts.empty') }}</p></div>
+<div class="tiles">
+  {% for item in items %}
+  {% set part = item.part %}
+  <a class="tile" href="/parts/{{ part.id }}/edit">
+    <div class="tile-head"><span class="thumb-placeholder">{{ ui.icon('puzzle') }}</span><div>{{ part.name }}</div>{{ badge(item) }}</div>
+    <div class="tile-stats">
+      <span>{{ t('parts.stock') }} <strong>{{ part.stock }}</strong> {{ part.unit }}</span>
+      <span>{{ t('parts.field.min_stock') }} <strong>{{ part.min_stock }}</strong></span>
+      <span>{{ t('parts.col.pack') }} <strong>{{ part.pack_size }}</strong></span>
+    </div>
+    {{ min_bar(item) }}
+    {% if part.supplier %}<div class="tile-foot"><span>{{ part.supplier }}</span></div>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endcall %}
 {% endif %}
+{% endcall %}
 {% endblock %}

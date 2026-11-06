@@ -488,3 +488,12 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
 @media (max-width: 599px) {
   .search { flex: 1 1 100%; max-width: none; }
 }
+
+/* ---- Zukaufteile/Sets (parts and sets lists) ------------------------------- */
+
+/* On a narrow screen the table scrolls in its box instead of squeezing the name to one word per
+   line; each set position stays on one line. */
+.table-card td.name { min-width: 9rem; }
+.table-card td.positions { white-space: nowrap; }
+/* A long supplier or article name without spaces wraps inside the tile instead of widening the page. */
+.tile-foot span { min-width: 0; overflow-wrap: anywhere; }

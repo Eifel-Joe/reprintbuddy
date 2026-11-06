@@ -449,5 +449,6 @@
   "tile.to_check": "{n} to check",
   "tile.to_assemble": "{n} to assemble",
   "rights.ok_title": "Bambuddy rights complete",
-  "rights.continue": "Continue"
+  "rights.continue": "Continue",
+  "parts.col.pack": "Order unit"
 }

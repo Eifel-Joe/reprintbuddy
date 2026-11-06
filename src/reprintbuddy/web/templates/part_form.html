@@ -1,11 +1,19 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{% if part %}{{ t('parts.edit') }}{% else %}{{ t('parts.new') }}{% endif %}{% endblock %}
 {% block content %}
-<h1>{% if part %}{{ part.name }}{% else %}{{ t('parts.new') }}{% endif %}{% if part and part.archived_at %} <span class="badge wait">{{ t('catalog.archived_badge') }}</span>{% endif %}</h1>
+{% call ui.page_head("puzzle", part.name if part else t('parts.new')) %}
+{% if part and part.archived_at %}<p class="summary">{{ ui.badge('part', 'archived') }}</p>{% endif %}
+{% endcall %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{#- The edit form shows the stock, so its region follows every change of the part (a booking too);
+    the form watches only the settings, so a booking never says "changed in the meantime" (Design 4.6).
+    A new part shows no data and has no region. -#}
+{% macro form_section() -%}
 <section class="card section">
-  {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
   {% set action = '/parts/' ~ part.id ~ '/edit' if part else '/parts/new' %}
-  <form method="post" action="{{ action }}">
+  <form method="post" action="{{ action }}"{% if part %} data-live-watch="part-settings:{{ part.id }}"{% endif %}>
+    {% if part %}{{ ui.live_stale() }}{% endif %}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if not part %}<input type="hidden" name="form_token" value="{{ form_token() }}">{% endif %}
     <label>{{ t('parts.field.name') }}
@@ -64,7 +72,9 @@
     <a class="btn-link" href="/parts">{{ t('common.cancel') }}</a>
   </form>
 </section>
+{%- endmacro %}
 {% if part %}
+{% call ui.region("form", "part:" ~ part.id) %}{{ form_section() }}{% endcall %}
 <div class="actions">
   <form method="post" action="/parts/{{ part.id }}/{% if part.archived_at %}restore{% else %}archive{% endif %}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -72,5 +82,7 @@
     <button class="btn {% if not part.archived_at %}secondary{% endif %}" type="submit">{% if part.archived_at %}{{ t('catalog.restore') }}{% else %}{{ t('catalog.archive') }}{% endif %}</button>
   </form>
 </div>
+{% else %}
+{{ form_section() }}
 {% endif %}
 {% endblock %}
