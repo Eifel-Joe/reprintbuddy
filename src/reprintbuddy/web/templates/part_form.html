@@ -5,6 +5,11 @@
 {% call ui.page_head("puzzle", part.name if part else t('parts.new')) %}
 {% if part and part.archived_at %}<p class="summary">{{ ui.badge('part', 'archived') }}</p>{% endif %}
 {% endcall %}
+<div class="toolbar">
+  <div class="toolbar-actions">
+    <a class="btn secondary" href="/parts">{{ ui.icon('puzzle') }}{{ t('parts.title') }}</a>
+  </div>
+</div>
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {#- The edit form shows the stock, so its region follows every change of the part (a booking too);
     the form watches only the settings, so a booking never says "changed in the meantime" (Design 4.6).

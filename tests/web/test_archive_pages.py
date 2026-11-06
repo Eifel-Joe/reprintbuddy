@@ -288,3 +288,28 @@ def test_archived_article_edit_is_refused(bb_client):
         assert s.get(Article, a).name == "Template A"
     act(bb_client, f"/articles/{a}", "restore")
     assert 'name="units_per_print"' in bb_client.get(f"/articles/{a}/edit").text
+
+
+def test_archive_and_restore_of_a_part_go_back_to_the_list(bb_client):
+    with sm_of(bb_client).begin() as s:
+        p = make_part(s, name="Insert M4").id
+    archived = act(bb_client, f"/parts/{p}", "archive", page=f"/parts/{p}/edit")
+    assert archived.status_code == 303 and archived.headers["location"] == "/parts"
+    assert en("parts.flash_archived", name="Insert M4") in bb_client.get("/parts").text
+    restored = act(bb_client, f"/parts/{p}", "restore", page=f"/parts/{p}/edit")
+    assert restored.status_code == 303 and restored.headers["location"] == "/parts"
+    page = bb_client.get("/parts").text
+    assert en("parts.flash_restored", name="Insert M4") in page and "Insert M4" in page
+
+
+def test_archive_and_restore_of_a_set_go_back_to_the_list(bb_client):
+    with sm_of(bb_client).begin() as s:
+        a = make_article(s, name="Template A").id
+        set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a])])).id
+    archived = act(bb_client, f"/sets/{set_id}", "archive", page=f"/sets/{set_id}/edit")
+    assert archived.status_code == 303 and archived.headers["location"] == "/sets"
+    assert en("sets.flash_archived", name="Starter Set") in bb_client.get("/sets").text
+    restored = act(bb_client, f"/sets/{set_id}", "restore", page=f"/sets/{set_id}/edit")
+    assert restored.status_code == 303 and restored.headers["location"] == "/sets"
+    page = bb_client.get("/sets").text
+    assert en("sets.flash_restored", name="Starter Set") in page and "Starter Set" in page

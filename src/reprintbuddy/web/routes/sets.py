@@ -212,7 +212,7 @@ def _archive_action(action, flash_key: str):
         return await run_form_action(
             request,
             work=work,
-            success_url=f"/sets/{set_id}/edit",
+            success_url="/sets",  # back to the list; an archived set leaves it, that is right
             flash_key=flash_key,
             on_error=lambda text, status, exc: _edit_again(request, db, product_set, text, status),
         )

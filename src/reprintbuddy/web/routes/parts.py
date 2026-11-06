@@ -203,7 +203,7 @@ def _archive_action(action, flash_key: str):
         return await run_form_action(
             request,
             work=work,
-            success_url=f"/parts/{part_id}/edit",
+            success_url="/parts",  # back to the list; an archived part leaves it, that is right
             flash_key=flash_key,
             on_error=lambda text, status, exc: _form_page(
                 request, part=part, values=_values_of(part), error=text, status=status

@@ -5,6 +5,11 @@
 {% call ui.page_head("boxes", product_set.name if product_set else t('sets.new')) %}
 {% if product_set and product_set.archived_at %}<p class="summary">{{ ui.badge('set', 'archived') }}</p>{% endif %}
 {% endcall %}
+<div class="toolbar">
+  <div class="toolbar-actions">
+    <a class="btn secondary" href="/sets">{{ ui.icon('boxes') }}{{ t('sets.title') }}</a>
+  </div>
+</div>
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {#- The form follows the articles it offers; the edit form also watches its set (Design 4.6). -#}
 {% call ui.region("form", ("set:" ~ product_set.id ~ " article") if product_set else "article") %}

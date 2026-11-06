@@ -263,3 +263,12 @@ def test_supplier_without_order_link_is_plain_text(ready_client):
     assert "Example Supplier" in listing
     assert not re.search(r"<a [^>]*>\s*Example Supplier", listing)
     assert nested_links(listing) == []
+
+
+def test_part_form_head_has_a_button_back_to_the_parts(ready_client):
+    part_id = add(ready_client, name="Insert M4")
+    for path in (f"/parts/{part_id}/edit", "/parts/new"):
+        head = re.search(r'<header class="page-head">.*?</header>\s*<div class="toolbar">.*?</div>\s*</div>',
+                         ready_client.get(path).text, re.S)
+        assert head, path
+        assert re.search(r'<a class="btn secondary" href="/parts">.*?#puzzle.*?Parts</a>', head.group(0), re.S), path
