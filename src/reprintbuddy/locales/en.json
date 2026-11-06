@@ -445,5 +445,9 @@
   "tile.to_assemble": "{n} to assemble",
   "rights.ok_title": "Bambuddy rights complete",
   "rights.continue": "Continue",
-  "parts.col.pack": "Order unit"
+  "parts.col.pack": "Order unit",
+  "assembly.empty": "No articles are waiting for assembly.",
+  "assembly.book": "Book assembled",
+  "assembly.done": "{name}: {n} assembled.",
+  "assembly.part_line": "{qty} per unit, stock {stock}"
 }

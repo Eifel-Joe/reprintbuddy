@@ -32,6 +32,7 @@ from reprintbuddy.web.throttle import FailureBrake, HashLimiter
 from reprintbuddy.web.routes import articles as articles_routes
 from reprintbuddy.web.routes import auth as auth_routes
 from reprintbuddy.web.routes import bookings as bookings_routes
+from reprintbuddy.web.routes import inspection as inspection_routes
 from reprintbuddy.web.routes import journal as journal_routes
 from reprintbuddy.web.routes import live as live_routes
 from reprintbuddy.web.routes import orders as orders_routes
@@ -153,6 +154,7 @@ def create_app(
     app.include_router(sets_routes.router)
     app.include_router(orders_routes.router)
     app.include_router(bookings_routes.router)
+    app.include_router(inspection_routes.router)
     app.include_router(ops_routes.router)
     app.include_router(live_routes.router)
     return app
