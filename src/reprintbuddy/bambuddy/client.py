@@ -273,10 +273,13 @@ class HttpBambuddyClient:
 
         The batch has no `plates`: it only groups, so Bambuddy owes nothing for it. A 409
         means the reference exists already (the only 409 of the create route); the search
-        then finds it. Bambuddy's search leaves out empty batches, so no hit means a batch
-        from an earlier try whose answer was lost and that is still empty: `BatchRefLost`,
-        and the caller takes a new reference. More than one hit cannot be (unique index):
-        `BambuddyUnexpected`. The create is sent once, never repeated here.
+        then finds it. Bambuddy's search leaves out batches without entries, so no hit is
+        `BatchRefLost` and the caller takes a new reference. That batch is either one from an
+        earlier try whose answer was lost, still empty because Reprintbuddy enqueues only
+        once it has the id, or one whose entries were all deleted (e.g. by clearing the
+        history). More than one hit cannot be (unique index): `BambuddyUnexpected`. A search
+        without an answer or refused is that error, not `BatchRefLost`. The create is sent
+        once, never repeated here.
         """
         body = {
             "name": name,
@@ -296,7 +299,7 @@ class HttpBambuddyClient:
         )
         hits = _parse.parse_batch_hits(found, external_ref)
         if not hits:
-            raise BatchRefLost(conflict.detail, status=409)
+            raise BatchRefLost(conflict.detail, status=409) from conflict
         if len(hits) > 1:
             raise BambuddyUnexpected(f"GET /queue/batches: {len(hits)} batches for one reference")
         return hits[0]

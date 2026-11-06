@@ -76,6 +76,29 @@ async def test_batch_conflict_without_hit_is_lost(respx_mock):
     assert exc.status == 409
     assert exc.detail == load("batch1_again.json")["detail"]
     assert post.call_count == 1
+    # The 409 stays in the traceback.
+    assert isinstance(exc.__cause__, BambuddyRejected)
+    assert exc.__cause__.status == 409
+
+
+async def test_batch_conflict_search_timeout_is_unavailable(respx_mock):
+    """A search that gets no answer says nothing about the batch: unclear, not lost."""
+    post = respx_mock.post(f"{API}/queue/batches").respond(409, json=load("batch1_again.json"))
+    respx_mock.get(f"{API}/queue/batches").mock(side_effect=httpx.ReadTimeout("slow"))
+    with pytest.raises(BambuddyUnavailable) as info:
+        await client().ensure_batch("Reprint 1", REF, 5)
+    assert not isinstance(info.value, BambuddyRejected)
+    assert post.call_count == 1
+
+
+async def test_batch_conflict_search_refused_is_rejected(respx_mock):
+    post = respx_mock.post(f"{API}/queue/batches").respond(409, json=load("batch1_again.json"))
+    respx_mock.get(f"{API}/queue/batches").respond(403, json={"detail": "Forbidden"})
+    with pytest.raises(BambuddyRejected) as info:
+        await client().ensure_batch("Reprint 1", REF, 5)
+    assert not isinstance(info.value, BatchRefLost)
+    assert info.value.status == 403
+    assert post.call_count == 1
 
 
 async def test_batch_conflict_two_hits_unexpected(respx_mock):
