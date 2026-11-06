@@ -8,6 +8,9 @@ speaks the names the server uses (Spec 10.5, plan decisions 3 to 8).
 import re
 from pathlib import Path
 
+from conftest import csrf_of, form_token_of
+from factories import make_part
+
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
 from reprintbuddy.web import i18n
@@ -70,6 +73,46 @@ def test_live_script_speaks_the_servers_names():
         '"reload"',
     ):
         assert name in text, name
+
+
+def test_a_page_shown_for_a_post_still_has_the_notice(ready_client):
+    """A failed booking is shown again under the POST address (no region source): live.js must
+    be able to show the notice there instead of reloading, which would send the form again."""
+    with ready_client.app.state.sessionmaker.begin() as s:
+        part_id = make_part(s, name="Insert M4").id
+    data = {
+        "csrf_token": csrf_of(ready_client, "/bookings"),
+        "form_token": form_token_of(ready_client, "/bookings", "/bookings/part-receipt"),
+        "part_id": part_id,
+        "qty": "0",
+    }
+    response = ready_client.post("/bookings/part-receipt", data=data)
+    assert response.status_code == 200 and 'data-live-src=""' in response.text
+    assert "data-live-reload" in notice(response.text)
+    assert SCRIPT_TAG in response.text
+
+
+def function_body(text, name):
+    match = re.search(r"\n  function " + name + r"\([^)]*\) \{\n(.*?)\n  \}\n", text, re.S)
+    assert match, f"function {name} missing"
+    return match.group(1)
+
+
+def test_live_script_reloads_only_where_the_page_has_a_get_address():
+    """Reloading a page shown for a POST would send the form again (a second booking). Every
+    reload goes through one function that refuses when the page has no region source; the
+    notice and the click on its button use it, and such a page hides the reload buttons."""
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert text.count("location.reload(") == 1
+    guard = function_body(text, "reloadIfSafe")
+    assert re.match(r"\s*if \(!source\) \{\s*return false;", guard), guard
+    assert "window.location.reload();" in guard
+    assert "reloadIfSafe()" in function_body(text, "reloadOrNotice")
+    click = re.search(r'addEventListener\("click", function \(event\) \{(.*?)\n  \}\);', text, re.S)
+    assert click and "reloadIfSafe()" in click.group(1)
+    hide = re.search(r"\n  if \(!source\) \{\n(.*?)\n  \}\n", text, re.S)
+    assert hide and 'querySelectorAll("[data-live-reload]")' in hide.group(1)
+    assert "hidden = true" in hide.group(1)
 
 
 def test_stale_notice_macro_is_hidden_and_translated(ready_client):

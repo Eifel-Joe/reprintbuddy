@@ -155,13 +155,23 @@
     }
   }
 
+  // The only place that loads the page again. A page shown as the answer to a form (no region
+  // source) has an address that only answers POST: loading it again would send the form a
+  // second time, a second booking. Such a page is never reloaded by this script.
+  function reloadIfSafe() {
+    if (!source) {
+      return false;
+    }
+    window.location.reload();
+    return true;
+  }
+
   // The page cannot bring itself up to date (signed out, an error page, a region that is
-  // gone, a new version): load it again, unless that would throw away what somebody typed.
+  // gone, a new version): load it again, unless that would throw away what somebody typed
+  // or send a form again; then say so instead.
   function reloadOrNotice() {
-    if (anyFormChanged()) {
+    if (anyFormChanged() || !reloadIfSafe()) {
       showNotice(document.getElementById("live-version"));
-    } else {
-      window.location.reload();
     }
   }
 
@@ -413,9 +423,17 @@
   document.addEventListener("click", function (event) {
     var target = event.target;
     if (target && target.closest && target.closest("[data-live-reload]")) {
-      window.location.reload();
+      reloadIfSafe();
     }
   });
+
+  // A page shown for a form submission cannot be reloaded (see reloadIfSafe): its notices keep
+  // their text but lose the button.
+  if (!source) {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-live-reload]"), function (button) {
+      button.hidden = true;
+    });
+  }
 
   connect();
 })();
