@@ -166,3 +166,29 @@ def test_blank_color_name_keeps_known_label(db):
             sort = s.get(FilamentSort, ids[filament.sort_key(named)])
             assert sort.label == "Example Brand PLA Black"
             assert sort.color_name == "Black"
+
+
+def test_unnamed_spools_split_by_color_hex(db):
+    fake = FakeBambuddy()
+    black = fake.add_spool("PLA", subtype="Matte", color_hex="#000000", color_name=None)
+    white = fake.add_spool("PLA", subtype="Matte", color_hex="#FFFFFF", color_name=None)
+    black_again = fake.add_spool("PLA", subtype="Matte", color_hex="#000000", color_name=None)
+    with db.begin() as s:
+        ids = filament.sync_sorts(s, [black, white])
+        assert len(set(ids.values())) == 2
+        assert s.scalar(select(func.count()).select_from(FilamentSort)) == 2
+    with db.begin() as s:
+        ids = filament.sync_sorts(s, [black, black_again])
+        assert len(set(ids.values())) == 1
+        assert s.scalar(select(func.count()).select_from(FilamentSort)) == 2  # the two from above
+
+
+def test_unnamed_spool_label_shows_hex_once_subtype(db):
+    fake = FakeBambuddy()
+    spool = fake.add_spool("PLA", subtype="Matte", color_hex="#000000", color_name=None)
+    assert filament.sort_label(spool) == "Example Brand PLA Matte #000000"
+    with db.begin() as s:
+        ids = filament.sync_sorts(s, [spool])
+        label = s.get(FilamentSort, ids[filament.sort_key(spool)]).label
+    assert label == "Example Brand PLA Matte #000000"
+    assert "#000000" in label and "None" not in label and label.count("Matte") == 1

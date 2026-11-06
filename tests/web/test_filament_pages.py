@@ -181,3 +181,14 @@ def test_filament_page_rejected_spool_list_is_not_a_500(bb_client, fake_bambuddy
     page = bb_client.get("/filament")
     assert page.status_code == 200
     assert "640" in page.text and f"Stock as of {yesterday:%Y-%m-%d}" in page.text
+
+
+def test_filament_list_spool_without_color_name(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", subtype="Matte", color_hex="#000000", color_name=None)
+    page = bb_client.get("/filament")
+    assert page.status_code == 200
+    lines = [r for r in rows_of(page.text) if "Example Brand PLA Matte #000000" in r]
+    assert len(lines) == 1
+    assert "Matte" in lines[0] and lines[0].count("Matte") == 1
+    assert 'class="swatch"' in lines[0]
+    assert "None" not in page.text
