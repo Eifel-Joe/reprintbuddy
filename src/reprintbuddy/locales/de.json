@@ -445,5 +445,9 @@
   "tile.to_assemble": "{n} zur Montage",
   "rights.ok_title": "Bambuddy-Rechte vollständig",
   "rights.continue": "Weiter",
-  "parts.col.pack": "Bestelleinheit"
+  "parts.col.pack": "Bestelleinheit",
+  "assembly.empty": "Kein Artikel wartet auf Montage.",
+  "assembly.book": "Montiert buchen",
+  "assembly.done": "{name}: {n} montiert.",
+  "assembly.part_line": "{qty} je Einheit, Bestand {stock}"
 }

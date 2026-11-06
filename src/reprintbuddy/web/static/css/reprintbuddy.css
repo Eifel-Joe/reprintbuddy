@@ -514,3 +514,6 @@ div.tile { position: relative; }
 .tile-foot a { position: relative; z-index: 1; color: var(--accent); text-decoration: none; }
 .tile-foot a:hover { text-decoration: underline; }
 div.tile:hover, div.tile:focus-within { border-color: var(--accent); }
+
+/* A button is at least 44 px high, so it can be hit with a thumb (assembly page on the phone). */
+.btn { min-height: 2.75rem; }
