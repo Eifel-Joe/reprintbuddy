@@ -447,5 +447,7 @@
   "list.no_match": "Nichts passt zu Suche oder Filter.",
   "list.col.status": "Status",
   "tile.to_check": "{n} zu prüfen",
-  "tile.to_assemble": "{n} zur Montage"
+  "tile.to_assemble": "{n} zur Montage",
+  "rights.ok_title": "Bambuddy-Rechte vollständig",
+  "rights.continue": "Weiter"
 }

@@ -49,7 +49,7 @@
    shown inside it, where the person can see them. A request for regions of the page leaves them
    for the page that is shown next (two tabs, one cookie). #}
 {% set pending = [] if live_region_mode else pop_flashes(request) %}
-{% set dialog_open = rights_notice and not rights_later %}
+{% set dialog_open = (rights_notice and not rights_later) or rights_success %}
 <div class="app" id="app" data-live="/live?v={{ app_version }}" data-live-state="{{ live_state }}" data-live-src="{{ live_src or '' }}">
   <details class="mobile-menu">
     <summary><span class="brand">{{ brand() }}</span></summary>
