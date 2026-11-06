@@ -3,7 +3,7 @@
 <div class="rights-overlay">
   <div class="rights-dialog" role="alertdialog" aria-modal="true" aria-labelledby="rights-title" aria-describedby="rights-intro">
     <h2 id="rights-title">{{ t('rights.title') }}</h2>
-    {% for message in flashes %}<p class="flash" role="status">{{ message }}</p>{% endfor %}
+    {% for message in flashes %}{% include "_flash_message.html" %}{% endfor %}
     <p id="rights-intro">{{ t('rights.intro') }}</p>
     {% with check=rights_notice, guide_link=True %}{% include "_bambuddy_result.html" %}{% endwith %}
     <div class="actions">

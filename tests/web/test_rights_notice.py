@@ -231,6 +231,12 @@ def _everything_granted(respx_mock):
     respx_mock.get(ME).respond(200, json=auth_me())
 
 
+def _paragraph_with(page, text):
+    """The whole opening tag of the <p> that holds `text`."""
+    end = page.index(text)
+    return page[page.rindex("<p", 0, end) : end]
+
+
 def test_recheck_after_fix_clears_notice(missing_client, respx_mock):
     assert "rights-dialog" in missing_client.get("/").text
     _everything_granted(respx_mock)  # the person added the right in Bambuddy
@@ -239,6 +245,9 @@ def test_recheck_after_fix_clears_notice(missing_client, respx_mock):
     page = missing_client.get("/articles").text
     assert "rights-dialog" not in page and "rights-banner" not in page
     assert "Bambuddy: all rights are there." in page
+    # Good news keeps the green look; only trouble gets the warning look.
+    tag = _paragraph_with(page, "Bambuddy: all rights are there.")
+    assert 'class="flash"' in tag and 'role="status"' in tag and "alert" not in tag
 
 
 def test_recheck_still_missing_keeps_dialog_and_says_so(missing_client):
@@ -252,6 +261,9 @@ def test_recheck_still_missing_keeps_dialog_and_says_so(missing_client):
     # The overlay covers the page: the message must stand inside the dialog, and only there.
     assert message in page[page.index('class="rights-dialog"') :]
     assert page.count(message) == 1
+    # Not the green success box: the right is still missing, so it is a warning.
+    tag = _paragraph_with(page, message)
+    assert 'class="alert"' in tag and 'role="alert"' in tag and "flash" not in tag
 
 
 def test_recheck_still_missing_says_so_in_german(missing_client):
@@ -277,8 +289,10 @@ def test_recheck_with_bambuddy_down_says_so_and_keeps_the_dialog(missing_client,
     _post(missing_client, RECHECK, next="/")
     page = missing_client.get("/").text
     assert "rights-dialog" in page
-    flash = page[page.index('class="flash"') :].split("</p>")[0]  # one line says why nothing changed
-    assert "Could not reach Bambuddy at this address." in flash
+    message = "Could not reach Bambuddy at this address."
+    assert message in page  # one line says why nothing changed
+    tag = _paragraph_with(page, message)  # nothing could be checked: not a success either
+    assert 'class="alert"' in tag and 'role="alert"' in tag and "flash" not in tag
 
 
 def test_later_switches_to_banner(missing_client):

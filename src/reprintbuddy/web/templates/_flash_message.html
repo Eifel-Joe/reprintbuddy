@@ -1,0 +1,2 @@
+{# One queued message (`message`, a FlashMessage): green for good news, the look of an error for trouble. #}
+{% if message.warning %}<p class="alert" role="alert">{{ message.text }}</p>{% else %}<p class="flash" role="status">{{ message.text }}</p>{% endif %}

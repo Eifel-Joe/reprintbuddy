@@ -71,7 +71,7 @@
       </form>
     </div>
     {% endif %}
-    {% if not dialog_open %}{% for message in pending %}<p class="flash" role="status">{{ message }}</p>{% endfor %}{% endif %}
+    {% if not dialog_open %}{% for message in pending %}{% include "_flash_message.html" %}{% endfor %}{% endif %}
     {% block content %}{% endblock %}
   </main>
 </div>
