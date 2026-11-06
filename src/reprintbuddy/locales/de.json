@@ -492,5 +492,10 @@
   "articles.pause_needs_target": "Erst ein Druckziel setzen.",
   "queue.article_archived": "{name} ist archiviert und kann nicht eingereiht werden.",
   "queue.entry_not_found": "Diesen Eintrag in der Warteschlange gibt es nicht.",
-  "queue.field.prints": "Drucke"
+  "queue.field.prints": "Drucke",
+  "nav.collapse": "Menü einklappen",
+  "nav.expand": "Menü ausklappen",
+  "nav.menu": "Menü",
+  "nav.version": "Version",
+  "list.col.actions": "Aktionen"
 }

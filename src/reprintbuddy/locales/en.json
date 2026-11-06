@@ -492,5 +492,10 @@
   "articles.pause_needs_target": "Set a print target first.",
   "queue.article_archived": "{name} is archived and cannot be queued.",
   "queue.entry_not_found": "This queue entry does not exist.",
-  "queue.field.prints": "Prints"
+  "queue.field.prints": "Prints",
+  "nav.collapse": "Fold menu",
+  "nav.expand": "Unfold menu",
+  "nav.menu": "Menu",
+  "nav.version": "Version",
+  "list.col.actions": "Actions"
 }
