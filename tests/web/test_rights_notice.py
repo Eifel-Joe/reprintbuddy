@@ -292,6 +292,14 @@ def test_recheck_success_keeps_the_dialog_with_every_right_ticked(missing_client
     assert 'action="/bambuddy/rights/recheck"' not in dialog
 
 
+def test_only_the_success_dialog_is_marked_green(missing_client, respx_mock):
+    """The frame of the dialog follows the result: red while a right is missing, green after."""
+    assert 'class="rights-overlay"' in missing_client.get("/").text
+    _everything_granted(respx_mock)
+    _recheck_from_the_dialog(missing_client)
+    assert 'class="rights-overlay rights-ok"' in missing_client.get("/").text
+
+
 def test_success_dialog_stays_until_continue(missing_client, respx_mock):
     assert "rights-dialog" in missing_client.get("/").text
     _everything_granted(respx_mock)

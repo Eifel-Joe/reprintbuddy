@@ -300,6 +300,7 @@ table.keytable td.off { color: var(--muted); }
   padding: 1.25rem 1.4rem; background: var(--surface);
   border: 1px solid var(--danger); border-radius: var(--radius);
 }
+.rights-ok .rights-dialog { border-color: var(--accent); }
 .rights-dialog h2 { margin-top: 0; }
 .rights-dialog .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem; }
 .rights-banner {
