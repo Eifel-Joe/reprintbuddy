@@ -1,6 +1,8 @@
 """The live channel: GET /live sends change notices to signed-in pages (server-sent events)."""
 
 import asyncio
+import html
+import re
 import time
 
 import pytest
@@ -108,6 +110,17 @@ async def test_old_page_version_gets_reload_and_the_stream_ends(ready_client, st
 
 async def test_same_page_version_gets_hello(ready_client, streams):
     probe = await streams(ready_client, f"/live?v={__version__}")
+    assert (await probe.next_event())[0] == "hello"
+
+
+@pytest.mark.parametrize("version", ["0.3.0+local.1", "0.3.0-beta.1", "1.0 rc&1"])
+async def test_the_address_a_page_carries_gets_hello_for_any_version(ready_client, streams, version):
+    """The page sends its version back in /live?v=; a "+" read as a space would mean endless reloads."""
+    ready_client.app.state.version = version
+    ready_client.app.state.templates.env.globals["app_version"] = version
+    page = ready_client.get("/journal").text
+    address = html.unescape(re.search(r'data-live="([^"]+)"', page)[1])
+    probe = await streams(ready_client, address)
     assert (await probe.next_event())[0] == "hello"
 
 

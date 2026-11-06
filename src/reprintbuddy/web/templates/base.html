@@ -50,7 +50,9 @@
    for the page that is shown next (two tabs, one cookie). #}
 {% set pending = [] if live_region_mode else pop_flashes(request) %}
 {% set dialog_open = (rights_notice and not rights_later) or rights_success %}
-<div class="app" id="app" data-live="/live?v={{ app_version }}" data-live-state="{{ live_state }}" data-live-src="{{ live_src or '' }}">
+{# The live channel compares v= with the running version: encoded, so a "+" stays a "+" (read as a
+   space, every page of a version like 0.3.0+local.1 would reload without end). #}
+<div class="app" id="app" data-live="/live?v={{ app_version|urlencode }}" data-live-state="{{ live_state }}" data-live-src="{{ live_src or '' }}">
   <details class="mobile-menu">
     <summary><span class="brand">{{ brand() }}</span></summary>
     <nav class="sidebar-nav">{{ nav_links(active_nav) }}</nav>
