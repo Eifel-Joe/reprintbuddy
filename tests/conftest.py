@@ -1,10 +1,12 @@
 import re
+import socket
 from pathlib import Path
 from typing import NamedTuple
 
 import pytest
 from fastapi.testclient import TestClient
 
+from network_guard import NetworkGuard
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.fake import FakeBambuddy
 from reprintbuddy.bambuddy.types import FilamentRequirement
@@ -106,6 +108,17 @@ def make_client(db_path, **create_kwargs) -> TestClient:
     app.state.login_failure_delay = 0  # tests do not wait; some tests set these themselves
     app.state.login_brake.delay = 0
     return TestClient(app, follow_redirects=False)
+
+
+@pytest.fixture(autouse=True)
+def no_test_host_lookup(monkeypatch):
+    """Fail any test that looks up a `.test` host: that is a request no respx route caught."""
+    guard = NetworkGuard()
+    monkeypatch.setattr(socket, "getaddrinfo", guard.getaddrinfo)
+    yield guard
+    problem = guard.report()
+    if problem:
+        pytest.fail(problem, pytrace=False)
 
 
 @pytest.fixture
@@ -237,6 +250,7 @@ def ops_env(tmp_path, fake_runner):
     )
     client = make_client(db, ops=ops)
     finish_bambuddy_setup(finish_admin_setup(client))
+    client.app.state.bambuddy_factory = lambda: None  # no Bambuddy, no network call (Spec 12)
     return OpsEnv(client, fake_runner, install_dir, db)
 
 
