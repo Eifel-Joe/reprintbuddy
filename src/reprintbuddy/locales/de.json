@@ -445,5 +445,9 @@
   "tile.to_assemble": "{n} zur Montage",
   "rights.ok_title": "Bambuddy-Rechte vollständig",
   "rights.continue": "Weiter",
-  "parts.col.pack": "Bestelleinheit"
+  "parts.col.pack": "Bestelleinheit",
+  "nav.collapse": "Menü einklappen",
+  "nav.expand": "Menü ausklappen",
+  "nav.menu": "Menü",
+  "nav.version": "Version"
 }
