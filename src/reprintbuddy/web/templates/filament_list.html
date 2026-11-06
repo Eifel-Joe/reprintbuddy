@@ -3,6 +3,7 @@
 {% block title %}{{ t('nav.filament') }}{% endblock %}
 {% block content %}
 {% call ui.page_head("disc-3", t('nav.filament')) %}{% endcall %}
+{% call ui.region("list", "filament article queue") %}
 {% if live %}<p class="muted" role="status">{{ t('filament.live') }}</p>
 {% elif stale_day %}<p class="alert" role="status">{{ t('filament.stale', day=stale_day) }}</p>
 {% else %}<p class="alert" role="status">{{ t('filament.stock_unknown') }}</p>{% endif %}
@@ -33,6 +34,8 @@
   </div>
   {% else %}<p class="muted">{{ t('filament.no_sorts') }}</p>{% endif %}
 </section>
+{% endcall %}
+{% call ui.region("hint", "article") %}
 {% if unmapped %}
 <section class="card section wide">
   <p>{{ t('filament.unmapped_hint') }}</p>
@@ -47,4 +50,5 @@
   </div>
 </section>
 {% endif %}
+{% endcall %}
 {% endblock %}

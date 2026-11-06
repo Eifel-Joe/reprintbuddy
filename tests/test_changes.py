@@ -15,7 +15,7 @@ from reprintbuddy.changes import CLASSIFIED, install_change_feed
 from reprintbuddy.domain import catalog, orders, stock
 from reprintbuddy.domain.catalog import ArticleInput, PositionInput, SetInput
 from reprintbuddy.domain.errors import StockLimitError
-from reprintbuddy.models import Article, Base, Inspection, Part, ReorderMark
+from reprintbuddy.models import Article, Base, FilamentSettings, Inspection, Part, ReorderMark
 from reprintbuddy.web.formtoken import consume_form_token, issue_form_token
 from factories import (
     make_article,
@@ -301,3 +301,16 @@ def test_filament_sorts_and_reorder_marks_report_their_kind(db, published):
     with db.begin() as s:
         s.add(ReorderMark(item_type="filament", item_id=1, qty=1))
     assert published == [frozenset({"reorder"})]
+
+
+def test_filament_settings_report_their_own_topic(db, published):
+    with db.begin() as s:
+        sort_id = make_sort(s).id
+    published.clear()
+    with db.begin() as s:
+        s.add(FilamentSettings(spool_filament_id=sort_id))
+    assert published == [frozenset({"filament", f"filament-settings:{sort_id}"})]
+    published.clear()
+    with db.begin() as s:
+        make_sort(s, color_hex="#ffffff")  # another sort or a snapshot does not touch this form
+    assert all(f"filament-settings:{sort_id}" not in topics for topics in published)

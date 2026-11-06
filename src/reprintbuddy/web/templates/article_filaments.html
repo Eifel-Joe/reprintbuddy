@@ -6,9 +6,11 @@
 <h2>{{ t('filament.title') }}</h2>
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {% if sorts_unknown %}<p class="alert" role="status">{{ t('filament.unknown') }}</p>{% endif %}
+{% call ui.region("form", "article-settings:" ~ article_id ~ " filament") %}
 <section class="card section wide">
   <p class="muted">{{ t('filament.intro') }}</p>
-  <form method="post" action="/articles/{{ article_id }}/filaments">
+  <form method="post" action="/articles/{{ article_id }}/filaments" data-live-watch="article-settings:{{ article_id }}">
+    {{ ui.live_stale() }}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="table-wrap">
       <table>
@@ -39,4 +41,5 @@
     <a class="btn-link" href="/articles/{{ article_id }}">{{ t('common.cancel') }}</a>
   </form>
 </section>
+{% endcall %}
 {% endblock %}

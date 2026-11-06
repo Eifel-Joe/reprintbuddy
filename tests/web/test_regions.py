@@ -6,7 +6,7 @@ import pytest
 from starlette.requests import Request
 
 from conftest import csrf_of, form_token_of, sm_of
-from factories import make_article, make_part
+from factories import make_article, make_part, make_sort
 from reprintbuddy import __version__
 from reprintbuddy.web import regions
 from reprintbuddy.web.app import TEMPLATES_DIR
@@ -176,15 +176,16 @@ PAGES_WITH_REGIONS = [
     "/parts", "/sets", "/sets/new",
     "/orders", "/orders?view=closed", "/orders/new",
     "/settings",
+    "/filament", "/filament/{sort}", "/articles/{article}/filaments", "/reorder",
 ]
 _MARK = re.compile(r"<!--(/?)live:([^>]*?)-->")
 
 
 @pytest.mark.parametrize("path", PAGES_WITH_REGIONS)
 def test_rendered_regions_are_balanced_unnested_and_unique(ready_client, path):
-    if "{article}" in path:
+    if "{article}" in path or "{sort}" in path:
         with sm_of(ready_client).begin() as s:
-            path = path.format(article=make_article(s).id)
+            path = path.format(article=make_article(s).id, sort=make_sort(s).id)
     page = ready_client.get(path)
     assert page.status_code == 200, path
     open_name, seen = None, []
@@ -200,3 +201,49 @@ def test_rendered_regions_are_balanced_unnested_and_unique(ready_client, path):
             open_name = None
     assert open_name is None, f"{path}: region {open_name!r} never ends"
     assert seen, f"{path}: no region"
+
+
+# The four pages of the filament and reorder block (Spec 10.5): region names, topics, watched forms.
+B6_REGIONS = [
+    ("/filament", "list", "filament article queue"),
+    ("/filament", "hint", "article"),
+    ("/filament/{sort}", "form", "filament-settings:{sort}"),
+    ("/articles/{article}/filaments", "form", "article-settings:{article} filament"),
+    ("/reorder", "suggestions", "filament reorder part article queue journal"),
+    ("/reorder", "under-way", "reorder part journal"),
+]
+
+
+def b6_ids(client):
+    with sm_of(client).begin() as s:
+        return {"article": make_article(s).id, "sort": make_sort(s).id}
+
+
+@pytest.mark.parametrize("path,region,topics", B6_REGIONS)
+def test_b6_page_marks_its_region_with_topics(ready_client, path, region, topics):
+    ids = b6_ids(ready_client)
+    page = ready_client.get(path.format(**ids)).text
+    assert f'data-live-region="{region}" data-live-topics="{topics.format(**ids)}"' in page
+
+
+@pytest.mark.parametrize("path,region,topics", B6_REGIONS)
+def test_b6_region_request_returns_only_the_region(ready_client, path, region, topics):
+    ids = b6_ids(ready_client)
+    response = ready_client.get(path.format(**ids), headers={regions.HEADER: region})
+    assert response.status_code == 200
+    assert response.text.startswith(f'<div class="live-region" data-live-region="{region}"')
+    assert "<html" not in response.text and "sidebar" not in response.text
+
+
+def test_b6_edit_forms_watch_their_settings(ready_client):
+    ids = b6_ids(ready_client)
+    sort = ready_client.get(f"/filament/{ids['sort']}").text
+    assert f'data-live-watch="filament-settings:{ids["sort"]}"' in sort and 'class="live-stale"' in sort
+    slots = ready_client.get(f"/articles/{ids['article']}/filaments").text
+    assert f'data-live-watch="article-settings:{ids["article"]}"' in slots and 'class="live-stale"' in slots
+
+
+def test_article_detail_main_region_follows_filament(ready_client):
+    ids = b6_ids(ready_client)
+    page = ready_client.get(f"/articles/{ids['article']}").text
+    assert f'data-live-topics="article:{ids["article"]} part filament"' in page

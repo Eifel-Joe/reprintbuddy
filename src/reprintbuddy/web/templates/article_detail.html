@@ -22,7 +22,7 @@
 {% endcall %}
 {% if error %}<p class="alert" role="alert">{{ error }}{% if relink_offer %} <a href="/articles/{{ article.id }}/relink">{{ t('articles.choose_other_file') }}</a>{% endif %}</p>{% endif %}
 
-{% call ui.region("main", "article:" ~ article.id ~ " part") %}
+{% call ui.region("main", "article:" ~ article.id ~ " part filament") %}
 <section class="card section wide">
   <div class="detail-head">
     {% if article.thumbnail %}<img class="thumb" src="/articles/{{ article.id }}/thumbnail" alt="">{% endif %}

@@ -4,6 +4,7 @@
 {% block content %}
 {% call ui.page_head("shopping-bag", t('reorder.title'), t('reorder.sub')) %}{% endcall %}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% call ui.region("suggestions", "filament reorder part article queue journal") %}
 {% if stale_day %}<p class="alert" role="status">{{ t('filament.stale', day=stale_day) }}</p>{% endif %}
 {% if filament_unknown %}<p class="alert" role="status">{{ t('reorder.filament_unknown') }}</p>{% endif %}
 <section class="card section wide">
@@ -32,6 +33,8 @@
   </div></div>
   {% else %}<p class="muted">{{ t('reorder.none') }}</p>{% endif %}
 </section>
+{% endcall %}
+{% call ui.region("under-way", "reorder part journal") %}
 {% if under_way %}
 <h2>{{ t('reorder.under_way') }}</h2>
 <section class="card section wide">
@@ -59,4 +62,5 @@
   </div>
 </section>
 {% endif %}
+{% endcall %}
 {% endblock %}

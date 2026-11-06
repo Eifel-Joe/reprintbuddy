@@ -4,8 +4,10 @@
 {% block content %}
 {% call ui.page_head("disc-3", label) %}{% endcall %}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% call ui.region("form", "filament-settings:" ~ sort_id) %}
 <section class="card section">
-  <form method="post" action="/filament/{{ sort_id }}">
+  <form method="post" action="/filament/{{ sort_id }}" data-live-watch="filament-settings:{{ sort_id }}">
+    {{ ui.live_stale() }}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="row">
       <label>{{ t('filament.field.lead_time_days') }}
@@ -39,4 +41,5 @@
     <a class="btn-link" href="/filament">{{ t('common.cancel') }}</a>
   </form>
 </section>
+{% endcall %}
 {% endblock %}
