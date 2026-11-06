@@ -9,7 +9,11 @@ from factories import make_article
 from fastapi.testclient import TestClient
 
 from reprintbuddy import settings as st
-from reprintbuddy.models import utcnow
+from datetime import date
+
+from reprintbuddy.domain import orders
+from reprintbuddy.domain.orders import ArticleItem
+from reprintbuddy.models import Article, utcnow
 from reprintbuddy.web import regions
 from reprintbuddy.web.i18n import translate
 
@@ -31,8 +35,13 @@ def four_states(client):
     add(client, name="Template D", stock=4, min_stock=4)
 
 
-def summary_of(page):
-    return re.search(r'<p class="summary">(.*?)</p>', page, re.S).group(1)
+def kpis_of(page):
+    """The cards of the summary region as (value, label) pairs."""
+    block = regions.extract(page, ["summary"])["summary"]
+    return [
+        (int(value), label)
+        for value, label in re.findall(r'<span class="kpi-value">(\d+)</span><span class="kpi-label">(.*?)</span>', block)
+    ]
 
 
 def text_of(html):
@@ -63,25 +72,107 @@ def test_paused_article_has_a_grey_badge(ready_client):
     page = ready_client.get("/articles").text
     assert '<span class="badge tone-neutral">paused</span>' in list_of(page)
     assert '<span class="badge tone-ok">enough</span>' in list_of(page)  # the state stays
-    assert "1 paused" in text_of(summary_of(page))
+    assert kpis_of(page) == [(1, "Articles")]  # paused is a badge and a filter, not a card
 
 
-def test_summary_counts_present_states(ready_client):
+def test_kpi_cards_count_present_states(ready_client):
     four_states(ready_client)
-    summary = summary_of(ready_client.get("/articles").text)
-    text = text_of(summary)
-    for part in ("4 articles", "1 overbooked", "1 below minimum", "1 low"):
-        assert part in text, part
-    assert "enough" not in text
-    assert summary.count('class="dot ') == 3
+    page = ready_client.get("/articles").text
+    assert kpis_of(page) == [(4, "Articles"), (1, "overbooked"), (1, "below minimum"), (1, "low")]
+    assert 'class="kpis"' in regions.extract(page, ["summary"])["summary"]
+    assert '<p class="summary">' not in page
 
 
-def test_summary_in_german(ready_client):
+def test_kpi_cards_in_german(ready_client):
     with sm_of(ready_client).begin() as s:
         st.set_setting(s, "language", "de", commit=False)
     four_states(ready_client)
-    summary = summary_of(ready_client.get("/articles").text)
-    assert text_of(summary) == "4 Artikel · 1 überbucht · 1 unter Minimum · 1 knapp"
+    assert kpis_of(ready_client.get("/articles").text) == [
+        (4, "Artikel"), (1, "überbucht"), (1, "unter Minimum"), (1, "knapp")
+    ]
+
+
+def test_kpi_cards_skip_states_without_entries(ready_client):
+    add(ready_client, name="Template D", stock=4, min_stock=4)
+    assert kpis_of(ready_client.get("/articles").text) == [(1, "Articles")]
+
+
+def test_archive_has_one_card(ready_client):
+    four_states(ready_client)
+    add(ready_client, name="Template E", archived_at=utcnow())
+    assert kpis_of(ready_client.get("/articles?view=archived").text) == [(1, "Archived articles")]
+
+
+def test_head_has_subtitle_and_new_button(ready_client):
+    page = ready_client.get("/articles").text
+    head = page[page.index('<header class="page-head">') : page.index("</header>")]
+    assert f'<p class="page-sub">{en("articles.subtitle")}</p>' in head
+    actions = head[head.index('<div class="page-actions">') :]
+    assert 'href="/articles/new"' in actions and en("articles.new") in actions
+    assert 'href="/articles/new"' not in page[page.index('<div class="toolbar">') : page.index("<!--live:list-->")]
+
+
+def row_actions_of(page):
+    block = list_of(page)
+    return block[block.index('<td class="actions-col">') :].split("</td>")[0]
+
+
+def test_row_has_edit_journal_and_archive(ready_client):
+    a = add(ready_client, name="Template A")
+    page = ready_client.get("/articles").text
+    cell = row_actions_of(page)
+    assert f'href="/articles/{a}/edit"' in cell and f'title="{en("articles.edit")}"' in cell
+    assert f'href="/journal?article={a}"' in cell and f'title="{en("journal.title")}"' in cell
+    assert f'<form class="icon-form" method="post" action="/articles/{a}/archive">' in cell
+    assert 'name="csrf_token"' in cell and 'name="form_token"' in cell
+    assert f'title="{en("catalog.archive")}"' in cell and "/restore" not in cell
+    assert f'<span class="sr-only">{en("list.col.actions")}</span>' in list_of(page)
+    assert list_of(page).count(f"/articles/{a}/archive") == 1  # tiles have no actions
+
+
+def test_archived_row_has_journal_and_restore(ready_client):
+    a = add(ready_client, name="Template A", archived_at=utcnow())
+    cell = row_actions_of(ready_client.get("/articles?view=archived").text)
+    assert f'href="/journal?article={a}"' in cell and f'action="/articles/{a}/restore"' in cell
+    assert "/edit" not in cell and "/archive" not in cell.replace("archive-restore", "")
+
+
+def test_archive_from_the_row_goes_to_the_detail_page(ready_client):
+    a = add(ready_client, name="Template A")
+    page = ready_client.get("/articles").text
+    response = ready_client.post(
+        f"/articles/{a}/archive",
+        data={"csrf_token": csrf_of(ready_client, "/articles"), "form_token": row_token(page, a)},
+    )
+    assert response.status_code == 303 and response.headers["location"] == f"/articles/{a}"
+    with sm_of(ready_client).begin() as s:
+        assert s.get(Article, a).archived_at is not None
+
+
+def test_archive_from_the_row_is_refused_with_an_open_order(ready_client):
+    a = add(ready_client, name="Template A", stock=2)
+    with sm_of(ready_client).begin() as s:
+        orders.create_order(s, reference="Order 1001", order_date=date(2026, 1, 15), items=[ArticleItem(a, 1)], actor="user")
+    page = ready_client.get("/articles").text
+    response = ready_client.post(
+        f"/articles/{a}/archive",
+        data={"csrf_token": csrf_of(ready_client, "/articles"), "form_token": row_token(page, a)},
+    )
+    assert en("articles.archive_open_orders") in response.text
+    with sm_of(ready_client).begin() as s:
+        assert s.get(Article, a).archived_at is None
+
+
+def row_token(page, article_id):
+    form = re.search(rf'<form class="icon-form"[^>]*action="/articles/{article_id}/archive">(.*?)</form>', page, re.S).group(1)
+    return re.search(r'name="form_token" value="([^"]+)"', form).group(1)
+
+
+def test_summary_region_carries_cards_and_fresh_form_tokens(ready_client):
+    a = add(ready_client, name="Template A", stock=0, reserved=1)
+    response = ready_client.get("/articles", headers={regions.HEADER: "summary list"})
+    assert 'data-live-region="summary"' in response.text and 'class="kpis"' in response.text
+    assert row_token(response.text, a)
 
 
 def test_filter_shows_only_that_state_and_the_counts_stay(ready_client):
@@ -93,7 +184,7 @@ def test_filter_shows_only_that_state_and_the_counts_stay(ready_client):
         assert other not in listed, other
     assert '<a class="filter active" href="/articles?status=low" aria-current="true">' in page
     assert 'All <span class="count">4</span>' in page
-    assert "4 articles" in text_of(summary_of(page))  # the summary counts all articles
+    assert kpis_of(page)[0] == (4, "Articles")  # the cards count all articles
 
 
 def test_unknown_filter_is_ignored(ready_client):
@@ -232,7 +323,7 @@ def test_search_narrows_the_filter_counts_not_the_summary(ready_client):
     assert 'All <span class="count">1</span>' in filters
     assert re.findall(r'href="([^"]*)"', filters) == ["/articles?q=Template+B", "/articles?q=Template+B&amp;status=low"]
     assert "Template B" in list_of(page) and "Template A" not in list_of(page)
-    assert "4 articles" in text_of(summary_of(page))
+    assert kpis_of(page)[0] == (4, "Articles")
 
 
 def test_name_and_number_are_escaped_in_list_and_tile(ready_client):

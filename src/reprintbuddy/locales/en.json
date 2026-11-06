@@ -450,5 +450,8 @@
   "nav.expand": "Unfold menu",
   "nav.menu": "Menu",
   "nav.version": "Version",
-  "list.col.actions": "Actions"
+  "list.col.actions": "Actions",
+  "articles.subtitle": "Printed articles: stock, minimum stock and target",
+  "kpi.articles": "Articles",
+  "kpi.articles_archived": "Archived articles"
 }

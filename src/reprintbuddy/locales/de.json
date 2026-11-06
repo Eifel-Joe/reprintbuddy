@@ -450,5 +450,8 @@
   "nav.expand": "Menü ausklappen",
   "nav.menu": "Menü",
   "nav.version": "Version",
-  "list.col.actions": "Aktionen"
+  "list.col.actions": "Aktionen",
+  "articles.subtitle": "Gedruckte Artikel: Bestand, Mindestbestand und Ziel",
+  "kpi.articles": "Artikel",
+  "kpi.articles_archived": "Archivierte Artikel"
 }

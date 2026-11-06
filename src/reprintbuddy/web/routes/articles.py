@@ -25,7 +25,7 @@ from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.domain import stock as stock_mod
 from reprintbuddy.models import Article, ArticleFilament, ArticlePart, Part
-from reprintbuddy.web import listing
+from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, render
 from reprintbuddy.web.forms import (
@@ -161,7 +161,7 @@ async def _read_plate(client: BambuddyClient, file_id: int, index: int):
 async def articles_list(
     request: Request, view: str = "active", q: str | None = None, db: Session = Depends(get_db)
 ):
-    """Overview with short summary, search, status filter and tiles or list (Spec 10.1).
+    """Overview with key figure cards, search, status filter and tiles or list (Spec 10.1).
 
     The summary counts all articles of the view; the filter counts follow the search; the list
     shows what passes both. The archive has no status filter: its badge is "archived".
@@ -174,18 +174,25 @@ async def articles_list(
     every = catalog.list_articles(db, archived=archived)
     found = [row for row in every if listing.matches(q, row.name, row.sku)]
     counts = Counter(row.status for row in found)
-    summary_items: list[tuple[str, int]] = []
-    if not archived:  # "enough" is not counted: the summary names what needs attention
-        summary_items = summarize((row.status for row in every), ("overbooked", "below_min", "low"))
-        if paused := sum(row.paused for row in every):
-            summary_items.append(("paused", paused))
+    lang = current_language(request)
+    if archived:
+        cards = kpis.state_cards(
+            lambda key: translate(lang, key), "article", "archive", len(every),
+            translate(lang, "kpi.articles_archived"), [],
+        )
+    else:  # "enough" and "paused" get no card: the cards name what needs attention
+        cards = kpis.state_cards(
+            lambda key: translate(lang, key), "article", "package", len(every),
+            translate(lang, "kpi.articles"),
+            summarize((row.status for row in every), ("overbooked", "below_min", "low")),
+        )
     keep = (("status", status), ("view", "archived" if archived else None))
     layout = listing.layout_of(request, "articles")
     return render(
         request, "articles_list.html", active_nav="articles", archived=archived,
         rows=[row for row in found if status is None or row.status == status],
         total=len(every),
-        summary_items=summary_items,
+        kpis=cards,
         filters=listing.filter_links(request, states, counts, len(found), status),
         layout=layout,
         layout_links=listing.layout_links(request, layout),
