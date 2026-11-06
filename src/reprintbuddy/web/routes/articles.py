@@ -18,13 +18,13 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
-from reprintbuddy.domain import catalog
+from reprintbuddy.domain import catalog, filament
 from reprintbuddy.domain.catalog import ArticleInput, TargetOption
-from reprintbuddy.domain.errors import DomainError
+from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.domain import stock as stock_mod
-from reprintbuddy.models import Article, ArticleFilament, ArticlePart, Part
+from reprintbuddy.models import Article, ArticleFilament, ArticlePart, FilamentSort, Part
 from reprintbuddy.web import listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, render
@@ -431,6 +431,13 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
     filaments = db.scalars(
         select(ArticleFilament).where(ArticleFilament.article_id == article_id).order_by(ArticleFilament.slot)
     ).all()
+    sort_labels = dict(
+        db.execute(
+            select(FilamentSort.id, FilamentSort.label).where(
+                FilamentSort.id.in_([f.spool_filament_id for f in filaments if f.spool_filament_id is not None])
+            )
+        ).all()
+    )
     parts = db.execute(
         select(Part.name, ArticlePart.qty_per_unit, Part.unit)
         .join(ArticlePart, ArticlePart.part_id == Part.id)
@@ -446,7 +453,11 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         article=article,
         row=catalog.article_row(article),  # numbers and state, the same as in the list
         target_label=_target_label(lang, article),
-        filaments=[_requirement_row(FilamentRequirement(f.slot, f.grams, f.material, f.color_hex)) for f in filaments],
+        filaments=[
+            _requirement_row(FilamentRequirement(f.slot, f.grams, f.material, f.color_hex))
+            | {"sort": sort_labels.get(f.spool_filament_id)}
+            for f in filaments
+        ],
         parts=parts,
         rows=journal_rows(db, entries),
         error=error,
@@ -539,6 +550,101 @@ async def article_update(request: Request, article_id: int, db: Session = Depend
             error=error_text(current_language(request), exc), status=error_status(exc),
         )
     return saved_redirect(request, f"/articles/{article_id}", "articles.saved", name=data.name)
+
+
+# ---- filament sort of each slot (Spec 5.2) -----------------------------------------------------
+
+_SLOT_FIELD = re.compile(r"slot_([0-9]{1,9})", re.ASCII)
+
+
+async def _spools_or_none(request: Request):
+    """The spools now; None when Bambuddy is not configured or cannot be reached (never a 500)."""
+    client = get_bambuddy(request)
+    if client is None:
+        return None
+    try:
+        return await client.list_spools()
+    except BambuddyUnavailable:
+        return None
+
+
+def _filament_page(request: Request, spools, article_id: int, typed: Mapping[int, str] | None = None,
+                   error: str | None = None, status: int = 200):
+    """The mapping form. Reads (and enters new sorts, Entscheidung 4) in one write transaction;
+    `typed` holds the values of a rejected submission, which stay as they were."""
+    lang = current_language(request)
+    with write_transaction(request) as tx:
+        article = tx.get(Article, article_id)
+        if article is None:
+            raise HTTPException(status_code=404)
+        sorts, day = filament.known_sorts(tx, spools)
+        rows = filament.slot_rows(tx, article_id, sorts or {})
+        labels = dict(tx.execute(select(FilamentSort.id, FilamentSort.label)).all())
+        name, archived = article.name, article.archived_at is not None
+    slots = []
+    for r in rows:
+        if sorts is None:  # unknown stock: only "none" and the saved sort, so saving loses nothing
+            ids = [r.mapped] if r.mapped is not None else []
+        else:
+            ids = sorted(sorts, key=lambda i: sorts[i].label.casefold())
+            if r.mapped is not None and r.mapped not in sorts:
+                ids.append(r.mapped)
+        if typed is not None and r.slot in typed:
+            chosen = typed[r.slot]
+        else:
+            fallback = r.mapped if r.mapped is not None else r.suggested
+            chosen = str(fallback) if fallback is not None else ""
+        slots.append({
+            "slot": r.slot,
+            "grams": f"{r.grams:.1f}",
+            "material": r.material or "",
+            "color": r.color_hex or "",
+            "swatch": r.color_hex if r.color_hex and _COLOR.fullmatch(r.color_hex) else None,
+            "options": [(str(i), labels.get(i, str(i)), str(i) == chosen) for i in ids],
+            "none_selected": chosen == "",
+            "is_suggestion": r.mapped is None and r.suggested is not None and chosen == str(r.suggested),
+        })
+    if archived and error is None:
+        error = translate(lang, "articles.edit_archived")
+    return render(
+        request, "article_filaments.html", status_code=status, active_nav="articles",
+        article_id=article_id, article_name=name, slots=slots, sorts_unknown=sorts is None,
+        stock_day=day, read_only=archived, error=error,
+    )
+
+
+@router.get("/articles/{article_id:int}/filaments")
+async def article_filaments(request: Request, article_id: int, db: Session = Depends(get_db)):
+    _get_article(db, article_id)
+    spools = await _spools_or_none(request)  # before any write transaction
+    return _filament_page(request, spools, article_id)
+
+
+@router.post("/articles/{article_id:int}/filaments", dependencies=[Depends(verify_csrf)])
+async def article_filaments_save(request: Request, article_id: int, db: Session = Depends(get_db)):
+    _get_article(db, article_id)
+    form = await request.form()
+    typed: dict[int, str] = {}
+    for key, value in form.multi_items():
+        m = _SLOT_FIELD.fullmatch(key)
+        if m and isinstance(value, str):
+            typed[int(m.group(1))] = value
+    spools = await _spools_or_none(request)  # before any write transaction
+    lang = current_language(request)
+    try:
+        mapping: dict[int, int | None] = {}
+        for slot, raw in typed.items():
+            if raw == "":
+                mapping[slot] = None
+            elif (sort_id := bounded_int(raw)) is None:
+                raise ValidationError("filament.invalid_sort")
+            else:
+                mapping[slot] = sort_id
+        with write_transaction(request) as tx:
+            filament.set_mapping(tx, article_id, mapping)
+    except DomainError as exc:
+        return _filament_page(request, spools, article_id, typed, error_text(lang, exc), error_status(exc))
+    return saved_redirect(request, f"/articles/{article_id}", "filament.mapping_saved")
 
 
 # ---- archive, restore, restore with another file (Spec 5.5) ------------------------------------------

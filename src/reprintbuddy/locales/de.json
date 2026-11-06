@@ -478,5 +478,14 @@
   "queue.entry_not_found": "Diesen Eintrag in der Warteschlange gibt es nicht.",
   "queue.field.prints": "Drucke",
   "filament.unknown_slot": "Diesen Filament-Slot gibt es bei dem Artikel nicht.",
-  "filament.sort_not_found": "Diese Filamentsorte gibt es nicht."
+  "filament.sort_not_found": "Diese Filamentsorte gibt es nicht.",
+  "filament.title": "Filamentzuordnung",
+  "filament.intro": "Wähle, welche Filamentsorte jeder Slot dieses Artikels benutzt. Ein Vorschlag wird erst mit „Speichern“ übernommen.",
+  "filament.sort": "Filamentsorte",
+  "filament.none": "Keine Zuordnung",
+  "filament.suggested": "Vorschlag",
+  "filament.unknown": "Der Filamentbestand ist gerade nicht bekannt. Nur die gespeicherte Zuordnung kann beibehalten werden.",
+  "filament.invalid_sort": "Wähle eine Filamentsorte aus der Liste.",
+  "filament.mapping_saved": "Filamentzuordnung gespeichert.",
+  "filament.map_link": "Filamentsorten zuordnen"
 }

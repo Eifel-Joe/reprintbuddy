@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% block title %}{{ t('filament.title') }}{% endblock %}
+{% block content %}
+{% call ui.page_head("package", article_name) %}{% endcall %}
+<h2>{{ t('filament.title') }}</h2>
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% if sorts_unknown %}<p class="alert" role="status">{{ t('filament.unknown') }}</p>{% endif %}
+<section class="card section wide">
+  <p class="muted">{{ t('filament.intro') }}</p>
+  <form method="post" action="/articles/{{ article_id }}/filaments">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>{{ t('articles.filament.slot') }}</th><th>{{ t('articles.filament.material') }}</th><th>{{ t('articles.filament.color') }}</th><th class="num">{{ t('articles.filament.grams') }}</th><th>{{ t('filament.sort') }}</th></tr></thead>
+        <tbody>
+        {% for r in slots %}
+          <tr>
+            <td>{{ r.slot }}</td>
+            <td>{{ r.material }}</td>
+            <td>{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}{{ r.color }}</td>
+            <td class="num">{{ r.grams }}</td>
+            <td>
+              <select name="slot_{{ r.slot }}" aria-label="{{ t('filament.sort') }} {{ r.slot }}"{% if read_only %} disabled{% endif %}>
+                <option value=""{% if r.none_selected %} selected{% endif %}>{{ t('filament.none') }}</option>
+                {% for value, label, chosen in r.options %}<option value="{{ value }}"{% if chosen %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              {% if r.is_suggestion %}<span class="suggested muted">{{ t('filament.suggested') }}</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if not read_only %}<button class="btn" type="submit">{{ t('common.save') }}</button>{% endif %}
+    <a class="btn-link" href="/articles/{{ article_id }}">{{ t('common.cancel') }}</a>
+  </form>
+</section>
+{% endblock %}

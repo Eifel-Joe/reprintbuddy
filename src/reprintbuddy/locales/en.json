@@ -478,5 +478,14 @@
   "queue.entry_not_found": "This queue entry does not exist.",
   "queue.field.prints": "Prints",
   "filament.unknown_slot": "Unknown filament slot for this article.",
-  "filament.sort_not_found": "This filament sort does not exist."
+  "filament.sort_not_found": "This filament sort does not exist.",
+  "filament.title": "Filament assignment",
+  "filament.intro": "Choose which filament sort each slot of this article uses. A suggestion is only saved when you save.",
+  "filament.sort": "Filament sort",
+  "filament.none": "No assignment",
+  "filament.suggested": "Suggested",
+  "filament.unknown": "The filament stock is not known right now. Only the saved assignment can be kept.",
+  "filament.invalid_sort": "Choose a filament sort from the list.",
+  "filament.mapping_saved": "Filament assignment saved.",
+  "filament.map_link": "Assign filament sorts"
 }
