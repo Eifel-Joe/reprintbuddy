@@ -137,6 +137,31 @@ def test_target_options():
     assert (p.model, p.printer_name) == ("A1", "Printer 1")
 
 
+def test_target_options_offer_only_active_printers():
+    printers = [
+        Printer(1, "Printer 1", "A1"),
+        Printer(2, "Printer 2", "P1S", active=False),
+        Printer(3, "Printer 3", "H2D", active=False),
+        Printer(4, "Printer 4", "H2D"),
+    ]
+    values = [o.value for o in catalog.target_options(printers, "A1")]
+    assert values == ["model:A1", "model:H2D", "printer:1", "printer:4", ""]
+    # the model of an inactive printer is no choice, unless the file has it
+    assert "model:P1S" not in values and "printer:2" not in values
+    with_file = [o.value for o in catalog.target_options(printers, "P1S")]
+    assert "model:P1S" in with_file and "printer:2" not in with_file
+
+
+def test_target_options_keep_printer_in_maintenance_as_known_target():
+    printers = [Printer(1, "Printer 1", "A1"), Printer(2, "Printer 2", "P1S", active=False)]
+    options = catalog.target_options(printers, "A1", current="printer:2")
+    kept = [o for o in options if o.value == "printer:2"]
+    assert len(kept) == 1
+    assert (kept[0].model, kept[0].printer_name) == ("P1S", "Printer 2")
+    # a stored model of an inactive printer is not turned into a printer
+    assert [o.value for o in options].count("model:P1S") == 0
+
+
 @pytest.mark.parametrize(
     "field,value",
     [("units_per_print", 0), ("units_per_print", 1001), ("min_stock", -1), ("buffer", -1),
