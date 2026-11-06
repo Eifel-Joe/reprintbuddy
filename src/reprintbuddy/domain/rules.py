@@ -71,3 +71,25 @@ def coverage(
 ) -> int:
     """Deckung = Verfügbar + eingereiht + in Arbeit + vorläufig + wartet auf Montage (Spec 7.1)."""
     return available + queued_units + in_progress_units + provisional + awaiting_assembly
+
+
+def prints_needed(*, min_stock: int, buffer: int, coverage: int, units_per_print: int) -> int:
+    """Drucke = ceil((Mindestbestand + Puffer − Deckung) / Stück je Druck), 0 if covered (Spec 7.1).
+
+    Without a minimum and without a buffer nothing is printed for the article (Spec 5.2).
+    """
+    if (min_stock == 0 and buffer == 0) or coverage >= min_stock:
+        return 0
+    return _ceil_div(min_stock + buffer - coverage, units_per_print)
+
+
+def prints_for_units(units: int, units_per_print: int) -> int:
+    """Drucke für eine Stückzahl = ceil(Stück / Stück je Druck), 0 for no units (Spec 7.5)."""
+    if units <= 0:
+        return 0
+    return _ceil_div(units, units_per_print)
+
+
+def _ceil_div(numerator: int, denominator: int) -> int:
+    # Integer ceil without floats: -(-n // d) rounds towards +infinity for d > 0.
+    return -(-numerator // denominator)
