@@ -27,7 +27,7 @@ Actor = Literal["user", "auto"]
 MAX_QTY = 1_000_000
 MAX_NOTE = 500
 
-# B4 and B5 add their own kinds (with a translation `journal.kind.<kind>`).
+# B5 adds its own kinds (with a translation `journal.kind.<kind>`).
 KINDS: frozenset[str] = frozenset(
     {
         "order_created",
@@ -42,6 +42,21 @@ KINDS: frozenset[str] = frozenset(
         "inspection_scrap",
         "assembly",
         "part_consumed",
+        "queue_entry_created",
+        "queue_entry_changed",
+        "queue_entry_deleted",
+        "queue_entry_held",
+        "queue_entry_released",
+        "print_dispatched",
+        "print_dispatch_unclear",
+        "print_returned",
+        "print_failed",
+        "print_cancelled",
+        "print_missing",
+        "automation_paused",
+        "automation_resumed",
+        "article_file_confirmed",
+        "article_relinked",
     }
 )
 
