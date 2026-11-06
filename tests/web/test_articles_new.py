@@ -211,8 +211,10 @@ def test_checkboxes_and_parts(bb_client):
         insert = create_part(s, PartInput(name="Insert M4"), 10, "user").id
         hex_key = create_part(s, PartInput(name="Hex key 2"), 10, "user").id
     page = bb_client.get(FORM).text
-    assert f'name="part_{insert}"' in page and f'name="part_{hex_key}"' in page
-    bb_client.post(FORM, data=fields(bb_client, needs_assembly="on", auto_enabled="on", **{f"part_{insert}": "2", f"part_{hex_key}": "0"}))
+    offered = re.search(r'<select[^>]*name="parts_part"[^>]*>(.*?)</select>', page, re.S).group(1)
+    assert f'<option value="{insert}"' in offered and f'<option value="{hex_key}"' in offered
+    bb_client.post(FORM, data=fields(bb_client, needs_assembly="on", auto_enabled="on", has_parts="on",
+                                     parts_part=[str(insert), ""], parts_qty=["2", ""]))
     art = articles(bb_client)[0]
     assert art.needs_assembly and art.auto_enabled
     from reprintbuddy.models import ArticlePart
@@ -227,7 +229,7 @@ def test_bad_part_quantity(bb_client):
 
     with sm_of(bb_client).begin() as s:
         insert = create_part(s, PartInput(name="Insert M4"), 0, "user").id
-    response = bb_client.post(FORM, data=fields(bb_client, **{f"part_{insert}": "abc"}))
+    response = bb_client.post(FORM, data=fields(bb_client, has_parts="on", parts_part=[str(insert)], parts_qty=["abc"]))
     assert response.status_code == 200 and articles(bb_client) == []
 
 

@@ -2,7 +2,8 @@
    fetch the regions of the page that a saved change concerns, without ever overwriting what
    somebody is typing. No texts and no addresses in here: both come from the page.
 
-   Terms: a form is "changed" when one of its fields differs from the value the page came with;
+   Terms: a form is "changed" when one of its fields differs from the value the page came with,
+   or when a page script marked it with data-changed (a row it removed changes no field);
    a region is "busy" while a form in it is changed or holds the focused field. A busy region is
    not swapped but remembered as stale and fetched once it is no longer busy. */
 (function () {
@@ -85,6 +86,9 @@
   }
 
   function formChanged(form) {
+    if (form.hasAttribute("data-changed")) {
+      return true;
+    }
     for (var i = 0; i < form.elements.length; i++) {
       if (fieldChanged(form.elements[i])) {
         return true;
