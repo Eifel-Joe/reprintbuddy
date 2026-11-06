@@ -85,6 +85,15 @@ class QueueItem:
 
 @dataclass(frozen=True)
 class Spool:
-    """Placeholder; B2 adds the fields after the experiment B0."""
+    """Fields follow plan assumption S1 (B6); B2's version replaces this on merge."""
 
     id: int
+    material: str
+    subtype: str | None
+    brand: str | None
+    color_name: str | None
+    color_hex: str | None  # "#RRGGBB"
+    label_g: int
+    remaining_g: float
+    archived: bool
+    created_at: datetime | None

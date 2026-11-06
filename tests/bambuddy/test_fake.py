@@ -94,12 +94,6 @@ async def test_removed_file():
         await fake.list_plates(f.id)
 
 
-async def test_spools_left_to_b2():
-    fake = FakeBambuddy()
-    with pytest.raises(NotImplementedError):
-        await fake.list_spools()
-
-
 async def test_calls_recorded():
     fake = FakeBambuddy()
     await fake.ping()

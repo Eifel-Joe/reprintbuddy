@@ -23,7 +23,7 @@ _EFFECT_METHODS = frozenset({"ensure_batch", "enqueue"})
 _FAILABLE_METHODS = _EFFECT_METHODS | {
     "list_folders", "list_files", "get_file", "list_plates", "plate_thumbnail",
     "filament_requirements", "list_printers", "get_queue_item", "list_queue",
-    "find_items_by_batch",
+    "find_items_by_batch", "list_spools",
 }
 
 
@@ -47,6 +47,8 @@ class FakeBambuddy:
         self._next_batch = 1
         self._next_item = 1
         self._failures: dict[str, tuple[Exception, bool]] = {}
+        self._spools: dict[int, Spool] = {}
+        self._next_spool = 1
 
     # ---- fill ------------------------------------------------------------
     def add_folder(self, name: str, parent_id: int | None = None) -> LibraryFolder:
@@ -299,6 +301,33 @@ class FakeBambuddy:
         )
 
     # ---- left to B2 --------------------------------------------------------
+    def add_spool(
+        self,
+        material: str,
+        *,
+        brand: str | None = "Example Brand",
+        subtype: str | None = None,
+        color_hex: str | None = "#000000",
+        label_g: int = 1000,
+        remaining_g: float = 1000.0,
+        archived: bool = False,
+        color_name: str | None = None,
+        created_at: datetime | None = None,
+    ) -> Spool:
+        spool = Spool(
+            self._next_spool, material, subtype, brand, color_name, color_hex,
+            label_g, remaining_g, archived, created_at,
+        )
+        self._spools[spool.id] = spool
+        self._next_spool += 1
+        return spool
+
+    def set_remaining(self, spool_id: int, grams: float) -> None:
+        self._spools[spool_id] = dataclasses.replace(self._spools[spool_id], remaining_g=grams)
+
+    def archive_spool(self, spool_id: int) -> None:
+        self._spools[spool_id] = dataclasses.replace(self._spools[spool_id], archived=True)
+
     async def list_spools(self) -> list[Spool]:
-        self.calls.append("list_spools")
-        raise NotImplementedError
+        self._enter("list_spools")
+        return [s for _, s in sorted(self._spools.items()) if not s.archived]
