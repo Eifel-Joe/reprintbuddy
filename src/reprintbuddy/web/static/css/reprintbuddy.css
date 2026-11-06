@@ -392,3 +392,84 @@ table.keytable td.off { color: var(--muted); }
   .rights-banner form { flex: 1 1 100%; }
   .rights-banner .btn { width: 100%; }
 }
+
+/* ---- overview pages: toolbar, search, filters, tiles or list -------------- */
+
+/* Row above the entries: search, filters and the layout switch. Wraps; on a phone the search
+   takes a line of its own. */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 0.9rem; margin: 0 0 1rem; }
+.toolbar .filters { flex: 1 1 auto; }
+.toolbar .layout-toggle { margin-left: auto; }
+
+.search { display: flex; flex: 1 1 16rem; max-width: 24rem; margin: 0; gap: 0.4rem; }
+.search input[type="search"] { flex: 1 1 auto; min-width: 0; margin: 0; }
+.search-button {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  padding: 0 0.7rem; border: 1px solid var(--line); border-radius: 8px;
+  background: transparent; color: var(--text-2); cursor: pointer;
+}
+.search-button:hover { color: var(--text); background: var(--neutral-soft); }
+
+.filters { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.filter {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.3rem 0.75rem; border: 1px solid var(--line); border-radius: 999px;
+  color: var(--text-2); font-size: 0.88rem; text-decoration: none; white-space: nowrap;
+}
+.filter:hover { color: var(--text); background: var(--neutral-soft); }
+.filter.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.count { font-variant-numeric: tabular-nums; opacity: 0.75; }
+
+.layout-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.layout-toggle a {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0.4rem 0.6rem; color: var(--text-2); text-decoration: none;
+}
+.layout-toggle a:hover { color: var(--text); background: var(--neutral-soft); }
+.layout-toggle a[aria-current="true"] { background: var(--accent-soft); color: var(--accent); }
+
+/* Fill bar: width in percent from the page, colour from the state. */
+.bar { display: block; height: 6px; border-radius: 3px; background: var(--neutral-soft); overflow: hidden; }
+.bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--text-2); }
+.bar.tone-ok .bar-fill { background: var(--accent); }
+.bar.tone-warn .bar-fill { background: var(--warn); }
+.bar.tone-bad .bar-fill { background: var(--danger); }
+
+/* Which of the two renderings of an overview shows: a chosen layout wins; without a choice
+   (layout-auto) tiles show below 900 px and the list above. */
+.collection .tiles { display: none; }
+.collection.layout-tiles .table-card { display: none; }
+.collection.layout-tiles .tiles { display: grid; }
+.collection.layout-list .tiles { display: none; }
+.collection.layout-auto .table-card { display: none; }
+.collection.layout-auto .tiles { display: grid; }
+@media (min-width: 900px) {
+  .collection.layout-auto .table-card { display: block; }
+  .collection.layout-auto .tiles { display: none; }
+}
+
+.tiles { grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 0.9rem; }
+.tile {
+  display: flex; flex-direction: column; gap: 0.6rem; min-width: 0;
+  padding: 0.9rem 1rem; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--text); text-decoration: none;
+}
+a.tile:hover { border-color: var(--accent); }
+.tile-head { display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
+.tile-head > div { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.tile-head .badge { flex: 0 0 auto; }
+.tile-stats { display: flex; flex-wrap: wrap; gap: 0.3rem 1.1rem; color: var(--text-2); font-size: 0.88rem; }
+.tile-stats strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.tile-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; margin-top: auto; color: var(--text-2); font-size: 0.85rem; }
+
+/* Small picture in a row or a tile head; the placeholder keeps the size without a picture. */
+.thumb-sm, .thumb-placeholder {
+  display: block; flex: 0 0 auto; width: 40px; height: 40px; border-radius: 6px; background: var(--bg);
+}
+.thumb-sm { object-fit: contain; }
+.thumb-placeholder { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); border: 1px dashed var(--line); }
+
+@media (max-width: 599px) {
+  .search { flex: 1 1 100%; max-width: none; }
+}

@@ -438,5 +438,13 @@
   "summary.orders_open.one": "{n} offene Bestellung",
   "summary.orders_open.other": "{n} offene Bestellungen",
   "summary.orders_closed.one": "{n} abgeschlossene Bestellung",
-  "summary.orders_closed.other": "{n} abgeschlossene Bestellungen"
+  "summary.orders_closed.other": "{n} abgeschlossene Bestellungen",
+  "list.search": "Suchen",
+  "list.search_placeholder": "Name oder Nummer",
+  "list.filter_all": "Alle",
+  "list.layout_list": "Liste",
+  "list.layout_tiles": "Kacheln",
+  "list.no_match": "Nichts passt zu Suche oder Filter.",
+  "tile.to_check": "{n} zu prüfen",
+  "tile.to_assemble": "{n} zur Montage"
 }

@@ -438,5 +438,13 @@
   "summary.orders_open.one": "{n} open order",
   "summary.orders_open.other": "{n} open orders",
   "summary.orders_closed.one": "{n} closed order",
-  "summary.orders_closed.other": "{n} closed orders"
+  "summary.orders_closed.other": "{n} closed orders",
+  "list.search": "Search",
+  "list.search_placeholder": "Name or number",
+  "list.filter_all": "All",
+  "list.layout_list": "List",
+  "list.layout_tiles": "Tiles",
+  "list.no_match": "Nothing matches the search or filter.",
+  "tile.to_check": "{n} to check",
+  "tile.to_assemble": "{n} to assemble"
 }

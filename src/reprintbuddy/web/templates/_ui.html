@@ -1,5 +1,6 @@
 {# Building blocks of the pages. Import at the top of a page, outside the blocks:
-   {% import "_ui.html" as ui with context %} #}
+   {% import "_ui.html" as ui with context %}
+   "with context" is required: the macros read `lang` and the template globals from the page. #}
 
 {# A part of the page that follows changes (Spec 10.5.3): {% call ui.region("list", "article") %}…{% endcall %}.
    The comments mark where web/regions.py cuts the region out of the whole page; `topics` (space
@@ -35,4 +36,49 @@
 {# The badge of a state; "overbooked" carries a red mark (flag). #}
 {% macro badge(kind, state) -%}
 <span class="badge tone-{{ status_tone(state) }}{% if state == 'overbooked' %} flag{% endif %}">{{ t('status.paused' if state == 'paused' else ('catalog.archived_badge' if state == 'archived' else 'status.' ~ kind ~ '.' ~ state)) }}</span>
+{%- endmacro %}
+
+{# Search field of an overview page (GET). `keep` is a list of (name, value) pairs that stay in the
+   query, e.g. [("view", "archived")]; the status filter and the layout are left out on purpose:
+   a new search starts from all entries. #}
+{% macro search_form(q, placeholder, keep=[]) -%}
+<form class="search" method="get" role="search">
+  {%- for name, value in keep %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor -%}
+  <input type="search" name="q" value="{{ q or '' }}" placeholder="{{ placeholder }}" aria-label="{{ t('list.search') }}">
+  <button type="submit" class="search-button" title="{{ t('list.search') }}" aria-label="{{ t('list.search') }}">{{ icon('search') }}</button>
+</form>
+{%- endmacro %}
+
+{# Status filters (listing.filter_links): "All" and one link per state with its count. `kind` is
+   the kind of the status texts (article, part, set, order). #}
+{% macro filter_bar(kind, links) -%}
+<nav class="filters">
+  {%- for link in links %}
+  <a class="filter{% if link.active %} active{% endif %}" href="{{ link.href }}"{% if link.active %} aria-current="true"{% endif %}>
+    {{- t('list.filter_all') if link.state is none else t('status.paused' if link.state == 'paused' else 'status.' ~ kind ~ '.' ~ link.state) }} <span class="count">{{ link.count }}</span></a>
+  {%- endfor %}
+</nav>
+{%- endmacro %}
+
+{# Switch between list and tiles (listing.layout_links); the chosen one is marked. #}
+{% macro layout_toggle(links) -%}
+<nav class="layout-toggle">
+  {%- for link in links %}
+  <a href="{{ link.href }}" title="{{ t('list.layout_list' if link.layout == 'list' else 'list.layout_tiles') }}" aria-label="{{ t('list.layout_list' if link.layout == 'list' else 'list.layout_tiles') }}"{% if link.current %} aria-current="true"{% endif %}>{{ icon('list' if link.layout == 'list' else 'layout-grid') }}</a>
+  {%- endfor %}
+</nav>
+{%- endmacro %}
+
+{# Fill bar (formatting.fill_percent); nothing without a target. The colour follows the state. #}
+{% macro bar(percent, state) -%}
+{%- if percent is not none -%}
+<span class="bar tone-{{ status_tone(state) }}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ percent }}"><span class="bar-fill" style="width: {{ percent }}%"></span></span>
+{%- endif -%}
+{%- endmacro %}
+
+{# Wrapper of the entries of an overview page: {% call ui.collection(layout) %}…{% endcall %}.
+   The call block holds `<div class="card table-wrap table-card">…</div>` (list) and/or
+   `<div class="tiles">…</div>` (tiles); see the CSS for what shows with which layout. #}
+{% macro collection(layout) -%}
+<div class="collection layout-{{ layout }}">{{ caller() }}</div>
 {%- endmacro %}

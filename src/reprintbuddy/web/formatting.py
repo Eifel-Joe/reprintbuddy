@@ -38,3 +38,10 @@ def format_date(day: date, lang: str) -> str:
 def local_date(context, day: date | None) -> str:
     """Jinja filter `local_date`: a calendar date (no time zone involved)."""
     return format_date(day, context.get("lang", "en")) if day is not None else ""
+
+
+def fill_percent(available: int, target: int) -> int | None:
+    """How full a stock is against its target, 0 to 100; `None` without a target."""
+    if target <= 0:
+        return None
+    return min(100, max(0, available) * 100 // target)
