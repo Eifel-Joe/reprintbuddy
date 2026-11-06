@@ -15,6 +15,7 @@ from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_dispatch, make_entry
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
+from reprintbuddy.domain import workqueue
 from reprintbuddy.models import Article, WorkQueueEntry
 from reprintbuddy.web import i18n, regions
 from reprintbuddy.web.i18n import translate
@@ -160,6 +161,26 @@ def test_kpis(bb_client):
     }
 
 
+def test_waiting_card_is_not_yellow(bb_client):
+    """One colour, one meaning (Design 3): the row badge "waiting" is green, so is its card."""
+    entry(bb_client, article(bb_client), 2)
+    summary = region(bb_client.get("/queue").text, "summary")
+    cards = re.findall(r'<div class="kpi"><span class="kpi-icon tone-(\w+)">.*?</div></div>', summary, re.S)
+    labels = re.findall(r'<span class="kpi-label">([^<]+)</span>', summary)
+    card = dict(zip(labels, cards, strict=True))
+    assert card[en("queue.kpi.waiting")] == "accent"
+
+
+def test_print_limit_comes_from_the_domain(bb_client, monkeypatch):
+    """The prints fields (row menu and manual form) take their maximum from workqueue.MAX_PRINTS."""
+    entry(bb_client, article(bb_client), 2)
+    monkeypatch.setattr(workqueue, "MAX_PRINTS", 7)
+    page = bb_client.get("/queue").text
+    fields = re.findall(r'<input type="number"[^>]*name="prints"[^>]*>', page)
+    assert len(fields) == 2
+    assert all('max="7"' in field for field in fields), fields
+
+
 def test_kpis_show_held_and_paused_only_when_present(bb_client):
     entry(bb_client, article(bb_client), 2)
     summary = region(bb_client.get("/queue").text, "summary")
@@ -234,7 +255,9 @@ def test_entry_actions(bb_client):
     assert rows(bb_client)[0][1] == 1
     with sm_of(bb_client)() as s:
         assert s.get(Article, a).paused is True
-    assert esc(en("pause.reason.queue_reduced")) in bb_client.get("/queue").text
+    # the message element itself (the paused badge carries the same text in its title)
+    flash = f'<p class="alert" role="alert">{esc(en("pause.reason.queue_reduced"))}</p>'
+    assert flash in bb_client.get("/queue").text
     # delete
     assert act(bb_client, other, "delete").status_code == 303
     assert order(bb_client) == [rule]
@@ -607,6 +630,13 @@ def test_drag_script_uses_pointer_events_and_the_pages_names():
         assert name in text, name
     for word in ("http", "/queue", "Drag", "Ziehen", "nach oben"):
         assert word not in text, word
+
+
+def test_small_targets_are_44_px():
+    css = CSS.read_text(encoding="utf-8")
+    for selector in (r"\.queue-name", r'\.menu-prints input\[type="number"\]'):
+        rules = re.findall(selector + r" \{[^}]*\}", css)
+        assert any("min-height: 2.75rem" in rule for rule in rules), selector
 
 
 def test_drag_handle_does_not_scroll_the_page():

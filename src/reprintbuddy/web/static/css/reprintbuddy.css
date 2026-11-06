@@ -694,7 +694,8 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 .drag-handle .icon { width: 18px; height: 18px; }
 .queue-pos { flex: 0 0 1.5rem; color: var(--muted); font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; }
 .queue-body { display: flex; flex: 1 1 auto; flex-direction: column; gap: 3px; min-width: 0; }
-.queue-name { color: var(--text); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+/* At least 44 px to tap, like every other target; the text stays at the top of that box. */
+.queue-name { display: inline-flex; align-items: center; align-self: flex-start; max-width: 100%; min-height: 2.75rem; color: var(--text); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
 .queue-name:hover { color: var(--accent); }
 .queue-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--muted); font-size: 12px; }
 .queue-body .badges { margin-top: 2px; }
@@ -727,7 +728,7 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .menu-item.danger, .menu-item.danger .icon { color: var(--danger); }
 .menu-prints { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 2px 0; }
 .menu-prints label { margin: 0; color: var(--text-2); font-size: 13px; }
-.menu-prints input[type="number"] { width: 5rem; margin: 0; }
+.menu-prints input[type="number"] { width: 5rem; min-height: 2.75rem; margin: 0; }
 .menu-prints .btn { flex: 0 0 auto; }
 
 /* Print manually: the three fields side by side where there is room. */

@@ -101,7 +101,7 @@ def kpi_cards(t: Callable[[str], str], entries: list[workqueue.EntryRow], open_p
     held = sum(1 for e in entries if e.held)
     paused = len({e.article_id for e in entries if e.article_paused})
     cards = [
-        Kpi("clock", "warn", waiting, t("queue.kpi.waiting")),
+        Kpi("clock", "accent", waiting, t("queue.kpi.waiting")),
         Kpi("printer", "ok", open_prints, t("queue.kpi.in_bambuddy")),
     ]
     if held:
@@ -174,6 +174,7 @@ def _page(
         dispatch_tones=DISPATCH_TONES,
         articles=articles,
         manual=manual_values or dict(MANUAL_DEFAULTS),
+        max_prints=workqueue.MAX_PRINTS,  # the limit of the prints fields
         error=error,
         error_for=error_for,
         **_bambuddy_view(request, db, bambuddy_fresh),

@@ -54,7 +54,7 @@
           {% else %}
           {% call menu_form("/queue/" ~ e.id ~ "/hold") %}<button type="submit" class="menu-item">{{ ui.icon('pause') }}{{ t('queue.hold') }}</button>{% endcall %}
           {% endif %}
-          {% call menu_form("/queue/" ~ e.id ~ "/prints") %}<div class="menu-prints"><label for="prints-{{ e.id }}">{{ t('queue.field.prints') }}</label><input type="number" id="prints-{{ e.id }}" name="prints" value="{{ e.prints }}" min="1" max="1000" step="1" inputmode="numeric" required><button type="submit" class="btn secondary">{{ t('queue.save_prints') }}</button></div>{% endcall %}
+          {% call menu_form("/queue/" ~ e.id ~ "/prints") %}<div class="menu-prints"><label for="prints-{{ e.id }}">{{ t('queue.field.prints') }}</label><input type="number" id="prints-{{ e.id }}" name="prints" value="{{ e.prints }}" min="1" max="{{ max_prints }}" step="1" inputmode="numeric" required><button type="submit" class="btn secondary">{{ t('queue.save_prints') }}</button></div>{% endcall %}
           {% call menu_form("/queue/" ~ e.id ~ "/delete") %}<button type="submit" class="menu-item danger">{{ ui.icon('trash-2') }}{{ t('queue.delete') }}</button>{% endcall %}
         </div>
       </details>
@@ -86,7 +86,7 @@
       </select>
     </label>
     <label>{{ t('queue.field.prints') }}
-      <input type="number" name="prints" value="{{ manual.prints }}" min="1" max="1000" step="1" inputmode="numeric" required>
+      <input type="number" name="prints" value="{{ manual.prints }}" min="1" max="{{ max_prints }}" step="1" inputmode="numeric" required>
     </label>
     <label>{{ t('queue.field.where') }}
       <select name="where">
