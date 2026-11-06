@@ -480,5 +480,10 @@
   "settings.bambuddy_key_hint": "Schlüssel des Bambuddy-Kontos, mit dem Reprintbuddy arbeitet",
   "settings.password_repeat_hint": "Das neue Passwort noch einmal eingeben",
   "settings.tls_cert_hint": "Text einfügen oder Datei wählen",
-  "settings.tls_key_hint": "Text einfügen oder Datei wählen; er wird nie wieder angezeigt"
+  "settings.tls_key_hint": "Text einfügen oder Datei wählen; er wird nie wieder angezeigt",
+  "overview.subtitle": "Bestand und Nachdrucke auf einen Blick",
+  "bookings.subtitle": "Inventur, Eingang und Verkauf ohne Bestellung buchen",
+  "journal.subtitle": "Jede Änderung am Bestand, mit Zeit und Herkunft",
+  "articles.edit_subtitle": "Mindestbestand, Ziel und Automatik dieses Artikels",
+  "articles.new_subtitle": "Neuen Artikel aus einer Druckdatei in Bambuddy anlegen"
 }

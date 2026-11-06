@@ -2,9 +2,8 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{% if product_set %}{{ t('sets.edit') }}{% else %}{{ t('sets.new') }}{% endif %}{% endblock %}
 {% block content %}
-{% call ui.page_head("boxes", product_set.name if product_set else t('sets.new'), t('sets.form_subtitle')) %}
-{% if product_set and product_set.archived_at %}{{ ui.badge('set', 'archived') }}{% endif %}
-{% endcall %}
+{% set sub %}{{ t('sets.form_subtitle') }}{% if product_set and product_set.archived_at %} · {{ ui.badge('set', 'archived') }}{% endif %}{% endset %}
+{% call ui.page_head("boxes", product_set.name if product_set else t('sets.new'), sub) %}{% endcall %}
 <div class="toolbar">
   <div class="toolbar-actions">
     <a class="btn secondary" href="/sets">{{ ui.icon('boxes') }}{{ t('sets.title') }}</a>

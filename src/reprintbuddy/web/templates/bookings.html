@@ -15,7 +15,7 @@
     {% for part in parts %}<option value="{{ part.id }}"{% if selected == part.id|string %} selected{% endif %}>{{ part.name }}</option>{% endfor %}
   </select>
 {% endmacro %}
-{% call ui.page_head("arrow-left-right", t('bookings.title')) %}{% endcall %}
+{% call ui.page_head("arrow-left-right", t('bookings.title'), t('bookings.subtitle')) %}{% endcall %}
 <div class="forms-grid">
 
 {% call ui.region("inventory", "article part") %}

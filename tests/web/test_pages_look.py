@@ -177,3 +177,60 @@ def test_bare_pages_keep_logo_and_no_menu(tmp_path, ready_client):
         assert "sidebar-nav" not in page.text, name
         assert "brand-mark-large" in page.text, name
         assert "page-head" not in page.text, name  # the logo is the head of these pages
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/", "/articles", "/articles/{article}", "/articles/{article}/edit", "/sets", "/parts",
+        "/orders", "/orders/{order}", "/orders/new", "/bookings", "/journal", "/settings", "/nosuch",
+    ],
+)
+def test_every_page_with_the_menu_has_a_subtitle(ready_client, ids, path):
+    page = ready_client.get(path.format(**ids)).text
+    assert "sidebar-nav" in page, path
+    assert page.count('class="page-sub"') == 1, path
+
+
+def test_new_subtitles_use_their_keys(ready_client, ids):
+    from reprintbuddy.web.i18n import translate
+
+    for path, key in [("/", "overview.subtitle"), ("/bookings", "bookings.subtitle"),
+                      ("/journal", "journal.subtitle"), ("/articles/{article}/edit", "articles.edit_subtitle")]:
+        page = ready_client.get(path.format(**ids)).text
+        assert f'<p class="page-sub">{translate("en", key)}</p>' in page, path
+
+
+def test_error_page_message_is_the_subtitle(ready_client):
+    page = ready_client.get("/nosuch").text
+    assert re.search(r'<p class="page-sub">[^<]+</p>', page)
+    assert 'class="summary"' not in page
+
+
+def test_archived_badge_of_part_and_set_forms_sits_in_the_subtitle(ready_client):
+    from factories import make_set
+    from reprintbuddy.models import utcnow
+
+    with sm_of(ready_client).begin() as s:
+        a = make_article(s, name="Template A").id
+        part = make_part(s, name="Insert M4", archived_at=utcnow()).id
+        pset = make_set(s, "Set A", [(1, [a])])
+        pset.archived_at = utcnow()
+        set_id = pset.id
+    for path in (f"/parts/{part}/edit", f"/sets/{set_id}/edit"):
+        page = ready_client.get(path).text
+        assert re.search(r'<p class="page-sub">[^<]*<span class="badge[^>]*>[^<]*</span></p>', page), path
+        assert 'class="page-actions"' not in page, path
+
+
+def test_no_template_uses_the_old_summary():
+    for p in sorted(TEMPLATES_DIR.rglob("*.html")):
+        text = p.read_text(encoding="utf-8")
+        assert "ui.summary" not in text and 'class="summary"' not in text, p.name
+
+
+def test_article_detail_head_has_edit_as_main_button(ready_client, ids):
+    page = ready_client.get(f"/articles/{ids['article']}").text
+    head = page.split("</header>")[0]
+    assert re.search(r'<div class="page-actions"><a class="btn" href="/articles/\d+/edit">.*?#pencil', head, re.S)
+    assert "article:" in page and 'data-live-region="head"' in page

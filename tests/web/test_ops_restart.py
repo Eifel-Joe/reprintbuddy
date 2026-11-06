@@ -72,10 +72,11 @@ def test_settings_shows_running_and_pending(ops_env):
 
 
 def test_unknown_ops_message_ignored(ops_env):
-    response = ops_env.client.get("/settings?ops=foo")
-    assert response.status_code == 200
-    assert "ops.msg" not in response.text
-    assert "Restart failed" not in response.text
+    for url in ("/settings?ops=foo", "/settings?tab=maintenance&ops=foo", "/settings?tab=general&ops=foo"):
+        response = ops_env.client.get(url)
+        assert response.status_code == 200
+        assert "ops.msg" not in response.text
+        assert "Restart failed" not in response.text
 
 
 def test_ops_messages_have_texts():
