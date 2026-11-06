@@ -60,3 +60,14 @@ def set_available(positions: Sequence[PositionStock]) -> int:
 def order_ready(needed: Mapping[int, int], stock: Mapping[int, int]) -> bool:
     """An order can ship when every article is in stock in the needed quantity (Spec 6.7)."""
     return all(stock.get(article_id, 0) >= qty for article_id, qty in needed.items())
+
+
+def coverage(
+    available: int,
+    queued_units: int,
+    in_progress_units: int,
+    provisional: int,
+    awaiting_assembly: int,
+) -> int:
+    """Deckung = Verfügbar + eingereiht + in Arbeit + vorläufig + wartet auf Montage (Spec 7.1)."""
+    return available + queued_units + in_progress_units + provisional + awaiting_assembly

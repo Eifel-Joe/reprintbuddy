@@ -1,6 +1,7 @@
 from reprintbuddy.domain.rules import (
     PositionStock,
     available,
+    coverage,
     order_ready,
     set_available,
     target_quantity,
@@ -50,3 +51,8 @@ def test_set_same_article_in_two_fixed_positions_adds_up():  # Spec 5.4 "gleichz
     assert set_available([PositionStock(2, (7,), (7,)), PositionStock(1, (7,), (7,))]) == 2  # 7 // 3
     assert set_available([PositionStock(1, (3,), (7,)), PositionStock(1, (9,), (8,))]) == 3  # different articles
     assert set_available([PositionStock(1, (-1,), (7,)), PositionStock(1, (-1,), (7,))]) == -1
+
+
+def test_coverage_sum():  # Spec 7.1
+    assert coverage(3, 2, 1, 1, 1) == 8
+    assert coverage(-2, 0, 0, 0, 0) == -2
