@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.convertors import Convertor, register_url_convertor
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, Response
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
@@ -19,7 +23,9 @@ from reprintbuddy import settings as st
 from reprintbuddy.changes import install_change_feed
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.domain import status
+from reprintbuddy.domain.engine import Engine
 from reprintbuddy.ops.context import OpsContext
+from reprintbuddy.ops.running import update_running
 from reprintbuddy.web import deps
 from reprintbuddy.web.flash import pop_flashes
 from reprintbuddy.web.formatting import fill_percent, local_date, local_dt
@@ -66,12 +72,58 @@ class BoundedInt(Convertor[int]):
 register_url_convertor("int", BoundedInt())
 SESSION_COOKIE = "reprintbuddy_session"
 
+# Plan B4 decision 13: after every successful write the engine ticks once (rule 7.1 and
+# hand-over), so every booking of B3, B5 and B6 is covered without touching its route.
+WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+# Signing in and out, the first-run setup and the operations of the server itself change
+# no stock and no queue.
+TICK_EXEMPT_PREFIXES = ("/login", "/logout", "/setup", "/settings/restart", "/settings/update")
+
+
+async def tick_after_write(request: Request, call_next) -> Response:
+    """Ask the tick engine for a tick after a write that was not refused (status < 400).
+
+    A form answered with 200 and a message (a refused booking) asks too: the tick then
+    finds nothing to do. It only wakes the background loop; the answer does not wait.
+    """
+    response = await call_next(request)
+    if (
+        request.method in WRITE_METHODS
+        and response.status_code < 400
+        and not request.url.path.startswith(TICK_EXEMPT_PREFIXES)
+    ):
+        request.app.state.ticker.request_tick()
+    return response
+
+
+def _poll_seconds(app: FastAPI) -> float:
+    """The poll interval, read from the settings at every regular tick (Spec 7.6)."""
+    with app.state.sessionmaker() as session:
+        return 60.0 * int(st.get_setting(session, "poll_minutes"))
+
+
+@contextlib.asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Run the tick engine in the background while the app serves (`run_engine`)."""
+    task: asyncio.Task[None] | None = None
+    if app.state.run_engine:
+        task = asyncio.create_task(app.state.ticker.run(lambda: _poll_seconds(app)), name="ticker")
+    app.state.ticker_task = task
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
 
 def create_app(
     db_path: Path,
     http_client_factory: Callable[[], httpx.AsyncClient] | None = None,
     *,
     ops: OpsContext | None = None,
+    run_engine: bool = True,
 ) -> FastAPI:
     engine = make_engine(db_path)
     upgrade(engine)
@@ -84,8 +136,10 @@ def create_app(
         https = st.tls_enabled(session)
 
     # No interactive API docs: this is a browser application, not a public API.
-    app = FastAPI(title="Reprintbuddy", docs_url=None, redoc_url=None, openapi_url=None)
-    app.state.engine = engine
+    app = FastAPI(
+        title="Reprintbuddy", docs_url=None, redoc_url=None, openapi_url=None, lifespan=_lifespan
+    )
+    app.state.engine = engine  # the SQLAlchemy engine; the tick engine is `ticker`
     app.state.db_path = db_path
     app.state.ops = ops or OpsContext()
     app.state.sessionmaker = sessionmaker
@@ -98,6 +152,16 @@ def create_app(
     app.state.rights = RightsMonitor()  # what the stored key may do, checked once per start
     app.state.live = live
     app.state.version = __version__  # the live channel tells pages of another version to reload
+    # The tick engine (plan B4): the app's own sessionmaker, so the change feed reports its
+    # writes like any other; its runtime status goes to the pages as topic "bambuddy".
+    app.state.ticker = Engine(
+        sessionmaker,
+        lambda: deps.bambuddy_client(app),
+        update_running=lambda: update_running(db_path.parent, app.state.ops.runner, datetime.now(UTC)),
+        publish=live.publish,
+    )
+    app.state.run_engine = run_engine
+    app.state.ticker_task = None  # the background loop while the app runs (see _lifespan)
 
     # Templates and texts are read now and never again: an update replaces the files while this
     # process still answers, and it must go on rendering what it started with.
@@ -122,6 +186,8 @@ def create_app(
     # outer layer so the gate can read it.
     # Innermost: pauses writes while an update runs; the gate has already decided who may pass.
     app.middleware("http")(ops_routes.update_guard)
+    # Sees the final status of the route and of the update guard (503 asks for no tick).
+    app.middleware("http")(tick_after_write)
     app.middleware("http")(deps.gate)
     app.add_middleware(
         SessionMiddleware,

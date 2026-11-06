@@ -102,6 +102,8 @@ def api_routes(app):
 
 
 def make_client(db_path, **create_kwargs) -> TestClient:
+    # No background tick loop unless a test asks for it (`with client:` would start it).
+    create_kwargs.setdefault("run_engine", False)
     app = create_app(db_path, **create_kwargs)
     app.state.login_failure_delay = 0  # tests do not wait; some tests set these themselves
     app.state.login_brake.delay = 0
