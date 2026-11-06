@@ -175,13 +175,22 @@ def test_stale_filament_suggestion_shows_the_day(bb_client, fake_bambuddy):  # E
     assert "Example Brand PLA Black" in response.text and "2 × 1000 g" in response.text
 
 
-def test_suggestion_details_sit_in_the_form_row(bb_client):  # phone: nothing important off-screen
+def test_each_suggestion_is_a_tile_with_amount_supplier_link_and_form(bb_client, fake_bambuddy):
     add_part(bb_client)
+    add_filament(bb_client, fake_bambuddy)
     html = bb_client.get("/reorder").text
-    row = re.search(r'<tr class="slot-select">(.*?)</tr>', html, re.S).group(1)
-    assert "1 × 50 (50 pcs)" in row and "Example Supplier" in row
-    assert 'href="https://shop.example/insert-m4"' in row
-    assert "days" in html and "0.0 pcs/day" in html
+    assert "<table" not in html.split("On its way")[0]  # no wide table to scroll sideways
+    tiles = re.findall(r'<div class="tile">(.*?)</form>\s*</div>', html, re.S)
+    assert len(tiles) == 2
+    for tile, amount, url in zip(
+        sorted(tiles, key=lambda t: "Insert" not in t),
+        ("1 × 50 (50 pcs)", "2 × 1000 g"),
+        ("https://shop.example/insert-m4", "https://shop.example/pla-black"),
+    ):
+        assert amount in tile and "Example Supplier" in tile
+        assert f'href="{url}" target="_blank" rel="noopener noreferrer"' in tile
+        assert 'action="/reorder/mark"' in tile and 'name="form_token"' in tile
+        assert "days" in tile and "/day" in tile
 
 
 def test_part_receipt_closes_mark_without_bambuddy(bb_client, fake_bambuddy):  # ruling R7
