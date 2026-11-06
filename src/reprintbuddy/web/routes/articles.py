@@ -444,8 +444,7 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         status_code=status,
         active_nav="articles",
         article=article,
-        available=article.stock - article.reserved,
-        target=article.min_stock + article.buffer,
+        row=catalog.article_row(article),  # numbers and state, the same as in the list
         target_label=_target_label(lang, article),
         filaments=[_requirement_row(FilamentRequirement(f.slot, f.grams, f.material, f.color_hex)) for f in filaments],
         parts=parts,

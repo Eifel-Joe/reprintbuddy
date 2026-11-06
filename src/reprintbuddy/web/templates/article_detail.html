@@ -1,24 +1,38 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ article.name }}{% endblock %}
 {% block content %}
-<h1>{{ article.name }}{% if article.archived_at %} <span class="badge wait">{{ t('catalog.archived_badge') }}</span>{% endif %}</h1>
-{% if error %}<p class="alert" role="alert">{{ error }}{% if relink_offer %} <a href="/articles/{{ article.id }}/relink">{{ t('articles.choose_other_file') }}</a>{% endif %}</p>{% endif %}
-<p>
-  {% if not article.archived_at %}<a class="btn" href="/articles/{{ article.id }}/edit">{{ t('articles.edit') }}</a>{% endif %}
-  <a class="btn-link" href="/journal?article={{ article.id }}">{{ t('journal.title') }}</a>
-  <a class="btn-link" href="/articles">{{ t('articles.title') }}</a>
+{#- The head follows the article too: its state changes with every booking, like the numbers. -#}
+{% call ui.region("head", "article:" ~ article.id) %}
+{% call ui.page_head("package", article.name) %}
+<p class="summary">
+  {%- if article.sku %}{{ article.sku }} · {% endif -%}
+  {{ ui.badge('article', row.status) }}
+  {%- if row.paused %} · {{ ui.badge('article', 'paused') }}{% endif -%}
+  {%- if article.archived_at %} · {{ ui.badge('article', 'archived') }}{% endif -%}
 </p>
+{% endcall %}
+<div class="toolbar">
+  <div class="toolbar-actions">
+    {% if not article.archived_at %}<a class="btn" href="/articles/{{ article.id }}/edit">{{ ui.icon('settings') }}{{ t('articles.edit') }}</a>{% endif %}
+    <a class="btn secondary" href="/journal?article={{ article.id }}">{{ ui.icon('history') }}{{ t('journal.title') }}</a>
+    <a class="btn secondary" href="/articles">{{ ui.icon('package') }}{{ t('articles.title') }}</a>
+  </div>
+</div>
+{% endcall %}
+{% if error %}<p class="alert" role="alert">{{ error }}{% if relink_offer %} <a href="/articles/{{ article.id }}/relink">{{ t('articles.choose_other_file') }}</a>{% endif %}</p>{% endif %}
 
+{% call ui.region("main", "article:" ~ article.id ~ " part") %}
 <section class="card section wide">
   <div class="detail-head">
     {% if article.thumbnail %}<img class="thumb" src="/articles/{{ article.id }}/thumbnail" alt="">{% endif %}
     <div class="stats">
-      <div class="stat"><span class="stat-label">{{ t('articles.col.stock') }}</span><span class="stat-value">{{ article.stock }}</span></div>
-      <div class="stat"><span class="stat-label">{{ t('articles.col.reserved') }}</span><span class="stat-value">{{ article.reserved }}</span></div>
-      <div class="stat"><span class="stat-label">{{ t('articles.col.available') }}</span><span class="stat-value{% if available < 0 %} neg{% endif %}">{{ available }}</span></div>
-      <div class="stat"><span class="stat-label">{{ t('articles.col.provisional') }}</span><span class="stat-value">{{ article.provisional }}</span></div>
-      <div class="stat"><span class="stat-label">{{ t('articles.col.awaiting_assembly') }}</span><span class="stat-value">{{ article.awaiting_assembly }}</span></div>
-      <div class="stat"><span class="stat-label">{{ t('articles.target_quantity') }}</span><span class="stat-value">{{ target }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.col.stock') }}</span><span class="stat-value">{{ row.stock }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.col.reserved') }}</span><span class="stat-value">{{ row.reserved }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.col.available') }}</span><span class="stat-value{% if row.available < 0 %} neg{% endif %}">{{ row.available }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.col.provisional') }}</span><span class="stat-value">{{ row.provisional }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.col.awaiting_assembly') }}</span><span class="stat-value">{{ row.awaiting_assembly }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.target_quantity') }}</span><span class="stat-value">{{ row.target }}</span>{{ ui.bar(fill_percent(row.available, row.target), row.status) }}</div>
     </div>
   </div>
 </section>
@@ -81,8 +95,11 @@
   </form>
   {% endif %}
 </div>
+{% endcall %}
 
 <h2>{{ t('articles.recent_journal') }}</h2>
+{% call ui.region("journal", "journal") %}
 {% include "_journal_table.html" %}
+{% endcall %}
 <p><a class="btn-link" href="/journal?article={{ article.id }}">{{ t('articles.all_journal') }}</a></p>
 {% endblock %}

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ t('articles.choose_plate') }}{% endblock %}
 {% block content %}
-<h1>{{ file.filename }}</h1>
+{% call ui.page_head("package", file.filename) %}<p class="summary">{{ t('articles.choose_plate') }}</p>{% endcall %}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
-<p class="muted">{{ t('articles.choose_plate') }}</p>
 <div class="plate-grid">
   {% for plate in plates %}
   <div class="card plate">

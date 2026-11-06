@@ -475,6 +475,7 @@ a.tile:hover { border-color: var(--accent); }
 .badges { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; flex: 0 0 auto; }
 .tile-head .badges { flex-direction: column; align-items: flex-end; }
 td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
+.stat .bar { margin-top: 0.4rem; }
 
 /* Small picture in a row or a tile head; the placeholder keeps the size without a picture. */
 .thumb-sm, .thumb-placeholder {

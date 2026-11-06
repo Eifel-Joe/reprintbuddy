@@ -6,7 +6,7 @@ import pytest
 from starlette.requests import Request
 
 from conftest import csrf_of, form_token_of, sm_of
-from factories import make_part
+from factories import make_article, make_part
 from reprintbuddy import __version__
 from reprintbuddy.web import regions
 from reprintbuddy.web.app import TEMPLATES_DIR
@@ -169,12 +169,16 @@ def test_region_names_are_valid_and_unique_per_template():
 
 
 # Pages with regions, as the signed-in browser sees them. Add each page that gets regions.
-PAGES_WITH_REGIONS = ["/journal", "/articles"]
+# "{article}" stands for the id of an article the test creates first.
+PAGES_WITH_REGIONS = ["/journal", "/articles", "/articles/{article}", "/articles/{article}/edit"]
 _MARK = re.compile(r"<!--(/?)live:([^>]*?)-->")
 
 
 @pytest.mark.parametrize("path", PAGES_WITH_REGIONS)
 def test_rendered_regions_are_balanced_unnested_and_unique(ready_client, path):
+    if "{article}" in path:
+        with sm_of(ready_client).begin() as s:
+            path = path.format(article=make_article(s).id)
     page = ready_client.get(path)
     assert page.status_code == 200, path
     open_name, seen = None, []

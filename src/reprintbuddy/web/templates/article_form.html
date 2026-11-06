@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ t('articles.new') }}{% endblock %}
 {% block content %}
-<h1>{{ t('articles.new') }}</h1>
+{% call ui.page_head("package", t('articles.new')) %}{% endcall %}
 <section class="card section">
   <div class="plate-head">
     <img class="thumb" src="/articles/new/file/{{ file.id }}/plate/{{ plate.index }}/thumbnail" alt="">

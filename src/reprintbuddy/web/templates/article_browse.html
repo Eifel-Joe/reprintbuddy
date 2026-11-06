@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ t('articles.browse_title') }}{% endblock %}
 {% block content %}
-<h1>{{ t('articles.browse_title') }}</h1>
+{% call ui.page_head("package", t('articles.browse_title')) %}{% endcall %}
 {% if problem %}
 <p class="alert" role="alert">{{ t(problem) }}</p>
 <p><a class="btn-link" href="/articles">{{ t('articles.title') }}</a></p>
