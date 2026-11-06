@@ -14,7 +14,7 @@
   <h2>{{ row.name }}</h2>
   <p>{{ t('articles.col.awaiting_assembly') }}: <strong>{{ row.awaiting }}</strong></p>
   {% if row.parts %}
-  <h3>{{ t('nav.parts') }}</h3>
+  <h3>{{ t('articles.parts_title') }}</h3>
   <ul class="plain-list">
     {% for need in row.parts %}
     <li{% if need.stock < need.qty_per_unit * row.awaiting %} class="neg"{% endif %}>{{ need.name }}: {{ t('assembly.part_line', qty=need.qty_per_unit, stock=need.stock) }}</li>

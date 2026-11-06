@@ -1,5 +1,6 @@
 """Page "Montage" (Spec 8.3, 10.3): articles whose units wait for assembly, and the booking."""
 
+import html
 import re
 
 import pytest
@@ -17,7 +18,7 @@ def en(key, **params):
     return translate("en", key, **params)
 
 
-def waiting(client, awaiting=2, *, stock_=0, parts=((("Insert M4", 2, 5)),), name="Template A"):
+def waiting(client, awaiting=2, *, stock_=0, parts=(("Insert M4", 2, 5),), name="Template A"):
     """An article with `awaiting` units waiting for assembly; `parts` are (name, qty_per_unit, stock)."""
     with sm_of(client).begin() as s:
         a = make_article(s, name=name, stock=stock_)
@@ -65,6 +66,7 @@ def test_assembly_lists_parts(ready_client):
     waiting(ready_client, 2, parts=(("Insert M4", 2, 3), ("Hex key 2", 1, 9)))
     page = ready_client.get("/assembly").text
     assert "Template A" in page and en("articles.col.awaiting_assembly") in page
+    assert f"<h3>{en('articles.parts_title')}</h3>" in page
     assert en("assembly.part_line", qty=2, stock=3) in page
     # Insert M4: 3 < 2 * 2 -> red; Hex key 2: 9 >= 1 * 2 -> not red
     assert re.search(r'class="neg"[^>]*>[^<]*Insert M4', page)
@@ -105,7 +107,7 @@ def test_assemble_over_awaiting(ready_client):
 
 def test_assemble_unknown_article(ready_client):
     response, _ = post_unknown(ready_client)
-    assert response.status_code in (200, 404)
+    assert response.status_code == 200
     assert en("articles.not_found") in response.text
 
 
@@ -126,14 +128,19 @@ def test_assemble_double_submit(ready_client):  # Review Focus 1
     with sm_of(ready_client).begin() as s:
         kinds = [e.kind for e in s.scalars(select(JournalEntry))]
     assert kinds.count("assembly") == 1
+    assert en("form.duplicate") in ready_client.get("/assembly").text
 
 
 @pytest.mark.parametrize("qty", ["", "abc", "0", "9" * 20])
 def test_assemble_invalid_numbers(ready_client, qty):
     a = waiting(ready_client, 2)
     response, _ = post(ready_client, a, qty=qty)
-    assert response.status_code in (200, 422)
+    assert response.status_code == 200
     assert 'class="alert"' in response.text
+    field = en("bookings.field.qty")
+    expected = (en("form.required", field=field) if qty == ""
+                else en("form.invalid_number", field=field, min=1, max=stock.MAX_QTY))
+    assert html.escape(expected) in response.text
     assert number(ready_client, Article, a, "awaiting_assembly") == 2
 
 
@@ -142,5 +149,7 @@ def test_assembly_german(ready_client):
     with sm_of(ready_client).begin() as s:
         st.set_setting(s, "language", "de", commit=False)
     page = ready_client.get("/assembly").text
-    for text in ("Montage", "Wartet auf Montage", "Montiert buchen", "Zukaufteile"):
+    assert "<h1>Montage</h1>" in page
+    assert "<h3>Zukaufteile</h3>" in page
+    for text in ("Wartet auf Montage", "Montiert buchen"):
         assert text in page
