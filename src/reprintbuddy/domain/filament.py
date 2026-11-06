@@ -8,12 +8,13 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
+from reprintbuddy.bambuddy.client import BambuddyClient
 from reprintbuddy.bambuddy.types import Spool
 from reprintbuddy.domain import rules
 from reprintbuddy.domain.catalog import _int_in
@@ -304,3 +305,17 @@ def save_settings(session: Session, sort_id: int, data: FilamentSettingsInput) -
     row.pack_grams, row.min_order_packs, row.supplier, row.order_url = pack, packs, supplier, url
     session.flush()
     return row
+
+
+# ---- hook in the regular tick (Entscheidung 16) ----------------------------------------------
+
+
+async def poll_hook(client: BambuddyClient, sm: sessionmaker, now: datetime) -> None:
+    """Record the day's spool stock and close arrived marks; errors go to the engine."""
+    from reprintbuddy.domain import reorder  # reorder imports this module
+
+    spools = await client.list_spools()  # no transaction open during the network call
+    with sm.begin() as session:
+        sync_sorts(session, [s for s in spools if not s.archived])
+        record_snapshot(session, spools, now.date())
+        reorder.close_arrived_marks(session, spools, now)

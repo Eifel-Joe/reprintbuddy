@@ -535,5 +535,10 @@
   "nav.expand": "Menü ausklappen",
   "nav.menu": "Menü",
   "nav.version": "Version",
-  "list.col.actions": "Aktionen"
+  "list.col.actions": "Aktionen",
+  "reorder.already_marked": "Schon als bestellt markiert.",
+  "reorder.already_received": "Schon als eingetroffen markiert.",
+  "reorder.item_not_found": "Dieser Posten lässt sich nicht bestellen.",
+  "reorder.invalid_packs": "Gib eine Anzahl Bestelleinheiten von 1 bis 1000 ein.",
+  "reorder.mark_not_found": "Diese Bestellmarkierung gibt es nicht."
 }

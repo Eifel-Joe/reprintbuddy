@@ -535,5 +535,10 @@
   "nav.expand": "Unfold menu",
   "nav.menu": "Menu",
   "nav.version": "Version",
-  "list.col.actions": "Actions"
+  "list.col.actions": "Actions",
+  "reorder.already_marked": "Already marked as ordered.",
+  "reorder.already_received": "This was already marked as received.",
+  "reorder.item_not_found": "This item cannot be ordered.",
+  "reorder.invalid_packs": "Enter a number of order units from 1 to 1000.",
+  "reorder.mark_not_found": "This order mark does not exist."
 }
