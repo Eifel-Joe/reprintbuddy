@@ -52,6 +52,9 @@ class Printer:
     id: int
     name: str
     model: str
+    # False: Bambuddy's maintenance mode (`is_active: false`). Such a printer is only
+    # temporarily unavailable; it stays a known print target but is not offered anew.
+    active: bool = True
 
 
 # The states of a queue entry as Bambuddy names them (PrintQueueItemResponse.status).

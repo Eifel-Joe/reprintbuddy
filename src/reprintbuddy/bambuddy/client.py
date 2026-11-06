@@ -226,6 +226,10 @@ class HttpBambuddyClient:
         )
         return _parse.parse_requirements(data)
 
+    async def list_printers(self) -> list[Printer]:
+        """Every printer with a model; `active` is False for one in maintenance."""
+        return _parse.parse_printers(await self._get("/printers/"))
+
     async def get_queue_item(self, item_id: int) -> QueueItem | None:
         """`None`: the entry is gone (deleted, or removed with the history; Decision 3)."""
         data = await self._get(f"/queue/{item_id}", none_on_404=True)

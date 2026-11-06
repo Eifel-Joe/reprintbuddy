@@ -18,6 +18,7 @@ from reprintbuddy.bambuddy.types import (
     LibraryFile,
     LibraryFolder,
     Plate,
+    Printer,
     QueueItem,
 )
 
@@ -223,4 +224,24 @@ def parse_requirements(data: object) -> list[FilamentRequirement]:
                 color_hex=normalize_color(d.get("color")),
             )
         )
+    return out
+
+
+def parse_printers(data: object) -> list[Printer]:
+    """The printer list (`PrinterResponse`, Bambuddy `printers.py` `GET /printers/`).
+
+    Only id, name, model and `is_active` are kept; address and serial number are not read.
+    A printer without a model is left out: no "Any <model>" target exists for it. A printer
+    in maintenance (`is_active: false`) is kept with `active=False`.
+    """
+    out: list[Printer] = []
+    for entry in _list(data, "printer list"):
+        d = _object(entry, "printer")
+        printer_id = _req(d, "id", int)
+        model = _opt(d, "model", str)
+        name = _req(d, "name", str)
+        active = _opt(d, "is_active", bool)
+        if not model:
+            continue
+        out.append(Printer(printer_id, name, model, True if active is None else active))
     return out
