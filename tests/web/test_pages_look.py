@@ -39,11 +39,6 @@ def test_my_pages_have_one_page_head_with_their_icon(ready_client, path, icon):
     assert head_icon(page.text) == icon, path
 
 
-def later(task, value):
-    """A case for a page another task of the plan brings into the new look; it turns green
-    (XPASS, and so red through strict) once that task is merged, and the mark comes out then."""
-    return pytest.param(value, marks=pytest.mark.xfail(strict=True, reason=f"page of plan task {task}, green after merge"))
-
 
 @pytest.fixture
 def ids(ready_client):
@@ -68,18 +63,18 @@ def ids(ready_client):
         "/journal",
         "/settings",
         "/nosuch",
-        later(10, "/articles"),
-        later(11, "/articles/{article}"),
-        later(11, "/articles/{article}/edit"),
-        later(13, "/sets"),
-        later(13, "/sets/new"),
-        later(13, "/sets/{set}/edit"),
-        later(12, "/parts"),
-        later(12, "/parts/new"),
-        later(12, "/parts/{part}/edit"),
-        later(14, "/orders"),
-        later(14, "/orders/new"),
-        later(14, "/orders/{order}"),
+        "/articles",
+        "/articles/{article}",
+        "/articles/{article}/edit",
+        "/sets",
+        "/sets/new",
+        "/sets/{set}/edit",
+        "/parts",
+        "/parts/new",
+        "/parts/{part}/edit",
+        "/orders",
+        "/orders/new",
+        "/orders/{order}",
     ],
 )
 def test_every_app_page_has_one_page_head(ready_client, ids, path):
@@ -88,14 +83,9 @@ def test_every_app_page_has_one_page_head(ready_client, ids, path):
     assert_one_head(page.text, path)
 
 
-OLD_BADGES_LATER = {"article_detail.html": 11, "part_form.html": 12, "set_form.html": 13,
-                    "orders_list.html": 14, "order_detail.html": 14}
-
-
 @pytest.mark.parametrize(
     "name",
-    [later(OLD_BADGES_LATER[p.name], p.name) if p.name in OLD_BADGES_LATER else p.name
-     for p in sorted(TEMPLATES_DIR.rglob("*.html"))],
+    [p.name for p in sorted(TEMPLATES_DIR.rglob("*.html"))],
 )
 def test_no_template_uses_the_old_badges(name):
     text = (TEMPLATES_DIR / name).read_text(encoding="utf-8")
