@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from conftest import finish_admin_setup, make_client
 
+from reprintbuddy import __version__
 from reprintbuddy.web import app as web_app
 
 IMG = Path(web_app.__file__).parent / "static" / "img"
@@ -19,9 +20,9 @@ FILES = {
     "logo-512.png": "image/png",
 }
 
-SVG_LINK = '<link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">'
-PNG_LINK = '<link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png">'
-APPLE_LINK = '<link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">'
+SVG_LINK = f'<link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg?v={__version__}">'
+PNG_LINK = f'<link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32.png?v={__version__}">'
+APPLE_LINK = f'<link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png?v={__version__}">'
 
 
 @pytest.mark.parametrize("name,media_type", FILES.items())
@@ -78,14 +79,14 @@ def test_every_layout_links_the_icons(tmp_path, ready_client):
 
 def test_sidebar_has_the_symbol_and_the_two_colour_wordmark(ready_client):
     html = ready_client.get("/").text
-    assert '<img class="brand-mark" src="/static/img/logo.svg" alt="" width="30" height="30">' in html
+    assert f'<img class="brand-mark" src="/static/img/logo.svg?v={__version__}" alt="" width="30" height="30">' in html
     assert '<span class="brand-text"><span class="brand-reprint">Reprint</span><span class="brand-buddy">buddy</span></span>' in html
 
 
 def test_login_and_setup_show_the_big_mark(tmp_path, ready_client):
     ready_client.cookies.clear()
     for html in (ready_client.get("/login").text, make_client(tmp_path / "fresh.db").get("/setup").text):
-        assert 'class="brand-mark brand-mark-large" src="/static/img/logo.svg"' in html
+        assert f'class="brand-mark brand-mark-large" src="/static/img/logo.svg?v={__version__}"' in html
         assert '<span class="brand-reprint">Reprint</span><span class="brand-buddy">buddy</span>' in html
 
 

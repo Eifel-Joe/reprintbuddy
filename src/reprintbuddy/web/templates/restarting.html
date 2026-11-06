@@ -11,7 +11,7 @@
   <div id="restart-wait" data-health-url="/healthz" data-return-url="/settings">
     <p role="status">{{ t('ops.restart.in_progress') }}</p>
   </div>
-  <script src="/static/js/ops.js" defer></script>
+  <script src="/static/js/ops.js?v={{ app_version }}" defer></script>
   {% endif %}
 </section>
 {% endblock %}

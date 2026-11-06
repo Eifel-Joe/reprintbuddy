@@ -14,6 +14,7 @@ from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
+from reprintbuddy import __version__
 from reprintbuddy import settings as st
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.ops.context import OpsContext
@@ -86,6 +87,9 @@ def create_app(
     templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
     templates.env.globals["t"] = deps.t
     templates.env.globals["pop_flashes"] = pop_flashes
+    # In the address of every file under /static/: a new version is a new address, so the browser
+    # fetches the new style sheet instead of using the copy it kept from the old version.
+    templates.env.globals["app_version"] = __version__
     templates.env.filters["local_dt"] = local_dt
     templates.env.filters["local_date"] = local_date
     templates.env.globals["form_token"] = lambda: issue_form_token(secret)

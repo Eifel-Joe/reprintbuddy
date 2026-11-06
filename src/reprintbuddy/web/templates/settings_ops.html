@@ -35,7 +35,7 @@
   {% endif %}
   {% if ops.busy %}
   <div id="update-status" data-status-url="/settings/update/status" data-state="{{ ops.update.state }}" data-step="{{ ops.update.step }}"></div>
-  <script src="/static/js/ops.js" defer></script>
+  <script src="/static/js/ops.js?v={{ app_version }}" defer></script>
   {% else %}
   <form method="post" action="/settings/update/check">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
