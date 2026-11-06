@@ -39,6 +39,69 @@ def test_my_pages_have_one_page_head_with_their_icon(ready_client, path, icon):
     assert head_icon(page.text) == icon, path
 
 
+def later(task, value):
+    """A case for a page another task of the plan brings into the new look; it turns green
+    (XPASS, and so red through strict) once that task is merged, and the mark comes out then."""
+    return pytest.param(value, marks=pytest.mark.xfail(strict=True, reason=f"page of plan task {task}, green after merge"))
+
+
+@pytest.fixture
+def ids(ready_client):
+    """One of each thing that has a page of its own."""
+    from factories import make_order, make_set
+
+    with sm_of(ready_client).begin() as s:
+        article_id = make_article(s, name="Template A").id
+        return {
+            "article": article_id,
+            "part": make_part(s, name="Insert M4").id,
+            "set": make_set(s, "Set A", [(1, [article_id])]).id,
+            "order": make_order(s, reference="Order 1001").id,
+        }
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/",
+        "/bookings",
+        "/journal",
+        "/settings",
+        "/nosuch",
+        later(10, "/articles"),
+        later(11, "/articles/{article}"),
+        later(11, "/articles/{article}/edit"),
+        later(13, "/sets"),
+        later(13, "/sets/new"),
+        later(13, "/sets/{set}/edit"),
+        later(12, "/parts"),
+        later(12, "/parts/new"),
+        later(12, "/parts/{part}/edit"),
+        later(14, "/orders"),
+        later(14, "/orders/new"),
+        later(14, "/orders/{order}"),
+    ],
+)
+def test_every_app_page_has_one_page_head(ready_client, ids, path):
+    page = ready_client.get(path.format(**ids))
+    assert page.status_code == (404 if path == "/nosuch" else 200), path
+    assert_one_head(page.text, path)
+
+
+OLD_BADGES_LATER = {"article_detail.html": 11, "part_form.html": 12, "set_form.html": 13,
+                    "orders_list.html": 14, "order_detail.html": 14}
+
+
+@pytest.mark.parametrize(
+    "name",
+    [later(OLD_BADGES_LATER[p.name], p.name) if p.name in OLD_BADGES_LATER else p.name
+     for p in sorted(TEMPLATES_DIR.rglob("*.html"))],
+)
+def test_no_template_uses_the_old_badges(name):
+    text = (TEMPLATES_DIR / name).read_text(encoding="utf-8")
+    assert "badge ok" not in text and "badge wait" not in text, name
+
+
 def test_restart_page_has_one_page_head(ops_env):
     page = ops_env.client.post("/settings/restart", data={"csrf_token": csrf_of(ops_env.client, "/settings")})
     assert page.status_code == 200
@@ -52,6 +115,7 @@ def test_error_page_without_the_menu_has_the_head_too(admin_client):
     assert page.status_code == 403
     assert "sidebar-nav" not in page.text
     assert_one_head(page.text, "bare error")
+    assert head_icon(page.text) == "circle-alert"
 
 
 def test_booking_forms_are_regions(ready_client):
@@ -69,7 +133,6 @@ def test_booking_page_follows_the_journal(ready_client):
 
 
 def test_booking_region_brings_an_article_added_elsewhere(ready_client):
-    ready_client.get("/bookings")
     with sm_of(ready_client).begin() as s:
         make_article(s, name="Template Z")
         make_part(s, name="Insert Z")
@@ -80,28 +143,37 @@ def test_booking_region_brings_an_article_added_elsewhere(ready_client):
     assert "Insert Z" in receipt
 
 
-def test_failed_booking_page_has_no_region_source(ready_client):  # Review Focus 2
+@pytest.mark.parametrize(
+    ("form", "fields"),
+    [
+        ("inventory", {"field": "stock", "counted": "lots"}),
+        ("part-inventory", {"counted": "lots"}),
+        ("part-receipt", {"qty": "lots"}),
+        ("sale", {"qty": "lots"}),
+        ("stock-in", {"qty": "lots"}),  # "deduct parts" left unticked
+    ],
+)
+def test_failed_booking_page_has_no_region_source(ready_client, form, fields):  # Review Focus 2
     with sm_of(ready_client).begin() as s:
-        article_id = make_article(s, name="Template A").id
+        thing = {"article_id": make_article(s, name="Template A").id, "part_id": make_part(s, name="Insert M4").id}
     data = {
         "csrf_token": csrf_of(ready_client, "/bookings"),
-        "form_token": form_token_of(ready_client, "/bookings", "/bookings/inventory"),
-        "article_id": str(article_id),
-        "field": "stock",
-        "counted": "lots",
+        "form_token": form_token_of(ready_client, "/bookings", f"/bookings/{form}"),
+        ("part_id" if form.startswith("part") else "article_id"): str(
+            thing["part_id" if form.startswith("part") else "article_id"]),
         "note": "typed by hand",
+        **fields,
     }
-    page = ready_client.post("/bookings/inventory", data=data)
+    page = ready_client.post(f"/bookings/{form}", data=data)
     assert page.status_code == 200
     assert 'data-live-src=""' in page.text
-    assert 'value="typed by hand"' in page.text
-
-
-def test_my_templates_do_not_use_the_old_badges():
-    for name in ["bookings.html", "journal.html", "overview.html", "settings.html", "settings_ops.html",
-                 "error.html", "restarting.html", "_journal_table.html"]:
-        text = (TEMPLATES_DIR / name).read_text(encoding="utf-8")
-        assert "badge ok" not in text and "badge wait" not in text, name
+    card = regions.extract(page.text, [form])[form]  # the typed values and the error stay in their own card
+    assert 'value="typed by hand"' in card and 'value="lots"' in card
+    assert 'role="alert"' in card
+    others = page.text.replace(card, "")
+    assert "typed by hand" not in others and 'role="alert"' not in others
+    if form == "stock-in":
+        assert re.search(r'<input name="consume_parts" type="checkbox"\s*>', card)
 
 
 def test_bare_pages_keep_logo_and_no_menu(tmp_path, ready_client):
