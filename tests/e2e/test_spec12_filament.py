@@ -30,6 +30,30 @@ def settings_form(client, sort_id, safety):
     return client.post(f"/filament/{sort_id}", data=data, follow_redirects=False)
 
 
+def tiles(client):
+    html = client.get("/reorder").text
+    return re.findall(r'<div class="tile">(.*?)</form>\s*</div>', html, re.S)
+
+
+def no_tile(client):
+    return tiles(client) == []
+
+
+def only_tile(client, sort_id):
+    found = tiles(client)
+    assert len(found) == 1
+    tile = found[0]
+    assert 'name="item_type" value="filament"' in tile
+    assert f'name="item_id" value="{sort_id}"' in tile
+    return tile
+
+
+def stat(tile, caption):
+    found = re.search(rf"<span>{caption} <strong>([^<]*)</strong>", tile)
+    assert found, caption
+    return found.group(1)
+
+
 def test_spec12_step_9(bb_client, fake_bambuddy):
     fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black", remaining_g=800.0)
     fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black", remaining_g=300.0)
@@ -38,7 +62,9 @@ def test_spec12_step_9(bb_client, fake_bambuddy):
     # Save the mapping: the page preselects the one matching sort, the user takes it over.
     page = bb_client.get(f"/articles/{article_id}/filaments")
     assert page.status_code == 200
-    block = re.search(r'<select[^>]*name="slot_1"[^>]*>(.*?)</select>', page.text, re.S).group(1)
+    found = re.search(r'<select[^>]*name="slot_1"[^>]*>(.*?)</select>', page.text, re.S)
+    assert found, "no slot_1 select on the mapping page"
+    block = found.group(1)
     selected = re.findall(r'<option value="(\d+)" selected>([^<]*)</option>', block)
     assert len(selected) == 1 and selected[0][1] == "Example Brand PLA Black"
     sort_id = int(selected[0][0])
@@ -53,15 +79,21 @@ def test_spec12_step_9(bb_client, fake_bambuddy):
 
     # Pack 1000 g, minimum order 1, lead time 0, cushion 0 g: 1100 - 42.5 >= 0, no filament suggestion.
     assert settings_form(bb_client, sort_id, 0).status_code == 303
-    html = bb_client.get("/reorder").text
-    # (the sort's name may still appear in the "settings saved" notice, so look for the tile itself)
-    assert 'action="/reorder/mark"' not in html and "× 1000 g" not in html and "Nothing to order" in html
+    assert no_tile(bb_client)
 
-    # Cushion 2000 g: ceil((2000 + 42.5 - 1100) / 1000) = 1 pack.
+    # Cushion 2000 g: ceil((2000 + 42.5 - 1100) / 1000) = 1 pack; the tile shows stock, demand, cushion.
     assert settings_form(bb_client, sort_id, 2000).status_code == 303
-    html = bb_client.get("/reorder").text
-    assert "Example Brand PLA Black" in html and "1 × 1000 g" in html
-    assert html.count('action="/reorder/mark"') == 1
+    tile = only_tile(bb_client, sort_id)
+    assert stat(tile, "Stock") == "1100 g"
+    assert stat(tile, "Demand") == "42 g"  # 42.5 g shown with :.0f; the next steps pin the exact value
+    assert stat(tile, "Safety cushion") == "2000 g"
+    assert "Suggestion: 1 × 1000 g" in tile
+
+    # The demand is exactly 42.5 g: 1100 - 42.5 = 1057.5 >= 1057, but < 1058.
+    assert settings_form(bb_client, sort_id, 1057).status_code == 303
+    assert no_tile(bb_client)
+    assert settings_form(bb_client, sort_id, 1058).status_code == 303
+    assert "Suggestion: 1 × 1000 g" in only_tile(bb_client, sort_id)
 
 
 # The ticker is built by hand here; it becomes `client.app.state.ticker` once the engine is wired in.
@@ -70,13 +102,14 @@ def test_daily_record_through_ticker(bb_client, fake_bambuddy):
     fake_bambuddy.add_spool("PETG", color_hex="#FFFFFF", color_name="White")
     engine = Engine(sm_of(bb_client), lambda: fake_bambuddy)
     engine.add_poll_hook("filament", filament.poll_hook)
+    today = utcnow().date()
 
     run_tick(engine, poll=True)
 
     assert "filament" not in engine.status.hook_errors
     with sm_of(bb_client)() as s:
         assert s.query(FilamentSort).count() == 2
-        assert s.query(FilamentSnapshot).filter_by(day=utcnow().date()).count() == 2
+        assert s.query(FilamentSnapshot).filter_by(day=today).count() == 2
 
 
 def test_all_b6_get_pages_without_bambuddy(ready_client):
