@@ -158,8 +158,12 @@ def _add_rights_notice(request: Request, context: dict[str, object]) -> None:
     after a successful "Check again" in the dialog the same dialog in green (Spec 11.3, p31)."""
     notice = request.app.state.rights.notice
     context["rights_notice"] = notice
-    # The green dialog stays until "Continue". A right that goes missing again outranks it.
-    context["rights_success"] = notice is None and bool(request.session.get(RIGHTS_SUCCESS_KEY))
+    # The green dialog stays until "Continue", but only while this process has really found every
+    # right: the flag lives in the cookie and outlasts a restart, after which nothing may be claimed
+    # until Bambuddy has answered (Spec 11.3). A right that goes missing again outranks it.
+    context["rights_success"] = request.app.state.rights.status == "ok" and bool(
+        request.session.get(RIGHTS_SUCCESS_KEY)
+    )
     if notice is None:
         context["rights_later"] = False
         if context["rights_success"]:
@@ -187,6 +191,8 @@ def take_verdict(request: Request, check: ConnectionCheck) -> None:
     """A check was made with the stored key (settings, setup, "Check again"): the monitor takes
     the verdict. A key that has every right also ends a "Later"."""
     request.app.state.rights.record(check)
+    # A new verdict ends a green dialog left open earlier; "Check again" in the dialog sets it anew.
+    request.session.pop(RIGHTS_SUCCESS_KEY, None)
     if check.ok:
         request.session.pop(RIGHTS_LATER_KEY, None)
 

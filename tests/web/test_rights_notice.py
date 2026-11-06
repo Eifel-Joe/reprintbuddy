@@ -253,7 +253,7 @@ def _rights_listed(dialog):
     return {re.search(r"<code>([^<]+)</code>", body).group(1): state for state, body in items}
 
 
-def test_recheck_after_fix_clears_notice(missing_client, respx_mock):
+def test_recheck_after_fix_turns_the_dialog_green(missing_client, respx_mock):
     """p31: a successful check from the dialog keeps it open, now green, instead of closing it."""
     assert "rights-dialog" in missing_client.get("/").text
     _everything_granted(respx_mock)  # the person added the right in Bambuddy
@@ -277,7 +277,8 @@ def test_recheck_success_keeps_the_dialog_with_every_right_ticked(missing_client
     _recheck_from_the_dialog(missing_client)
     page = missing_client.get("/articles?q=x").text
     dialog = _dialog(page)
-    assert 'role="alertdialog"' in dialog
+    # Good news, not an alert: a screen reader announces it as a plain dialog.
+    assert 'role="dialog"' in dialog and "alertdialog" not in dialog
     assert _rights_listed(dialog) == {code: "ok" for code in REQUIRED}
     assert "perm bad" not in page
     assert dialog.count('aria-label="granted"') == len(REQUIRED)
@@ -320,6 +321,63 @@ def test_continue_closes_the_success_dialog(missing_client, respx_mock):
         page = missing_client.get(path).text
         assert "rights-dialog" not in page and "rights-banner" not in page, path
         assert ALL_THERE not in page, path
+
+
+@pytest.fixture
+def green_left_open(missing_client, respx_mock):
+    """The green dialog is shown, and the person closes the tab without "Continue"."""
+    assert "rights-dialog" in missing_client.get("/").text
+    _everything_granted(respx_mock)
+    _recheck_from_the_dialog(missing_client)
+    assert "Bambuddy rights complete" in missing_client.get("/").text
+    return missing_client
+
+
+def _restart(client):
+    """A new process (an update, say): the rights are unknown again; the session cookie stays."""
+    from reprintbuddy.web.rights import RightsMonitor
+
+    client.app.state.rights = RightsMonitor()
+
+
+def test_a_right_missing_again_outranks_the_green_dialog(green_left_open):
+    _other_right_goes_missing(green_left_open)
+    page = green_left_open.get("/").text
+    assert "Bambuddy right missing" in page and "Bambuddy rights complete" not in page
+    assert "rights-ok" not in page
+
+
+def test_green_dialog_left_open_claims_nothing_after_a_restart_with_bambuddy_down(green_left_open, respx_mock):
+    """Spec 11.3: while Bambuddy cannot be reached after a start, nothing is shown."""
+    _restart(green_left_open)
+    respx_mock.get(ME).mock(side_effect=httpx.ConnectError("down"))
+    page = green_left_open.get("/").text
+    assert "rights-dialog" not in page and ALL_THERE not in page
+
+
+def test_green_dialog_left_open_does_not_come_back_from_the_banner(green_left_open, respx_mock):
+    """After a restart with a right missing, "Later", then "Check again" in the warning line: a message, no dialog."""
+    _restart(green_left_open)
+    mock_auth_me(respx_mock, permissions=WITHOUT_INVENTORY)
+    assert "Bambuddy right missing" in green_left_open.get("/").text
+    _post(green_left_open, LATER, next="/")
+    _everything_granted(respx_mock)
+    _post(green_left_open, RECHECK, next="/")  # from the warning line: no `from`
+    page = green_left_open.get("/").text
+    assert "rights-dialog" not in page and page.count(ALL_THERE) == 1
+
+
+def test_green_dialog_left_open_does_not_cover_the_settings_after_a_save(green_left_open, respx_mock):
+    _restart(green_left_open)
+    mock_auth_me(respx_mock, permissions=WITHOUT_INVENTORY)
+    assert "Bambuddy right missing" in green_left_open.get("/").text
+    _everything_granted(respx_mock)
+    token = csrf_of(green_left_open, "/settings")
+    saved = green_left_open.post(
+        "/settings/bambuddy", data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": "bb_newkey123"}
+    )
+    assert saved.status_code == 303
+    assert "rights-dialog" not in green_left_open.get("/settings").text
 
 
 def test_recheck_from_the_banner_shows_no_dialog(missing_client, respx_mock):

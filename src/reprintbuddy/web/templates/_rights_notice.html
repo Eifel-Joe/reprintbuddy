@@ -3,7 +3,7 @@
    Needs `rights_notice` (ConnectionCheck) or `rights_success`, `rights_next`, `flashes` and the
    permission context. #}
 <div class="rights-overlay{% if rights_success %} rights-ok{% endif %}">
-  <div class="rights-dialog" role="alertdialog" aria-modal="true" aria-labelledby="rights-title" aria-describedby="rights-intro">
+  <div class="rights-dialog" role="{{ 'dialog' if rights_success else 'alertdialog' }}" aria-modal="true" aria-labelledby="rights-title" aria-describedby="rights-intro">
     {% if rights_success %}
     <h2 id="rights-title">{{ t('rights.ok_title') }}</h2>
     {% for message in flashes %}{% include "_flash_message.html" %}{% endfor %}
