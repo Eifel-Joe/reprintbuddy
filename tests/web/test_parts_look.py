@@ -196,3 +196,9 @@ def test_new_part_form_has_no_region(ready_client):
     page = ready_client.get("/parts/new").text
     assert 'class="page-head"' in page
     assert "data-live-region" not in page and "data-live-watch" not in page
+
+
+def test_part_badge_sits_in_the_badges_wrapper_like_the_articles(ready_client):
+    add(ready_client, stock=5, min_stock=5)
+    listing = list_of(ready_client.get("/parts").text)
+    assert listing.count('<span class="badges"><span class="badge tone-ok">enough</span></span>') == 2

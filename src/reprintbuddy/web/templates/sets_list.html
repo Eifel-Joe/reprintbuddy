@@ -4,7 +4,7 @@
 {% block content %}
 {#- The state badge; in the archive "archived" instead. -#}
 {% macro badge(row) -%}
-{{ ui.badge('set', 'archived' if archived else row.status) }}
+<span class="badges">{{ ui.badge('set', 'archived' if archived else row.status) }}</span>
 {%- endmacro %}
 {#- One position: "2 × Template A" or, with a choice, "2 × (Template B | Template C)". -#}
 {% macro position_text(position) -%}
@@ -47,11 +47,11 @@
     <tbody>
     {% for row in rows %}
       <tr>
-        <td><a href="/sets/{{ row.id }}/edit">{{ row.name }}</a></td>
+        <td class="name"><a href="/sets/{{ row.id }}/edit">{{ row.name }}</a></td>
         <td>{{ row.sku or '' }}</td>
         <td>{{ badge(row) }}</td>
         <td class="num{% if row.available < 0 %} neg{% endif %}">{{ row.available }}</td>
-        <td>
+        <td class="positions">
           {% for position in row.positions %}{{ position_text(position) }}{% if not loop.last %}<br>{% endif %}
           {% endfor %}
         </td>

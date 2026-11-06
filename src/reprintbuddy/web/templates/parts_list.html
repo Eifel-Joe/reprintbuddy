@@ -4,7 +4,7 @@
 {% block content %}
 {#- The state badge; in the archive "archived" instead. -#}
 {% macro badge(item) -%}
-{{ ui.badge('part', 'archived' if archived else item.status) }}
+<span class="badges">{{ ui.badge('part', 'archived' if archived else item.status) }}</span>
 {%- endmacro %}
 {#- Fill bar towards the minimum stock; grey in the archive. -#}
 {% macro min_bar(item) -%}
@@ -50,7 +50,7 @@
     {% for item in items %}
     {% set part = item.part %}
       <tr>
-        <td><a href="/parts/{{ part.id }}/edit">{{ part.name }}</a></td>
+        <td class="name"><a href="/parts/{{ part.id }}/edit">{{ part.name }}</a></td>
         <td>{{ badge(item) }}</td>
         <td class="num">{{ part.stock }} {{ part.unit }}</td>
         <td class="num target">{{ part.min_stock }}{{ min_bar(item) }}</td>

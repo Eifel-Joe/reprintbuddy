@@ -5,7 +5,7 @@ import re
 
 import pytest
 from conftest import csrf_of, sm_of
-from factories import make_article, make_set
+from factories import make_article, make_part, make_set
 
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog, stock
@@ -169,3 +169,37 @@ def test_more_rows_page_has_no_region_source(ready_client):
     response = ready_client.post("/sets/new", data=data)
     assert response.status_code == 200
     assert 'data-live-src=""' in response.text and 'value="Typed Set"' in response.text
+
+
+_MARK = re.compile(r"<!--(/?)live:([^>]*?)-->")
+
+
+def test_edit_pages_have_one_balanced_form_region(ready_client):
+    """The edit pages need an id, so the shared structure test in test_regions.py cannot reach them."""
+    set_id, _ = set_with(ready_client, "Starter Set", stock=1)
+    with sm_of(ready_client).begin() as s:
+        part_id = make_part(s).id
+    for path in (f"/sets/{set_id}/edit", f"/parts/{part_id}/edit"):
+        marks = _MARK.findall(ready_client.get(path).text)
+        assert marks == [("", "form"), ("/", "form")], (path, marks)
+
+
+def test_failed_set_edit_has_no_region_source(ready_client):
+    set_id, article_id = set_with(ready_client, "Starter Set", stock=1)
+    data = {"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Typed Name", "sku": "",
+            "rows": "5"}  # no position: invalid
+    response = ready_client.post(f"/sets/{set_id}/edit", data=data)
+    assert response.status_code == 200 and "A set needs at least one position." in response.text
+    assert 'data-live-src=""' in response.text and 'value="Typed Name"' in response.text
+
+
+def test_negative_available_is_red_in_the_tile(ready_client):
+    set_with(ready_client, "Starter Set", stock=0, reserved=1)
+    tile = re.search(r'<a class="tile".*?</a>', list_of(ready_client.get("/sets").text), re.S).group(0)
+    assert '<strong class="neg">-1</strong>' in tile
+
+
+def test_set_badge_sits_in_the_badges_wrapper_like_the_articles(ready_client):
+    set_with(ready_client, "Starter Set", stock=1)
+    listing = list_of(ready_client.get("/sets").text)
+    assert listing.count('<span class="badges"><span class="badge tone-ok">deliverable</span></span>') == 2
