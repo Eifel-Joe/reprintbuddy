@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% block title %}{{ t('queue.title') }}{% endblock %}
+{% block content %}
+{#- Small picture of the article; the placeholder keeps the size without one. -#}
+{% macro thumb(article_id) -%}
+{% if article_id in thumbs %}<img class="thumb-sm" src="/articles/{{ article_id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb-placeholder">{{ ui.icon('package') }}</span>{% endif %}
+{%- endmacro %}
+{#- A POST form of the row menu: both tokens (`token` false for moving, which can be repeated). -#}
+{% macro menu_form(action, token=True) -%}
+<form method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% if token %}<input type="hidden" name="form_token" value="{{ form_token() }}">{% endif %}{{ caller() }}</form>
+{%- endmacro %}
+
+{% call ui.page_head("list-ordered", t('queue.title'), t('queue.sub')) %}<a class="btn" href="#manual">{{ ui.icon('plus') }}{{ t('queue.manual') }}</a>{% endcall %}
+{% if error and error_for != 'manual' %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+
+{% call ui.region("summary", "queue article bambuddy") %}{{ ui.kpi_row(cards) }}{% endcall %}
+
+{% call ui.region("warnings", "bambuddy queue article settings") %}{% include "_warnings.html" %}{% endcall %}
+
+{# What the drag script says when a move was refused (the server's text); outside the regions,
+   so a fresh region does not take it away. #}
+<p id="queue-drag-message" class="alert" role="alert" hidden></p>
+
+{# Reprintbuddy's queue (Spec 7.2, Design 5): the grip drags (queue-drag.js), the menu of a row
+   is a set of plain forms and works without JavaScript. #}
+{% call ui.region("entries", "queue article") %}
+<section class="queue-section" id="entries">
+  <div class="section-head"><h2>{{ ui.icon('list-ordered') }}{{ t('queue.own_title') }}</h2>{% if entries|length > 1 %}<span class="section-hint">{{ t('queue.own_hint') }}</span>{% endif %}</div>
+  {% if entries %}
+  <ol class="queue-list" data-csrf="{{ csrf_token }}">
+    {% for e in entries %}
+    {% set origin_key = 'queue.origin.' ~ e.origin %}
+    {% set reason = pause_reasons.get(e.article_id) %}
+    <li class="queue-row{% if e.held %} is-held{% endif %}{% if e.article_paused %} is-paused{% endif %}" data-entry-id="{{ e.id }}" data-move-url="/queue/{{ e.id }}/move">
+      <button type="button" class="drag-handle icon-btn" aria-label="{{ t('queue.drag') }}" title="{{ t('queue.drag') }}">{{ ui.icon('grip-vertical') }}</button>
+      <span class="queue-pos">{{ loop.index }}</span>
+      {{ thumb(e.article_id) }}
+      <div class="queue-body">
+        <a class="queue-name" href="/articles/{{ e.article_id }}">{{ e.article_name }}</a>
+        <div class="queue-meta"><span>{{ tc('queue.prints', e.prints) }}</span><span>{{ t(origin_key) }}</span><span>{{ t('queue.created_at', at=e.created_at|local_dt) }}</span></div>
+        <span class="badges">
+          {%- if e.held %}<span class="badge tone-warn badge-held">{{ t('queue.state.held') }}</span>{% elif not e.article_paused %}<span class="badge tone-ok">{{ t('queue.state.waiting') }}</span>{% endif %}
+          {%- if e.article_paused %}{% set reason_key = 'pause.reason.' ~ reason %}<span class="badge tone-neutral"{% if reason %} title="{{ t(reason_key) }}"{% endif %}>{{ t('queue.article_paused') }}</span>{% endif -%}
+        </span>
+      </div>
+      <details class="row-menu">
+        <summary class="icon-btn" title="{{ t('queue.menu') }}" aria-label="{{ t('queue.menu') }}">{{ ui.icon('ellipsis-vertical') }}</summary>
+        <div class="row-menu-panel">
+          {% call menu_form("/queue/" ~ e.id ~ "/move", token=False) %}<input type="hidden" name="to" value="top"><button type="submit" class="menu-item">{{ ui.icon('arrow-up-to-line') }}{{ t('queue.to_top') }}</button>{% endcall %}
+          {% call menu_form("/queue/" ~ e.id ~ "/move", token=False) %}<input type="hidden" name="to" value="bottom"><button type="submit" class="menu-item">{{ ui.icon('arrow-down-to-line') }}{{ t('queue.to_bottom') }}</button>{% endcall %}
+          {% if e.held %}
+          {% call menu_form("/queue/" ~ e.id ~ "/release") %}<button type="submit" class="menu-item">{{ ui.icon('play') }}{{ t('queue.release') }}</button>{% endcall %}
+          {% else %}
+          {% call menu_form("/queue/" ~ e.id ~ "/hold") %}<button type="submit" class="menu-item">{{ ui.icon('pause') }}{{ t('queue.hold') }}</button>{% endcall %}
+          {% endif %}
+          {% call menu_form("/queue/" ~ e.id ~ "/prints") %}<div class="menu-prints"><label for="prints-{{ e.id }}">{{ t('queue.field.prints') }}</label><input type="number" id="prints-{{ e.id }}" name="prints" value="{{ e.prints }}" min="1" max="1000" step="1" inputmode="numeric" required><button type="submit" class="btn secondary">{{ t('queue.save_prints') }}</button></div>{% endcall %}
+          {% call menu_form("/queue/" ~ e.id ~ "/delete") %}<button type="submit" class="menu-item danger">{{ ui.icon('trash-2') }}{{ t('queue.delete') }}</button>{% endcall %}
+        </div>
+      </details>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <div class="card"><p class="muted">{{ t('queue.empty') }}</p></div>
+  {% endif %}
+</section>
+{% endcall %}
+
+{# Print manually (Spec 7.4). The choice of the position follows the queue live while the form
+   is unchanged (live.js leaves a changed form alone). #}
+{% call ui.region("manual", "queue article") %}
+<section class="card section manual-card" id="manual">
+  {% call ui.card_head("plus", t('queue.manual')) %}{% endcall %}
+  <p class="muted">{{ t('queue.manual_hint') }}</p>
+  {% if error and error_for == 'manual' %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+  {% if articles %}
+  <form method="post" action="/queue/manual" class="manual-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <label>{{ t('queue.field.article') }}
+      <select name="article_id" required>
+        {%- for id, name in articles %}
+        <option value="{{ id }}"{% if manual.article_id == id|string %} selected{% endif %}>{{ name }}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    <label>{{ t('queue.field.prints') }}
+      <input type="number" name="prints" value="{{ manual.prints }}" min="1" max="1000" step="1" inputmode="numeric" required>
+    </label>
+    <label>{{ t('queue.field.where') }}
+      <select name="where">
+        <option value="end"{% if manual.where == 'end' %} selected{% endif %}>{{ t('queue.where.end') }}</option>
+        <option value="start"{% if manual.where == 'start' %} selected{% endif %}>{{ t('queue.where.start') }}</option>
+        {%- for e in entries %}
+        {%- set value = 'before:' ~ e.id %}
+        <option value="{{ value }}"{% if manual.where == value %} selected{% endif %}>{{ t('queue.where.before', n=loop.index, name=e.article_name) }}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    <button class="btn" type="submit">{{ ui.icon('plus') }}{{ t('queue.manual_submit') }}</button>
+  </form>
+  {% else %}
+  <p class="muted">{{ t('queue.no_articles') }}</p>
+  {% endif %}
+</section>
+{% endcall %}
+
+{# Prints handed over to Bambuddy and not finished (Spec 7.1 "in progress"). #}
+{% call ui.region("in-progress", "queue") %}
+<section class="queue-section" id="in-progress">
+  <div class="section-head"><h2>{{ ui.icon('printer') }}{{ t('queue.in_progress') }}</h2></div>
+  {% if in_progress %}
+  <div class="card table-wrap table-card">
+    <table>
+      <thead>
+        <tr>
+          <th>{{ t('queue.col.article') }}</th>
+          <th>{{ t('queue.col.origin') }}</th>
+          <th>{{ t('queue.col.state') }}</th>
+          <th>{{ t('queue.col.handed_over') }}</th>
+          <th class="num">{{ t('queue.col.bambuddy_id') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for d, name in in_progress %}
+      {% set origin_key = 'queue.origin.' ~ d.origin %}
+      {% set status_key = 'dispatch.status.' ~ d.status %}
+        <tr>
+          <td class="name"><a href="/articles/{{ d.article_id }}">{{ name }}</a></td>
+          <td>{{ t(origin_key) }}</td>
+          <td><span class="badge tone-{{ dispatch_tones.get(d.status, 'neutral') }}">{{ t(status_key) }}</span></td>
+          <td class="nowrap">{{ d.dispatched_at|local_dt }}</td>
+          <td class="num">{{ d.bambuddy_item_id if d.bambuddy_item_id is not none else '' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card"><p class="muted">{{ t('queue.in_progress_empty') }}</p></div>
+  {% endif %}
+</section>
+{% endcall %}
+
+{# Bambuddy's queue, to look at only (Spec 7.8): no forms here; changes only in Bambuddy. #}
+{% call ui.region("bambuddy", "bambuddy queue") %}
+<section class="queue-section" id="bambuddy-queue">
+  <div class="section-head"><h2>{{ ui.icon('list') }}{{ t('queue.bambuddy_title') }}</h2>{% if open_bambuddy_url %}<a class="btn secondary" href="{{ open_bambuddy_url }}" target="_blank" rel="noopener noreferrer">{{ ui.icon('external-link') }}{{ t('queue.open_in_bambuddy') }}</a>{% endif %}</div>
+  {% if not bambuddy_known %}
+  <div class="card"><p class="muted">{{ t('queue.bambuddy_unavailable') }}</p></div>
+  {% else %}
+  {% if not bambuddy_fresh %}<p class="stale-note">{{ t('queue.bambuddy_stale', at=bambuddy_at|local_dt) }}</p>{% endif %}
+  {% if bambuddy_rows %}
+  <div class="card table-wrap table-card">
+    <table>
+      <thead>
+        <tr>
+          <th class="num">{{ t('queue.col.position') }}</th>
+          <th>{{ t('queue.col.label') }}</th>
+          <th>{{ t('queue.col.target') }}</th>
+          <th>{{ t('queue.col.state') }}</th>
+          <th>{{ t('queue.col.created_by') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for item, own in bambuddy_rows %}
+        <tr>
+          <td class="num">{{ item.position if item.position is not none else '' }}</td>
+          <td class="name">{{ item.label }}</td>
+          <td>{% if item.printer_name %}{{ item.printer_name }}{% elif item.target_model %}{{ t('queue.any_model', model=item.target_model) }}{% endif %}</td>
+          <td>{{ item.status }}</td>
+          <td>{{ item.created_by or '' }}{% if own %} <span class="badge tone-info badge-own">{{ t('queue.own_badge') }}</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card"><p class="muted">{{ t('queue.bambuddy_empty') }}</p></div>
+  {% endif %}
+  {% endif %}
+  <p class="section-hint">{{ t('queue.bambuddy_hint') }}</p>
+</section>
+{% endcall %}
+{% endblock %}
+{% block scripts %}<script src="/static/js/queue-drag.js?v={{ app_version }}" defer></script>{% endblock %}
