@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% block title %}{{ t('reorder.title') }}{% endblock %}
+{% block content %}
+{% call ui.page_head("shopping-bag", t('reorder.title'), t('reorder.sub')) %}{% endcall %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% if filament_unknown %}<p class="alert" role="status">{{ t('reorder.filament_unknown') }}</p>{% endif %}
+<section class="card section wide">
+  {% if rows %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>{{ t('reorder.col.item') }}</th><th class="num">{{ t('reorder.col.stock') }}</th>
+        <th class="num">{{ t('reorder.col.demand') }}</th><th class="num">{{ t('reorder.col.usage') }}</th>
+        <th class="num">{{ t('reorder.col.safety') }}</th><th>{{ t('reorder.col.suggestion') }}</th>
+        <th>{{ t('reorder.col.supplier') }}</th><th>{{ t('reorder.col.link') }}</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}{{ r.label }}</td>
+          <td class="num">{{ r.stock }} {{ r.unit }}</td>
+          <td class="num">{{ r.demand }} {{ r.unit }}</td>
+          <td class="num">{{ t('reorder.per_day_days', per_day=r.per_day, days=r.lead_days) }}</td>
+          <td class="num">{{ r.safety }} {{ r.unit }}</td>
+          <td>{% if r.item_type == 'part' %}{{ t('reorder.suggest_part', packs=r.packs, size=r.size, total=r.total, unit=r.unit) }}{% else %}{{ t('reorder.suggest_filament', packs=r.packs, size=r.size, unit=r.unit) }}{% endif %}</td>
+          <td>{{ r.supplier or '' }}</td>
+          <td>{% if r.order_url %}<a href="{{ r.order_url }}" target="_blank" rel="noopener noreferrer">{{ t('reorder.open_link') }}</a>{% endif %}</td>
+        </tr>
+        <tr class="slot-select">
+          <td colspan="8">
+            <form method="post" action="/reorder/mark">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="form_token" value="{{ form_token() }}">
+              <input type="hidden" name="item_type" value="{{ r.item_type }}">
+              <input type="hidden" name="item_id" value="{{ r.item_id }}">
+              <label>{{ t('reorder.pack_label') }} <input type="number" name="packs" value="{{ r.packs }}" min="1" max="1000" inputmode="numeric" required></label>
+              <button class="btn" type="submit">{{ t('reorder.mark') }}</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<p class="muted">{{ t('reorder.none') }}</p>{% endif %}
+</section>
+{% if under_way %}
+<h2>{{ t('reorder.under_way') }}</h2>
+<section class="card section wide">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>{{ t('reorder.col.item') }}</th><th>{{ t('reorder.col.ordered') }}</th></tr></thead>
+      <tbody>
+      {% for m in under_way %}
+        <tr>
+          <td>{{ m.label }}: {{ m.packs }} × {{ m.size }} {{ m.unit }}</td>
+          <td>{{ m.day }}</td>
+        </tr>
+        <tr class="slot-select">
+          <td colspan="2">
+            <form method="post" action="/reorder/marks/{{ m.id }}/received">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="form_token" value="{{ form_token() }}">
+              <button class="btn" type="submit">{{ t('reorder.received') }}</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
