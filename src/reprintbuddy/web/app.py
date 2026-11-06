@@ -38,6 +38,7 @@ from reprintbuddy.web.routes import orders as orders_routes
 from reprintbuddy.web.routes import ops as ops_routes
 from reprintbuddy.web.routes import overview as overview_routes
 from reprintbuddy.web.routes import rights as rights_routes
+from reprintbuddy.web.routes import filament as filament_routes
 from reprintbuddy.web.routes import parts as parts_routes
 from reprintbuddy.web.routes import settings as settings_routes
 from reprintbuddy.web.routes import sets as sets_routes
@@ -148,6 +149,7 @@ def create_app(
     app.include_router(settings_routes.router)
     app.include_router(rights_routes.router)
     app.include_router(parts_routes.router)
+    app.include_router(filament_routes.router)
     app.include_router(articles_routes.router)
     app.include_router(journal_routes.router)
     app.include_router(sets_routes.router)

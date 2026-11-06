@@ -9,14 +9,17 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.bambuddy.types import Spool
 from reprintbuddy.domain import rules
+from reprintbuddy.domain.catalog import _int_in
+from reprintbuddy.domain.catalog import _text as _form_text
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
-from reprintbuddy.models import Article, ArticleFilament, FilamentSnapshot, FilamentSort
+from reprintbuddy.models import Article, ArticleFilament, FilamentSettings, FilamentSnapshot, FilamentSort
 
 WINDOW_DAYS = 30
 
@@ -259,3 +262,45 @@ def unmapped_slots(session: Session) -> list[tuple[int, str, int]]:
         .order_by(Article.name, ArticleFilament.slot)
     )
     return [(a, n, s) for a, n, s in session.execute(stmt)]
+
+
+# ---- settings of a sort (Spec 9.3) -----------------------------------------------------------
+
+
+@dataclass
+class FilamentSettingsInput:
+    lead_time_days: int = 0
+    safety_value: int = 0
+    safety_unit: Literal["days", "grams"] = "days"
+    pack_grams: int = 1000
+    min_order_packs: int = 1
+    supplier: str | None = None
+    order_url: str | None = None
+
+
+def get_settings(session: Session, sort_id: int) -> FilamentSettings | None:
+    return session.get(FilamentSettings, sort_id)
+
+
+def save_settings(session: Session, sort_id: int, data: FilamentSettingsInput) -> FilamentSettings:
+    """Create or replace the settings of a sort; everything is checked before anything is stored."""
+    if session.get(FilamentSort, sort_id) is None:
+        raise NotFoundError("filament.sort_not_found")
+    if data.safety_unit not in ("days", "grams"):
+        raise ValidationError("filament.invalid_safety_unit")
+    lead = _int_in(data.lead_time_days, "filament.field.lead_time_days", 0, 365)
+    safety = _int_in(data.safety_value, "filament.field.safety_value", 0, 1_000_000)
+    pack = _int_in(data.pack_grams, "filament.field.pack_grams", 1, 100_000)
+    packs = _int_in(data.min_order_packs, "filament.field.min_order_packs", 1, 1000)
+    supplier = _form_text(data.supplier, "filament.field.supplier", 200)
+    url = _form_text(data.order_url, "filament.field.order_url", 2000)
+    if url is not None and not url.lower().startswith(("http://", "https://")):
+        raise ValidationError("filament.invalid_url")
+    row = session.get(FilamentSettings, sort_id)
+    if row is None:
+        row = FilamentSettings(spool_filament_id=sort_id)
+        session.add(row)
+    row.lead_time_days, row.safety_value, row.safety_unit = lead, safety, data.safety_unit
+    row.pack_grams, row.min_order_packs, row.supplier, row.order_url = pack, packs, supplier, url
+    session.flush()
+    return row
