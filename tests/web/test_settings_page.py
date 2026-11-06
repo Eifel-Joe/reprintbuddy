@@ -190,6 +190,27 @@ def test_settings_check_missing_permission(ready_client, respx_mock):
     assert saved(ready_client, "bambuddy_username") == "reprintbuddy"
 
 
+def _tag_with(page, text):
+    """The opening tag of the <p> that holds `text`."""
+    end = page.index(text)
+    return page[page.rindex("<p", 0, end) : end]
+
+
+def _is_warning(tag):
+    return 'class="alert"' in tag and 'role="alert"' in tag
+
+
+def _is_plain_notice(tag):
+    return 'class="notice"' in tag and 'role="status"' in tag
+
+
+def test_a_plain_save_stays_in_the_calm_look(ready_client, respx_mock):
+    respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me())
+    response = post(ready_client, "/settings/bambuddy", **bambuddy_form())
+    assert response.status_code == 303
+    assert _is_plain_notice(_tag_with(ready_client.get("/settings").text, "Saved."))
+
+
 def test_settings_check_admin_owner_warns(ready_client, respx_mock):
     respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me(username="boss", is_admin=True))
     response = post(ready_client, "/settings/bambuddy", **bambuddy_form())
@@ -197,6 +218,8 @@ def test_settings_check_admin_owner_warns(ready_client, respx_mock):
     assert saved(ready_client, "bambuddy_username") == "boss"
     page = ready_client.get("/settings")
     assert "administrator" in page.text and "more than" in page.text
+    assert _is_warning(_tag_with(page.text, "The key belongs to an administrator"))  # a warning, not a success
+    assert "administrator" not in ready_client.get("/settings").text  # shown once
 
 
 def test_settings_without_a_stored_key_and_no_entry_is_reported(ready_client):
@@ -474,6 +497,7 @@ def test_a_port_below_1024_is_saved_with_a_hint(ready_client):
     assert "below 1024" in page and "set-port" in page
     assert "install script" in page  # the installed service has the right to use such a port
     assert "does not run as root" not in page  # it does bind low ports: CAP_NET_BIND_SERVICE
+    assert _is_warning(_tag_with(page, "Saved. Note: ports below 1024"))
 
 
 def test_a_normal_port_has_no_privileged_hint(ready_client):
@@ -481,6 +505,7 @@ def test_a_normal_port_has_no_privileged_hint(ready_client):
     page = ready_client.get("/settings").text
     assert "below 1024" not in page
     assert "restarted" in page  # the usual restart hint is still there
+    assert _is_plain_notice(_tag_with(page, "Changes to address, port and HTTPS"))
 
 
 def test_settings_list_has_bambuddys_label_purpose_and_where_to_fix(ready_client, respx_mock):

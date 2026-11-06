@@ -141,7 +141,15 @@ def test_stock_in_short_parts_warns(ready_client):  # rule 8.3
     response, _ = post(ready_client, "stock-in", article_id=a, qty="2", consume_parts="on")
     assert response.status_code == 303
     assert number(ready_client, Part, p, "stock") == 0
-    assert en("stock.parts_short", part="Insert M4", had=1, needed=4) in ready_client.get("/bookings").text
+    page = ready_client.get("/bookings").text
+    short = en("stock.parts_short", part="Insert M4", had=1, needed=4)
+    done = en("bookings.stock_in_done", item="Template A", qty=2)
+    assert short in page and done in page
+    # The shortage is a warning, the booking itself is good news.
+    short_tag = page[page.rindex("<p", 0, page.index(short)) : page.index(short)]
+    done_tag = page[page.rindex("<p", 0, page.index(done)) : page.index(done)]
+    assert 'class="alert"' in short_tag and 'role="alert"' in short_tag
+    assert 'class="flash"' in done_tag and 'role="status"' in done_tag
 
 
 def test_bookings_double_submit(ready_client):

@@ -60,8 +60,8 @@ def _page(
     )
 
 
-def _saved(request: Request, key: str = "settings.saved") -> RedirectResponse:
-    flash(request, key)
+def _saved(request: Request, key: str = "settings.saved", *, warning: bool = False) -> RedirectResponse:
+    flash(request, key, warning=warning)
     return RedirectResponse("/settings", status_code=303)
 
 
@@ -118,7 +118,9 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     # One transaction: a failure must not leave a new address with the old key.
     st.apply_check(db, url, api_key, check)
     take_verdict(request, check)  # a fixed key clears the notice at once
-    return _saved(request, "bambuddy.admin_warning" if check.owner_is_admin else "settings.saved")
+    if check.owner_is_admin:
+        return _saved(request, "bambuddy.admin_warning", warning=True)
+    return _saved(request)
 
 
 @router.post("/settings/password", dependencies=[Depends(verify_csrf)])
@@ -209,4 +211,6 @@ async def save_server(request: Request, db: Session = Depends(get_db)):
     st.set_setting(db, "tls_key", key, commit=False)
     db.commit()
     # Ports below 1024 need CAP_NET_BIND_SERVICE: the installed service has it, others may not.
-    return _saved(request, "settings.privileged_port" if port < 1024 else "settings.restart_needed")
+    if port < 1024:
+        return _saved(request, "settings.privileged_port", warning=True)
+    return _saved(request, "settings.restart_needed")

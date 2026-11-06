@@ -167,6 +167,17 @@ def test_connect_saves_owner(admin_client, respx_mock):
     assert admin_client.get("/").status_code == 200
 
 
+def test_connect_with_an_administrator_key_warns_on_the_next_page(admin_client, respx_mock):
+    mock_auth_me(respx_mock, is_admin=True)
+    token = csrf_of(admin_client, CONNECT)
+    response = admin_client.post(CONNECT, data=_form(token))
+    assert response.status_code == 303 and response.headers["location"] == "/settings"
+    page = admin_client.get("/settings").text
+    text = "The key belongs to an administrator"
+    tag = page[page.rindex("<p", 0, page.index(text)) : page.index(text)]
+    assert 'class="alert"' in tag and 'role="alert"' in tag
+
+
 def test_connect_takes_the_owner_name_from_the_answer(admin_client, respx_mock):
     mock_auth_me(respx_mock, username="print-robot")
     token = csrf_of(admin_client, CONNECT)

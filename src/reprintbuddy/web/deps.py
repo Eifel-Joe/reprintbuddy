@@ -22,6 +22,7 @@ from reprintbuddy.web.i18n import translate
 UID_KEY = "uid"
 SID_KEY = "sid"
 FLASH_KEY = "flash"
+FLASH_WARNING_KEY = "flash_warning"  # the message above is a warning, not good news
 RIGHTS_LATER_KEY = "rights_later"  # in the session: the missing rights "Later" was pressed for
 
 # Reachable by everyone, whatever the state of the installation.
@@ -89,6 +90,7 @@ def render(request: Request, name: str, status_code: int = 200, **context: objec
     context.setdefault("active_nav", None)
     context["min_password_length"] = auth.MIN_PASSWORD_LENGTH
     context.setdefault("notice", request.session.pop(FLASH_KEY, None))
+    context.setdefault("notice_warning", bool(request.session.pop(FLASH_WARNING_KEY, False)))
     context["csrf_token"] = csrf_token(request)
     _add_rights_notice(request, context)
     return request.app.state.templates.TemplateResponse(
@@ -139,9 +141,14 @@ def take_verdict(request: Request, check: ConnectionCheck) -> None:
         request.session.pop(RIGHTS_LATER_KEY, None)
 
 
-def flash(request: Request, key: str) -> None:
-    """Remember a message (a translation key) for the next page shown."""
+def flash(request: Request, key: str, *, warning: bool = False) -> None:
+    """Remember a message (a translation key) for the next page shown; `warning` for anything
+    that is not good news, which is shown in the look of an error."""
     request.session[FLASH_KEY] = key
+    if warning:
+        request.session[FLASH_WARNING_KEY] = True
+    else:
+        request.session.pop(FLASH_WARNING_KEY, None)
 
 
 def safe_next(value: str | None) -> str:

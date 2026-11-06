@@ -83,6 +83,10 @@ def _active_part(tx: Session, part_id: int) -> Part:
     return part
 
 
+# Messages that report trouble although the booking went through.
+WARNING_KEYS = frozenset({"stock.parts_short"})
+
+
 def _shortages(tx: Session, shortages: list[stock.PartShortage]) -> list[tuple[str, dict[str, Any]]]:
     messages = []
     for shortage in shortages:
@@ -112,7 +116,7 @@ async def _book(
             values=values, status=error_status(exc),
         )
     for key, message_params in messages:
-        flash(request, key, **message_params)
+        flash(request, key, warning=key in WARNING_KEYS, **message_params)
     return RedirectResponse("/bookings", status_code=303)
 
 

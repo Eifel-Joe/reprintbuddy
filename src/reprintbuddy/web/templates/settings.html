@@ -2,7 +2,7 @@
 {% block title %}{{ t('settings.title') }}{% endblock %}
 {% block content %}
 <h1>{{ t('settings.title') }}</h1>
-{% if notice %}<p class="notice" role="status">{{ t(notice) }}</p>{% endif %}
+{% if notice %}{% if notice_warning %}<p class="alert" role="alert">{{ t(notice) }}</p>{% else %}<p class="notice" role="status">{{ t(notice) }}</p>{% endif %}{% endif %}
 
 <section class="card section">
   <h2>{{ t('settings.language') }}</h2>
