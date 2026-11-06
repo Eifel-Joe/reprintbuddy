@@ -79,7 +79,7 @@ def lift_pause(session: Session, article_id: int, actor: Actor) -> None:
     reason = article.pause_reason
     if reason in FILE_REASONS:
         raise ConflictError("articles.pause_needs_file")
-    if reason == "no_target" and not article.target_model:
+    if reason == "no_target" and not (article.target_model or article.printer_id):
         raise ConflictError("articles.pause_needs_target")
     article.paused = False
     article.pause_reason = None

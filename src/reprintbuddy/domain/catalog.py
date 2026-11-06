@@ -16,7 +16,7 @@ from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationE
 from reprintbuddy.domain.workqueue import OPEN_STATES
 from reprintbuddy.domain.status import ArticleStatus, article_status
 from reprintbuddy.domain.status import SetStatus, set_status
-from reprintbuddy.domain.stock import MAX_QTY, Actor, count_part
+from reprintbuddy.domain.stock import MAX_QTY, Actor, count_part, write_journal
 from reprintbuddy.models import (
     Article,
     ArticleFilament,
@@ -706,6 +706,120 @@ def restore_article_with_plate(
         )
     article.archived_at = None
     session.flush()
+    return article
+
+
+def _take_over_filaments(
+    session: Session,
+    article_id: int,
+    requirements: Sequence[FilamentRequirement],
+    *,
+    keep_mapping: bool,
+) -> None:
+    """Replace the filament rows. With `keep_mapping` a slot keeps its `spool_filament_id`
+    when material and colour stay the same (plan B4 decision 10, used by B6)."""
+    old = {
+        row.slot: (row.material, row.color_hex, row.spool_filament_id)
+        for row in session.scalars(
+            select(ArticleFilament).where(ArticleFilament.article_id == article_id)
+        )
+    }
+    _delete_rows(session, select(ArticleFilament).where(ArticleFilament.article_id == article_id))
+    for requirement in requirements:
+        spool = None
+        previous = old.get(requirement.slot)
+        if keep_mapping and previous and previous[:2] == (requirement.material, requirement.color_hex):
+            spool = previous[2]
+        session.add(
+            ArticleFilament(
+                article_id=article_id,
+                slot=requirement.slot,
+                grams=requirement.grams,
+                material=requirement.material,
+                color_hex=requirement.color_hex,
+                spool_filament_id=spool,
+            )
+        )
+
+
+def _active_article(session: Session, article_id: int) -> Article:
+    article = _article_or_404(session, article_id)
+    if article.archived_at is not None:
+        raise ConflictError("articles.edit_archived")
+    return article
+
+
+def _lift_file_pause(article: Article, reasons: tuple[str, ...]) -> None:
+    if article.paused and article.pause_reason in reasons:
+        article.paused = False
+        article.pause_reason = None
+        article.consecutive_failures = 0
+
+
+def confirm_article_file(
+    session: Session,
+    article_id: int,
+    *,
+    file: LibraryFile,
+    requirements: Sequence[FilamentRequirement],
+    thumbnail: bytes | None,
+    actor: Actor,
+) -> Article:
+    """Spec 5.1: accept the changed file as it is now; lifts a `file_changed` pause.
+
+    A `file_missing` pause stays (the file is not there); other pauses stay too.
+    """
+    article = _active_article(session, article_id)
+    details = {
+        "old_name": article.file_name,
+        "old_fingerprint": article.file_fingerprint,
+        "new_name": file.filename,
+        "new_fingerprint": file.fingerprint,
+    }
+    article.file_name = file.filename
+    article.file_fingerprint = file.fingerprint
+    article.thumbnail = thumbnail
+    _take_over_filaments(session, article_id, requirements, keep_mapping=True)
+    _lift_file_pause(article, ("file_changed",))
+    session.flush()
+    write_journal(
+        session, kind="article_file_confirmed", actor=actor, article_id=article.id, details=details
+    )
+    return article
+
+
+def relink_article(
+    session: Session,
+    article_id: int,
+    *,
+    file: LibraryFile,
+    plate: Plate,
+    requirements: Sequence[FilamentRequirement],
+    thumbnail: bytes | None,
+    actor: Actor,
+) -> Article:
+    """Spec 5.1: choose another file and plate for an active article; lifts a file pause."""
+    article = _active_article(session, article_id)
+    holder = _plate_holder(session, file.id, plate.index, besides=article.id)
+    if holder is not None:
+        raise ConflictError("articles.plate_taken", name=holder.name)
+    details = {
+        "old_file_id": article.library_file_id,
+        "old_plate": article.plate_id,
+        "new_file_id": file.id,
+        "new_plate": plate.index,
+    }
+    article.library_file_id = file.id
+    article.plate_id = plate.index
+    article.file_name = file.filename
+    article.file_fingerprint = file.fingerprint
+    article.thumbnail = thumbnail
+    _take_over_filaments(session, article_id, requirements, keep_mapping=False)
+    _lift_file_pause(article, ("file_changed", "file_missing"))
+    session.flush()
+    write_journal(
+        session, kind="article_relinked", actor=actor, article_id=article.id, details=details
+    )
     return article
 
 

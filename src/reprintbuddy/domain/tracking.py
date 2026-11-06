@@ -175,3 +175,77 @@ async def poll_dispatches(client: BambuddyClient, sm: sessionmaker) -> PollRepor
             if apply_outcome(session, dispatch_id, outcome, item.status if item else None):
                 report.changed += 1
     return report
+
+
+# ---- print file and print target -------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ArticleCheck:
+    error: str | None  # "unavailable" or Bambuddy's refusal; then nothing was changed
+    # Articles whose target is only temporarily unavailable (printer in maintenance mode);
+    # they are not paused, the engine skips them when handing over (assumption A9).
+    waiting_for_printer: frozenset[int]
+
+
+async def check_articles(client: BambuddyClient, sm: sessionmaker) -> ArticleCheck:
+    """Spec 5.1, 7.7, decisions 9, 10: pause active articles whose file changed or vanished
+    or whose print target is gone.
+
+    Reads in a short session, asks Bambuddy, then writes each pause in its own transaction.
+    Unreachable or refused: nothing is changed. A printer in maintenance mode (inactive) is
+    only unavailable for now; a printer missing from the list counts as deleted.
+    """
+    with sm() as session:
+        rows = session.execute(
+            select(
+                Article.id, Article.library_file_id, Article.file_name,
+                Article.file_fingerprint, Article.target_model, Article.printer_id,
+            )
+            .where(Article.archived_at.is_(None))
+            .order_by(Article.id)
+        ).all()
+    try:
+        printers = await client.list_printers()
+        files = {}
+        for file_id in sorted({row.library_file_id for row in rows}):
+            files[file_id] = await client.get_file(file_id)
+    except BambuddyUnavailable:
+        return ArticleCheck("unavailable", frozenset())
+    except BambuddyRejected as exc:
+        return ArticleCheck(str(exc), frozenset())
+
+    by_id = {printer.id: printer for printer in printers}
+    waiting: set[int] = set()
+    for row in rows:
+        file = files[row.library_file_id]
+        verdicts: list[tuple[str, dict]] = []
+        if file is None:
+            verdicts.append(("file_missing", {"file_name": row.file_name}))
+        elif file.fingerprint != row.file_fingerprint or file.filename != row.file_name:
+            verdicts.append((
+                "file_changed",
+                {
+                    "old_fingerprint": row.file_fingerprint,
+                    "new_fingerprint": file.fingerprint,
+                    "old_name": row.file_name,
+                    "new_name": file.filename,
+                },
+            ))
+        if row.printer_id is not None:
+            chosen = by_id.get(row.printer_id)
+            target = {"printer_id": row.printer_id}
+            matching = [chosen] if chosen else []
+        elif row.target_model:
+            target = {"target_model": row.target_model}
+            matching = [p for p in printers if p.model == row.target_model]
+        else:
+            target, matching = {}, []
+        if not matching:
+            verdicts.append(("no_target", target))
+        elif not any(p.active for p in matching):
+            waiting.add(row.id)
+        for reason, details in verdicts:
+            with sm.begin() as session:
+                pause_article(session, row.id, reason, "auto", details=details)
+    return ArticleCheck(None, frozenset(waiting))
