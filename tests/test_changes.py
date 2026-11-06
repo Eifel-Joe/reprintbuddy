@@ -1,0 +1,257 @@
+"""The change feed: every committed change is reported as topics (kind and id, no content)."""
+
+from __future__ import annotations
+
+import logging
+import re
+from datetime import date
+from pathlib import Path
+
+import pytest
+from sqlalchemy import select, update
+
+from reprintbuddy import auth
+from reprintbuddy.changes import CLASSIFIED, install_change_feed
+from reprintbuddy.domain import catalog, orders, stock
+from reprintbuddy.domain.catalog import ArticleInput, PositionInput, SetInput
+from reprintbuddy.domain.errors import StockLimitError
+from reprintbuddy.models import Article, Base, Part
+from reprintbuddy.web.formtoken import consume_form_token, issue_form_token
+from factories import make_article, make_order, make_part, make_set
+
+SRC = Path(__file__).resolve().parents[1] / "src" / "reprintbuddy"
+
+
+@pytest.fixture
+def published(db):
+    """What the feed publishes; the data of each test is created before it is cleared."""
+    sent: list[frozenset[str]] = []
+    install_change_feed(db, sent.append)
+    return sent
+
+
+def test_inventory_booking_reports_article_and_journal(db, published):
+    with db.begin() as s:
+        a = make_article(s).id
+    published.clear()
+    with db.begin() as s:
+        stock.count_article(s, a, "stock", 3, "user")
+    assert published == [frozenset({"article", f"article:{a}", "journal"})]
+
+
+def test_nothing_is_reported_before_the_commit(db, published):
+    with db.begin() as s:
+        a = make_article(s).id
+    published.clear()
+    with db.begin() as s:
+        stock.count_article(s, a, "stock", 3, "user")
+        s.flush()
+        assert published == []
+    assert len(published) == 1
+
+
+def test_a_rolled_back_change_reports_nothing(db, published):
+    with db.begin() as s:
+        a = make_article(s).id
+    published.clear()
+    with pytest.raises(RuntimeError):
+        with db.begin() as s:
+            stock.count_article(s, a, "stock", 3, "user")
+            s.flush()
+            raise RuntimeError("boom")
+    assert published == []
+    with db.begin() as s:  # the next commit does not carry the discarded topics along
+        stock.receive_part(s, make_part(s).id, 1, "user")
+    assert all(f"article:{a}" not in topics for topics in published)
+
+
+def test_a_refused_booking_reports_nothing(db, published):
+    with db.begin() as s:
+        a = make_article(s, stock=1).id
+        order = make_order(s).id
+    published.clear()
+    with pytest.raises(StockLimitError):
+        with db.begin() as s:
+            stock.ship_for_order(s, order, {a: 5}, "user")
+    assert published == []
+
+
+def test_editing_settings_reports_the_settings_topic(db, published):
+    with db.begin() as s:
+        a = make_article(s).id
+    published.clear()
+    with db.begin() as s:
+        catalog.update_article(s, a, ArticleInput(name="Template A", min_stock=4))
+    assert f"article-settings:{a}" in published[0]
+
+
+def test_removing_the_parts_of_an_article_reports_its_settings(db, published):
+    with db.begin() as s:
+        p = make_part(s).id
+        a = catalog.update_article(s, make_article(s).id, ArticleInput(name="Template A", parts={p: 2})).id
+    published.clear()
+    with db.begin() as s:
+        catalog.update_article(s, a, ArticleInput(name="Template A", parts={}))
+    assert published == [frozenset({"article", f"article:{a}", f"article-settings:{a}"})]
+
+
+def test_order_creation_reports_order_articles_and_journal(db, published):
+    with db.begin() as s:
+        a = make_article(s, stock=5).id
+    published.clear()
+    with db.begin() as s:
+        order = orders.create_order(
+            s,
+            reference="Order 1001",
+            order_date=date(2026, 1, 1),
+            items=[orders.ArticleItem(a, 2)],
+            actor="user",
+        ).id
+    assert len(published) == 1
+    assert {"order", f"order:{order}", f"article:{a}", "journal"} <= published[0]
+
+
+def test_set_update_reports_the_set(db, published):
+    with db.begin() as s:
+        a = make_article(s).id
+        b = make_article(s, name="Template B").id
+        set_id = make_set(s, "Set A", [(1, [a]), (2, [a, b])]).id
+    published.clear()
+    with db.begin() as s:
+        catalog.update_set(s, set_id, SetInput("Set A", None, [PositionInput(3, [b])]))
+    assert len(published) == 1
+    assert {"set", f"set:{set_id}"} <= published[0]
+
+
+def test_part_receipt_reports_part_and_journal(db, published):
+    with db.begin() as s:
+        p = make_part(s).id
+    published.clear()
+    with db.begin() as s:
+        stock.receive_part(s, p, 10, "user")
+    assert published == [frozenset({"part", f"part:{p}", "journal"})]
+
+
+def test_signing_in_and_form_tokens_report_nothing(db, published):
+    with db() as s:
+        auth.create_session(s)
+    with db.begin() as s:
+        consume_form_token(s, "secret", issue_form_token("secret"))
+    assert published == []
+
+
+def test_one_report_per_commit(db, published):
+    with db.begin() as s:
+        a = make_article(s).id
+        b = make_article(s, name="Template B").id
+    published.clear()
+    with db.begin() as s:
+        stock.count_article(s, a, "stock", 3, "user")
+        s.flush()
+        stock.count_article(s, b, "stock", 4, "user")
+    assert published == [
+        frozenset({"article", f"article:{a}", f"article:{b}", "journal"})
+    ]
+
+
+def test_a_failing_publish_does_not_undo_the_commit(db, caplog):
+    def fail(_topics):
+        raise RuntimeError("broker down")
+
+    install_change_feed(db, fail)
+    with db.begin() as s:
+        a = make_article(s).id
+    with caplog.at_level(logging.WARNING, logger="reprintbuddy.changes"):
+        with db.begin() as s:
+            stock.count_article(s, a, "stock", 3, "user")
+    with db() as s:
+        assert s.get(Article, a).stock == 3
+    assert any(r.levelno == logging.WARNING and r.name == "reprintbuddy.changes" for r in caplog.records)
+
+
+def test_bulk_statements_report_the_kind(db, published):
+    with db.begin() as s:
+        make_part(s)
+    published.clear()
+    with db.begin() as s:
+        s.execute(update(Part).values(supplier="x"))
+    assert published == [frozenset({"part"})]
+
+
+def test_a_savepoint_neither_reports_nor_discards(db, published):
+    with db.begin() as s:
+        a = make_article(s).id
+        p = make_part(s).id
+    published.clear()
+    with db.begin() as s:
+        stock.count_article(s, a, "stock", 3, "user")
+        with s.begin_nested():
+            stock.receive_part(s, p, 1, "user")
+        assert published == []  # released, not committed
+        with pytest.raises(RuntimeError):
+            with s.begin_nested():
+                stock.receive_part(s, p, 1, "user")
+                s.flush()
+                raise RuntimeError("boom")
+    assert len(published) == 1
+    assert {f"article:{a}", f"part:{p}", "journal"} <= published[0]
+
+
+def test_every_table_is_classified():
+    unclassified = {m.class_.__name__ for m in Base.registry.mappers} - {c.__name__ for c in CLASSIFIED}
+    assert not unclassified, f"give these tables topics in changes.py or ignore them: {unclassified}"
+
+
+def _sources(root: Path, skip: tuple[str, ...] = ()) -> list[Path]:
+    files = []
+    for path in sorted(root.rglob("*.py")):
+        relative = path.relative_to(root).as_posix()
+        if not any(relative == s or relative.startswith(s) for s in skip):
+            files.append(path)
+    return files
+
+
+_TEXT_CALL = re.compile(r"""\btext\(\s*[rRbBuU]?("{3}|'{3}|"|')(.*?)\1""", re.S)
+_WRITE_WORD = re.compile(r"\b(insert|update|delete)\b", re.I)
+
+
+def test_no_raw_sql_writes_outside_migrations():
+    offenders = []
+    for path in _sources(SRC, skip=("migrations/", "db.py", "ops/")):
+        source = path.read_text(encoding="utf-8")
+        if "exec_driver_sql" in source:
+            offenders.append(f"{path.name}: exec_driver_sql")
+        for match in _TEXT_CALL.finditer(source):
+            if _WRITE_WORD.search(match.group(2)):
+                offenders.append(f"{path.name}: {match.group(0)[:60]}")
+    assert not offenders, f"raw SQL writes bypass the change feed: {offenders}"
+
+
+def test_domain_writes_row_by_row():
+    bulk = re.compile(r"execute\(\s*(delete|update|insert)\(")
+    offenders = [
+        path.name
+        for path in _sources(SRC / "domain")
+        if bulk.search(path.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, f"row by row, so the change feed can name the row: {offenders}"
+
+
+def test_the_rule_checks_find_what_they_look_for():
+    """The source checks above would pass on anything if their patterns were wrong."""
+    assert _TEXT_CALL.search('conn.execute(text("DELETE FROM parts"))')
+    assert _WRITE_WORD.search(_TEXT_CALL.search("text('update parts set x=1')").group(2))
+    assert not _TEXT_CALL.search('_text("DELETE")')
+    assert re.search(r"execute\(\s*(delete|update|insert)\(", "session.execute(delete(Part))")
+
+
+def test_feed_is_scoped_to_its_sessionmaker(db, published):
+    """Another sessionmaker on the same engine does not report through this feed."""
+    from reprintbuddy.db import make_sessionmaker
+
+    other = make_sessionmaker(db.kw["bind"])
+    with other.begin() as s:
+        make_part(s)
+    assert published == []
+    with db() as s:
+        assert s.scalar(select(Part.id)) is not None

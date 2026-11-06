@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
@@ -206,8 +206,16 @@ def _check_article_input(
     )
 
 
+def _delete_rows(session: Session, query) -> None:
+    """Delete row by row, so the change feed can name each row (changes.py). The flush
+    clears the way for new rows with the same key (ArticlePart: article and part)."""
+    for row in session.scalars(query).all():
+        session.delete(row)
+    session.flush()
+
+
 def _set_parts(session: Session, article_id: int, parts: dict[int, int]) -> None:
-    session.execute(delete(ArticlePart).where(ArticlePart.article_id == article_id))
+    _delete_rows(session, select(ArticlePart).where(ArticlePart.article_id == article_id))
     for part_id, qty in parts.items():
         session.add(ArticlePart(article_id=article_id, part_id=part_id, qty_per_unit=qty))
 
@@ -509,8 +517,9 @@ def update_set(session: Session, set_id: int, data: SetInput) -> ProductSet:
     name, sku, positions = _check_set_input(session, data, set_id=set_id)
     old = session.scalars(select(SetPosition.id).where(SetPosition.set_id == set_id)).all()
     if old:
-        session.execute(delete(SetPositionOption).where(SetPositionOption.position_id.in_(old)))
-        session.execute(delete(SetPosition).where(SetPosition.id.in_(old)))
+        # Options first: they point at their position.
+        _delete_rows(session, select(SetPositionOption).where(SetPositionOption.position_id.in_(old)))
+        _delete_rows(session, select(SetPosition).where(SetPosition.id.in_(old)))
     product_set.name = name
     product_set.sku = sku
     _write_positions(session, set_id, positions)
@@ -653,7 +662,7 @@ def restore_article_with_plate(
     article.file_name = file.filename
     article.file_fingerprint = file.fingerprint
     article.thumbnail = thumbnail
-    session.execute(delete(ArticleFilament).where(ArticleFilament.article_id == article_id))
+    _delete_rows(session, select(ArticleFilament).where(ArticleFilament.article_id == article_id))
     for requirement in requirements:
         session.add(
             ArticleFilament(
