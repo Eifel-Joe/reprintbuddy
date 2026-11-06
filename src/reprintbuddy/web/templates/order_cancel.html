@@ -1,10 +1,13 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ t('orders.cancel') }}{% endblock %}
 {% block content %}
-<h1>{{ order.reference }}</h1>
+{% call ui.page_head("receipt", order.reference) %}<p class="summary">{{ order.order_date|local_date }} · {{ ui.badge('order', order.display_status) }}</p>{% endcall %}
 <section class="card section">
   <p>{{ t('orders.cancel_confirm', reference=order.reference) }}</p>
-  <form method="post" action="/orders/{{ order.id }}/cancel">
+  {#- An answer to a POST: no region is fetched, but the form notices when its order changes. -#}
+  <form method="post" action="/orders/{{ order.id }}/cancel" data-live-watch="order:{{ order.id }}">
+    {{ ui.live_stale() }}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="form_token" value="{{ form_token_value }}">
     <input type="hidden" name="confirm" value="yes">

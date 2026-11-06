@@ -484,3 +484,9 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
 @media (max-width: 599px) {
   .search { flex: 1 1 100%; max-width: none; }
 }
+
+/* ---- orders (Bestellungen) ------------------------------------------------- */
+/* What an order holds, in its tile: one line per set or article. */
+.tile-items { color: var(--text-2); font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }
+/* The badge in the short summary of an order sits on the line of the date. */
+.page-head .summary .badge { vertical-align: 0.05em; }
