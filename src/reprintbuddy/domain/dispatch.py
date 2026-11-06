@@ -31,6 +31,7 @@ from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, Bambu
 from reprintbuddy.bambuddy.types import EnqueueRequest, QueueItem
 from reprintbuddy.domain.pauses import pause_article
 from reprintbuddy.domain.stock import write_journal
+from reprintbuddy.domain.tracking import apply_outcome, classify
 from reprintbuddy.domain.workqueue import OPEN_STATES, _ordered, _renumber
 from reprintbuddy.models import Article, Dispatch, WorkQueueEntry, utcnow
 
@@ -189,7 +190,13 @@ def mark_unclear(session: Session, dispatch_id: int) -> None:
 
 
 def confirm_dispatch(session: Session, dispatch_id: int, item: QueueItem) -> None:
-    """Bambuddy holds the print as `item`."""
+    """Bambuddy holds the print as `item`; its state follows `tracking.classify`.
+
+    The print becomes `queued` and is handed over (journal), then Bambuddy's state is
+    applied like a poll answer: `printing`, or - for an entry found already finished -
+    provisional stock, replacement or pause. An unknown state leaves it `queued`; the
+    next poll reports it.
+    """
     row = _dispatch(session, dispatch_id)
     if row.status not in ("sending", "unclear"):
         raise ValueError(f"dispatch {dispatch_id} cannot be confirmed ({row.status})")
@@ -198,8 +205,7 @@ def confirm_dispatch(session: Session, dispatch_id: int, item: QueueItem) -> Non
         row.bambuddy_batch_id = item.batch_id
     row.last_status = item.status
     row.dispatched_at = utcnow()
-    # Until tracking.classify exists (B4 Task 7), which replaces this line.
-    row.status = "printing" if item.status == "printing" else "queued"
+    row.status = "queued"
     session.flush()
     write_journal(
         session,
@@ -213,6 +219,7 @@ def confirm_dispatch(session: Session, dispatch_id: int, item: QueueItem) -> Non
             "batch_id": row.bambuddy_batch_id,
         },
     )
+    apply_outcome(session, row.id, classify(item), item.status)
 
 
 def return_print(
