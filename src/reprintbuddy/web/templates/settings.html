@@ -59,6 +59,23 @@
   </form>
 </section>
 
+{# Automation (Spec 7.3, 7.6, 7.7). A live region on the settings topic: saved on another
+   device, it is fetched again; while its form is changed or in use, live.js leaves it alone. #}
+{% call ui.region("automation", "settings") %}
+<section class="card section" id="automation">
+  {% call ui.card_head("list-ordered", t('settings.automation')) %}<button class="btn" type="submit" form="automation-form">{{ t('settings.save') }}</button>{% endcall %}
+  {% if error and error_section == 'automation' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
+  <form method="post" action="/settings/automation" id="automation-form">
+    {% call ui.setting_row(t('settings.automation_main'), t('settings.automation_main_hint'), "automation-main") %}{{ ui.switch("automation", automation, t('settings.automation_main'), "automation-main") }}{% endcall %}
+    {% call ui.setting_row(t('settings.queue_stopped'), t('settings.queue_stopped_hint'), "queue-stopped") %}{{ ui.switch("queue_stopped", queue_stopped, t('settings.queue_stopped'), "queue-stopped") }}{% endcall %}
+    {% call ui.setting_row(t('settings.queue_cap'), t('settings.queue_cap_hint'), "queue-cap") %}<input type="number" id="queue-cap" name="queue_cap" value="{{ queue_cap }}" min="1" max="999" step="1" inputmode="numeric" required>{% endcall %}
+    {% call ui.setting_row(t('settings.insert_next'), t('settings.insert_next_hint'), "insert-next") %}{{ ui.switch("insert_next", insert_next, t('settings.insert_next'), "insert-next") }}{% endcall %}
+    {% call ui.setting_row(t('settings.poll_minutes'), t('settings.poll_minutes_hint'), "poll-minutes") %}<input type="number" id="poll-minutes" name="poll_minutes" value="{{ poll_minutes }}" min="1" max="1440" step="1" inputmode="numeric" required>{% endcall %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  </form>
+</section>
+{% endcall %}
+
 <section class="card section">
   <h2>{{ t('settings.server') }}</h2>
   <p class="muted">{{ t('settings.restart_needed') }}</p>

@@ -639,6 +639,8 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 .setting-text label { margin: 0; color: var(--text); font-size: 13.5px; font-weight: 550; }
 .setting-text span { color: var(--muted); font-size: 12px; }
 .setting-control { flex: 0 1 auto; min-width: 0; }
+.card-head ~ form > .setting-row:first-child { border-top: 0; }
+.setting-control input[type="number"] { width: 6.5rem; margin-top: 0; }
 
 @media (max-width: 899px) {
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
