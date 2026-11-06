@@ -1,7 +1,7 @@
 {% extends layout %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ t(title_key) }}{% endblock %}
 {% block content %}
-<h1>{{ t(title_key) }}</h1>
-<p class="muted">{{ t(message_key) }}</p>
+{% call ui.page_head("circle-alert", t(title_key)) %}<p class="summary">{{ t(message_key) }}</p>{% endcall %}
 <p><a class="btn" href="/">{{ t('error.back') }}</a></p>
 {% endblock %}

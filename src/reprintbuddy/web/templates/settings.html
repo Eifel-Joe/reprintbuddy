@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ t('settings.title') }}{% endblock %}
 {% block content %}
-<h1>{{ t('settings.title') }}</h1>
+{% call ui.page_head("settings", t('settings.title')) %}{% endcall %}
 {% if notice %}{% if notice_warning %}<p class="alert" role="alert">{{ t(notice) }}</p>{% else %}<p class="notice" role="status">{{ t(notice) }}</p>{% endif %}{% endif %}
 
 <section class="card section">

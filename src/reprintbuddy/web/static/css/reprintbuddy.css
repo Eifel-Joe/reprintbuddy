@@ -473,3 +473,10 @@ a.tile:hover { border-color: var(--accent); }
 @media (max-width: 599px) {
   .search { flex: 1 1 100%; max-width: none; }
 }
+
+/* ---- Übrige Seiten: bookings, journal, overview, settings, error, restart (plan task 15) ---- */
+
+/* Side-page buttons under a section, each with its symbol; the same rule as the toolbar of the
+   article list, kept here so this page looks right on its own (one copy may go after merging). */
+.toolbar-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.toolbar-actions .btn { display: inline-flex; align-items: center; gap: 0.45rem; }

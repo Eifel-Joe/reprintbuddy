@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ t('ops.restart.title') }}{% endblock %}
 {% block content %}
-<h1>{{ t('ops.restart.title') }}</h1>
+{% call ui.page_head("refresh-cw", t('ops.restart.title')) %}{% endcall %}
 <section class="card section">
   {% if new_url %}
   <p>{{ t('ops.restart.new_address', url=new_url) }}</p>
