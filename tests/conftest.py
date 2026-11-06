@@ -156,7 +156,12 @@ def admin_client(client):
 
 @pytest.fixture
 def ready_client(admin_client):
-    return finish_bambuddy_setup(admin_client)
+    finish_bambuddy_setup(admin_client)
+    # The app would now read Bambuddy over HTTP; the tests that use `ready_client` mean
+    # "no Bambuddy" and must never cause a network call (Spec 12). Tests with a Bambuddy
+    # use `bb_client` (the fake) or respx.
+    admin_client.app.state.bambuddy_factory = lambda: None
+    return admin_client
 
 
 class FakeRunner:

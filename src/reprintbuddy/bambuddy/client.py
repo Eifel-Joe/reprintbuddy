@@ -96,7 +96,7 @@ class BambuddyClient(Protocol):
     async def list_printers(self) -> list[Printer]: ...
 
 
-BambuddyFactory = Callable[[], BambuddyClient]
+BambuddyFactory = Callable[[], BambuddyClient | None]
 
 
 def _detail(response: httpx.Response) -> str:

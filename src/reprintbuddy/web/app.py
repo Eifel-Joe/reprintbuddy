@@ -16,6 +16,7 @@ from starlette.templating import Jinja2Templates
 
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
+from reprintbuddy.bambuddy.factory import make_http_factory
 from reprintbuddy.changes import install_change_feed
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.domain import status
@@ -90,7 +91,8 @@ def create_app(
     app.state.login_brake = FailureBrake()  # 10 failures in 60 s: every attempt waits 2 s
     app.state.hash_limiter = HashLimiter(capacity=2)  # at most two argon2 runs at once
     app.state.http_client_factory = http_client_factory or httpx.AsyncClient
-    app.state.bambuddy_factory = None  # B2 sets the HTTP factory; tests set the fake
+    # The client is built from the stored settings at every call; tests replace the factory.
+    app.state.bambuddy_factory = make_http_factory(sessionmaker, app.state.http_client_factory)
     app.state.session_secret = secret  # also signs the one-time form tokens
     app.state.rights = RightsMonitor()  # what the stored key may do, checked once per start
     app.state.live = live
