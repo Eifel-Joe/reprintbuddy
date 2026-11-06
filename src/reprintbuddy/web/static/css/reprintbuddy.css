@@ -463,6 +463,17 @@ a.tile:hover { border-color: var(--accent); }
 .tile-stats strong { color: var(--text); font-variant-numeric: tabular-nums; }
 .tile-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; margin-top: auto; color: var(--text-2); font-size: 0.85rem; }
 
+/* Main and side-page buttons of the toolbar, each with its symbol. */
+.toolbar-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.toolbar-actions .btn { display: inline-flex; align-items: center; gap: 0.45rem; }
+
+/* First cell of a list row: picture next to name and number. Badges of one entry side by side
+   (in a tile head one above the other); the fill bar sits under the target number. */
+.item { display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
+.badges { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; flex: 0 0 auto; }
+.tile-head .badges { flex-direction: column; align-items: flex-end; }
+td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
+
 /* Small picture in a row or a tile head; the placeholder keeps the size without a picture. */
 .thumb-sm, .thumb-placeholder {
   display: block; flex: 0 0 auto; width: 40px; height: 40px; border-radius: 6px; background: var(--bg);

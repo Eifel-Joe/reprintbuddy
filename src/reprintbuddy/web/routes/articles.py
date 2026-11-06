@@ -8,6 +8,7 @@ and nothing is taken from hidden fields.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Mapping
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -20,9 +21,11 @@ from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate,
 from reprintbuddy.domain import catalog
 from reprintbuddy.domain.catalog import ArticleInput, TargetOption
 from reprintbuddy.domain.errors import DomainError
+from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.domain import stock as stock_mod
 from reprintbuddy.models import Article, ArticleFilament, ArticlePart, Part
+from reprintbuddy.web import listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, render
 from reprintbuddy.web.forms import (
@@ -155,11 +158,40 @@ async def _read_plate(client: BambuddyClient, file_id: int, index: int):
 
 
 @router.get("/articles")
-async def articles_list(request: Request, view: str = "active", db: Session = Depends(get_db)):
+async def articles_list(
+    request: Request, view: str = "active", q: str | None = None, db: Session = Depends(get_db)
+):
+    """Overview with short summary, search, status filter and tiles or list (Spec 10.1).
+
+    The summary counts all articles of the view; the filter counts follow the search; the list
+    shows what passes both. The archive has no status filter: its badge is "archived".
+    """
+    if (redirect := listing.remember_layout(request, "articles")) is not None:
+        return redirect  # ?layout=... only sets the cookie
     archived = view == "archived"
+    states = STATES["article"]
+    status = None if archived else listing.pick(request.query_params.get("status"), states)
+    every = catalog.list_articles(db, archived=archived)
+    found = [row for row in every if listing.matches(q, row.name, row.sku)]
+    counts = Counter(row.status for row in found)
+    summary_items: list[tuple[str, int]] = []
+    if not archived:  # "enough" is not counted: the summary names what needs attention
+        summary_items = summarize((row.status for row in every), ("overbooked", "below_min", "low"))
+        if paused := sum(row.paused for row in every):
+            summary_items.append(("paused", paused))
+    keep = (("status", status), ("view", "archived" if archived else None))
+    layout = listing.layout_of(request, "articles")
     return render(
         request, "articles_list.html", active_nav="articles", archived=archived,
-        rows=catalog.list_articles(db, archived=archived),
+        rows=[row for row in found if status is None or row.status == status],
+        total=len(every),
+        summary_items=summary_items,
+        filters=listing.filter_links(request, states, counts, len(found), status),
+        layout=layout,
+        layout_links=listing.layout_links(request, layout),
+        q=q,
+        status=status,
+        search_keep=[(name, value) for name, value in keep if value],  # a new search keeps these
     )
 
 

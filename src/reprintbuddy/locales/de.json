@@ -445,6 +445,7 @@
   "list.layout_list": "Liste",
   "list.layout_tiles": "Kacheln",
   "list.no_match": "Nichts passt zu Suche oder Filter.",
+  "list.col.status": "Status",
   "tile.to_check": "{n} zu prüfen",
   "tile.to_assemble": "{n} zur Montage"
 }

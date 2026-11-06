@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
 from reprintbuddy.domain import rules
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
+from reprintbuddy.domain.status import ArticleStatus, article_status
 from reprintbuddy.domain.stock import MAX_QTY, Actor, count_part
 from reprintbuddy.models import (
     Article,
@@ -310,6 +311,33 @@ class ArticleRow:
     awaiting_assembly: int
     min_stock: int
     target: int
+    has_thumbnail: bool
+    paused: bool
+    coverage: int
+    status: ArticleStatus
+
+
+def article_row(article: Article) -> ArticleRow:
+    """The numbers and the state of one article, as the overview shows them."""
+    available = rules.available(article.stock, article.reserved)
+    # queued and in-progress units come with the queue (Spec 7.1)
+    coverage = rules.coverage(available, 0, 0, article.provisional, article.awaiting_assembly)
+    return ArticleRow(
+        id=article.id,
+        name=article.name,
+        sku=article.sku,
+        stock=article.stock,
+        reserved=article.reserved,
+        available=available,
+        provisional=article.provisional,
+        awaiting_assembly=article.awaiting_assembly,
+        min_stock=article.min_stock,
+        target=rules.target_quantity(article.min_stock, article.buffer),
+        has_thumbnail=bool(article.thumbnail),
+        paused=article.paused,
+        coverage=coverage,
+        status=article_status(available=available, min_stock=article.min_stock, coverage=coverage),
+    )
 
 
 def _archive_filter(column, archived: bool):
@@ -319,21 +347,7 @@ def _archive_filter(column, archived: bool):
 def list_articles(session: Session, *, archived: bool = False) -> list[ArticleRow]:
     """Active articles; with `archived=True` only the archived ones (Spec 5.5)."""
     articles = session.scalars(select(Article).where(_archive_filter(Article.archived_at, archived))).all()
-    rows = [
-        ArticleRow(
-            id=a.id,
-            name=a.name,
-            sku=a.sku,
-            stock=a.stock,
-            reserved=a.reserved,
-            available=rules.available(a.stock, a.reserved),
-            provisional=a.provisional,
-            awaiting_assembly=a.awaiting_assembly,
-            min_stock=a.min_stock,
-            target=rules.target_quantity(a.min_stock, a.buffer),
-        )
-        for a in articles
-    ]
+    rows = [article_row(a) for a in articles]
     return sorted(rows, key=lambda r: (r.name.casefold(), r.id))
 
 

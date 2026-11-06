@@ -1,42 +1,87 @@
 {% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
 {% block title %}{{ t('articles.title') }}{% endblock %}
 {% block content %}
-<h1>{{ t('articles.title') }}{% if archived %} · {{ t('catalog.archived') }}{% endif %}</h1>
-<p>
-  <a class="btn" href="/articles/new">{{ t('articles.new') }}</a>
-  <a class="btn-link" href="/journal">{{ t('journal.title') }}</a>
-  {% if archived %}<a class="btn-link" href="/articles">{{ t('catalog.show_active') }}</a>{% else %}<a class="btn-link" href="/articles?view=archived">{{ t('catalog.archived') }}</a>{% endif %}
-</p>
-{% if rows %}
-<div class="card table-wrap">
+{#- Picture of a row or tile; the placeholder keeps the size when the article has none. -#}
+{% macro thumb(row) -%}
+{% if row.has_thumbnail %}<img class="thumb-sm" src="/articles/{{ row.id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb-placeholder">{{ ui.icon('package') }}</span>{% endif %}
+{%- endmacro %}
+{#- The state badge (in the archive: "archived" instead), plus "paused". -#}
+{% macro badges(row) -%}
+<span class="badges">{% if archived %}{{ ui.badge('article', 'archived') }}{% else %}{{ ui.badge('article', row.status) }}{% if row.paused %} {{ ui.badge('article', 'paused') }}{% endif %}{% endif %}</span>
+{%- endmacro %}
+{#- Fill bar towards the target quantity; grey in the archive. -#}
+{% macro target_bar(row) -%}
+{{ ui.bar(fill_percent(row.available, row.target), 'archived' if archived else row.status) }}
+{%- endmacro %}
+
+{% call ui.page_head("package", t('articles.title') ~ (' · ' ~ t('catalog.archived') if archived else '')) %}
+{% call ui.region("summary", "article") %}{{ ui.summary("article", tc('summary.articles', total), summary_items) }}{% endcall %}
+{% endcall %}
+
+<div class="toolbar">
+  {{ ui.search_form(q, t('list.search_placeholder'), keep=search_keep) }}
+  {% if not archived %}{% call ui.region("filters", "article") %}{{ ui.filter_bar("article", filters) }}{% endcall %}{% endif %}
+  {{ ui.layout_toggle(layout_links) }}
+  <div class="toolbar-actions">
+    <a class="btn" href="/articles/new">{{ ui.icon('plus') }}{{ t('articles.new') }}</a>
+    <a class="btn secondary" href="/journal">{{ ui.icon('history') }}{{ t('journal.title') }}</a>
+    {% if archived %}<a class="btn secondary" href="/articles">{{ ui.icon('archive') }}{{ t('catalog.show_active') }}</a>
+    {%- else %}<a class="btn secondary" href="/articles?view=archived">{{ ui.icon('archive') }}{{ t('catalog.archived') }}</a>{% endif %}
+  </div>
+</div>
+
+{% call ui.region("list", "article") %}
+{% if not total %}
+<div class="card"><p class="muted">{{ t('articles.empty') }}</p></div>
+{% elif not rows %}
+<div class="card"><p class="muted">{{ t('list.no_match') }}</p></div>
+{% else %}
+{% call ui.collection(layout) %}
+<div class="card table-wrap table-card">
   <table>
     <thead>
       <tr>
         <th>{{ t('articles.col.name') }}</th>
+        <th>{{ t('list.col.status') }}</th>
         <th class="num">{{ t('articles.col.stock') }}</th>
-        <th class="num">{{ t('articles.col.reserved') }}</th>
         <th class="num">{{ t('articles.col.available') }}</th>
-        <th class="num">{{ t('articles.col.provisional') }}</th>
-        <th class="num">{{ t('articles.col.awaiting_assembly') }}</th>
-        <th class="num">{{ t('articles.col.min_target') }}</th>
+        <th class="num">{{ t('articles.target_quantity') }}</th>
       </tr>
     </thead>
     <tbody>
     {% for row in rows %}
       <tr>
-        <td><a href="/articles/{{ row.id }}">{{ row.name }}</a>{% if row.sku %}<br><span class="muted">{{ row.sku }}</span>{% endif %}</td>
+        <td><div class="item">{{ thumb(row) }}<div><a href="/articles/{{ row.id }}">{{ row.name }}</a>{% if row.sku %}<br><span class="muted">{{ row.sku }}</span>{% endif %}</div></div></td>
+        <td>{{ badges(row) }}</td>
         <td class="num">{{ row.stock }}</td>
-        <td class="num">{{ row.reserved }}</td>
         <td class="num{% if row.available < 0 %} neg{% endif %}">{{ row.available }}</td>
-        <td class="num">{{ row.provisional }}</td>
-        <td class="num">{{ row.awaiting_assembly }}</td>
-        <td class="num">{{ row.min_stock }} / {{ row.target }}</td>
+        <td class="num target">{{ row.target }}{{ target_bar(row) }}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
 </div>
-{% else %}
-<div class="card"><p class="muted">{{ t('articles.empty') }}</p></div>
+<div class="tiles">
+  {% for row in rows %}
+  <a class="tile" href="/articles/{{ row.id }}">
+    <div class="tile-head">{{ thumb(row) }}<div>{{ row.name }}{% if row.sku %}<br><span class="muted">{{ row.sku }}</span>{% endif %}</div>{{ badges(row) }}</div>
+    <div class="tile-stats">
+      <span>{{ t('articles.col.stock') }} <strong>{{ row.stock }}</strong></span>
+      <span>{{ t('articles.col.available') }} <strong{% if row.available < 0 %} class="neg"{% endif %}>{{ row.available }}</strong></span>
+      <span>{{ t('articles.target_quantity') }} <strong>{{ row.target }}</strong></span>
+    </div>
+    {{ target_bar(row) }}
+    {% if row.provisional or row.awaiting_assembly %}
+    <div class="tile-foot">
+      {%- if row.provisional %}<span>{{ t('tile.to_check', n=row.provisional) }}</span>{% endif %}
+      {%- if row.awaiting_assembly %}<span>{{ t('tile.to_assemble', n=row.awaiting_assembly) }}</span>{% endif -%}
+    </div>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endcall %}
 {% endif %}
+{% endcall %}
 {% endblock %}
