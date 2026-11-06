@@ -267,6 +267,69 @@ class HttpBambuddyClient:
         items = _parse.parse_queue_items(await self._get("/queue/"))
         return [item for item in items if item.batch_id == batch_id]
 
+    # ---- the two write calls (Spec 3.1; `tests/bambuddy/test_write_guard.py` watches) ----
+    async def ensure_batch(self, name: str, external_ref: str, library_file_id: int) -> int:
+        """The id of the batch for `external_ref`, created if need be (Decision 10).
+
+        The batch has no `plates`: it only groups, so Bambuddy owes nothing for it. A 409
+        means the reference exists already (the only 409 of the create route); the search
+        then finds it. Bambuddy's search leaves out empty batches, so no hit means a batch
+        from an earlier try whose answer was lost and that is still empty: `BatchRefLost`,
+        and the caller takes a new reference. More than one hit cannot be (unique index):
+        `BambuddyUnexpected`. The create is sent once, never repeated here.
+        """
+        body = {
+            "name": name,
+            "library_file_id": library_file_id,
+            "external_source": _parse.EXTERNAL_SOURCE,
+            "external_ref": external_ref,
+        }
+        try:
+            return _parse.parse_batch_id(await self._post("/queue/batches", body), external_ref)
+        except BambuddyRejected as exc:
+            if exc.status != 409:
+                raise
+            conflict = exc
+        found = await self._get(
+            "/queue/batches",
+            {"external_source": _parse.EXTERNAL_SOURCE, "external_ref": external_ref},
+        )
+        hits = _parse.parse_batch_hits(found, external_ref)
+        if not hits:
+            raise BatchRefLost(conflict.detail, status=409)
+        if len(hits) > 1:
+            raise BambuddyUnexpected(f"GET /queue/batches: {len(hits)} batches for one reference")
+        return hits[0]
+
+    async def enqueue(self, req: EnqueueRequest) -> QueueItem:
+        """One queue entry, sent once (Decision 11, Review Focus 1).
+
+        The body holds exactly the file, the plate, one target (model or printer), the
+        batch and `manual_start: false`; `insert_at_top` only when set, `insert_position`
+        only when given. No print options: Bambuddy's defaults apply. A request with both
+        targets, none, an empty model or a position below 1 is a `ValueError` before any
+        network call. A timeout is `BambuddyUnavailable` with an unknown outcome; the
+        caller looks for the entry by batch instead of sending it again.
+        """
+        if req.target_model == "":
+            raise ValueError("target_model is empty")
+        if (req.target_model is None) == (req.printer_id is None):
+            raise ValueError("exactly one of target_model and printer_id is needed")
+        if req.insert_position is not None and req.insert_position < 1:
+            raise ValueError("insert_position starts at 1")
+        body: dict = {"library_file_id": req.library_file_id, "plate_id": req.plate_id}
+        if req.target_model is not None:
+            body["target_model"] = req.target_model
+        else:
+            body["printer_id"] = req.printer_id
+        body["batch_id"] = req.batch_id
+        body["manual_start"] = False
+        if req.insert_at_top:
+            body["insert_at_top"] = True
+        if req.insert_position is not None:
+            body["insert_position"] = req.insert_position
+        return _parse.parse_queue_item(await self._post("/queue/", body))
+
     async def check_connection(self) -> ConnectionCheck:
         """Who owns the key and may it do everything Reprintbuddy needs? Never raises.
 

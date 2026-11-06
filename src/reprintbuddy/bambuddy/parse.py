@@ -309,3 +309,33 @@ def parse_spools(data: object) -> list[Spool]:
             )
         )
     return out
+
+
+# ---- batches ---------------------------------------------------------------------------
+
+# The `external_source` of every batch Reprintbuddy creates. Bambuddy keeps
+# `external_ref` unique within one source (`PrintBatchCreate`, pattern `^[a-z0-9_-]+$`).
+EXTERNAL_SOURCE = "reprintbuddy"
+
+
+def parse_batch_id(data: object, external_ref: str) -> int:
+    """The `id` of one batch (`PrintBatchResponse`), checked against what was sent.
+
+    `external_source` must be `EXTERNAL_SOURCE` and `external_ref` the reference that was
+    sent; a batch of anyone or anything else is an unexpected answer, never a hit
+    (Decision 10).
+    """
+    d = _object(data, "batch")
+    batch_id = _req(d, "id", int)
+    if d.get("external_source") != EXTERNAL_SOURCE or d.get("external_ref") != external_ref:
+        raise BambuddyUnexpected("batch belongs to another reference")
+    return batch_id
+
+
+def parse_batch_hits(data: object, external_ref: str) -> list[int]:
+    """The ids of the batch search (`GET /queue/batches?external_source=…&external_ref=…`).
+
+    Every hit must carry the reference that was searched for (`parse_batch_id`); how many
+    hits are fine is the caller's decision.
+    """
+    return [parse_batch_id(entry, external_ref) for entry in _list(data, "batch list")]
