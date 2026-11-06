@@ -171,6 +171,9 @@ class HttpBambuddyClient:
             data = response.json()
         except ValueError:
             raise BambuddyUnexpected(f"{method} {path}: answer is not JSON") from None
+        except RecursionError:
+            # A pathologically deep body is no answer of the source (not a ValueError).
+            raise BambuddyUnexpected(f"{method} {path}: answer is nested too deeply") from None
         if data is None:
             # `None` from `_get` means "gone" (404); a JSON `null` is no answer of the source.
             raise BambuddyUnexpected(f"{method} {path}: answer is empty")
@@ -251,6 +254,18 @@ class HttpBambuddyClient:
         """`None`: the entry is gone (deleted, or removed with the history; Decision 3)."""
         data = await self._get(f"/queue/{item_id}", none_on_404=True)
         return None if data is None else _parse.parse_queue_item(data)
+
+    async def list_queue(self) -> list[QueueItem]:
+        """The open entries (pending, printing), in Bambuddy's order (by position)."""
+        return _parse.parse_queue_items(await self._get("/queue/", {"status": "pending,printing"}))
+
+    async def find_items_by_batch(self, batch_id: int) -> list[QueueItem]:
+        """Every entry of one batch, history included (Decision 14).
+
+        Bambuddy has no filter by batch, so the whole list is read and filtered here.
+        """
+        items = _parse.parse_queue_items(await self._get("/queue/"))
+        return [item for item in items if item.batch_id == batch_id]
 
     async def check_connection(self) -> ConnectionCheck:
         """Who owns the key and may it do everything Reprintbuddy needs? Never raises.

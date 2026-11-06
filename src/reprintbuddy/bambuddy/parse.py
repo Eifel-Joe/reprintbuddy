@@ -130,6 +130,11 @@ def parse_queue_item(data: object) -> QueueItem:
     )
 
 
+def parse_queue_items(data: object) -> list[QueueItem]:
+    """The queue list (`GET /queue/`), in the order of the answer (Bambuddy sorts by position)."""
+    return [parse_queue_item(entry) for entry in _list(data, "queue list")]
+
+
 # ---- library ---------------------------------------------------------------------------
 
 
@@ -163,7 +168,10 @@ def parse_folders(data: object) -> list[LibraryFolder]:
             if children is not None:
                 walk(children, folder_id)
 
-    walk(data, None)
+    try:
+        walk(data, None)
+    except RecursionError:
+        raise BambuddyUnexpected("folder tree is nested too deeply") from None
     return out
 
 
@@ -274,7 +282,7 @@ def parse_spools(data: object) -> list[Spool]:
     out: list[Spool] = []
     for entry in _list(data, "spool list"):
         d = _object(entry, "spool")
-        label = _req(d, "label_weight", (int, float))
+        label = _req(d, "label_weight", int)  # Bambuddy's schema types it as int
         used = _req(d, "weight_used", (int, float))
         out.append(
             Spool(
@@ -284,7 +292,7 @@ def parse_spools(data: object) -> list[Spool]:
                 brand=_opt(d, "brand", str) or None,
                 color_name=_opt(d, "color_name", str) or None,
                 color_hex=normalize_color(d.get("rgba")),
-                label_g=int(label),
+                label_g=label,
                 remaining_g=max(0.0, float(label) - float(used)),
                 archived=bool(d.get("archived_at")),
                 created_at=_utc(d.get("created_at")),
