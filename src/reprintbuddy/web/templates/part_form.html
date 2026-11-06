@@ -6,7 +6,9 @@
 {% if part and part.archived_at %}<p class="summary">{{ ui.badge('part', 'archived') }}</p>{% endif %}
 {% endcall %}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
-{#- The edit form follows changes of its part's settings (Design 4.6); a new part shows no data. -#}
+{#- The edit form shows the stock, so its region follows every change of the part (a booking too);
+    the form watches only the settings, so a booking never says "changed in the meantime" (Design 4.6).
+    A new part shows no data and has no region. -#}
 {% macro form_section() -%}
 <section class="card section">
   {% set action = '/parts/' ~ part.id ~ '/edit' if part else '/parts/new' %}
@@ -72,7 +74,7 @@
 </section>
 {%- endmacro %}
 {% if part %}
-{% call ui.region("form", "part-settings:" ~ part.id) %}{{ form_section() }}{% endcall %}
+{% call ui.region("form", "part:" ~ part.id) %}{{ form_section() }}{% endcall %}
 <div class="actions">
   <form method="post" action="/parts/{{ part.id }}/{% if part.archived_at %}restore{% else %}archive{% endif %}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

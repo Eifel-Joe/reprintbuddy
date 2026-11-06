@@ -168,7 +168,7 @@ def test_part_edit_watches_its_settings(ready_client):
     part_id = add(ready_client, name="Insert M4", stock=2)
     page = ready_client.get(f"/parts/{part_id}/edit").text
     form = region_of(page, "form")
-    assert f'data-live-topics="part-settings:{part_id}"' in page
+    assert f'data-live-topics="part:{part_id}"' in page
     assert re.search(rf'<form method="post" action="/parts/{part_id}/edit" data-live-watch="part-settings:{part_id}">\s*<p class="live-stale" hidden', form)
     assert 'class="page-head"' in page
 
@@ -202,3 +202,16 @@ def test_part_badge_sits_in_the_badges_wrapper_like_the_articles(ready_client):
     add(ready_client, stock=5, min_stock=5)
     listing = list_of(ready_client.get("/parts").text)
     assert listing.count('<span class="badges"><span class="badge tone-ok">enough</span></span>') == 2
+
+
+def test_part_edit_region_follows_a_booking_made_elsewhere(ready_client):
+    """The form shows the stock, so its region listens to every change of the part; the watch stays
+    on the settings, so a mere booking never says "changed in the meantime" (Design 4.6)."""
+    part_id = add(ready_client, name="Insert M4", stock=2)
+    page = ready_client.get(f"/parts/{part_id}/edit").text
+    assert f'data-live-region="form" data-live-topics="part:{part_id}"' in page
+    assert f'data-live-watch="part-settings:{part_id}"' in page
+    with sm_of(ready_client).begin() as s:
+        stock.count_part(s, part_id, 12, "user")
+    piece = ready_client.get(f"/parts/{part_id}/edit", headers={regions.HEADER: "form"}).text
+    assert re.search(r"<strong>12</strong>\s*pcs", piece)
