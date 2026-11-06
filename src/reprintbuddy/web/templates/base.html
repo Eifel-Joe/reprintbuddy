@@ -36,11 +36,11 @@
 
 {% macro nav_footer() %}
   {% if open_bambuddy_url %}
-    <a class="nav-link nav-external" href="{{ open_bambuddy_url }}" target="_blank" rel="noopener noreferrer">{{ ui.icon('external-link') }}<span class="nav-label">{{ t('nav.open_bambuddy') }}</span></a>
+    <a class="nav-link nav-external" href="{{ open_bambuddy_url }}" target="_blank" rel="noopener noreferrer" title="{{ t('nav.open_bambuddy') }}" aria-label="{{ t('nav.open_bambuddy') }}">{{ ui.icon('external-link') }}<span class="nav-label">{{ t('nav.open_bambuddy') }}</span></a>
   {% endif %}
   <form method="post" action="/logout">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="nav-link nav-button" type="submit">{{ ui.icon('log-out') }}<span class="nav-label">{{ t('nav.logout') }}</span></button>
+    <button class="nav-link nav-button" type="submit" title="{{ t('nav.logout') }}" aria-label="{{ t('nav.logout') }}">{{ ui.icon('log-out') }}<span class="nav-label">{{ t('nav.logout') }}</span></button>
   </form>
 {% endmacro %}
 

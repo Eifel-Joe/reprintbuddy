@@ -15,7 +15,7 @@
   --warn: #f59e0b;
   --warn-soft: rgba(245, 158, 11, 0.16);
   --danger-soft: rgba(239, 68, 68, 0.14);
-  --neutral-soft: rgba(148, 163, 184, 0.15);
+  --neutral-soft: rgba(161, 161, 170, 0.15);
   --info: #60a5fa;
   --info-soft: rgba(59, 130, 246, 0.16);
   --radius: 11px;
@@ -84,7 +84,7 @@ p { margin: 0 0 1rem; }
   width: 100%;
   cursor: pointer;
 }
-.nav-link:hover { background: rgba(148, 163, 184, 0.1); color: var(--text); }
+.nav-link:hover { background: #26272a; color: var(--text); }
 .nav-link.active { background: var(--accent); color: #fff; font-weight: 600; }
 
 /* Symbols of the sprite (static/icons/icons.svg); they take the colour of the text. */
@@ -519,7 +519,6 @@ div.tile:hover, div.tile:focus-within { border-color: var(--accent); }
 /* ---- look like Bambuddy (Spec 10.1, 06.11.2026) ---- */
 
 .nav-link { font-size: 13.5px; padding: 8px 10px; gap: 0.6rem; }
-.nav-link:hover { background: rgba(255, 255, 255, 0.06); }
 .nav-link.active:hover { background: var(--accent); color: #fff; }
 
 /* Text for screen readers only (the menu button shows a symbol). */
@@ -540,14 +539,14 @@ div.tile:hover, div.tile:focus-within { border-color: var(--accent); }
 /* Folded menu (cookie rb_sidebar): symbols only, the name is the title of the link. */
 .app.sidebar-collapsed { --sidebar-w: 64px; }
 .sidebar-collapsed .sidebar { padding-left: 0.5rem; padding-right: 0.5rem; }
-.sidebar-collapsed .brand { padding-left: 0.4rem; padding-right: 0; }
-.sidebar-collapsed .brand-text,
-.sidebar-collapsed .nav-label { display: none; }
-.sidebar-collapsed .nav-link { justify-content: center; padding-left: 0; padding-right: 0; }
-.sidebar-collapsed .nav-version-row { flex-direction: column; padding-left: 0; padding-right: 0; }
-.sidebar-collapsed .nav-version { font-size: 10px; }
-.sidebar-collapsed .nav-collapse .icon-collapse { display: none; }
-.sidebar-collapsed .nav-collapse .icon-expand { display: inline-block; }
+.sidebar-collapsed .sidebar .brand { padding-left: 0.4rem; padding-right: 0; }
+.sidebar-collapsed .sidebar .brand-text,
+.sidebar-collapsed .sidebar .nav-label { display: none; }
+.sidebar-collapsed .sidebar .nav-link { justify-content: center; padding-left: 0; padding-right: 0; }
+.sidebar-collapsed .sidebar .nav-version-row { flex-direction: column; padding-left: 0; padding-right: 0; }
+.sidebar-collapsed .sidebar .nav-version { font-size: 10px; }
+.sidebar-collapsed .sidebar .nav-collapse .icon-collapse { display: none; }
+.sidebar-collapsed .sidebar .nav-collapse .icon-expand { display: inline-block; }
 
 @media (max-width: 899px) {
   .mobile-menu summary {
@@ -555,7 +554,7 @@ div.tile:hover, div.tile:focus-within { border-color: var(--accent); }
     min-height: 2.75rem; padding: 0;
   }
   .mobile-menu summary::after {
-    content: "³0"; float: none; display: inline-flex; align-items: center; justify-content: center;
+    content: "\2630"; float: none; display: inline-flex; align-items: center; justify-content: center;
     min-width: 2.75rem; min-height: 2.75rem; font-size: 1.25rem; color: var(--text-2);
   }
   .mobile-menu[open] summary::after { color: var(--text); }

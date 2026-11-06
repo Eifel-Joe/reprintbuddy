@@ -81,3 +81,32 @@ def test_collapse_needs_login(ready_client):
     assert response.status_code == 303
     assert response.headers["location"].startswith("/login")
     assert "rb_sidebar" not in response.headers.get("set-cookie", "")
+
+
+def test_burger_glyph_is_an_escape_not_bytes(ready_client):
+    css = css_text(ready_client)
+    assert chr(92) + "2630" in css
+    assert chr(0xB3) not in css
+
+
+def test_collapsed_rules_only_touch_the_desktop_sidebar(ready_client):
+    """The phone menu sits inside `.app` too: a folded cookie must not strip its brand or labels."""
+    css = re.sub(r"/\*.*?\*/", "", css_text(ready_client), flags=re.S)
+    selectors = re.findall(r"([^{}]*\.sidebar-collapsed[^{}]*)\{", css)
+    assert selectors
+    for group in selectors:
+        for selector in group.split(","):
+            selector = selector.strip()
+            assert selector == ".app.sidebar-collapsed" or ".sidebar-collapsed .sidebar" in selector, selector
+
+
+def test_footer_entries_have_a_name_when_collapsed(ready_client):
+    ready_client.get("/ui/sidebar?collapsed=1&next=/")
+    html = ready_client.get("/").text
+    assert 'class="app sidebar-collapsed"' in html
+    assert re.search(r'<button class="nav-link nav-button"[^>]*title="Log out"[^>]*aria-label="Log out"', html)
+    assert re.search(r'<a class="nav-link nav-external"[^>]*title="Open Bambuddy"[^>]*aria-label="Open Bambuddy"', html)
+
+
+def test_no_slate_left_in_tokens(ready_client):
+    assert "148, 163, 184" not in css_text(ready_client)
