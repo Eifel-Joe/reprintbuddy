@@ -253,7 +253,14 @@ def test_writes_blocked_during_update(ops_env):
     git_env(ops_env)
     token = csrf_of(ops_env.client, "/settings")
     write_status(data_dir(ops_env), UpdateStatus(state="running", step="install", started_at=now() - timedelta(minutes=1)))
-    exempt = {"/settings/update/check", "/settings/update", "/logout", "/bambuddy/rights/later", "/bambuddy/rights/recheck"}
+    exempt = {
+        "/settings/update/check",
+        "/settings/update",
+        "/logout",
+        "/bambuddy/rights/later",
+        "/bambuddy/rights/recheck",
+        "/bambuddy/rights/done",
+    }
     paths = sorted(
         {
             route.path
@@ -284,6 +291,14 @@ def test_rights_buttons_work_during_an_update(ops_env, respx_mock):
         assert response.status_code == 303 and response.headers["location"] == "/settings", path
     with ops_env.client.app.state.sessionmaker() as session:
         assert st.get_setting(session, "language") == "en"  # nothing was written
+
+
+def test_done_works_while_an_update_runs(ops_env):
+    """"Continue" of the green rights dialog only changes the session cookie: never paused."""
+    token = csrf_of(ops_env.client, "/settings")
+    write_status(data_dir(ops_env), UpdateStatus(state="running", step="install", started_at=now() - timedelta(minutes=1)))
+    response = ops_env.client.post("/bambuddy/rights/done", data={"csrf_token": token, "next": "/settings"})
+    assert response.status_code == 303 and response.headers["location"] == "/settings"
 
 
 def test_writes_allowed_again_after_the_update(ops_env):

@@ -25,6 +25,7 @@ SID_KEY = "sid"
 FLASH_KEY = "flash"
 FLASH_WARNING_KEY = "flash_warning"  # the message above is a warning, not good news
 RIGHTS_LATER_KEY = "rights_later"  # in the session: the missing rights "Later" was pressed for
+RIGHTS_SUCCESS_KEY = "rights_success"  # in the session: "Check again" in the dialog found every right
 
 # Reachable by everyone, whatever the state of the installation.
 _OPEN_EXACT = {"/healthz", "/favicon.ico"}
@@ -153,23 +154,33 @@ def _page_to_return_to(request: Request) -> str:
 
 
 def _add_rights_notice(request: Request, context: dict[str, object]) -> None:
-    """What base.html needs to show the missing-rights dialog or, after "Later", the warning line."""
+    """What base.html needs to show the missing-rights dialog, after "Later" the warning line, or
+    after a successful "Check again" in the dialog the same dialog in green (Spec 11.3, p31)."""
     notice = request.app.state.rights.notice
     context["rights_notice"] = notice
+    # The green dialog stays until "Continue". A right that goes missing again outranks it.
+    context["rights_success"] = notice is None and bool(request.session.get(RIGHTS_SUCCESS_KEY))
     if notice is None:
         context["rights_later"] = False
+        if context["rights_success"]:
+            _add_permission_tables(context)
+            context["rights_next"] = _page_to_return_to(request)
         return
     # "Later" holds for the rights it was pressed for. One more right missing after a later
     # update is news: the dialog comes back.
     context["rights_later"] = request.session.get(RIGHTS_LATER_KEY) == ",".join(notice.missing)
+    labels = _add_permission_tables(context)["editor_labels"]
+    context["rights_names"] = ", ".join(str(labels[code]) for code in notice.missing)
+    context["rights_next"] = _page_to_return_to(request)
+
+
+def _add_permission_tables(context: dict[str, object]) -> dict[str, object]:
     from reprintbuddy.web.bambuddy_check import permission_context  # imports deps: not at the top
 
     tables = permission_context()
     for name, value in tables.items():
         context.setdefault(name, value)
-    labels = tables["editor_labels"]
-    context["rights_names"] = ", ".join(str(labels[code]) for code in notice.missing)
-    context["rights_next"] = _page_to_return_to(request)
+    return tables
 
 
 def take_verdict(request: Request, check: ConnectionCheck) -> None:

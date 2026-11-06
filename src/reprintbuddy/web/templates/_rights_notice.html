@@ -1,7 +1,26 @@
-{# The dialog over the interface when the stored key lacks a right this version needs.
-   Needs `rights_notice` (ConnectionCheck), `rights_next`, `flashes` and the permission context. #}
+{# The dialog over the interface when the stored key lacks a right this version needs, and the same
+   dialog in green after "Check again" in it found every right, until "Continue" (Spec 11.3, p31).
+   Needs `rights_notice` (ConnectionCheck) or `rights_success`, `rights_next`, `flashes` and the
+   permission context. #}
 <div class="rights-overlay">
   <div class="rights-dialog" role="alertdialog" aria-modal="true" aria-labelledby="rights-title" aria-describedby="rights-intro">
+    {% if rights_success %}
+    <h2 id="rights-title">{{ t('rights.ok_title') }}</h2>
+    {% for message in flashes %}{% include "_flash_message.html" %}{% endfor %}
+    <p id="rights-intro">{{ t('rights.ok') }}</p>
+    <ul class="perms">
+      {% for code in required_permissions %}
+      <li class="perm ok"><span class="mark" aria-label="{{ t('bambuddy.result.granted') }}">✓</span> {% include "_permission_label.html" %}</li>
+      {% endfor %}
+    </ul>
+    <div class="actions">
+      <form method="post" action="/bambuddy/rights/done">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ rights_next }}">
+        <button class="btn" type="submit" autofocus>{{ t('rights.continue') }}</button>
+      </form>
+    </div>
+    {% else %}
     <h2 id="rights-title">{{ t('rights.title') }}</h2>
     {% for message in flashes %}{% include "_flash_message.html" %}{% endfor %}
     <p id="rights-intro">{{ t('rights.intro') }}</p>
@@ -10,6 +29,7 @@
       <form method="post" action="/bambuddy/rights/recheck">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="next" value="{{ rights_next }}">
+        <input type="hidden" name="from" value="dialog">
         <button class="btn" type="submit" autofocus>{{ t('rights.recheck') }}</button>
       </form>
       <form method="post" action="/bambuddy/rights/later">
@@ -18,5 +38,6 @@
         <button class="btn secondary" type="submit">{{ t('rights.later') }}</button>
       </form>
     </div>
+    {% endif %}
   </div>
 </div>

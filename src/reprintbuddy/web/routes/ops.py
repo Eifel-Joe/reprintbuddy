@@ -57,7 +57,14 @@ OPS_MESSAGES = frozenset(
 # database). Everything else is paused: the rollback restores the backup made before the
 # update, so a booking made meanwhile would be lost.
 UPDATE_EXEMPT_PATHS = frozenset(
-    {"/settings/update/check", "/settings/update", "/logout", "/bambuddy/rights/later", "/bambuddy/rights/recheck"}
+    {
+        "/settings/update/check",
+        "/settings/update",
+        "/logout",
+        "/bambuddy/rights/later",
+        "/bambuddy/rights/recheck",
+        "/bambuddy/rights/done",
+    }
 )
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 

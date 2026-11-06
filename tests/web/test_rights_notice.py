@@ -219,7 +219,8 @@ def test_forms_carry_the_page_to_come_back_to(missing_client):
 
 # --- check again, later, and feedback from settings and setup ---------------------------------
 
-RECHECK, LATER = "/bambuddy/rights/recheck", "/bambuddy/rights/later"
+RECHECK, LATER, DONE = "/bambuddy/rights/recheck", "/bambuddy/rights/later", "/bambuddy/rights/done"
+ALL_THERE = "Bambuddy: all rights are there."
 
 
 def _post(client, path, token=None, **data):
@@ -237,17 +238,110 @@ def _paragraph_with(page, text):
     return page[page.rindex("<p", 0, end) : end]
 
 
+def _recheck_from_the_dialog(client, next="/"):
+    """What the "Check again" button of the dialog sends."""
+    return _post(client, RECHECK, next=next, **{"from": "dialog"})
+
+
+def _dialog(page):
+    return page[page.index('class="rights-dialog"') :]
+
+
+def _rights_listed(dialog):
+    """Every right listed in the dialog: its code and whether it is ticked ("ok") or crossed ("bad")."""
+    items = re.findall(r'<li class="perm (\w+)">(.*?)</li>', dialog, re.S)
+    return {re.search(r"<code>([^<]+)</code>", body).group(1): state for state, body in items}
+
+
 def test_recheck_after_fix_clears_notice(missing_client, respx_mock):
+    """p31: a successful check from the dialog keeps it open, now green, instead of closing it."""
     assert "rights-dialog" in missing_client.get("/").text
     _everything_granted(respx_mock)  # the person added the right in Bambuddy
+    response = _recheck_from_the_dialog(missing_client, next="/articles")
+    assert response.status_code == 303 and response.headers["location"] == "/articles"
+    page = missing_client.get("/articles").text
+    assert "rights-dialog" in page and "rights-banner" not in page
+    assert "Bambuddy rights complete" in page
+    assert 'aria-label="missing"' not in page and "Bambuddy right missing" not in page
+
+
+def test_the_check_again_button_of_the_dialog_says_it_comes_from_the_dialog(missing_client):
+    dialog = _dialog(missing_client.get("/").text)
+    recheck = dialog[dialog.index('action="/bambuddy/rights/recheck"') : dialog.index('action="/bambuddy/rights/later"')]
+    assert 'name="from" value="dialog"' in recheck
+
+
+def test_recheck_success_keeps_the_dialog_with_every_right_ticked(missing_client, respx_mock):
+    assert "rights-dialog" in missing_client.get("/").text
+    _everything_granted(respx_mock)
+    _recheck_from_the_dialog(missing_client)
+    page = missing_client.get("/articles?q=x").text
+    dialog = _dialog(page)
+    assert 'role="alertdialog"' in dialog
+    assert _rights_listed(dialog) == {code: "ok" for code in REQUIRED}
+    assert "perm bad" not in page
+    assert dialog.count('aria-label="granted"') == len(REQUIRED)
+    assert ALL_THERE in dialog and page.count(ALL_THERE) == 1  # the text of the dialog, not a message too
+    assert "Read Inventory" in dialog and "inventory:read" in dialog
+    # One button: Continue, back to this very page. No "Later", nothing to check again.
+    assert 'action="/bambuddy/rights/done"' in dialog and "Continue" in dialog
+    done = dialog[dialog.index('action="/bambuddy/rights/done"') :]
+    assert 'name="next" value="/articles?q=x"' in done and 'name="csrf_token"' in done
+    assert "autofocus" in done
+    assert "Later" not in dialog and 'action="/bambuddy/rights/later"' not in dialog
+    assert 'action="/bambuddy/rights/recheck"' not in dialog
+
+
+def test_success_dialog_stays_until_continue(missing_client, respx_mock):
+    assert "rights-dialog" in missing_client.get("/").text
+    _everything_granted(respx_mock)
+    _recheck_from_the_dialog(missing_client)
+    for path in ("/settings", "/articles"):
+        page = missing_client.get(path).text
+        assert "rights-dialog" in page and "Bambuddy rights complete" in page, path
+
+
+def test_continue_closes_the_success_dialog(missing_client, respx_mock):
+    assert "rights-dialog" in missing_client.get("/").text
+    _everything_granted(respx_mock)
+    _recheck_from_the_dialog(missing_client)
+    assert "rights-dialog" in missing_client.get("/").text
+    response = _post(missing_client, DONE, next="/articles")
+    assert response.status_code == 303 and response.headers["location"] == "/articles"
+    for path in ("/articles", "/"):
+        page = missing_client.get(path).text
+        assert "rights-dialog" not in page and "rights-banner" not in page, path
+        assert ALL_THERE not in page, path
+
+
+def test_recheck_from_the_banner_shows_no_dialog(missing_client, respx_mock):
+    """After "Later" there is no dialog to keep open: the good news is a message, as before."""
+    assert "rights-dialog" in missing_client.get("/").text
+    _post(missing_client, LATER, next="/")
+    banner = missing_client.get("/").text
+    banner = banner[banner.index('class="rights-banner"') :]
+    assert 'name="from"' not in banner[: banner.index("</form>")]
+    _everything_granted(respx_mock)
     response = _post(missing_client, RECHECK, next="/articles")
     assert response.status_code == 303 and response.headers["location"] == "/articles"
     page = missing_client.get("/articles").text
     assert "rights-dialog" not in page and "rights-banner" not in page
-    assert "Bambuddy: all rights are there." in page
+    assert ALL_THERE in page
     # Good news keeps the green look; only trouble gets the warning look.
-    tag = _paragraph_with(page, "Bambuddy: all rights are there.")
+    tag = _paragraph_with(page, ALL_THERE)
     assert 'class="flash"' in tag and 'role="status"' in tag and "alert" not in tag
+
+
+def test_success_dialog_in_german(missing_client, respx_mock):
+    with missing_client.app.state.sessionmaker() as s:
+        st.set_setting(s, "language", "de")
+    assert "rights-dialog" in missing_client.get("/").text
+    _everything_granted(respx_mock)
+    _recheck_from_the_dialog(missing_client)
+    dialog = _dialog(missing_client.get("/").text)
+    assert "Bambuddy-Rechte vollständig" in dialog and "Weiter" in dialog
+    assert "Bambuddy: alle Rechte sind da." in dialog
+    assert "Read Inventory" in dialog  # Bambuddy shows its rights in English only
 
 
 def test_recheck_still_missing_keeps_dialog_and_says_so(missing_client):
@@ -318,13 +412,13 @@ def test_later_survives_pages_not_a_new_login(missing_client):
     assert "rights-dialog" in page and "rights-banner" not in page
 
 
-@pytest.mark.parametrize("path", [RECHECK, LATER])
+@pytest.mark.parametrize("path", [RECHECK, LATER, DONE])
 def test_rights_posts_need_csrf(missing_client, path):
     assert missing_client.post(path, data={"next": "/"}).status_code == 403
     assert missing_client.post(path, data={"csrf_token": "wrong", "next": "/"}).status_code == 403
 
 
-@pytest.mark.parametrize("path", [RECHECK, LATER])
+@pytest.mark.parametrize("path", [RECHECK, LATER, DONE])
 def test_rights_posts_need_a_login(missing_client, respx_mock, path):
     """With a valid CSRF token in the cookie, so that only the missing login can be the reason."""
     token = csrf_of(missing_client, "/")
@@ -345,7 +439,7 @@ def test_a_post_does_not_start_the_check(rights_client, respx_mock):
     assert route.call_count == 0 and rights_client.app.state.rights.status == "unknown"
 
 
-@pytest.mark.parametrize("path", [RECHECK, LATER])
+@pytest.mark.parametrize("path", [RECHECK, LATER, DONE])
 @pytest.mark.parametrize("target", ["https://example.com/", "//example.com/", "/\\example.com", ""])
 def test_next_must_be_local(missing_client, path, target):
     response = _post(missing_client, path, next=target)

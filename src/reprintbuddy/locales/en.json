@@ -415,5 +415,7 @@
   "ops.update.state.interrupted": "Update was interrupted",
   "ops.update.installed_with_package": "Installed version: {version} (package version {package})",
   "live.changed": "This has changed in the meantime.",
-  "live.reload": "Reload"
+  "live.reload": "Reload",
+  "rights.ok_title": "Bambuddy rights complete",
+  "rights.continue": "Continue"
 }
