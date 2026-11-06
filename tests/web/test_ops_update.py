@@ -2,7 +2,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from conftest import api_routes, csrf_of
+from conftest import STREAM_PATHS, api_routes, csrf_of
 
 from reprintbuddy import settings as st
 from reprintbuddy.ops.runner import CommandResult
@@ -242,7 +242,7 @@ def test_state_and_step_keys_exist():
 def test_no_get_route_runs_commands(ops_env):
     git_env(ops_env)
     for route in api_routes(ops_env.client.app):
-        if "GET" in route.methods and "{" not in route.path:
+        if "GET" in route.methods and "{" not in route.path and route.path not in STREAM_PATHS:
             ops_env.client.get(route.path)
     assert ops_env.runner.calls, "the walk reached no command at all"
     for call in ops_env.runner.calls:

@@ -3,7 +3,7 @@
 import base64
 import json
 
-from conftest import api_routes, auth_me, csrf_of, PASSWORD
+from conftest import STREAM_PATHS, api_routes, auth_me, csrf_of, PASSWORD
 
 from reprintbuddy import settings as st
 
@@ -61,6 +61,7 @@ def test_no_get_page_leaks_a_secret(ready_client, respx_mock):
             for route in api_routes(ready_client.app)
             if "GET" in route.methods
             and "{" not in route.path
+            and route.path not in STREAM_PATHS
         }
     )
     assert "/settings" in paths and "/" in paths  # the walk really covers the pages

@@ -7,6 +7,7 @@ import time
 import httpx
 import pytest
 from conftest import ADMIN, PASSWORD, auth_me
+from db_probes import Connections, CountingSessions
 
 from reprintbuddy import settings as st
 
@@ -62,44 +63,6 @@ async def test_a_slow_bambuddy_save_and_a_parallel_language_save_both_land(ready
 
 
 # --- one database session per request, no connection held while waiting -----------
-
-
-class CountingSessions:
-    """Stands in for the sessionmaker and counts how many sessions are open at once."""
-
-    def __init__(self, inner):
-        self.inner = inner
-        self.open = 0
-        self.most = 0
-        self.created = 0
-
-    def __call__(self):
-        session = self.inner()
-        self.open += 1
-        self.created += 1
-        self.most = max(self.most, self.open)
-        real_close = session.close
-        closed = []
-
-        def close():
-            if not closed:
-                closed.append(True)
-                self.open -= 1
-            real_close()
-
-        session.close = close
-        return session
-
-
-class Connections:
-    """Counts database connections that are checked out right now."""
-
-    def __init__(self, engine):
-        from sqlalchemy import event
-
-        self.out = 0
-        event.listen(engine, "checkout", lambda *a: setattr(self, "out", self.out + 1))
-        event.listen(engine, "checkin", lambda *a: setattr(self, "out", self.out - 1))
 
 
 def test_a_request_has_at_most_one_session_open(ready_client):

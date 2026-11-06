@@ -81,6 +81,11 @@ def mock_auth_me(respx_mock, url="http://bambuddy.test:8000", status=200, **kwar
     return route.respond(status)
 
 
+# GET routes that answer with an endless stream: a walk over all GET routes skips them,
+# or it would wait forever for the end of the response (tests/live_support.py drives them).
+STREAM_PATHS = frozenset({"/live"})
+
+
 def api_routes(app):
     """All path operations, also those hidden in included routers (FastAPI >= 0.16x)."""
     from fastapi.routing import APIRoute

@@ -16,6 +16,7 @@ from starlette.templating import Jinja2Templates
 
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
+from reprintbuddy.changes import install_change_feed
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.web import deps
@@ -23,6 +24,7 @@ from reprintbuddy.web.flash import pop_flashes
 from reprintbuddy.web.formatting import local_date, local_dt
 from reprintbuddy.web.formtoken import issue_form_token
 from reprintbuddy.web.i18n import load_locales
+from reprintbuddy.web.live import LiveBroker
 from reprintbuddy.web.preload import PreloadedLoader
 from reprintbuddy.web.rights import RightsMonitor
 from reprintbuddy.web.throttle import FailureBrake, HashLimiter
@@ -30,6 +32,7 @@ from reprintbuddy.web.routes import articles as articles_routes
 from reprintbuddy.web.routes import auth as auth_routes
 from reprintbuddy.web.routes import bookings as bookings_routes
 from reprintbuddy.web.routes import journal as journal_routes
+from reprintbuddy.web.routes import live as live_routes
 from reprintbuddy.web.routes import orders as orders_routes
 from reprintbuddy.web.routes import ops as ops_routes
 from reprintbuddy.web.routes import overview as overview_routes
@@ -69,6 +72,9 @@ def create_app(
     engine = make_engine(db_path)
     upgrade(engine)
     sessionmaker = make_sessionmaker(engine)
+    # Every committed change of this sessionmaker goes to the open pages (Spec 10.5.2).
+    live = LiveBroker()
+    install_change_feed(sessionmaker, live.publish)
     with sessionmaker() as session:
         secret = st.ensure_session_secret(session)
         https = st.tls_enabled(session)
@@ -86,6 +92,8 @@ def create_app(
     app.state.bambuddy_factory = None  # B2 sets the HTTP factory; tests set the fake
     app.state.session_secret = secret  # also signs the one-time form tokens
     app.state.rights = RightsMonitor()  # what the stored key may do, checked once per start
+    app.state.live = live
+    app.state.version = __version__  # the live channel tells pages of another version to reload
 
     # Templates and texts are read now and never again: an update replaces the files while this
     # process still answers, and it must go on rendering what it started with.
@@ -142,4 +150,5 @@ def create_app(
     app.include_router(orders_routes.router)
     app.include_router(bookings_routes.router)
     app.include_router(ops_routes.router)
+    app.include_router(live_routes.router)
     return app
