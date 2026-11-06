@@ -16,7 +16,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable
+from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
 from reprintbuddy.domain import catalog, filament
 from reprintbuddy.domain.catalog import ArticleInput, TargetOption
@@ -40,13 +40,11 @@ from reprintbuddy.web.forms import (
     saved_redirect,
 )
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
-from reprintbuddy.web.filament_view import COLOR, spools_or_none
+from reprintbuddy.web.filament_view import BAMBUDDY_ERRORS, COLOR, spools_or_none
 from reprintbuddy.web.journal_view import journal_rows
 from reprintbuddy.web.i18n import translate
 
 router = APIRouter()
-
-BAMBUDDY_ERRORS = (BambuddyUnavailable, BambuddyRejected)
 
 
 # ---- shared form helpers (also used by the edit page) ----------------------------------
@@ -618,7 +616,6 @@ async def article_filaments_save(request: Request, article_id: int, db: Session 
         m = _SLOT_FIELD.fullmatch(key)
         if m and isinstance(value, str):
             typed[int(m.group(1))] = value
-    spools = await spools_or_none(request)  # before any write transaction
     lang = current_language(request)
     try:
         mapping: dict[int, int | None] = {}
@@ -632,6 +629,7 @@ async def article_filaments_save(request: Request, article_id: int, db: Session 
         with write_transaction(request) as tx:
             filament.set_mapping(tx, article_id, mapping)
     except DomainError as exc:
+        spools = await spools_or_none(request)  # only to show the form again, outside the write transaction
         return _filament_page(request, spools, article_id, typed, error_text(lang, exc), error_status(exc))
     return saved_redirect(request, f"/articles/{article_id}", "filament.mapping_saved")
 

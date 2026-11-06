@@ -5,6 +5,7 @@ import re
 from conftest import csrf_of, sm_of
 from factories import make_article
 from reprintbuddy import settings as st
+from reprintbuddy.bambuddy.client import BambuddyRejected
 from reprintbuddy.models import ArticleFilament, FilamentSort, utcnow
 
 
@@ -178,3 +179,23 @@ def test_select_sits_in_its_own_full_width_row(bb_client, fake_bambuddy):  # pho
     html = bb_client.get(f"/articles/{a}/filaments").text
     assert re.search(r'<tr class="slot-select">\s*<td colspan="4">\s*<select[^>]*name="slot_1"', html)
     assert len(re.findall(r"<th[ >]", html)) == 4
+
+
+def test_rejected_spool_list_is_not_a_500(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    a = make(bb_client)
+    fake_bambuddy.fail_next("list_spools", BambuddyRejected("forbidden", status=403))
+    page = bb_client.get(f"/articles/{a}/filaments")
+    assert page.status_code == 200 and "not known" in page.text
+
+
+def test_successful_save_does_not_ask_bambuddy(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    a = make(bb_client)
+    sort_id = first_sort_id(bb_client, a)
+    token = csrf_of(bb_client, f"/articles/{a}/filaments")
+    fake_bambuddy.unavailable = True
+    fake_bambuddy.calls.clear()
+    r = bb_client.post(f"/articles/{a}/filaments", data={"csrf_token": token, "slot_1": sort_id}, follow_redirects=False)
+    assert r.status_code == 303 and slot_one(bb_client, a) == int(sort_id)
+    assert "list_spools" not in fake_bambuddy.calls

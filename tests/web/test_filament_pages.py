@@ -8,6 +8,7 @@ import pytest
 from conftest import csrf_of, sm_of
 from factories import make_article, make_filament_settings, make_snapshot, make_sort
 from reprintbuddy import settings as st
+from reprintbuddy.bambuddy.client import BambuddyRejected
 from reprintbuddy.models import ArticleFilament, FilamentSettings, utcnow
 
 
@@ -169,3 +170,14 @@ def test_sort_label_links_to_settings_and_hint_links_are_cell_links(bb_client, f
     assert f'href="/filament/{sid}"' in html
     # in a table cell, where the app styles links green (td a)
     assert re.search(rf'<td><a href="/articles/{art_id}/filaments">', html)
+
+
+def test_filament_page_rejected_spool_list_is_not_a_500(bb_client, fake_bambuddy):  # Review Focus 2
+    yesterday = utcnow().date() - timedelta(days=1)
+    with sm_of(bb_client).begin() as s:
+        sort = make_sort(s)
+        make_snapshot(s, yesterday, 1, sort.id, 640.0)
+    fake_bambuddy.fail_next("list_spools", BambuddyRejected("forbidden", status=403))
+    page = bb_client.get("/filament")
+    assert page.status_code == 200
+    assert "640" in page.text and f"Stock as of {yesterday:%Y-%m-%d}" in page.text

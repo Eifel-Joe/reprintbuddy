@@ -115,7 +115,10 @@ def make_sort(
     color_name: str | None = "Black",
 ) -> FilamentSort:
     """A filament sort with key and label from `domain/filament.py` (one place for the rules)."""
-    spool = Spool(0, material, subtype, brand, color_name, color_hex, 1000, 1000.0, False, None)
+    spool = Spool(
+        id=0, material=material, subtype=subtype, brand=brand, color_name=color_name, color_hex=color_hex,
+        label_g=1000, remaining_g=1000.0, archived=False, created_at=None,
+    )
     sort = FilamentSort(
         sort_key=filament.sort_key(spool),
         brand=brand,

@@ -11,7 +11,7 @@ from reprintbuddy.domain.errors import DomainError
 from reprintbuddy.domain.filament import FilamentSettingsInput
 from reprintbuddy.models import FilamentSettings, FilamentSort, utcnow
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_db, render
+from reprintbuddy.web.deps import current_language, db_session, get_db, render
 from reprintbuddy.web.formatting import format_date
 from reprintbuddy.web.forms import error_status, error_text, parse_int, parse_text, saved_redirect
 from reprintbuddy.web.filament_view import COLOR, spools_or_none
@@ -34,25 +34,26 @@ async def filament_list(request: Request):
     today = utcnow().date()
     with write_transaction(request) as tx:  # entering new sorts is the one write (Entscheidung 4)
         sorts, day = filament.known_sorts(tx, spools)
-        directory = tx.scalars(select(FilamentSort)).all()
-        configured = set(tx.scalars(select(FilamentSettings.spool_filament_id)))
-        demand = reorder.filament_demand(tx)
-        rows = []
-        for sort in directory:
-            entry = sorts.get(sort.id) if sorts is not None else None
-            per_day, days = filament.consumption(tx, sort.id, today)
-            rows.append({
-                "id": sort.id,
-                "label": sort.label,
-                "material": sort.material or "",
-                "swatch": sort.color_hex if sort.color_hex and COLOR.fullmatch(sort.color_hex) else None,
-                "stock": f"{entry.stock_g:.0f}" if entry is not None else None,
-                "spools": entry.spools if entry is not None else None,
-                "per_day": f"{per_day:.1f}" if days else None,
-                "demand": f"{demand.get(sort.id, 0.0):.0f}",
-                "configured": sort.id in configured,
-            })
-        unmapped = filament.unmapped_slots(tx)
+    db = db_session(request)  # the rest only reads, on the request's normal session
+    directory = db.scalars(select(FilamentSort)).all()
+    configured = set(db.scalars(select(FilamentSettings.spool_filament_id)))
+    demand = reorder.filament_demand(db)
+    rows = []
+    for sort in directory:
+        entry = sorts.get(sort.id) if sorts is not None else None
+        per_day, days = filament.consumption(db, sort.id, today)
+        rows.append({
+            "id": sort.id,
+            "label": sort.label,
+            "material": sort.material or "",
+            "swatch": sort.color_hex if sort.color_hex and COLOR.fullmatch(sort.color_hex) else None,
+            "stock": f"{entry.stock_g:.0f}" if entry is not None else None,
+            "spools": entry.spools if entry is not None else None,
+            "per_day": f"{per_day:.1f}" if days else None,
+            "demand": f"{demand.get(sort.id, 0.0):.0f}",
+            "configured": sort.id in configured,
+        })
+    unmapped = filament.unmapped_slots(db)
     rows.sort(key=lambda r: (r["label"].casefold(), r["id"]))
     return render(
         request, "filament_list.html", active_nav="filament", rows=rows, unmapped=unmapped,

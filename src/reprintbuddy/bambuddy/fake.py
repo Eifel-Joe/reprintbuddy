@@ -315,8 +315,9 @@ class FakeBambuddy:
         created_at: datetime | None = None,
     ) -> Spool:
         spool = Spool(
-            self._next_spool, material, subtype, brand, color_name, color_hex,
-            label_g, remaining_g, archived, created_at,
+            id=self._next_spool, material=material, subtype=subtype, brand=brand, color_name=color_name,
+            color_hex=color_hex, label_g=label_g, remaining_g=remaining_g, archived=archived,
+            created_at=created_at,
         )
         self._spools[spool.id] = spool
         self._next_spool += 1
