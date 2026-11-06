@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from conftest import csrf_of
 
+from reprintbuddy import __version__
 from reprintbuddy import settings as st
 from reprintbuddy.web import i18n
 
@@ -99,7 +100,8 @@ def test_logout_form_posts_with_csrf(ready_client):
 def test_mobile_menu_without_javascript(ready_client):
     html = ready_client.get("/").text
     assert "<details" in html
-    assert "<script" not in html
+    # The menu opens without a script; the only script is the one that keeps the page live.
+    assert re.findall(r"<script[^>]*>", html) == [f'<script src="/static/js/live.js?v={__version__}" defer>']
 
 
 def test_pages_without_sidebar_use_the_stylesheet(client):

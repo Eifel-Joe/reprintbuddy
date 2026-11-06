@@ -413,5 +413,7 @@
   "ops.update.step.rollback": "Restoring the previous version",
   "ops.update.step.done": "Done",
   "ops.update.state.interrupted": "Update was interrupted",
-  "ops.update.installed_with_package": "Installed version: {version} (package version {package})"
+  "ops.update.installed_with_package": "Installed version: {version} (package version {package})",
+  "live.changed": "This has changed in the meantime.",
+  "live.reload": "Reload"
 }

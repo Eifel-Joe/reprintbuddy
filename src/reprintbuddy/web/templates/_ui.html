@@ -8,3 +8,10 @@
 {% macro region(name, topics) -%}
 <!--live:{{ name }}--><div class="live-region" data-live-region="{{ name }}" data-live-topics="{{ topics }}">{{ caller() }}</div><!--/live:{{ name }}-->
 {%- endmacro %}
+
+{# "This has changed in the meantime" for a form that is not swapped while it is in use
+   (Design 4.6). The form names its topics in `data-live-watch="article-settings:7"` and has this
+   notice as its first child; live.js shows it when one of the topics changes. #}
+{% macro live_stale() -%}
+<p class="live-stale" hidden role="status">{{ t('live.changed') }} <button type="button" class="btn-link" data-live-reload>{{ t('live.reload') }}</button></p>
+{%- endmacro %}
