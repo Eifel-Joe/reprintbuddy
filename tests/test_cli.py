@@ -316,3 +316,20 @@ def test_cli_url_uses_the_saved_host(db, capsys):
 def test_cli_url_missing_db(db, capsys):
     assert main(["url", "--db", str(db)]) == 1
     assert not db.exists()
+
+
+@pytest.mark.parametrize("with_tls", [False, True])
+def test_serve_limits_the_graceful_shutdown(db, monkeypatch, with_tls):
+    """Open live streams must not hold the stop back: Uvicorn waits forever without a limit."""
+    main(["migrate", "--db", str(db)])
+    if with_tls:
+        with open_session(db) as s:
+            st.set_setting(s, "tls_cert", CERT)
+            st.set_setting(s, "tls_key", KEY)
+    calls = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: calls.append(kw))
+    assert main(["serve", "--db", str(db)]) == 0
+    (kwargs,) = calls
+    assert (kwargs.get("ssl_certfile") is not None) == with_tls
+    assert kwargs["timeout_graceful_shutdown"] == 3
+    assert "workers" not in kwargs  # one process (Spec 10.5.8)

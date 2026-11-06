@@ -31,6 +31,11 @@ from reprintbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upg
 from reprintbuddy.web.app import create_app
 
 
+# Open live streams (GET /live) never end by themselves; without this limit Uvicorn waits
+# for them without end when stopping and systemd kills the service only after 90 s.
+SHUTDOWN_GRACE_SECONDS = 3
+
+
 def _error(message: str) -> int:
     print(f"reprintbuddy: {message}", file=sys.stderr)
     return 2
@@ -73,9 +78,16 @@ def _serve(args: argparse.Namespace) -> int:
     app.state.ops = OpsContext(effective=effective)
     if tls:
         with _pem_files(str(cert), str(key)) as (cert_file, key_file):
-            uvicorn.run(app, host=host, port=port, ssl_certfile=cert_file, ssl_keyfile=key_file)
+            uvicorn.run(
+                app,
+                host=host,
+                port=port,
+                ssl_certfile=cert_file,
+                ssl_keyfile=key_file,
+                timeout_graceful_shutdown=SHUTDOWN_GRACE_SECONDS,
+            )
     else:
-        uvicorn.run(app, host=host, port=port)
+        uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=SHUTDOWN_GRACE_SECONDS)
     return 0
 
 
