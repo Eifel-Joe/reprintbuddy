@@ -438,10 +438,14 @@ def test_all_settings_posts_require_csrf(ready_client):
     )
     assert paths == [
         "/settings/automation",
+        "/settings/backup",
         "/settings/bambuddy",
         "/settings/language",
         "/settings/password",
         "/settings/restart",
+        "/settings/restore",
+        "/settings/restore/cancel",
+        "/settings/restore/upload",
         "/settings/server",
         "/settings/update",
         "/settings/update/check",
