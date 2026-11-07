@@ -310,6 +310,27 @@ def update_article(session: Session, article_id: int, data: ArticleInput) -> Art
     return article
 
 
+def set_auto_enabled(session: Session, article_id: int, enabled: bool) -> Article:
+    """Switch the automation of one article on or off (the switch of the list, p44).
+
+    The wanted state is passed, not "toggle": two open tabs cannot turn each other back.
+    Off always works for an active article. On needs what the automation needs: a print target
+    (`dispatch.reserve_next` pauses an article without one with `no_target`). An archived article
+    has no automation. The edit form writes no journal entry for this field, so neither does this.
+    """
+    article = session.get(Article, article_id)
+    if article is None:
+        raise NotFoundError("articles.not_found")
+    if article.archived_at is not None:
+        raise ConflictError("articles.auto_archived", name=article.name)
+    if enabled and not (article.target_model or article.printer_id is not None):
+        raise ConflictError("articles.auto_needs_target", name=article.name)
+    if article.auto_enabled != enabled:
+        article.auto_enabled = enabled
+        session.flush()
+    return article
+
+
 @dataclass(frozen=True)
 class ArticleRow:
     id: int
@@ -329,6 +350,7 @@ class ArticleRow:
     queued_units: int
     in_progress_units: int
     in_progress_prints: int  # open prints in Bambuddy: the note "N in Bambuddy" (Spec 10.1)
+    auto_enabled: bool = False  # the switch of the list (p44)
 
 
 def article_row(
@@ -362,6 +384,7 @@ def article_row(
         queued_units=queued_units,
         in_progress_units=in_progress_units,
         in_progress_prints=in_progress_prints,
+        auto_enabled=article.auto_enabled,
     )
 
 

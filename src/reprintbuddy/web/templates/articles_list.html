@@ -57,7 +57,8 @@
         <td class="num{% if row.available < 0 %} neg{% endif %}">{{ row.available }}</td>
         <td class="num target">{{ row.target }}{{ target_bar(row) }}</td>
         <td class="actions-col">{% call ui.row_actions() %}
-          {%- if not archived %}{{ ui.icon_button('pencil', t('articles.edit'), '/articles/' ~ row.id ~ '/edit') }}{% endif %}
+          {%- if not archived %}{{ ui.switch_post('/articles/' ~ row.id ~ '/auto', row.auto_enabled, t('articles.auto_switch', name=row.name), here) }}
+          {{- ui.icon_button('pencil', t('articles.edit'), '/articles/' ~ row.id ~ '/edit') }}{% endif %}
           {{- ui.icon_button('history', t('journal.title'), '/journal?article=' ~ row.id) }}
           {%- if archived %}{{ ui.icon_post('archive-restore', t('catalog.restore'), '/articles/' ~ row.id ~ '/restore', [('next', '/articles')]) }}
           {%- else %}{{ ui.icon_post('archive', t('catalog.archive'), '/articles/' ~ row.id ~ '/archive', [('next', '/articles')]) }}{% endif %}
@@ -69,8 +70,8 @@
 </div>
 <div class="tiles">
   {% for row in rows %}
-  <a class="tile" href="/articles/{{ row.id }}">
-    <div class="tile-head">{{ thumb(row) }}<div>{{ row.name }}{% if row.sku %}<br><span class="muted">{{ row.sku }}</span>{% endif %}</div>{{ badges(row) }}</div>
+  <div class="tile">
+    <div class="tile-head">{{ thumb(row) }}<div><a class="tile-link" href="/articles/{{ row.id }}">{{ row.name }}</a>{% if row.sku %}<br><span class="muted">{{ row.sku }}</span>{% endif %}</div>{{ badges(row) }}</div>
     <div class="tile-stats">
       <span>{{ t('articles.col.stock') }} <strong>{{ row.stock }}</strong></span>
       <span>{{ t('articles.col.available') }} <strong{% if row.available < 0 %} class="neg"{% endif %}>{{ row.available }}</strong></span>
@@ -84,7 +85,8 @@
       {%- if row.in_progress_prints %}<span>{{ t('tile.in_bambuddy', n=row.in_progress_prints) }}</span>{% endif -%}
     </div>
     {% endif %}
-  </a>
+    {% if not archived %}<div class="tile-auto"><span>{{ t('articles.field.auto_enabled') }}</span>{{ ui.switch_post('/articles/' ~ row.id ~ '/auto', row.auto_enabled, t('articles.auto_switch', name=row.name), here) }}</div>{% endif %}
+  </div>
   {% endfor %}
 </div>
 {% endcall %}

@@ -634,6 +634,26 @@ input.switch:checked::after, label.check input[type="checkbox"]:checked::after {
 input.switch:focus-visible, label.check input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 label.check input[type="checkbox"] { margin-top: 0.1rem; }
 
+/* Switch that posts (automation in the list): the button is the 44 px target, the track the picture. */
+.switch-form { display: inline-flex; margin: 0; }
+.switch-btn {
+  display: inline-flex; align-items: center; justify-content: center; position: relative; z-index: 1;
+  min-width: 2.75rem; min-height: 2.75rem; padding: 0; border: 0; background: none; cursor: pointer;
+}
+.switch-track {
+  position: relative; display: block; width: 40px; height: 22px; border-radius: 999px;
+  background: #3a3c41; transition: background 0.15s;
+}
+.switch-track::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+  background: #e4e4e7; transition: left 0.15s;
+}
+.switch-btn[aria-checked="true"] .switch-track { background: var(--accent); }
+.switch-btn[aria-checked="true"] .switch-track::after { left: 21px; background: #fff; }
+.switch-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
+.tile-auto { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: auto; color: var(--text-2); font-size: 0.85rem; }
+.tile-auto + .tile-foot, .tile-foot + .tile-auto { margin-top: 0; }
+
 /* Tabs: links, wrap on a narrow screen instead of sticking out. */
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin: 0 0 1rem; }
 .tab {

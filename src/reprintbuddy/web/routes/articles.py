@@ -13,7 +13,7 @@ from itertools import zip_longest
 from collections.abc import Mapping
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -42,6 +42,7 @@ from reprintbuddy.web.forms import (
     parse_text,
     saved_redirect,
 )
+from reprintbuddy.web.flash import flash
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
 from reprintbuddy.web.filament_view import BAMBUDDY_ERRORS, COLOR, spools_or_none
 from reprintbuddy.web.journal_view import journal_rows
@@ -274,6 +275,7 @@ async def articles_list(
         q=q,
         status=status,
         search_keep=[(name, value) for name, value in keep if value],  # a new search keeps these
+        here=request.url.path + (f"?{request.url.query}" if request.url.query else ""),  # the switches return here
     )
 
 
@@ -900,6 +902,36 @@ async def article_resume(request: Request, article_id: int, db: Session = Depend
     return await run_form_action(
         request, work=work, success_url=f"/articles/{article_id}", flash_key="articles.resumed",
         on_error=lambda text, status, exc: _detail_refused(request, db, article_id, text, status),
+    )
+
+
+@router.post("/articles/{article_id:int}/auto", dependencies=[Depends(verify_csrf)])
+async def article_auto(request: Request, article_id: int, db: Session = Depends(get_db)):
+    """The automation switch of the list (p44): `enabled=1|0` is the wanted state, never a toggle.
+
+    Back to the list the switch was on (`next`, with its search and filter); a refusal is a
+    warning there, not a page of its own."""
+    name = _get_article(db, article_id).name
+    form = await request.form()
+    after = local_next(form) or "/articles"
+    wanted = str(form.get("enabled", "")).strip()
+
+    def work(tx):
+        if wanted not in ("0", "1"):
+            raise ValidationError("articles.auto_bad_value")
+        catalog.set_auto_enabled(tx, article_id, wanted == "1")
+        return {"name": name}
+
+    def refused(text: str, status: int, exc: Exception):
+        if isinstance(exc, DomainError):
+            flash(request, exc.key, warning=True, **{k: v for k, v in exc.params.items() if isinstance(v, (str, int))})
+        else:  # an expired or forged form token
+            flash(request, "form.expired", warning=True)
+        return RedirectResponse(after, status_code=303)
+
+    return await run_form_action(
+        request, work=work, success_url=after,
+        flash_key="articles.auto_on" if wanted == "1" else "articles.auto_off", on_error=refused,
     )
 
 
