@@ -578,7 +578,7 @@
   "warning.bambuddy_unreachable": "Bambuddy cannot be reached. Nothing is handed over and no stock changes.",
   "warning.poll_rejected": "Bambuddy refuses the status query ({message}). Finished prints are not booked until this is fixed.",
   "warning.unexpected_answer": "Bambuddy reports a state Reprintbuddy does not know ({statuses}). Those prints stay as they are.",
-  "warning.waiting_for_review": "{count} print(s) wait for approval in Bambuddy. Give Reprintbuddy's key the right “Print Without Review” (queue:start_unreviewed) or start them in Bambuddy.",
+  "warning.waiting_for_review": "{count} print(s) wait for approval in Bambuddy. The group of the user who owns Reprintbuddy's API key needs the right “Print Without Review” (queue:start_unreviewed) or “Update All Queue” (queue:update_all) there. Otherwise start the prints in Bambuddy yourself.",
   "warning.bambuddy_rejected": "Bambuddy refused a print of {name} ({message}). It is back in the work queue; the next regular query tries again.",
   "warning.unclear_prints": "{count} hand-over(s) unclear – nothing new is handed over until they are clear.",
   "warning.resolve_rejected": "The search for an unclear hand-over failed ({message}). Nothing new is handed over until it is clear.",

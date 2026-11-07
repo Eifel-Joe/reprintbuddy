@@ -578,7 +578,7 @@
   "warning.bambuddy_unreachable": "Bambuddy ist nicht erreichbar. Es wird nichts übergeben und kein Bestand geändert.",
   "warning.poll_rejected": "Bambuddy lehnt die Abfrage ab ({message}). Fertige Drucke werden erst danach gebucht.",
   "warning.unexpected_answer": "Bambuddy meldet einen Zustand, den Reprintbuddy nicht kennt ({statuses}). Diese Drucke bleiben, wie sie sind.",
-  "warning.waiting_for_review": "{count} Druck(e) warten in Bambuddy auf Freigabe. Dem Schlüssel von Reprintbuddy das Recht „Print Without Review“ (queue:start_unreviewed) geben oder die Drucke in Bambuddy starten.",
+  "warning.waiting_for_review": "{count} Druck(e) warten in Bambuddy auf Freigabe. Die Gruppe des Benutzers, dem der API-Schlüssel von Reprintbuddy gehört, braucht dort das Recht „Print Without Review“ (queue:start_unreviewed) oder „Update All Queue“ (queue:update_all). Sonst die Drucke in Bambuddy selbst starten.",
   "warning.bambuddy_rejected": "Bambuddy hat einen Druck von {name} abgelehnt ({message}). Er liegt wieder in der Warteschlange; die nächste reguläre Abfrage versucht es erneut.",
   "warning.unclear_prints": "{count} Übergabe(n) unklar – bis sie geklärt sind, wird nichts Neues übergeben.",
   "warning.resolve_rejected": "Die Suche nach einer unklaren Übergabe ist gescheitert ({message}). Bis sie geklärt ist, wird nichts Neues übergeben.",
