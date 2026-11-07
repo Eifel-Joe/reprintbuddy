@@ -53,7 +53,7 @@
   "settings.channel.connecting": "Verbindet mit dem Live-Kanal …",
   "settings.channel.connected": "Verbunden. Bambuddy meldet fertige Drucke sofort.",
   "settings.channel.waiting": "Im Moment nicht verbunden (Bambuddy antwortet nicht oder die Verbindung ist abgerissen). Reprintbuddy versucht es gleich wieder.",
-  "settings.channel.no_right": "Bambuddy verweigert den Live-Kanal. In Bambuddy fehlt der Gruppe des Schlüssel-Benutzers das Recht „websocket:connect“; außerdem prüft Bambuddy am Schlüssel das Recht „Read Status“. Reprintbuddy versucht es alle {minutes} Minuten wieder.",
+  "settings.channel.no_right": "Bambuddy verweigert den Live-Kanal. In Bambuddy fehlt der Gruppe des Schlüssel-Benutzers das Recht „websocket:connect“ (fehlende Gruppenrechte lassen sich dort ergänzen), und am API-Schlüssel muss „Status lesen“ an sein. Die Rechte eines vorhandenen Schlüssels lassen sich in Bambuddy nicht ändern; dafür legst du dort einen neuen Schlüssel an und trägst ihn hier ein. Reprintbuddy versucht es alle {minutes} Minuten wieder.",
   "settings.channel.fallback": "Ohne Live-Kanal läuft alles über die regelmäßige Abfrage (alle {poll} Minuten).",
   "settings.channel.badge.connected": "Verbunden",
   "settings.channel.badge.connecting": "Verbindet",
