@@ -22,6 +22,7 @@ BAD_WARNINGS: frozenset[str] = frozenset(
         "warning.poll_rejected",
         "warning.unclear_prints",
         "warning.resolve_rejected",
+        "warning.resolve_no_user",
         "warning.duplicates",
     }
 )

@@ -579,7 +579,7 @@ async def test_nothing_new_while_the_own_user_is_unknown(engine_env):
     assert env.engine.status.unresolved == 1
     assert env.engine.status.reachable is True
     found = keys(env.sm, env.engine.status)
-    assert "warning.unclear_prints" in found and "warning.resolve_rejected" in found
+    assert "warning.unclear_prints" in found and "warning.resolve_no_user" in found
 
 
 async def test_duplicates_kept_after_settling(engine_env):
@@ -1103,3 +1103,17 @@ async def test_skipped_short_tick_brings_the_poll_forward(engine_env, monkeypatc
         await asyncio.sleep(0.1)
 
     assert calls == [True, False, True]
+
+
+def test_unknown_own_user_has_its_own_translated_warning(engine_env):
+    """p50: without the own Bambuddy user the search cannot run; the warning says so in
+    the interface language instead of quoting an English text."""
+    from reprintbuddy.domain import dispatch
+
+    status = EngineStatus(configured=True, reachable=True, resolve_error=dispatch.NO_OWN_USER)
+    found = warnings(engine_env.sm, status)
+    assert EngineWarning("warning.resolve_no_user", {}) in found
+    assert all(w.key != "warning.resolve_rejected" for w in found)
+    for lang in ("de", "en"):
+        text = translate(lang, "warning.resolve_no_user")
+        assert text != "warning.resolve_no_user" and "{" not in text

@@ -502,6 +502,7 @@
   "warning.bambuddy_rejected": "Bambuddy refused a print of {name} ({message}). It is back in the work queue; the next regular query tries again.",
   "warning.unclear_prints": "{count} hand-over(s) unclear – nothing new is handed over until they are found.",
   "warning.resolve_rejected": "The search for an unclear hand-over failed ({message}). Nothing new is handed over until it is clear.",
+  "warning.resolve_no_user": "Reprintbuddy does not know its Bambuddy user, so it cannot look for an unclear hand-over. Nothing new is handed over until it is clear. Check the connection to Bambuddy in the settings.",
   "warning.duplicates": "An unclear hand-over cannot be matched for certain: Bambuddy has several entries that could be it (entries {ids}). None was taken over; the article is paused. Check Bambuddy and delete the extra entries; if the print ran, book it with stock-in without print.",
   "warning.tick_error": "The automation stopped with an error ({message}). It tries again with the next run.",
   "warning.hook_error": "An extension failed during the last query: {names}.",

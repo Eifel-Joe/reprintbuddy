@@ -474,7 +474,9 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
     )
     if unclear:
         add("unclear_prints", count=unclear)
-    if status.resolve_error:
+    if status.resolve_error == dispatch.NO_OWN_USER:
+        add("resolve_no_user")  # no Bambuddy text to quote: say it in the page's language
+    elif status.resolve_error:
         add("resolve_rejected", message=status.resolve_error)
     if status.duplicates:
         add("duplicates", ids=[list(ids) for ids in status.duplicates])
