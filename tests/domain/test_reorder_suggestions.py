@@ -161,6 +161,21 @@ def test_part_min_stock_with_demand_counts_both(db):
         assert sug.demand == 6 and sug.packs == 1
 
 
+def test_part_floor_with_safety_in_days(db):
+    with db.begin() as s:
+        # 3 per day for 5 days = 15 safety; min stock 20 is the larger floor: stock 19 -> suggestion
+        part = make_part(s, stock=19, min_stock=20, pack_size=50, safety_value=5, safety_unit="days")
+        old = datetime.combine(TODAY - timedelta(days=10), datetime.min.time())
+        journal(s, "inventory", None, 0, old)
+        journal(s, "part_consumed", part.id, 30, old + timedelta(days=5), cause="assembly")
+        (sug,) = reorder.suggestions(s, sorts=None, today=TODAY)
+        assert sug.per_day == 3.0 and sug.safety == 20
+        # stock 22 - 0 - 0 = 22 >= 20 and the cushion (15) is smaller: no suggestion
+        part.stock = 22
+        s.flush()
+        assert reorder.suggestions(s, sorts=None, today=TODAY) == []
+
+
 def test_count_suggestions_counts_part_under_min_stock(db):
     with db.begin() as s:
         make_part(s, stock=18, min_stock=20, pack_size=50, safety_value=0, safety_unit="qty")

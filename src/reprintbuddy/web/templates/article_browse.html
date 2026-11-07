@@ -57,5 +57,9 @@
 {% else %}
 <div class="card"><p class="muted">{{ t('articles.no_files') }}</p></div>
 {% endif %}
+{#- Unsliced files are not offered (only a sliced file can become an article); the note says they exist and why they are missing. -#}
+{% if hidden_unsliced %}
+<p class="muted file-hint" role="status">{{ t('articles.hidden_unsliced', count=hidden_unsliced) }}</p>
+{% endif %}
 {% endif %}
 {% endblock %}

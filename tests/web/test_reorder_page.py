@@ -315,4 +315,4 @@ def test_part_under_min_stock_is_listed_without_any_demand(bb_client):  # p48, S
     html = bb_client.get("/reorder").text
     assert "Washer" in html
     assert "20 pcs" in html and "Lower limit" in html
-    assert "1 × 50" in html or "1 x 50" in html
+    assert "1 × 50 (50 pcs)" in html
