@@ -317,7 +317,7 @@ async def test_enqueue_unknown_file_or_batch_or_printer():
         assert err.value.status == 404
     with pytest.raises(BambuddyRejected) as err:
         await fake.enqueue(_req(fid, batch, target_model=None, printer_id=99))
-    assert err.value.status == 404
+    assert err.value.status == 400
 
 
 async def test_enqueue_to_printer_names_it():
@@ -401,3 +401,45 @@ def test_fake_matches_http_client_signatures():
             sig = inspect.signature(getattr(cls, name))
             return [(p.name, p.kind) for p in sig.parameters.values()]
         assert params(FakeBambuddy) == params(HttpBambuddyClient), name
+
+
+async def test_find_items_by_batch_sorted_by_position():
+    fake, fid = _ready()
+    batch = await fake.ensure_batch("Job", "ref-1", fid)
+    first = await fake.enqueue(_req(fid, batch))
+    top = await fake.enqueue(_req(fid, batch, insert_at_top=True))
+    assert first.id < top.id
+    assert [i.id for i in await fake.find_items_by_batch(batch)] == [top.id, first.id]
+
+
+async def test_insert_position_wins_over_insert_at_top():
+    fake, fid = _ready()
+    fake.add_foreign_item("F1")
+    fake.add_foreign_item("F2")
+    batch = await fake.ensure_batch("Job", "ref-1", fid)
+    item = await fake.enqueue(_req(fid, batch, insert_at_top=True, insert_position=2))
+    assert item.position == 2
+    item = await fake.enqueue(_req(fid, batch, insert_at_top=True, insert_position=99))
+    assert item.position == 4
+
+
+async def test_ensure_batch_empty_name_rejected():
+    fake, fid = _ready()
+    for name in ("", "  "):
+        with pytest.raises(BambuddyRejected) as err:
+            await fake.ensure_batch(name, "ref-1", fid)
+        assert (err.value.status, err.value.detail) == (400, "Batch name is required")
+
+
+async def test_batch_ref_lost_text_is_bambuddys():
+    fake, fid = _ready()
+    await fake.ensure_batch("Job", "ref-1", fid)
+    with pytest.raises(BatchRefLost) as err:
+        await fake.ensure_batch("Job", "ref-1", fid)
+    assert err.value.detail == "A batch for this external_source and external_ref already exists"
+
+
+async def test_foreign_item_not_pending_has_int_position():
+    fake = FakeBambuddy()
+    done = fake.add_foreign_item("Done", status="completed")
+    assert done.position == 0

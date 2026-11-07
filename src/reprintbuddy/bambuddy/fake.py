@@ -225,7 +225,7 @@ class FakeBambuddy:
         self, label: str = "Other print", *, status: str = "pending", created_by: str = "admin"
     ) -> QueueItem:
         """An entry somebody else made in Bambuddy: no batch, at the end of the queue."""
-        position = self._highest() + 1 if status == "pending" else None
+        position = self._highest() + 1 if status == "pending" else 0  # Bambuddy defaults to 0
         return self._new_item(label=label, status=status, created_by=created_by, position=position)
 
     def set_status(self, item_id: int, status: str, *, printer_id: int | None = None) -> None:
@@ -270,6 +270,8 @@ class FakeBambuddy:
 
     async def ensure_batch(self, name: str, external_ref: str, library_file_id: int) -> int:
         failure = await self._write_call("ensure_batch")
+        if not name.strip():
+            raise BambuddyRejected("Batch name is required", status=400)
         if library_file_id not in self._files:
             raise BambuddyRejected("Library file not found", status=404)
         if external_ref in self._batches:
@@ -277,7 +279,7 @@ class FakeBambuddy:
             if not any(i.batch_id == batch_id for i in self._items.values()):
                 # Bambuddy answers 409, and its batch list leaves out empty batches
                 raise BatchRefLost(
-                    f"batch reference {external_ref} exists but is empty", status=409
+                    "A batch for this external_source and external_ref already exists", status=409
                 )
         else:
             batch_id = self._next_batch
@@ -305,16 +307,16 @@ class FakeBambuddy:
         if req.printer_id is not None:
             printer = next((p for p in self._printers if p.id == req.printer_id), None)
             if printer is None:
-                raise BambuddyRejected("Printer not found", status=404)
+                raise BambuddyRejected("Printer not found", status=400)
         elif not any(p.model == req.target_model and p.active for p in self._printers):
             raise BambuddyRejected(
                 f"No active printers for model: {req.target_model}", status=400
             )
         highest = self._highest()
-        if req.insert_at_top:
-            position = 1
-        elif req.insert_position is not None:
+        if req.insert_position is not None:  # wins over insert_at_top, as in Bambuddy
             position = min(req.insert_position, highest + 1)
+        elif req.insert_at_top:
+            position = 1
         else:
             position = highest + 1
         for other in self._pending():
@@ -355,6 +357,7 @@ class FakeBambuddy:
         return await self._queue_read(
             "find_items_by_batch",
             lambda: sorted(
-                (i for i in self._items.values() if i.batch_id == batch_id), key=lambda i: i.id
+                (i for i in self._items.values() if i.batch_id == batch_id),
+                key=lambda i: (i.position is None, i.position or 0, i.id),
             ),
         )
