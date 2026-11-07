@@ -1,0 +1,500 @@
+"""The full backup file (Spec 11.6): write it, read it back, refuse anything else."""
+
+import json
+import sqlite3
+import zipfile
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from sqlalchemy import text
+
+from reprintbuddy import auth
+from reprintbuddy import settings as st
+from reprintbuddy.db import known_revisions, make_engine, make_sessionmaker, upgrade
+from reprintbuddy.ops import backupcrypto as bc
+from reprintbuddy.ops import fullbackup as fb
+
+NOW = datetime(2026, 11, 7, 12, 0, 5, tzinfo=UTC)
+API_KEY = "bb_FULLBACKUP_test_key"
+TLS_KEY = "-----BEGIN PRIVATE KEY-----\nFULLBACKUP\n-----END PRIVATE KEY-----\n"
+FAST = bc.KdfParams(time_cost=1, memory_cost=8 * 1024, parallelism=1)
+
+
+@pytest.fixture(autouse=True)
+def fast_kdf(monkeypatch):
+    monkeypatch.setattr(fb, "KDF", FAST)
+
+
+def make_db(path: Path, revision: str = "head") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    engine = make_engine(path)
+    upgrade(engine, revision=revision)
+    engine.dispose()
+    return path
+
+
+@pytest.fixture
+def live(tmp_path):
+    """A database as the service has it: secrets, an account, a signed-in browser."""
+    path = make_db(tmp_path / "data" / "reprintbuddy.db")
+    maker = make_sessionmaker(make_engine(path))
+    with maker() as session:
+        st.set_setting(session, "bambuddy_api_key", API_KEY)
+        st.set_setting(session, "tls_key", TLS_KEY)
+        st.set_setting(session, "queue_cap", 7)
+        st.ensure_session_secret(session)
+        auth.create_admin(session, "admin", "admin-password-1")
+        auth.create_session(session)
+    return path
+
+
+@pytest.fixture
+def work(tmp_path):
+    path = tmp_path / "work"
+    path.mkdir()
+    return path
+
+
+def rows(path: Path, sql: str) -> list[tuple]:
+    con = sqlite3.connect(path)
+    try:
+        return con.execute(sql).fetchall()
+    finally:
+        con.close()
+
+
+def setting(path: Path, key: str):
+    found = rows(path, f"SELECT value FROM settings WHERE key = '{key}'")
+    return json.loads(found[0][0]) if found else None
+
+
+def members(path: Path) -> dict[str, bytes]:
+    with zipfile.ZipFile(path) as archive:
+        return {info.filename: archive.read(info) for info in archive.infolist()}
+
+
+def write_zip(path: Path, entries: list[tuple[str, bytes]]) -> Path:
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, data in entries:
+            archive.writestr(name, data)
+    return path
+
+
+def rewrite(source: Path, target: Path, **replace: bytes) -> Path:
+    """Copy a backup with some members replaced (by name, dots as underscores)."""
+    content = members(source)
+    entries = [(name, replace.get(name.replace(".", "_"), data)) for name, data in content.items()]
+    return write_zip(target, entries)
+
+
+def manifest_of(path: Path) -> dict:
+    return json.loads(members(path)["manifest.json"])
+
+
+def with_manifest(source: Path, target: Path, **changes) -> Path:
+    manifest = manifest_of(source)
+    manifest.update(changes)
+    return rewrite(source, target, manifest_json=json.dumps(manifest).encode())
+
+
+def plain_backup(live, work) -> fb.CreatedBackup:
+    return fb.create_backup(live, work_dir=work, password=None, now=NOW)
+
+
+def sealed_backup(live, work, password="sicher-genug-1") -> fb.CreatedBackup:
+    return fb.create_backup(live, work_dir=work, password=password, now=NOW)
+
+
+def read_back(path: Path, work: Path, password: str | None = None) -> Path:
+    manifest = fb.read_manifest(path)
+    target = work / "candidate.db"
+    fb.extract_database(path, manifest, password, target)
+    fb.verify_database(target, manifest, work_dir=work)
+    return target
+
+
+# --- writing -------------------------------------------------------------------------------
+
+
+def test_plain_backup_holds_everything_but_sessions(live, work):
+    created = plain_backup(live, work)
+    assert created.filename == "reprintbuddy-backup-20261107-120005.zip"
+    assert set(members(created.path)) == {"manifest.json", "database.sqlite"}
+    manifest = manifest_of(created.path)
+    assert manifest["format"] == "reprintbuddy-backup"
+    assert manifest["format_version"] == 1
+    assert manifest["encrypted"] is False
+    assert manifest["schema_revision"] == known_revisions()[-1]
+    assert manifest["created_at"] == "2026-11-07T12:00:05+00:00"
+    db = read_back(created.path, work)
+    assert setting(db, "bambuddy_api_key") == API_KEY
+    assert setting(db, "tls_key") == TLS_KEY
+    assert setting(db, "session_secret") == setting(live, "session_secret")
+    assert rows(db, "SELECT username, password_hash FROM users") == rows(
+        live, "SELECT username, password_hash FROM users"
+    )
+    assert rows(db, "SELECT count(*) FROM sessions") == [(0,)]
+    assert rows(live, "SELECT count(*) FROM sessions") == [(1,)]  # the running one is untouched
+
+
+def test_encrypted_backup_hides_the_database(live, work):
+    created = sealed_backup(live, work)
+    assert created.filename == "reprintbuddy-backup-20261107-120005-encrypted.zip"
+    content = members(created.path)
+    assert set(content) == {"manifest.json", "database.sqlite.enc"}
+    blob = b"".join(content.values())
+    for secret in (API_KEY.encode(), b"FULLBACKUP", b"SQLite format 3", b"admin-password"):
+        assert secret not in blob
+    manifest = manifest_of(created.path)
+    assert manifest["encrypted"] is True
+    assert manifest["encryption"]["cipher"] == "AES-256-GCM"
+    assert manifest["encryption"]["kdf"] == "argon2id"
+    db = read_back(created.path, work, "sicher-genug-1")
+    assert setting(db, "bambuddy_api_key") == API_KEY
+
+
+def test_two_encrypted_backups_use_fresh_salt_and_nonce(live, work):
+    first = manifest_of(sealed_backup(live, work).path)["encryption"]
+    second = manifest_of(sealed_backup(live, work).path)["encryption"]
+    assert first["salt"] != second["salt"] and first["nonce"] != second["nonce"]
+
+
+def test_snapshot_drops_deleted_data(live, work):
+    con = sqlite3.connect(live)
+    con.execute("INSERT INTO settings (key, value) VALUES ('old', ?)", (json.dumps("OLD-SECRET-" * 50),))
+    con.commit()
+    con.execute("DELETE FROM settings WHERE key = 'old'")
+    con.commit()
+    con.close()
+    created = plain_backup(live, work)
+    assert b"OLD-SECRET-" not in members(created.path)["database.sqlite"]
+
+
+def test_snapshot_sees_data_still_in_the_wal(live, work):
+    holder = sqlite3.connect(live)  # keeps the WAL from being checkpointed away
+    holder.execute("SELECT 1").fetchall()
+    con = sqlite3.connect(live)
+    con.execute("UPDATE settings SET value = '9' WHERE key = 'queue_cap'")
+    con.commit()
+    con.close()
+    created = plain_backup(live, work)
+    holder.close()
+    assert setting(read_back(created.path, work), "queue_cap") == 9
+
+
+def test_writing_leaves_no_temporary_files(live, work):
+    created = plain_backup(live, work)
+    assert sorted(p.name for p in work.iterdir()) == [created.path.name]
+
+
+# --- reading: what is refused before any password -------------------------------------------
+
+
+def test_not_a_zip(work):
+    path = work / "x.zip"
+    path.write_bytes(b"this is no zip file")
+    with pytest.raises(fb.NotABackup):
+        fb.read_manifest(path)
+
+
+def test_zip_from_somewhere_else(work):
+    path = write_zip(work / "x.zip", [("photo.jpg", b"\xff\xd8")])
+    with pytest.raises(fb.NotABackup):
+        fb.read_manifest(path)
+
+
+def test_foreign_format_name(live, work):
+    source = plain_backup(live, work).path
+    with pytest.raises(fb.NotABackup):
+        fb.read_manifest(with_manifest(source, work / "y.zip", format="bambuddy-backup"))
+
+
+def test_newer_format_version_is_too_new(live, work):
+    source = plain_backup(live, work).path
+    with pytest.raises(fb.TooNew):
+        fb.read_manifest(with_manifest(source, work / "y.zip", format_version=2))
+
+
+def test_newer_app_version_is_too_new(live, work, monkeypatch):
+    monkeypatch.setattr(fb, "__version__", "0.3.5")
+    source = plain_backup(live, work).path
+    with pytest.raises(fb.TooNew):
+        fb.read_manifest(with_manifest(source, work / "y.zip", app_version="0.4.0"))
+    assert fb.read_manifest(with_manifest(source, work / "z.zip", app_version="0.3.5")).app_version == "0.3.5"
+    assert fb.read_manifest(with_manifest(source, work / "w.zip", app_version="0.2.9")).app_version == "0.2.9"
+
+
+def test_unknown_schema_revision_is_too_new(live, work):
+    source = plain_backup(live, work).path
+    with pytest.raises(fb.TooNew):
+        fb.read_manifest(with_manifest(source, work / "y.zip", schema_revision="0999"))
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"app_version": "latest"},
+        {"app_version": 5},
+        {"schema_revision": None},
+        {"created_at": "yesterday"},
+        {"encrypted": "no"},
+        {"encrypted": True},  # says encrypted, carries the plain database
+    ],
+)
+def test_broken_manifest_fields(live, work, changes):
+    source = plain_backup(live, work).path
+    with pytest.raises(fb.NotABackup):
+        fb.read_manifest(with_manifest(source, work / "y.zip", **changes))
+
+
+def test_manifest_that_is_no_json(live, work):
+    source = plain_backup(live, work).path
+    with pytest.raises(fb.NotABackup):
+        fb.read_manifest(rewrite(source, work / "y.zip", manifest_json=b"{not json"))
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        [("notes.txt", b"hello")],
+        [("../evil.db", b"x")],
+        [("manifest.json", b"{}")],  # a second member of the same name
+    ],
+)
+@pytest.mark.filterwarnings("ignore:Duplicate name")
+def test_unexpected_members(live, work, extra):
+    content = members(plain_backup(live, work).path)
+    path = write_zip(work / "y.zip", list(content.items()) + extra)
+    with pytest.raises(fb.NotABackup):
+        fb.read_manifest(path)
+
+
+def test_both_database_members(live, work):
+    content = members(plain_backup(live, work).path)
+    path = write_zip(work / "y.zip", list(content.items()) + [("database.sqlite.enc", b"x" * 40)])
+    with pytest.raises(fb.NotABackup):
+        fb.read_manifest(path)
+
+
+def test_database_member_too_large(live, work, monkeypatch):
+    source = plain_backup(live, work).path
+    monkeypatch.setattr(fb, "MAX_DATABASE_BYTES", 1024)
+    with pytest.raises(fb.TooLarge):
+        fb.read_manifest(source)
+
+
+@pytest.mark.parametrize(
+    "encryption",
+    [
+        {"memory_cost": 4 * 1024 * 1024},
+        {"time_cost": 100},
+        {"parallelism": 64},
+        {"salt": "AAAA"},
+        {"nonce": "not base64!"},
+        {"cipher": "ROT13"},
+        {"kdf": "md5"},
+    ],
+)
+def test_encryption_parameters_outside_limits(live, work, encryption):
+    source = sealed_backup(live, work).path
+    manifest = manifest_of(source)
+    manifest["encryption"].update(encryption)
+    path = rewrite(source, work / "y.zip", manifest_json=json.dumps(manifest).encode())
+    with pytest.raises(fb.NotABackup):
+        fb.read_manifest(path)
+
+
+def test_manifest_describes_what_the_page_shows(live, work):
+    manifest = fb.read_manifest(sealed_backup(live, work).path)
+    assert manifest.encrypted is True
+    assert manifest.created_at == NOW
+    assert manifest.schema_revision == known_revisions()[-1]
+
+
+# --- reading: password and integrity -------------------------------------------------------
+
+
+def test_encrypted_without_password(live, work):
+    path = sealed_backup(live, work).path
+    manifest = fb.read_manifest(path)
+    for missing in (None, ""):
+        with pytest.raises(fb.PasswordNeeded):
+            fb.extract_database(path, manifest, missing, work / "c.db")
+    assert not (work / "c.db").exists()
+
+
+def test_wrong_password(live, work):
+    path = sealed_backup(live, work).path
+    with pytest.raises(fb.WrongPassword):
+        fb.extract_database(path, fb.read_manifest(path), "falsches-passwort", work / "c.db")
+    assert not (work / "c.db").exists()
+
+
+def test_flipped_bit_in_encrypted_data(live, work):
+    source = sealed_backup(live, work).path
+    sealed = bytearray(members(source)["database.sqlite.enc"])
+    sealed[len(sealed) // 2] ^= 1
+    path = rewrite(source, work / "y.zip", database_sqlite_enc=bytes(sealed))
+    with pytest.raises(fb.Damaged):
+        fb.extract_database(path, fb.read_manifest(path), "sicher-genug-1", work / "c.db")
+    assert not (work / "c.db").exists()
+
+
+def test_changed_manifest_of_encrypted_backup(live, work):
+    source = sealed_backup(live, work).path
+    path = with_manifest(source, work / "y.zip", created_at="2020-01-01T00:00:00+00:00")
+    with pytest.raises(fb.Damaged):
+        fb.extract_database(path, fb.read_manifest(path), "sicher-genug-1", work / "c.db")
+
+
+def test_changed_plain_database(live, work):
+    source = plain_backup(live, work).path
+    db = bytearray(members(source)["database.sqlite"])
+    db[200] ^= 1
+    path = rewrite(source, work / "y.zip", database_sqlite=bytes(db))
+    with pytest.raises(fb.Damaged):
+        fb.extract_database(path, fb.read_manifest(path), None, work / "c.db")
+
+
+def test_plain_backup_ignores_a_given_password(live, work):
+    path = plain_backup(live, work).path
+    fb.extract_database(path, fb.read_manifest(path), "egal-123", work / "c.db")
+    assert (work / "c.db").is_file()
+
+
+def test_bytes_that_are_no_sqlite(live, work):
+    source = plain_backup(live, work).path
+    junk = b"no database here" * 100
+    path = rewrite(source, work / "y.zip", database_sqlite=junk)
+    manifest = manifest_of(path)
+    import hashlib
+
+    manifest["database"] = {"size": len(junk), "sha256": hashlib.sha256(junk).hexdigest()}
+    path = rewrite(path, work / "z.zip", manifest_json=json.dumps(manifest).encode())
+    with pytest.raises(fb.Damaged):
+        read_back(path, work)
+
+
+def test_database_revision_must_match_manifest(live, work):
+    source = plain_backup(live, work).path
+    path = with_manifest(source, work / "y.zip", schema_revision=known_revisions()[-2])
+    with pytest.raises(fb.NotABackup):
+        read_back(path, work)
+
+
+def test_foreign_trigger_is_refused(tmp_path, work):
+    path = make_db(tmp_path / "other" / "reprintbuddy.db")
+    con = sqlite3.connect(path)
+    con.execute("CREATE TRIGGER sneaky AFTER INSERT ON journal BEGIN DELETE FROM settings; END")
+    con.commit()
+    con.close()
+    created = fb.create_backup(path, work_dir=work, password=None, now=NOW)
+    with pytest.raises(fb.Incompatible):
+        read_back(created.path, work)
+
+
+def test_missing_table_is_refused(tmp_path, work):
+    path = make_db(tmp_path / "other" / "reprintbuddy.db")
+    con = sqlite3.connect(path)
+    con.execute("DROP TABLE reorder_marks")
+    con.commit()
+    con.close()
+    created = fb.create_backup(path, work_dir=work, password=None, now=NOW)
+    with pytest.raises(fb.Incompatible):
+        read_back(created.path, work)
+
+
+def test_older_database_is_accepted_but_not_migrated(tmp_path, work):
+    older = known_revisions()[-2]
+    path = make_db(tmp_path / "old" / "reprintbuddy.db", revision=older)
+    created = fb.create_backup(path, work_dir=work, password=None, now=NOW)
+    assert manifest_of(created.path)["schema_revision"] == older
+    db = read_back(created.path, work)
+    assert rows(db, "SELECT version_num FROM alembic_version") == [(older,)]  # the start migrates
+    assert sorted(p.name for p in work.iterdir()) == sorted([created.path.name, db.name])
+
+
+def test_corrupt_page_is_damaged(live, work):
+    created = plain_backup(live, work)
+    db = work / "plain.db"
+    db.write_bytes(members(created.path)["database.sqlite"])
+    page_size = rows(db, "PRAGMA page_size")[0][0]
+    data = bytearray(db.read_bytes())
+    for i in range(page_size * 2 + 8, page_size * 3 - 8):  # wreck the third page
+        data[i] = 0xA5
+    import hashlib
+
+    manifest = manifest_of(created.path)
+    manifest["database"] = {"size": len(data), "sha256": hashlib.sha256(bytes(data)).hexdigest()}
+    path = write_zip(
+        work / "y.zip",
+        [("manifest.json", json.dumps(manifest).encode()), ("database.sqlite", bytes(data))],
+    )
+    with pytest.raises(fb.Damaged):
+        read_back(path, work)
+
+
+# --- replacing the live database -----------------------------------------------------------
+
+
+def test_replace_keeps_a_backup_and_swaps_the_content(live, work, tmp_path):
+    other = make_db(tmp_path / "other" / "reprintbuddy.db")
+    maker = make_sessionmaker(make_engine(other))
+    with maker() as session:
+        st.set_setting(session, "queue_cap", 3)
+        auth.create_admin(session, "restored", "restored-password-1")
+        auth.create_session(session)
+    candidate = read_back(fb.create_backup(other, work_dir=work, password=None, now=NOW).path, work)
+    con = sqlite3.connect(candidate)  # a file made some other way may still carry sessions
+    con.execute("INSERT INTO sessions VALUES ('x', '2026-11-07 12:00:00', '2026-11-07 12:00:00')")
+    con.commit()
+    con.close()
+
+    service = make_sessionmaker(make_engine(live))
+    holder = service()  # the service keeps a connection open
+    holder.execute(text("SELECT 1"))
+    before = fb.replace_database(candidate, live, now=NOW)
+    holder.close()
+
+    assert before.name == "reprintbuddy-before-restore-20261107T120005Z.db"
+    assert setting(before, "queue_cap") == 7
+    assert setting(live, "queue_cap") == 3
+    assert rows(live, "SELECT username FROM users") == [("restored",)]
+    assert rows(live, "SELECT count(*) FROM sessions") == [(0,)]
+    assert setting(live, "session_secret") is None  # the other database never started a service
+    assert not candidate.exists()
+
+
+def test_replace_accepts_another_page_size(live, work, tmp_path):
+    other = tmp_path / "other" / "reprintbuddy.db"
+    other.parent.mkdir()
+    con = sqlite3.connect(other)
+    con.execute("PRAGMA page_size = 8192")
+    con.execute("VACUUM")
+    con.close()
+    make_db(other)
+    assert rows(other, "PRAGMA page_size") == [(8192,)]
+    candidate = read_back(fb.create_backup(other, work_dir=work, password=None, now=NOW).path, work)
+    fb.replace_database(candidate, live, now=NOW)
+    assert rows(live, "PRAGMA page_size") == [(4096,)]
+    assert rows(live, "PRAGMA integrity_check") == [("ok",)]
+
+
+def test_replace_protects_a_backup_named_by_a_failed_rollback(live, work, tmp_path):
+    from reprintbuddy.ops.backup import backup_database, backup_dir_for
+
+    backups = backup_dir_for(live)
+    named = backup_database(live, backups, label="v0.1.0", now=datetime(2026, 1, 1, tzinfo=UTC))
+    for day in range(2, 8):
+        backup_database(live, backups, label="v0.2.0", now=datetime(2026, 1, day, tzinfo=UTC))
+    candidate = read_back(plain_backup(live, work).path, work)
+    fb.replace_database(candidate, live, now=NOW, protect=[named])
+    assert named.exists()
+    assert len(list(backups.iterdir())) == 6  # five newest + the protected one
+
+
+def test_replace_refuses_a_missing_candidate(live, work):
+    with pytest.raises(FileNotFoundError):
+        fb.replace_database(work / "nothing.db", live, now=NOW)
+    assert not (live.parent / "backups").exists()
