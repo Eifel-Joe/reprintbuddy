@@ -9,6 +9,7 @@ import html as htmllib
 import json
 import re
 import subprocess
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -364,16 +365,21 @@ def test_css_popup_is_pinned_under_the_button_and_inside_the_screen(ready_client
     assert "position: absolute" in pop
     assert "18rem" in pop and "100vw" in pop  # width limit, never wider than the screen
     assert "z-index" in pop
-    # The card is the frame of the popup, so it can never leave the card (and so the screen).
-    assert "position: relative" in rules_of(css, ".card")
+    # The row of label and button is the frame of the popup (not the card): in a second column the
+    # popup stays at its own field.
+    assert "position: relative" in rules_of(css, ".label-row")
+    assert "position: relative" in rules_of(css, ".check-row")
     assert "list-style: none" in rules_of(css, ".info summary")  # no disclosure triangle
 
 
 def test_css_popup_width_rule_is_the_agreed_one(ready_client):
     pop = rules_of(ready_client.get(CSS).text, ".info-pop")
-    assert "width: min(18rem, calc(100% - 2.5rem))" in pop
+    assert "width: min(18rem, max(100%, 14rem))" in pop  # as wide as its field, but readable
     assert "max-width: calc(100vw - 2rem)" in pop
-    assert "left: 1.25rem" in pop  # the padding of the card: the popup starts at its content edge
+    # It starts at the field's own left edge unless the script moves it under the button; never at
+    # the card's edge (that was the bug: a popup of the right column opened under the left column).
+    assert "left: var(--info-x, 0px)" in pop
+    assert "1.25rem" not in pop
 
 
 def _rem(rule, prop):
@@ -420,3 +426,90 @@ def test_css_rows_keep_the_switch_look_and_the_label_rule(ready_client):
     assert "label.check" in css and 'label.check input[type="checkbox"]' in css
     assert "display: flex" in rules_of(css, ".check-row")
     assert "display: flex" in rules_of(css, ".label-row")
+
+
+# ---- the popup opens under its own button, in either column --------------------------------
+
+class _Ancestors(HTMLParser):
+    """For every <details class="info">: the classes of the elements it sits in."""
+
+    VOID = {"input", "br", "img", "meta", "link", "hr", "path", "use"}
+
+    def __init__(self):
+        super().__init__()
+        self.stack, self.found = [], []
+
+    def handle_starttag(self, tag, attrs):
+        classes = (dict(attrs).get("class") or "").split()
+        if tag == "details" and "info" in classes:
+            self.found.append([c for _, cs in self.stack for c in cs])
+        if tag not in self.VOID:
+            self.stack.append((tag, classes))
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i][0] == tag:
+                del self.stack[i:]
+                break
+
+
+def _frames_of(page):
+    parser = _Ancestors()
+    parser.feed(page)
+    return parser.found
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/articles/{article}/edit", "/parts/{part}/edit", "/parts/new", "/bookings", "/settings"],
+)
+def test_every_info_button_sits_in_a_row_that_frames_its_popup(ready_client, path):
+    """Sister paths of the bug: the field of a second column, the switch row, the settings row, the
+    booking box and the part form all put the button in `.label-row` or `.check-row`."""
+    with ready_client.app.state.sessionmaker() as session:
+        article = make_article(session)
+        part = make_part(session)
+        session.commit()
+        ids = {"article": article.id, "part": part.id}
+    frames = _frames_of(ready_client.get(path.format(**ids)).text)
+    assert frames, path
+    for classes in frames:
+        assert "label-row" in classes or "check-row" in classes, (path, classes)
+
+
+NODE_CASES = [
+    # (button left, frame left, frame width, popup width, viewport) -> expected x
+    ((420, 400, 500, 288, 1280), 8),     # under the button (button left minus the 12 px edge)
+    ((986, 700, 500, 288, 1280), 212),   # button at the far end of the field: right-aligned to the field
+    ((400, 400, 500, 288, 1280), 0),     # never left of the field
+    ((100, 50, 200, 288, 1280), 0),      # popup wider than the field: starts at the field
+    ((300, 40, 295, 288, 375), 7),       # phone: the field is the card's content, nothing to move
+    ((700, 300, 500, 288, 700), 104),    # the screen's edge wins over the field's edge
+]
+
+
+def test_script_places_the_popup_under_its_button_and_inside_the_field_and_the_screen():
+    try:
+        done = subprocess.run(
+            [
+                "node",
+                "-e",
+                "const p=require(process.argv[1]).place;"
+                "console.log(JSON.stringify(JSON.parse(process.argv[2]).map(a=>p.apply(null,a))))",
+                str(STATIC / "js" / "info.js"),
+                json.dumps([list(args) for args, _ in NODE_CASES]),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except FileNotFoundError:
+        pytest.skip("node is not installed")
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == [expected for _, expected in NODE_CASES]
+
+
+def test_script_sets_the_offset_when_an_explanation_opens_and_when_the_window_changes():
+    source = (STATIC / "js" / "info.js").read_text(encoding="utf-8")
+    assert "--info-x" in source
+    assert '"resize"' in source
