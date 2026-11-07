@@ -405,6 +405,7 @@ class FilamentSnapshot(Base):
     __table_args__ = (
         Index("uq_filament_snapshots_day_spool", "day", "spool_id", unique=True),
         Index("ix_filament_snapshots_sort_day", "spool_filament_id", "day"),
+        Index("ix_filament_snapshots_spool", "spool_id"),  # 0007: rows follow their spool
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

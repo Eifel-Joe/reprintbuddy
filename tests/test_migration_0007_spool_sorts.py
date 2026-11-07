@@ -114,3 +114,10 @@ def test_scripts_dir_has_0007_on_top_of_0006():
     versions = Path(dbmod.__file__).parent / "migrations" / "versions"
     text_0007 = next(versions.glob("0007*")).read_text(encoding="utf-8")
     assert 'down_revision = "0006"' in text_0007
+
+
+def test_daily_rows_have_an_index_by_spool(old_db):
+    """The daily rows follow their spool on every spool list (`filament._follow_spools`)."""
+    upgrade(old_db)
+    indexes = {i["name"]: i["column_names"] for i in inspect(old_db).get_indexes("filament_snapshots")}
+    assert indexes.get("ix_filament_snapshots_spool") == ["spool_id"]

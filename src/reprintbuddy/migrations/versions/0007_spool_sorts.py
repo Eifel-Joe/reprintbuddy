@@ -43,6 +43,8 @@ def upgrade() -> None:
         sqlite_where=sa.text("reordered = 1"),
     )
     op.create_index("ix_article_filament_sorts_sort", "article_filament_sorts", ["sort_id"])
+    # the daily rows of a spool follow it to its spool sort with every spool list
+    op.create_index("ix_filament_snapshots_spool", "filament_snapshots", ["spool_id"])
 
 
 def downgrade() -> None:

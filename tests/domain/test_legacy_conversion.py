@@ -208,3 +208,51 @@ def test_daily_rows_of_listed_spools_leave_the_legacy_sort(db):
         stock, day = filament.stock_from_snapshots(s)
         assert day == DAY - timedelta(days=1)
         assert {k: v.stock_g for k, v in stock.items()} == {ids[spool.id]: 600.0}
+
+
+# ---- review findings of v0.3.7 part A ------------------------------------------------------------
+
+
+def test_an_empty_spool_list_converts_nothing(db):
+    """Bambuddy answers with no spools (a fresh install, another spool mode): nothing is dropped or
+    closed, the legacy sort waits for a list with spools."""
+    with db.begin() as s:
+        old = make_legacy_sort(s)
+        make_filament_settings(s, old.id, lead_time_days=4)
+        mark(s, old.id, 2)
+        filament.sync_sorts(s, [])
+        filament.known_sorts(s, [])
+        assert s.get(FilamentSettings, old.id) is not None
+        assert [m.item_id for m in open_marks(s)] == [old.id]
+        assert journal(s) == []
+
+
+def test_a_mark_moved_onto_other_settings_is_counted_in_their_order_units(db):
+    """The old sort ordered 4 x 250 g; the target already has settings with 1000 g packs: the moved
+    mark counts 1 x 1000 g, and joined with the target's own open mark 2 x 1000 g."""
+    fake = FakeBambuddy()
+    spool = fake.add_spool("PLA", brand="Brand A", color_hex="#000000")
+    with db.begin() as s:
+        old = make_legacy_sort(s)
+        make_filament_settings(s, old.id, pack_grams=250)
+        mark(s, old.id, 4, days_ago=2)
+        target = make_sort(s, brand="Brand A")
+        make_filament_settings(s, target.id, pack_grams=1000)
+        mark(s, target.id, 1, days_ago=1)
+        filament.sync_sorts(s, [spool])
+        (joined,) = open_marks(s)
+        assert (joined.item_id, joined.qty) == (target.id, 2)
+
+
+def test_a_moved_mark_rounds_up_to_whole_order_units(db):
+    fake = FakeBambuddy()
+    spool = fake.add_spool("PLA", brand="Brand A", color_hex="#000000")
+    with db.begin() as s:
+        old = make_legacy_sort(s)
+        make_filament_settings(s, old.id, pack_grams=750)
+        mark(s, old.id, 1)
+        target = make_sort(s, brand="Brand A")
+        make_filament_settings(s, target.id, pack_grams=1000)
+        filament.sync_sorts(s, [spool])
+        (moved,) = open_marks(s)
+        assert (moved.item_id, moved.qty) == (target.id, 1)

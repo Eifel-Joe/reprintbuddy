@@ -7,6 +7,7 @@ Functions never commit; the caller owns the transaction.
 
 from __future__ import annotations
 
+import math
 from collections import Counter, defaultdict
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -136,13 +137,19 @@ def sync_sorts(session: Session, spools: Sequence[Spool]) -> dict[int, int]:
 
 def _follow_spools(session: Session, assigned: Mapping[int, int]) -> None:
     """The daily rows of a spool belong to the spool sort it is in now (also those of earlier days)."""
-    if not assigned:
-        return
-    # Row by row and only where it differs: a bulk UPDATE would report a change on every page view.
-    rows = session.scalars(select(FilamentSnapshot).where(FilamentSnapshot.spool_id.in_(list(assigned))))
-    for row in rows:
-        if row.spool_filament_id != assigned[row.spool_id]:
-            row.spool_filament_id = assigned[row.spool_id]
+    by_sort: dict[int, list[int]] = defaultdict(list)
+    for spool_id, sort_id in assigned.items():
+        by_sort[sort_id].append(spool_id)
+    # Only the rows that differ, and row by row: a bulk UPDATE would report a change on every page
+    # view, and loading every day of every spool would grow with the record (review v0.3.7 A, 4).
+    for sort_id, spool_ids in by_sort.items():
+        rows = session.scalars(
+            select(FilamentSnapshot).where(
+                FilamentSnapshot.spool_id.in_(spool_ids), FilamentSnapshot.spool_filament_id != sort_id
+            )
+        )
+        for row in rows:
+            row.spool_filament_id = sort_id
 
 
 # ---- conversion of the brandless sorts of 0006 (migration 0007) -------------------------------
@@ -187,7 +194,9 @@ def convert_legacy(session: Session, spools: Sequence[Spool], assigned: Mapping[
         )
         if session.get(FilamentSettings, sort.id) is not None or _open_filament_marks(session, sort.id)
     ]
-    if not pending:
+    if not pending or not spools:
+        # An empty list (a fresh Bambuddy, another spool mode) is no evidence that the spools are gone:
+        # nothing is dropped or closed, the next list with spools converts (review v0.3.7 A, 1).
         return 0
     all_legacy = session.scalars(
         select(FilamentSort).where(FilamentSort.legacy.is_(True)).order_by(FilamentSort.id)
@@ -230,6 +239,7 @@ def _convert_one(session: Session, old: FilamentSort, target: FilamentSort | Non
     if target is not None:
         details["into"], details["into_label"] = target.id, target.label
     settings = session.get(FilamentSettings, old.id)
+    old_pack = settings.pack_grams if settings is not None else None
     if settings is not None:
         values = {f: getattr(settings, f) for f in _SETTINGS}
         session.delete(settings)
@@ -245,8 +255,13 @@ def _convert_one(session: Session, old: FilamentSort, target: FilamentSort | Non
     marks = _open_filament_marks(session, old.id)
     if marks:
         if target is not None:
+            target_settings = session.get(FilamentSettings, target.id)
+            new_pack = target_settings.pack_grams if target_settings is not None else None
             for mark in marks:
                 mark.item_id = target.id
+                if old_pack and new_pack and old_pack != new_pack:
+                    # the target orders in other units: the same grams, rounded up to whole units
+                    mark.qty = max(1, math.ceil(mark.qty * old_pack / new_pack))
             session.flush()
             joined = _open_filament_marks(session, target.id)
             if len(joined) > 1:
