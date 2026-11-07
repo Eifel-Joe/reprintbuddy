@@ -151,12 +151,12 @@ def open_count(client) -> int:
         return dispatch_domain.open_count(s)
 
 
-def confirm_inspection(client, dispatch_id: int, good: int) -> None:
-    """Page "To check": the operator counts the good pieces of the print and presses "Confirm"."""
+def confirm_inspection(client, dispatch_id: int, scrap: int) -> None:
+    """Page "To check": the operator enters the scrap of the print (default 0) and presses "Confirm"."""
     with sm_of(client)() as s:
         inspection_id = s.scalar(select(Inspection.id).where(Inspection.dispatch_id == dispatch_id))
     assert inspection_id is not None
-    post_form(client, "/inspection", f"/inspection/{inspection_id}", good=str(good))
+    post_form(client, "/inspection", f"/inspection/{inspection_id}", scrap=str(scrap))
 
 
 def open_inspections(client) -> int:
@@ -198,7 +198,7 @@ def test_spec12_steps(ready_client, fake_bambuddy):
     # the next tick adds nothing.
     assert open_inspections(client) == 1
     assert "Template A" in client.get("/inspection").text
-    confirm_inspection(client, first.id, good=1)
+    confirm_inspection(client, first.id, scrap=0)
     assert numbers(client, article_id) == (1, 0, 0)
     assert open_inspections(client) == 0
     done = client.get("/inspection").text
@@ -238,7 +238,7 @@ def test_spec12_steps(ready_client, fake_bambuddy):
     tick(client, poll=True)
     assert open_inspections(client) == 1
     entries_before_scrap = entries_of(client)
-    confirm_inspection(client, last_dispatch(client).id, good=0)
+    confirm_inspection(client, last_dispatch(client).id, scrap=1)
     assert open_inspections(client) == 0
     replacement_page = client.get("/inspection").text
     assert en("inspections.done", name="Template A", good=0, scrap=1) in replacement_page

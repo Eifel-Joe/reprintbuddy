@@ -96,15 +96,28 @@ def test_nav_inspection_active(ready_client):
     assert "active" in link.group(0) or "aria-current" in link.group(0)
 
 
-def test_list_shows_cards(ready_client):  # Spec 8.2
-    finished(ready_client, "Template A", needs_assembly=True)
+def lines(page):
+    """The html of every row of the list (one per print)."""
+    return re.findall(r'<form[^>]*class="[^"]*inspect-line[^"]*"[^>]*>.*?</form>', page, re.S)
+
+
+def test_list_shows_one_line_per_print(ready_client):  # Spec 8.2 (07.11.2026)
+    finished(ready_client, "Template A", units=3, needs_assembly=True)
     finished(ready_client, "Template B")
     page = ready_client.get(PAGE).text
-    assert page.count('class="card section inspect-card"') == 2
-    assert "Template A" in page and "Template B" in page
-    assert len(re.findall(r'name="good"[^>]*value="1"', page)) == 2  # the number field starts at the units
+    rows = lines(page)
+    assert len(rows) == 2 and "<table" not in page
+    first = rows[0]
+    assert "Template A" in first and "Template B" in rows[1]
+    # the target number (pieces per print), the scrap field starting at 0, the button
+    assert re.search(r'<span class="inspect-soll[^"]*">3</span>', first)
+    scrap = re.search(r'<input[^>]*name="scrap"[^>]*>', first).group(0)
+    assert 'value="0"' in scrap and 'min="0"' in scrap and 'max="3"' in scrap
+    assert 'inputmode="numeric"' in scrap and "required" not in scrap
+    assert 'name="good"' not in page and 'name="note"' not in page  # no good field, no note
+    assert en("inspections.confirm") in first
+    assert re.search(r'class="line-head[ "]', page)  # the small column heads
     assert page.count(en("inspections.goes_to_assembly")) == 1
-    assert en("inspections.confirm") in page
     assert en("inspections.subtitle") in page
     assert "<h1>" in page and en("nav.inspection") in page
 
@@ -124,7 +137,7 @@ def test_confirm_good(ready_client):  # Spec 12 step 4
     a, i = finished(ready_client)
     ticks = []
     ready_client.app.state.ticker.request_tick = lambda: ticks.append(1)
-    response, _ = confirm(ready_client, i, good="1")
+    response, _ = confirm(ready_client, i, scrap="0")
     assert response.status_code == 303 and response.headers["location"] == PAGE
     assert count(ready_client, Article, a, "stock") == 1
     assert count(ready_client, Article, a, "provisional") == 0
@@ -142,7 +155,7 @@ def test_confirm_scrap_creates_replacement(ready_client):  # Spec 12 step 6
         other = make_article(s, name="Template Z").id
         make_entry(s, other, 1)
     a, i = finished(ready_client, units=2)
-    response, _ = confirm(ready_client, i, good="0")
+    response, _ = confirm(ready_client, i, scrap="2")
     assert response.status_code == 303
     assert count(ready_client, Article, a, "stock") == 0
     page = ready_client.get(PAGE).text
@@ -155,7 +168,7 @@ def test_confirm_scrap_creates_replacement(ready_client):  # Spec 12 step 6
 
 def test_confirm_double_submit(ready_client):  # Review Focus 1
     a, i = finished(ready_client, units=2)
-    response, data = confirm(ready_client, i, good="2")
+    response, data = confirm(ready_client, i, scrap="0")
     again = ready_client.post(f"/inspection/{i}", data=data)
     assert response.status_code == 303 and again.status_code == 303
     assert count(ready_client, Article, a, "stock") == 2
@@ -165,23 +178,29 @@ def test_confirm_double_submit(ready_client):  # Review Focus 1
     assert en("form.duplicate") in ready_client.get(PAGE).text
 
 
-@pytest.mark.parametrize("good", ["", "abc", "-1", "2", "9" * 20, "²"])
-def test_confirm_invalid_numbers(ready_client, good):  # Review Focus 3
+@pytest.mark.parametrize("scrap", ["abc", "-1", "2", "9" * 20, "²"])
+def test_confirm_invalid_numbers(ready_client, scrap):  # Review Focus 3
     a, i = finished(ready_client, units=1)
-    response, _ = confirm(ready_client, i, good=good)
+    response, _ = confirm(ready_client, i, scrap=scrap)
     assert response.status_code == 200
     assert 'class="alert"' in response.text
-    field = en("inspections.field.good")
-    if good == "":
-        expected = en("form.required", field=field)
-    elif good == "2":
+    field = en("inspections.field.scrap")
+    if scrap == "2":
         expected = en("form.invalid_number", field=field, min=0, max=1)
     else:
         expected = en("form.invalid_number", field=field, min=0, max=1000)
     assert html.escape(expected) in response.text
+    assert f'name="scrap"' in response.text and f'value="{html.escape(scrap)}"' in response.text  # typed value stays
     assert count(ready_client, Article, a, "stock") == 0
     assert count(ready_client, Article, a, "provisional") == 1
     assert open_count(ready_client) == 1
+
+
+def test_empty_scrap_is_the_default_zero(ready_client):
+    a, i = finished(ready_client, units=2)
+    response, _ = confirm(ready_client, i, scrap="")
+    assert response.status_code == 303
+    assert count(ready_client, Article, a, "stock") == 2
 
 
 def test_confirm_resolved_elsewhere(ready_client):
@@ -191,7 +210,7 @@ def test_confirm_resolved_elsewhere(ready_client):
     token = _TOKEN.search(forms[0][1]).group(1)
     with sm_of(ready_client).begin() as s:
         inspection.resolve(s, i, 1, "user")
-    data = {"csrf_token": csrf_of(ready_client, PAGE), "form_token": token, "good": "1"}
+    data = {"csrf_token": csrf_of(ready_client, PAGE), "form_token": token, "scrap": "0"}
     response = ready_client.post(f"/inspection/{i}", data=data)
     assert response.status_code == 200
     assert en("inspections.already_resolved") in response.text
@@ -205,7 +224,7 @@ def test_all_good_selected(ready_client):
     assert open_count(ready_client) == 1
     page = ready_client.get(PAGE).text
     assert en("inspections.all_done", resolved=2, skipped=0) in page
-    assert "Template C" in page and page.count('class="card section inspect-card"') == 1
+    assert "Template C" in page and len(lines(page)) == 1
 
 
 def test_all_good_everything(ready_client):
@@ -251,7 +270,7 @@ def test_all_good_none_selected(ready_client, ids):
 
 def test_short_parts_flash(ready_client):  # Spec 7.5
     _a, i = finished(ready_client, parts=(("Insert M4", 2, 1),), units=1)
-    response, _ = confirm(ready_client, i, good="1")
+    response, _ = confirm(ready_client, i, scrap="0")
     assert response.status_code == 303
     assert en("stock.parts_short", part="Insert M4", had=1, needed=2) in ready_client.get(PAGE).text
 
@@ -261,9 +280,8 @@ def test_inspection_german(ready_client):
     with sm_of(ready_client).begin() as s:
         st.set_setting(s, "language", "de", commit=False)
     page = ready_client.get(PAGE).text
-    for text in ("Zu prüfen", "Bestätigen", "Alle gut", "Gute Einheiten", de("inspections.subtitle")):
+    for text in ("Zu prüfen", "Bestätigen", "Alle gut", "Ausschuss", "Soll", de("inspections.subtitle")):
         assert text in html.unescape(page), text
-    assert "Ausschuss" in html.unescape(page)  # in the explanation of the field
 
 
 def test_mobile_markup(ready_client):
@@ -271,5 +289,108 @@ def test_mobile_markup(ready_client):
     page = ready_client.get(PAGE).text
     assert 'inputmode="numeric"' in page
     assert "<table" not in page
-    assert 'class="info"' in page and en("info.inspection_good") in html.unescape(page)
+    assert 'class="info"' in page and en("info.inspection_scrap") in html.unescape(page)
     assert re.search(r'<label class="check[ "]', page)
+
+
+# ---- the filter by article (Spec 8.2; the target of the later QR code) ------------------------
+
+
+def two_articles(client):
+    a, ia = finished(client, "Template A", units=2)
+    b, ib = finished(client, "Template B", units=3)
+    return a, ia, b, ib
+
+
+def test_filter_shows_only_the_prints_of_the_article_with_a_chip(ready_client):
+    a, ia, b, ib = two_articles(ready_client)
+    page = ready_client.get(f"{PAGE}?article={a}").text
+    rows = lines(page)
+    assert len(rows) == 1 and "Template A" in rows[0] and "Template B" not in "".join(rows)
+    assert f'action="/inspection/{ia}"' in page and f'action="/inspection/{ib}"' not in page
+    chip = re.search(r'<a class="chip"[^>]*href="([^"]*)"[^>]*>(.*?)</a>', page, re.S)
+    assert chip and chip.group(1) == PAGE  # taking it off goes back to the whole list
+    assert "Template A" in chip.group(2) and en("list.filter_article") in chip.group(2)
+    # the key figures follow the filter
+    cards = re.findall(r'<span class="kpi-value">(\d+)</span>', page)
+    assert cards == ["1", "2"]
+
+
+@pytest.mark.parametrize("raw", ["abc", "", "0x1", "999999", "-1", "9" * 30])
+def test_a_bad_or_unknown_article_filter_is_no_filter(ready_client, raw):
+    two_articles(ready_client)
+    page = ready_client.get(PAGE, params={"article": raw}).text
+    assert len(lines(page)) == 2 and 'class="chip"' not in page
+
+
+def test_filtered_list_without_prints_of_that_article(ready_client):
+    a, *_ = two_articles(ready_client)
+    with sm_of(ready_client).begin() as s:
+        other = make_article(s, name="Template C").id
+    page = ready_client.get(f"{PAGE}?article={other}").text
+    assert lines(page) == [] and en("inspections.empty_article") in page
+    assert 'class="chip"' in page
+
+
+def test_confirming_in_the_filtered_list_returns_to_it(ready_client):
+    a, ia, b, ib = two_articles(ready_client)
+    forms = [(at, inner) for at, inner in _FORM.findall(ready_client.get(f"{PAGE}?article={a}").text)
+             if f'action="/inspection/{ia}"' in at]
+    inner = forms[0][1]
+    assert 'name="article" value="%d"' % a in inner
+    data = {"csrf_token": csrf_of(ready_client, PAGE), "form_token": _TOKEN.search(inner).group(1),
+            "scrap": "0", "article": str(a)}
+    response = ready_client.post(f"/inspection/{ia}", data=data)
+    assert response.status_code == 303 and response.headers["location"] == f"{PAGE}?article={a}"
+    assert open_count(ready_client) == 1  # B is still waiting
+
+
+def test_a_failed_confirm_in_the_filtered_list_keeps_the_filter(ready_client):
+    a, ia, b, ib = two_articles(ready_client)
+    data = {"csrf_token": csrf_of(ready_client, PAGE),
+            "form_token": token_of(ready_client, f"/inspection/{ia}"), "scrap": "99", "article": str(a)}
+    response = ready_client.post(f"/inspection/{ia}", data=data)
+    assert response.status_code == 200
+    assert len(lines(response.text)) == 1 and 'class="chip"' in response.text
+
+
+def test_all_good_of_the_filtered_list_touches_only_that_article(ready_client):
+    """The server filters by article itself: a form that carries ids of other articles (a prints
+    that came in after the page was drawn, or a hand-made request) does not touch them."""
+    a, ia, b, ib = two_articles(ready_client)
+    _c, ic = finished(ready_client, "Template A", units=1)  # a second print of A, came later
+    forms = forms_of(ready_client, "/inspection/all-good")
+    token = next(_TOKEN.search(inner).group(1) for at, inner in forms if 'name="all"' in inner)
+    data = {"csrf_token": csrf_of(ready_client, PAGE), "form_token": token, "all": "1",
+            "article": str(a), "ids": [str(ia), str(ib)]}  # B's print is in the request
+    response = ready_client.post("/inspection/all-good", data=data)
+    assert response.status_code == 303 and response.headers["location"] == f"{PAGE}?article={a}"
+    assert count(ready_client, Inspection, ia, "resolved_at") is not None
+    assert count(ready_client, Inspection, ib, "resolved_at") is None  # B stays open
+    assert count(ready_client, Article, b, "provisional") == 3 and count(ready_client, Article, b, "stock") == 0
+    assert count(ready_client, Inspection, ic, "resolved_at") is None  # not in the request, not touched
+    page = ready_client.get(f"{PAGE}?article={a}").text
+    assert en("inspections.all_done", resolved=1, skipped=0) in page
+
+
+def test_the_all_good_form_of_the_filtered_list_carries_only_its_prints(ready_client):
+    a, ia, b, ib = two_articles(ready_client)
+    inner = "".join(i for _a, i in forms_of_page(ready_client.get(f"{PAGE}?article={a}").text, "/inspection/all-good"))
+    assert re.findall(r'name="ids" value="(\d+)"', inner) == [str(ia)]
+    assert 'name="article" value="%d"' % a in inner
+
+
+def forms_of_page(page, action):
+    return [(a, inner) for a, inner in _FORM.findall(page) if f'action="{action}"' in a]
+
+
+def test_a_form_of_the_old_page_with_a_good_field_is_refused_not_misread(ready_client):
+    """A tab opened before the update still posts `good`; reading only `scrap` (default 0) would
+    book every unit as good and lose the scrap. The server refuses and books nothing."""
+    a, i = finished(ready_client, units=2)
+    response, _ = confirm(ready_client, i, good="0")
+    assert response.status_code == 200
+    assert html.escape(en("inspections.form_outdated")) in response.text
+    assert count(ready_client, Article, a, "stock") == 0
+    assert count(ready_client, Article, a, "provisional") == 2
+    assert open_count(ready_client) == 1

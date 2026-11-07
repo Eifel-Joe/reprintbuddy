@@ -194,7 +194,9 @@ def test_update_article(db):
     with db.begin() as s:
         art = create(s)
         art_id = art.id
-        catalog.update_article(s, art_id, ArticleInput(name="Template A", min_stock=4, buffer=2, auto_enabled=True))
+        catalog.update_article(
+            s, art_id, ArticleInput(name="Template A", min_stock=4, buffer=2, auto_enabled=True, target_model="A1")
+        )
     with db.begin() as s:
         row = catalog.list_articles(s)[0]
         assert row.target == 6 and row.min_stock == 4
@@ -347,3 +349,43 @@ def test_list_row_carries_the_automation_state(db):
     with db.begin() as s:
         rows = {r.name: r.auto_enabled for r in catalog.list_articles(s)}
     assert rows == {"Template A": True, "Template B": False}
+
+
+# ---- the automation needs a print target, in the form like in the switch (p52) ---------------
+
+
+def test_create_with_automation_but_no_target_is_refused(db):
+    with pytest.raises(ValidationError) as info:
+        with db.begin() as s:
+            create(s, data=ArticleInput(name="Template A", auto_enabled=True))
+    assert info.value.key == "articles.field_auto_needs_target"
+    with db.begin() as s:
+        assert s.scalars(select(Article)).all() == []
+
+
+def test_update_with_automation_but_no_target_is_refused(db):
+    with db.begin() as s:
+        art_id = create(s).id
+    with pytest.raises(ValidationError) as info:
+        with db.begin() as s:
+            catalog.update_article(s, art_id, ArticleInput(name="Renamed", auto_enabled=True))
+    assert info.value.key == "articles.field_auto_needs_target"
+    with db.begin() as s:
+        art = s.get(Article, art_id)
+        assert art.name == "Template A" and art.auto_enabled is False
+
+
+def test_automation_with_a_model_or_printer_target_is_saved(db):
+    with db.begin() as s:
+        art_id = create(s).id
+        catalog.update_article(s, art_id, ArticleInput(name="Template A", auto_enabled=True, target_model="A1"))
+        assert s.get(Article, art_id).auto_enabled is True
+        catalog.update_article(s, art_id, ArticleInput(name="Template A", auto_enabled=True, printer_id=3))
+        assert s.get(Article, art_id).auto_enabled is True
+
+
+def test_no_automation_without_target_is_fine(db):
+    with db.begin() as s:
+        art_id = create(s).id
+        catalog.update_article(s, art_id, ArticleInput(name="Template A", auto_enabled=False))
+        assert s.get(Article, art_id).target_model is None

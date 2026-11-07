@@ -8,6 +8,7 @@ layouts and the style sheet shows tiles on narrow screens and the list on wide o
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -15,6 +16,9 @@ from urllib.parse import quote, urlencode
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy.orm import Session
+
+from reprintbuddy.models import Article
 
 Layout = Literal["auto", "list", "tiles"]
 
@@ -109,3 +113,41 @@ class ToggleLink:
 
 def layout_links(request: Request, current: Layout) -> list[ToggleLink]:
     return [ToggleLink(choice, url_with(request, layout=choice), choice == current) for choice in _CHOICES]
+
+
+# ---- the filter by article of the work lists (Spec 8.2; the later QR code of an article opens
+# the list with `?article=<id>`) -----------------------------------------------------------------
+
+# An id in an address or a form: ASCII digits only, at most 18 of them (fits every id).
+_ARTICLE_ID = re.compile(r"[0-9]{1,18}", re.ASCII)
+
+
+def article_id_of(raw: object) -> int | None:
+    """The id in a `article` parameter or field; anything that is no id counts as no filter."""
+    text = str(raw) if raw is not None else ""
+    return int(text) if _ARTICLE_ID.fullmatch(text) else None
+
+
+@dataclass(frozen=True)
+class ArticleFilter:
+    id: int
+    name: str
+    clear_href: str  # the list without the filter
+
+
+def article_filter(db: Session, raw: object, path: str) -> ArticleFilter | None:
+    """The filter of `raw` (an `article` value) on the list at `path`; `None` for no filter.
+
+    An id that is no article is no filter either: the whole list shows instead of an empty one
+    that names nothing.
+    """
+    article_id = article_id_of(raw)
+    if article_id is None:
+        return None
+    article = db.get(Article, article_id)
+    return ArticleFilter(article.id, article.name, path) if article is not None else None
+
+
+def with_article(path: str, article_id: int | None) -> str:
+    """`path` with `?article=<id>` when there is a filter (the redirect after an action)."""
+    return f"{path}?article={article_id}" if article_id is not None else path

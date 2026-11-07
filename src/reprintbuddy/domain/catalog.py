@@ -196,6 +196,10 @@ def _check_article_input(
         printer_id = _int_in(printer_id, "articles.field.printer_id", 1, MAX_QTY)
     if target_model is not None and printer_id is not None:
         raise ValidationError("articles.target_exclusive")
+    # The same rule as the switch of the list (`set_auto_enabled`): the automation needs a print
+    # target, `dispatch.reserve_next` would pause the article with `no_target` at once (p52).
+    if data.auto_enabled and target_model is None and printer_id is None:
+        raise ValidationError("articles.field_auto_needs_target", field="articles.field.auto_enabled")
     parts: dict[int, int] = {}
     linked = _linked_parts(session, article_id)
     for part_id, qty in data.parts.items():

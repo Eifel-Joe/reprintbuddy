@@ -37,8 +37,9 @@
 {% endcall %}
 {% call ui.check_row(t('info.auto_enabled'), t('articles.field.auto_enabled')) %}
 <label class="check">
-  <input name="auto_enabled" type="checkbox"{% if values.auto_enabled %} checked{% endif %}>
+  <input name="auto_enabled" type="checkbox"{% if values.auto_enabled %} checked{% endif %}{% if field_errors and field_errors.auto_enabled %} aria-invalid="true" aria-describedby="auto-enabled-error"{% endif %}>
   <span>{{ t('articles.field.auto_enabled') }}</span>
 </label>
 {% endcall %}
+{% if field_errors and field_errors.auto_enabled %}<p class="field-error" id="auto-enabled-error" role="alert">{{ field_errors.auto_enabled }}</p>{% endif %}
 {% if parts %}{% include "_article_parts.html" %}{% endif %}

@@ -231,6 +231,9 @@ a.btn { text-decoration: none; }
   color: var(--text);
 }
 
+/* The error of one field of a form, under the field (p52). */
+.field-error { margin: 0.3rem 0 1rem; color: var(--danger); font-size: 0.85rem; }
+
 .steps { padding-left: 1.25rem; color: var(--text-2); }
 .steps li { margin-bottom: 0.35rem; }
 
@@ -617,6 +620,9 @@ a.btn, button.btn { display: inline-flex; align-items: center; justify-content: 
 td a.icon-btn:hover { text-decoration: none; }
 .icon-form { display: inline-flex; margin: 0; }
 .row-actions { display: flex; justify-content: flex-end; gap: 2px; }
+/* The column of the automation switch (p83): narrow, head and switch centred. */
+th.auto-col, td.auto-col { width: 1%; white-space: nowrap; text-align: center; padding-top: 2px; padding-bottom: 2px; }
+td.auto-col .switch-form { vertical-align: middle; }
 th.actions-col, td.actions-col { width: 1%; white-space: nowrap; padding-top: 2px; padding-bottom: 2px; }
 
 /* Switch: a checkbox in the shape of a switch (also label.check input[type=checkbox]). */
@@ -666,6 +672,9 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 
 /* Settings cards: head with symbol and Save, then one line per setting; two columns in a grid. */
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+/* A column of cards inside the grid: the cards follow each other with the normal gap (p85). */
+.settings-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.settings-col > .card { margin: 0; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0.5rem; }
 .card-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 650; }
 .card-head h2 .icon { width: 17px; height: 17px; color: var(--accent); }
@@ -918,20 +927,56 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 /* The list/tiles switch is hit with a thumb too. */
 .layout-toggle a { min-height: 2.75rem; min-width: 2.75rem; }
 
-/* ---- page "To check": one card per finished print ---------------------------- */
+/* ---- work lists "To check" and "Assembly": one dense line per print or article (Spec 10.1) ---- */
 .inspect-toolbar { align-items: center; gap: 0.6rem; }
 .inspect-toolbar form { margin: 0; }
 .inspect-toolbar .btn { display: inline-flex; align-items: center; gap: 0.45rem; }
-.inspect-card .inspect-head { display: flex; align-items: center; gap: 10px; min-width: 0; margin-bottom: 0.75rem; }
-.inspect-title { display: flex; flex: 1 1 auto; flex-direction: column; gap: 3px; min-width: 0; }
+/* The article filter, visible and removable. */
+.chip { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; padding: 0 0.9rem; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 13px; text-decoration: none; max-width: 100%; }
+.chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip .icon { flex: 0 0 auto; width: 15px; height: 15px; }
+.chip:hover { background: var(--neutral-soft); }
+.line-list { padding: 0; overflow: hidden; }
+.line-head, .line { display: grid; align-items: center; gap: 6px 14px; padding: 8px 14px; margin: 0; }
+.line-head { padding-top: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line); color: var(--text-2); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.line-wrap + .line-wrap { border-top: 1px solid var(--line); }
+.line-wrap > .alert { margin: 8px 14px 0; }
+.line-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.line-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 /* At least 44 px to tap, like .queue-name. */
-.inspect-name { display: inline-flex; align-items: center; align-self: flex-start; max-width: 100%; min-height: 2.75rem; color: var(--text); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
-.inspect-name:hover { color: var(--accent); }
-.inspect-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; color: var(--muted); font-size: 12px; }
-/* The whole label is the hit area of the tick box: 44 px high. */
-.inspect-select { flex: 0 0 auto; align-items: center; min-height: 2.75rem; margin: 0; padding-left: 0.5rem; color: var(--text-2); font-size: 13px; cursor: pointer; }
-.inspect-form input[type="number"] { min-height: 2.75rem; }
-.inspect-form .btn { margin-top: 0.25rem; }
+.line-name { display: inline-flex; align-items: center; align-self: flex-start; max-width: 100%; min-height: 2.75rem; color: var(--text); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.line-name:hover { color: var(--accent); }
+.line-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; color: var(--muted); font-size: 12px; }
+.line-cell { min-width: 0; }
+.line-cell.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* The labels in the line are for the narrow screen; the head row names the columns above. */
+.line-label { display: none; margin: 0 0 2px; color: var(--muted); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.line input[type="number"] { min-height: 2.75rem; margin: 0; max-width: none; }
+.line .btn { min-height: 2.75rem; margin: 0; white-space: nowrap; }
+.inspect-cols { grid-template-columns: 2.75rem minmax(0, 1fr) 5rem 7rem 8.5rem; }
+.assembly-cols { grid-template-columns: minmax(0, 1fr) 7rem 7rem 11rem; }
+/* The bought parts of an article, small under its name; red where the stock does not cover the wait. */
+.line-parts { display: flex; flex-wrap: wrap; gap: 0 14px; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 12px; }
+.line-parts .neg { color: var(--danger); }
+.assembly-awaiting { font-size: 15px; font-weight: 600; }
+/* The whole label is the hit area of the tick box: 44 px. */
+.inspect-select { display: flex; align-items: center; justify-content: center; width: 2.75rem; min-height: 2.75rem; margin: 0; cursor: pointer; }
+.inspect-soll { font-size: 15px; font-weight: 600; }
+@media (max-width: 699px) {
+  .line-head { display: none; }
+  .inspect-cols.line { grid-template-columns: 2.75rem minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "sel main main" ". soll scrap" "btn btn btn"; }
+  .inspect-line .inspect-select { grid-area: sel; }
+  .inspect-line .line-main { grid-area: main; }
+  .inspect-line .line-cell.num { grid-area: soll; text-align: left; }
+  .inspect-line .line-cell:not(.num) { grid-area: scrap; }
+  .inspect-line .btn { grid-area: btn; width: 100%; }
+  .assembly-cols.line { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "main main" "awaiting qty" "btn btn"; }
+  .assembly-line .line-main { grid-area: main; }
+  .assembly-line .line-cell.num { grid-area: awaiting; text-align: left; }
+  .assembly-line .line-cell:not(.num) { grid-area: qty; }
+  .assembly-line .btn { grid-area: btn; width: 100%; }
+  .line-label { display: block; }
+}
 
 /* ---- filament and reorder pages (B6) -------------------------------------- */
 

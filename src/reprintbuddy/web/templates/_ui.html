@@ -67,6 +67,14 @@
 </nav>
 {%- endmacro %}
 
+{# The article filter of a work list (listing.article_filter), visible and removable: "Artikel: Name ✕".
+   Nothing without a filter. #}
+{% macro article_chip(flt) -%}
+{%- if flt -%}
+<a class="chip" href="{{ flt.clear_href }}" title="{{ t('list.filter_remove') }}" aria-label="{{ t('list.filter_article') }}: {{ flt.name }}. {{ t('list.filter_remove') }}"><span class="chip-label">{{ t('list.filter_article') }}: <strong>{{ flt.name }}</strong></span>{{ icon('x') }}</a>
+{%- endif -%}
+{%- endmacro %}
+
 {# Fill bar (formatting.fill_percent); nothing without a target. The colour follows the state. #}
 {% macro bar(percent, state) -%}
 {%- if percent is not none -%}
