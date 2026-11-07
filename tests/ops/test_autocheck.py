@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 import pytest
 
 from reprintbuddy.ops import autocheck
-from reprintbuddy.ops.autocheck import CHECK_INTERVAL, RETRY_AFTER_FAILURE, AutoCheck
+from reprintbuddy.ops.autocheck import CHECK_INTERVAL, RETRY_AFTER_FAILURE, UPDATE_RETRY, AutoCheck
 from reprintbuddy.ops.versions import UpdateCheckError, VersionInfo
 
 INFO = VersionInfo("v0.1.0", "v0.2.0", datetime(2026, 11, 7, tzinfo=UTC))
@@ -109,10 +109,28 @@ async def test_without_a_git_installation_the_loop_ends_without_asking():
     assert s.checks == 0 and s.waits == []
 
 
-async def test_while_an_update_runs_the_round_is_skipped():
+async def test_while_an_update_runs_the_round_is_skipped_and_tried_again_within_seconds():
+    # p105: the first check after a restart falls into the update unit that is still running;
+    # an hour of silence after that is wrong. Like the engine (UPDATE_RETRY_SECONDS), a few seconds.
     s = Setup(busy=True)
-    assert await s.build().run_once() == RETRY_AFTER_FAILURE
+    assert await s.build().run_once() == UPDATE_RETRY
     assert s.checks == 0
+    assert UPDATE_RETRY <= 10
+    assert UPDATE_RETRY < RETRY_AFTER_FAILURE
+
+
+async def test_the_skipped_round_is_followed_by_a_check_once_the_update_is_over():
+    s = Setup(busy=True)
+    check = s.build()
+    assert await check.run_once() == UPDATE_RETRY
+    s.busy = False
+    assert await check.run_once() == CHECK_INTERVAL
+    assert s.checks == 1 and s.stored == [INFO]
+
+
+async def test_a_failed_check_still_waits_an_hour():
+    s = Setup(outcome=UpdateCheckError("no network"))
+    assert await s.build().run_once() == RETRY_AFTER_FAILURE
 
 
 async def test_the_check_runs_in_a_thread_and_the_loop_stays_free():
