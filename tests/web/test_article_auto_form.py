@@ -28,12 +28,12 @@ def edit_data(client, a, **over):
 
 
 def field_error(html):
-    found = re.search(r'<p class="field-error" role="alert"[^>]*>(.*?)</p>', html, re.S)
+    found = re.search(r'<p class="field-error"[^>]*role="alert"[^>]*>(.*?)</p>', html, re.S)
     return found.group(1) if found else None
 
 
 def checkbox_checked(html, name):
-    return bool(re.search(rf'<input name="{name}" type="checkbox" checked>', html))
+    return bool(re.search(rf'<input name="{name}" type="checkbox" checked[ >]', html))
 
 
 def test_edit_with_automation_and_no_target_shows_the_error_at_the_field(ready_client):
@@ -45,6 +45,10 @@ def test_edit_with_automation_and_no_target_shows_the_error_at_the_field(ready_c
     assert response.status_code == 200
     assert field_error(response.text) == en("articles.field_auto_needs_target")
     assert 'class="alert"' not in response.text  # not twice: the field says it
+    # the tick says it is wrong and points to the message (screen readers; the form is long on a phone)
+    tick = re.search(r'<input name="auto_enabled"[^>]*>', response.text).group(0)
+    assert 'aria-invalid="true"' in tick and 'aria-describedby="auto-enabled-error"' in tick
+    assert 'id="auto-enabled-error"' in response.text
     assert 'name="name" value="Renamed"' in response.text  # what was typed stays
     assert 'name="min_stock" inputmode="numeric" value="3"' in response.text
     assert checkbox_checked(response.text, "auto_enabled")

@@ -382,3 +382,15 @@ def test_the_all_good_form_of_the_filtered_list_carries_only_its_prints(ready_cl
 
 def forms_of_page(page, action):
     return [(a, inner) for a, inner in _FORM.findall(page) if f'action="{action}"' in a]
+
+
+def test_a_form_of_the_old_page_with_a_good_field_is_refused_not_misread(ready_client):
+    """A tab opened before the update still posts `good`; reading only `scrap` (default 0) would
+    book every unit as good and lose the scrap. The server refuses and books nothing."""
+    a, i = finished(ready_client, units=2)
+    response, _ = confirm(ready_client, i, good="0")
+    assert response.status_code == 200
+    assert html.escape(en("inspections.form_outdated")) in response.text
+    assert count(ready_client, Article, a, "stock") == 0
+    assert count(ready_client, Article, a, "provisional") == 2
+    assert open_count(ready_client) == 1

@@ -265,3 +265,17 @@ def test_api_list_of_one_article(ready_client):
     assert [r["id"] for r in rows] == [ia]
     assert len(ready_client.get(LIST_URL).json()["inspections"]) == 2
     assert ready_client.get(LIST_URL, params={"article": "abc"}).status_code == 422
+
+
+def test_api_resolved_print_answers_409_before_a_count_mismatch(ready_client):
+    a, i = finished(ready_client, units=3)
+    assert api_post(ready_client, i, {"scrap_units": 0}).status_code == 200
+    response = api_post(ready_client, i, {"good_units": 1, "scrap_units": 1})
+    assert response.status_code == 409
+    assert response.json()["error"] == "inspections.already_resolved"
+
+
+def test_api_list_with_an_empty_article_is_the_whole_list(ready_client):
+    finished(ready_client, "Template A")
+    finished(ready_client, "Template B")
+    assert len(ready_client.get(LIST_URL, params={"article": ""}).json()["inspections"]) == 2

@@ -109,6 +109,10 @@ async def resolve_inspection(inspection_id: int, request: Request, db: Session =
     article = form.get("article")
     values = {k: str(v) for k, v in form.items() if k not in ("csrf_token", "form_token", "article")}
     try:
+        # A page opened before the update still posts the old field `good`. Reading only `scrap`
+        # (default 0) would book every unit as good and lose the scrap: refuse, book nothing.
+        if "good" in form:
+            raise ValidationError("inspections.form_outdated")
         # "Ausschuss", default 0 (Spec 8.2): good units are the units of the print minus the scrap.
         scrap = parse_int(form.get("scrap"), field="inspections.field.scrap", min=0, max=MAX_GOOD, default=0)
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
@@ -183,7 +187,7 @@ def _counts(raw: bytes) -> tuple[int | None, int | None]:
 async def api_list(request: Request, db: Session = Depends(get_db)):
     raw_article = request.query_params.get("article")
     article_id = listing.article_id_of(raw_article)
-    if raw_article is not None and article_id is None:
+    if raw_article and article_id is None:  # empty is no filter, like on the page
         return _api_error(request, ValidationError(
             "form.invalid_number", field="articles.title", min=1, max=MAX_QTY
         ))
@@ -218,9 +222,13 @@ async def api_resolve(inspection_id: int, request: Request):
             if scrap is None:
                 result = inspection.resolve(tx, inspection_id, good, "user")
             else:
-                units = tx.scalar(select(Inspection.units).where(Inspection.id == inspection_id))
-                if good is not None and units is not None and good + scrap != units:
-                    raise ValidationError("inspections.counts_mismatch", units=units)
+                # Not found and already inspected answer first (404, 409); only for a print that is
+                # still open do the two counts have to add up.
+                found = tx.execute(
+                    select(Inspection.units, Inspection.resolved_at).where(Inspection.id == inspection_id)
+                ).first()
+                if found is not None and found.resolved_at is None and good is not None                         and good + scrap != found.units:
+                    raise ValidationError("inspections.counts_mismatch", units=found.units)
                 result = inspection.resolve_scrap(tx, inspection_id, scrap, "user")
     except DomainError as exc:
         return _api_error(request, exc)

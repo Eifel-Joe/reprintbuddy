@@ -65,7 +65,7 @@ def test_nav_assembly_active(ready_client):
 def test_assembly_lists_parts(ready_client):
     waiting(ready_client, 2, parts=(("Insert M4", 2, 3), ("Hex key 2", 1, 9)))
     page = ready_client.get("/assembly").text
-    assert "Template A" in page and en("articles.col.awaiting_assembly") in page
+    assert "Template A" in page and en("assembly.col.awaiting") in page
     assert en("assembly.part_line", qty=2, stock=3) in page
     # Insert M4: 3 < 2 * 2 -> red; Hex key 2: 9 >= 1 * 2 -> not red
     assert re.search(r'class="neg"[^>]*>[^<]*Insert M4', page)
