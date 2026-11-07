@@ -39,6 +39,20 @@ from reprintbuddy.bambuddy.client import BambuddyRejected
 
 log = logging.getLogger(__name__)
 
+
+def _warnings_only(record: logging.LogRecord) -> bool:
+    return record.levelno >= logging.WARNING
+
+
+# The library's own log for this connection. At DEBUG it writes the handshake, token included
+# (`> GET /api/v1/ws?token=…`, websockets `client.py`), and its INFO lines are of no use here.
+# So it gets a logger of its own that lets nothing below WARNING out: by its level, and by a
+# filter in case a logging setup turns the level down. Its WARNING and ERROR lines carry no
+# address (websockets 17: keepalive, parser and internal errors).
+LIBRARY_LOG = logging.getLogger(f"{__name__}.websockets")
+LIBRARY_LOG.setLevel(logging.WARNING)
+LIBRARY_LOG.addFilter(_warnings_only)
+
 # Messages after which the queue may have changed. `queue_item_*` go to the entry's user
 # only; a socket opened with a key carries no user, so they probably never arrive.
 TRIGGER_TYPES = frozenset({"print_start", "print_complete", "queue_item_acked", "queue_item_failed"})
@@ -114,6 +128,7 @@ class LiveListener:
         self._token: str | None = None
         self._token_at = 0.0
         self._failures = 0  # failed attempts since the last stable connection
+        self._paused_in: str | None = None  # the state of the last pause; None after a connect
 
     async def run(self) -> None:
         """Connect, listen, pause, again; only `CancelledError` leaves."""
@@ -125,33 +140,33 @@ class LiveListener:
         """One attempt (two after a refusal); the pause to take afterwards."""
         self.state = "connecting"
         try:
-            outcome = await self._connect_once()
+            outcome, reason = await self._connect_once()
             if outcome == _REFUSED:
                 # The token may be expired or revoked: one more try with a fresh one.
                 self._token = None
-                outcome = await self._connect_once()
+                outcome, reason = await self._connect_once()
                 if outcome == _REFUSED:
                     self._token = None
-                    return self._no_right()
-            return self._retry()
+                    return self._no_right(reason)
+            return self._retry(reason)
         except BambuddyRejected as exc:
             if exc.status == 403:
-                return self._no_right()
-            log.warning("Bambuddy live channel: token refused with HTTP %s", exc.status)
-            return self._retry()
+                return self._no_right("token refused with HTTP 403")
+            return self._retry(f"token refused with HTTP {exc.status}")
         except Exception as exc:  # network, Bambuddy unavailable, anything else: try later
-            log.warning("Bambuddy live channel: %s", type(exc).__name__)
-            return self._retry()
+            # Only the type: a message may hold the address with its token (`InvalidURI`).
+            return self._retry(type(exc).__name__)
 
-    async def _connect_once(self) -> str:
-        """Connect and listen until the connection ends; `_REFUSED` or `_LOST`."""
+    async def _connect_once(self) -> tuple[str, str]:
+        """Connect and listen until the connection ends; (`_REFUSED` or `_LOST`, reason)."""
         url = self._client.ws_url(await self._current_token())
         address = _without_query(url)
         opened: float | None = None
         try:
-            async with self._connect(url) as connection:
+            async with self._connect(url, logger=LIBRARY_LOG) as connection:
                 opened = self._now()
                 self.state = "connected"
+                self._paused_in = None
                 log.info("Bambuddy live channel connected: %s", address)
                 await self._emit("connected")
                 while True:
@@ -160,16 +175,13 @@ class LiveListener:
                         await self._emit(kind)
         except ConnectionClosed as exc:
             code = exc.rcvd.code if exc.rcvd is not None else None
-            log.info("Bambuddy live channel closed (%s): %s", code, address)
-            if code == UNAUTHORIZED_CLOSE:
-                return _REFUSED
-            return _LOST
+            log.debug("Bambuddy live channel closed (%s): %s", code, address)
+            return (_REFUSED if code == UNAUTHORIZED_CLOSE else _LOST), f"closed with code {code}"
         except InvalidStatus as exc:
             status = exc.response.status_code
-            log.info("Bambuddy live channel refused with HTTP %s: %s", status, address)
-            if status in REFUSED_HANDSHAKE:
-                return _REFUSED
-            return _LOST
+            log.debug("Bambuddy live channel handshake answered HTTP %s: %s", status, address)
+            refused = status in REFUSED_HANDSHAKE
+            return (_REFUSED if refused else _LOST), f"handshake answered HTTP {status}"
         finally:
             if opened is not None and self._now() - opened >= STABLE_AFTER:
                 self._failures = 0
@@ -191,19 +203,27 @@ class LiveListener:
         except Exception:
             log.exception("Bambuddy live channel: handling %r failed", kind)
 
-    def _retry(self) -> float:
-        self.state = "waiting"
+    def _retry(self, reason: str) -> float:
         delay = RETRY_DELAYS[min(self._failures, len(RETRY_DELAYS) - 1)]
         self._failures += 1
-        log.info("Bambuddy live channel: next attempt in %s s", delay)
+        self._pause("waiting", "Bambuddy live channel lost (%s); next attempt in %s s", reason, delay)
         return delay
 
-    def _no_right(self) -> float:
-        self.state = "no_right"
+    def _no_right(self, reason: str) -> float:
         self._failures = 0  # after the pause, everything starts over
-        log.warning(
-            "Bambuddy live channel refused: the key's group needs websocket:connect;"
-            " next attempt in %s s",
+        # A 403 can also come from Bambuddy failing to check the right, or from a proxy.
+        self._pause(
+            "no_right",
+            "Bambuddy live channel refused (%s): probably the key's group lacks"
+            " websocket:connect; next attempt in %s s",
+            reason,
             NO_RIGHT_DELAY,
         )
         return NO_RIGHT_DELAY
+
+    def _pause(self, state: str, message: str, *args: object) -> None:
+        """Go into `state`; a WARNING when that is a change, DEBUG while it repeats."""
+        level = logging.DEBUG if self._paused_in == state else logging.WARNING
+        self._paused_in = state
+        self.state = state
+        log.log(level, message, *args)

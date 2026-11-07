@@ -1,13 +1,14 @@
 """Bambuddy's live channel, client side (B2 Task 9, Spec 7.6).
 
 The token comes over HTTP (respx); the connection is a scripted stand-in passed as
-`connect`, and `sleep` and `now` are injected, so no test waits for real time. Two tests
+`connect`, and `sleep` and `now` are injected, so no test waits for real time. Three tests
 run the real `websockets` library against a local server on 127.0.0.1.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 
@@ -138,10 +139,12 @@ class FakeConnect:
     def __init__(self, *sessions) -> None:
         self.sessions = list(sessions)
         self.urls: list[str] = []
+        self.options: list[dict] = []
         self.connections: list[FakeConnection] = []
 
-    def __call__(self, url: str):
+    def __call__(self, url: str, **options):
         self.urls.append(url)
+        self.options.append(options)
         session = self.sessions.pop(0) if self.sessions else []
         if callable(session):
             session = session(url)
@@ -209,6 +212,13 @@ def tokens(respx_mock, *names: str):
 
 def listener(connect, on_event, sleeps, clock=None) -> live.LiveListener:
     return live.LiveListener(quick_client(), on_event, connect=connect, sleep=sleeps, now=clock or Clock())
+
+
+async def stop(task: asyncio.Task) -> None:
+    """Cancel `task` and wait for it; run in `finally`, so no failed assert leaves it running."""
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
 
 
 async def run_until_stopped(subject: live.LiveListener) -> None:
@@ -297,17 +307,17 @@ async def test_reconnect_with_pause_and_token_reuse(respx_mock):
     connect = FakeConnect([closed(1006)], [closed_ok()], [])
     sleeps = Sleeps(3)
     task = asyncio.create_task(listener(connect, events, sleeps).run())
-    for _ in range(1000):
-        await asyncio.sleep(0)
-        if len(connect.connections) == 3 and connect.connections[2].waiting.is_set():
-            break
-    assert sleeps.delays == [5, 15]
-    assert route.call_count == 1
-    assert connect.urls == [f"{WS}?token=t1"] * 3
-    assert events.kinds == ["connected"] * 3
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    try:
+        for _ in range(1000):
+            await asyncio.sleep(0)
+            if len(connect.connections) == 3 and connect.connections[2].waiting.is_set():
+                break
+        assert sleeps.delays == [5, 15]
+        assert route.call_count == 1
+        assert connect.urls == [f"{WS}?token=t1"] * 3
+        assert events.kinds == ["connected"] * 3
+    finally:
+        await stop(task)
 
 
 async def test_retry_delays_grow_to_the_last(respx_mock):
@@ -417,14 +427,14 @@ async def test_state_connected_while_open(respx_mock):
     subject = listener(connect, Events(), Sleeps(1))
     assert subject.state == "connecting"
     task = asyncio.create_task(subject.run())
-    for _ in range(1000):
-        await asyncio.sleep(0)
-        if connect.connections and connect.connections[0].waiting.is_set():
-            break
-    assert subject.state == "connected"
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    try:
+        for _ in range(1000):
+            await asyncio.sleep(0)
+            if connect.connections and connect.connections[0].waiting.is_set():
+                break
+        assert subject.state == "connected"
+    finally:
+        await stop(task)
 
 
 @pytest.mark.parametrize("where", ["waiting", "receiving"])
@@ -439,29 +449,85 @@ async def test_cancel_stops_cleanly(respx_mock, where):
     connect = FakeConnect([closed(1006)] if where == "waiting" else [])
     subject = live.LiveListener(quick_client(), Events(), connect=connect, sleep=sleep, now=Clock())
     task = asyncio.create_task(subject.run())
-    if where == "waiting":
-        await asyncio.wait_for(sleeping.wait(), timeout=2)
-    else:
-        for _ in range(1000):
-            await asyncio.sleep(0)
-            if connect.connections and connect.connections[0].waiting.is_set():
-                break
-        assert subject.state == "connected"
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    try:
+        if where == "waiting":
+            await asyncio.wait_for(sleeping.wait(), timeout=2)
+        else:
+            for _ in range(1000):
+                await asyncio.sleep(0)
+                if connect.connections and connect.connections[0].waiting.is_set():
+                    break
+            assert subject.state == "connected"
+        assert not task.done()
+    finally:
+        await stop(task)
+    assert task.cancelled()  # CancelledError left run(), nothing else
     assert connect.connections[0].closed
 
 
 async def test_unexpected_error_does_not_leave_run(respx_mock):
     tokens(respx_mock, "t1")
 
-    def broken(url: str):
+    def broken(url: str, **options):
         raise ValueError("bug in the address")
 
     subject = live.LiveListener(quick_client(), Events(), connect=broken, sleep=Sleeps(2), now=Clock())
     await run_until_stopped(subject)
     assert subject.state == "waiting"
+
+
+def pause_lines(caplog) -> list[tuple[int, str]]:
+    """(level, text) of the listener's line at each pause."""
+    return [
+        (record.levelno, record.getMessage())
+        for record in caplog.records
+        if record.name == live.__name__ and "next attempt in" in record.getMessage()
+    ]
+
+
+@pytest.mark.parametrize("cause", ["token-403", "handshake-403", "token-404", "token-500", "network"])
+async def test_warning_only_when_the_state_changes(respx_mock, caplog, cause):
+    if cause.startswith("token-"):
+        respx_mock.post(TOKEN_URL).respond(int(cause[-3:]), json={"detail": "x"})
+        connect = FakeConnect()
+    else:
+        respx_mock.post(TOKEN_URL).respond(json={"token": "t1"})
+        refusal = refused(403) if cause == "handshake-403" else OSError("down")
+        connect = FakeConnect(*[refusal] * 6)
+    with caplog.at_level(logging.DEBUG, logger=live.__name__):
+        await run_until_stopped(listener(connect, Events(), Sleeps(3)))
+    levels = [level for level, _ in pause_lines(caplog)]
+    assert levels == [logging.WARNING, logging.DEBUG, logging.DEBUG]
+    warnings = [r for r in caplog.records if r.name == live.__name__ and r.levelno >= logging.WARNING]
+    assert len(warnings) == 1
+
+
+async def test_warning_again_after_a_connection(respx_mock, caplog):
+    respx_mock.post(TOKEN_URL).respond(json={"token": "t1"})
+    connect = FakeConnect(OSError("down"), OSError("down"), [closed(1006)], OSError("down"))
+    with caplog.at_level(logging.DEBUG, logger=live.__name__):
+        await run_until_stopped(listener(connect, Events(), Sleeps(4)))
+    levels = [level for level, _ in pause_lines(caplog)]
+    assert levels == [logging.WARNING, logging.DEBUG, logging.WARNING, logging.DEBUG]
+
+
+async def test_warning_when_waiting_turns_into_no_right(respx_mock, caplog):
+    respx_mock.post(TOKEN_URL).mock(
+        side_effect=[httpx.Response(500), httpx.Response(403, json={"detail": "x"})]
+    )
+    with caplog.at_level(logging.DEBUG, logger=live.__name__):
+        await run_until_stopped(listener(FakeConnect(), Events(), Sleeps(2)))
+    levels = [level for level, _ in pause_lines(caplog)]
+    assert levels == [logging.WARNING, logging.WARNING]
+
+
+async def test_no_right_names_the_right_as_probable_cause(respx_mock, caplog):
+    respx_mock.post(TOKEN_URL).respond(403, json={"detail": "x"})
+    with caplog.at_level(logging.DEBUG, logger=live.__name__):
+        await run_until_stopped(listener(FakeConnect(), Events(), Sleeps(1)))
+    [(level, text)] = pause_lines(caplog)
+    assert level == logging.WARNING
+    assert "probably" in text and "websocket:connect" in text
 
 
 @pytest.mark.parametrize("case", ["token-403", "4401", "network"])
@@ -485,6 +551,69 @@ async def test_secret_never_logged(respx_mock, caplog, case):
 
 
 # ---- the real library against a local server ---------------------------------------------
+
+
+def quiet_server_log() -> logging.Logger:
+    """A logger for the test server: its own lines show the request with the token."""
+    server_log = logging.getLogger("tests.live.server")
+    server_log.propagate = False
+    server_log.addHandler(logging.NullHandler())
+    return server_log
+
+
+async def test_connect_gets_the_quiet_library_logger(respx_mock):
+    tokens(respx_mock, "t1")
+    connect = FakeConnect([closed(1006)])
+    await run_until_stopped(listener(connect, Events(), Sleeps(1)))
+    assert connect.options == [{"logger": live.LIBRARY_LOG}]
+    assert not live.LIBRARY_LOG.isEnabledFor(logging.INFO)
+
+
+async def test_real_library_logs_no_secret(respx_mock, caplog):
+    """The library logs the handshake (`> GET /api/v1/ws?token=…`) at DEBUG; never here."""
+    secret = "tok-SECRET-123"
+    attempts: list[str] = []
+
+    async def process_request(connection, request):
+        attempts.append(request.path)
+        if len(attempts) == 1 or request.path != f"/api/v1/ws?token={secret}":
+            return connection.respond(403, "")  # the first one is refused, like a stale token
+        return None
+
+    async def handler(connection):
+        await connection.send(json.dumps({"type": "print_complete"}))
+        await connection.wait_closed()
+
+    caplog.set_level(logging.DEBUG)
+    caplog.set_level(logging.DEBUG, logger="websockets")
+    # Even turned up by hand, the listener's library logger lets nothing below WARNING out.
+    caplog.set_level(logging.DEBUG, logger=live.LIBRARY_LOG.name)
+    async with serve(handler, "127.0.0.1", 0, process_request=process_request, logger=quiet_server_log()) as server:
+        port = server.sockets[0].getsockname()[1]
+        base = f"http://127.0.0.1:{port}"
+        respx_mock.post(f"{base}/api/v1/auth/ws-token").respond(json={"token": secret})
+        done = asyncio.Event()
+        seen: list[str] = []
+
+        def on_event(kind: str) -> None:
+            seen.append(kind)
+            if kind == "print_complete":
+                done.set()
+
+        subject = live.LiveListener(
+            HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), on_event
+        )
+        task = asyncio.create_task(subject.run())
+        try:
+            await asyncio.wait_for(done.wait(), timeout=5)
+        finally:
+            await stop(task)
+    assert seen == ["connected", "print_complete"]
+    assert len(attempts) == 2  # refused once, then accepted
+    assert caplog.text  # the listener did log
+    assert secret not in caplog.text
+    assert KEY not in caplog.text
+    assert "token=" not in caplog.text
 
 
 async def test_real_library_round_trip(respx_mock):
@@ -516,9 +645,8 @@ async def test_real_library_round_trip(respx_mock):
             await asyncio.wait_for(both.wait(), timeout=5)
             assert subject.state == "connected"
         finally:
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
+            await stop(task)
+        assert task.cancelled()
     assert seen == ["connected", "print_complete"]
 
 
