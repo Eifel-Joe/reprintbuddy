@@ -1,4 +1,4 @@
-/* Reprintbuddy – dark slate theme in the style of Bambuddy (Spec 10.1).
+/* Reprintbuddy – dark grey theme in the style of Bambuddy (Spec 10.1).
    No fonts or files from the internet: Inter is used only if installed. */
 
 :root {
@@ -100,7 +100,7 @@ p { margin: 0 0 1rem; }
 }
 .nav-label { min-width: 0; overflow-wrap: anywhere; }
 
-/* Head of a page: symbol, title, short summary. */
+/* Head of a page: symbol, title, subtitle. */
 .page-head { display: flex; align-items: flex-start; gap: 0.75rem; margin-bottom: 1.25rem; }
 .page-head h1 { margin: 0; }
 .page-icon {
@@ -115,7 +115,6 @@ p { margin: 0 0 1rem; }
   color: var(--accent);
   font-size: 1.2rem;
 }
-.summary { margin: 0.25rem 0 0; color: var(--text-2); }
 .dot {
   display: inline-block;
   width: 0.6em;
@@ -316,9 +315,9 @@ td a:hover, .btn-link:hover { text-decoration: underline; }
 .detail-head { display: flex; gap: 1.25rem; align-items: flex-start; flex-wrap: wrap; }
 .detail-head .thumb { width: 160px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr)); gap: 0.75rem; flex: 1; min-width: 0; }
-.stat { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 0.8rem; }
-.stat-label { display: block; color: var(--text-2); font-size: 0.8rem; }
-.stat-value { display: block; font-size: 1.4rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.stat-label { display: block; color: var(--muted); font-size: 12px; }
+.stat-value { display: block; font-size: 20px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .props { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 0.4rem 1rem; margin: 0; }
 .props dt { color: var(--text-2); }
 .props dd { margin: 0; overflow-wrap: anywhere; }
@@ -502,8 +501,6 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
 /* ---- orders (Bestellungen) ------------------------------------------------- */
 /* What an order holds, in its tile: one line per set or article. */
 .tile-items { color: var(--text-2); font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }
-/* The badge in the short summary of an order sits on the line of the date. */
-.page-head .summary .badge { vertical-align: 0.05em; }
 
 /* ---- Übrige Seiten: bookings, journal, overview, settings, error, restart (plan task 15) ---- */
 
@@ -546,7 +543,7 @@ div.tile:hover, div.tile:focus-within { border-color: var(--accent); }
 .sidebar-collapsed .sidebar .nav-label { display: none; }
 .sidebar-collapsed .sidebar .nav-link { justify-content: center; padding-left: 0; padding-right: 0; }
 .sidebar-collapsed .sidebar .nav-version-row { flex-direction: column; padding-left: 0; padding-right: 0; }
-.sidebar-collapsed .sidebar .nav-version { font-size: 10px; }
+.sidebar-collapsed .sidebar .nav-version { font-size: 10px; overflow-wrap: anywhere; text-align: center; }
 .sidebar-collapsed .sidebar .nav-collapse .icon-collapse { display: none; }
 .sidebar-collapsed .sidebar .nav-collapse .icon-expand { display: inline-block; }
 
@@ -650,3 +647,195 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
   .settings-grid { grid-template-columns: minmax(0, 1fr); }
   .setting-row { flex-wrap: wrap; }
 }
+
+/* ---- queue (Warteschlange, plan B4; Design 5) ---------------------- */
+
+/* Badges that are not a state of status.py: blue for Reprintbuddy's own prints in Bambuddy's
+   queue, yellow for a held entry (with tone-warn). */
+.badge.tone-info, .badge-own { background: var(--info-soft); color: var(--info); }
+.badge-held { background: var(--warn-soft); color: var(--warn); }
+
+/* Warnings of the engine (_warnings.html): red when Bambuddy does not answer or refuses,
+   yellow otherwise; the line with the last successful query under them. */
+.warnings { margin: 0 0 1rem; }
+.warning-card {
+  display: flex; align-items: flex-start; gap: 10px; margin: 0 0 0.6rem; padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+}
+.warning-card p { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.warning-card .icon { flex: 0 0 18px; width: 18px; height: 18px; margin-top: 1px; }
+.warning-card.tone-warn { border-color: rgba(245, 158, 11, 0.45); background: var(--warn-soft); }
+.warning-card.tone-warn .icon { color: var(--warn); }
+.warning-card.tone-bad { border-color: rgba(239, 68, 68, 0.5); background: var(--danger-soft); }
+.warning-card.tone-bad .icon { color: var(--danger); }
+.last-poll { margin: 0; color: var(--muted); font-size: 12.5px; }
+
+/* A part of the queue page: title with symbol, a grey hint or a button to the right. */
+.queue-section { margin: 0 0 1.5rem; }
+.section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; margin: 0 0 0.6rem; }
+.section-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 650; }
+.section-head h2 .icon { width: 17px; height: 17px; color: var(--accent); }
+.section-hint { color: var(--muted); font-size: 12.5px; }
+.queue-section > .section-hint { display: block; margin: 0.5rem 0 0; }
+.stale-note { margin: 0 0 0.6rem; color: var(--warn); font-size: 0.9rem; }
+
+/* Reprintbuddy's queue: one card per entry. Only the grip takes the finger for dragging
+   (touch-action: none); everywhere else the page scrolls as usual. */
+.queue-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.queue-row {
+  display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 6px 6px 2px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+}
+.queue-row.is-paused .queue-body, .queue-row.is-paused .thumb-sm, .queue-row.is-paused .thumb-placeholder { opacity: 0.7; }
+.drag-handle {
+  flex: 0 0 auto; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.drag-handle .icon { width: 18px; height: 18px; }
+.queue-pos { flex: 0 0 1.5rem; color: var(--muted); font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; }
+.queue-body { display: flex; flex: 1 1 auto; flex-direction: column; gap: 3px; min-width: 0; }
+/* At least 44 px to tap, like every other target; the text stays at the top of that box. */
+.queue-name { display: inline-flex; align-items: center; align-self: flex-start; max-width: 100%; min-height: 2.75rem; color: var(--text); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.queue-name:hover { color: var(--accent); }
+.queue-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--muted); font-size: 12px; }
+.queue-body .badges { margin-top: 2px; }
+/* While dragging: the entry follows the pointer above the list, a dashed gap shows where it lands. */
+.queue-row.is-dragging {
+  position: fixed; z-index: 50; margin: 0; border-color: var(--accent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.queue-row.is-dragging .drag-handle { cursor: grabbing; }
+.queue-placeholder { list-style: none; border: 1px dashed var(--accent); border-radius: 10px; background: rgba(0, 174, 66, 0.06); }
+body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+
+/* The menu of a row: a <details> that opens a small panel of forms (works without JavaScript). */
+.row-menu { position: relative; flex: 0 0 auto; }
+.row-menu > summary { list-style: none; }
+.row-menu > summary::-webkit-details-marker { display: none; }
+.row-menu[open] > summary { background: var(--line); color: var(--text); }
+.row-menu-panel {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; gap: 2px;
+  min-width: 15rem; padding: 6px; background: var(--menu); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+.row-menu-panel form { margin: 0; }
+.menu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 2.75rem; padding: 0 10px;
+  background: none; border: 0; border-radius: 8px; color: var(--text); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer;
+}
+.menu-item .icon { width: 16px; height: 16px; color: var(--muted); }
+.menu-item:hover, .menu-item:focus-visible { background: var(--line); }
+.menu-item.danger, .menu-item.danger .icon { color: var(--danger); }
+.menu-prints { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 2px 0; }
+.menu-prints label { margin: 0; color: var(--text-2); font-size: 13px; }
+.menu-prints input[type="number"] { width: 5rem; min-height: 2.75rem; margin: 0; }
+.menu-prints .btn { flex: 0 0 auto; }
+
+/* Print manually: the three fields side by side where there is room. */
+.manual-card { margin-bottom: 1.5rem; }
+.manual-form { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 2fr); gap: 0 1rem; align-items: end; }
+.manual-form .btn { grid-column: 1 / -1; justify-self: start; }
+/* 44 px to tap: the general field padding alone gives 43 px. */
+.manual-form select { min-height: 2.75rem; }
+.manual-form input[type="number"] { min-height: 2.75rem; }
+/* The article link of a print in progress: 44 px to tap, like .queue-name. */
+.progress-name { display: inline-flex; align-items: center; min-height: 2.75rem; overflow-wrap: anywhere; }
+
+@media (max-width: 599px) {
+  .queue-pos { display: none; }
+  .queue-row { gap: 6px; }
+  .manual-form { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---- settings page in tabs ----------------------------------------------- */
+.settings-grid .card > .muted, .settings-grid .card > .status { margin: 0 0 0.6rem; font-size: 12.5px; }
+.settings-grid .card > .alert, .settings-grid .card > .notice, .settings-grid .card > .result { margin: 0 0 0.75rem; }
+.settings-grid .card .card-sub { margin: 0.9rem 0 0.25rem; font-size: 13.5px; font-weight: 600; }
+.settings-grid .card form { margin: 0; }
+.setting-control input:not([type="checkbox"]):not([type="file"]), .setting-control select {
+  width: min(18rem, 100%); margin-top: 0;
+}
+.setting-control input[type="checkbox"] { margin: 0; }
+/* Wide fields (PEM text, files): under their label, across the whole card. */
+.setting-row.stack { flex-direction: column; align-items: stretch; gap: 6px; }
+.setting-row.stack .setting-control { width: 100%; flex: none; }
+.setting-row.stack .setting-control textarea { width: 100%; margin-top: 0; }
+.setting-row.stack .setting-control input[type="file"] { margin-top: 6px; }
+.facts p { margin: 0 0 0.25rem; font-size: 13px; }
+@media (max-width: 899px) {
+  .setting-row .setting-control { width: 100%; flex: 1 1 100%; }
+  .setting-control input:not([type="checkbox"]):not([type="file"]), .setting-control select { width: 100%; }
+  .setting-row:has(input.switch) .setting-control { width: auto; flex: 0 0 auto; }
+}
+
+/* ---- purchased parts of an article (templates/_article_parts.html) ------ */
+
+/* The list opens with its checkbox, without a script; a browser without :has shows it always. */
+.parts-field:has(input[name="has_parts"]:not(:checked)) .parts-list { display: none; }
+.parts-list { min-width: 0; margin: 0 0 1rem; padding: 0; border: 0; }
+.parts-list legend { padding: 0; margin: 0.25rem 0 0; color: var(--text); font-size: 0.95rem; font-weight: 600; }
+.parts-list .hint { margin: 0.1rem 0 0.75rem; }
+.part-head, .part-row { display: grid; grid-template-columns: minmax(0, 1fr) 6rem 2.75rem; gap: 0.5rem; align-items: center; }
+.part-head { margin-bottom: 0.3rem; color: var(--text-2); font-size: 0.8rem; }
+/* The rows follow the settings-row look: one line each with a thin rule above. */
+.part-rows { display: grid; margin-bottom: 0.75rem; }
+.part-row { padding: 10px 0; border-top: 1px solid #2a2b2f; }
+.part-row:first-child { border-top: 0; }
+.part-row select, .part-row input { margin-top: 0; min-height: 2.75rem; min-width: 0; }
+.part-row input { width: 6rem; }
+.part-row .icon-btn { justify-self: center; min-width: 2.75rem; min-height: 2.75rem; }
+/* the cross shows alone; the word and the part's name stay in the accessible name */
+.part-row .icon-btn > span:not([data-parts-name]) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.parts-list > .btn { display: inline-flex; gap: 0.4rem; align-items: center; justify-content: center; min-height: 2.75rem; }
+
+/* ---- info buttons (templates/_ui.html: info, field, check_row) ------------ */
+
+/* The card is the frame of every popup (see .info-pop). */
+.card { position: relative; }
+
+/* Label and button side by side; the label keeps its own `for`, the control follows below. */
+.field { margin-bottom: 1rem; }
+.label-row { display: flex; align-items: center; gap: 0.5rem; color: var(--text-2); font-size: 0.9rem; }
+.label-row label { margin: 0; }
+/* The button reaches 10 px above and below its row; the gap keeps that off the control. Sideways its
+   hit area starts exactly where the label ends: the gap (0.5rem) is as wide as the negative margin. */
+.field > .label-row { margin-bottom: 0.6rem; }
+.field > input:not([type="checkbox"]), .field > select, .field > textarea { margin-top: 0; }
+.setting-text .label-row { color: var(--text); font-size: 13.5px; }
+/* A switch with a button behind it: the label stays a label and only it toggles the switch. */
+.check-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
+.check-row > label.check { flex: 0 1 auto; margin-bottom: 0; }
+
+.info { display: inline-block; flex: 0 0 auto; }
+.info summary {
+  display: flex; align-items: center; justify-content: center;
+  min-width: 2.75rem; min-height: 2.75rem; margin: -0.6rem -0.5rem;
+  list-style: none; cursor: pointer; border-radius: 8px; color: var(--muted);
+}
+.info summary::-webkit-details-marker { display: none; }
+.info summary .icon { width: 16px; height: 16px; }
+.info summary:hover, .info[open] > summary { color: var(--text); }
+.info summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* Pinned under the button: it opens in the flow just below it (top stays auto) and is framed by
+   the card, from the card's content edge, at most 18rem and never wider than the card or the
+   screen. So it stays on the screen at 320 px as well as at 1280 px, with no script. */
+.info-pop {
+  position: absolute; left: 1.25rem; z-index: 30;
+  width: min(18rem, calc(100% - 2.5rem)); max-width: calc(100vw - 2rem);
+  margin-top: 0.55rem; padding: 0.7rem 0.85rem;
+  background: #2a2b2f; border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color: var(--text); font-size: 13px; font-weight: 400; line-height: 1.45; text-align: left;
+  white-space: normal; overflow-wrap: anywhere;
+}
+
+/* ---- widths and hit areas (final touches) -------------------------------- */
+
+/* Cards run the full width, the fields in them stop at 40rem. Rows that arrange their own fields
+   (settings, parts) keep what they have. */
+.card.section input:not([type="checkbox"]):not([type="file"]), .card.section select, .card.section textarea { max-width: 40rem; }
+.setting-row.stack .setting-control textarea, .setting-row.stack .setting-control input { max-width: none; }
+.card.section .part-row select, .card.section .part-row input { max-width: none; }
+
+/* The list/tiles switch is hit with a thumb too. */
+.layout-toggle a { min-height: 2.75rem; min-width: 2.75rem; }

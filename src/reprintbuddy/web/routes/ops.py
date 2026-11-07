@@ -177,7 +177,7 @@ async def restart(request: Request, db: Session = Depends(get_db)):
     if not result.ok:
         # The reason (sudo output) goes to the log only, never onto the page.
         log.warning("restart failed: %s", (result.stderr or "").strip()[:300])
-        return RedirectResponse("/settings?ops=restart_failed#ops-restart", status_code=303)
+        return RedirectResponse("/settings?tab=general&ops=restart_failed#ops-restart", status_code=303)
 
     new_url = None
     if ops.effective is not None:
@@ -188,8 +188,8 @@ async def restart(request: Request, db: Session = Depends(get_db)):
 
 
 def _back(code: str | None = None) -> RedirectResponse:
-    query = f"?ops={code}" if code else ""
-    return RedirectResponse(f"/settings{query}#ops-update", status_code=303)
+    query = f"&ops={code}" if code else ""
+    return RedirectResponse(f"/settings?tab=maintenance{query}#ops-update", status_code=303)
 
 
 @router.post("/settings/update/check", dependencies=[Depends(verify_csrf)])

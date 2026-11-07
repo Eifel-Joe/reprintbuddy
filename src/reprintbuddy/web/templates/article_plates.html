@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('articles.choose_plate') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("package", file.filename) %}<p class="summary">{{ t('articles.choose_plate') }}</p>{% endcall %}
+{% call ui.page_head("package", file.filename, t('articles.choose_plate')) %}{% endcall %}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 <div class="plate-grid">
   {% for plate in plates %}
@@ -16,7 +16,7 @@
     <form method="post" action="{{ file_base }}/{{ file.id }}/plate/{{ plate.index }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="form_token" value="{{ form_token() }}">
-      <button class="btn" type="submit">{{ t('articles.restore_with_plate') }}</button>
+      <button class="btn" type="submit">{{ t('articles.restore_with_plate' if relink_archived else 'articles.use_plate') }}</button>
     </form>
     {% else %}
     <p><a class="btn" href="{{ file_base }}/{{ file.id }}/plate/{{ plate.index }}">{{ t('articles.use_plate') }}</a></p>

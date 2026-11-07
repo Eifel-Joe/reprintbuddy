@@ -20,7 +20,7 @@ The session functions never commit: the caller opens the transaction.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -35,7 +35,7 @@ from reprintbuddy.domain.tracking import apply_outcome, classify
 from reprintbuddy.domain.workqueue import OPEN_STATES, _ordered, _renumber
 from reprintbuddy.models import Article, Dispatch, JournalEntry, WorkQueueEntry, utcnow
 
-HandOverResult = Literal["queued", "unclear", "not_sent", "rejected"]
+HandOverResult = Literal["queued", "unclear", "not_sent", "rejected", "held_for_update"]
 MAX_MESSAGE = 500
 
 
@@ -334,9 +334,20 @@ def _put_back(
 
 
 async def hand_over(
-    client: BambuddyClient, sm: sessionmaker, res: Reservation, *, insert_next: bool
+    client: BambuddyClient,
+    sm: sessionmaker,
+    res: Reservation,
+    *,
+    insert_next: bool,
+    may_send: Callable[[], bool] = lambda: True,
 ) -> HandOverResult:
-    """Hand the reserved print to Bambuddy. No Bambuddy call runs inside a transaction."""
+    """Hand the reserved print to Bambuddy. No Bambuddy call runs inside a transaction.
+
+    `may_send` is asked right before the mark: False (an update has started) puts the
+    never-sent print back and returns `held_for_update`. An update backs the database
+    up while the service runs and restores it on failure; a print sent after the
+    backup would be in Bambuddy but back in the restored work queue - printed twice.
+    """
     try:
         batch_id = await client.ensure_batch(res.batch_name, res.external_ref, res.library_file_id)
         with sm.begin() as session:
@@ -354,6 +365,9 @@ async def hand_over(
         _put_back(sm, res, "not_sent")
         return "not_sent"
 
+    if not may_send():
+        _put_back(sm, res, "not_sent")
+        return "held_for_update"
     with sm.begin() as session:
         mark_sent(session, res.dispatch_id)
     request = EnqueueRequest(
@@ -389,6 +403,7 @@ class ResolveReport:
     unresolved: int  # sent prints left `unclear` because the search failed
     duplicates: list[list[int]]  # Bambuddy ids per print found more than once
     lost: list[int]  # dispatch ids of sent prints Bambuddy does not have
+    error: str | None = None  # Bambuddy refused the search (shown as a warning)
 
 
 async def resolve_pending(client: BambuddyClient, sm: sessionmaker) -> ResolveReport:
@@ -429,6 +444,8 @@ async def resolve_pending(client: BambuddyClient, sm: sessionmaker) -> ResolveRe
                 items = await client.find_items_by_batch(batch_id)
             except (BambuddyUnavailable, BambuddyRejected) as exc:
                 report.reachable = not isinstance(exc, BambuddyUnavailable)
+                if isinstance(exc, BambuddyRejected):
+                    report.error = str(exc)[:MAX_MESSAGE]
                 rest = [d for _, d, _ in sent[index:]]
                 with sm.begin() as session:
                     for d in rest:
@@ -445,9 +462,19 @@ async def resolve_pending(client: BambuddyClient, sm: sessionmaker) -> ResolveRe
             report.resolved += 1
             if len(items) > 1:
                 ids = [i.id for i in items]
+                article_id = _dispatch(session, dispatch_id).article_id
+                # Always written down: the pause below writes nothing when the article
+                # is already paused, and the warning lives only in memory.
+                write_journal(
+                    session,
+                    kind="print_duplicates",
+                    actor="auto",
+                    article_id=article_id,
+                    details={"dispatch_id": dispatch_id, "batch_id": batch_id, "item_ids": ids},
+                )
                 pause_article(
                     session,
-                    _dispatch(session, dispatch_id).article_id,
+                    article_id,
                     "unclear",
                     "auto",
                     details={"dispatch_id": dispatch_id, "item_ids": ids},

@@ -486,3 +486,33 @@ async def test_only_allowed_bambuddy_calls(db, fake_bambuddy):
     fake_bambuddy.fail_next("enqueue", BambuddyRejected("invalid", status=422))
     await hand(db, fake_bambuddy, insert_next=True)
     assert set(fake_bambuddy.calls) == {"ensure_batch", "list_queue", "enqueue"}
+
+
+async def test_update_before_send_puts_print_back(db, fake_bambuddy):
+    """Final review 1: an update that starts after the reservation stops the send."""
+    with db.begin() as s:
+        a = article(s).id
+        e = entry(s, a, 2).id
+    asked = []
+
+    def may_send():
+        asked.append(fake_bambuddy.calls.count("ensure_batch"))
+        return False
+
+    with db.begin() as s:
+        res = dispatch.reserve_next(s, cap=10)
+    result = await dispatch.hand_over(
+        fake_bambuddy, db, res, insert_next=False, may_send=may_send
+    )
+
+    assert result == "held_for_update"
+    assert asked == [1]  # asked after the batch, right before the mark
+    assert "enqueue" not in fake_bambuddy.calls
+    assert fake_bambuddy.enqueued == []
+    with db.begin() as s:
+        row = s.get(Dispatch, res.dispatch_id)
+        assert row.status == "returned"
+        assert row.message == "not_sent"
+        assert row.enqueue_sent_at is None
+        assert s.get(WorkQueueEntry, e).prints == 2
+        assert dispatch.open_count(s) == 0

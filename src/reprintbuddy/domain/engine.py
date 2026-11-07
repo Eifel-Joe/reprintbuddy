@@ -61,13 +61,18 @@ class EngineStatus:
     unexpected: list[str] = field(default_factory=list)
     waiting_review: list[int] = field(default_factory=list)
     rejected: str | None = None
+    rejected_name: str | None = None  # the article of the refused print (final review 7)
     poll_error: str | None = None
     unresolved: int = 0
+    resolve_error: str | None = None  # Bambuddy refused the search for an unclear print
     duplicates: list[list[int]] = field(default_factory=list)
     cap_reached: bool = False
     skipped_for_update: bool = False
     bambuddy_queue: list[QueueItem] | None = None
     bambuddy_queue_at: datetime | None = None
+    # Whether the last read of Bambuddy's queue (poll or queue page) was answered: the
+    # queue page marks the list as old by this, not by `reachable` (final review 4).
+    bambuddy_queue_ok: bool = False
     hook_errors: dict[str, str] = field(default_factory=dict)
     error: str | None = None
     # Articles whose printer is in maintenance mode (assumption A9): skipped, not paused.
@@ -175,6 +180,7 @@ class Engine:
 
         with self.sm() as session:
             status.cap_reached = self._cap_reached(session)
+            self._prune_duplicates(session)
         status.last_tick_at = self.now()
         return TickResult(None, created, dispatched)
 
@@ -190,10 +196,12 @@ class Engine:
         report = await dispatch.resolve_pending(client, self.sm)
         status.reachable = reachable and report.reachable
         status.unresolved = report.unresolved
-        # Duplicates are reported once, when they are settled: keep them until the next
-        # report names new ones (a restart clears them; the article stays paused).
-        if report.duplicates:
-            status.duplicates = report.duplicates
+        status.resolve_error = report.error
+        # Duplicates are reported once, when they are settled: keep each group while its
+        # article stays paused (`_prune_duplicates`); the journal keeps the ids for good.
+        for ids in report.duplicates:
+            if ids not in status.duplicates:
+                status.duplicates.append(ids)
 
     async def _poll(self, client: BambuddyClient) -> None:
         """Step 5: ask Bambuddy about everything; a refusal ends only its own part.
@@ -208,6 +216,7 @@ class Engine:
 
         def cut_short() -> None:
             status.reachable = False
+            status.bambuddy_queue_ok = False  # the list was not read again
             if error is not None:
                 status.poll_error = error
 
@@ -233,10 +242,12 @@ class Engine:
         try:
             status.bambuddy_queue = await client.list_queue()
             status.bambuddy_queue_at = self.now()
+            status.bambuddy_queue_ok = True
         except BambuddyUnavailable:
             cut_short()
             return
         except BambuddyRejected as exc:
+            status.bambuddy_queue_ok = False
             error = str(exc)
         status.poll_error = error  # the poll reached its end
 
@@ -250,6 +261,7 @@ class Engine:
                 status.hook_errors.pop(name, None)
 
         status.rejected = None  # decision 4: a regular tick tries again
+        status.rejected_name = None
         if status.poll_error is None:
             status.last_poll_at = self.now()
 
@@ -268,6 +280,11 @@ class Engine:
         skip = frozenset(status.waiting_for_printer)
         dispatched = 0
         while True:
+            # An update started in the middle of a tick may already have backed up the
+            # database; a print sent now could come back with a restore (final review 1).
+            if self.update_running():
+                status.skipped_for_update = True
+                return dispatched
             # Settings are read again for every print: a stop or a lower cap set in the
             # middle of a tick holds for the next print already.
             with self.sm.begin() as session:
@@ -278,16 +295,44 @@ class Engine:
                 res = dispatch.reserve_next(session, cap=cap, skip_article_ids=skip)
             if res is None:
                 return dispatched
-            result = await dispatch.hand_over(client, self.sm, res, insert_next=insert_next)
+            result = await dispatch.hand_over(
+                client,
+                self.sm,
+                res,
+                insert_next=insert_next,
+                may_send=lambda: not self.update_running(),
+            )
             if result == "queued":
                 dispatched += 1
                 continue
+            if result == "held_for_update":  # Bambuddy answered; the update holds it
+                status.skipped_for_update = True
+                return dispatched
             if result == "rejected":
                 with self.sm() as session:
                     status.rejected = session.get(Dispatch, res.dispatch_id).message
+                    status.rejected_name = session.get(Article, res.article_id).name
             else:  # "unclear" or "not_sent": Bambuddy did not answer
                 status.reachable = False
             return dispatched
+
+    def _prune_duplicates(self, session: Session) -> None:
+        """Drop duplicate groups whose article is no longer paused (final review 2).
+
+        Lifting the pause is the user's answer to the warning. A group without a print
+        of its own (cannot happen: the first id was adopted) is dropped as well.
+        """
+        kept = []
+        for ids in self.status.duplicates:
+            paused = session.scalar(
+                select(Article.paused)
+                .join(Dispatch, Dispatch.article_id == Article.id)
+                .where(Dispatch.bambuddy_item_id.in_(ids))
+                .limit(1)
+            )
+            if paused:
+                kept.append(ids)
+        self.status.duplicates = kept
 
     def _cap_reached(self, session: Session) -> bool:
         """Step 8: the cap holds back a print that could otherwise go now."""
@@ -392,7 +437,7 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
     if status.waiting_review:
         add("waiting_for_review", count=len(status.waiting_review))
     if status.rejected:
-        add("bambuddy_rejected", message=status.rejected)
+        add("bambuddy_rejected", name=status.rejected_name or "", message=status.rejected)
     unclear = int(
         session.scalar(
             select(func.count()).select_from(Dispatch).where(Dispatch.status == "unclear")
@@ -400,6 +445,8 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
     )
     if unclear:
         add("unclear_prints", count=unclear)
+    if status.resolve_error:
+        add("resolve_rejected", message=status.resolve_error)
     if status.duplicates:
         add("duplicates", ids=[list(ids) for ids in status.duplicates])
     if status.error:
@@ -428,7 +475,8 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
         .order_by(Article.name, Article.id)
     ).all()
     for name, reason in paused:
-        text = translate(lang, f"pause.reason.{reason}") if reason else ""
+        # A pause without a reason (older data) gets the general word, never "Name: ".
+        text = translate(lang, f"pause.reason.{reason}" if reason else "status.paused")
         add("article_paused", name=name, reason=text)
     return found
 

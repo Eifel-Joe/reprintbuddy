@@ -188,6 +188,36 @@ async def test_duplicates_adopt_first_and_pause(db, fake_bambuddy):
         assert paused.details["item_ids"] == [first.id, second.id]
         assert paused.details["reason"] == "unclear"
         assert len(journal(s, "print_dispatched")) == 1
+        (dup,) = journal(s, "print_duplicates")
+        assert dup.actor == "auto" and dup.article_id == a
+        assert dup.details == {
+            "dispatch_id": d,
+            "batch_id": batch_id,
+            "item_ids": [first.id, second.id],
+        }
+
+
+async def test_duplicates_journaled_when_article_already_paused(db, fake_bambuddy):
+    """Final review 2: the ids are written down even when the pause writes nothing."""
+    from reprintbuddy.domain.pauses import pause_article
+
+    a, d = await lost_answer(db, fake_bambuddy)
+    batch_id = batch_of(db, d)
+    (first,) = await fake_bambuddy.find_items_by_batch(batch_id)
+    second = await fake_bambuddy.enqueue(EnqueueRequest(1, 1, "A1", None, batch_id, False, None))
+    with db.begin() as s:
+        pause_article(s, a, "two_failures", "auto")
+
+    report = await dispatch.resolve_pending(fake_bambuddy, db)
+
+    assert report.duplicates == [[first.id, second.id]]
+    with db.begin() as s:
+        assert s.get(Article, a).pause_reason == "two_failures"
+        assert len(journal(s, "automation_paused")) == 1  # only the earlier pause
+        (dup,) = journal(s, "print_duplicates")
+        assert dup.article_id == a
+        assert dup.details["item_ids"] == [first.id, second.id]
+        assert dup.details["dispatch_id"] == d and dup.details["batch_id"] == batch_id
 
 
 def test_adopt_writes_dispatched_once(db, fake_bambuddy):
@@ -426,8 +456,9 @@ async def test_resolve_rejected_keeps_unclear(db, fake_bambuddy):
 
     report = await dispatch.resolve_pending(fake_bambuddy, db)
 
+    # Final review 8: the refusal's text is kept for the warning.
     assert report == dispatch.ResolveReport(
-        reachable=True, resolved=0, unresolved=2, duplicates=[], lost=[]
+        reachable=True, resolved=0, unresolved=2, duplicates=[], lost=[], error="422: bad"
     )
     assert fake_bambuddy.calls == ["find_items_by_batch"]
     with db.begin() as s:

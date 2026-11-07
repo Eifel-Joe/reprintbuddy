@@ -121,9 +121,10 @@ def test_relink_plate_taken_and_missing_file(bb_client, fake_bambuddy):
         assert s.get(Article, a).archived_at is not None
 
 
-def test_relink_only_for_archived_articles(bb_client):
+def test_relink_for_active_and_archived_articles(bb_client):
+    # plan B4 decision 10: an active article chooses its file again on the same pages
     a = make(bb_client)
-    assert bb_client.get(f"/articles/{a}/relink").status_code == 404
+    assert bb_client.get(f"/articles/{a}/relink").status_code == 200
     assert bb_client.get("/articles/999/relink").status_code == 404
 
 
@@ -194,7 +195,8 @@ def test_archived_absent_from_selections(bb_client):
         catalog.archive_article(s, b)
         catalog.archive_part(s, hex_key)
     form = bb_client.get("/articles/new/file/1/plate/1").text
-    assert f'name="part_{insert}"' in form and f'name="part_{hex_key}"' not in form
+    offered = re.search(r'<select[^>]*name="parts_part"[^>]*>(.*?)</select>', form, re.S).group(1)
+    assert f'<option value="{insert}"' in offered and f'<option value="{hex_key}"' not in form
     new_set = bb_client.get("/sets/new").text
     assert f'<option value="{a}"' in new_set and f'<option value="{b}"' not in new_set
     new_order = bb_client.get("/orders/new").text

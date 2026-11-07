@@ -4,17 +4,15 @@
 {% block content %}
 {#- The head follows the article too: its state changes with every booking, like the numbers. -#}
 {% call ui.region("head", "article:" ~ article.id) %}
-{% call ui.page_head("package", article.name) %}
-<p class="summary">
+{% set sub %}
   {%- if article.sku %}{{ article.sku }} · {% endif -%}
   {{ ui.badge('article', row.status) }}
   {%- if row.paused %} · {{ ui.badge('article', 'paused') }}{% endif -%}
   {%- if article.archived_at %} · {{ ui.badge('article', 'archived') }}{% endif -%}
-</p>
-{% endcall %}
+{% endset %}
+{% call ui.page_head("package", article.name, sub) %}{% if not article.archived_at %}<a class="btn" href="/articles/{{ article.id }}/edit">{{ ui.icon('pencil') }}{{ t('articles.edit') }}</a>{% endif %}{% endcall %}
 <div class="toolbar">
   <div class="toolbar-actions">
-    {% if not article.archived_at %}<a class="btn" href="/articles/{{ article.id }}/edit">{{ ui.icon('settings') }}{{ t('articles.edit') }}</a>{% endif %}
     <a class="btn secondary" href="/journal?article={{ article.id }}">{{ ui.icon('history') }}{{ t('journal.title') }}</a>
     <a class="btn secondary" href="/articles">{{ ui.icon('package') }}{{ t('articles.title') }}</a>
   </div>
@@ -32,9 +30,76 @@
       <div class="stat"><span class="stat-label">{{ t('articles.col.available') }}</span><span class="stat-value{% if row.available < 0 %} neg{% endif %}">{{ row.available }}</span></div>
       <div class="stat"><span class="stat-label">{{ t('articles.col.provisional') }}</span><span class="stat-value">{{ row.provisional }}</span></div>
       <div class="stat"><span class="stat-label">{{ t('articles.col.awaiting_assembly') }}</span><span class="stat-value">{{ row.awaiting_assembly }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.in_progress') }}</span><span class="stat-value">{{ row.in_progress_units }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.queued') }}</span><span class="stat-value">{{ row.queued_units }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('articles.coverage') }}</span><span class="stat-value">{{ row.coverage }}</span></div>
       <div class="stat"><span class="stat-label">{{ t('articles.target_quantity') }}</span><span class="stat-value">{{ row.target }}</span>{{ ui.bar(fill_percent(row.available, row.target), row.status) }}</div>
     </div>
   </div>
+</section>
+
+{% if article.paused and not article.archived_at %}
+<section class="card section wide article-pause">
+  <h2>{{ ui.icon('pause') }}{{ t('articles.paused_title') }}</h2>
+  {% set reason_key = 'pause.reason.' ~ article.pause_reason %}
+  <p>{{ t(reason_key) if article.pause_reason else t('status.paused') }}</p>
+  <div class="actions">
+    {% if article.pause_reason == 'file_changed' %}
+    <form method="post" action="/articles/{{ article.id }}/confirm-file">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="form_token" value="{{ form_token() }}">
+      <button class="btn" type="submit">{{ ui.icon('check') }}{{ t('articles.confirm_file') }}</button>
+    </form>
+    <a class="btn secondary" href="/articles/{{ article.id }}/relink">{{ t('articles.choose_file_again') }}</a>
+    {% elif article.pause_reason == 'file_missing' %}
+    <a class="btn" href="/articles/{{ article.id }}/relink">{{ ui.icon('refresh-cw') }}{{ t('articles.choose_file_again') }}</a>
+    {% elif article.pause_reason == 'no_target' and not has_target %}
+    <p class="muted">{{ t('articles.pause_needs_target') }}</p>
+    <a class="btn" href="/articles/{{ article.id }}/edit">{{ ui.icon('settings') }}{{ t('articles.edit') }}</a>
+    {% else %}
+    <form method="post" action="/articles/{{ article.id }}/resume">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="form_token" value="{{ form_token() }}">
+      <button class="btn" type="submit">{{ ui.icon('play') }}{{ t('articles.resume') }}</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="card section wide article-work">
+  <div class="section-head"><h2>{{ ui.icon('printer') }}{{ t('articles.work_title') }}</h2>{% if not article.archived_at %}<a class="btn secondary" href="/queue#manual">{{ ui.icon('plus') }}{{ t('queue.manual') }}</a>{% endif %}</div>
+  {% if queue_entries or open_prints %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>{{ t('queue.col.state') }}</th><th>{{ t('queue.col.origin') }}</th><th class="num">{{ t('articles.work_prints') }}</th><th class="num">{{ t('queue.col.bambuddy_id') }}</th><th>{{ t('articles.last_known') }}</th></tr></thead>
+      <tbody>
+      {% for e in queue_entries %}
+        {% set origin_key = 'queue.origin.' ~ e.origin %}
+        <tr>
+          <td>{% if e.held %}<span class="badge tone-warn">{{ t('queue.state.held') }}</span>{% else %}<span class="badge tone-ok">{{ t('queue.state.waiting') }}</span>{% endif %}</td>
+          <td>{{ t(origin_key) }}</td>
+          <td class="num">{{ tc('queue.prints', e.prints) }}</td>
+          <td class="num"></td><td></td>
+        </tr>
+      {% endfor %}
+      {% for d in open_prints %}
+        {% set origin_key = 'queue.origin.' ~ d.origin %}
+        {% set status_key = 'dispatch.status.' ~ d.status %}
+        <tr>
+          <td><span class="badge tone-{{ dispatch_tones.get(d.status, 'neutral') }}">{{ t(status_key) }}</span></td>
+          <td>{{ t(origin_key) }}</td>
+          <td class="num">{{ tc('queue.prints', 1) }}</td>
+          <td class="num">{{ d.bambuddy_item_id if d.bambuddy_item_id is not none else '' }}</td>
+          <td>{{ d.last_status or '' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">{{ t('articles.nothing_running') }}</p>
+  {% endif %}
 </section>
 
 <section class="card section wide">

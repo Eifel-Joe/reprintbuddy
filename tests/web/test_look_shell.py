@@ -110,3 +110,17 @@ def test_footer_entries_have_a_name_when_collapsed(ready_client):
 
 def test_no_slate_left_in_tokens(ready_client):
     assert "148, 163, 184" not in css_text(ready_client)
+
+
+def test_css_every_variable_used_is_defined(ready_client):
+    css = ready_client.get("/static/css/reprintbuddy.css").text
+    root = re.search(r":root \{([^}]*)\}", css).group(1)
+    defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", root))
+    used = set(re.findall(r"var\((--[a-z0-9-]+)", css))
+    assert used - defined == set()
+
+
+def test_css_stat_cards_use_muted_label(ready_client):
+    css = ready_client.get("/static/css/reprintbuddy.css").text
+    assert re.search(r"\n\.stat-label \{[^}]*color: var\(--muted\)", css)
+    assert css.count("\n.stat-label {") == 1 and css.count("\n.stat {") == 1

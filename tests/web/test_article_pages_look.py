@@ -174,3 +174,14 @@ def test_create_flow_pages_have_the_head(bb_client, path):
     assert page.status_code == 200
     assert 'class="page-head"' in page.text and "#package" in head_of(page.text)
     assert "data-live-region" not in page.text
+    key = "articles.choose_plate" if path.endswith("/file/1") else "articles.new_subtitle"
+    assert f'<p class="page-sub">{en(key)}</p>' in head_of(page.text)
+
+
+def test_create_flow_subtitles_in_german(bb_client):
+    token = csrf_of(bb_client, "/settings")
+    bb_client.post("/settings/language", data={"csrf_token": token, "language": "de"})
+    for path, key in [("/articles/new", "articles.new_subtitle"), ("/articles/new/file/1", "articles.choose_plate"),
+                      ("/articles/new/file/1/plate/1", "articles.new_subtitle")]:
+        head = head_of(bb_client.get(path).text)
+        assert f'<p class="page-sub">{translate("de", key)}</p>' in head, path

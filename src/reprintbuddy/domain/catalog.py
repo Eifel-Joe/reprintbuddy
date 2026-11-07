@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
-from reprintbuddy.domain import rules
+from reprintbuddy.domain import rules, workqueue
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.domain.workqueue import OPEN_STATES
 from reprintbuddy.domain.status import ArticleStatus, article_status
@@ -123,14 +123,21 @@ def target_options(
         current, current_model = "", None
     if printers is None:
         return [TargetOption(current, current_model, None)]
-    models = sorted({p.model for p in printers} | ({file_model} if file_model else set()))
+    # A printer in maintenance is only temporarily away: not offered anew (neither alone nor
+    # through its model), but a target that already names it keeps its name and model.
+    offered = [p for p in printers if p.active]
+    models = sorted({p.model for p in offered} | ({file_model} if file_model else set()))
     options = [TargetOption(f"model:{m}", m, None) for m in models]
     options += [
         TargetOption(f"printer:{p.id}", p.model, p.name)
-        for p in sorted(printers, key=lambda p: (p.name, p.id))
+        for p in sorted(offered, key=lambda p: (p.name, p.id))
     ]
     if current and current not in {o.value for o in options}:
-        options.append(TargetOption(current, current_model, None))
+        known = next((p for p in printers if f"printer:{p.id}" == current), None)
+        if known is not None:
+            options.append(TargetOption(current, known.model, known.name))
+        else:
+            options.append(TargetOption(current, current_model, None))
     options.append(TargetOption("", None, None))
     return options
 
@@ -319,13 +326,24 @@ class ArticleRow:
     paused: bool
     coverage: int
     status: ArticleStatus
+    queued_units: int
+    in_progress_units: int
+    in_progress_prints: int  # open prints in Bambuddy: the note "N in Bambuddy" (Spec 10.1)
 
 
-def article_row(article: Article) -> ArticleRow:
-    """The numbers and the state of one article, as the overview shows them."""
+def article_row(
+    article: Article, *, queued_units: int = 0, in_progress_units: int = 0, in_progress_prints: int = 0
+) -> ArticleRow:
+    """The numbers and the state of one article, as the overview shows them.
+
+    The caller passes what the queue holds (`workqueue.coverage_all` / `coverage_of`), so the
+    status follows the full coverage of Spec 7.1 (Spec 10.1). Without them the coverage
+    leaves out the queue and the open prints.
+    """
     available = rules.available(article.stock, article.reserved)
-    # queued and in-progress units come with the queue (Spec 7.1)
-    coverage = rules.coverage(available, 0, 0, article.provisional, article.awaiting_assembly)
+    coverage = rules.coverage(
+        available, queued_units, in_progress_units, article.provisional, article.awaiting_assembly
+    )
     return ArticleRow(
         id=article.id,
         name=article.name,
@@ -341,6 +359,9 @@ def article_row(article: Article) -> ArticleRow:
         paused=article.paused,
         coverage=coverage,
         status=article_status(available=available, min_stock=article.min_stock, coverage=coverage),
+        queued_units=queued_units,
+        in_progress_units=in_progress_units,
+        in_progress_prints=in_progress_prints,
     )
 
 
@@ -351,7 +372,20 @@ def _archive_filter(column, archived: bool):
 def list_articles(session: Session, *, archived: bool = False) -> list[ArticleRow]:
     """Active articles; with `archived=True` only the archived ones (Spec 5.5)."""
     articles = session.scalars(select(Article).where(_archive_filter(Article.archived_at, archived))).all()
-    rows = [article_row(a) for a in articles]
+    # one query per table; an archived article has no entry and no open print (plan B4 decision 20)
+    coverages = {} if archived else workqueue.coverage_all(session)
+    prints = {} if archived else workqueue.in_progress_prints(session)
+    rows = []
+    for a in articles:
+        c = coverages.get(a.id)
+        rows.append(
+            article_row(
+                a,
+                queued_units=c.queued_units if c else 0,
+                in_progress_units=c.in_progress_units if c else 0,
+                in_progress_prints=prints.get(a.id, 0),
+            )
+        )
     return sorted(rows, key=lambda r: (r.name.casefold(), r.id))
 
 

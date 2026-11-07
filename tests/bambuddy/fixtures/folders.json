@@ -1,0 +1,63 @@
+[
+  {
+    "id": 1,
+    "name": "Templates",
+    "parent_id": null,
+    "project_id": null,
+    "archive_id": null,
+    "project_name": null,
+    "archive_name": null,
+    "is_external": false,
+    "external_path": null,
+    "external_readonly": false,
+    "file_count": 2,
+    "latest_activity_at": "2026-11-03T15:02:11",
+    "created_by_id": 1,
+    "shared": false,
+    "can_write": false,
+    "can_rename": false,
+    "can_delete": false,
+    "children": [
+      {
+        "id": 3,
+        "name": "Templates 2",
+        "parent_id": 1,
+        "project_id": null,
+        "archive_id": null,
+        "project_name": null,
+        "archive_name": null,
+        "is_external": false,
+        "external_path": null,
+        "external_readonly": false,
+        "file_count": 0,
+        "latest_activity_at": "2026-10-20T11:58:40",
+        "created_by_id": 1,
+        "shared": false,
+        "can_write": false,
+        "can_rename": false,
+        "can_delete": false,
+        "children": []
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "Templates 3",
+    "parent_id": null,
+    "project_id": null,
+    "archive_id": null,
+    "project_name": null,
+    "archive_name": null,
+    "is_external": false,
+    "external_path": null,
+    "external_readonly": false,
+    "file_count": 0,
+    "latest_activity_at": "2026-10-12T09:03:15",
+    "created_by_id": 1,
+    "shared": false,
+    "can_write": false,
+    "can_rename": false,
+    "can_delete": false,
+    "children": []
+  }
+]

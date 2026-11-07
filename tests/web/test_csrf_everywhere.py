@@ -8,7 +8,7 @@ filled with `1` so that routes such as `/articles/{id}/book` are checked too.
 import re
 
 import pytest
-from conftest import ADMIN, PASSWORD, api_routes, csrf_of, make_client
+from conftest import ADMIN, PASSWORD, api_routes, csrf_of, make_client, mock_auth_me
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from starlette.middleware.sessions import SessionMiddleware
@@ -104,8 +104,9 @@ def test_every_write_route_refuses_a_missing_or_forged_token(tmp_path, ready_cli
             assert response.status_code == 403, f"{method} {path} accepted a {label} token ({response.status_code})"
 
 
-def test_every_write_route_accepts_a_valid_token(tmp_path, ready_client):
+def test_every_write_route_accepts_a_valid_token(tmp_path, ready_client, respx_mock):
     """The positive control: the refusals above are about the token, not about something else."""
+    mock_auth_me(respx_mock)  # the rights re-check route asks Bambuddy; that answer is made up here
     clients = states(tmp_path, ready_client)
     routes = write_routes(ready_client.app)
     # signing out ends the session, so it comes last
