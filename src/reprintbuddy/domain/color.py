@@ -5,7 +5,8 @@ together with a new revision that keeps the old result for databases not yet mig
 
 Pure functions, no I/O. Two spools whose colours are at most `SIMILAR` apart count as the same
 colour. The value 7 is a decision of the project (two blacks #000000 / #1A1A1A: 5.5, together;
-black / anthracite #333333: 13.4, apart).
+black / anthracite #333333: 13.4, apart). Alpha 00 means transparent: all transparent values are one colour,
+never alike to an opaque one; a partly transparent value goes only with the same alpha.
 """
 
 from __future__ import annotations
@@ -15,25 +16,43 @@ import re
 
 SIMILAR = 7.0
 
-_HEX = re.compile(r"#?([0-9A-Fa-f]{6})(?:[0-9A-Fa-f]{2})?")
+_HEX = re.compile(r"#?([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?")
 # D65 reference white (sRGB)
 _WHITE = (95.047, 100.0, 108.883)
 
 
-def parse_hex(value: str | None) -> tuple[int, int, int] | None:
-    """RGB of `#RRGGBB` (also `RRGGBB` and `#RRGGBBAA`, the alpha part is ignored); None if it is no colour."""
+def parse_rgba(value: str | None) -> tuple[int, int, int, int] | None:
+    """RGB and alpha of `#RRGGBB[AA]` (the `#` is optional); alpha is 255 when the value has none.
+    None if the value is no colour."""
     if value is None:
         return None
     match = _HEX.fullmatch(value.strip())
     if match is None:
         return None
-    digits = match.group(1)
-    return int(digits[0:2], 16), int(digits[2:4], 16), int(digits[4:6], 16)
+    digits, alpha = match.group(1), match.group(2)
+    return (
+        int(digits[0:2], 16), int(digits[2:4], 16), int(digits[4:6], 16),
+        255 if alpha is None else int(alpha, 16),
+    )
+
+
+def parse_hex(value: str | None) -> tuple[int, int, int] | None:
+    """RGB of a colour value (see `parse_rgba`), the alpha part left out; None if it is no colour."""
+    rgba = parse_rgba(value)
+    return None if rgba is None else rgba[:3]
+
+
+def is_transparent(value: str | None) -> bool:
+    """Alpha 00 means transparent (Spec 9.1); its RGB part carries no meaning."""
+    rgba = parse_rgba(value)
+    return rgba is not None and rgba[3] == 0
 
 
 def display_hex(value: str | None) -> str:
-    """How a colour is shown: `#RRGGBB` for anything `parse_hex` understands (no alpha part, always a `#`),
-    otherwise the text as it is, trimmed."""
+    """How a colour is shown: "transparent" for alpha 00, `#RRGGBB` for any other colour value `parse_rgba`
+    understands (no alpha part, always a `#`), otherwise the text as it is, trimmed."""
+    if is_transparent(value):
+        return "transparent"
     rgb = parse_hex(value)
     if rgb is None:
         return (value or "").strip()
@@ -124,11 +143,28 @@ def delta_e(first: str | None, second: str | None) -> float | None:
     return delta_e2000_lab(_lab(rgb1), _lab(rgb2))
 
 
+def distance(first: str | None, second: str | None) -> float | None:
+    """How far two colour values are apart for the grouping of Spec 9.1, None if they can never be one colour.
+
+    Transparent values (alpha 00) are all alike, whatever their RGB (distance 0), and never alike to anything
+    else. A partly transparent value goes only with the same alpha. Otherwise CIEDE2000 of the RGB parts.
+    Two values that are no colour are alike (0) only when they are written alike; one that is none is never
+    alike to a colour.
+    """
+    one, two = parse_rgba(first), parse_rgba(second)
+    if one is None or two is None:
+        if one is None and two is None:
+            same = (first or "").strip().casefold() == (second or "").strip().casefold()
+            return 0.0 if same else None
+        return None
+    if one[3] != two[3]:
+        return None
+    if one[3] == 0:
+        return 0.0
+    return delta_e2000_lab(_lab(one[:3]), _lab(two[:3]))
+
+
 def similar(first: str | None, second: str | None) -> bool:
-    """Spec 9.1: at most `SIMILAR` apart. Two values that are no colour are alike only when they are written alike."""
-    distance = delta_e(first, second)
-    if distance is None:
-        return parse_hex(first) is None and parse_hex(second) is None and (
-            (first or "").strip().casefold() == (second or "").strip().casefold()
-        )
-    return distance <= SIMILAR
+    """Spec 9.1: alike by `distance`, and at most `SIMILAR` apart."""
+    d = distance(first, second)
+    return d is not None and d <= SIMILAR

@@ -131,14 +131,59 @@ def test_spools_without_a_colour(db):
 
 def test_label_shows_the_colour_as_hash_rrggbb(db):
     fake = FakeBambuddy()
-    a = fake.add_spool("PETG", color_hex="00000000")  # no hash, with an alpha part
+    a = fake.add_spool("PETG", color_hex="000000FF")  # no hash, with an alpha part
     with db.begin() as s:
         ids = filament.sync_sorts(s, [a])
         sort = s.get(FilamentSort, ids[a.id])
-        assert sort.label == "PETG #000000" and sort.color_hex == "00000000"  # the anchor stays as read
+        assert sort.label == "PETG #000000" and sort.color_hex == "000000FF"  # the anchor stays as read
 
 
-def test_alpha_in_the_hex_is_ignored(db):
+def test_transparent_spools_form_one_sort_apart_from_every_opaque_colour(db):  #
+    fake = FakeBambuddy()
+    black = fake.add_spool("PETG", color_hex="000000")
+    clear_a = fake.add_spool("PETG", color_hex="00000000")
+    clear_b = fake.add_spool("PETG", color_hex="FFFFFF00", brand="Other Brand")  # its RGB does not matter
+    clear_other = fake.add_spool("PETG", subtype="HF", color_hex="00000000")
+    with db.begin() as s:
+        ids = filament.sync_sorts(s, [black, clear_a, clear_b, clear_other])
+        assert ids[clear_a.id] == ids[clear_b.id] != ids[black.id]
+        assert ids[clear_other.id] not in (ids[clear_a.id], ids[black.id])  # another subtype
+        assert s.get(FilamentSort, ids[clear_a.id]).label == "PETG transparent"
+        assert s.get(FilamentSort, ids[black.id]).label == "PETG #000000"
+
+
+def test_transparent_second_call_and_resolve_agree(db):
+    fake = FakeBambuddy()
+    spools = [fake.add_spool("PETG", color_hex=h) for h in ("00000000", "000000", "FFFFFF00", "1A1A1A")]
+    with db.begin() as s:
+        first = filament.sync_sorts(s, spools)
+    with db.begin() as s:
+        assert filament.sync_sorts(s, spools) == first == filament.resolve_sorts(s, spools)
+        assert sort_count(s) == 2
+
+
+def test_partly_transparent_spools_keep_to_their_alpha(db):
+    fake = FakeBambuddy()
+    half_a = fake.add_spool("PETG", color_hex="#00000080")
+    half_b = fake.add_spool("PETG", color_hex="#1A1A1A80")
+    other = fake.add_spool("PETG", color_hex="#00000081")
+    solid = fake.add_spool("PETG", color_hex="#000000")
+    clear = fake.add_spool("PETG", color_hex="#00000000")
+    with db.begin() as s:
+        ids = filament.sync_sorts(s, [half_a, half_b, other, solid, clear])
+        assert ids[half_a.id] == ids[half_b.id]
+        assert len({ids[half_a.id], ids[other.id], ids[solid.id], ids[clear.id]}) == 4
+
+
+def test_a_named_transparent_sort_shows_its_name(db):
+    fake = FakeBambuddy()
+    spool = fake.add_spool("PETG", color_hex="00000000", color_name="Clear")
+    with db.begin() as s:
+        ids = filament.sync_sorts(s, [spool])
+        assert s.get(FilamentSort, ids[spool.id]).label == "PETG Clear"
+
+
+def test_a_fully_opaque_alpha_changes_nothing(db):
     fake = FakeBambuddy()
     a = fake.add_spool("PLA", color_hex="#000000FF")
     b = fake.add_spool("PLA", color_hex="#000000")

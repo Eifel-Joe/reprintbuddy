@@ -74,9 +74,7 @@ def nearest_sort(sorts: Iterable[FilamentSort], color_hex: str | None) -> Filame
     best: tuple[float, int] | None = None
     found: FilamentSort | None = None
     for sort in sorts:
-        distance = color.delta_e(sort.color_hex, color_hex)
-        if distance is None:
-            distance = 0.0 if color.similar(sort.color_hex, color_hex) else None
+        distance = color.distance(sort.color_hex, color_hex)
         if distance is None or distance > color.SIMILAR:
             continue
         if best is None or (distance, sort.id) < best:

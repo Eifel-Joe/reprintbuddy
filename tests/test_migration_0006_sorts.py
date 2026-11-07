@@ -201,6 +201,19 @@ def test_two_open_marks_of_merged_sorts_become_one(old_db):
     ]
 
 
+def test_transparent_sorts_merge_and_never_with_an_opaque_one(old_db):  #
+    with old_db.begin() as conn:
+        add_sort(conn, 1, "Brand One", "PETG", "#000000", name=None)
+        add_sort(conn, 2, "Brand Two", "PETG", "00000000", name=None)
+        add_sort(conn, 3, "Brand Three", "PETG", "FFFFFF00", name=None)
+        add_sort(conn, 4, "Brand One", "PETG", "#00000080", name=None)
+    upgrade(old_db)
+    assert rows(old_db, "select id, label from filament_sorts order by id") == [
+        (1, "PETG #000000"), (2, "PETG transparent"), (4, "PETG #000000"),
+    ]
+    assert scalar(old_db, "select count(*) from journal") == 1  # only 2 and 3 fell together
+
+
 def test_an_empty_database_migrates_without_a_journal_entry(old_db):
     upgrade(old_db)
     assert scalar(old_db, "select count(*) from journal") == 0

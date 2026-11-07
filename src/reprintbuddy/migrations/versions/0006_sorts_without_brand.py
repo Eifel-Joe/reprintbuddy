@@ -58,9 +58,7 @@ def _nearest(kept, color_hex):
     """The kept sort of the group nearest to `color_hex` within delta E 7; a tie goes to the lower id."""
     best, found = None, None
     for sort in kept:
-        distance = color.delta_e(sort.color_hex, color_hex)
-        if distance is None:
-            distance = 0.0 if color.similar(sort.color_hex, color_hex) else None
+        distance = color.distance(sort.color_hex, color_hex)
         if distance is None or distance > _SIMILAR:
             continue
         if best is None or (distance, sort.id) < best:
