@@ -268,6 +268,11 @@ class Engine:
         skip = frozenset(status.waiting_for_printer)
         dispatched = 0
         while True:
+            # An update started in the middle of a tick may already have backed up the
+            # database; a print sent now could come back with a restore (final review 1).
+            if self.update_running():
+                status.skipped_for_update = True
+                return dispatched
             # Settings are read again for every print: a stop or a lower cap set in the
             # middle of a tick holds for the next print already.
             with self.sm.begin() as session:
@@ -278,10 +283,19 @@ class Engine:
                 res = dispatch.reserve_next(session, cap=cap, skip_article_ids=skip)
             if res is None:
                 return dispatched
-            result = await dispatch.hand_over(client, self.sm, res, insert_next=insert_next)
+            result = await dispatch.hand_over(
+                client,
+                self.sm,
+                res,
+                insert_next=insert_next,
+                may_send=lambda: not self.update_running(),
+            )
             if result == "queued":
                 dispatched += 1
                 continue
+            if result == "held_for_update":  # Bambuddy answered; the update holds it
+                status.skipped_for_update = True
+                return dispatched
             if result == "rejected":
                 with self.sm() as session:
                     status.rejected = session.get(Dispatch, res.dispatch_id).message

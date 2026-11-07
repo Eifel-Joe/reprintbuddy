@@ -271,6 +271,52 @@ async def test_tick_skipped_during_update(engine_env):
     assert env.engine.status.skipped_for_update is False
 
 
+async def test_update_between_reservation_and_send(engine_env, monkeypatch):
+    """Final review 1: the update's backup may already be taken; nothing may be sent now."""
+    env = engine_env
+    ensure_batch = env.fake.ensure_batch
+
+    async def batch_then_update(*args):
+        batch_id = await ensure_batch(*args)
+        env.updating = True
+        return batch_id
+
+    monkeypatch.setattr(env.fake, "ensure_batch", batch_then_update)
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 1, 0)
+    assert "enqueue" not in env.fake.calls
+    assert env.fake.enqueued == []
+    assert statuses(env.sm) == ["returned"]
+    assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
+    assert env.engine.status.reachable is True
+    assert env.engine.status.skipped_for_update is True
+
+
+async def test_update_between_two_prints_of_one_tick(engine_env, monkeypatch):
+    env = engine_env
+    update_article(env.sm, env.article_id, min_stock=2)
+    enqueue = env.fake.enqueue
+
+    async def enqueue_then_update(req):
+        item = await enqueue(req)
+        env.updating = True
+        return item
+
+    monkeypatch.setattr(env.fake, "enqueue", enqueue_then_update)
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 1, 1)
+    assert env.fake.calls.count("ensure_batch") == 1
+    assert len(env.fake.enqueued) == 1
+    assert statuses(env.sm) == ["queued"]  # the second print was never reserved
+    assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
+    assert env.engine.status.reachable is True
+    assert env.engine.status.skipped_for_update is True
+
+
 # ---- Bambuddy unreachable, unclear or refusing -----------------------------------------
 
 
