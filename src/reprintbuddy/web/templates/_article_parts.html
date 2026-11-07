@@ -16,7 +16,7 @@
     {% endfor %}
   </select>
   <input name="parts_qty" inputmode="numeric" value="{{ row.qty }}" data-label="{{ t('articles.field.qty_per_unit') }}" aria-label="{{ t('articles.field.qty_per_unit') }} {{ n }}">
-  <button class="btn secondary" type="submit" name="parts_remove" value="{{ index }}" formnovalidate data-parts-remove>{{ ui.icon('x') }}<span>{{ t('articles.part_remove') }}</span><span class="sr-only" data-parts-name>{% for part in parts %}{% if part.id | string == row.part %}{{ part.name }}{% endif %}{% endfor %}</span></button>
+  <button class="icon-btn" type="submit" name="parts_remove" value="{{ index }}" title="{{ t('articles.part_remove') }}" formnovalidate data-parts-remove>{{ ui.icon('x') }}<span>{{ t('articles.part_remove') }}</span><span class="sr-only" data-parts-name>{% for part in parts %}{% if part.id | string == row.part %}{{ part.name }}{% endif %}{% endfor %}</span></button>
 </div>
 {%- endmacro %}
 {% set rows = values.part_rows or [{"part": "", "qty": ""}] %}

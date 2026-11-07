@@ -673,16 +673,16 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 .parts-list { min-width: 0; margin: 0 0 1rem; padding: 0; border: 0; }
 .parts-list legend { padding: 0; margin: 0.25rem 0 0; color: var(--text); font-size: 0.95rem; font-weight: 600; }
 .parts-list .hint { margin: 0.1rem 0 0.75rem; }
-.part-head, .part-row { display: grid; grid-template-columns: minmax(0, 1fr) 6rem 8rem; gap: 0.5rem; align-items: center; }
+.part-head, .part-row { display: grid; grid-template-columns: minmax(0, 1fr) 6rem 2.75rem; gap: 0.5rem; align-items: center; }
 .part-head { margin-bottom: 0.3rem; color: var(--text-2); font-size: 0.8rem; }
-.part-rows { display: grid; gap: 0.5rem; margin-bottom: 0.75rem; }
-.part-row select, .part-row input { margin-top: 0; }
-.part-row .btn, .parts-list > .btn { display: inline-flex; gap: 0.4rem; align-items: center; justify-content: center; }
-@media (max-width: 599px) {
-  .part-head, .part-row { grid-template-columns: minmax(0, 1fr) 4.5rem 2.75rem; }
-  .part-row .btn { padding: 0; }
-  /* on the phone the remove button shows only its cross; the word stays for screen readers */
-  .part-row .btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-}
-
+/* The rows follow the settings-row look: one line each with a thin rule above. */
+.part-rows { display: grid; margin-bottom: 0.75rem; }
+.part-row { padding: 10px 0; border-top: 1px solid #2a2b2f; }
+.part-row:first-child { border-top: 0; }
+.part-row select, .part-row input { margin-top: 0; min-height: 2.75rem; min-width: 0; }
+.part-row input { width: 6rem; }
+.part-row .icon-btn { justify-self: center; min-width: 2.75rem; min-height: 2.75rem; }
+/* the cross shows alone; the word and the part's name stay in the accessible name */
+.part-row .icon-btn > span:not([data-parts-name]) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.parts-list > .btn { display: inline-flex; gap: 0.4rem; align-items: center; justify-content: center; min-height: 2.75rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
