@@ -796,7 +796,13 @@ async def test_collect_warnings(engine_env):
     ]
     assert found[-1] == EngineWarning(
         "warning.article_paused",
-        {"name": "Template A", "reason": translate("en", "pause.reason.two_failures")},
+        {
+            "name": "Template A",
+            "reason": translate("en", "pause.reason.two_failures"),
+            "article_id": env.article_id,
+            "reason_key": "two_failures",
+            "has_target": True,
+        },
     )
 
 
@@ -812,10 +818,31 @@ async def test_paused_without_reason_gets_the_general_text(engine_env):
     assert found == [
         EngineWarning(
             "warning.article_paused",
-            {"name": "Template A", "reason": translate("en", "status.paused")},
+            {
+                "name": "Template A",
+                "reason": translate("en", "status.paused"),
+                "article_id": env.article_id,
+                "reason_key": None,
+                "has_target": True,
+            },
         )
     ]
     assert warning_text("en", found[0]) == "Template A: paused"
+
+
+async def test_paused_notice_tells_whether_a_target_is_set(engine_env):
+    """p49: the page offers "lift" only where `lift_pause` would not refuse; the text is unchanged."""
+    from reprintbuddy.domain.engine import warning_text
+
+    env = engine_env
+    update_article(env.sm, env.article_id, paused=True, pause_reason="no_target",
+                   target_model=None, printer_id=None)
+
+    (found,) = warnings(env.sm, EngineStatus(configured=True, reachable=True))
+
+    assert found.params["has_target"] is False and found.params["reason_key"] == "no_target"
+    assert found.params["article_id"] == env.article_id
+    assert warning_text("en", found) == f"Template A: {translate('en', 'pause.reason.no_target')}"
 
 
 async def test_collect_warnings_order(engine_env):
@@ -860,7 +887,13 @@ async def test_collect_warnings_order(engine_env):
         EngineWarning("warning.waiting_for_printer", {"names": ["Template A"]}),
         EngineWarning(
             "warning.article_paused",
-            {"name": "Template A", "reason": translate("en", "pause.reason.unclear")},
+            {
+                "name": "Template A",
+                "reason": translate("en", "pause.reason.unclear"),
+                "article_id": env.article_id,
+                "reason_key": "unclear",
+                "has_target": True,
+            },
         ),
     ]
 

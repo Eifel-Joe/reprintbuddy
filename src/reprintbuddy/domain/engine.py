@@ -448,7 +448,8 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
     """Spec 10.2 "warnings", in a fixed order; B7 shows the same list.
 
     `article_paused` carries the pause reason already translated into the interface
-    language; lists stay lists (see `warning_text`).
+    language; lists stay lists (see `warning_text`). It also carries `article_id`, `reason_key`
+    (the stored reason or None) and `has_target`, which the text does not use.
     """
     found: list[EngineWarning] = []
 
@@ -501,14 +502,21 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
 
     lang = str(settings.get_setting(session, "language"))
     paused = session.execute(
-        select(Article.name, Article.pause_reason)
+        select(
+            Article.id, Article.name, Article.pause_reason, Article.target_model, Article.printer_id
+        )
         .where(Article.paused.is_(True), Article.archived_at.is_(None))
         .order_by(Article.name, Article.id)
     ).all()
-    for name, reason in paused:
+    for article_id, name, reason, target_model, printer_id in paused:
         # A pause without a reason (older data) gets the general word, never "Name: ".
         text = translate(lang, f"pause.reason.{reason}" if reason else "status.paused")
-        add("article_paused", name=name, reason=text)
+        # `article_id`, `reason_key` and `has_target` are for the page's way out of the pause
+        # (p49, web/engine_view.py), not for the text: `warning_text` ignores them.
+        add(
+            "article_paused", name=name, reason=text, article_id=article_id,
+            reason_key=reason, has_target=bool(target_model or printer_id),
+        )
     return found
 
 

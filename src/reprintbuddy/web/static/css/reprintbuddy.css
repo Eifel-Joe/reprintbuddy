@@ -704,6 +704,15 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 .warning-card.tone-warn .icon { color: var(--warn); }
 .warning-card.tone-bad { border-color: rgba(239, 68, 68, 0.5); background: var(--danger-soft); }
 .warning-card.tone-bad .icon { color: var(--danger); }
+/* The way on from a paused article (p49): the actions sit right of the text, under it on a phone.
+   Button and links are at least 44px high. */
+.warning-card { flex-wrap: wrap; }
+.warning-card > p { flex: 1 1 14rem; }
+.warning-link, #confirm-file { scroll-margin-top: 6rem; } /* the anchor from the notice stays below the phone's top bar */
+.warning-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.9rem; margin-left: auto; }
+.warning-actions form { margin: 0; }
+.warning-link { display: inline-flex; align-items: center; min-height: 2.75rem; color: var(--info); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+@media (max-width: 899px) { .warning-actions { flex: 1 1 100%; margin-left: 28px; } }
 .last-poll { margin: 0; color: var(--muted); font-size: 12.5px; }
 
 /* A part of the queue page: title with symbol, a grey hint or a button to the right. */

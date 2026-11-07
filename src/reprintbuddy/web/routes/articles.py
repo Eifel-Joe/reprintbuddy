@@ -892,15 +892,22 @@ def _detail_refused(request: Request, db: Session, article_id: int, text: str, s
 
 @router.post("/articles/{article_id:int}/resume", dependencies=[Depends(verify_csrf)])
 async def article_resume(request: Request, article_id: int, db: Session = Depends(get_db)):
-    """Lift the pause. A file pause or a missing print target refuses (`pauses.lift_pause`)."""
+    """Lift the pause. A file pause or a missing print target refuses (`pauses.lift_pause`).
+
+    Back to the page the button was on (`next`, a local path; the notice of a pause on the
+    overview and the queue has one), else to the article. A refusal shows on the article page."""
     name = _get_article(db, article_id).name
+    form = await request.form()
+    # The overview is "/", which `local_next` counts as no `next`: here it is a page like any.
+    back = "/" if str(form.get("next", "")) == "/" else local_next(form)
+    after = back or f"/articles/{article_id}"
 
     def work(tx):
         pauses.lift_pause(tx, article_id, "user")
         return {"name": name}
 
     return await run_form_action(
-        request, work=work, success_url=f"/articles/{article_id}", flash_key="articles.resumed",
+        request, work=work, success_url=after, flash_key="articles.resumed",
         on_error=lambda text, status, exc: _detail_refused(request, db, article_id, text, status),
     )
 
