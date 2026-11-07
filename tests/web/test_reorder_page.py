@@ -8,7 +8,7 @@ import pytest
 
 from reprintbuddy import settings as st
 from conftest import csrf_of, form_token_of, sm_of
-from factories import make_article, make_filament_settings, make_part, make_snapshot, make_sort
+from factories import assign_sort, make_article, make_filament_settings, make_part, make_snapshot, make_sort
 from reprintbuddy.domain import stock
 from reprintbuddy.models import ArticlePart, ReorderMark, utcnow
 
@@ -37,6 +37,7 @@ def add_filament(client, fake):
             s, sort.id, pack_grams=1000, min_order_packs=1, safety_value=2000, safety_unit="grams",
             supplier="Example Supplier", order_url="https://shop.example/pla-black",
         )
+        assign_sort(s, sort)  # reordered in a slot of an article: only then a suggestion (Spec 9.3)
         return sort.id
 
 
@@ -167,6 +168,7 @@ def test_stale_filament_suggestion_shows_the_day(bb_client, fake_bambuddy):  # E
     with sm_of(bb_client).begin() as s:
         sort = make_sort(s)
         make_filament_settings(s, sort.id, pack_grams=1000, safety_value=2000, safety_unit="grams")
+        assign_sort(s, sort)
         make_snapshot(s, yesterday, 1, sort.id, 100.0)
     fake_bambuddy.unavailable = True
     response = bb_client.get("/reorder")
@@ -190,7 +192,7 @@ def test_each_suggestion_is_a_tile_with_amount_supplier_link_and_form(bb_client,
         assert amount in tile and "Example Supplier" in tile
         assert f'href="{url}" target="_blank" rel="noopener noreferrer"' in tile
         assert 'action="/reorder/mark"' in tile and 'name="form_token"' in tile
-        assert "days" in tile and "/day" in tile
+        assert "Usage × lead time" in tile
 
 
 def test_part_receipt_closes_mark_without_bambuddy(bb_client, fake_bambuddy):  # ruling R7
@@ -316,3 +318,95 @@ def test_part_under_min_stock_is_listed_without_any_demand(bb_client):  # p48, S
     assert "Washer" in html
     assert "20 pcs" in html and "Lower limit" in html
     assert "1 × 50 (50 pcs)" in html
+
+
+# ---- p59: no usage recorded yet ----------------------------------------------------------------
+
+from reprintbuddy.domain import reorder  # noqa: E402
+from reprintbuddy.web.i18n import translate  # noqa: E402
+
+
+def tile_of(html, label):
+    return next(t for t in re.findall(r'<div class="tile">(.*?)</form>\s*</div>', html, re.S) if label in t)
+
+
+def test_a_filament_tile_without_history_says_so(bb_client, fake_bambuddy):  # p59
+    add_filament(bb_client, fake_bambuddy)
+    tile = tile_of(bb_client.get("/reorder").text, "PLA Black")
+    assert translate("en", "filament.no_history") in tile
+    assert "0.0 g/day" not in tile
+
+
+def test_a_filament_tile_with_history_shows_the_use_per_day(bb_client, fake_bambuddy):
+    sid = add_filament(bb_client, fake_bambuddy)
+    today = utcnow().date()
+    with sm_of(bb_client).begin() as s:
+        make_snapshot(s, today - timedelta(days=10), 1, sid, 600.0)
+        make_snapshot(s, today - timedelta(days=5), 1, sid, 100.0)
+    tile = tile_of(bb_client.get("/reorder").text, "PLA Black")
+    assert "g/day" in tile and translate("en", "filament.no_history") not in tile
+
+
+def test_german_tile_without_history(bb_client, fake_bambuddy):
+    add_filament(bb_client, fake_bambuddy)
+    with sm_of(bb_client).begin() as s:
+        st.set_setting(s, "language", "de", commit=False)
+    tile = tile_of(bb_client.get("/reorder").text, "PLA Black")
+    assert "noch kein Verlauf" in tile and "0.0 g/Tag" not in tile
+
+
+# ---- p60: an archived part leaves "on its way" -------------------------------------------------
+
+
+def test_an_archived_part_leaves_on_its_way_and_comes_back_on_restore(bb_client):  # p60
+    from reprintbuddy.domain import catalog
+
+    pid = add_part(bb_client)
+    mark_form(bb_client, "part", pid, "1")
+    bb_client.get("/reorder")  # shows (and so ends) the flash message that names the part
+    with sm_of(bb_client).begin() as s:
+        s.query(ArticlePart).delete()  # nothing uses it any more, so it may be archived
+        catalog.archive_part(s, pid)
+    html = bb_client.get("/reorder").text
+    assert "On its way" not in html and "Insert M4" not in html
+    assert [m.received_at for m in marks(bb_client)] == [None]  # the mark stays open
+    with sm_of(bb_client).begin() as s:
+        catalog.restore_part(s, pid)
+    html = bb_client.get("/reorder").text
+    assert "On its way" in html and "Insert M4: 1 × 50" in html
+
+
+# ---- p64: the key figure counts what the page shows ---------------------------------------------
+
+
+def page_tiles(client):
+    return len(re.findall(r'<div class="tile">', client.get("/reorder").text))
+
+
+def counted(client, spools):
+    with sm_of(client).begin() as s:
+        return reorder.count_suggestions(s, spools, utcnow())
+
+
+@pytest.mark.parametrize("case", ["live", "record", "nothing", "part_received"])
+def test_the_count_is_the_number_of_tiles(bb_client, fake_bambuddy, case):  # p64
+    pid = add_part(bb_client)
+    sid = add_filament(bb_client, fake_bambuddy)
+    spools = None
+    if case == "live":
+        spools = list(fake_bambuddy._spools.values())
+    elif case == "record":
+        with sm_of(bb_client).begin() as s:
+            make_snapshot(s, utcnow().date() - timedelta(days=1), 1, sid, 100.0)
+        fake_bambuddy.unavailable = True
+    elif case == "nothing":
+        fake_bambuddy.unavailable = True
+    else:  # an open part mark whose goods were booked in: the page closes it, the count too
+        mark_form(bb_client, "part", pid, "1")
+        with sm_of(bb_client).begin() as s:
+            s.query(ReorderMark).one().marked_at -= timedelta(seconds=1)
+            stock.receive_part(s, pid, 1, "user")  # too little: once the mark is closed, it is suggested again
+        fake_bambuddy.unavailable = True
+    expected = counted(bb_client, spools)
+    assert page_tiles(bb_client) == expected
+    assert expected == {"live": 2, "record": 2, "nothing": 1, "part_received": 1}[case]

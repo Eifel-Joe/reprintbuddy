@@ -13,31 +13,33 @@
     {% call ui.card_head("package", t('filament.title')) %}{{ ui.info(t('info.filament_mapping'), t('filament.title')) }}{% endcall %}
     <p class="muted">{{ t('filament.intro') }}</p>
   </div>
-  <div class="card table-wrap table-card">
+  {% for r in slots %}
+  <div class="card table-wrap table-card slot-group">
+    <input type="hidden" name="slot" value="{{ r.slot }}">
+    <p class="slot-caption">{{ t('filament.slot_caption', slot=r.slot, material=r.material, grams=r.grams) }}
+      {%- if r.swatch %} <span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}{% if r.color %} {{ r.color }}{% endif %}</p>
     <table>
-      <thead><tr><th>{{ t('articles.filament.slot') }}</th><th>{{ t('articles.filament.material') }}</th><th>{{ t('articles.filament.color') }}</th><th class="num">{{ t('articles.filament.grams') }}</th></tr></thead>
+      <thead><tr>
+        <th class="check-col"><span class="sr-only">{{ t('filament.col.use') }}</span></th>
+        <th>{{ t('filament.col.spool_sort') }}</th>
+        <th class="num">{{ t('filament.col.stock') }}</th>
+        <th class="check-col">{{ t('filament.col.reordered') }}</th>
+      </tr></thead>
       <tbody>
-      {% for r in slots %}
-        <tr>
-          <td>{{ r.slot }}</td>
-          <td>{{ r.material }}</td>
-          <td>{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}{{ r.color }}</td>
-          <td class="num">{{ r.grams }}</td>
+      {% for c in r.choices %}
+        <tr class="choice">
+          <td class="check-col"><input type="checkbox" id="tick-{{ r.slot }}-{{ c.id }}" name="tick_{{ r.slot }}" value="{{ c.id }}"{% if c.ticked %} checked{% endif %}{% if read_only %} disabled{% endif %}></td>
+          <td><label for="tick-{{ r.slot }}-{{ c.id }}">{% if c.swatch %}<span class="swatch" style="background: {{ c.swatch }}"></span>{% endif %}<strong>{{ c.brand }}</strong>{% if c.subtype %} {{ c.subtype }}{% endif %} {{ c.color }}</label></td>
+          <td class="num nowrap">{% if c.stock is not none %}{{ c.stock }} g{% else %}—{% endif %}</td>
+          <td class="check-col"><input type="radio" name="reorder_{{ r.slot }}" value="{{ c.id }}"{% if c.reordered %} checked{% endif %}{% if read_only %} disabled{% endif %} aria-label="{{ t('filament.col.reordered') }}: {{ c.brand }} {{ c.color }}"></td>
         </tr>
-        <tr class="slot-select">
-          <td colspan="4">
-            <select name="slot_{{ r.slot }}" aria-label="{{ t('filament.sort') }} {{ r.slot }}"{% if read_only %} disabled{% endif %}>
-              <option value=""{% if r.none_selected %} selected{% endif %}>{{ t('filament.none') }}</option>
-              {% for value, label, chosen in r.options %}<option value="{{ value }}"{% if chosen %} selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-            {% if r.is_suggestion %}<span class="suggested muted">{{ t('filament.suggested') }}</span>{% endif %}
-          </td>
-        </tr>
+      {% else %}
+        <tr><td colspan="4" class="muted">{{ t('filament.no_candidates') }}</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
+  {% endfor %}
   {% if not read_only %}<button class="btn" type="submit">{{ t('common.save') }}</button>{% endif %}
   <a class="btn secondary" href="/articles/{{ article_id }}">{{ t('common.cancel') }}</a>
 </form>

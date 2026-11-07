@@ -1005,3 +1005,10 @@ form > .btn + .btn.secondary { margin-left: 0.5rem; }
 .reorder-mark { align-items: flex-end; }
 .reorder-mark .field { margin-bottom: 0; }
 .reorder-mark input[type="number"] { width: 6rem; }
+
+/* v0.3.7: the filament group of each slot, one table card per slot (Spec 5.2) */
+.slot-group { margin-bottom: 0.75rem; }
+.slot-group .slot-caption { margin: 0; padding: 0.6rem 0.75rem; font-weight: 600; border-bottom: 1px solid var(--line); }
+.slot-group th.check-col, .slot-group td.check-col { width: 1%; white-space: nowrap; text-align: center; }
+.slot-group td.check-col input { width: 1.1rem; height: 1.1rem; margin: 0; accent-color: var(--accent); }
+.slot-group td label { cursor: pointer; }
