@@ -301,6 +301,7 @@ td a:hover, .btn-link:hover { text-decoration: underline; }
 
 .crumbs { color: var(--text-2); }
 .crumbs a, .plain-list a { color: var(--accent); text-decoration: none; }
+.crumbs a { display: inline-flex; align-items: center; min-height: 2.75rem; }
 .plain-list { list-style: none; margin: 0; padding: 0; }
 .plain-list li { padding: 0.45rem 0; border-bottom: 1px solid var(--line); }
 .plain-list li:last-child { border-bottom: 0; }
@@ -480,6 +481,21 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
   display: block; flex: 0 0 auto; width: 40px; height: 40px; border-radius: 6px; background: var(--bg);
 }
 .thumb-sm { object-fit: contain; }
+/* Large picture of a file tile; the placeholder keeps the size without a picture. */
+.thumb-lg { display: block; flex: 0 0 auto; width: 100%; height: 150px; border-radius: 8px; background: var(--bg); object-fit: contain; }
+.thumb-placeholder.thumb-lg { display: flex; }
+.thumb-placeholder.thumb-lg .icon { width: 2.5rem; height: 2.5rem; }
+/* A picture laid over its own placeholder: if Bambuddy has no picture after all (the route answers
+   404), the picture removes itself (onerror in the markup) and the placeholder underneath shows. A
+   loaded picture has an opaque background: Bambu thumbnails are often transparent PNGs, and the
+   dashed frame and icon must not show through them. */
+.thumb-box { position: relative; display: block; flex: 0 0 auto; }
+.thumb-box.sm { width: 40px; height: 40px; }
+.thumb-box.lg { width: 100%; height: 150px; }
+.thumb-box > img { position: absolute; inset: 0; width: 100%; height: 100%; background: var(--bg); }
+.thumb-box > .thumb-placeholder { width: 100%; height: 100%; }
+/* A long print file name without spaces wraps inside its tile or row instead of widening the page. */
+.file-name { min-width: 0; overflow-wrap: anywhere; }
 .thumb-placeholder { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); border: 1px dashed var(--line); }
 
 @media (max-width: 599px) {

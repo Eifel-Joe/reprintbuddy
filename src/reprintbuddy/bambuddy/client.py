@@ -6,10 +6,11 @@ import json
 import logging
 from contextlib import AbstractAsyncContextManager
 from typing import Callable, Protocol, runtime_checkable
+from urllib.parse import quote
 
 import httpx
 
-from reprintbuddy.bambuddy.connection import TIMEOUT_SECONDS
+from reprintbuddy.bambuddy.connection import TIMEOUT_SECONDS, ConnectionCheck, _evaluate
 from reprintbuddy.bambuddy.types import (
     EnqueueRequest,
     FilamentRequirement,
@@ -19,6 +20,7 @@ from reprintbuddy.bambuddy.types import (
     Printer,
     QueueItem,
     Spool,
+    SpoolMode,
 )
 
 log = logging.getLogger(__name__)
@@ -60,6 +62,23 @@ from reprintbuddy.bambuddy import parse as _parse  # noqa: E402
 
 _PNG_HEAD = bytes([0x89]) + b"PNG" + bytes([0x0D, 0x0A, 0x1A, 0x0A])
 
+# Preview images of library files: Bambuddy names the type by the file extension
+# (`library.py:5794-5831`), so it is not always PNG. Declared type and magic bytes must agree.
+_IMAGE_KINDS = ("image/png", "image/jpeg", "image/gif", "image/webp")
+
+
+def _image_kind_of(content: bytes) -> str | None:
+    if content.startswith(_PNG_HEAD):
+        return "image/png"
+    if content.startswith(bytes([0xFF, 0xD8, 0xFF])):
+        return "image/jpeg"
+    if content[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 HttpFactory = Callable[[], AbstractAsyncContextManager[httpx.AsyncClient]]
 
 
@@ -76,6 +95,8 @@ class BambuddyClient(Protocol):
     async def list_plates(self, file_id: int) -> list[Plate]: ...
 
     async def plate_thumbnail(self, file_id: int, plate_index: int) -> bytes: ...
+
+    async def file_thumbnail(self, file_id: int) -> tuple[str, bytes]: ...
 
     async def filament_requirements(
         self, file_id: int, plate_id: int
@@ -94,6 +115,8 @@ class BambuddyClient(Protocol):
     async def list_spools(self) -> list[Spool]: ...
 
     async def list_printers(self) -> list[Printer]: ...
+
+    async def spool_mode(self) -> SpoolMode: ...
 
 
 BambuddyFactory = Callable[[], BambuddyClient | None]
@@ -168,6 +191,9 @@ class HttpBambuddyClient:
             data = response.json()
         except ValueError:
             raise BambuddyUnexpected(f"{method} {path}: answer is not JSON") from None
+        except RecursionError:
+            # A pathologically deep body is no answer of the source (not a ValueError).
+            raise BambuddyUnexpected(f"{method} {path}: answer is nested too deeply") from None
         if data is None:
             # `None` from `_get` means "gone" (404); a JSON `null` is no answer of the source.
             raise BambuddyUnexpected(f"{method} {path}: answer is empty")
@@ -188,7 +214,8 @@ class HttpBambuddyClient:
             raise BambuddyRejected(_detail(response), status=404)
         return response.headers.get("content-type", ""), response.content
 
-    async def _post(self, path: str, body: dict) -> object:
+    async def _post(self, path: str, body: dict | None = None) -> object:
+        """A POST; without `body` the request has no body at all."""
         response = await self._send("POST", path, body=body)
         if response.status_code == 404:
             raise BambuddyRejected(_detail(response), status=404)
@@ -220,6 +247,15 @@ class HttpBambuddyClient:
             raise BambuddyUnexpected(f"GET {path}: answer is no PNG image")
         return content
 
+    async def file_thumbnail(self, file_id: int) -> tuple[str, bytes]:
+        """(content type, bytes) of the file's preview; 404 is `BambuddyRejected`."""
+        path = f"/library/files/{file_id}/thumbnail"
+        content_type, content = await self._get_bytes(path)
+        kind = content_type.split(";", 1)[0].strip().lower()
+        if kind not in _IMAGE_KINDS or _image_kind_of(content) != kind:
+            raise BambuddyUnexpected(f"GET {path}: answer is no supported image")
+        return kind, content
+
     async def filament_requirements(self, file_id: int, plate_id: int) -> list[FilamentRequirement]:
         data = await self._get(
             f"/library/files/{file_id}/filament-requirements", {"plate_id": plate_id}
@@ -230,7 +266,165 @@ class HttpBambuddyClient:
         """Every printer with a model; `active` is False for one in maintenance."""
         return _parse.parse_printers(await self._get("/printers/"))
 
+    async def spool_mode(self) -> SpoolMode:
+        """Which spool management Bambuddy runs right now (Decision 17)."""
+        return _parse.parse_spool_mode(await self._get("/spoolman/status"))
+
+    async def list_spools(self) -> list[Spool]:
+        """The spools of the running mode, and only of it (Decision 12).
+
+        An unreachable Spoolman or a refused status is an error, never a reason to read the
+        other list: its numbers would be stale or foreign.
+        """
+        mode = await self.spool_mode()
+        path = "/spoolman/inventory/spools" if mode == "spoolman" else "/inventory/spools"
+        return _parse.parse_spools(await self._get(path))
+
     async def get_queue_item(self, item_id: int) -> QueueItem | None:
         """`None`: the entry is gone (deleted, or removed with the history; Decision 3)."""
         data = await self._get(f"/queue/{item_id}", none_on_404=True)
         return None if data is None else _parse.parse_queue_item(data)
+
+    async def list_queue(self) -> list[QueueItem]:
+        """The open entries (pending, printing), in Bambuddy's order (by position)."""
+        return _parse.parse_queue_items(await self._get("/queue/", {"status": "pending,printing"}))
+
+    async def find_items_by_batch(self, batch_id: int) -> list[QueueItem]:
+        """Every entry of one batch, history included (Decision 14).
+
+        Bambuddy has no filter by batch, so the whole list is read and filtered here.
+        """
+        items = _parse.parse_queue_items(await self._get("/queue/"))
+        return [item for item in items if item.batch_id == batch_id]
+
+    # ---- the two write calls (Spec 3.1; `tests/bambuddy/test_write_guard.py` watches) ----
+    async def ensure_batch(self, name: str, external_ref: str, library_file_id: int) -> int:
+        """The id of the batch for `external_ref`, created if need be (Decision 10).
+
+        The batch has no `plates`: it only groups, so Bambuddy owes nothing for it. A 409
+        means the reference exists already (the only 409 of the create route); the search
+        then finds it. Bambuddy's search leaves out batches without entries, so no hit is
+        `BatchRefLost` and the caller takes a new reference. That batch is either one from an
+        earlier try whose answer was lost, still empty because Reprintbuddy enqueues only
+        once it has the id, or one whose entries were all deleted (e.g. by clearing the
+        history). More than one hit cannot be (unique index): `BambuddyUnexpected`. A search
+        without an answer or refused is that error, not `BatchRefLost`. The create is sent
+        once, never repeated here.
+        """
+        body = {
+            "name": name,
+            "library_file_id": library_file_id,
+            "external_source": _parse.EXTERNAL_SOURCE,
+            "external_ref": external_ref,
+        }
+        try:
+            return _parse.parse_batch_id(await self._post("/queue/batches", body), external_ref)
+        except BambuddyRejected as exc:
+            if exc.status != 409:
+                raise
+            conflict = exc
+        found = await self._get(
+            "/queue/batches",
+            {"external_source": _parse.EXTERNAL_SOURCE, "external_ref": external_ref},
+        )
+        hits = _parse.parse_batch_hits(found, external_ref)
+        if not hits:
+            raise BatchRefLost(conflict.detail, status=409) from conflict
+        if len(hits) > 1:
+            raise BambuddyUnexpected(f"GET /queue/batches: {len(hits)} batches for one reference")
+        return hits[0]
+
+    async def enqueue(self, req: EnqueueRequest) -> QueueItem:
+        """One queue entry, sent once (Decision 11, Review Focus 1).
+
+        The body holds exactly the file, the plate, one target (model or printer), the
+        batch and `manual_start: false`; `insert_at_top` only when set, `insert_position`
+        only when given. No print options: Bambuddy's defaults apply. A request with both
+        targets, none, an empty model or a position below 1 is a `ValueError` before any
+        network call. A timeout is `BambuddyUnavailable` with an unknown outcome; the
+        caller looks for the entry by batch instead of sending it again.
+        """
+        if req.target_model == "":
+            raise ValueError("target_model is empty")
+        if (req.target_model is None) == (req.printer_id is None):
+            raise ValueError("exactly one of target_model and printer_id is needed")
+        if req.insert_position is not None and req.insert_position < 1:
+            raise ValueError("insert_position starts at 1")
+        body: dict = {"library_file_id": req.library_file_id, "plate_id": req.plate_id}
+        if req.target_model is not None:
+            body["target_model"] = req.target_model
+        else:
+            body["printer_id"] = req.printer_id
+        body["batch_id"] = req.batch_id
+        body["manual_start"] = False
+        if req.insert_at_top:
+            body["insert_at_top"] = True
+        if req.insert_position is not None:
+            body["insert_position"] = req.insert_position
+        return _parse.parse_queue_item(await self._post("/queue/", body))
+
+    # ---- the live channel (Spec 7.6; not in the Protocol, B4's interface stays as it is) ----
+    async def ws_token(self) -> str:
+        """A token for Bambuddy's live channel, valid 60 minutes (B2 Task 9).
+
+        The third POST and no write: it changes nothing in the queue, the printers or the
+        library. It needs the group right `websocket:connect`; without it Bambuddy answers
+        403 (`BambuddyRejected`). An answer without a non-empty text `token` is
+        `BambuddyUnexpected`. The token is never part of an error message.
+        """
+        data = await self._post("/auth/ws-token")
+        token = data.get("token") if isinstance(data, dict) else None
+        if not isinstance(token, str) or not token:
+            raise BambuddyUnexpected("POST /auth/ws-token: answer has no token")
+        return token
+
+    def ws_url(self, token: str) -> str:
+        """The live channel's address: `ws://…/api/v1/ws?token=…` (`wss://` for https)."""
+        scheme, sep, rest = self._api.partition("://")
+        secure = {"http": "ws", "https": "wss"}.get(scheme.lower())
+        if not sep or secure is None:
+            raise ValueError("the Bambuddy address is no http or https address")
+        return f"{secure}://{rest}/ws?token={quote(token, safe='')}"
+
+    async def check_connection(self) -> ConnectionCheck:
+        """Who owns the key and may it do everything Reprintbuddy needs? Maps the errors below.
+
+        Only the `BambuddyUnavailable` family (and `BambuddyRejected`) is mapped to a result; any
+        other exception (e.g. a key that cannot be sent as a header, a closed client) propagates.
+        `ping()` is the method that never raises.
+
+        Mapping as in B1: network error, timeout, invalid address and 5xx are `unreachable`;
+        401 `unauthorized`; 403 `forbidden`; 200 goes to `_evaluate`; everything else (HTML,
+        no JSON, 3xx, 404, any other status) is `not_bambuddy`. `BambuddyUnexpected` is caught
+        before `BambuddyUnavailable`, its parent (Decision 5).
+        """
+        try:
+            response = await self._send("GET", "/auth/me")
+            if response.status_code != 200:
+                # 404 and any other 2xx: B1 and the brief send only 200 to `_evaluate`.
+                return ConnectionCheck(False, "not_bambuddy")
+            body = self._json(response, "GET", "/auth/me")
+        except BambuddyRejected as exc:
+            if exc.status == 401:
+                return ConnectionCheck(False, "unauthorized")
+            if exc.status == 403:
+                return ConnectionCheck(False, "forbidden")
+            return ConnectionCheck(False, "not_bambuddy")
+        except BambuddyUnexpected:
+            return ConnectionCheck(False, "not_bambuddy")
+        except BambuddyUnavailable:
+            return ConnectionCheck(False, "unreachable")
+        return _evaluate(body)
+
+    async def ping(self) -> bool:
+        """True when Bambuddy answers and accepts the key; missing rights do not matter here.
+
+        Never raises: anything unexpected (e.g. a key that cannot be sent as a header, a closed
+        client from the factory) is False. Only the type is logged, never the key. `CancelledError`
+        is a `BaseException`, so it still propagates.
+        """
+        try:
+            return (await self.check_connection()).reason in ("ok", "missing_permissions")
+        except Exception as exc:
+            log.debug("Bambuddy ping failed: %s", type(exc).__name__)
+            return False

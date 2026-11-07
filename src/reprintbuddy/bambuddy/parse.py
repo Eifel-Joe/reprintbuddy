@@ -8,6 +8,7 @@ not know are ignored, so a newer Bambuddy with more fields keeps working.
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
@@ -20,6 +21,8 @@ from reprintbuddy.bambuddy.types import (
     Plate,
     Printer,
     QueueItem,
+    Spool,
+    SpoolMode,
 )
 
 _Types = type | tuple[type, ...]
@@ -33,6 +36,10 @@ def _matches(value: object, types: _Types) -> bool:
         return False
     if float in wanted and isinstance(value, int):
         return True  # JSON writes 42.0 as 42
+    # Python's json reads the non-standard NaN/Infinity/-Infinity as floats; a number that
+    # is not finite is a wrong answer, not a weight (it would give remaining 0.0 or inf).
+    if isinstance(value, float) and not math.isfinite(value):
+        return False
     return isinstance(value, wanted)
 
 
@@ -80,7 +87,10 @@ def _utc(value: object) -> datetime | None:
     except ValueError:
         raise BambuddyUnexpected("a time is not in ISO format") from None
     if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        try:
+            parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        except OverflowError:  # e.g. 0001-01-01T00:00:00+01:00 lies before year 1 in UTC
+            raise BambuddyUnexpected("a time is out of range") from None
     return parsed
 
 
@@ -125,6 +135,11 @@ def parse_queue_item(data: object) -> QueueItem:
     )
 
 
+def parse_queue_items(data: object) -> list[QueueItem]:
+    """The queue list (`GET /queue/`), in the order of the answer (Bambuddy sorts by position)."""
+    return [parse_queue_item(entry) for entry in _list(data, "queue list")]
+
+
 # ---- library ---------------------------------------------------------------------------
 
 
@@ -158,8 +173,25 @@ def parse_folders(data: object) -> list[LibraryFolder]:
             if children is not None:
                 walk(children, folder_id)
 
-    walk(data, None)
+    try:
+        walk(data, None)
+    except RecursionError:
+        raise BambuddyUnexpected("folder tree is nested too deeply") from None
     return out
+
+
+def _has_text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_sliced(file_type: str | None, filename: str) -> bool:
+    """Sliced for our purpose: Bambuddy's `file_type` is `gcode.3mf` (it judges by the zip content,
+    `library.py:249-280`). Old entries (before Bambuddy #1600) may still say `3mf` for a
+    `.gcode.3mf`, and a missing type follows the name. A raw `.gcode` cannot be queued for a
+    Bambu printer in network mode (`library.py:338-368`), so it does not count."""
+    if file_type == "gcode.3mf":
+        return True
+    return file_type in (None, "3mf") and filename.lower().endswith(".gcode.3mf")
 
 
 def parse_file(data: object) -> LibraryFile:
@@ -174,6 +206,8 @@ def parse_file(data: object) -> LibraryFile:
         folder_id=_opt(d, "folder_id", int),
         fingerprint=_opt(d, "file_hash", str) or None,
         printer_model=_opt(d, "sliced_for_model", str) or None,
+        has_thumbnail=_has_text(d.get("thumbnail_path")),
+        sliced=_is_sliced(_opt(d, "file_type", str), _req(d, "filename", str)),
     )
 
 
@@ -245,3 +279,79 @@ def parse_printers(data: object) -> list[Printer]:
             continue
         out.append(Printer(printer_id, name, model, active))
     return out
+
+
+def parse_spool_mode(data: object) -> SpoolMode:
+    """The running inventory mode from `GET /spoolman/status` (Decision 17).
+
+    Bambuddy resolves every spool route by `enabled` and a non-empty `url`
+    (`api/routes/spoolman.py` `get_spoolman_status`); `connected` is a live check of
+    Spoolman and does not decide the mode, so an unreachable Spoolman is still Spoolman mode.
+    """
+    d = _object(data, "Spoolman status")
+    enabled = _req(d, "enabled", bool)
+    url = _opt(d, "url", str)
+    return "spoolman" if enabled and url else "builtin"
+
+
+def parse_spools(data: object) -> list[Spool]:
+    """The spools of either list (`GET /inventory/spools`, `GET /spoolman/inventory/spools`).
+
+    Both routes send the same `InventorySpool` shape (Decision 12; Bambuddy
+    `schemas/spool.py` `SpoolResponse`, `_spoolman_helpers.py` `_map_spoolman_spool`).
+    """
+    out: list[Spool] = []
+    for entry in _list(data, "spool list"):
+        d = _object(entry, "spool")
+        label = _req(d, "label_weight", int)  # Bambuddy's schema types it as int
+        used = _req(d, "weight_used", (int, float))
+        # In Spoolman mode Bambuddy fills a missing colour name from the subtype and sets
+        # `color_name_is_synthesized` (`_spoolman_helpers.py` `_map_spoolman_spool`). That is
+        # no colour: B6 builds the variety from the subtype already. Only a real `true`
+        # counts; missing, `false` or any other form means the name is as delivered.
+        synthesized = d.get("color_name_is_synthesized") is True
+        out.append(
+            Spool(
+                id=_req(d, "id", int),
+                material=_req(d, "material", str),
+                subtype=_opt(d, "subtype", str) or None,
+                brand=_opt(d, "brand", str) or None,
+                color_name=None if synthesized else (_opt(d, "color_name", str) or None),
+                color_hex=normalize_color(d.get("rgba")),
+                label_g=label,
+                remaining_g=max(0.0, float(label) - float(used)),
+                archived=bool(d.get("archived_at")),
+                created_at=_utc(d.get("created_at")),
+            )
+        )
+    return out
+
+
+# ---- batches ---------------------------------------------------------------------------
+
+# The `external_source` of every batch Reprintbuddy creates. Bambuddy keeps
+# `external_ref` unique within one source (`PrintBatchCreate`, pattern `^[a-z0-9_-]+$`).
+EXTERNAL_SOURCE = "reprintbuddy"
+
+
+def parse_batch_id(data: object, external_ref: str) -> int:
+    """The `id` of one batch (`PrintBatchResponse`), checked against what was sent.
+
+    `external_source` must be `EXTERNAL_SOURCE` and `external_ref` the reference that was
+    sent; a batch of anyone or anything else is an unexpected answer, never a hit
+    (Decision 10).
+    """
+    d = _object(data, "batch")
+    batch_id = _req(d, "id", int)
+    if d.get("external_source") != EXTERNAL_SOURCE or d.get("external_ref") != external_ref:
+        raise BambuddyUnexpected("batch belongs to another reference")
+    return batch_id
+
+
+def parse_batch_hits(data: object, external_ref: str) -> list[int]:
+    """The ids of the batch search (`GET /queue/batches?external_source=…&external_ref=…`).
+
+    Every hit must carry the reference that was searched for (`parse_batch_id`); how many
+    hits are fine is the caller's decision.
+    """
+    return [parse_batch_id(entry, external_ref) for entry in _list(data, "batch list")]
