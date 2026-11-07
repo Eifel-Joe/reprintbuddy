@@ -148,6 +148,7 @@ async def bambuddy_connect_submit(request: Request, db: Session = Depends(get_db
         return fail(f"bambuddy.reason.{check.reason}", check)
 
     st.apply_check(db, url, api_key, check)  # one transaction
+    request.app.state.live_listener.wake(reconnect=True)  # p97: the channel tries with the new key at once
     take_verdict(request, check)  # this start has checked the new key
     if check.owner_is_admin:
         flash(request, "bambuddy.admin_warning", warning=True)  # saved, but the person is told

@@ -578,3 +578,53 @@ def test_a_hint_that_already_ends_in_a_full_stop_gets_no_second_one(ready_client
     assert template.render(hint="One").strip() == "One. Stored."
     assert template.render(hint="Really?").strip() == "Really? Stored."
     assert template.render(hint="One", ).strip() == "One. Stored."
+
+
+# p97 (v0.3.7): "check and save" wakes the live channel; a failed check wakes nothing.
+
+
+class WakeRecorder:
+    """Stands in for the live listener of the app: records every wake."""
+
+    def __init__(self):
+        self.wakes: list[bool] = []
+        self.state = "no_right"
+
+    def wake(self, *, reconnect: bool = False) -> None:
+        self.wakes.append(reconnect)
+
+
+def test_a_saved_connection_wakes_the_live_channel(ready_client, respx_mock):
+    recorder = ready_client.app.state.live_listener = WakeRecorder()
+    respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me())
+    response = post(ready_client, "/settings/bambuddy", **bambuddy_form())
+    assert response.status_code == 303
+    assert recorder.wakes == [False]  # same address, same key: a standing connection is left alone
+
+
+def test_a_new_key_or_address_replaces_a_standing_connection(ready_client, respx_mock):
+    recorder = ready_client.app.state.live_listener = WakeRecorder()
+    respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me())
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_token="bb_new"))
+    respx_mock.get(f"{NEW_URL}/api/v1/auth/me").respond(200, json=auth_me())
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address=NEW_URL, bambuddy_token="bb_other"))
+    assert recorder.wakes == [True, True]
+
+
+def test_the_same_key_typed_again_counts_as_unchanged(ready_client, respx_mock):
+    recorder = ready_client.app.state.live_listener = WakeRecorder()
+    respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me())
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_token="bb_testkey"))
+    assert recorder.wakes == [False]
+
+
+def test_a_failed_check_wakes_nothing(ready_client, respx_mock):
+    recorder = ready_client.app.state.live_listener = WakeRecorder()
+    respx_mock.get(f"{NEW_URL}/api/v1/auth/me").respond(401)
+    response = post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address=NEW_URL, bambuddy_token="bb_x"))
+    assert response.status_code == 200
+    respx_mock.get(f"{OLD_URL}/api/v1/auth/me").mock(side_effect=httpx.ConnectError("x"))
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_token="bb_y"))
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address="", bambuddy_token="bb_z"))
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address="not an address"))
+    assert recorder.wakes == []

@@ -157,8 +157,15 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     if not check.ok:
         return fail(f"bambuddy.reason.{check.reason}", check)
 
+    # A standing connection belongs to the old address and key: only a change replaces it.
+    changed = not (
+        st.same_address(str(url), str(st.get_setting(db, "bambuddy_url") or ""))
+        and api_key == str(st.get_setting(db, "bambuddy_api_key") or "")
+    )
     # One transaction: a failure must not leave a new address with the old key.
     st.apply_check(db, url, api_key, check)
+    # p97: a new key or new rights must not wait for the live channel's pause (up to 15 minutes).
+    request.app.state.live_listener.wake(reconnect=changed)
     take_verdict(request, check)  # a fixed key clears the notice at once
     if check.owner_is_admin:
         return _saved(request, "bambuddy.admin_warning", warning=True, tab=SECTION_TAB["bambuddy"])

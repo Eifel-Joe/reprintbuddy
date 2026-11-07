@@ -551,3 +551,28 @@ def test_the_key_creation_rights_are_not_in_the_result_list(admin_client, respx_
     token = csrf_of(admin_client, CONNECT)
     page = admin_client.post(CONNECT, data=_form(token)).text
     assert "api_keys" not in page and "settings:read" not in page
+
+
+class _WakeRecorder:
+    def __init__(self):
+        self.wakes: list[bool] = []
+        self.state = "connecting"
+
+    def wake(self, *, reconnect: bool = False) -> None:
+        self.wakes.append(reconnect)
+
+
+def test_connect_wakes_the_live_channel(admin_client, respx_mock):  # p97
+    recorder = admin_client.app.state.live_listener = _WakeRecorder()
+    mock_auth_me(respx_mock)
+    token = csrf_of(admin_client, CONNECT)
+    assert admin_client.post(CONNECT, data=_form(token)).status_code == 303
+    assert recorder.wakes == [True]
+
+
+def test_a_failed_connect_wakes_nothing(admin_client, respx_mock):  # p97
+    recorder = admin_client.app.state.live_listener = _WakeRecorder()
+    respx_mock.get(f"{URL}/api/v1/auth/me").respond(401)
+    token = csrf_of(admin_client, CONNECT)
+    assert admin_client.post(CONNECT, data=_form(token)).status_code == 200
+    assert recorder.wakes == []
