@@ -56,7 +56,7 @@ def test_form_preselects_suggestion(bb_client, fake_bambuddy):  # Spec 5.2
     by = sorts_by_label(bb_client)
     opts = options(page.text)
     assert opts[0][0] == "" and len(opts) == 3
-    assert [(v, sel) for v, sel, _ in opts if sel] == [(str(by["Example Brand PLA Black"]), True)]
+    assert [(v, sel) for v, sel, _ in opts if sel] == [(str(by["PLA Black"]), True)]
     assert 'class="suggested ' in page.text
     assert slot_one(bb_client, a) is None  # nothing is stored until the user saves
 
@@ -69,14 +69,14 @@ def test_save_mapping(bb_client, fake_bambuddy):
     assert r.status_code == 303 and r.headers["location"] == f"/articles/{a}"
     assert slot_one(bb_client, a) == int(sort_id)
     detail = bb_client.get(f"/articles/{a}").text
-    assert "Example Brand PLA Black" in detail
+    assert "PLA Black" in detail
     assert f"/articles/{a}/filaments" in detail
     assert "Filament assignment saved." in detail
 
 
 def test_ambiguous_no_preselection(bb_client, fake_bambuddy):
     fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
-    fake_bambuddy.add_spool("PLA", brand="Other Brand", color_hex="#000000", color_name="Black")
+    fake_bambuddy.add_spool("PLA", subtype="Matte", color_hex="#000000", color_name="Black")
     a = make(bb_client)
     page = bb_client.get(f"/articles/{a}/filaments")
     opts = options(page.text)

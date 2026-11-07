@@ -307,7 +307,7 @@ def test_hint_names_the_number_of_hidden_unsliced_files(mixed, layout):  # p42
     mixed.cookies.set("rb_layout_files", layout)
     html = mixed.get("/articles/new?folder=1").text
     assert html.count(HIDDEN_EN.format(n=3)) == 1  # Template D, E and F
-    assert re.search(r'<p class="muted" role="status">' + re.escape(HIDDEN_EN.format(n=3)), html)
+    assert re.search(r'<p class="muted file-hint" role="status">' + re.escape(HIDDEN_EN.format(n=3)), html)
     for hidden in ("Template D", "Template E", "Template F"):  # the hint names no file
         assert hidden not in html
 

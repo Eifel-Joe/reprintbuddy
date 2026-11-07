@@ -30,7 +30,7 @@ def test_filament_list_live(bb_client, fake_bambuddy):  # Spec 9.1
     use_sort(bb_client)
     page = bb_client.get("/filament")
     assert page.status_code == 200
-    lines = [r for r in rows_of(page.text) if "Example Brand PLA Black" in r]
+    lines = [r for r in rows_of(page.text) if "PLA Black" in r]
     assert len(lines) == 1 and "1100" in lines[0] and "1100.0" not in lines[0]
     assert "einstellen" not in lines[0] and "Configure" in lines[0]  # no settings yet
     assert "Live from Bambuddy" in page.text
@@ -67,7 +67,7 @@ def test_filament_page_unknown_without_record(bb_client, fake_bambuddy):  # Anti
     assert page.status_code == 200
     assert "nothing has been recorded yet" in page.text
     assert "saved assignment" not in page.text  # that sentence belongs to the mapping page
-    line = [r for r in rows_of(page.text) if "Example Brand PLA Black" in r][0]
+    line = [r for r in rows_of(page.text) if "PLA Black" in r][0]
     cells = re.findall(r"<td[^>]*>(.*?)</td>", line, re.S)
     assert cells[2].strip() == "—" and cells[3].strip() == "—"  # stock and spools, never "0 g"
     assert f'/filament/{sort.id}"' in cells[6]
@@ -118,7 +118,7 @@ def test_save_settings(ready_client):
 def test_settings_defaults(ready_client):
     sid = sort_id_of(ready_client)
     form = ready_client.get(f"/filament/{sid}").text
-    assert 'name="pack_grams"' in form and 'value="1000"' in form and "Example Brand PLA Black" in form
+    assert 'name="pack_grams"' in form and 'value="1000"' in form and "PLA Black" in form
 
 
 @pytest.mark.parametrize(
@@ -179,7 +179,7 @@ def test_sort_label_links_to_settings_and_hint_links_are_cell_links(bb_client, f
         s.add(ArticleFilament(article_id=art.id, slot=1, grams=10.0, material="PETG", color_hex="#FFFFFF"))
         art_id = art.id
     html = bb_client.get("/filament").text
-    sid = re.search(r'<a href="/filament/(\d+)">Example Brand PLA Black</a>', html).group(1)
+    sid = re.search(r'<a href="/filament/(\d+)">PLA Black</a>', html).group(1)
     assert f'href="/filament/{sid}"' in html
     # in a table cell, where the app styles links green (td a)
     assert re.search(rf'<td><a href="/articles/{art_id}/filaments">', html)
@@ -202,7 +202,7 @@ def test_filament_list_spool_without_color_name(bb_client, fake_bambuddy):
     use_sort(bb_client, subtype="Matte", color_name=None)
     page = bb_client.get("/filament")
     assert page.status_code == 200
-    lines = [r for r in rows_of(page.text) if "Example Brand PLA Matte #000000" in r]
+    lines = [r for r in rows_of(page.text) if "PLA Matte #000000" in r]
     assert len(lines) == 1
     assert "Matte" in lines[0] and lines[0].count("Matte") == 1
     assert 'class="swatch"' in lines[0]
@@ -305,7 +305,7 @@ def test_list_is_a_table_card_with_symbol_buttons(bb_client, fake_bambuddy):
     assert '<div class="card table-wrap table-card">' in page
     assert "<section" not in page and "section wide" not in page
     assert '<th class="actions-col"><span class="sr-only">Actions</span></th>' in page
-    black = [r for r in rows_of(page) if "Example Brand PLA Black" in r][0]
+    black = [r for r in rows_of(page) if "PLA Black" in r][0]
     assert re.search(r'<td class="actions-col"><div class="row-actions"><a class="icon-btn" href="/filament/\d+" '
                      r'title="Configure" aria-label="Configure">.*?#settings', black, re.S)
     assert "Not configured" in black
@@ -330,7 +330,7 @@ def test_settings_head_card_head_and_buttons(ready_client):
     sid = sort_id_of(ready_client)
     page = ready_client.get(f"/filament/{sid}").text
     head = head_of(page)
-    assert "#disc-3" in head and "<h1>Example Brand PLA Black</h1>" in head
+    assert "#disc-3" in head and "<h1>PLA Black</h1>" in head
     assert f'<p class="page-sub">{en("filament.settings_sub")}</p>' in head
     form = regions.extract(page, ["form"])["form"]
     assert re.search(rf'<div class="card-head"><h2>.*?#settings.*?{en("filament.settings_card")}</h2>', form, re.S)
@@ -385,8 +385,8 @@ def test_unassigned_sort_is_not_listed_or_counted(bb_client, fake_bambuddy):
         black = make_sort(s)  # the spool's sort, used by an article
         assign_sort(s, black)
     html = bb_client.get("/filament").text
-    assert len([r for r in rows_of(html) if "Example Brand" in r]) == 1
-    assert "Example Brand PLA Black" in html and "PETG" not in html
+    assert len([r for r in rows_of(html) if "PLA" in r]) == 1
+    assert "PLA Black" in html and "PETG" not in html
     cards = {label: value for value, label in kpi_cards(regions.extract(html, ["summary"])["summary"])}
     assert cards[en("kpi.filament_sorts")] == "1"
     assert cards[en("kpi.filament_stock")] == "800" and cards[en("kpi.filament_spools")] == "1"
@@ -397,7 +397,7 @@ def test_sort_of_an_archived_article_is_not_listed(bb_client, fake_bambuddy):
     with sm_of(bb_client).begin() as s:
         assign_sort(s, make_sort(s), archived=True)
     html = bb_client.get("/filament").text
-    assert "Example Brand PLA Black" not in html
+    assert "PLA Black" not in html
     assert "No filament sorts" in html
 
 
@@ -408,7 +408,7 @@ def test_sort_used_by_two_articles_is_listed_once(bb_client, fake_bambuddy):
         assign_sort(s, sort, name="One")
         assign_sort(s, sort, name="Two")
     html = bb_client.get("/filament").text
-    assert len([r for r in rows_of(html) if "Example Brand PLA Black" in r]) == 1
+    assert len([r for r in rows_of(html) if "PLA Black" in r]) == 1
 
 
 def test_assigning_in_the_article_makes_the_sort_appear(bb_client, fake_bambuddy):
@@ -418,14 +418,14 @@ def test_assigning_in_the_article_makes_the_sort_appear(bb_client, fake_bambuddy
         art = make_article(s, name="Template A")
         s.add(ArticleFilament(article_id=art.id, slot=1, grams=10.0, material="PLA", color_hex="#000000"))
         art_id = art.id
-    assert "Example Brand PLA Black" not in bb_client.get("/filament").text
+    assert "PLA Black" not in bb_client.get("/filament").text
     token = csrf_of(bb_client, f"/articles/{art_id}/filaments")
     r = bb_client.post(
         f"/articles/{art_id}/filaments", data={"csrf_token": token, "slot_1": str(sort.id)},
         follow_redirects=False,
     )
     assert r.status_code == 303, r.text[:300]
-    assert "Example Brand PLA Black" in bb_client.get("/filament").text
+    assert "PLA Black" in bb_client.get("/filament").text
 
 
 def test_article_page_still_offers_every_sort(bb_client, fake_bambuddy):  # Spec 9.3: the full choice stays
@@ -436,7 +436,7 @@ def test_article_page_still_offers_every_sort(bb_client, fake_bambuddy):  # Spec
         s.add(ArticleFilament(article_id=art.id, slot=1, grams=10.0, material="PLA", color_hex="#000000"))
         art_id = art.id
     html = bb_client.get(f"/articles/{art_id}/filaments").text
-    assert "Example Brand PLA Black" in html and "Example Brand PETG Red" in html
+    assert "PLA Black" in html and "PETG Red" in html
 
 
 def test_settings_of_an_unassigned_sort_stay_reachable_by_url(bb_client):
@@ -447,5 +447,19 @@ def test_settings_of_an_unassigned_sort_stay_reachable_by_url(bb_client):
 def test_empty_page_says_how_a_sort_gets_here(bb_client, fake_bambuddy):
     fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
     html = bb_client.get("/filament").text
-    assert "Example Brand PLA Black" not in html
+    assert "PLA Black" not in html
     assert "article" in re.search(r'<p class="muted">(No filament sorts[^<]*)</p>', html).group(1).lower()
+
+
+def test_unconfigured_card_counts_only_shown_sorts(bb_client, fake_bambuddy):  # p46
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    fake_bambuddy.add_spool("PETG", color_hex="#FF0000", color_name="Red")
+    use_sort(bb_client)  # one shown sort without settings; the PETG sort is not used by an article
+    cards = {label: value for value, label in kpi_cards(region(bb_client, "/filament", "summary"))}
+    assert cards[en("kpi.filament_unconfigured")] == "1"
+
+
+def test_empty_page_in_german(bb_client):  # p46
+    with sm_of(bb_client).begin() as s:
+        st.set_setting(s, "language", "de", commit=False)
+    assert de("filament.no_sorts") in bb_client.get("/filament").text

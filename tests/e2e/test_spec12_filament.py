@@ -63,7 +63,7 @@ def test_spec12_step_9(bb_client, fake_bambuddy):
     assert found, "no slot_1 select on the mapping page"
     block = found.group(1)
     selected = re.findall(r'<option value="(\d+)" selected>([^<]*)</option>', block)
-    assert len(selected) == 1 and selected[0][1] == "Example Brand PLA Black"
+    assert len(selected) == 1 and selected[0][1] == "PLA Black"
     sort_id = int(selected[0][0])
     response = bb_client.post(
         f"/articles/{article_id}/filaments",

@@ -310,6 +310,7 @@ def close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: d
     """
     closed = 0
     live = None if spools is None else [s for s in spools if not s.archived]
+    sort_of = {} if live is None else filament.resolve_sorts(session, live)
     for mark in session.scalars(select(ReorderMark).where(ReorderMark.received_at.is_(None))).all():
         if mark.item_type == "part":
             arrived = session.scalar(
@@ -332,7 +333,7 @@ def close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: d
                 for s in live
                 if s.created_at is not None
                 and _naive_utc(s.created_at) > mark.marked_at
-                and filament.sort_key(s) == sort.sort_key
+                and sort_of[s.id] == sort.id
             )
             if grams >= mark.qty * settings.pack_grams:
                 mark.received_at = now

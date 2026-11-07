@@ -44,12 +44,20 @@ def test_suggest_case_insensitive(db):
 def test_suggest_none_when_ambiguous_or_missing(db):
     with db.begin() as s:
         make_sort(s)
-        make_sort(s, brand="Other Brand")
+        make_sort(s, subtype="Matte")
         sorts = _sorts(s)
-        assert filament.suggest_sort("PLA", "#000000", sorts) is None  # two brands
+        assert filament.suggest_sort("PLA", "#000000", sorts) is None  # two subtypes, same colour
         assert filament.suggest_sort("PLA", None, sorts) is None
         assert filament.suggest_sort(None, "#000000", sorts) is None
         assert filament.suggest_sort("PLA", "#123456", sorts) is None
+
+
+def test_suggest_takes_a_similar_colour(db):  # Spec 9.1: at most delta E 7
+    with db.begin() as s:
+        black = make_sort(s)
+        sorts = _sorts(s)
+        assert filament.suggest_sort("PLA", "#1A1A1A", sorts) == black.id  # 5.5 away
+        assert filament.suggest_sort("PLA", "#333333", sorts) is None  # 13.4 away
 
 
 def test_set_and_read_mapping(db):

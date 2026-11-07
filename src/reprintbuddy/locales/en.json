@@ -180,6 +180,7 @@
   "journal.kind.inspection_scrap": "Inspection: scrap",
   "journal.kind.assembly": "Assembly",
   "journal.kind.part_consumed": "Part used",
+  "journal.kind.filament_sorts_merged": "Filament sorts merged",
   "articles.title": "Articles",
   "articles.empty": "No articles yet. Create the first one from a print file.",
   "articles.new": "New article from print file",

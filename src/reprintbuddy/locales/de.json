@@ -180,6 +180,7 @@
   "journal.kind.inspection_scrap": "Prüfung Ausschuss",
   "journal.kind.assembly": "Montage",
   "journal.kind.part_consumed": "Teil verbraucht",
+  "journal.kind.filament_sorts_merged": "Filamentsorten zusammengelegt",
   "articles.title": "Artikel",
   "articles.empty": "Noch keine Artikel. Lege den ersten aus einer Druckdatei an.",
   "articles.new": "Neuer Artikel aus Druckdatei",

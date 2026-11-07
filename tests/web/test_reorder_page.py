@@ -58,7 +58,7 @@ def test_reorder_lists_part_and_filament(bb_client, fake_bambuddy):  # Spec 9.4
     add_filament(bb_client, fake_bambuddy)
     html = bb_client.get("/reorder").text
     assert "Insert M4" in html and "1 × 50 (50 pcs)" in html
-    assert "Example Brand PLA Black" in html and "2 × 1000 g" in html
+    assert "PLA Black" in html and "2 × 1000 g" in html
     assert html.count("Example Supplier") >= 2
     for url in ("https://shop.example/insert-m4", "https://shop.example/pla-black"):
         assert f'href="{url}" target="_blank" rel="noopener noreferrer"' in html
@@ -136,7 +136,7 @@ def test_reorder_without_any_filament_stock(bb_client, fake_bambuddy):  # Review
     fake_bambuddy.unavailable = True
     response = bb_client.get("/reorder")
     assert response.status_code == 200
-    assert "Insert M4" in response.text and "Example Brand PLA Black" not in response.text
+    assert "Insert M4" in response.text and "PLA Black" not in response.text
     assert "filament stock is not known" in response.text.lower()
 
 
@@ -172,7 +172,7 @@ def test_stale_filament_suggestion_shows_the_day(bb_client, fake_bambuddy):  # E
     response = bb_client.get("/reorder")
     assert response.status_code == 200
     assert f"Stock as of {yesterday:%Y-%m-%d}" in response.text
-    assert "Example Brand PLA Black" in response.text and "2 × 1000 g" in response.text
+    assert "PLA Black" in response.text and "2 × 1000 g" in response.text
 
 
 def test_each_suggestion_is_a_tile_with_amount_supplier_link_and_form(bb_client, fake_bambuddy):

@@ -8,7 +8,6 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.bambuddy.types import Spool
 from reprintbuddy.domain import filament
 from reprintbuddy.models import (
     Article,
@@ -112,23 +111,18 @@ def make_sort(
     *,
     material: str = "PLA",
     color_hex: str | None = "#000000",
-    brand: str | None = "Example Brand",
     subtype: str | None = None,
     color_name: str | None = "Black",
 ) -> FilamentSort:
     """A filament sort with key and label from `domain/filament.py` (one place for the rules)."""
-    spool = Spool(
-        id=0, material=material, subtype=subtype, brand=brand, color_name=color_name, color_hex=color_hex,
-        label_g=1000, remaining_g=1000.0, archived=False, created_at=None,
-    )
     sort = FilamentSort(
-        sort_key=filament.sort_key(spool),
-        brand=brand,
+        sort_key=filament.sort_key(material, subtype, color_hex),
+        brand=None,
         material=material,
         subtype=subtype,
         color_hex=color_hex,
         color_name=color_name,
-        label=filament.sort_label(spool),
+        label=filament.sort_label(material, subtype, color_name, color_hex),
     )
     s.add(sort)
     s.flush()
