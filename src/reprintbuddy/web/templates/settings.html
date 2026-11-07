@@ -95,7 +95,7 @@
 
 {# The live channel to Bambuddy (v0.3.6 p86): follows the listener live (topic live-channel). Only with a
    stored address. Not connected: the regular query takes over, and the page says so. #}
-{% call ui.region("channel", "live-channel") %}
+{% call ui.region("channel", "live-channel settings") %}
 {% if live_channel %}
 {% set channel_key = 'settings.channel.' ~ live_channel %}
 {% set channel_badge_key = 'settings.channel.badge.' ~ live_channel %}

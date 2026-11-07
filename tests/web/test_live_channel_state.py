@@ -7,7 +7,7 @@ The state follows the listener live: a change is published as topic `live-channe
 
 import pytest
 
-from conftest import sm_of
+from conftest import csrf_of, sm_of
 from reprintbuddy import settings as st
 from reprintbuddy.web import regions
 from reprintbuddy.web.i18n import translate
@@ -60,12 +60,25 @@ def test_no_right_names_the_missing_rights(ready_client):
 
 
 def test_nothing_without_a_stored_address(ready_client):
+    """Without a stored address the whole page is not offered (the set-up comes first)."""
     with sm_of(ready_client).begin() as s:
         st.set_setting(s, "bambuddy_url", None)
     set_state(ready_client, "no_right")
-    page = ready_client.get(TAB).text
-    assert "websocket:connect" not in page
-    assert regions.extract(page, ["channel"]).get("channel", "").strip() == ""
+    response = ready_client.get(TAB)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/setup/bambuddy"
+
+
+def test_the_row_stays_when_an_empty_address_is_refused(ready_client):
+    """An address is stored, the field is sent empty: the page is drawn again with the error and the
+    typed (empty) value, but the row follows the stored address and stays."""
+    set_state(ready_client, "no_right")
+    response = ready_client.post(
+        "/settings/bambuddy",
+        data={"csrf_token": csrf_of(ready_client, TAB), "bambuddy_address": "", "bambuddy_token": ""},
+    )
+    assert response.status_code == 200  # drawn again with the error, not redirected
+    assert "websocket:connect" in regions.extract(response.text, ["channel"])["channel"]
 
 
 def test_the_region_can_be_fetched_alone(ready_client):
@@ -74,9 +87,11 @@ def test_the_region_can_be_fetched_alone(ready_client):
     assert translate("en", "settings.channel.waiting", minutes=15) in part
 
 
-def test_the_region_listens_to_its_own_topic(ready_client):
+def test_the_region_listens_to_its_own_topic_and_to_the_settings(ready_client):
+    # The row also shows stored settings (the poll interval, the address), so a change made in
+    # another tab must redraw it, too.
     page = ready_client.get(TAB).text
-    assert 'data-live-region="channel" data-live-topics="live-channel"' in page
+    assert 'data-live-region="channel" data-live-topics="live-channel settings"' in page
 
 
 def test_other_tabs_do_not_carry_the_region(ready_client):

@@ -90,7 +90,8 @@ def _page(
         ops=ops_view(request, db),
         update_check=bool(st.get_setting(db, "update_check")),  # the switch of the automatic check
         # The live channel row: only with a stored address (without one there is nothing to connect to).
-        live_channel=request.app.state.live_listener.state if values["bambuddy_address"] else None,
+        # The stored setting decides, not `values`: a typed address that was refused is no address.
+        live_channel=request.app.state.live_listener.state if st.get_setting(db, "bambuddy_url") else None,
         channel_retry_minutes=NO_RIGHT_DELAY // 60,
         **permission_context(),
         check=check,
