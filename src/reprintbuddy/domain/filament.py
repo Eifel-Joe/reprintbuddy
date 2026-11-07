@@ -239,7 +239,8 @@ def _convert_one(session: Session, old: FilamentSort, target: FilamentSort | Non
     if target is not None:
         details["into"], details["into_label"] = target.id, target.label
     settings = session.get(FilamentSettings, old.id)
-    old_pack = settings.pack_grams if settings is not None else None
+    # without settings a mark counts in the default unit, as "on its way" shows it (reorder.open_marks)
+    old_pack = settings.pack_grams if settings is not None else FilamentSettingsInput.pack_grams
     if settings is not None:
         values = {f: getattr(settings, f) for f in _SETTINGS}
         session.delete(settings)
@@ -256,10 +257,10 @@ def _convert_one(session: Session, old: FilamentSort, target: FilamentSort | Non
     if marks:
         if target is not None:
             target_settings = session.get(FilamentSettings, target.id)
-            new_pack = target_settings.pack_grams if target_settings is not None else None
+            new_pack = target_settings.pack_grams if target_settings is not None else FilamentSettingsInput.pack_grams
             for mark in marks:
                 mark.item_id = target.id
-                if old_pack and new_pack and old_pack != new_pack:
+                if old_pack != new_pack:
                     # the target orders in other units: the same grams, rounded up to whole units
                     mark.qty = max(1, math.ceil(mark.qty * old_pack / new_pack))
             session.flush()
