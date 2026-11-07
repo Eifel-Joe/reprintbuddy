@@ -28,7 +28,7 @@ from reprintbuddy.domain import stock as stock_mod
 from reprintbuddy.models import Article, ArticleFilament, ArticlePart, Part
 from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, render
+from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, local_next, render
 from reprintbuddy.web.forms import (
     bounded_int,
     duplicate_redirect,
@@ -626,6 +626,9 @@ async def article_update(request: Request, article_id: int, db: Session = Depend
 def _archive_action(action, flash_key: str):
     async def handler(request: Request, article_id: int, db: Session = Depends(get_db)):
         article = _get_article(db, article_id)
+        # From the list (its forms send `next`) the person lands on the list again, where the row
+        # left or came back; from the detail page (no `next`) on the detail page.
+        after = local_next(await request.form()) or f"/articles/{article_id}"
 
         def work(tx):
             action(tx, article_id)
@@ -636,9 +639,7 @@ def _archive_action(action, flash_key: str):
             offer = getattr(exc, "key", None) == "articles.restore_plate_taken"
             return _detail_page(request, db, article, error=text, status=status, relink_offer=offer)
 
-        return await run_form_action(
-            request, work=work, success_url=f"/articles/{article_id}", flash_key=flash_key, on_error=on_error
-        )
+        return await run_form_action(request, work=work, success_url=after, flash_key=flash_key, on_error=on_error)
 
     return handler
 

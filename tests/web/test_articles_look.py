@@ -339,3 +339,89 @@ def test_name_and_number_are_escaped_in_list_and_tile(ready_client):
     assert f'<a href="/articles/{article}">Template &lt;A&gt;</a><br><span class="muted">A&lt;100</span>' in listed
     assert '<div>Template &lt;A&gt;<br><span class="muted">A&lt;100</span></div>' in listed
     assert "<A>" not in listed and "A<100" not in listed
+
+
+# ---- archive and restore from the list go back to the list ------------------------------------
+
+def row_form(page, article_id, action):
+    """The form of a row action: (hidden fields by name, form_token)."""
+    form = re.search(
+        rf'<form class="icon-form"[^>]*action="/articles/{article_id}/{action}">(.*?)</form>', page, re.S
+    ).group(1)
+    return dict(re.findall(r'<input type="hidden" name="([^"]+)" value="([^"]*)"', form))
+
+
+def post_row(client, page, article_id, action, **extra):
+    fields = row_form(page, article_id, action)
+    data = {"csrf_token": csrf_of(client, "/articles"), "form_token": fields["form_token"], **extra}
+    if "next" in fields:
+        data.setdefault("next", fields["next"])
+    return client.post(f"/articles/{article_id}/{action}", data=data)
+
+
+def test_row_forms_send_the_list_they_belong_to(ready_client):
+    a = add(ready_client, name="Template A")
+    b = add(ready_client, name="Template B", archived_at=utcnow())
+    assert row_form(ready_client.get("/articles").text, a, "archive")["next"] == "/articles"
+    assert row_form(ready_client.get("/articles?view=archived").text, b, "restore")["next"] == "/articles"
+
+
+def test_archive_from_the_row_goes_back_to_the_list_with_the_message(ready_client):
+    a = add(ready_client, name="Template A")
+    add(ready_client, name="Template B")
+    page = ready_client.get("/articles").text
+    response = post_row(ready_client, page, a, "archive")
+    assert response.status_code == 303 and response.headers["location"] == "/articles"
+    with sm_of(ready_client).begin() as s:
+        assert s.get(Article, a).archived_at is not None
+    listed = ready_client.get("/articles").text
+    assert en("articles.flash_archived", name="Template A") in listed
+    assert "Template B" in list_of(listed) and "Template A" not in list_of(listed)
+
+
+def test_restore_from_the_archive_row_goes_to_the_active_list_with_the_message(ready_client):
+    a = add(ready_client, name="Template A", archived_at=utcnow())
+    page = ready_client.get("/articles?view=archived").text
+    response = post_row(ready_client, page, a, "restore")
+    assert response.status_code == 303 and response.headers["location"] == "/articles"
+    with sm_of(ready_client).begin() as s:
+        assert s.get(Article, a).archived_at is None
+    listed = ready_client.get("/articles").text
+    assert en("articles.flash_restored", name="Template A") in listed and "Template A" in list_of(listed)
+
+
+@pytest.mark.parametrize("foreign", ["//evil.example", "https://evil.example/x", "/\\evil.example", ""])
+def test_a_foreign_next_falls_back_to_the_detail_page(ready_client, foreign):
+    a = add(ready_client, name="Template A")
+    page = ready_client.get("/articles").text
+    response = post_row(ready_client, page, a, "archive", next=foreign)
+    assert response.status_code == 303 and response.headers["location"] == f"/articles/{a}"
+
+
+def test_a_used_form_token_from_the_list_goes_back_to_the_list(ready_client):
+    a = add(ready_client, name="Template A")
+    page = ready_client.get("/articles").text
+    post_row(ready_client, page, a, "archive")
+    again = post_row(ready_client, page, a, "archive")  # the same token a second time
+    assert again.status_code == 303 and again.headers["location"] == "/articles"
+
+
+def test_archive_refused_from_the_list_still_shows_the_detail_page_with_the_reason(ready_client):
+    a = add(ready_client, name="Template A", stock=2)
+    with sm_of(ready_client).begin() as s:
+        orders.create_order(s, reference="Order 1001", order_date=date(2026, 1, 15), items=[ArticleItem(a, 1)], actor="user")
+    response = post_row(ready_client, ready_client.get("/articles").text, a, "archive")
+    assert response.status_code == 200 and en("articles.archive_open_orders") in response.text
+    with sm_of(ready_client).begin() as s:
+        assert s.get(Article, a).archived_at is None
+
+
+def test_the_detail_page_forms_stay_on_the_detail_page(ready_client):
+    a = add(ready_client, name="Template A")
+    detail = ready_client.get(f"/articles/{a}").text
+    assert f'action="/articles/{a}/archive"' in detail and 'name="next"' not in detail
+    response = ready_client.post(
+        f"/articles/{a}/archive",
+        data={"csrf_token": csrf_of(ready_client, f"/articles/{a}"), "form_token": re.search(r'name="form_token" value="([^"]+)"', detail).group(1)},
+    )
+    assert response.status_code == 303 and response.headers["location"] == f"/articles/{a}"
