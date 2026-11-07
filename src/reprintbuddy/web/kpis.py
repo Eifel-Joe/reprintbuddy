@@ -50,5 +50,5 @@ def state_cards(
         if n <= 0:
             continue
         key = "status.paused" if state == "paused" else f"status.{kind}.{state}"
-        cards.append(Kpi(icon=_ICONS[state], tone=status.tone(state), value=n, label=t(key)))
+        cards.append(Kpi(icon=_ICONS.get(state, "circle-alert"), tone=status.tone(state), value=n, label=t(key)))
     return cards

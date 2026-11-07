@@ -1,4 +1,4 @@
-/* Reprintbuddy – dark slate theme in the style of Bambuddy (Spec 10.1).
+/* Reprintbuddy – dark grey theme in the style of Bambuddy (Spec 10.1).
    No fonts or files from the internet: Inter is used only if installed. */
 
 :root {
@@ -540,7 +540,7 @@ div.tile:hover, div.tile:focus-within { border-color: var(--accent); }
 .sidebar-collapsed .sidebar .nav-label { display: none; }
 .sidebar-collapsed .sidebar .nav-link { justify-content: center; padding-left: 0; padding-right: 0; }
 .sidebar-collapsed .sidebar .nav-version-row { flex-direction: column; padding-left: 0; padding-right: 0; }
-.sidebar-collapsed .sidebar .nav-version { font-size: 10px; }
+.sidebar-collapsed .sidebar .nav-version { font-size: 10px; overflow-wrap: anywhere; text-align: center; }
 .sidebar-collapsed .sidebar .nav-collapse .icon-collapse { display: none; }
 .sidebar-collapsed .sidebar .nav-collapse .icon-expand { display: inline-block; }
 
@@ -643,7 +643,7 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
   .setting-row { flex-wrap: wrap; }
 }
 
-/* ---- settings page in tabs (Task 6) -------------------------------------- */
+/* ---- settings page in tabs ----------------------------------------------- */
 .settings-grid .card > .muted, .settings-grid .card > .status { margin: 0 0 0.6rem; font-size: 12.5px; }
 .settings-grid .card > .alert, .settings-grid .card > .notice, .settings-grid .card > .result { margin: 0 0 0.75rem; }
 .settings-grid .card .card-sub { margin: 0.9rem 0 0.25rem; font-size: 13.5px; font-weight: 600; }
@@ -663,8 +663,6 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
   .setting-control input:not([type="checkbox"]):not([type="file"]), .setting-control select { width: 100%; }
   .setting-row:has(input.switch) .setting-control { width: auto; flex: 0 0 auto; }
 }
-/* A button is at least 44 px high, so it can be hit with a thumb (assembly page on the phone). */
-.btn { min-height: 2.75rem; }
 
 /* ---- purchased parts of an article (templates/_article_parts.html) ------ */
 
@@ -685,7 +683,6 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 /* the cross shows alone; the word and the part's name stay in the accessible name */
 .part-row .icon-btn > span:not([data-parts-name]) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .parts-list > .btn { display: inline-flex; gap: 0.4rem; align-items: center; justify-content: center; min-height: 2.75rem; }
-.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* ---- info buttons (templates/_ui.html: info, field, check_row) ------------ */
 
@@ -727,3 +724,14 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
   color: var(--text); font-size: 13px; font-weight: 400; line-height: 1.45; text-align: left;
   white-space: normal; overflow-wrap: anywhere;
 }
+
+/* ---- widths and hit areas (final touches) -------------------------------- */
+
+/* Cards run the full width, the fields in them stop at 40rem. Rows that arrange their own fields
+   (settings, parts) keep what they have. */
+.card.section input:not([type="checkbox"]):not([type="file"]), .card.section select, .card.section textarea { max-width: 40rem; }
+.setting-row.stack .setting-control textarea, .setting-row.stack .setting-control input { max-width: none; }
+.card.section .part-row select, .card.section .part-row input { max-width: none; }
+
+/* The list/tiles switch is hit with a thumb too. */
+.layout-toggle a { min-height: 2.75rem; min-width: 2.75rem; }

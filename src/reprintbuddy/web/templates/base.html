@@ -50,7 +50,8 @@
   <div class="nav-version-row">
     <span class="nav-version">v{{ app_version }}</span>
     {% if collapsible %}
-    {% set here = request.url.path ~ ('?' ~ request.url.query if request.url.query else '') %}
+    {# The page's own address; a page that answered a POST has none (that address only answers POST), then the start page. #}
+    {% set here = live_src or '/' %}
     <a class="nav-collapse" id="sidebar-toggle" href="/ui/sidebar?collapsed={{ 0 if sidebar_collapsed else 1 }}&amp;next={{ here|urlencode }}" data-label-collapse="{{ t('nav.collapse') }}" data-label-expand="{{ t('nav.expand') }}" title="{{ t('nav.expand') if sidebar_collapsed else t('nav.collapse') }}" aria-label="{{ t('nav.expand') if sidebar_collapsed else t('nav.collapse') }}">{{ ui.icon('chevrons-left', 'icon-collapse') }}{{ ui.icon('chevrons-right', 'icon-expand') }}</a>
     {% endif %}
   </div>
