@@ -676,6 +676,21 @@ def test_small_targets_are_44_px():
         assert any("min-height: 2.75rem" in rule for rule in rules), selector
 
 
+def test_manual_fields_and_progress_link_are_44_px(bb_client):
+    """Final review 5: the manual form's fields and the article link in progress."""
+    css = CSS.read_text(encoding="utf-8")
+    for selector in (r"\.manual-form select", r'\.manual-form input\[type="number"\]', r"\.progress-name"):
+        rules = re.findall(selector + r" \{[^}]*\}", css)
+        assert any("min-height: 2.75rem" in rule for rule in rules), selector
+    link = re.search(r"\.progress-name \{[^}]*\}", css).group(0)
+    assert "display: inline-flex" in link and "align-items: center" in link
+    article_id = article(bb_client)
+    with sm_of(bb_client).begin() as s:
+        make_dispatch(s, article_id, status="queued", bambuddy_item_id=5)
+    part = region(bb_client.get("/queue").text, "in-progress")
+    assert f'<a class="progress-name" href="/articles/{article_id}">' in part
+
+
 def test_drag_handle_does_not_scroll_the_page():
     css = CSS.read_text(encoding="utf-8")
     rule = re.search(r"\.drag-handle \{[^}]*\}", css).group(0)

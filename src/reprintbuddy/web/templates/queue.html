@@ -127,7 +127,7 @@
       {% set origin_key = 'queue.origin.' ~ d.origin %}
       {% set status_key = 'dispatch.status.' ~ d.status %}
         <tr>
-          <td class="name"><a href="/articles/{{ d.article_id }}">{{ name }}</a></td>
+          <td class="name"><a class="progress-name" href="/articles/{{ d.article_id }}">{{ name }}</a></td>
           <td>{{ t(origin_key) }}</td>
           <td><span class="badge tone-{{ dispatch_tones.get(d.status, 'neutral') }}">{{ t(status_key) }}</span></td>
           <td class="nowrap">{{ d.dispatched_at|local_dt }}</td>

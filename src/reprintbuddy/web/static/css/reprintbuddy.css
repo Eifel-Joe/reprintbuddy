@@ -735,6 +735,11 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .manual-card { margin-bottom: 1.5rem; }
 .manual-form { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 2fr); gap: 0 1rem; align-items: end; }
 .manual-form .btn { grid-column: 1 / -1; justify-self: start; }
+/* 44 px to tap: the general field padding alone gives 43 px. */
+.manual-form select { min-height: 2.75rem; }
+.manual-form input[type="number"] { min-height: 2.75rem; }
+/* The article link of a print in progress: 44 px to tap, like .queue-name. */
+.progress-name { display: inline-flex; align-items: center; min-height: 2.75rem; overflow-wrap: anywhere; }
 
 @media (max-width: 599px) {
   .queue-pos { display: none; }
