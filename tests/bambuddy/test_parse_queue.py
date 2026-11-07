@@ -20,7 +20,8 @@ def test_parse_pending_item():
     assert isinstance(item, QueueItem)
     assert item.status == "pending"
     assert item.manual_start is False
-    assert item.batch_id == request["batch_id"]
+    assert "batch_id" not in request and item.batch_id is None  # a single entry (Spec 7.6)
+    assert item.created_at == datetime(2026, 11, 5, 9, 12, 44)  # `Z` -> naive UTC
     assert item.plate_id == request["plate_id"]
     assert item.library_file_id == request["library_file_id"]
     assert item.target_model == request["target_model"]
@@ -86,6 +87,8 @@ def _q4(**changes):
         _q4(manual_start=None),
         _q4(started_at="gestern"),
         _q4(started_at=1730800000),
+        _q4(created_at="gestern"),
+        _q4(created_at=1730800000),
         _q4(batch_id="12"),
         _q4(plate_id=False),
         _q4(created_by_username=7),
@@ -138,3 +141,15 @@ def test_utc_keeps_fractions_and_none():
 def test_utc_rejects_other_values(value):
     with pytest.raises(BambuddyUnexpected):
         _utc(value)
+
+
+def test_created_at_missing_or_null_is_none():
+    body = load("q4.json")
+    del body["created_at"]
+    assert parse_queue_item(body).created_at is None
+    assert parse_queue_item(dict(load("q4.json"), created_at=None)).created_at is None
+
+
+def test_created_at_with_offset_becomes_utc():
+    item = parse_queue_item(dict(load("q4.json"), created_at="2026-11-05T10:12:44+01:00"))
+    assert item.created_at == datetime(2026, 11, 5, 9, 12, 44)

@@ -66,8 +66,13 @@ class EngineStatus:
     rejected_name: str | None = None  # the article of the refused print (final review 7)
     poll_error: str | None = None
     unresolved: int = 0
-    resolve_error: str | None = None  # Bambuddy refused the search for an unclear print
+    # The search for an unclear print was refused or could not run (Spec 7.6).
+    resolve_error: str | None = None
+    # Bambuddy ids per unclear print that could not be told apart (none was adopted).
     duplicates: list[list[int]] = field(default_factory=list)
+    # Bambuddy id -> article of the ids in `duplicates`: no print holds these ids, so the
+    # article is remembered to keep the warning while it stays paused.
+    duplicate_articles: dict[int, int] = field(default_factory=dict)
     cap_reached: bool = False
     skipped_for_update: bool = False
     bambuddy_queue: list[QueueItem] | None = None
@@ -204,6 +209,7 @@ class Engine:
         for ids in report.duplicates:
             if ids not in status.duplicates:
                 status.duplicates.append(ids)
+        status.duplicate_articles.update(report.duplicate_articles)
 
     async def _poll(self, client: BambuddyClient) -> None:
         """Step 5: ask Bambuddy about everything; a refusal ends only its own part.
@@ -321,20 +327,29 @@ class Engine:
     def _prune_duplicates(self, session: Session) -> None:
         """Drop duplicate groups whose article is no longer paused (final review 2).
 
-        Lifting the pause is the user's answer to the warning. A group without a print
-        of its own (cannot happen: the first id was adopted) is dropped as well.
+        Lifting the pause is the user's answer to the warning. Since v0.3.5 (Spec 7.6) no
+        print holds the ids of a group - none was adopted - so the article comes from
+        `duplicate_articles`, filled by `resolve_pending`. Rejected: finding it through
+        `Dispatch.bambuddy_item_id` (always empty now) or through the journal's
+        `print_duplicates` lines (couples the warning to the journal's form). A group
+        without a known article cannot be held to a pause and is dropped.
         """
+        status = self.status
         kept = []
-        for ids in self.status.duplicates:
-            paused = session.scalar(
-                select(Article.paused)
-                .join(Dispatch, Dispatch.article_id == Article.id)
-                .where(Dispatch.bambuddy_item_id.in_(ids))
-                .limit(1)
+        for ids in status.duplicates:
+            articles = {status.duplicate_articles[i] for i in ids if i in status.duplicate_articles}
+            paused = articles and session.scalar(
+                select(func.count())
+                .select_from(Article)
+                .where(Article.id.in_(articles), Article.paused.is_(True))
             )
             if paused:
                 kept.append(ids)
-        self.status.duplicates = kept
+        status.duplicates = kept
+        held = {i for ids in kept for i in ids}
+        status.duplicate_articles = {
+            i: a for i, a in status.duplicate_articles.items() if i in held
+        }
 
     def _cap_reached(self, session: Session) -> bool:
         """Step 8: the cap holds back a print that could otherwise go now."""

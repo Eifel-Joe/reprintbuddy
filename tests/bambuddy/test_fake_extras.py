@@ -6,8 +6,7 @@ from reprintbuddy.bambuddy.types import EnqueueRequest
 
 
 async def _enqueue(fake: FakeBambuddy):
-    batch = await fake.ensure_batch("Template A", "ref-1", 1)
-    return await fake.enqueue(EnqueueRequest(1, 1, "A1", None, batch, False, None))
+    return await fake.enqueue(EnqueueRequest(1, 1, "A1", None, False, None))
 
 
 async def test_delay_lets_other_tasks_run(fake_bambuddy):

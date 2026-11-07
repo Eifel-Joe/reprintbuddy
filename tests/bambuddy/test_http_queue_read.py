@@ -1,4 +1,6 @@
-"""Reading the open queue and finding entries by batch (B2 Task 5, Decisions 13 and 14)."""
+"""Reading the open queue and the whole queue with its history (B2 Task 5, Decision 13; Spec 7.6)."""
+
+from datetime import datetime
 
 import pytest
 from fixtures import API, client, load
@@ -29,13 +31,25 @@ def _entry(item_id: int, status: str, batch_id: int | None) -> dict:
     return entry
 
 
-async def test_find_items_by_batch_filters(respx_mock):
-    data = load("queue_all.json") + [_entry(901, "completed", 42), _entry(902, "pending", 42)]
+async def test_list_all_items_reads_everything_without_status(respx_mock):
+    """Spec 7.6: the search for an unclear hand-over needs every entry, history included."""
+    data = load("queue_all.json") + [_entry(901, "completed", None), _entry(902, "cancelled", 42)]
     route = respx_mock.get(f"{API}/queue/").respond(200, json=data)
-    items = await client().find_items_by_batch(42)
-    assert [(i.id, i.status) for i in items] == [(901, "completed"), (902, "pending")]
-    assert _query(route) == ""  # no filter: the history is part of the answer
-    assert await client().find_items_by_batch(43) == []
+    items = await client().list_all_items()
+    assert [(i.id, i.status) for i in items] == [(e["id"], e["status"]) for e in data]
+    assert route.call_count == 1
+    assert route.calls.last.request.url.path == "/api/v1/queue/"
+    assert _query(route) == ""  # no `status`: the history is part of the answer
+
+
+async def test_list_all_items_parses_created_at_and_creator(respx_mock):
+    data = load("queue_all.json")
+    respx_mock.get(f"{API}/queue/").respond(200, json=data)
+    items = await client().list_all_items()
+    assert items[0].created_at == datetime.fromisoformat(data[0]["created_at"][:-1])
+    assert items[0].created_at.tzinfo is None
+    assert items[0].created_by == data[0]["created_by_username"]
+    assert all(isinstance(i.created_at, datetime) for i in items)
 
 
 async def test_unknown_status_passed_raw(respx_mock):
@@ -50,7 +64,7 @@ async def test_unknown_status_passed_raw(respx_mock):
 async def test_queue_answer_not_a_list(respx_mock):
     respx_mock.get(f"{API}/queue/").respond(200, json={"items": []})
     with pytest.raises(BambuddyUnexpected):
-        await client().find_items_by_batch(1)
+        await client().list_all_items()
     with pytest.raises(BambuddyUnexpected):
         await client().list_queue()
 
@@ -67,7 +81,7 @@ async def test_json_recursion_is_unexpected(respx_mock):
     deep = "[" * 200_000 + "]" * 200_000
     respx_mock.get(f"{API}/queue/").respond(200, content=deep, headers={"content-type": "application/json"})
     with pytest.raises(BambuddyUnexpected):
-        await client().find_items_by_batch(1)
+        await client().list_all_items()
 
 
 def test_parse_folders_recursion_is_unexpected():

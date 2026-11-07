@@ -53,10 +53,6 @@ class BambuddyRejected(Exception):
         return self.detail if self.status is None else f"{self.status}: {self.detail}"
 
 
-class BatchRefLost(BambuddyRejected):
-    """409 for the batch reference, but no batch with it can be found (Decision 10)."""
-
-
 # After the error classes: `parse` imports them from here.
 from reprintbuddy.bambuddy import parse as _parse  # noqa: E402
 
@@ -102,15 +98,13 @@ class BambuddyClient(Protocol):
         self, file_id: int, plate_id: int
     ) -> list[FilamentRequirement]: ...
 
-    async def ensure_batch(self, name: str, external_ref: str, library_file_id: int) -> int: ...
-
     async def enqueue(self, req: EnqueueRequest) -> QueueItem: ...
 
     async def get_queue_item(self, item_id: int) -> QueueItem | None: ...
 
     async def list_queue(self) -> list[QueueItem]: ...
 
-    async def find_items_by_batch(self, batch_id: int) -> list[QueueItem]: ...
+    async def list_all_items(self) -> list[QueueItem]: ...
 
     async def list_spools(self) -> list[Spool]: ...
 
@@ -289,60 +283,27 @@ class HttpBambuddyClient:
         """The open entries (pending, printing), in Bambuddy's order (by position)."""
         return _parse.parse_queue_items(await self._get("/queue/", {"status": "pending,printing"}))
 
-    async def find_items_by_batch(self, batch_id: int) -> list[QueueItem]:
-        """Every entry of one batch, history included (Decision 14).
+    async def list_all_items(self) -> list[QueueItem]:
+        """Every entry Bambuddy shows the key's owner, history included, in Bambuddy's order.
 
-        Bambuddy has no filter by batch, so the whole list is read and filtered here.
+        `GET /queue/` without `status` (Bambuddy `print_queue.py:740-806`, sorted by position,
+        then id). The search after an unclear hand-over needs the history too: the print may
+        already be finished or cancelled (Spec 7.6).
         """
-        items = _parse.parse_queue_items(await self._get("/queue/"))
-        return [item for item in items if item.batch_id == batch_id]
+        return _parse.parse_queue_items(await self._get("/queue/"))
 
-    # ---- the two write calls (Spec 3.1; `tests/bambuddy/test_write_guard.py` watches) ----
-    async def ensure_batch(self, name: str, external_ref: str, library_file_id: int) -> int:
-        """The id of the batch for `external_ref`, created if need be (Decision 10).
-
-        The batch has no `plates`: it only groups, so Bambuddy owes nothing for it. A 409
-        means the reference exists already (the only 409 of the create route); the search
-        then finds it. Bambuddy's search leaves out batches without entries, so no hit is
-        `BatchRefLost` and the caller takes a new reference. That batch is either one from an
-        earlier try whose answer was lost, still empty because Reprintbuddy enqueues only
-        once it has the id, or one whose entries were all deleted (e.g. by clearing the
-        history). More than one hit cannot be (unique index): `BambuddyUnexpected`. A search
-        without an answer or refused is that error, not `BatchRefLost`. The create is sent
-        once, never repeated here.
-        """
-        body = {
-            "name": name,
-            "library_file_id": library_file_id,
-            "external_source": _parse.EXTERNAL_SOURCE,
-            "external_ref": external_ref,
-        }
-        try:
-            return _parse.parse_batch_id(await self._post("/queue/batches", body), external_ref)
-        except BambuddyRejected as exc:
-            if exc.status != 409:
-                raise
-            conflict = exc
-        found = await self._get(
-            "/queue/batches",
-            {"external_source": _parse.EXTERNAL_SOURCE, "external_ref": external_ref},
-        )
-        hits = _parse.parse_batch_hits(found, external_ref)
-        if not hits:
-            raise BatchRefLost(conflict.detail, status=409) from conflict
-        if len(hits) > 1:
-            raise BambuddyUnexpected(f"GET /queue/batches: {len(hits)} batches for one reference")
-        return hits[0]
-
+    # ---- the one write call (Spec 3.1; `tests/bambuddy/test_write_guard.py` watches) ----
     async def enqueue(self, req: EnqueueRequest) -> QueueItem:
-        """One queue entry, sent once (Decision 11, Review Focus 1).
+        """One single queue entry, sent once (Decision 11, Review Focus 1; Spec 7.6).
 
-        The body holds exactly the file, the plate, one target (model or printer), the
-        batch and `manual_start: false`; `insert_at_top` only when set, `insert_position`
-        only when given. No print options: Bambuddy's defaults apply. A request with both
-        targets, none, an empty model or a position below 1 is a `ValueError` before any
-        network call. A timeout is `BambuddyUnavailable` with an unknown outcome; the
-        caller looks for the entry by batch instead of sending it again.
+        The body holds exactly the file, the plate, one target (model or printer) and
+        `manual_start: false`; `insert_at_top` only when set, `insert_position` only when
+        given. No `batch_id` and no `quantity`: Bambuddy then makes exactly one entry outside
+        any batch (`print_queue.py:1347-1408`). No print options: Bambuddy's defaults apply.
+        A request with both targets, none, an empty model or a position below 1 is a
+        `ValueError` before any network call. A timeout is `BambuddyUnavailable` with an
+        unknown outcome; the caller looks for the entry (`list_all_items`) instead of
+        sending it again.
         """
         if req.target_model == "":
             raise ValueError("target_model is empty")
@@ -355,7 +316,6 @@ class HttpBambuddyClient:
             body["target_model"] = req.target_model
         else:
             body["printer_id"] = req.printer_id
-        body["batch_id"] = req.batch_id
         body["manual_start"] = False
         if req.insert_at_top:
             body["insert_at_top"] = True
@@ -367,7 +327,7 @@ class HttpBambuddyClient:
     async def ws_token(self) -> str:
         """A token for Bambuddy's live channel, valid 60 minutes (B2 Task 9).
 
-        The third POST and no write: it changes nothing in the queue, the printers or the
+        The second POST and no write: it changes nothing in the queue, the printers or the
         library. It needs the group right `websocket:connect`; without it Bambuddy answers
         403 (`BambuddyRejected`). An answer without a non-empty text `token` is
         `BambuddyUnexpected`. The token is never part of an error message.

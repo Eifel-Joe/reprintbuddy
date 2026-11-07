@@ -317,6 +317,9 @@ def engine_env(db, fake_bambuddy):
     env = EngineEnv(db, fake_bambuddy)
     with db() as s:
         st.set_setting(s, "automation", True)
+        # The owner of the key, as the connection check stores it: the search for an
+        # unclear hand-over looks for entries of this user (Spec 7.6).
+        st.set_setting(s, "bambuddy_username", fake_bambuddy.username)
     with db.begin() as s:
         env.article_id = make_article(
             s,

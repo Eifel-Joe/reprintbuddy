@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+from collections.abc import Callable
 from datetime import UTC, datetime
 
-from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable, BatchRefLost
+from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable
 from reprintbuddy.bambuddy.types import (
     EnqueueRequest,
     FilamentRequirement,
@@ -19,14 +20,19 @@ from reprintbuddy.bambuddy.types import (
     SpoolMode,
 )
 
-# The two methods with an effect: `fail_next(..., after_effect=True)` lets the effect happen
-# first ("the answer got lost"). Every other method has no effect, so it fails at once.
-_EFFECT_METHODS = frozenset({"ensure_batch", "enqueue"})
+# The one method with an effect (Spec 3.1): `fail_next(..., after_effect=True)` lets the
+# effect happen first ("the answer got lost"). Every other method has no effect, so it fails
+# at once.
+_EFFECT_METHODS = frozenset({"enqueue"})
 _FAILABLE_METHODS = _EFFECT_METHODS | {
     "list_folders", "list_files", "get_file", "list_plates", "plate_thumbnail", "file_thumbnail",
     "filament_requirements", "list_printers", "spool_mode", "list_spools",
-    "get_queue_item", "list_queue", "find_items_by_batch",
+    "get_queue_item", "list_queue", "list_all_items",
 }
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class FakeBambuddy:
@@ -35,7 +41,10 @@ class FakeBambuddy:
         self.spoolman_enabled = False
         self.spoolman_reachable = True  # False + spoolman_enabled: list_spools raises
         self.delay: float = 0.0  # queue calls wait first, so other tasks can interleave
-        self.username = "reprintbuddy"
+        self.username = "reprintbuddy"  # Bambuddy's `created_by_username` of every own entry
+        # Bambuddy's clock: `created_at` of new entries (naive UTC). Tests set it to place an
+        # entry in time against `enqueue_sent_at` (Spec 7.6).
+        self.now: Callable[[], datetime] = _utcnow
         self.enqueued: list[EnqueueRequest] = []
         self.calls: list[str] = []
         self._folders: list[LibraryFolder] = []
@@ -46,8 +55,6 @@ class FakeBambuddy:
         self._next_folder = 1
         self._next_file = 1
         self._items: dict[int, QueueItem] = {}
-        self._batches: dict[str, int] = {}
-        self._next_batch = 1
         self._next_item = 1
         self._failures: dict[str, tuple[Exception, bool]] = {}
         self._spools: dict[int, Spool] = {}
@@ -99,7 +106,7 @@ class FakeBambuddy:
         self.calls.append(name)
         if self.unavailable:
             raise BambuddyUnavailable("fake Bambuddy is switched off")
-        if name not in _EFFECT_METHODS:  # the two writing methods handle their failure themselves
+        if name not in _EFFECT_METHODS:  # the writing method handles its failure itself
             failure = self._failures.pop(name, None)
             if failure:
                 raise failure[0]
@@ -202,8 +209,8 @@ class FakeBambuddy:
     def fail_next(self, method: str, exc: Exception, *, after_effect: bool = False) -> None:
         """The next call of `method` raises `exc`; with `after_effect` the effect happens first.
 
-        `after_effect` ("the answer got lost") only matters for the two writing methods; a
-        read has no effect, so it raises at once either way.
+        `after_effect` ("the answer got lost") only matters for the writing method (`enqueue`);
+        a read has no effect, so it raises at once either way.
         """
         if method not in _FAILABLE_METHODS:
             raise ValueError(f"cannot inject a failure into {method!r}")
@@ -224,7 +231,7 @@ class FakeBambuddy:
             "target_model": None, "label": "", "created_by": None, "library_file_id": None,
             "plate_id": None, "printer_name": None, "manual_start": False,
             "waiting_reason": None, "started_at": None, "completed_at": None,
-            "error_message": None,
+            "error_message": None, "created_at": self.now(),
         }
         values.update(fields)
         item = QueueItem(id=self._next_item, **values)  # type: ignore[arg-type]
@@ -233,11 +240,33 @@ class FakeBambuddy:
         return item
 
     def add_foreign_item(
-        self, label: str = "Other print", *, status: str = "pending", created_by: str = "admin"
+        self,
+        label: str = "Other print",
+        *,
+        status: str = "pending",
+        created_by: str = "admin",
+        library_file_id: int | None = None,
+        plate_id: int | None = None,
+        created_at: datetime | None = None,
+        undated: bool = False,
     ) -> QueueItem:
-        """An entry somebody else made in Bambuddy: no batch, at the end of the queue."""
+        """An entry made in Bambuddy without `enqueue`, at the end of the queue.
+
+        By default somebody else's ("admin"). With `created_by=fake.username`, a file, a plate
+        and a time it stands for an own entry Reprintbuddy does not know (Spec 7.6): e.g. one
+        from an earlier lost answer. `created_at` defaults to the fake's clock; `undated`
+        leaves it empty, as an answer without the field would.
+        """
         position = self._highest() + 1 if status == "pending" else 0  # Bambuddy defaults to 0
-        return self._new_item(label=label, status=status, created_by=created_by, position=position)
+        return self._new_item(
+            label=label,
+            status=status,
+            created_by=created_by,
+            position=position,
+            library_file_id=library_file_id,
+            plate_id=plate_id,
+            created_at=None if undated else (created_at or self.now()),
+        )
 
     def set_status(self, item_id: int, status: str, *, printer_id: int | None = None) -> None:
         item = self._items[item_id]
@@ -279,27 +308,6 @@ class FakeBambuddy:
             raise failure[0]
         return failure
 
-    async def ensure_batch(self, name: str, external_ref: str, library_file_id: int) -> int:
-        failure = await self._write_call("ensure_batch")
-        if not name.strip():
-            raise BambuddyRejected("Batch name is required", status=400)
-        if library_file_id not in self._files:
-            raise BambuddyRejected("Library file not found", status=404)
-        if external_ref in self._batches:
-            batch_id = self._batches[external_ref]
-            if not any(i.batch_id == batch_id for i in self._items.values()):
-                # Bambuddy answers 409, and its batch list leaves out empty batches
-                raise BatchRefLost(
-                    "A batch for this external_source and external_ref already exists", status=409
-                )
-        else:
-            batch_id = self._next_batch
-            self._next_batch += 1
-            self._batches[external_ref] = batch_id
-        if failure:
-            raise failure[0]
-        return batch_id
-
     async def enqueue(self, req: EnqueueRequest) -> QueueItem:
         # like the HTTP client: refuse before any (simulated) network call
         if req.target_model == "":
@@ -312,8 +320,6 @@ class FakeBambuddy:
         file = self._files.get(req.library_file_id)
         if file is None:
             raise BambuddyRejected("Library file not found", status=404)
-        if req.batch_id not in self._batches.values():
-            raise BambuddyRejected("Batch not found", status=404)
         printer = None
         if req.printer_id is not None:
             printer = next((p for p in self._printers if p.id == req.printer_id), None)
@@ -334,7 +340,6 @@ class FakeBambuddy:
             if other.position is not None and other.position >= position:
                 self._put(dataclasses.replace(other, position=other.position + 1))
         item = self._new_item(
-            batch_id=req.batch_id,
             position=position,
             printer_id=req.printer_id,
             target_model=req.target_model,
@@ -364,11 +369,10 @@ class FakeBambuddy:
 
         return await self._queue_read("list_queue", open_items)
 
-    async def find_items_by_batch(self, batch_id: int) -> list[QueueItem]:
-        return await self._queue_read(
-            "find_items_by_batch",
-            lambda: sorted(
-                (i for i in self._items.values() if i.batch_id == batch_id),
-                key=lambda i: (i.position is None, i.position or 0, i.id),
-            ),
-        )
+    async def list_all_items(self) -> list[QueueItem]:
+        """Every entry, history included, sorted as Bambuddy does: by (position, id)."""
+
+        def every_item() -> list[QueueItem]:
+            return sorted(self._items.values(), key=lambda i: (i.position or 0, i.id))
+
+        return await self._queue_read("list_all_items", every_item)

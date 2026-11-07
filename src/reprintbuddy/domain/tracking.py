@@ -36,7 +36,8 @@ STATUS_MAP: dict[str, Outcome] = {
 }
 
 # Prints the poll asks Bambuddy about. `sending`/`unclear` are settled by
-# `dispatch.resolve_pending` (decision 5), which looks them up by batch.
+# `dispatch.resolve_pending` (decision 5), which looks for their entry among Bambuddy's
+# entries by own user, file, plate and time (Spec 7.6).
 POLLED_STATES = ("queued", "printing")
 FAILURES_TO_PAUSE = 2
 

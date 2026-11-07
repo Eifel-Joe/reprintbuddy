@@ -13,7 +13,6 @@ from sqlalchemy import select
 from factories import make_article, make_dispatch, make_entry
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable
-from reprintbuddy.bambuddy.types import EnqueueRequest
 from reprintbuddy.domain import workqueue as wq
 from reprintbuddy.domain.engine import (
     Engine,
@@ -221,7 +220,6 @@ async def test_cap_lowered_recalls_nothing(engine_env):
 
     assert result == TickResult(None, 1, 0)
     assert "enqueue" not in env.fake.calls
-    assert "ensure_batch" not in env.fake.calls
     assert statuses(env.sm) == ["queued"] * 3
     assert len(await env.fake.list_queue()) == 3
     assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
@@ -274,14 +272,15 @@ async def test_tick_skipped_during_update(engine_env):
 async def test_update_between_reservation_and_send(engine_env, monkeypatch):
     """Final review 1: the update's backup may already be taken; nothing may be sent now."""
     env = engine_env
-    ensure_batch = env.fake.ensure_batch
+    setting(env.sm, "insert_next", True)  # Bambuddy is asked (list_queue) before the send
+    list_queue = env.fake.list_queue
 
-    async def batch_then_update(*args):
-        batch_id = await ensure_batch(*args)
+    async def read_then_update():
+        items = await list_queue()
         env.updating = True
-        return batch_id
+        return items
 
-    monkeypatch.setattr(env.fake, "ensure_batch", batch_then_update)
+    monkeypatch.setattr(env.fake, "list_queue", read_then_update)
 
     result = await env.engine.tick(poll=False)
 
@@ -309,7 +308,7 @@ async def test_update_between_two_prints_of_one_tick(engine_env, monkeypatch):
     result = await env.engine.tick(poll=False)
 
     assert result == TickResult(None, 1, 1)
-    assert env.fake.calls.count("ensure_batch") == 1
+    assert env.fake.calls.count("enqueue") == 1
     assert len(env.fake.enqueued) == 1
     assert statuses(env.sm) == ["queued"]  # the second print was never reserved
     assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
@@ -352,13 +351,13 @@ async def test_unclear_blocks_new_dispatch(engine_env):
     assert env.engine.status.reachable is False
     with env.sm.begin() as s:
         make_entry(s, env.article_id, 1, origin="manual")
-    env.fake.fail_next("find_items_by_batch", BambuddyUnavailable("timeout"))
+    env.fake.fail_next("list_all_items", BambuddyUnavailable("timeout"))
     env.fake.calls.clear()
 
     result = await env.engine.tick(poll=False)
 
     assert result == TickResult(None, 0, 0)
-    assert "ensure_batch" not in env.fake.calls and "enqueue" not in env.fake.calls
+    assert "enqueue" not in env.fake.calls
     assert statuses(env.sm) == ["unclear"]
     assert queue_of(env.sm) == [(env.article_id, 1, "manual")]
     assert env.engine.status.unresolved == 1
@@ -372,7 +371,7 @@ async def test_refused_search_becomes_a_warning(engine_env):
     env = engine_env
     env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
     await env.engine.tick(poll=False)
-    env.fake.fail_next("find_items_by_batch", BambuddyRejected("Forbidden", status=403))
+    env.fake.fail_next("list_all_items", BambuddyRejected("Forbidden", status=403))
 
     await env.engine.tick(poll=False)
 
@@ -411,7 +410,7 @@ async def test_rejected_waits_for_regular_tick(engine_env):
     env.fake.calls.clear()
     result = await env.engine.tick(poll=False)
     assert result == TickResult(None, 0, 0)
-    assert "enqueue" not in env.fake.calls and "ensure_batch" not in env.fake.calls
+    assert "enqueue" not in env.fake.calls
 
     result = await env.engine.tick(poll=True)
     assert result == TickResult(None, 0, 1)
@@ -466,7 +465,7 @@ async def test_poll_rejection_blocks_dispatch(engine_env):
     result = await env.engine.tick(poll=True)
 
     assert result == TickResult(None, 0, 0)
-    assert "enqueue" not in env.fake.calls and "ensure_batch" not in env.fake.calls
+    assert "enqueue" not in env.fake.calls
     assert env.engine.status.poll_error == "403: Forbidden"
     assert EngineWarning("warning.poll_rejected", {"message": "403: Forbidden"}) in warnings(
         env.sm, env.engine.status
@@ -501,7 +500,7 @@ async def test_poll_refusal_survives_cut_short_poll(engine_env):
 
     assert env.engine.status.reachable is True
     assert result == TickResult(None, 0, 0)
-    assert "enqueue" not in env.fake.calls and "ensure_batch" not in env.fake.calls
+    assert "enqueue" not in env.fake.calls
     assert env.engine.status.poll_error == "403: Forbidden"
 
     result = await env.engine.tick(poll=True)
@@ -522,44 +521,102 @@ async def test_refusal_in_a_cut_short_poll_is_kept(engine_env):
     assert env.engine.status.poll_error == "403: Forbidden"
 
 
-async def test_duplicates_kept_after_settling(engine_env):
+async def ambiguous_hand_over(env, file=1):
+    """A print whose answer got lost, plus a second unknown own entry of the same file and
+    plate made after the send: the next tick cannot tell them apart (Spec 7.6)."""
+    env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
+    await env.engine.tick(poll=False)
+    (real,) = [i for i in await env.fake.list_all_items() if i.library_file_id == file]
+    other = env.fake.add_foreign_item(
+        "Copy", created_by=env.fake.username, library_file_id=file, plate_id=1
+    )
+    return [real.id, other.id]
+
+
+async def test_lost_answer_is_found_by_the_next_tick(engine_env):
+    """Spec 7.6: the answer to `enqueue` gets lost; the next tick finds the entry by user,
+    file, plate and time, adopts it, and sends nothing a second time."""
+    env = engine_env
+    env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
+    await env.engine.tick(poll=False)
+    assert statuses(env.sm) == ["unclear"]
+    (entry,) = await env.fake.list_all_items()
+    env.fake.calls.clear()
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 0, 0)
+    assert env.fake.calls.count("enqueue") == 0
+    assert len(env.fake.enqueued) == 1
+    assert "list_all_items" in env.fake.calls
+    assert statuses(env.sm) == ["queued"]
+    assert item_ids(env.sm) == [entry.id]
+    assert env.engine.status.unresolved == 0
+    assert env.engine.status.duplicates == []
+    assert len(await env.fake.list_all_items()) == 1
+
+
+async def test_nothing_new_while_the_own_user_is_unknown(engine_env):
+    """Without its Bambuddy user the search decides nothing: the print stays unclear and
+    nothing new is handed over (Spec 7.6: until the hand-over is clear, nothing more)."""
+    from reprintbuddy.models import Setting
+
     env = engine_env
     env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
     await env.engine.tick(poll=False)
     with env.sm() as s:
-        batch_id = s.get(Dispatch, 1).bambuddy_batch_id
-    (first,) = await env.fake.find_items_by_batch(batch_id)
-    second = await env.fake.enqueue(EnqueueRequest(1, 1, "A1", None, batch_id, False, None))
+        s.merge(Setting(key="bambuddy_username", value="null"))
+        s.commit()
+    with env.sm.begin() as s:
+        make_entry(s, env.article_id, 1, origin="manual")
+    env.fake.calls.clear()
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 0, 0)
+    assert "enqueue" not in env.fake.calls
+    assert statuses(env.sm) == ["unclear"]
+    assert env.engine.status.unresolved == 1
+    assert env.engine.status.reachable is True
+    found = keys(env.sm, env.engine.status)
+    assert "warning.unclear_prints" in found and "warning.resolve_rejected" in found
+
+
+async def test_duplicates_kept_after_settling(engine_env):
+    env = engine_env
+    ids = await ambiguous_hand_over(env)
 
     await env.engine.tick(poll=False)
-    assert env.engine.status.duplicates == [[first.id, second.id]]
+    assert env.engine.status.duplicates == [ids]
+    assert statuses(env.sm) == ["missing"]
     await env.engine.tick(poll=False)
 
-    assert env.engine.status.duplicates == [[first.id, second.id]]
-    assert EngineWarning("warning.duplicates", {"ids": [[first.id, second.id]]}) in warnings(
+    assert env.engine.status.duplicates == [ids]
+    assert EngineWarning("warning.duplicates", {"ids": [ids]}) in warnings(
         env.sm, env.engine.status
     )
+    assert len(env.fake.enqueued) == 1
 
 
 async def test_duplicates_warning_ends_when_pause_is_lifted(engine_env):
-    """Final review 2: the duplicate warning does not stay once the pause is lifted."""
+    """Final review 2: the duplicate warning does not stay once the pause is lifted.
+
+    No print holds these ids (none was adopted), so the group remembers its article.
+    """
     from reprintbuddy.domain.pauses import lift_pause
 
     env = engine_env
-    env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
-    await env.engine.tick(poll=False)
-    with env.sm() as s:
-        batch_id = s.get(Dispatch, 1).bambuddy_batch_id
-    (first,) = await env.fake.find_items_by_batch(batch_id)
-    second = await env.fake.enqueue(EnqueueRequest(1, 1, "A1", None, batch_id, False, None))
+    ids = await ambiguous_hand_over(env)
     await env.engine.tick(poll=False)
     assert "warning.duplicates" in keys(env.sm, env.engine.status)
+    assert env.engine.status.duplicate_articles == {i: env.article_id for i in ids}
 
     with env.sm.begin() as s:
         lift_pause(s, env.article_id, "user")
     await env.engine.tick(poll=False)
 
     assert env.engine.status.duplicates == []
+    assert env.engine.status.duplicate_articles == {}
     assert "warning.duplicates" not in keys(env.sm, env.engine.status)
 
 
@@ -567,21 +624,26 @@ async def test_duplicates_of_two_ticks_are_both_kept(engine_env):
     """A later report does not drop a group whose article is still paused."""
     env = engine_env
     env.engine.status.duplicates = [[90, 91]]
+    env.engine.status.duplicate_articles = {90: env.article_id, 91: env.article_id}
     with env.sm.begin() as s:
-        make_dispatch(s, env.article_id, status="queued", bambuddy_item_id=90)
         pause_article(s, env.article_id, "unclear", "auto")
     other = second_article(env.sm)
-    env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
+    ids = await ambiguous_hand_over(env, file=2)
+
     await env.engine.tick(poll=False)
+
+    assert env.engine.status.duplicates == [[90, 91], ids]
     with env.sm() as s:
-        row = s.scalars(select(Dispatch).where(Dispatch.article_id == other)).one()
-        batch_id = row.bambuddy_batch_id
-    (first,) = await env.fake.find_items_by_batch(batch_id)
-    second = await env.fake.enqueue(EnqueueRequest(2, 1, "A1", None, batch_id, False, None))
+        assert s.get(Article, other).pause_reason == "unclear"
+
+
+async def test_duplicate_group_without_known_article_is_dropped(engine_env):
+    env = engine_env
+    env.engine.status.duplicates = [[90, 91]]
 
     await env.engine.tick(poll=False)
 
-    assert env.engine.status.duplicates == [[90, 91], [first.id, second.id]]
+    assert env.engine.status.duplicates == []
 
 
 async def test_poll_notes_whether_the_queue_list_was_read(engine_env):

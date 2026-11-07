@@ -21,7 +21,7 @@ def _bambuddy(seen: list[str]):
         seen.append(f"{request.method} {path}")
         if path.endswith("/auth/me"):
             return httpx.Response(200, json=load("auth_me.json"))
-        return httpx.Response(200, json=[])  # queue, printers, batches: nothing in them
+        return httpx.Response(200, json=[])  # queue, printers: nothing in them
 
     return answer
 

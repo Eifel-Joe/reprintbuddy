@@ -294,7 +294,7 @@ def test_finished_print_is_left_alone(db, status):
 def test_confirm_dispatch_state_by_classify(db, raw, state):
     with db.begin() as s:
         a = article(s).id
-        d = make_dispatch(s, a, status="unclear", bambuddy_batch_id=3).id
+        d = make_dispatch(s, a, status="unclear").id
         dispatch.confirm_dispatch(s, d, item(raw, 11))
         row = s.get(Dispatch, d)
         assert (row.status, row.last_status, row.bambuddy_item_id) == (state, raw, 11)
@@ -303,7 +303,7 @@ def test_confirm_dispatch_state_by_classify(db, raw, state):
 def test_confirm_dispatch_already_completed(db):
     with db.begin() as s:
         a = article(s).id
-        d = make_dispatch(s, a, status="unclear", bambuddy_batch_id=3).id
+        d = make_dispatch(s, a, status="unclear").id
         dispatch.confirm_dispatch(s, d, item("completed", 11))
         assert s.get(Dispatch, d).status == "completed"
         assert s.get(Article, a).provisional == 1
@@ -316,7 +316,7 @@ def test_confirm_dispatch_already_completed(db):
 def test_confirm_dispatch_unknown_stays_queued(db):
     with db.begin() as s:
         a = article(s).id
-        d = make_dispatch(s, a, status="unclear", bambuddy_batch_id=3).id
+        d = make_dispatch(s, a, status="unclear").id
         dispatch.confirm_dispatch(s, d, item("paused", 11))
         row = s.get(Dispatch, d)
         assert (row.status, row.last_status) == ("queued", "paused")
