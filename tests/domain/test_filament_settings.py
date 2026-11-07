@@ -1,6 +1,6 @@
 import pytest
 
-from factories import make_sort
+from factories import make_legacy_sort, make_sort
 from reprintbuddy.domain import filament
 from reprintbuddy.domain.errors import NotFoundError, ValidationError
 from reprintbuddy.domain.filament import FilamentSettingsInput
@@ -25,6 +25,15 @@ def test_unknown_sort(db):
         with pytest.raises(NotFoundError) as e:
             filament.save_settings(s, 99, FilamentSettingsInput())
         assert e.value.key == "filament.sort_not_found"
+
+
+def test_a_legacy_sort_takes_no_settings(db):  # it waits for the conversion and shows nowhere
+    with db.begin() as s:
+        old = make_legacy_sort(s).id
+        with pytest.raises(NotFoundError) as e:
+            filament.save_settings(s, old, FilamentSettingsInput())
+        assert e.value.key == "filament.sort_not_found"
+        assert filament.get_settings(s, old) is None
 
 
 @pytest.mark.parametrize(

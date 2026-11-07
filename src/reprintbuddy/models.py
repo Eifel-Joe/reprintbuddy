@@ -126,7 +126,25 @@ class ArticleFilament(Base):
     grams: Mapped[float] = mapped_column(Float)
     material: Mapped[str | None] = mapped_column(String, default=None)
     color_hex: Mapped[str | None] = mapped_column(String, default=None)
-    spool_filament_id: Mapped[int | None] = mapped_column(default=None)  # B6
+
+
+class ArticleFilamentSort(Base):
+    """A spool sort ticked for one slot of an article (the filament group, Spec 5.2, 9.1); at most one
+    per slot `reordered`. Keyed by article and slot, because a new print file replaces the slot rows."""
+
+    __tablename__ = "article_filament_sorts"
+    __table_args__ = (
+        Index(
+            "uq_article_filament_sorts_reordered", "article_id", "slot", unique=True,
+            sqlite_where=text("reordered = 1"),
+        ),
+        Index("ix_article_filament_sorts_sort", "sort_id"),
+    )
+
+    article_id: Mapped[int] = mapped_column(ForeignKey("articles.id"), primary_key=True)
+    slot: Mapped[int] = mapped_column(primary_key=True)
+    sort_id: Mapped[int] = mapped_column(ForeignKey("filament_sorts.id"), primary_key=True)
+    reordered: Mapped[bool] = _flag()
 
 
 class Part(Base):
@@ -342,12 +360,15 @@ class Inspection(Base):
 
 
 class FilamentSort(Base):
-    """A kind of filament as Bambuddy's spools show it; `id` is what `spool_filament_id` means."""
+    """A spool sort: brand, material, subtype and colour value of Bambuddy's spools (Spec 4, 9.1);
+    `id` is what `spool_filament_id` means. `legacy`: a brandless sort of 0006, waiting for
+    `filament.convert_legacy`; it takes no spools and shows nowhere."""
 
     __tablename__ = "filament_sorts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     sort_key: Mapped[str] = mapped_column(String, unique=True)
+    legacy: Mapped[bool] = _flag()
     brand: Mapped[str | None] = mapped_column(String, default=None)
     material: Mapped[str] = mapped_column(String)
     subtype: Mapped[str | None] = mapped_column(String, default=None)

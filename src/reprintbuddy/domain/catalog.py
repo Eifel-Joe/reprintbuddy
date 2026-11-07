@@ -20,6 +20,7 @@ from reprintbuddy.domain.stock import MAX_QTY, Actor, count_part, write_journal
 from reprintbuddy.models import (
     Article,
     ArticleFilament,
+    ArticleFilamentSort,
     ArticlePart,
     Dispatch,
     Order,
@@ -754,17 +755,7 @@ def restore_article_with_plate(
     article.file_name = file.filename
     article.file_fingerprint = file.fingerprint
     article.thumbnail = thumbnail
-    _delete_rows(session, select(ArticleFilament).where(ArticleFilament.article_id == article_id))
-    for requirement in requirements:
-        session.add(
-            ArticleFilament(
-                article_id=article_id,
-                slot=requirement.slot,
-                grams=requirement.grams,
-                material=requirement.material,
-                color_hex=requirement.color_hex,
-            )
-        )
+    _take_over_filaments(session, article_id, requirements, keep_mapping=False)  # another file: no group stays
     article.archived_at = None
     session.flush()
     return article
@@ -777,20 +768,25 @@ def _take_over_filaments(
     *,
     keep_mapping: bool,
 ) -> None:
-    """Replace the filament rows. With `keep_mapping` a slot keeps its `spool_filament_id`
-    when material and colour stay the same (plan B4 decision 10, used by B6)."""
+    """Replace the filament rows. With `keep_mapping` a slot keeps its filament group (the ticked
+    spool sorts, Spec 5.2) when material and colour stay the same (plan B4 decision 10); every other
+    group of the article is dropped, so that a slot never counts spool sorts chosen for another colour."""
     old = {
-        row.slot: (row.material, row.color_hex, row.spool_filament_id)
+        row.slot: (row.material, row.color_hex)
         for row in session.scalars(
             select(ArticleFilament).where(ArticleFilament.article_id == article_id)
         )
     }
+    new = {r.slot: (r.material, r.color_hex) for r in requirements}
+    keep = {slot for slot, value in new.items() if keep_mapping and old.get(slot) == value}
+    _delete_rows(
+        session,
+        select(ArticleFilamentSort).where(
+            ArticleFilamentSort.article_id == article_id, ArticleFilamentSort.slot.not_in(keep)
+        ),
+    )
     _delete_rows(session, select(ArticleFilament).where(ArticleFilament.article_id == article_id))
     for requirement in requirements:
-        spool = None
-        previous = old.get(requirement.slot)
-        if keep_mapping and previous and previous[:2] == (requirement.material, requirement.color_hex):
-            spool = previous[2]
         session.add(
             ArticleFilament(
                 article_id=article_id,
@@ -798,7 +794,6 @@ def _take_over_filaments(
                 grams=requirement.grams,
                 material=requirement.material,
                 color_hex=requirement.color_hex,
-                spool_filament_id=spool,
             )
         )
 

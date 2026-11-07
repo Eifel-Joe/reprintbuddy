@@ -8,10 +8,8 @@ import pytest
 from sqlalchemy import text
 
 from reprintbuddy import db as dbmod
-from reprintbuddy.bambuddy.fake import FakeBambuddy
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
-from reprintbuddy.domain import filament
-from reprintbuddy.models import FilamentSort, JournalEntry
+from reprintbuddy.models import JournalEntry
 
 
 @pytest.fixture
@@ -19,7 +17,8 @@ def old_db(tmp_path):
     """A database at revision 0005 (sorts with brands in the key) and the full scripts for the step to 0006."""
     scripts = tmp_path / "migrations"
     shutil.copytree(Path(dbmod.__file__).parent / "migrations", scripts, ignore=shutil.ignore_patterns("__pycache__"))
-    (scripts / "versions" / next((scripts / "versions").glob("0006*")).name).unlink()
+    for later in [*(scripts / "versions").glob("0006*"), *(scripts / "versions").glob("0007*")]:
+        later.unlink()
     engine = make_engine(tmp_path / "old.db")
     upgrade(engine, script_location=scripts)
     return engine
@@ -67,7 +66,7 @@ def test_two_brands_of_one_colour_become_one_sort_and_everything_follows(old_db)
                           " VALUES ('2026-11-01', 7, 2, 500, 1000)"))
         conn.execute(text("INSERT INTO reorder_marks (item_type, item_id, qty) VALUES ('filament', 2, 1)"))
         conn.execute(text("INSERT INTO reorder_marks (item_type, item_id, qty) VALUES ('part', 2, 1)"))  # a part: stays
-    upgrade(old_db)
+    upgrade(old_db, revision="0006")
     assert scalar(old_db, "select version_num from alembic_version") == "0006"
     assert rows(old_db, "select id, sort_key, brand, label, color_name, color_hex from filament_sorts order by id") == [
         (1, "petg||#000000", None, "PETG Black", "Black", "#000000"),
@@ -85,7 +84,7 @@ def test_settings_of_the_lowest_id_stay_the_others_are_dropped_and_journalled(ol
         add_sort(conn, 3, "Brand Three", "PLA", "#080808")
         add_settings(conn, 1, lead_time_days=5)
         add_settings(conn, 2, lead_time_days=9, supplier="Other Supplier")
-    upgrade(old_db)
+    upgrade(old_db, revision="0006")
     assert rows(old_db, "select spool_filament_id, lead_time_days from filament_settings") == [(1, 5)]
     session = make_sessionmaker(old_db)()
     with session:
@@ -104,7 +103,7 @@ def test_the_next_merged_sort_brings_its_settings_when_the_lowest_has_none(old_d
         add_sort(conn, 6, "Brand Three", "PLA", "#101010")
         add_settings(conn, 5, lead_time_days=7)
         add_settings(conn, 6, lead_time_days=8)
-    upgrade(old_db)
+    upgrade(old_db, revision="0006")
     assert rows(old_db, "select spool_filament_id, lead_time_days from filament_settings") == [(4, 7)]
     session = make_sessionmaker(old_db)()
     with session:
@@ -120,7 +119,7 @@ def test_sorts_that_stay_apart_are_untouched_but_lose_the_brand(old_db):
         add_sort(conn, 4, "Brand One", "PETG", "#000000")  # other material
         add_sort(conn, 5, "Brand One", "PLA", None, name="Natural")  # no colour
         add_settings(conn, 2)
-    upgrade(old_db)
+    upgrade(old_db, revision="0006")
     assert rows(old_db, "select id, sort_key, label from filament_sorts order by id") == [
         (1, "pla||#000000", "PLA Black"),
         (2, "pla||#333333", "PLA Anthracite"),
@@ -137,7 +136,7 @@ def test_chain_of_colours_is_not_followed(old_db):
         add_sort(conn, 1, "A", "PLA", "#000000")
         add_sort(conn, 2, "B", "PLA", "#101010")  # 4 from the first
         add_sort(conn, 3, "C", "PLA", "#202020")  # 4 from the second, 8 from the first
-    upgrade(old_db)
+    upgrade(old_db, revision="0006")
     assert [r[0] for r in rows(old_db, "select id from filament_sorts order by id")] == [1, 3]
 
 
@@ -145,24 +144,8 @@ def test_a_name_comes_from_a_merged_sort_when_the_lowest_has_none(old_db):
     with old_db.begin() as conn:
         add_sort(conn, 1, "A", "PLA", "#000000", name=None)
         add_sort(conn, 2, "B", "PLA", "#080808", name="Schwarz")
-    upgrade(old_db)
+    upgrade(old_db, revision="0006")
     assert rows(old_db, "select label, color_name from filament_sorts") == [("PLA Schwarz", "Schwarz")]
-
-
-def test_the_stored_sorts_agree_with_the_live_rule(old_db):
-    """After the migration the spools of the same colours land in the migrated sorts: no new sort appears."""
-    with old_db.begin() as conn:
-        add_sort(conn, 1, "Brand One", "PETG", "#000000")
-        add_sort(conn, 2, "Brand Two", "PETG", "#1A1A1A")
-        add_sort(conn, 3, "Brand Two", "PETG", "#FF0000", name="Red")
-    upgrade(old_db)
-    fake = FakeBambuddy()
-    spools = [fake.add_spool("PETG", brand="X", color_hex=h) for h in ("#000000", "#1A1A1A", "#FF0000")]
-    session = make_sessionmaker(old_db)()
-    with session.begin():
-        ids = filament.sync_sorts(session, spools)
-        assert ids[spools[0].id] == ids[spools[1].id] == 1 and ids[spools[2].id] == 3
-        assert session.query(FilamentSort).count() == 2
 
 
 def test_a_merged_sort_joins_the_nearest_keeper_of_all(old_db):
@@ -173,15 +156,9 @@ def test_a_merged_sort_joins_the_nearest_keeper_of_all(old_db):
         add_sort(conn, 3, "C", "PLA", "#262626")
         conn.execute(text("INSERT INTO filament_snapshots (day, spool_id, spool_filament_id, remaining_g, label_g)"
                           " VALUES ('2026-11-01', 7, 2, 500, 1000)"))
-    upgrade(old_db)
+    upgrade(old_db, revision="0006")
     assert [r[0] for r in rows(old_db, "select id from filament_sorts order by id")] == [1, 3]
     assert rows(old_db, "select spool_filament_id from filament_snapshots") == [(3,)]
-    fake = FakeBambuddy()
-    spools = [fake.add_spool("PLA", color_hex=h) for h in ("#000000", "#1D1D1D", "#262626")]
-    session = make_sessionmaker(old_db)()
-    with session.begin():
-        ids = filament.sync_sorts(session, spools)
-        assert [ids[s.id] for s in spools] == [1, 3, 3]
 
 
 def test_two_open_marks_of_merged_sorts_become_one(old_db):
@@ -194,7 +171,7 @@ def test_two_open_marks_of_merged_sorts_become_one(old_db):
                           " VALUES ('filament', 2, 3, '2026-11-02 10:00:00')"))
         conn.execute(text("INSERT INTO reorder_marks (item_type, item_id, qty, marked_at, received_at)"
                           " VALUES ('filament', 2, 5, '2026-10-01 10:00:00', '2026-10-05 10:00:00')"))
-    upgrade(old_db)
+    upgrade(old_db, revision="0006")
     assert rows(old_db, "select item_id, qty, marked_at, received_at from reorder_marks order by marked_at") == [
         (1, 5, "2026-10-01 10:00:00", "2026-10-05 10:00:00"),
         (1, 5, "2026-11-02 10:00:00", None),
@@ -207,7 +184,7 @@ def test_transparent_sorts_merge_and_never_with_an_opaque_one(old_db):  #
         add_sort(conn, 2, "Brand Two", "PETG", "00000000", name=None)
         add_sort(conn, 3, "Brand Three", "PETG", "FFFFFF00", name=None)
         add_sort(conn, 4, "Brand One", "PETG", "#00000080", name=None)
-    upgrade(old_db)
+    upgrade(old_db, revision="0006")
     assert rows(old_db, "select id, label from filament_sorts order by id") == [
         (1, "PETG #000000"), (2, "PETG transparent"), (4, "PETG #000000"),
     ]
@@ -215,6 +192,6 @@ def test_transparent_sorts_merge_and_never_with_an_opaque_one(old_db):  #
 
 
 def test_an_empty_database_migrates_without_a_journal_entry(old_db):
-    upgrade(old_db)
+    upgrade(old_db, revision="0006")
     assert scalar(old_db, "select count(*) from journal") == 0
     assert json.dumps(rows(old_db, "select * from filament_sorts")) == "[]"

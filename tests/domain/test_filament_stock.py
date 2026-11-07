@@ -11,68 +11,35 @@ from reprintbuddy.models import FilamentSnapshot, FilamentSort
 DAY = date(2026, 3, 1)
 
 
-def test_sort_key_and_label():  # Spec 9.1: no brand
-    assert filament.sort_key("PLA", None, "#000000") == "pla||#000000"
-    assert filament.sort_label("PLA", None, "Black", "#000000") == "PLA Black"
-    assert filament.sort_label("PLA", None, None, "#000000") == "PLA #000000"
-    assert filament.sort_label("PLA", None, "  ", "#000000") == "PLA #000000"
-    assert filament.sort_label("PLA", "Matte", "Matte", None) == "PLA Matte"
-    assert filament.sort_label("PLA", "Matte", "Black", "#000000") == "PLA Matte Black"
-
-
-def test_sort_key_normalized():
-    assert filament.sort_key(" pla ", " Matte", " #AABBCC ") == "pla|matte|#aabbcc"
-
-
 def test_color_name_not_in_key(db):
     fake = FakeBambuddy()
-    a = fake.add_spool("PLA", color_name="Black")
+    a = fake.add_spool("PLA", brand="Brand A", color_name="Black")
     with db.begin() as s:
         ids = filament.sync_sorts(s, [a])
-        b = dataclasses.replace(a, color_name="Schwarz")
+        b = dataclasses.replace(a, color_name="Jet")
         ids2 = filament.sync_sorts(s, [b])
         assert ids == ids2
         assert s.scalar(select(func.count()).select_from(FilamentSort)) == 1
         sort = s.get(FilamentSort, ids2[b.id])
-        assert sort.label == "PLA Schwarz"
-        assert sort.color_name == "Schwarz"
+        assert sort.label == "Brand A PLA Jet"
+        assert sort.color_name == "Jet"
 
 
-def test_brand_does_not_split_a_sort(db):  # Spec 9.1: PETG is PETG, whoever made it
+def test_a_spool_without_brand_has_a_sort_of_its_own(db):
     fake = FakeBambuddy()
-    spools = [
-        fake.add_spool("PLA", brand="Example Brand"),
-        fake.add_spool("PLA", brand="Other Brand"),
-        fake.add_spool("PLA", brand=None),
-    ]
+    spools = [fake.add_spool("PLA", brand="Brand A"), fake.add_spool("PLA", brand=None)]
     with db.begin() as s:
         ids = filament.sync_sorts(s, spools)
-        assert len(set(ids.values())) == 1
-        (sort,) = s.scalars(select(FilamentSort)).all()
-        assert sort.brand is None and "Brand" not in sort.label
-
-
-def test_subtype_and_material_still_split(db):
-    fake = FakeBambuddy()
-    spools = [
-        fake.add_spool("PLA"),
-        fake.add_spool("PLA", subtype="Matte"),
-        fake.add_spool("PETG"),
-        fake.add_spool("pla"),  # the same material in other case
-        fake.add_spool("PLA", subtype=" matte "),
-    ]
-    with db.begin() as s:
-        ids = filament.sync_sorts(s, spools)
-        assert ids[spools[0].id] == ids[spools[3].id]
-        assert ids[spools[1].id] == ids[spools[4].id]
-        assert len(set(ids.values())) == 3
+        assert len(set(ids.values())) == 2
+        unbranded = s.get(FilamentSort, ids[spools[1].id])
+        assert unbranded.brand is None and unbranded.label == "PLA #000000"
 
 
 def _two_spools():
     fake = FakeBambuddy()
     return fake, [
-        fake.add_spool("PLA", remaining_g=800.0),
-        fake.add_spool("PLA", remaining_g=300.0),
+        fake.add_spool("PLA", brand="Brand A", remaining_g=800.0),
+        fake.add_spool("PLA", brand="Brand A", remaining_g=300.0),
     ]
 
 
@@ -83,13 +50,13 @@ def test_stock_sums_spools(db):  # Spec 9.1
         (entry,) = stock.values()
         assert entry.stock_g == 1100.0
         assert entry.spools == 2
-        assert entry.label == "PLA #000000"
+        assert entry.label == "Brand A PLA #000000"
         assert entry.material == "PLA"
 
 
 def test_archived_spools_not_counted(db):
     fake, spools = _two_spools()
-    spools.append(fake.add_spool("PLA", remaining_g=500.0, archived=True))
+    spools.append(fake.add_spool("PLA", brand="Brand A", remaining_g=500.0, archived=True))
     with db.begin() as s:
         (entry,) = filament.stock_by_sort(s, spools).values()
         assert entry.stock_g == 1100.0
@@ -123,7 +90,7 @@ def test_stock_from_snapshots_latest_day(db):
         assert day == DAY + timedelta(days=1)
         (entry,) = stock.values()
         assert (entry.stock_g, entry.spools) == (500.0, 1)
-        assert entry.label == "PLA #000000"
+        assert entry.label == "Brand A PLA #000000"
 
 
 def test_consumption_window(db):  # Entscheidung 7
@@ -134,6 +101,23 @@ def test_consumption_window(db):  # Entscheidung 7
             make_snapshot(s, today - timedelta(days=back), 1, sort, 1000.0 - 10.0 * (39 - back))
     with db.begin() as s:
         assert filament.consumption(s, sort, today) == (10.0, 30)
+
+
+def test_consumption_of_several_sorts_adds_up(db):  # Spec 9.2: the sorts ticked in the slots
+    today = date(2026, 5, 1)
+    with db.begin() as s:
+        a = make_sort(s).id
+        b = make_sort(s, brand="Brand B").id
+        other = make_sort(s, color_hex="#FFFFFF", color_name="White").id
+        for back in range(11):
+            make_snapshot(s, today - timedelta(days=back), 1, a, 500.0 + 10.0 * back)
+            make_snapshot(s, today - timedelta(days=back), 2, b, 500.0 + 5.0 * back)
+            make_snapshot(s, today - timedelta(days=back), 3, other, 500.0 + 100.0 * back)
+    with db.begin() as s:
+        assert filament.consumption(s, a, today) == (10.0, 10)
+        assert filament.consumption(s, [a, b], today) == (15.0, 10)
+        assert filament.consumption(s, {b}, today) == (5.0, 10)
+        assert filament.consumption(s, [], today) == (0.0, 0)
 
 
 def test_known_sorts(db):
@@ -167,21 +151,21 @@ def test_snapshot_drops_rows_of_spools_no_longer_live(db):
 
 def test_blank_color_name_keeps_known_label(db):
     fake = FakeBambuddy()
-    named = fake.add_spool("PLA", color_name="Black")
-    unnamed = fake.add_spool("PLA")
+    named = fake.add_spool("PLA", brand="Brand A", color_name="Black")
+    unnamed = fake.add_spool("PLA", brand="Brand A")
     for order in ([named, unnamed], [unnamed, named]):
         with db.begin() as s:
             ids = filament.sync_sorts(s, order)
             sort = s.get(FilamentSort, ids[named.id])
-            assert sort.label == "PLA Black"
+            assert sort.label == "Brand A PLA Black"
             assert sort.color_name == "Black"
 
 
 def test_unnamed_spools_split_by_color_hex(db):
     fake = FakeBambuddy()
-    black = fake.add_spool("PLA", subtype="Matte", color_hex="#000000", color_name=None)
-    white = fake.add_spool("PLA", subtype="Matte", color_hex="#FFFFFF", color_name=None)
-    black_again = fake.add_spool("PLA", subtype="Matte", color_hex="#000000", color_name=None)
+    black = fake.add_spool("PLA", brand="Brand A", subtype="Matte", color_hex="#000000", color_name=None)
+    white = fake.add_spool("PLA", brand="Brand A", subtype="Matte", color_hex="#FFFFFF", color_name=None)
+    black_again = fake.add_spool("PLA", brand="Brand A", subtype="Matte", color_hex="#000000", color_name=None)
     with db.begin() as s:
         ids = filament.sync_sorts(s, [black, white])
         assert len(set(ids.values())) == 2
@@ -194,9 +178,9 @@ def test_unnamed_spools_split_by_color_hex(db):
 
 def test_unnamed_spool_label_shows_hex_once_subtype(db):
     fake = FakeBambuddy()
-    spool = fake.add_spool("PLA", subtype="Matte", color_hex="#000000", color_name=None)
+    spool = fake.add_spool("PLA", brand="Brand A", subtype="Matte", color_hex="#000000", color_name=None)
     with db.begin() as s:
         ids = filament.sync_sorts(s, [spool])
         label = s.get(FilamentSort, ids[spool.id]).label
-    assert label == "PLA Matte #000000"
+    assert label == "Brand A PLA Matte #000000"
     assert "#000000" in label and "None" not in label and label.count("Matte") == 1

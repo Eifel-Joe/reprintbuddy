@@ -4,33 +4,36 @@ import pytest
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
-from reprintbuddy.models import ReorderMark
+from reprintbuddy.models import ArticleFilamentSort, ReorderMark
 
-from factories import make_filament_settings, make_snapshot, make_sort
+from factories import make_article, make_filament_settings, make_legacy_sort, make_snapshot, make_sort, tick_sorts
 
-TABLES = {"filament_sorts", "filament_settings", "filament_snapshots", "reorder_marks"}
+TABLES = {"filament_sorts", "filament_settings", "filament_snapshots", "reorder_marks", "article_filament_sorts"}
 
 
 def test_tables_exist(db):
     assert TABLES <= set(inspect(db.kw["bind"]).get_table_names())
 
 
-def test_head_is_0006(db):
+def test_head_is_0007(db):
     with db() as s:
-        assert s.execute(text("select version_num from alembic_version")).scalar() == "0006"
+        assert s.execute(text("select version_num from alembic_version")).scalar() == "0007"
 
 
 def test_make_sort_key_and_label(db):
     with db.begin() as s:
-        plain = make_sort(s)
-        matte = make_sort(s, subtype="Matte", color_name="matte", color_hex="#FFFFFF")
-        unnamed = make_sort(s, material="PETG", color_name=None)
-        assert plain.sort_key == "pla||#000000"
-        assert plain.label == "PLA Black"
-        assert matte.sort_key == "pla|matte|#ffffff"
-        assert matte.label == "PLA Matte"
-        assert unnamed.label == "PETG #000000"
+        plain = make_sort(s, brand="Brand A")
+        matte = make_sort(s, brand="Brand A", subtype="Matte", color_name="matte", color_hex="#FFFFFF")
+        unnamed = make_sort(s, brand="Brand B", material="PETG", color_name=None)
+        assert plain.sort_key == "brand a|pla||#000000"
+        assert plain.label == "Brand A PLA Black"
+        assert matte.sort_key == "brand a|pla|matte|#ffffff"
+        assert matte.label == "Brand A PLA Matte"
+        assert unnamed.label == "Brand B PETG #000000"
         assert plain.first_seen_at is not None
+        assert plain.legacy is False
+        old = make_legacy_sort(s)
+        assert old.legacy is True and old.sort_key == f"legacy:{old.id}" and old.brand is None
 
 
 def test_settings_defaults(db):
@@ -83,10 +86,48 @@ def test_mark_defaults(db):
 
 def test_sort_key_unique(db):
     with db.begin() as s:
-        make_sort(s)
+        make_sort(s, brand="Brand A")
+        make_sort(s, brand="Brand B")  # another brand: another sort
     with pytest.raises(IntegrityError):
         with db.begin() as s:
-            make_sort(s, color_name="Other name")
+            make_sort(s, brand="Brand A", color_name="Other name")
+
+
+def _slot_with(s, *sorts, reordered=None):
+    article = make_article(s)
+    tick_sorts(s, article.id, 1, *sorts, reordered=reordered)
+    return article
+
+
+def test_one_reordered_sort_per_slot(db):
+    with db.begin() as s:
+        a = make_sort(s, brand="Brand A")
+        b = make_sort(s, brand="Brand B")
+        article = _slot_with(s, a, b, reordered=a)  # two ticked, one reordered: fine
+        tick_sorts(s, article.id, 2, b)  # another slot has its own reordered sort
+        article_id, b_id = article.id, b.id
+    with pytest.raises(IntegrityError):
+        with db.begin() as s:
+            row = s.get(ArticleFilamentSort, (article_id, 1, b_id))
+            row.reordered = True
+
+
+def test_a_sort_is_ticked_once_per_slot(db):
+    with db.begin() as s:
+        a = make_sort(s).id
+        article = _slot_with(s).id
+        s.add(ArticleFilamentSort(article_id=article, slot=1, sort_id=a, reordered=True))
+    with pytest.raises(IntegrityError):
+        with db.begin() as s:
+            s.add(ArticleFilamentSort(article_id=article, slot=1, sort_id=a, reordered=False))
+
+
+def test_ticked_sort_must_exist(db):
+    with db.begin() as s:
+        article = _slot_with(s).id
+    with pytest.raises(IntegrityError):
+        with db.begin() as s:
+            s.add(ArticleFilamentSort(article_id=article, slot=1, sort_id=999, reordered=True))
 
 
 def test_snapshot_unique_per_day_and_spool(db):

@@ -47,27 +47,28 @@ def _missing_by_article(session: Session) -> tuple[dict[int, Article], dict[int,
 
 
 def filament_demand(session: Session) -> dict[int, float]:
-    """Grams per filament sort: grams x (queued + in-progress prints + prints up to the target).
+    """Grams per reordered spool sort: over the slots where it is reordered, grams x (queued +
+    in-progress prints + prints up to the target) (Spec 9.2).
 
-    Counts every non-archived article (also with automation off); slots without a sort are
-    skipped; sorts without demand may be missing from the result.
+    Counts every non-archived article (also with automation off); slots without a reordered sort
+    are skipped; sorts without demand may be missing from the result.
     """
     articles, missing = _missing_by_article(session)
     queued = workqueue.queued_prints(session)
     running = workqueue.in_progress_prints(session)
+    grams = {(r.article_id, r.slot): r.grams for r in session.scalars(select(ArticleFilament))}
     demand: dict[int, float] = defaultdict(float)
-    for slot in session.scalars(
-        select(ArticleFilament).where(ArticleFilament.spool_filament_id.is_not(None))
-    ):
-        article = articles.get(slot.article_id)
-        if article is None:
-            continue
-        prints = (
-            queued.get(article.id, 0)
-            + running.get(article.id, 0)
-            + rules.prints_for_units(missing[article.id], article.units_per_print)
-        )
-        demand[slot.spool_filament_id] += slot.grams * prints
+    for group in filament.reorder_groups(session).values():
+        for article_id, slot in group.slots:
+            article = articles.get(article_id)
+            if article is None or (article_id, slot) not in grams:
+                continue
+            prints = (
+                queued.get(article_id, 0)
+                + running.get(article_id, 0)
+                + rules.prints_for_units(missing[article_id], article.units_per_print)
+            )
+            demand[group.sort_id] += grams[(article_id, slot)] * prints
     return dict(demand)
 
 
@@ -135,6 +136,7 @@ class Suggestion:
     pack_size: float
     supplier: str | None
     order_url: str | None
+    has_history: bool = True  # False: no usage recorded yet, the tile says so instead of "0.0 g/day" (p59)
 
 
 def _open_marked(session: Session) -> set[tuple[str, int]]:
@@ -147,7 +149,7 @@ def _open_marked(session: Session) -> set[tuple[str, int]]:
 def _suggest(
     kind: Literal["filament", "part"], item_id: int, label: str, unit: str, *, stock: float,
     demand: float, per_day: float, lead_days: int, safety: float, pack: float, min_packs: int,
-    supplier: str | None, order_url: str | None,
+    supplier: str | None, order_url: str | None, has_history: bool = True,
 ) -> Suggestion | None:
     if not rules.needs_reorder(
         stock=stock, demand=demand, per_day=per_day, lead_days=lead_days, safety=safety
@@ -159,39 +161,48 @@ def _suggest(
     )
     return Suggestion(
         kind, item_id, label, unit, stock, demand, per_day, lead_days, safety, packs, pack,
-        supplier, order_url,
+        supplier, order_url, has_history,
     )
 
 
 def suggestions(
     session: Session, *, sorts: Mapping[int, filament.SortStock] | None, today: date
 ) -> list[Suggestion]:
-    """Reorder suggestions: filament sorts with settings (only when the stock is known, i.e.
-    `sorts` is not None), then every active part. Items with an open mark have none (Entscheidung 14)."""
+    """Reorder suggestions: reordered spool sorts with settings (only when the stock is known, i.e.
+    `sorts` is not None), then every active part. Items with an open mark have none (Entscheidung 14).
+
+    A reordered spool sort counts, over the slots where it is reordered, the stock and the usage of
+    every spool sort ticked there (Spec 9.2); a sort ticked in the slots of two reordered sorts
+    counts for both.
+    """
     marked = _open_marked(session)
     result: list[Suggestion] = []
     if sorts is not None:
         demand = filament_demand(session)
+        groups = filament.reorder_groups(session)
         rows = session.execute(
             select(FilamentSettings, FilamentSort)
             .join(FilamentSort, FilamentSort.id == FilamentSettings.spool_filament_id)
+            .where(FilamentSort.id.in_(list(groups)))
             .order_by(FilamentSort.label, FilamentSort.id)
         )
         for settings, sort in rows:
             if ("filament", sort.id) in marked:
                 continue
-            per_day = filament.consumption(session, sort.id, today)[0]
-            have = sorts[sort.id].stock_g if sort.id in sorts else 0.0
+            members = groups[sort.id].members
+            per_day, days = filament.consumption(session, members, today)
+            have = sum(sorts[m].stock_g for m in members if m in sorts)
             sug = _suggest(
                 "filament", sort.id, sort.label, "g", stock=have, demand=demand.get(sort.id, 0.0),
                 per_day=per_day, lead_days=settings.lead_time_days,
                 safety=rules.safety_amount(settings.safety_value, settings.safety_unit, per_day),
                 pack=settings.pack_grams, min_packs=settings.min_order_packs,
-                supplier=settings.supplier, order_url=settings.order_url,
+                supplier=settings.supplier, order_url=settings.order_url, has_history=days > 0,
             )
             if sug is not None:
                 result.append(sug)
     part_needs = part_demand(session)
+    part_history = session.scalar(select(func.min(JournalEntry.at))) is not None
     for part in session.scalars(
         select(Part).where(Part.archived_at.is_(None)).order_by(Part.name, Part.id)
     ):
@@ -205,17 +216,33 @@ def suggestions(
                 rules.safety_amount(part.safety_value, part.safety_unit, per_day), part.min_stock
             ),
             pack=part.pack_size, min_packs=part.min_order_packs, supplier=part.supplier,
-            order_url=part.order_url,
+            order_url=part.order_url, has_history=part_history,
         )
         if sug is not None:
             result.append(sug)
     return result
 
 
-def count_suggestions(session: Session, today: date) -> int:
-    """Number of suggestions with the stock from the daily record (no record: parts only)."""
-    stock, day = filament.stock_from_snapshots(session)
-    return len(suggestions(session, sorts=stock if day is not None else None, today=today))
+@dataclass(frozen=True)
+class Current:
+    """What the reorder page shows, computed in one place for the page and its key figure (p64)."""
+
+    sorts: dict[int, filament.SortStock] | None
+    day: date | None  # the recorded day the filament stock comes from; None when live or unknown
+    suggestions: list[Suggestion]
+
+
+def current(session: Session, spools: Sequence[Spool] | None, now: datetime) -> Current:
+    """Stock (live with `spools`, else the record), close arrived marks, then the suggestions.
+    It writes (new sorts, closed marks): call it in a write transaction."""
+    sorts, day = filament.known_sorts(session, spools)
+    close_arrived_marks(session, spools, now)
+    return Current(sorts, day, suggestions(session, sorts=sorts, today=now.date()))
+
+
+def count_suggestions(session: Session, spools: Sequence[Spool] | None, now: datetime) -> int:
+    """The number of suggestions the reorder page shows (the key figure of Spec 9.4)."""
+    return len(current(session, spools, now).suggestions)
 
 
 # ---- "ordered" marks (Spec 9.4, Entscheidung 14, 17) ------------------------------------------
@@ -239,7 +266,8 @@ def mark_ordered(session: Session, item_type: str, item_id: int, packs: int) -> 
         part = session.get(Part, item_id)
         known = part is not None and part.archived_at is None
     elif item_type == "filament":
-        known = session.get(FilamentSettings, item_id) is not None
+        sort = session.get(FilamentSort, item_id)  # a legacy sort of 0006 is no spool sort to order
+        known = sort is not None and not sort.legacy and session.get(FilamentSettings, item_id) is not None
     else:
         known = False
     if not known:
@@ -275,6 +303,7 @@ class MarkRow:
 
 
 def open_marks(session: Session) -> list[MarkRow]:
+    """The open marks (on its way), oldest first; those of archived parts are left out."""
     rows: list[MarkRow] = []
     marks = session.scalars(
         select(ReorderMark)
@@ -284,11 +313,14 @@ def open_marks(session: Session) -> list[MarkRow]:
     for mark in marks:
         if mark.item_type == "part":
             part = session.get(Part, mark.item_id)
+            if part.archived_at is not None:
+                continue  # archived parts leave every list (Spec 5.5); the mark stays for a restore (p60)
             label, size, unit = part.name, part.pack_size, part.unit
         else:
             sort = session.get(FilamentSort, mark.item_id)
             settings = session.get(FilamentSettings, mark.item_id)
-            label, size, unit = sort.label, settings.pack_grams, "g"
+            size = settings.pack_grams if settings is not None else filament.FilamentSettingsInput.pack_grams
+            label, unit = sort.label, "g"
         rows.append(
             MarkRow(mark.id, mark.item_type, mark.item_id, label, mark.qty, size, unit, mark.marked_at)
         )

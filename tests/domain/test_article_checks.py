@@ -6,14 +6,14 @@ Plan B4 decisions 8, 9, 10; assumptions A8, A9 (maintenance mode: inactive = wai
 import pytest
 from sqlalchemy import select
 
-from factories import make_article
+from factories import make_article, make_sort, tick_sorts
 from reprintbuddy.bambuddy.client import BambuddyRejected
 from reprintbuddy.bambuddy.fake import FakeBambuddy
 from reprintbuddy.bambuddy.types import FilamentRequirement, Plate
 from reprintbuddy.domain import catalog, pauses
 from reprintbuddy.domain.errors import ConflictError
 from reprintbuddy.domain.tracking import ArticleCheck, check_articles
-from reprintbuddy.models import Article, ArticleFilament, JournalEntry, utcnow
+from reprintbuddy.models import Article, ArticleFilament, ArticleFilamentSort, JournalEntry, utcnow
 
 
 def journal(s, kind):
@@ -180,19 +180,27 @@ async def test_check_rejected_changes_nothing(db, fake_bambuddy):
 # ---- confirm / relink ------------------------------------------------------------------
 
 
-def add_filament(db, article_id, color="#000000", spool=7):
+def add_filament(db, article_id, color="#000000"):
+    """Slot 1 (PLA) with a filament group of two spool sorts; returns their ids (reordered first)."""
     with db.begin() as s:
-        s.add(
-            ArticleFilament(
-                article_id=article_id, slot=1, grams=42.5, material="PLA",
-                color_hex=color, spool_filament_id=spool,
-            )
-        )
+        s.add(ArticleFilament(article_id=article_id, slot=1, grams=42.5, material="PLA", color_hex=color))
+        s.flush()
+        a = make_sort(s, brand="Brand A", color_hex=color)
+        b = make_sort(s, brand="Brand B", color_hex=color)
+        tick_sorts(s, article_id, 1, a, b, reordered=a)
+        return a.id, b.id
+
+
+def group(s, article_id):
+    return sorted(
+        (r.slot, r.sort_id, r.reordered)
+        for r in s.scalars(select(ArticleFilamentSort).where(ArticleFilamentSort.article_id == article_id))
+    )
 
 
 async def test_confirm_file(db, fake_bambuddy):
     a = article(db, paused=True, pause_reason="file_changed")
-    add_filament(db, a)
+    reordered, other = add_filament(db, a)
     fake_bambuddy.update_file(1, fingerprint="v2")
     file = await fake_bambuddy.get_file(1)
     with db.begin() as s:
@@ -206,7 +214,8 @@ async def test_confirm_file(db, fake_bambuddy):
         assert not row.paused and row.pause_reason is None
         assert row.thumbnail == b"png"
         (f,) = s.scalars(select(ArticleFilament).where(ArticleFilament.article_id == a))
-        assert f.grams == 50.0 and f.spool_filament_id == 7
+        assert f.grams == 50.0
+        assert group(s, a) == [(1, reordered, True), (1, other, False)]  # same material and colour: kept
         assert len(journal(s, "article_file_confirmed")) == 1
 
 
@@ -221,7 +230,8 @@ async def test_confirm_drops_mapping_when_color_changes(db, fake_bambuddy):
         )
     with db() as s:
         (f,) = s.scalars(select(ArticleFilament).where(ArticleFilament.article_id == a))
-        assert f.spool_filament_id is None
+        assert f.color_hex == "#FFFFFF"
+        assert group(s, a) == []  # another colour: the group is dropped
 
 
 async def test_confirm_keeps_other_pause(db, fake_bambuddy):
@@ -269,6 +279,20 @@ async def test_relink_active_article(db, fake_bambuddy):
         assert row.file_fingerprint == file_b.fingerprint
         assert not row.paused
         assert len(journal(s, "article_relinked")) == 1
+
+
+async def test_relink_drops_every_group_even_with_the_same_colour(db, fake_bambuddy):
+    """Another file: no filament group stays, whatever its slots say (keep_mapping=False)."""
+    a = article(db)
+    add_filament(db, a)
+    file_b = await fake_bambuddy.get_file(2)
+    with db.begin() as s:
+        catalog.relink_article(
+            s, a, file=file_b, plate=Plate(1, None),
+            requirements=[FilamentRequirement(1, 42.5, "PLA", "#000000")], thumbnail=None, actor="user",
+        )
+    with db() as s:
+        assert group(s, a) == []
 
 
 async def test_relink_archived_refused(db, fake_bambuddy):

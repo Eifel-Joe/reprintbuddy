@@ -15,7 +15,16 @@ from reprintbuddy.changes import CLASSIFIED, install_change_feed
 from reprintbuddy.domain import catalog, orders, stock
 from reprintbuddy.domain.catalog import ArticleInput, PositionInput, SetInput
 from reprintbuddy.domain.errors import StockLimitError
-from reprintbuddy.models import Article, Base, FilamentSettings, Inspection, Part, ReorderMark
+from reprintbuddy.models import (
+    Article,
+    ArticleFilament,
+    ArticleFilamentSort,
+    Base,
+    FilamentSettings,
+    Inspection,
+    Part,
+    ReorderMark,
+)
 from reprintbuddy.web.formtoken import consume_form_token, issue_form_token
 from factories import (
     make_article,
@@ -328,3 +337,19 @@ def test_saving_filament_settings_reports_only_a_real_change(db, published):
     with db.begin() as s:
         s.get(FilamentSettings, sort_id).supplier = "Example Supplier"  # same value
     assert published == []
+
+
+def test_a_ticked_spool_sort_reports_the_article_and_the_filament_page(db, published):
+    with db.begin() as s:
+        a = make_article(s).id
+        s.add(ArticleFilament(article_id=a, slot=1, grams=10.0, material="PLA", color_hex="#000000"))
+        sort_id = make_sort(s).id
+    published.clear()
+    with db.begin() as s:
+        s.add(ArticleFilamentSort(article_id=a, slot=1, sort_id=sort_id, reordered=True))
+    expected = frozenset({"article", f"article:{a}", f"article-settings:{a}", "filament"})
+    assert published == [expected]
+    published.clear()
+    with db.begin() as s:
+        s.delete(s.get(ArticleFilamentSort, (a, 1, sort_id)))
+    assert published == [expected]
