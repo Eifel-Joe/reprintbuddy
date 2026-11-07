@@ -377,10 +377,13 @@ async def test_rejected_waits_for_regular_tick(engine_env):
 
     assert result == TickResult(None, 1, 0)
     assert env.engine.status.rejected == "400: No active printers for model: A1"
+    assert env.engine.status.rejected_name == "Template A"
     assert statuses(env.sm) == ["returned"]
     assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
+    # Final review 7: the warning names the article of the refused print.
     assert EngineWarning(
-        "warning.bambuddy_rejected", {"message": "400: No active printers for model: A1"}
+        "warning.bambuddy_rejected",
+        {"name": "Template A", "message": "400: No active printers for model: A1"},
     ) in warnings(env.sm, env.engine.status)
 
     env.fake.calls.clear()
@@ -392,6 +395,7 @@ async def test_rejected_waits_for_regular_tick(engine_env):
     assert result == TickResult(None, 0, 1)
     assert len(env.fake.enqueued) == 1
     assert env.engine.status.rejected is None
+    assert env.engine.status.rejected_name is None
 
 
 async def test_queue_stopped_unclear_not_resent(engine_env):
@@ -725,6 +729,7 @@ async def test_collect_warnings_order(engine_env):
         unexpected=["paused"],
         waiting_review=[7, 8],
         rejected="400: No",
+        rejected_name="Template B",
         duplicates=[[1, 2]],
         error="boom",
         hook_errors={"b": "x", "a": "y"},
@@ -740,7 +745,7 @@ async def test_collect_warnings_order(engine_env):
         EngineWarning("warning.poll_rejected", {"message": "403: Forbidden"}),
         EngineWarning("warning.unexpected_answer", {"statuses": ["paused"]}),
         EngineWarning("warning.waiting_for_review", {"count": 2}),
-        EngineWarning("warning.bambuddy_rejected", {"message": "400: No"}),
+        EngineWarning("warning.bambuddy_rejected", {"name": "Template B", "message": "400: No"}),
         EngineWarning("warning.unclear_prints", {"count": 1}),
         EngineWarning("warning.duplicates", {"ids": [[1, 2]]}),
         EngineWarning("warning.tick_error", {"message": "boom"}),
@@ -767,7 +772,8 @@ async def test_warning_texts_exist_and_format(engine_env):
     setting(env.sm, "queue_running", False)
     status = EngineStatus(
         configured=True, reachable=False, poll_error="403: Forbidden", unexpected=["paused"],
-        waiting_review=[7], rejected="400: No", duplicates=[[1, 2], [5, 6]], error="boom",
+        waiting_review=[7], rejected="400: No", rejected_name="Template B",
+        duplicates=[[1, 2], [5, 6]], error="boom",
         hook_errors={"a": "x"}, skipped_for_update=True, cap_reached=True,
         waiting_for_printer=[env.article_id],
     )
@@ -782,6 +788,9 @@ async def test_warning_texts_exist_and_format(engine_env):
     assert warning_text("de", EngineWarning("warning.cap_reached", {"cap": 3})) == (
         "Obergrenze von 3 offenen Drucken in Bambuddy erreicht; der Rest wartet in Reprintbuddy."
     )
+    refused = EngineWarning("warning.bambuddy_rejected", {"name": "Template B", "message": "400: No"})
+    for lang in ("en", "de"):
+        assert "Template B" in warning_text(lang, refused) and "400: No" in warning_text(lang, refused)
     review = warning_text("en", EngineWarning("warning.waiting_for_review", {"count": 1}))
     assert "Print Without Review" in review and "queue:start_unreviewed" in review
 

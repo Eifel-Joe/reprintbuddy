@@ -61,6 +61,7 @@ class EngineStatus:
     unexpected: list[str] = field(default_factory=list)
     waiting_review: list[int] = field(default_factory=list)
     rejected: str | None = None
+    rejected_name: str | None = None  # the article of the refused print (final review 7)
     poll_error: str | None = None
     unresolved: int = 0
     duplicates: list[list[int]] = field(default_factory=list)
@@ -258,6 +259,7 @@ class Engine:
                 status.hook_errors.pop(name, None)
 
         status.rejected = None  # decision 4: a regular tick tries again
+        status.rejected_name = None
         if status.poll_error is None:
             status.last_poll_at = self.now()
 
@@ -307,6 +309,7 @@ class Engine:
             if result == "rejected":
                 with self.sm() as session:
                     status.rejected = session.get(Dispatch, res.dispatch_id).message
+                    status.rejected_name = session.get(Article, res.article_id).name
             else:  # "unclear" or "not_sent": Bambuddy did not answer
                 status.reachable = False
             return dispatched
@@ -432,7 +435,7 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
     if status.waiting_review:
         add("waiting_for_review", count=len(status.waiting_review))
     if status.rejected:
-        add("bambuddy_rejected", message=status.rejected)
+        add("bambuddy_rejected", name=status.rejected_name or "", message=status.rejected)
     unclear = int(
         session.scalar(
             select(func.count()).select_from(Dispatch).where(Dispatch.status == "unclear")
