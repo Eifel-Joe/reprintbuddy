@@ -233,7 +233,7 @@ def test_general_tab_columns(ready_client):  # p85
 
 
 COLUMNS_OF_TAB = {  # p104: the cards of each tab, per column, by the id a card (or its form) carries
-    "general": [["settings-language", "ops-restart"], ["settings-server"]],
+    "general": [["settings-language", "settings-qr", "ops-restart"], ["settings-server"]],
     "automation": [["automation-form"], []],
     "bambuddy": [["settings-bambuddy"], ["live-channel"]],
     "account": [["settings-password"], []],
