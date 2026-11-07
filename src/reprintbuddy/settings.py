@@ -7,6 +7,7 @@ Sensitive values are only ever shown as `MASK`; see `display_value`.
 from __future__ import annotations
 
 import json
+import re
 import secrets
 from typing import Any, Callable
 from urllib.parse import urlsplit
@@ -123,6 +124,9 @@ def _optional_url(value: Any) -> str | None:
     raise ValueError("address must start with http:// or https://")
 
 
+_HOST_LABEL = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?", re.IGNORECASE)
+
+
 def _qr_base_url(value: Any) -> str | None:
     """The start of the address a QR code carries (Spec 8.4): scheme, host, port and, behind a
     reverse proxy, a path. No credentials (the code is printed and stuck to a shelf), no query or
@@ -135,6 +139,20 @@ def _qr_base_url(value: Any) -> str | None:
         raise ValueError("address must be a plain web address without query or fragment")
     if "@" in text:  # user:password@host (also a path with an @ is not worth the doubt)
         raise ValueError("address must not contain credentials")
+    parts = urlsplit(text)
+    if parts.netloc.endswith(":"):  # a port sign without a port
+        raise ValueError("address has an invalid host or port")
+    if not parts.netloc.startswith("["):  # an IPv6 address in brackets was parsed by `_optional_url`
+        try:
+            labels = (parts.hostname or "").encode("idna").decode("ascii").split(".")  # umlauts are fine
+        except UnicodeError:
+            raise ValueError("address has an invalid host or port") from None
+        if not all(_HOST_LABEL.fullmatch(label) for label in labels):
+            raise ValueError("address has an invalid host or port")
+    if any(char in parts.path for char in "<>\"'") or any(
+        segment in (".", "..") for segment in parts.path.split("/")
+    ):
+        raise ValueError("address has an invalid path")
     return text
 
 

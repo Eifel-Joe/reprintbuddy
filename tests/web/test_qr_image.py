@@ -109,6 +109,7 @@ def test_download_names_the_file_by_the_id_only(ready_client, article_id):
         response = ready_client.get(f"/articles/{article_id}/qr.{kind}?download=1")
         assert response.headers["content-disposition"] == f'attachment; filename="qr-article-{article_id}.{kind}"'
     assert "content-disposition" not in ready_client.get(f"/articles/{article_id}/qr.png").headers
+    assert "content-disposition" not in ready_client.get(f"/articles/{article_id}/qr.png?download=0").headers
 
 
 def test_unknown_article_or_format(ready_client, article_id):

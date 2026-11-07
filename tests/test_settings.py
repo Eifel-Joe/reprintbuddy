@@ -275,6 +275,10 @@ def test_apply_check_overwrites_an_older_owner(session):
         ("https://shelf.example.com/", "https://shelf.example.com"),
         ("  http://shelf.example.com:8080/  ", "http://shelf.example.com:8080"),
         ("https://example.com/stock/", "https://example.com/stock"),  # behind a reverse proxy path
+        ("http://10.0.0.5:8080", "http://10.0.0.5:8080"),
+        ("http://[::1]:8080", "http://[::1]:8080"),
+        ("http://lager-pi", "http://lager-pi"),  # a name without a dot: a home network
+        ("https://lager.example.com/a..b", "https://lager.example.com/a..b"),  # inside a name, no segment
         (None, None),
     ],
 )
@@ -299,6 +303,14 @@ def test_qr_base_url_is_normalised(given, stored):
         "",
         "   ",
         5,
+        "https://shelf.example.com:",
+        "http://shelf.example.com;x",
+        "https://-/",
+        "https://shelf..example.com",
+        "https://shelf.example.com/<script>",
+        'https://shelf.example.com/"x',
+        "https://shelf.example.com:8080/../x",
+        "https://shelf.example.com/a/./b",
     ],
 )
 def test_qr_base_url_refuses_what_cannot_be_the_start_of_an_address(bad):

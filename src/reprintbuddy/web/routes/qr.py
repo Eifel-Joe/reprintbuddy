@@ -56,7 +56,7 @@ async def picture(request: Request, article_id: int, kind: str, download: str | 
     _article_or_404(db, article_id)
     content_type, draw = _PICTURES[kind]
     headers = dict(_NO_STORE)
-    if download:
+    if download == "1":
         # The name holds the id only: no article name, nothing that needs quoting.
         headers["Content-Disposition"] = f'attachment; filename="qr-article-{article_id}.{kind}"'
     body = draw(qr.article_address(qr.base_address(request, db), article_id))

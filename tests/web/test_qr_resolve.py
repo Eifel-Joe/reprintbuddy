@@ -111,8 +111,10 @@ def test_signed_out_goes_to_the_login_and_back_to_the_article_address(ready_clie
 
 
 def test_signed_out_learns_nothing_about_the_article(ready_client):
+    known_id = article(ready_client)
     ready_client.cookies.clear()
-    known = ready_client.get("/a/1")
+    known = ready_client.get(f"/a/{known_id}")
     unknown = ready_client.get("/a/999")
     assert known.status_code == unknown.status_code == 303
-    assert known.headers["location"].startswith("/login?next=")
+    assert known.headers["location"] == f"/login?next=%2Fa%2F{known_id}"
+    assert unknown.headers["location"] == "/login?next=%2Fa%2F999"
