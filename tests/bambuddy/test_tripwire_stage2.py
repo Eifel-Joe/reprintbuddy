@@ -11,7 +11,7 @@ import pytest
 from reprintbuddy.bambuddy.client import BambuddyClient, HttpBambuddyClient
 
 
-@pytest.mark.xfail(strict=True, reason="queue methods come with B2 stage 2")
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="queue methods come with B2 stage 2")
 def test_http_client_implements_the_whole_protocol():
     http_client = HttpBambuddyClient("http://bambuddy.test", "k", lambda: httpx.AsyncClient())
     assert isinstance(http_client, BambuddyClient)
