@@ -634,6 +634,26 @@ input.switch:checked::after, label.check input[type="checkbox"]:checked::after {
 input.switch:focus-visible, label.check input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 label.check input[type="checkbox"] { margin-top: 0.1rem; }
 
+/* Switch that posts (automation in the list): the button is the 44 px target, the track the picture. */
+.switch-form { display: inline-flex; margin: 0; }
+.switch-btn {
+  display: inline-flex; align-items: center; justify-content: center; position: relative; z-index: 1;
+  min-width: 2.75rem; min-height: 2.75rem; padding: 0; border: 0; background: none; cursor: pointer;
+}
+.switch-track {
+  position: relative; display: block; width: 40px; height: 22px; border-radius: 999px;
+  background: #3a3c41; transition: background 0.15s;
+}
+.switch-track::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+  background: #e4e4e7; transition: left 0.15s;
+}
+.switch-btn[aria-checked="true"] .switch-track { background: var(--accent); }
+.switch-btn[aria-checked="true"] .switch-track::after { left: 21px; background: #fff; }
+.switch-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
+.tile-auto { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: auto; color: var(--text-2); font-size: 0.85rem; }
+.tile-auto + .tile-foot, .tile-foot + .tile-auto { margin-top: 0; }
+
 /* Tabs: links, wrap on a narrow screen instead of sticking out. */
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin: 0 0 1rem; }
 .tab {
@@ -684,6 +704,15 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 .warning-card.tone-warn .icon { color: var(--warn); }
 .warning-card.tone-bad { border-color: rgba(239, 68, 68, 0.5); background: var(--danger-soft); }
 .warning-card.tone-bad .icon { color: var(--danger); }
+/* The way on from a paused article (p49): the actions sit right of the text, under it on a phone.
+   Button and links are at least 44px high. */
+.warning-card { flex-wrap: wrap; }
+.warning-card > p { flex: 1 1 14rem; }
+.warning-link, #confirm-file { scroll-margin-top: 6rem; } /* the anchor from the notice stays below the phone's top bar */
+.warning-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.9rem; margin-left: auto; }
+.warning-actions form { margin: 0; }
+.warning-link { display: inline-flex; align-items: center; min-height: 2.75rem; color: var(--info); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+@media (max-width: 899px) { .warning-actions { flex: 1 1 100%; margin-left: 28px; } }
 .last-poll { margin: 0; color: var(--muted); font-size: 12.5px; }
 
 /* A part of the queue page: title with symbol, a grey hint or a button to the right. */
@@ -695,33 +724,41 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 .queue-section > .section-hint { display: block; margin: 0.5rem 0 0; }
 .stale-note { margin: 0 0 0.6rem; color: var(--warn); font-size: 0.9rem; }
 
-/* Reprintbuddy's queue: one card per entry. Only the grip takes the finger for dragging
-   (touch-action: none); everywhere else the page scrolls as usual. */
-.queue-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.queue-row {
-  display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 6px 6px 2px;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
-}
-.queue-row.is-paused .queue-body, .queue-row.is-paused .thumb-sm, .queue-row.is-paused .thumb-placeholder { opacity: 0.7; }
+/* Reprintbuddy's queue: a table, one row per entry (p45). Only the grip takes the finger for
+   dragging (touch-action: none); everywhere else the page scrolls as usual. No overflow on the
+   wrapper: the row menu opens as a panel below the row and must not be cut off. */
+.queue-table-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.queue-table { table-layout: auto; }
+.queue-table thead th { padding-top: 8px; padding-bottom: 8px; }
+.queue-table td { padding: 4px 12px; }
+.queue-row.is-paused .queue-cell-name, .queue-row.is-paused .thumb-sm, .queue-row.is-paused .thumb-placeholder { opacity: 0.7; }
+.queue-cell-pos { white-space: nowrap; }
+.queue-cell-pos, .queue-col-pos { width: 1%; padding-left: 4px; }
+.queue-cell-img, .queue-col-img { width: 1%; }
 .drag-handle {
-  flex: 0 0 auto; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+  vertical-align: middle; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
 .drag-handle .icon { width: 18px; height: 18px; }
-.queue-pos { flex: 0 0 1.5rem; color: var(--muted); font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; }
-.queue-body { display: flex; flex: 1 1 auto; flex-direction: column; gap: 3px; min-width: 0; }
+.queue-pos { display: inline-block; min-width: 1.5rem; color: var(--muted); font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; }
 /* At least 44 px to tap, like every other target; the text stays at the top of that box. */
-.queue-name { display: inline-flex; align-items: center; align-self: flex-start; max-width: 100%; min-height: 2.75rem; color: var(--text); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.queue-name { display: inline-flex; align-items: center; max-width: 100%; min-height: 2.75rem; color: var(--text); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
 .queue-name:hover { color: var(--accent); }
-.queue-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--muted); font-size: 12px; }
-.queue-body .badges { margin-top: 2px; }
+/* The number of prints: much bigger and bolder than the text of the row. */
+.queue-col-prints, .queue-prints { text-align: right; }
+.queue-prints-n { font-size: 1.75rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.queue-cell-name { width: 40%; min-width: 11rem; }
+.queue-cell-origin, .queue-cell-created { color: var(--text-2); font-size: 13px; }
+.queue-cell-state .badges { margin: 0; }
 /* While dragging: the entry follows the pointer above the list, a dashed gap shows where it lands. */
 .queue-row.is-dragging {
-  position: fixed; z-index: 50; margin: 0; border-color: var(--accent);
+  display: flex; align-items: center; position: fixed; z-index: 50; margin: 0;
+  background: var(--surface); border: 1px solid var(--accent); border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
+.queue-row.is-dragging > td { flex: 0 0 auto; border-bottom: 0; box-sizing: border-box; }
 .queue-row.is-dragging .drag-handle { cursor: grabbing; }
-.queue-placeholder { list-style: none; border: 1px dashed var(--accent); border-radius: 10px; background: rgba(0, 174, 66, 0.06); }
+.queue-placeholder > td { padding: 0; border: 1px dashed var(--accent); background: rgba(0, 174, 66, 0.06); }
 body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: none; }
 
 /* The menu of a row: a <details> that opens a small panel of forms (works without JavaScript). */
@@ -758,8 +795,28 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .progress-name { display: inline-flex; align-items: center; min-height: 2.75rem; overflow-wrap: anywhere; }
 
 @media (max-width: 599px) {
-  .queue-pos { display: none; }
-  .queue-row { gap: 6px; }
+  /* Stacked: each row becomes a card; the grip and the menu stay 44 px, the prints stay big. */
+  .queue-table, .queue-table tbody { display: block; }
+  .queue-table thead { display: none; }
+  .queue-table-card { background: none; border: 0; }
+  .queue-table tbody { display: flex; flex-direction: column; gap: 8px; }
+  .queue-row {
+    display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 2px 8px;
+    padding: 6px 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .queue-table td, .queue-table td.actions-col { display: block; width: auto; padding: 0; border: 0; white-space: normal; }
+  .queue-cell-pos { grid-column: 1; grid-row: 1 / span 2; padding: 0; }
+  .queue-cell-img { grid-column: 2; grid-row: 1 / span 2; }
+  .queue-cell-name { grid-column: 3; grid-row: 1; min-width: 0; }
+  .queue-prints { grid-column: 4; grid-row: 1; padding-right: 4px; }
+  .queue-prints::before { content: attr(data-label); display: block; color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+  .queue-cell-menu { grid-column: 4; grid-row: 2; justify-self: end; }
+  .queue-cell-origin { grid-column: 3; grid-row: 2; }
+  .queue-cell-created { display: none !important; }
+  .queue-cell-state { grid-column: 3; grid-row: 3; }
+  .queue-cell-state:empty, .queue-cell-state .badges:empty { display: none; }
+  .queue-row .queue-pos { display: none; }
+  .queue-row.is-dragging { display: grid; }
   .manual-form { grid-template-columns: minmax(0, 1fr); }
 }
 

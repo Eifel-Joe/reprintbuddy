@@ -106,6 +106,14 @@
 <form class="icon-form" method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="form_token" value="{{ form_token() }}">{% for field_name, field_value in fields %}<input type="hidden" name="{{ field_name }}" value="{{ field_value }}">{% endfor %}<button type="submit" class="icon-btn" title="{{ label }}" aria-label="{{ label }}">{{ icon(icon_name) }}</button></form>
 {%- endmacro %}
 
+{# On/off switch that posts (the automation of an article in the list): a small form with both tokens
+   and a button in the shape of a switch. It sends the wanted state in `enabled` ("1" or "0"), never
+   "toggle", so two open tabs cannot turn each other back. `next` is the local path to return to.
+   Works without JavaScript; 44 px target. #}
+{% macro switch_post(action, on, label, next) -%}
+<form class="switch-form" method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="form_token" value="{{ form_token() }}"><input type="hidden" name="enabled" value="{{ '0' if on else '1' }}"><input type="hidden" name="next" value="{{ next }}"><button type="submit" class="switch-btn" role="switch" aria-checked="{{ 'true' if on else 'false' }}" title="{{ label }}" aria-label="{{ label }}"><span class="switch-track" aria-hidden="true"></span></button></form>
+{%- endmacro %}
+
 {# The symbols at the end of a table row: {% call ui.row_actions() %}…{% endcall %}. The column
    head is <th class="actions-col"><span class="sr-only">{{ t('list.col.actions') }}</span></th>. #}
 {% macro row_actions() -%}

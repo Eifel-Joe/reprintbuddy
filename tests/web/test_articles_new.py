@@ -245,4 +245,4 @@ def test_no_bambuddy_write_calls(bb_client, fake_bambuddy):
     bb_client.get("/articles/new/file/1")
     bb_client.post(FORM, data=fields(bb_client))
     assert fake_bambuddy.calls  # something was read
-    assert "ensure_batch" not in fake_bambuddy.calls and "enqueue" not in fake_bambuddy.calls
+    assert "enqueue" not in fake_bambuddy.calls

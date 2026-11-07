@@ -290,3 +290,60 @@ def test_article_row_thumbnail_and_pause(db):
         row = catalog.list_articles(s)[0]
         assert row.has_thumbnail is True and row.paused is True
         assert row.status == "overbooked"
+
+
+# ---- the automation switch of the list (p44) --------------------------------------------------
+
+
+def test_set_auto_enabled_on_and_off(db):
+    with db.begin() as s:
+        a = make_article(s, target_model="A1").id
+    with db.begin() as s:
+        assert catalog.set_auto_enabled(s, a, True).auto_enabled is True
+    with db.begin() as s:
+        assert catalog.set_auto_enabled(s, a, True).auto_enabled is True  # a wanted state, no toggle
+        assert catalog.set_auto_enabled(s, a, False).auto_enabled is False
+
+
+def test_set_auto_enabled_on_needs_a_target(db):
+    with db.begin() as s:
+        a = make_article(s, target_model=None, printer_id=None).id
+    with db.begin() as s:
+        with pytest.raises(ConflictError) as err:
+            catalog.set_auto_enabled(s, a, True)
+        assert err.value.key == "articles.auto_needs_target"
+        assert s.get(Article, a).auto_enabled is False
+    with db.begin() as s:
+        s.get(Article, a).printer_id = 2
+    with db.begin() as s:
+        assert catalog.set_auto_enabled(s, a, True).auto_enabled is True
+
+
+def test_set_auto_enabled_off_needs_no_target(db):
+    with db.begin() as s:
+        a = make_article(s, target_model=None, printer_id=None, auto_enabled=True).id
+    with db.begin() as s:
+        assert catalog.set_auto_enabled(s, a, False).auto_enabled is False
+
+
+def test_set_auto_enabled_refuses_archived_and_missing(db):
+    from datetime import datetime, timezone
+
+    with db.begin() as s:
+        a = make_article(s, target_model="A1", archived_at=datetime.now(timezone.utc)).id
+    with db.begin() as s:
+        for wanted in (True, False):
+            with pytest.raises(ConflictError) as err:
+                catalog.set_auto_enabled(s, a, wanted)
+            assert err.value.key == "articles.auto_archived"
+        with pytest.raises(NotFoundError):
+            catalog.set_auto_enabled(s, 999, True)
+
+
+def test_list_row_carries_the_automation_state(db):
+    with db.begin() as s:
+        make_article(s, name="Template A", target_model="A1", auto_enabled=True)
+        make_article(s, name="Template B", target_model="A1")
+    with db.begin() as s:
+        rows = {r.name: r.auto_enabled for r in catalog.list_articles(s)}
+    assert rows == {"Template A": True, "Template B": False}

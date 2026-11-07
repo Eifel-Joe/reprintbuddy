@@ -1,11 +1,29 @@
 {# Warnings of the engine (Spec 7.7, 10.2) and the time of the last successful query of Bambuddy.
-   Context from web/engine_view.warnings_context: `warnings` (text, tone) and `last_poll_at`, the end
-   of the last regular query that Bambuddy did not refuse. The queue page and the overview show it
-   inside a region on the topics "bambuddy queue article settings"; B7 takes it over. #}
+   Context from web/engine_view.warnings_context: `warnings` (text, tone, article_id, action) and
+   `last_poll_at`, the end of the last regular query that Bambuddy did not refuse. The queue page and
+   the overview show it inside a region on the topics "bambuddy queue article settings"; B7 takes it
+   over. A paused article's notice says how to go on (p49): `action` "resume" is a button (a plain
+   form, with its own one-time token, which the region brings fresh each time it is fetched and which
+   returns to the page it was on: `live_src`), the others are links to where the pause is settled. #}
 {% import "_ui.html" as ui with context %}
 <div class="warnings">
 {%- for warning in warnings %}
-<div class="warning-card tone-{{ warning.tone }}" role="status">{{ ui.icon('triangle-alert' if warning.tone == 'bad' else 'circle-alert') }}<p>{{ warning.text }}</p></div>
+<div class="warning-card tone-{{ warning.tone }}" role="status">{{ ui.icon('triangle-alert' if warning.tone == 'bad' else 'circle-alert') }}<p>{{ warning.text }}</p>
+{%- if warning.action %}
+<div class="warning-actions">
+{%- if warning.action == 'resume' %}
+<form method="post" action="/articles/{{ warning.article_id }}/resume"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="form_token" value="{{ form_token() }}">{% if live_src %}<input type="hidden" name="next" value="{{ live_src }}">{% endif %}<button class="btn" type="submit">{{ t('warning.action.resume') }}</button></form>
+{%- elif warning.action == 'confirm_file' %}
+<a class="warning-link" href="/articles/{{ warning.article_id }}#confirm-file">{{ t('warning.action.confirm_file') }}</a>
+{%- elif warning.action == 'relink' %}
+<a class="warning-link" href="/articles/{{ warning.article_id }}/relink">{{ t('warning.action.relink') }}</a>
+{%- elif warning.action == 'edit' %}
+<a class="warning-link" href="/articles/{{ warning.article_id }}/edit">{{ t('warning.action.edit') }}</a>
+{%- endif %}
+<a class="warning-link" href="/articles/{{ warning.article_id }}">{{ t('warning.action.article') }}</a>
+</div>
+{%- endif %}
+</div>
 {%- endfor %}
 <p class="last-poll">{% if last_poll_at %}{{ t('queue.last_poll', at=last_poll_at|local_dt) }}{% else %}{{ t('queue.never_polled') }}{% endif %}</p>
 </div>

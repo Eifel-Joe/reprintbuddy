@@ -1,4 +1,5 @@
 import inspect
+from datetime import UTC, datetime
 
 import pytest
 
@@ -6,7 +7,6 @@ from reprintbuddy.bambuddy.client import (
     BambuddyClient,
     BambuddyRejected,
     BambuddyUnavailable,
-    BatchRefLost,
     HttpBambuddyClient,
 )
 from reprintbuddy.bambuddy.fake import FakeBambuddy
@@ -21,8 +21,8 @@ def test_protocol_matches_master_plan():
     names = {n for n in dir(BambuddyClient) if not n.startswith("_")}
     assert names == {
         "ping", "list_folders", "list_files", "get_file", "list_plates",
-        "plate_thumbnail", "filament_requirements", "ensure_batch", "enqueue",
-        "get_queue_item", "list_queue", "find_items_by_batch", "list_spools",
+        "plate_thumbnail", "filament_requirements", "enqueue",
+        "get_queue_item", "list_queue", "list_all_items", "list_spools",
         "list_printers", "spool_mode", "file_thumbnail",
     }
     for name in names:
@@ -113,7 +113,7 @@ async def test_spool_mode_follows_spoolman_enabled():
         await fake.spool_mode()
 
 
-# ---- queue, batches, spools (Task 7) ------------------------------------------------
+# ---- queue, spools (Task 7; single entries since v0.3.5, Spec 7.6) ------------------
 def _ready() -> tuple[FakeBambuddy, int]:
     """A fake with one A1 printer and one file; returns it and the file id."""
     fake = FakeBambuddy()
@@ -121,10 +121,10 @@ def _ready() -> tuple[FakeBambuddy, int]:
     return fake, fake.add_file("Template A.gcode.3mf").id
 
 
-def _req(file_id: int, batch_id: int, **kw) -> EnqueueRequest:
+def _req(file_id: int, **kw) -> EnqueueRequest:
     fields = dict(
         library_file_id=file_id, plate_id=1, target_model="A1", printer_id=None,
-        batch_id=batch_id, insert_at_top=False, insert_position=None,
+        insert_at_top=False, insert_position=None,
     )
     fields.update(kw)
     return EnqueueRequest(**fields)
@@ -134,53 +134,105 @@ async def test_enqueue_appends_and_inserts():
     fake, fid = _ready()
     f1, f2 = fake.add_foreign_item("F1"), fake.add_foreign_item("F2")
     assert (f1.position, f2.position) == (1, 2)
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
-    last = await fake.enqueue(_req(fid, batch))
+    last = await fake.enqueue(_req(fid))
     assert last.position == 3
     assert (last.status, last.manual_start, last.created_by) == ("pending", False, "reprintbuddy")
     assert last.label == "Template A.gcode.3mf / plate 1"
-    top = await fake.enqueue(_req(fid, batch, insert_at_top=True))
+    top = await fake.enqueue(_req(fid, insert_at_top=True))
     assert top.position == 1
     assert [i.position for i in await fake.list_queue()] == [1, 2, 3, 4]
     assert (await fake.get_queue_item(f1.id)).position == 2
-    second = await fake.enqueue(_req(fid, batch, insert_position=2))
+    second = await fake.enqueue(_req(fid, insert_position=2))
     assert second.position == 2
     assert (await fake.get_queue_item(f1.id)).position == 3
-    assert fake.enqueued[-1] == _req(fid, batch, insert_position=2)
+    assert fake.enqueued[-1] == _req(fid, insert_position=2)
+
+
+async def test_enqueue_makes_a_single_entry_without_batch():
+    """Spec 7.6 (v0.3.5): one entry per print, never a batch."""
+    fake, fid = _ready()
+    item = await fake.enqueue(_req(fid))
+    assert item.batch_id is None
+    assert not hasattr(fake, "ensure_batch")
+    assert not hasattr(fake, "find_items_by_batch")
+
+
+async def test_enqueue_stamps_creator_and_time_from_the_fake_clock():
+    fake, fid = _ready()
+    fake.now = lambda: datetime(2026, 11, 7, 8, 30)
+    item = await fake.enqueue(_req(fid, plate_id=1))
+    assert (item.created_by, item.created_at) == ("reprintbuddy", datetime(2026, 11, 7, 8, 30))
+    assert (item.library_file_id, item.plate_id) == (fid, 1)
+    fake.username = "robot"
+    assert (await fake.enqueue(_req(fid))).created_by == "robot"
+
+
+async def test_fake_clock_is_naive_utc_by_default():
+    before = datetime.now(UTC).replace(tzinfo=None)
+    stamp = FakeBambuddy().now()
+    assert stamp.tzinfo is None
+    assert before <= stamp <= datetime.now(UTC).replace(tzinfo=None)
+
+
+async def test_foreign_item_for_a_file_and_time():
+    fake, fid = _ready()
+    item = fake.add_foreign_item(
+        "Old", created_by=fake.username, library_file_id=fid, plate_id=1,
+        created_at=datetime(2026, 11, 7, 8, 0),
+    )
+    assert (item.created_by, item.library_file_id, item.plate_id, item.created_at) == (
+        "reprintbuddy", fid, 1, datetime(2026, 11, 7, 8, 0)
+    )
+    fake.now = lambda: datetime(2026, 11, 7, 9, 0)
+    assert fake.add_foreign_item("Now").created_at == datetime(2026, 11, 7, 9, 0)
+    assert fake.add_foreign_item("Undated", undated=True).created_at is None
+
+
+async def test_list_all_items_includes_history_in_queue_order():
+    fake, fid = _ready()
+    first = await fake.enqueue(_req(fid))
+    top = await fake.enqueue(_req(fid, insert_at_top=True))
+    done = await fake.enqueue(_req(fid))
+    fake.set_status(done.id, "completed")
+    foreign = fake.add_foreign_item("F1", status="cancelled")
+    fake.calls.clear()
+    items = await fake.list_all_items()
+    assert fake.calls == ["list_all_items"]
+    assert {i.id for i in items} == {first.id, top.id, done.id, foreign.id}
+    # Bambuddy sorts by (position, id); finished entries keep their old position.
+    assert [i.id for i in items] == [
+        i.id for i in sorted(items, key=lambda i: (i.position or 0, i.id))
+    ]
 
 
 async def test_insert_position_capped():
     fake, fid = _ready()
     fake.add_foreign_item("F1")
     fake.add_foreign_item("F2")
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
-    assert (await fake.enqueue(_req(fid, batch, insert_position=99))).position == 3
+    assert (await fake.enqueue(_req(fid, insert_position=99))).position == 3
 
 
 async def test_gaps_remain_after_delete():
     fake, fid = _ready()
     a, b = fake.add_foreign_item("A"), fake.add_foreign_item("B")
     fake.delete_item(a.id)
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
     assert (await fake.get_queue_item(b.id)).position == 2
-    assert (await fake.enqueue(_req(fid, batch))).position == 3
+    assert (await fake.enqueue(_req(fid))).position == 3
 
 
 async def test_list_queue_open_only():
     fake, fid = _ready()
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
-    item = await fake.enqueue(_req(fid, batch))
+    item = await fake.enqueue(_req(fid))
     fake.set_status(item.id, "completed")
     assert await fake.list_queue() == []
     got = await fake.get_queue_item(item.id)
     assert got.status == "completed" and got.completed_at is not None
-    assert [i.id for i in await fake.find_items_by_batch(batch)] == [item.id]
+    assert [i.id for i in await fake.list_all_items()] == [item.id]
 
 
 async def test_set_status_printing_sets_started_and_printer():
     fake, fid = _ready()
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
-    item = await fake.enqueue(_req(fid, batch))
+    item = await fake.enqueue(_req(fid))
     fake.set_status(item.id, "printing", printer_id=1)
     got = await fake.get_queue_item(item.id)
     assert got.started_at is not None and got.completed_at is None
@@ -190,60 +242,28 @@ async def test_set_status_printing_sets_started_and_printer():
 
 async def test_deleted_item_is_none():
     fake, fid = _ready()
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
-    item = await fake.enqueue(_req(fid, batch))
+    item = await fake.enqueue(_req(fid))
     fake.delete_item(item.id)
     assert await fake.get_queue_item(item.id) is None
-    assert await fake.find_items_by_batch(batch) == []
-
-
-async def test_batch_ref_reused_and_lost():
-    fake, fid = _ready()
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
-    assert batch == 1
-    # an empty batch behind a known reference: the batch list omits it -> lost
-    with pytest.raises(BatchRefLost):
-        await fake.ensure_batch("Job", "ref-1", fid)
-    await fake.enqueue(_req(fid, batch))
-    assert await fake.ensure_batch("Job", "ref-1", fid) == batch
-    assert await fake.ensure_batch("Job", "ref-2", fid) == 2
-
-
-async def test_ensure_batch_unknown_file():
-    fake = FakeBambuddy()
-    with pytest.raises(BambuddyRejected) as err:
-        await fake.ensure_batch("Job", "ref-1", 99)
-    assert (err.value.status, err.value.detail) == (404, "Library file not found")
+    assert await fake.list_all_items() == []
 
 
 async def test_lost_response_effect_happens():
     fake, fid = _ready()
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
     fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
     with pytest.raises(BambuddyUnavailable):
-        await fake.enqueue(_req(fid, batch))
-    assert len(await fake.find_items_by_batch(batch)) == 1
-    await fake.enqueue(_req(fid, batch))
-    assert len(await fake.find_items_by_batch(batch)) == 2
-
-
-async def test_lost_response_of_ensure_batch_effect_happens():
-    fake, fid = _ready()
-    fake.fail_next("ensure_batch", BambuddyUnavailable("timeout"), after_effect=True)
-    with pytest.raises(BambuddyUnavailable):
-        await fake.ensure_batch("Job", "ref-1", fid)
-    # the batch exists but is empty -> exactly the case of Decision 10
-    with pytest.raises(BatchRefLost):
-        await fake.ensure_batch("Job", "ref-1", fid)
+        await fake.enqueue(_req(fid))
+    assert len(await fake.list_all_items()) == 1
+    await fake.enqueue(_req(fid))
+    assert len(await fake.list_all_items()) == 2
 
 
 async def test_fail_next_without_effect():
     fake, fid = _ready()
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
     fake.fail_next("enqueue", BambuddyRejected("invalid", status=422))
     with pytest.raises(BambuddyRejected):
-        await fake.enqueue(_req(fid, batch))
-    assert await fake.find_items_by_batch(batch) == []
+        await fake.enqueue(_req(fid))
+    assert await fake.list_all_items() == []
     assert fake.enqueued == []
 
 
@@ -252,7 +272,7 @@ async def test_fail_next_without_effect():
     [
         ("list_folders", ()), ("list_files", (None,)), ("get_file", (1,)),
         ("list_printers", ()), ("spool_mode", ()), ("list_spools", ()),
-        ("get_queue_item", (1,)), ("list_queue", ()), ("find_items_by_batch", (1,)),
+        ("get_queue_item", (1,)), ("list_queue", ()), ("list_all_items", ()),
     ],
 )
 @pytest.mark.parametrize("after_effect", [False, True])
@@ -267,12 +287,16 @@ async def test_fail_next_works_for_read_methods(method, args, after_effect):
 def test_fail_next_unknown_method():
     with pytest.raises(ValueError):
         FakeBambuddy().fail_next("nope", RuntimeError())
+    for gone in ("ensure_batch", "find_items_by_batch"):
+        with pytest.raises(ValueError):
+            FakeBambuddy().fail_next(gone, RuntimeError())
 
 
 async def test_unavailable_applies_to_queue_and_spools():
     fake, fid = _ready()
     fake.unavailable = True
-    for call in (fake.list_queue(), fake.list_spools(), fake.ensure_batch("J", "r", fid)):
+    calls = (fake.list_queue(), fake.list_spools(), fake.list_all_items(), fake.enqueue(_req(fid)))
+    for call in calls:
         with pytest.raises(BambuddyUnavailable):
             await call
 
@@ -290,40 +314,35 @@ async def test_enqueue_rejects_unknown_model():
     fake = FakeBambuddy()
     fake.add_printer("Printer 1", "A1")
     fid = fake.add_file("Template A.gcode.3mf").id
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
     with pytest.raises(BambuddyRejected) as err:
-        await fake.enqueue(_req(fid, batch, target_model="X1"))
+        await fake.enqueue(_req(fid, target_model="X1"))
     assert err.value.status == 400
     assert err.value.detail == "No active printers for model: X1"
-    assert await fake.find_items_by_batch(batch) == []
+    assert await fake.list_all_items() == []
 
 
 async def test_enqueue_ignores_inactive_printers():
     fake = FakeBambuddy()
     fake.add_printer("Printer 1", "A1", active=False)
     fid = fake.add_file("Template A.gcode.3mf").id
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
     with pytest.raises(BambuddyRejected) as err:
-        await fake.enqueue(_req(fid, batch))
+        await fake.enqueue(_req(fid))
     assert err.value.status == 400
 
 
-async def test_enqueue_unknown_file_or_batch_or_printer():
+async def test_enqueue_unknown_file_or_printer():
     fake, fid = _ready()
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
-    for req in (_req(99, batch), _req(fid, 99)):
-        with pytest.raises(BambuddyRejected) as err:
-            await fake.enqueue(req)
-        assert err.value.status == 404
     with pytest.raises(BambuddyRejected) as err:
-        await fake.enqueue(_req(fid, batch, target_model=None, printer_id=99))
+        await fake.enqueue(_req(99))
+    assert err.value.status == 404
+    with pytest.raises(BambuddyRejected) as err:
+        await fake.enqueue(_req(fid, target_model=None, printer_id=99))
     assert err.value.status == 400
 
 
 async def test_enqueue_to_printer_names_it():
     fake, fid = _ready()
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
-    item = await fake.enqueue(_req(fid, batch, target_model=None, printer_id=1))
+    item = await fake.enqueue(_req(fid, target_model=None, printer_id=1))
     assert (item.printer_id, item.printer_name, item.target_model) == (1, "Printer 1", None)
 
 
@@ -338,13 +357,12 @@ async def test_enqueue_to_printer_names_it():
 )
 async def test_enqueue_value_errors_before_any_effect(changes):
     fake, fid = _ready()
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
     fake.fail_next("enqueue", BambuddyUnavailable("must stay queued"))
     with pytest.raises(ValueError):
-        await fake.enqueue(_req(fid, batch, **changes))
+        await fake.enqueue(_req(fid, **changes))
     assert fake.enqueued == [] and "enqueue" not in fake.calls
     with pytest.raises(BambuddyUnavailable):  # the injected failure was not used up
-        await fake.enqueue(_req(fid, batch))
+        await fake.enqueue(_req(fid))
 
 
 async def test_spools_builtin():
@@ -403,40 +421,14 @@ def test_fake_matches_http_client_signatures():
         assert params(FakeBambuddy) == params(HttpBambuddyClient), name
 
 
-async def test_find_items_by_batch_sorted_by_position():
-    fake, fid = _ready()
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
-    first = await fake.enqueue(_req(fid, batch))
-    top = await fake.enqueue(_req(fid, batch, insert_at_top=True))
-    assert first.id < top.id
-    assert [i.id for i in await fake.find_items_by_batch(batch)] == [top.id, first.id]
-
-
 async def test_insert_position_wins_over_insert_at_top():
     fake, fid = _ready()
     fake.add_foreign_item("F1")
     fake.add_foreign_item("F2")
-    batch = await fake.ensure_batch("Job", "ref-1", fid)
-    item = await fake.enqueue(_req(fid, batch, insert_at_top=True, insert_position=2))
+    item = await fake.enqueue(_req(fid, insert_at_top=True, insert_position=2))
     assert item.position == 2
-    item = await fake.enqueue(_req(fid, batch, insert_at_top=True, insert_position=99))
+    item = await fake.enqueue(_req(fid, insert_at_top=True, insert_position=99))
     assert item.position == 4
-
-
-async def test_ensure_batch_empty_name_rejected():
-    fake, fid = _ready()
-    for name in ("", "  "):
-        with pytest.raises(BambuddyRejected) as err:
-            await fake.ensure_batch(name, "ref-1", fid)
-        assert (err.value.status, err.value.detail) == (400, "Batch name is required")
-
-
-async def test_batch_ref_lost_text_is_bambuddys():
-    fake, fid = _ready()
-    await fake.ensure_batch("Job", "ref-1", fid)
-    with pytest.raises(BatchRefLost) as err:
-        await fake.ensure_batch("Job", "ref-1", fid)
-    assert err.value.detail == "A batch for this external_source and external_ref already exists"
 
 
 async def test_foreign_item_not_pending_has_int_position():

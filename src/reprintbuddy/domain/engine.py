@@ -48,6 +48,8 @@ Publish = Callable[[frozenset[str]], None]
 TOPIC = "bambuddy"
 # Poll interval until `poll_seconds()` could be read once (it reads the settings).
 DEFAULT_POLL_SECONDS = 60.0
+# After a tick held back by an update, the next regular tick comes this soon (p41).
+UPDATE_RETRY_SECONDS = 5.0
 
 
 @dataclass
@@ -64,8 +66,13 @@ class EngineStatus:
     rejected_name: str | None = None  # the article of the refused print (final review 7)
     poll_error: str | None = None
     unresolved: int = 0
-    resolve_error: str | None = None  # Bambuddy refused the search for an unclear print
+    # The search for an unclear print was refused or could not run (Spec 7.6).
+    resolve_error: str | None = None
+    # Bambuddy ids per unclear print that could not be told apart (none was adopted).
     duplicates: list[list[int]] = field(default_factory=list)
+    # Bambuddy id -> article of the ids in `duplicates`: no print holds these ids, so the
+    # article is remembered to keep the warning while it stays paused.
+    duplicate_articles: dict[int, int] = field(default_factory=dict)
     cap_reached: bool = False
     skipped_for_update: bool = False
     bambuddy_queue: list[QueueItem] | None = None
@@ -202,6 +209,7 @@ class Engine:
         for ids in report.duplicates:
             if ids not in status.duplicates:
                 status.duplicates.append(ids)
+        status.duplicate_articles.update(report.duplicate_articles)
 
     async def _poll(self, client: BambuddyClient) -> None:
         """Step 5: ask Bambuddy about everything; a refusal ends only its own part.
@@ -319,20 +327,29 @@ class Engine:
     def _prune_duplicates(self, session: Session) -> None:
         """Drop duplicate groups whose article is no longer paused (final review 2).
 
-        Lifting the pause is the user's answer to the warning. A group without a print
-        of its own (cannot happen: the first id was adopted) is dropped as well.
+        Lifting the pause is the user's answer to the warning. Since v0.3.5 (Spec 7.6) no
+        print holds the ids of a group - none was adopted - so the article comes from
+        `duplicate_articles`, filled by `resolve_pending`. Rejected: finding it through
+        `Dispatch.bambuddy_item_id` (always empty now) or through the journal's
+        `print_duplicates` lines (couples the warning to the journal's form). A group
+        without a known article cannot be held to a pause and is dropped.
         """
+        status = self.status
         kept = []
-        for ids in self.status.duplicates:
-            paused = session.scalar(
-                select(Article.paused)
-                .join(Dispatch, Dispatch.article_id == Article.id)
-                .where(Dispatch.bambuddy_item_id.in_(ids))
-                .limit(1)
+        for ids in status.duplicates:
+            articles = {status.duplicate_articles[i] for i in ids if i in status.duplicate_articles}
+            paused = articles and session.scalar(
+                select(func.count())
+                .select_from(Article)
+                .where(Article.id.in_(articles), Article.paused.is_(True))
             )
             if paused:
                 kept.append(ids)
-        self.status.duplicates = kept
+        status.duplicates = kept
+        held = {i for ids in kept for i in ids}
+        status.duplicate_articles = {
+            i: a for i, a in status.duplicate_articles.items() if i in held
+        }
 
     def _cap_reached(self, session: Session) -> bool:
         """Step 8: the cap holds back a print that could otherwise go now."""
@@ -402,6 +419,18 @@ class Engine:
             except Exception as exc:
                 log.exception("engine: tick failed")
                 problem = repr(exc)
+            # p41 - root cause: the first tick of a freshly started process can still fall
+            # into the update unit, which is running until the service is up again. The
+            # tick is skipped, and the next regular one came only after `poll_minutes`
+            # (default 15): "an update is running" and "never polled" stood that long.
+            # Fix: while ticks are held back by an update - skipped at the start or
+            # stopped in the hand-over, both set `skipped_for_update` - the next regular
+            # tick comes after `UPDATE_RETRY_SECONDS`; a tick that runs clears the flag
+            # and the interval holds again. Rejected: waiting on the update unit itself
+            # (the engine knows only `update_running()`), a fixed second tick (an update
+            # may take longer). Tests: test_engine.py "p41".
+            if self.status.skipped_for_update:
+                next_poll_at = min(next_poll_at, loop.time() + UPDATE_RETRY_SECONDS)
             self.status.error = problem
             self._announce()
 
@@ -419,7 +448,8 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
     """Spec 10.2 "warnings", in a fixed order; B7 shows the same list.
 
     `article_paused` carries the pause reason already translated into the interface
-    language; lists stay lists (see `warning_text`).
+    language; lists stay lists (see `warning_text`). It also carries `article_id`, `reason_key`
+    (the stored reason or None) and `has_target`, which the text does not use.
     """
     found: list[EngineWarning] = []
 
@@ -445,7 +475,9 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
     )
     if unclear:
         add("unclear_prints", count=unclear)
-    if status.resolve_error:
+    if status.resolve_error == dispatch.NO_OWN_USER:
+        add("resolve_no_user")  # no Bambuddy text to quote: say it in the page's language
+    elif status.resolve_error:
         add("resolve_rejected", message=status.resolve_error)
     if status.duplicates:
         add("duplicates", ids=[list(ids) for ids in status.duplicates])
@@ -470,14 +502,21 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
 
     lang = str(settings.get_setting(session, "language"))
     paused = session.execute(
-        select(Article.name, Article.pause_reason)
+        select(
+            Article.id, Article.name, Article.pause_reason, Article.target_model, Article.printer_id
+        )
         .where(Article.paused.is_(True), Article.archived_at.is_(None))
         .order_by(Article.name, Article.id)
     ).all()
-    for name, reason in paused:
+    for article_id, name, reason, target_model, printer_id in paused:
         # A pause without a reason (older data) gets the general word, never "Name: ".
         text = translate(lang, f"pause.reason.{reason}" if reason else "status.paused")
-        add("article_paused", name=name, reason=text)
+        # `article_id`, `reason_key` and `has_target` are for the page's way out of the pause
+        # (p49, web/engine_view.py), not for the text: `warning_text` ignores them.
+        add(
+            "article_paused", name=name, reason=text, article_id=article_id,
+            reason_key=reason, has_target=bool(target_model or printer_id),
+        )
     return found
 
 

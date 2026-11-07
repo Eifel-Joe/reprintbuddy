@@ -42,11 +42,12 @@ class FilamentRequirement:
 
 @dataclass(frozen=True)
 class EnqueueRequest:
+    """One print as one single queue entry (Spec 7.6): no batch, no quantity."""
+
     library_file_id: int
     plate_id: int
     target_model: str | None
     printer_id: int | None
-    batch_id: int
     insert_at_top: bool
     insert_position: int | None
 
@@ -73,7 +74,7 @@ class QueueItem:
 
     id: int
     status: str  # raw, see QUEUE_STATUSES
-    batch_id: int | None
+    batch_id: int | None  # as Bambuddy reports it; Reprintbuddy makes no batches (Spec 7.6)
     position: int | None
     printer_id: int | None  # set once Bambuddy assigned a printer
     target_model: str | None  # "Any <model>" entries
@@ -87,6 +88,9 @@ class QueueItem:
     started_at: datetime | None  # naive UTC
     completed_at: datetime | None  # naive UTC
     error_message: str | None
+    # Last, with a default: every earlier construction stays valid. Used to find an entry
+    # after an unclear hand-over (Spec 7.6).
+    created_at: datetime | None = None  # naive UTC
 
 
 # Which spool management Bambuddy runs: its own ("builtin") or Spoolman ("spoolman").

@@ -45,7 +45,7 @@
   <p>{{ t(reason_key) if article.pause_reason else t('status.paused') }}</p>
   <div class="actions">
     {% if article.pause_reason == 'file_changed' %}
-    <form method="post" action="/articles/{{ article.id }}/confirm-file">
+    <form method="post" id="confirm-file" action="/articles/{{ article.id }}/confirm-file">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="form_token" value="{{ form_token() }}">
       <button class="btn" type="submit">{{ ui.icon('check') }}{{ t('articles.confirm_file') }}</button>

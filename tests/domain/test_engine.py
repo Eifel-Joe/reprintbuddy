@@ -13,7 +13,6 @@ from sqlalchemy import select
 from factories import make_article, make_dispatch, make_entry
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable
-from reprintbuddy.bambuddy.types import EnqueueRequest
 from reprintbuddy.domain import workqueue as wq
 from reprintbuddy.domain.engine import (
     Engine,
@@ -221,7 +220,6 @@ async def test_cap_lowered_recalls_nothing(engine_env):
 
     assert result == TickResult(None, 1, 0)
     assert "enqueue" not in env.fake.calls
-    assert "ensure_batch" not in env.fake.calls
     assert statuses(env.sm) == ["queued"] * 3
     assert len(await env.fake.list_queue()) == 3
     assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
@@ -274,14 +272,15 @@ async def test_tick_skipped_during_update(engine_env):
 async def test_update_between_reservation_and_send(engine_env, monkeypatch):
     """Final review 1: the update's backup may already be taken; nothing may be sent now."""
     env = engine_env
-    ensure_batch = env.fake.ensure_batch
+    setting(env.sm, "insert_next", True)  # Bambuddy is asked (list_queue) before the send
+    list_queue = env.fake.list_queue
 
-    async def batch_then_update(*args):
-        batch_id = await ensure_batch(*args)
+    async def read_then_update():
+        items = await list_queue()
         env.updating = True
-        return batch_id
+        return items
 
-    monkeypatch.setattr(env.fake, "ensure_batch", batch_then_update)
+    monkeypatch.setattr(env.fake, "list_queue", read_then_update)
 
     result = await env.engine.tick(poll=False)
 
@@ -309,7 +308,7 @@ async def test_update_between_two_prints_of_one_tick(engine_env, monkeypatch):
     result = await env.engine.tick(poll=False)
 
     assert result == TickResult(None, 1, 1)
-    assert env.fake.calls.count("ensure_batch") == 1
+    assert env.fake.calls.count("enqueue") == 1
     assert len(env.fake.enqueued) == 1
     assert statuses(env.sm) == ["queued"]  # the second print was never reserved
     assert queue_of(env.sm) == [(env.article_id, 1, "rule")]
@@ -352,13 +351,13 @@ async def test_unclear_blocks_new_dispatch(engine_env):
     assert env.engine.status.reachable is False
     with env.sm.begin() as s:
         make_entry(s, env.article_id, 1, origin="manual")
-    env.fake.fail_next("find_items_by_batch", BambuddyUnavailable("timeout"))
+    env.fake.fail_next("list_all_items", BambuddyUnavailable("timeout"))
     env.fake.calls.clear()
 
     result = await env.engine.tick(poll=False)
 
     assert result == TickResult(None, 0, 0)
-    assert "ensure_batch" not in env.fake.calls and "enqueue" not in env.fake.calls
+    assert "enqueue" not in env.fake.calls
     assert statuses(env.sm) == ["unclear"]
     assert queue_of(env.sm) == [(env.article_id, 1, "manual")]
     assert env.engine.status.unresolved == 1
@@ -372,7 +371,7 @@ async def test_refused_search_becomes_a_warning(engine_env):
     env = engine_env
     env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
     await env.engine.tick(poll=False)
-    env.fake.fail_next("find_items_by_batch", BambuddyRejected("Forbidden", status=403))
+    env.fake.fail_next("list_all_items", BambuddyRejected("Forbidden", status=403))
 
     await env.engine.tick(poll=False)
 
@@ -411,7 +410,7 @@ async def test_rejected_waits_for_regular_tick(engine_env):
     env.fake.calls.clear()
     result = await env.engine.tick(poll=False)
     assert result == TickResult(None, 0, 0)
-    assert "enqueue" not in env.fake.calls and "ensure_batch" not in env.fake.calls
+    assert "enqueue" not in env.fake.calls
 
     result = await env.engine.tick(poll=True)
     assert result == TickResult(None, 0, 1)
@@ -466,7 +465,7 @@ async def test_poll_rejection_blocks_dispatch(engine_env):
     result = await env.engine.tick(poll=True)
 
     assert result == TickResult(None, 0, 0)
-    assert "enqueue" not in env.fake.calls and "ensure_batch" not in env.fake.calls
+    assert "enqueue" not in env.fake.calls
     assert env.engine.status.poll_error == "403: Forbidden"
     assert EngineWarning("warning.poll_rejected", {"message": "403: Forbidden"}) in warnings(
         env.sm, env.engine.status
@@ -501,7 +500,7 @@ async def test_poll_refusal_survives_cut_short_poll(engine_env):
 
     assert env.engine.status.reachable is True
     assert result == TickResult(None, 0, 0)
-    assert "enqueue" not in env.fake.calls and "ensure_batch" not in env.fake.calls
+    assert "enqueue" not in env.fake.calls
     assert env.engine.status.poll_error == "403: Forbidden"
 
     result = await env.engine.tick(poll=True)
@@ -522,44 +521,102 @@ async def test_refusal_in_a_cut_short_poll_is_kept(engine_env):
     assert env.engine.status.poll_error == "403: Forbidden"
 
 
-async def test_duplicates_kept_after_settling(engine_env):
+async def ambiguous_hand_over(env, file=1):
+    """A print whose answer got lost, plus a second unknown own entry of the same file and
+    plate made after the send: the next tick cannot tell them apart (Spec 7.6)."""
+    env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
+    await env.engine.tick(poll=False)
+    (real,) = [i for i in await env.fake.list_all_items() if i.library_file_id == file]
+    other = env.fake.add_foreign_item(
+        "Copy", created_by=env.fake.username, library_file_id=file, plate_id=1
+    )
+    return [real.id, other.id]
+
+
+async def test_lost_answer_is_found_by_the_next_tick(engine_env):
+    """Spec 7.6: the answer to `enqueue` gets lost; the next tick finds the entry by user,
+    file, plate and time, adopts it, and sends nothing a second time."""
+    env = engine_env
+    env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
+    await env.engine.tick(poll=False)
+    assert statuses(env.sm) == ["unclear"]
+    (entry,) = await env.fake.list_all_items()
+    env.fake.calls.clear()
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 0, 0)
+    assert env.fake.calls.count("enqueue") == 0
+    assert len(env.fake.enqueued) == 1
+    assert "list_all_items" in env.fake.calls
+    assert statuses(env.sm) == ["queued"]
+    assert item_ids(env.sm) == [entry.id]
+    assert env.engine.status.unresolved == 0
+    assert env.engine.status.duplicates == []
+    assert len(await env.fake.list_all_items()) == 1
+
+
+async def test_nothing_new_while_the_own_user_is_unknown(engine_env):
+    """Without its Bambuddy user the search decides nothing: the print stays unclear and
+    nothing new is handed over (Spec 7.6: until the hand-over is clear, nothing more)."""
+    from reprintbuddy.models import Setting
+
     env = engine_env
     env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
     await env.engine.tick(poll=False)
     with env.sm() as s:
-        batch_id = s.get(Dispatch, 1).bambuddy_batch_id
-    (first,) = await env.fake.find_items_by_batch(batch_id)
-    second = await env.fake.enqueue(EnqueueRequest(1, 1, "A1", None, batch_id, False, None))
+        s.merge(Setting(key="bambuddy_username", value="null"))
+        s.commit()
+    with env.sm.begin() as s:
+        make_entry(s, env.article_id, 1, origin="manual")
+    env.fake.calls.clear()
+
+    result = await env.engine.tick(poll=False)
+
+    assert result == TickResult(None, 0, 0)
+    assert "enqueue" not in env.fake.calls
+    assert statuses(env.sm) == ["unclear"]
+    assert env.engine.status.unresolved == 1
+    assert env.engine.status.reachable is True
+    found = keys(env.sm, env.engine.status)
+    assert "warning.unclear_prints" in found and "warning.resolve_no_user" in found
+
+
+async def test_duplicates_kept_after_settling(engine_env):
+    env = engine_env
+    ids = await ambiguous_hand_over(env)
 
     await env.engine.tick(poll=False)
-    assert env.engine.status.duplicates == [[first.id, second.id]]
+    assert env.engine.status.duplicates == [ids]
+    assert statuses(env.sm) == ["missing"]
     await env.engine.tick(poll=False)
 
-    assert env.engine.status.duplicates == [[first.id, second.id]]
-    assert EngineWarning("warning.duplicates", {"ids": [[first.id, second.id]]}) in warnings(
+    assert env.engine.status.duplicates == [ids]
+    assert EngineWarning("warning.duplicates", {"ids": [ids]}) in warnings(
         env.sm, env.engine.status
     )
+    assert len(env.fake.enqueued) == 1
 
 
 async def test_duplicates_warning_ends_when_pause_is_lifted(engine_env):
-    """Final review 2: the duplicate warning does not stay once the pause is lifted."""
+    """Final review 2: the duplicate warning does not stay once the pause is lifted.
+
+    No print holds these ids (none was adopted), so the group remembers its article.
+    """
     from reprintbuddy.domain.pauses import lift_pause
 
     env = engine_env
-    env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
-    await env.engine.tick(poll=False)
-    with env.sm() as s:
-        batch_id = s.get(Dispatch, 1).bambuddy_batch_id
-    (first,) = await env.fake.find_items_by_batch(batch_id)
-    second = await env.fake.enqueue(EnqueueRequest(1, 1, "A1", None, batch_id, False, None))
+    ids = await ambiguous_hand_over(env)
     await env.engine.tick(poll=False)
     assert "warning.duplicates" in keys(env.sm, env.engine.status)
+    assert env.engine.status.duplicate_articles == {i: env.article_id for i in ids}
 
     with env.sm.begin() as s:
         lift_pause(s, env.article_id, "user")
     await env.engine.tick(poll=False)
 
     assert env.engine.status.duplicates == []
+    assert env.engine.status.duplicate_articles == {}
     assert "warning.duplicates" not in keys(env.sm, env.engine.status)
 
 
@@ -567,21 +624,26 @@ async def test_duplicates_of_two_ticks_are_both_kept(engine_env):
     """A later report does not drop a group whose article is still paused."""
     env = engine_env
     env.engine.status.duplicates = [[90, 91]]
+    env.engine.status.duplicate_articles = {90: env.article_id, 91: env.article_id}
     with env.sm.begin() as s:
-        make_dispatch(s, env.article_id, status="queued", bambuddy_item_id=90)
         pause_article(s, env.article_id, "unclear", "auto")
     other = second_article(env.sm)
-    env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
+    ids = await ambiguous_hand_over(env, file=2)
+
     await env.engine.tick(poll=False)
+
+    assert env.engine.status.duplicates == [[90, 91], ids]
     with env.sm() as s:
-        row = s.scalars(select(Dispatch).where(Dispatch.article_id == other)).one()
-        batch_id = row.bambuddy_batch_id
-    (first,) = await env.fake.find_items_by_batch(batch_id)
-    second = await env.fake.enqueue(EnqueueRequest(2, 1, "A1", None, batch_id, False, None))
+        assert s.get(Article, other).pause_reason == "unclear"
+
+
+async def test_duplicate_group_without_known_article_is_dropped(engine_env):
+    env = engine_env
+    env.engine.status.duplicates = [[90, 91]]
 
     await env.engine.tick(poll=False)
 
-    assert env.engine.status.duplicates == [[90, 91], [first.id, second.id]]
+    assert env.engine.status.duplicates == []
 
 
 async def test_poll_notes_whether_the_queue_list_was_read(engine_env):
@@ -734,7 +796,13 @@ async def test_collect_warnings(engine_env):
     ]
     assert found[-1] == EngineWarning(
         "warning.article_paused",
-        {"name": "Template A", "reason": translate("en", "pause.reason.two_failures")},
+        {
+            "name": "Template A",
+            "reason": translate("en", "pause.reason.two_failures"),
+            "article_id": env.article_id,
+            "reason_key": "two_failures",
+            "has_target": True,
+        },
     )
 
 
@@ -750,10 +818,31 @@ async def test_paused_without_reason_gets_the_general_text(engine_env):
     assert found == [
         EngineWarning(
             "warning.article_paused",
-            {"name": "Template A", "reason": translate("en", "status.paused")},
+            {
+                "name": "Template A",
+                "reason": translate("en", "status.paused"),
+                "article_id": env.article_id,
+                "reason_key": None,
+                "has_target": True,
+            },
         )
     ]
     assert warning_text("en", found[0]) == "Template A: paused"
+
+
+async def test_paused_notice_tells_whether_a_target_is_set(engine_env):
+    """p49: the page offers "lift" only where `lift_pause` would not refuse; the text is unchanged."""
+    from reprintbuddy.domain.engine import warning_text
+
+    env = engine_env
+    update_article(env.sm, env.article_id, paused=True, pause_reason="no_target",
+                   target_model=None, printer_id=None)
+
+    (found,) = warnings(env.sm, EngineStatus(configured=True, reachable=True))
+
+    assert found.params["has_target"] is False and found.params["reason_key"] == "no_target"
+    assert found.params["article_id"] == env.article_id
+    assert warning_text("en", found) == f"Template A: {translate('en', 'pause.reason.no_target')}"
 
 
 async def test_collect_warnings_order(engine_env):
@@ -798,7 +887,13 @@ async def test_collect_warnings_order(engine_env):
         EngineWarning("warning.waiting_for_printer", {"names": ["Template A"]}),
         EngineWarning(
             "warning.article_paused",
-            {"name": "Template A", "reason": translate("en", "pause.reason.unclear")},
+            {
+                "name": "Template A",
+                "reason": translate("en", "pause.reason.unclear"),
+                "article_id": env.article_id,
+                "reason_key": "unclear",
+                "has_target": True,
+            },
         ),
     ]
 
@@ -961,3 +1056,97 @@ async def test_request_poll_runs_regular_tick(engine_env, monkeypatch):
         await wait_until(lambda: len(calls) == 3, timeout=0.1)
 
     assert calls == [True, False, True]
+
+
+# ---- p41: right after an update, ask Bambuddy again soon -------------------------------
+
+
+def record_update_ticks(engine, monkeypatch, *, updates, via_status=False):
+    """The first `updates` ticks are skipped for an update, the rest run.
+
+    `via_status`: the tick itself runs but stops its hand-over for the update (the
+    result is not `"update"`, only `status.skipped_for_update` tells).
+    """
+    calls = []
+
+    async def tick(*, poll):
+        calls.append(poll)
+        skipped = len(calls) <= updates
+        engine.status.skipped_for_update = skipped
+        if skipped and not via_status:
+            return TickResult("update", 0, 0)
+        return TickResult(None, 0, 0)
+
+    monkeypatch.setattr(engine, "tick", tick)
+    return calls
+
+
+async def test_tick_skipped_for_update_is_retried_soon(engine_env, monkeypatch):
+    """p41: a tick skipped for an update is followed by a regular tick after a few
+    seconds, not only after `poll_minutes`, until the update is over."""
+    import reprintbuddy.domain.engine as engine_module
+
+    monkeypatch.setattr(engine_module, "UPDATE_RETRY_SECONDS", 0.02)
+    engine = engine_env.engine
+    calls = record_update_ticks(engine, monkeypatch, updates=2)
+
+    async with running(engine, lambda: 60):
+        await wait_until(lambda: len(calls) >= 3)
+        await asyncio.sleep(0.1)  # once the update is over, the interval holds again
+
+    assert calls == [True, True, True]
+    assert engine.status.skipped_for_update is False
+
+
+async def test_hand_over_stopped_for_update_is_retried_soon(engine_env, monkeypatch):
+    """Sister path: the hand-over stopped for an update in the middle of a tick."""
+    import reprintbuddy.domain.engine as engine_module
+
+    monkeypatch.setattr(engine_module, "UPDATE_RETRY_SECONDS", 0.02)
+    engine = engine_env.engine
+    calls = record_update_ticks(engine, monkeypatch, updates=1, via_status=True)
+
+    async with running(engine, lambda: 60):
+        await wait_until(lambda: len(calls) >= 2)
+        await asyncio.sleep(0.1)
+
+    assert calls == [True, True]
+
+
+async def test_skipped_short_tick_brings_the_poll_forward(engine_env, monkeypatch):
+    """A booking's short tick skipped for an update also leads to a regular tick soon."""
+    import reprintbuddy.domain.engine as engine_module
+
+    monkeypatch.setattr(engine_module, "UPDATE_RETRY_SECONDS", 0.02)
+    engine = engine_env.engine
+    calls = []
+
+    async def tick(*, poll):
+        calls.append(poll)
+        skipped = len(calls) == 2  # the first poll ran; the booking's tick hits the update
+        engine.status.skipped_for_update = skipped
+        return TickResult("update" if skipped else None, 0, 0)
+
+    monkeypatch.setattr(engine, "tick", tick)
+
+    async with running(engine, lambda: 60):
+        await wait_until(lambda: calls == [True])
+        engine.request_tick()
+        await wait_until(lambda: len(calls) >= 3)
+        await asyncio.sleep(0.1)
+
+    assert calls == [True, False, True]
+
+
+def test_unknown_own_user_has_its_own_translated_warning(engine_env):
+    """p50: without the own Bambuddy user the search cannot run; the warning says so in
+    the interface language instead of quoting an English text."""
+    from reprintbuddy.domain import dispatch
+
+    status = EngineStatus(configured=True, reachable=True, resolve_error=dispatch.NO_OWN_USER)
+    found = warnings(engine_env.sm, status)
+    assert EngineWarning("warning.resolve_no_user", {}) in found
+    assert all(w.key != "warning.resolve_rejected" for w in found)
+    for lang in ("de", "en"):
+        text = translate(lang, "warning.resolve_no_user")
+        assert text != "warning.resolve_no_user" and "{" not in text

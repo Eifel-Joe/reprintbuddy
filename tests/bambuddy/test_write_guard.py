@@ -1,4 +1,4 @@
-"""Reprintbuddy writes to Bambuddy in exactly two ways (Spec 3.1, B2 Task 6).
+"""Reprintbuddy writes to Bambuddy in exactly one way: a single queue entry (Spec 3.1, 7.6).
 
 The only other POST is the live channel's token (`/auth/ws-token`, Spec 7.6, B2 Task 9): it
 changes nothing in the queue, the printers or the library.
@@ -40,9 +40,10 @@ SOURCE = Path(client_module.__file__).read_text(encoding="utf-8")
 LIVE_SOURCE = Path(live_module.__file__).read_text(encoding="utf-8")
 SRC = Path(reprintbuddy.__file__).resolve().parent
 
-# The only paths Reprintbuddy may POST to (one entry per call): the two write calls and the
-# live channel's token, which writes nothing (Spec 7.6).
-WRITE_PATHS = {"/queue/batches", "/queue/", "/auth/ws-token"}
+# The only paths Reprintbuddy may POST to (one entry per call): the one write call (a single
+# queue entry) and the live channel's token, which writes nothing (Spec 3.1, 7.6). Batches
+# (`/queue/batches`) are gone since v0.3.5: every print is its own entry.
+WRITE_PATHS = {"/queue/", "/auth/ws-token"}
 
 # Modules that import httpx today. A new importer would be a way around the watch.
 HTTPX_IMPORTERS = {
@@ -162,7 +163,7 @@ class _Scan(ast.NodeVisitor):
 
 
 def check_source(text: str) -> list[str]:
-    """Every way `text` (the client's source) could write past the two allowed calls."""
+    """Every way `text` (the client's source) could write past the allowed calls."""
     problems = [f"contains {fragment!r}" for fragment in FORBIDDEN if fragment in text]
     scan = _Scan()
     scan.visit(ast.parse(text))
@@ -301,8 +302,18 @@ def test_only_the_allowed_posts():
 
 
 def test_every_post_path_is_used():
-    """The watch watches something: both write calls and the token go through `_post`."""
+    """The watch watches something: the write call and the token go through `_post`."""
     assert post_paths(SOURCE) == WRITE_PATHS
+
+
+def test_batch_route_is_nowhere_in_the_code():
+    """Spec 7.6 (v0.3.5): no batch is created or searched any more, by any module."""
+    hits = sorted(
+        path.relative_to(SRC).as_posix()
+        for path in SRC.rglob("*.py")
+        if "/queue/batches" in path.read_text(encoding="utf-8")
+    )
+    assert hits == []
 
 
 def test_only_known_modules_import_httpx():
@@ -353,9 +364,6 @@ class Client:
     async def _post(self, path, body):
         return await self._send("POST", path, body=body)
 
-    async def ensure_batch(self):
-        return await self._post("/queue/batches", {})
-
     async def enqueue(self):
         return await self._post("/queue/", {})
 
@@ -376,6 +384,7 @@ def test_base_passes():
 
 
 BYPASSES = {
+    "batch-create": ('await self._post("/queue/batches", {})', "_post to '/queue/batches'"),
     "path-concatenated": ('await self._post("/queue/" + suffix, {})', "_post to None"),
     "path-implicitly-joined": ('await self._post("/queue/" "reorder", {})', "_post to '/queue/reorder'"),
     "path-keyword-elsewhere": ('await self._post(path="/printers/1", body={})', "_post to '/printers/1'"),

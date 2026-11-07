@@ -196,8 +196,8 @@ def test_entry_rows_have_handle_and_menu(bb_client):
     e = entry(bb_client, a, 2)
     page = bb_client.get("/queue").text
     entries = region(page, "entries")
-    assert '<ol class="queue-list"' in entries
-    assert re.search(rf'<li class="queue-row[^"]*" data-entry-id="{e}" data-move-url="/queue/{e}/move"', entries)
+    assert '<tbody class="queue-list"' in entries
+    assert re.search(rf'<tr class="queue-row[^"]*" data-entry-id="{e}" data-move-url="/queue/{e}/move"', entries)
     handle = re.search(r'<button type="button" class="drag-handle[^"]*"[^>]*>', entries).group(0)
     assert f'aria-label="{en("queue.drag")}"' in handle
     assert "#grip-vertical" in entries
@@ -215,13 +215,63 @@ def test_entry_rows_have_handle_and_menu(bb_client):
     assert f'data-csrf="{csrf_of(bb_client, "/queue")}"' in entries
 
 
+def test_own_queue_is_a_table_with_the_columns(bb_client):
+    """p45: header cells in the order position, picture, article, prints, origin, added, state, menu."""
+    a = article(bb_client)
+    entry(bb_client, a, 7)
+    entries = region(bb_client.get("/queue").text, "entries")
+    assert '<table class="queue-table"' in entries
+    head = re.search(r"<thead>(.*?)</thead>", entries, re.S).group(1)
+    cells = re.findall(r"<th[^>]*>(.*?)</th>", head, re.S)
+    assert len(cells) == 8
+    texts = [re.sub(r"<[^>]+>", "", c).strip() for c in cells]
+    expected = [en("queue.col.position"), en("queue.col.image"), en("queue.col.article"),
+                en("queue.col.prints"), en("queue.col.origin"), en("queue.col.created"),
+                en("queue.col.state"), en("queue.col.menu")]
+    assert texts == expected
+
+
+def test_prints_cell_has_its_own_class_and_big_digits(bb_client):
+    a = article(bb_client)
+    entry(bb_client, a, 12)
+    entries = region(bb_client.get("/queue").text, "entries")
+    cell = re.search(r'<td class="queue-prints[^"]*"[^>]*>(.*?)</td>', entries, re.S).group(1)
+    assert re.search(r'<span class="queue-prints-n">12</span>', cell)
+    css = CSS.read_text(encoding="utf-8")
+    rule = re.search(r"\.queue-prints-n \{[^}]*\}", css).group(0)
+    assert "font-weight: 700" in rule
+    size = float(re.search(r"font-size: ([\d.]+)rem", rule).group(1))
+    assert size >= 1.5
+
+
+def test_every_row_has_its_handle_and_menu(bb_client):
+    a = article(bb_client)
+    ids = [entry(bb_client, a, n) for n in (1, 2, 3)]
+    entries = region(bb_client.get("/queue").text, "entries")
+    assert entries.count('class="queue-row') == 3
+    assert entries.count('<button type="button" class="drag-handle') == 3
+    assert entries.count('<details class="row-menu">') == 3
+    for e in ids:
+        assert f'data-move-url="/queue/{e}/move"' in entries
+
+
+def test_table_stacks_on_a_phone_without_overflow():
+    css = CSS.read_text(encoding="utf-8")
+    media = css[css.index("@media (max-width: 599px)") :]
+    row = re.search(r"\.queue-row \{[^}]*\}", media).group(0)
+    assert "display: grid" in row
+    assert "display: none" in re.search(r"\.queue-table thead \{[^}]*\}", media).group(0)
+    handle = re.search(r"\.icon-btn \{[^}]*\}", css).group(0)
+    assert "min-width: 2.75rem" in handle and "min-height: 2.75rem" in handle
+
+
 def test_entry_row_shows_origin_prints_and_link(bb_client):
     a = article(bb_client)
     entry(bb_client, a, 3, origin="scrap")
     entries = region(bb_client.get("/queue").text, "entries")
     assert f'href="/articles/{a}"' in entries and "Template A" in entries
     assert en("queue.origin.scrap") in entries
-    assert translate("en", "queue.prints.other", n=3) in entries
+    assert '<span class="queue-prints-n">3</span>' in entries
     assert en("queue.state.waiting") in entries
 
 

@@ -28,39 +28,61 @@
 <section class="queue-section" id="entries">
   <div class="section-head"><h2>{{ ui.icon('list-ordered') }}{{ t('queue.own_title') }}</h2>{% if entries|length > 1 %}<span class="section-hint">{{ t('queue.own_hint') }}</span>{% endif %}</div>
   {% if entries %}
-  <ol class="queue-list" data-csrf="{{ csrf_token }}">
+  <div class="queue-table-card">
+  <table class="queue-table">
+    <thead>
+      <tr>
+        <th class="queue-col-pos">{{ t('queue.col.position') }}</th>
+        <th class="queue-col-img">{{ t('queue.col.image') }}</th>
+        <th>{{ t('queue.col.article') }}</th>
+        <th class="queue-col-prints">{{ t('queue.col.prints') }}</th>
+        <th>{{ t('queue.col.origin') }}</th>
+        <th>{{ t('queue.col.created') }}</th>
+        <th>{{ t('queue.col.state') }}</th>
+        <th class="actions-col"><span class="sr-only">{{ t('queue.col.menu') }}</span></th>
+      </tr>
+    </thead>
+    <tbody class="queue-list" data-csrf="{{ csrf_token }}">
     {% for e in entries %}
     {% set origin_key = 'queue.origin.' ~ e.origin %}
     {% set reason = pause_reasons.get(e.article_id) %}
-    <li class="queue-row{% if e.held %} is-held{% endif %}{% if e.article_paused %} is-paused{% endif %}" data-entry-id="{{ e.id }}" data-move-url="/queue/{{ e.id }}/move">
-      <button type="button" class="drag-handle icon-btn" aria-label="{{ t('queue.drag') }}" title="{{ t('queue.drag') }}">{{ ui.icon('grip-vertical') }}</button>
-      <span class="queue-pos">{{ loop.index }}</span>
-      {{ thumb(e.article_id) }}
-      <div class="queue-body">
-        <a class="queue-name" href="/articles/{{ e.article_id }}">{{ e.article_name }}</a>
-        <div class="queue-meta"><span>{{ tc('queue.prints', e.prints) }}</span><span>{{ t(origin_key) }}</span><span>{{ t('queue.created_at', at=e.created_at|local_dt) }}</span></div>
+    <tr class="queue-row{% if e.held %} is-held{% endif %}{% if e.article_paused %} is-paused{% endif %}" data-entry-id="{{ e.id }}" data-move-url="/queue/{{ e.id }}/move">
+      <td class="queue-cell-pos" data-label="{{ t('queue.col.position') }}">
+        <button type="button" class="drag-handle icon-btn" aria-label="{{ t('queue.drag') }}" title="{{ t('queue.drag') }}">{{ ui.icon('grip-vertical') }}</button>
+        <span class="queue-pos">{{ loop.index }}</span>
+      </td>
+      <td class="queue-cell-img">{{ thumb(e.article_id) }}</td>
+      <td class="queue-cell-name"><a class="queue-name" href="/articles/{{ e.article_id }}">{{ e.article_name }}</a></td>
+      <td class="queue-prints" data-label="{{ t('queue.col.prints') }}"><span class="queue-prints-n">{{ e.prints }}</span></td>
+      <td class="queue-cell-origin" data-label="{{ t('queue.col.origin') }}">{{ t(origin_key) }}</td>
+      <td class="queue-cell-created nowrap" data-label="{{ t('queue.col.created') }}">{{ e.created_at|local_dt }}</td>
+      <td class="queue-cell-state" data-label="{{ t('queue.col.state') }}">
         <span class="badges">
           {%- if e.held %}<span class="badge tone-warn badge-held">{{ t('queue.state.held') }}</span>{% elif not e.article_paused %}<span class="badge tone-ok">{{ t('queue.state.waiting') }}</span>{% endif %}
           {%- if e.article_paused %}{% set reason_key = 'pause.reason.' ~ reason %}<span class="badge tone-neutral"{% if reason %} title="{{ t(reason_key) }}"{% endif %}>{{ t('queue.article_paused') }}</span>{% endif -%}
         </span>
-      </div>
-      <details class="row-menu">
-        <summary class="icon-btn" title="{{ t('queue.menu') }}" aria-label="{{ t('queue.menu') }}">{{ ui.icon('ellipsis-vertical') }}</summary>
-        <div class="row-menu-panel">
-          {% call menu_form("/queue/" ~ e.id ~ "/move", token=False) %}<input type="hidden" name="to" value="top"><button type="submit" class="menu-item">{{ ui.icon('arrow-up-to-line') }}{{ t('queue.to_top') }}</button>{% endcall %}
-          {% call menu_form("/queue/" ~ e.id ~ "/move", token=False) %}<input type="hidden" name="to" value="bottom"><button type="submit" class="menu-item">{{ ui.icon('arrow-down-to-line') }}{{ t('queue.to_bottom') }}</button>{% endcall %}
-          {% if e.held %}
-          {% call menu_form("/queue/" ~ e.id ~ "/release") %}<button type="submit" class="menu-item">{{ ui.icon('play') }}{{ t('queue.release') }}</button>{% endcall %}
-          {% else %}
-          {% call menu_form("/queue/" ~ e.id ~ "/hold") %}<button type="submit" class="menu-item">{{ ui.icon('pause') }}{{ t('queue.hold') }}</button>{% endcall %}
-          {% endif %}
-          {% call menu_form("/queue/" ~ e.id ~ "/prints") %}<div class="menu-prints"><label for="prints-{{ e.id }}">{{ t('queue.field.prints') }}</label><input type="number" id="prints-{{ e.id }}" name="prints" value="{{ e.prints }}" min="1" max="{{ max_prints }}" step="1" inputmode="numeric" required><button type="submit" class="btn secondary">{{ t('queue.save_prints') }}</button></div>{% endcall %}
-          {% call menu_form("/queue/" ~ e.id ~ "/delete") %}<button type="submit" class="menu-item danger">{{ ui.icon('trash-2') }}{{ t('queue.delete') }}</button>{% endcall %}
-        </div>
-      </details>
-    </li>
+      </td>
+      <td class="actions-col queue-cell-menu">
+        <details class="row-menu">
+          <summary class="icon-btn" title="{{ t('queue.menu') }}" aria-label="{{ t('queue.menu') }}">{{ ui.icon('ellipsis-vertical') }}</summary>
+          <div class="row-menu-panel">
+            {% call menu_form("/queue/" ~ e.id ~ "/move", token=False) %}<input type="hidden" name="to" value="top"><button type="submit" class="menu-item">{{ ui.icon('arrow-up-to-line') }}{{ t('queue.to_top') }}</button>{% endcall %}
+            {% call menu_form("/queue/" ~ e.id ~ "/move", token=False) %}<input type="hidden" name="to" value="bottom"><button type="submit" class="menu-item">{{ ui.icon('arrow-down-to-line') }}{{ t('queue.to_bottom') }}</button>{% endcall %}
+            {% if e.held %}
+            {% call menu_form("/queue/" ~ e.id ~ "/release") %}<button type="submit" class="menu-item">{{ ui.icon('play') }}{{ t('queue.release') }}</button>{% endcall %}
+            {% else %}
+            {% call menu_form("/queue/" ~ e.id ~ "/hold") %}<button type="submit" class="menu-item">{{ ui.icon('pause') }}{{ t('queue.hold') }}</button>{% endcall %}
+            {% endif %}
+            {% call menu_form("/queue/" ~ e.id ~ "/prints") %}<div class="menu-prints"><label for="prints-{{ e.id }}">{{ t('queue.field.prints') }}</label><input type="number" id="prints-{{ e.id }}" name="prints" value="{{ e.prints }}" min="1" max="{{ max_prints }}" step="1" inputmode="numeric" required><button type="submit" class="btn secondary">{{ t('queue.save_prints') }}</button></div>{% endcall %}
+            {% call menu_form("/queue/" ~ e.id ~ "/delete") %}<button type="submit" class="menu-item danger">{{ ui.icon('trash-2') }}{{ t('queue.delete') }}</button>{% endcall %}
+          </div>
+        </details>
+      </td>
+    </tr>
     {% endfor %}
-  </ol>
+    </tbody>
+  </table>
+  </div>
   {% else %}
   <div class="card"><p class="muted">{{ t('queue.empty') }}</p></div>
   {% endif %}

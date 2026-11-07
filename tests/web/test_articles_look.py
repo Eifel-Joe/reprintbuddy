@@ -337,7 +337,10 @@ def test_name_and_number_are_escaped_in_list_and_tile(ready_client):
     article = add(ready_client, name="Template <A>", sku="A<100")
     listed = list_of(ready_client.get("/articles").text)
     assert f'<a href="/articles/{article}">Template &lt;A&gt;</a><br><span class="muted">A&lt;100</span>' in listed
-    assert '<div>Template &lt;A&gt;<br><span class="muted">A&lt;100</span></div>' in listed
+    assert (
+        f'<div><a class="tile-link" href="/articles/{article}">Template &lt;A&gt;</a>'
+        '<br><span class="muted">A&lt;100</span></div>'
+    ) in listed
     assert "<A>" not in listed and "A<100" not in listed
 
 

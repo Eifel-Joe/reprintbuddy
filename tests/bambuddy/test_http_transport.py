@@ -11,7 +11,6 @@ from reprintbuddy.bambuddy.client import (
     BambuddyRejected,
     BambuddyUnavailable,
     BambuddyUnexpected,
-    BatchRefLost,
     HttpBambuddyClient,
 )
 from reprintbuddy.bambuddy.connection import TIMEOUT_SECONDS
@@ -26,7 +25,6 @@ def q4_with_id(item_id: int) -> dict:
 
 def test_error_class_tree():
     assert issubclass(BambuddyUnexpected, BambuddyUnavailable)
-    assert issubclass(BatchRefLost, BambuddyRejected)
     assert not issubclass(BambuddyRejected, BambuddyUnavailable)
 
 
@@ -216,10 +214,10 @@ async def test_get_json_null_is_unexpected(respx_mock):
 
 
 async def test_post_sends_json_with_key(respx_mock):
-    route = respx_mock.post(f"{API}/queue/batches").respond(200, json=load("batch1.json"))
-    body = load("batch1.request.json")
-    answer = await client()._post("/queue/batches", body)
-    assert answer == load("batch1.json")
+    route = respx_mock.post(f"{API}/queue/").respond(200, json=load("q4.json"))
+    body = load("q4.request.json")
+    answer = await client()._post("/queue/", body)
+    assert answer == load("q4.json")
     request = route.calls.last.request
     assert json.loads(request.content) == body
     assert request.headers.get_list("X-API-Key") == [KEY]
@@ -228,11 +226,12 @@ async def test_post_sends_json_with_key(respx_mock):
 
 
 async def test_post_conflict_is_rejected(respx_mock):
-    respx_mock.post(f"{API}/queue/batches").respond(409, json=load("batch1_again.json"))
+    detail = "Item is already in the queue"
+    respx_mock.post(f"{API}/queue/").respond(409, json={"detail": detail})
     with pytest.raises(BambuddyRejected) as info:
-        await client()._post("/queue/batches", load("batch1.request.json"))
+        await client()._post("/queue/", load("q4.request.json"))
     assert info.value.status == 409
-    assert info.value.detail == load("batch1_again.json")["detail"]
+    assert info.value.detail == detail
 
 
 async def test_post_timeout_is_unavailable_and_sent_once(respx_mock):

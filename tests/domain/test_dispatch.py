@@ -97,8 +97,9 @@ def test_reserve_takes_top_eligible(db):
         assert row.queue_entry_id == ec_id
         assert row.origin == "rule"
         assert row.article_id == c
-        assert res.external_ref == row.external_ref and len(res.external_ref) == 32
-        assert res.batch_name == f"Template A ({row.id})"
+        # `external_ref` is unused since v0.3.5 (Spec 7.6), but the column is NOT NULL UNIQUE.
+        assert len(row.external_ref) == 32
+        assert not hasattr(res, "batch_name") and not hasattr(res, "external_ref")
         assert (res.library_file_id, res.plate_id, res.target_model, res.printer_id) == (
             1,
             1,
@@ -168,23 +169,21 @@ async def test_hand_over_queued(db, fake_bambuddy):
     assert result == "queued"
     with db.begin() as s:
         row = s.get(Dispatch, res.dispatch_id)
-        assert fake_bambuddy.enqueued[-1] == EnqueueRequest(
-            1, 1, "A1", None, row.bambuddy_batch_id, False, None
-        )
+        assert fake_bambuddy.enqueued[-1] == EnqueueRequest(1, 1, "A1", None, False, None)
         assert row.status == "queued"
-        assert row.bambuddy_batch_id is not None and row.bambuddy_item_id is not None
+        assert row.bambuddy_batch_id is None and row.bambuddy_item_id is not None
         assert row.last_status == "pending"
         assert row.enqueue_sent_at is not None and row.dispatched_at is not None
         assert row.finished_at is None
         lines = journal(s, "print_dispatched")
         assert len(lines) == 1
         assert lines[0].actor == "auto" and lines[0].qty == 1 and lines[0].article_id == a
-        assert lines[0].details == {
-            "dispatch_id": row.id,
-            "item_id": row.bambuddy_item_id,
-            "batch_id": row.bambuddy_batch_id,
-        }
+        assert lines[0].details == {"dispatch_id": row.id, "item_id": row.bambuddy_item_id}
         assert wq.list_entries(s) == []
+    # Spec 7.6: one single entry, no batch is made or asked for.
+    assert fake_bambuddy.calls == ["enqueue"]
+    (item,) = await fake_bambuddy.list_all_items()
+    assert item.batch_id is None
 
 
 async def test_hand_over_printer_target(db, fake_bambuddy):
@@ -210,7 +209,8 @@ async def test_entry_handed_print_by_print(db, fake_bambuddy):
         assert [r.status for r in rows] == ["queued"] * 3
         assert [r.units for r in rows] == [4] * 3
         assert len({r.external_ref for r in rows}) == 3
-        assert len({r.bambuddy_batch_id for r in rows}) == 3
+        assert len({r.bambuddy_item_id for r in rows}) == 3
+        assert {r.bambuddy_batch_id for r in rows} == {None}
         assert dispatch.reserve_next(s, cap=10) is None
     assert len(fake_bambuddy.enqueued) == 3
 
@@ -263,7 +263,7 @@ async def test_insert_next_off_appends(db, fake_bambuddy):
 def test_confirm_dispatch_printing(db):
     with db.begin() as s:
         a = article(s).id
-        row = make_dispatch(s, a, status="sending", bambuddy_batch_id=7, enqueue_sent_at=utcnow())
+        row = make_dispatch(s, a, status="sending", enqueue_sent_at=utcnow())
         item = queue_item(11, None, "printing")
         dispatch.confirm_dispatch(s, row.id, item)
         assert row.status == "printing" and row.last_status == "printing"
@@ -288,18 +288,19 @@ async def test_unavailable_on_enqueue_marks_unclear(db, fake_bambuddy, exc, afte
         row = s.get(Dispatch, res.dispatch_id)
         assert row.status == "unclear"
         assert row.enqueue_sent_at is not None
-        assert row.bambuddy_item_id is None and row.bambuddy_batch_id is not None
+        assert row.bambuddy_item_id is None and row.bambuddy_batch_id is None
         assert s.get(WorkQueueEntry, e).prints == 1  # not put back
         assert s.get(Article, a).stock == 5
         lines = journal(s, "print_dispatch_unclear")
         assert len(lines) == 1 and lines[0].actor == "auto" and lines[0].article_id == a
+        assert lines[0].details == {"dispatch_id": row.id}
         assert journal(s, "print_returned") == []
         assert journal(s, "print_dispatched") == []
         assert dispatch.open_count(s) == 1
     assert fake_bambuddy.calls.count("enqueue") == 1
 
 
-@pytest.mark.parametrize("method", ["ensure_batch", "list_queue"])
+@pytest.mark.parametrize("method", ["list_queue"])
 async def test_unavailable_before_enqueue_returns(db, fake_bambuddy, method):
     with db.begin() as s:
         a = article(s).id
@@ -323,7 +324,7 @@ async def test_unavailable_before_enqueue_returns(db, fake_bambuddy, method):
     assert fake_bambuddy.enqueued == []
 
 
-@pytest.mark.parametrize("method", ["ensure_batch", "list_queue", "enqueue"])
+@pytest.mark.parametrize("method", ["list_queue", "enqueue"])
 async def test_rejected_puts_print_back(db, fake_bambuddy, method):
     with db.begin() as s:
         a = article(s).id
@@ -459,12 +460,11 @@ async def test_sent_mark_committed_and_no_transaction_during_calls(db, fake_bamb
 
         setattr(fake_bambuddy, name, call)
 
-    for name in ("ensure_batch", "list_queue", "enqueue"):
+    for name in ("list_queue", "enqueue"):
         wrap(name)
     _, result = await hand(db, fake_bambuddy, insert_next=True)
     assert result == "queued"
     assert seen == [
-        ("ensure_batch", "sending", False),
         ("list_queue", "sending", False),
         ("enqueue", "sending", True),
     ]
@@ -479,13 +479,11 @@ async def test_only_allowed_bambuddy_calls(db, fake_bambuddy):
     await hand(db, fake_bambuddy, insert_next=True)
     fake_bambuddy.fail_next("enqueue", BambuddyUnavailable("timeout"))
     await hand(db, fake_bambuddy)
-    fake_bambuddy.fail_next("ensure_batch", BambuddyUnavailable("timeout"))
-    await hand(db, fake_bambuddy)
     fake_bambuddy.fail_next("list_queue", BambuddyUnavailable("timeout"))
     await hand(db, fake_bambuddy, insert_next=True)
     fake_bambuddy.fail_next("enqueue", BambuddyRejected("invalid", status=422))
     await hand(db, fake_bambuddy, insert_next=True)
-    assert set(fake_bambuddy.calls) == {"ensure_batch", "list_queue", "enqueue"}
+    assert set(fake_bambuddy.calls) == {"list_queue", "enqueue"}
 
 
 async def test_update_before_send_puts_print_back(db, fake_bambuddy):
@@ -496,7 +494,7 @@ async def test_update_before_send_puts_print_back(db, fake_bambuddy):
     asked = []
 
     def may_send():
-        asked.append(fake_bambuddy.calls.count("ensure_batch"))
+        asked.append(list(fake_bambuddy.calls))
         return False
 
     with db.begin() as s:
@@ -506,7 +504,7 @@ async def test_update_before_send_puts_print_back(db, fake_bambuddy):
     )
 
     assert result == "held_for_update"
-    assert asked == [1]  # asked after the batch, right before the mark
+    assert asked == [[]]  # asked right before the mark, before any write
     assert "enqueue" not in fake_bambuddy.calls
     assert fake_bambuddy.enqueued == []
     with db.begin() as s:

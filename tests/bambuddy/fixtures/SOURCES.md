@@ -10,7 +10,7 @@ Paths are relative to Bambuddy's repository. Tags:
 - **D5** = `v1.3.1b1-daily.20261105` (for files the D4 copy lacks; `api/routes/print_queue.py`,
   `api/routes/library.py` and `schemas/print_queue.py` are identical in both tags)
 
-Times follow the serializers: queue and batch times (`UTCDatetime`) end in `Z`
+Times follow the serializers: queue times (`UTCDatetime`) end in `Z`
 (`backend/app/schemas/print_queue.py:12-19`); library, printer, spool and API-key times are
 plain `datetime` values without a zone. Error bodies are FastAPI's `{"detail": ...}`.
 
@@ -34,13 +34,8 @@ plain `datetime` values without a zone. Error bodies are FastAPI's `{"detail": .
 | `queue_open.json` | `GET /api/v1/queue/?status=pending,printing` | D4 `backend/app/api/routes/print_queue.py:740-811`, `_enrich_response` `:437-643`; `backend/app/schemas/print_queue.py:215-325` | Sorted by `position`, then `id`. Entry 30 comes from an archive (reprint): label falls back to `archive_name`. |
 | `queue_all.json` | `GET /api/v1/queue/` | as `queue_open.json`; `skipped` text `backend/app/services/print_scheduler.py:2249-2255` | All entries with the history, sorted by `position`, then `id`; finished entries keep their old position. |
 | `queue_404.json` | `GET /api/v1/queue/999999999` | D4 `backend/app/api/routes/print_queue.py:2362-2398` | – |
-| `batch1.request.json` | body of `POST /api/v1/queue/batches` | D4 `backend/app/schemas/print_queue.py:431-463` | Without `plates` (Plan B2, Decision 10). |
-| `batch1.json` | `POST /api/v1/queue/batches` | D4 `backend/app/api/routes/print_queue.py:1821-1936`, `:2288-2359`; `backend/app/schemas/print_queue.py:526-567`; `backend/app/services/print_batch.py:245-333` | Empty batch: all counts 0, `plates` `[]`. |
-| `batch1_again.json` | the same `POST` again | D4 `backend/app/api/routes/print_queue.py:1804`, `:1864-1872` | – |
-| `batch1_find_empty.json` | `GET /api/v1/queue/batches?external_source=reprintbuddy&external_ref=…` while the batch is empty | D4 `backend/app/api/routes/print_queue.py:2150-2211` (empty batches left out `:2164-2178`) | – |
-| `batch1_find.json` | the same search after `q4` was queued into the batch | as `batch1.json`; `backend/app/schemas/print_queue.py:501-524`; `backend/app/services/print_batch.py:104-158`, `:290-333` | One plate row derived from the pending entry (no targets): `quantity_target` 1, `remaining` 0, `can_dispatch` false. |
-| `q4.request.json` | body of `POST /api/v1/queue/` | D4 `backend/app/schemas/print_queue.py:85-152`; Plan B2, Decision 11 | Queued into the batch from `batch1.json`. |
-| `q4.json` | `POST /api/v1/queue/` | D4 `backend/app/api/routes/print_queue.py:1188-1584`; `backend/app/schemas/print_queue.py:215-325` | `library_file_name` is the file name (no `print_name`, see `files_root.json`). Print options at the schema defaults (`:112-127`). `required_filament_types` from the plate. |
+| `q4.request.json` | body of `POST /api/v1/queue/` | D4 `backend/app/schemas/print_queue.py:85-152`; Plan B2, Decision 11; single entry `backend/app/api/routes/print_queue.py:1347-1408` | A single entry (Spec 7.6, since v0.3.5): no `batch_id` and no `quantity`, so Bambuddy makes no batch. |
+| `q4.json` | `POST /api/v1/queue/` | D4 `backend/app/api/routes/print_queue.py:1188-1584`; `backend/app/schemas/print_queue.py:215-325` | `library_file_name` is the file name (no `print_name`, see `files_root.json`). Print options at the schema defaults (`:112-127`). `required_filament_types` from the plate. `batch_id`/`batch_name` `null` (single entry). `created_by_username` is the key's owner (`created_by_id = actor.id`, `print_queue.py:1547`), `created_at` the creation time in UTC. |
 | `q4_printing.json` | `GET /api/v1/queue/31` after the start | as `q4.json`; start `backend/app/services/print_scheduler.py:9627`, `:9675-9677` | `printer_id`/`printer_name` of the printer that took it, `archive_id` set (archive made at the start, schema `:223`), `target_model` kept. `started_at` has microseconds (`datetime.now()`). |
 | `q4_completed.json` | `GET /api/v1/queue/31` after the end | as `q4_printing.json` | `completed_at` set. |
 
