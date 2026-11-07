@@ -598,5 +598,8 @@
   "dispatch.status.failed": "fehlgeschlagen",
   "dispatch.status.cancelled": "abgebrochen",
   "dispatch.status.missing": "in Bambuddy verschwunden",
-  "dispatch.status.returned": "zurück in der Warteschlange"
+  "dispatch.status.returned": "zurück in der Warteschlange",
+  "inspections.not_found": "Dieser Druck wartet nicht auf Prüfung.",
+  "inspections.already_resolved": "Dieser Druck ist schon geprüft.",
+  "inspections.field.good": "Gute Einheiten"
 }

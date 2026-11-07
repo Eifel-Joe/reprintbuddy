@@ -339,6 +339,25 @@ def test_inspect_good_short_parts_clamped(db):  # decision 5
         assert s.get(Part, ids[1]).stock == 0 and s.get(Article, ids[0]).stock == 3
 
 
+def test_inspection_bookings_take_details(db):  # plan B5 decision 6
+    with db.begin() as s:
+        a = make_article(s, provisional=3).id
+        b = make_article(s, name="Template B", provisional=1, needs_assembly=True).id
+        c = make_article(s, name="Template C", awaiting_assembly=1, needs_assembly=True).id
+        stock.inspect_good(s, a, 1, "user", details={"inspection_id": 7})
+        stock.inspect_scrap(s, a, 1, "user", details={"inspection_id": 7})
+        stock.inspect_good(s, b, 1, "user", details={"inspection_id": 7})
+        stock.assemble(s, c, 1, "user", details={"inspection_id": 7})
+    with db.begin() as s:
+        rows = [r for r in journal(s) if r.kind in ("inspection_good", "inspection_scrap", "assembly")]
+        assert [r.kind for r in rows] == [
+            "inspection_good", "inspection_scrap", "inspection_good", "assembly"
+        ]
+        for row in rows:
+            assert row.details["inspection_id"] == 7
+            assert "changes" in row.details
+
+
 def test_assemble_over_awaiting_rejected(db):
     with db.begin() as s:
         a = make_article(s, awaiting_assembly=1).id

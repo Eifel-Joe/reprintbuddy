@@ -598,5 +598,8 @@
   "dispatch.status.failed": "failed",
   "dispatch.status.cancelled": "cancelled",
   "dispatch.status.missing": "gone from Bambuddy",
-  "dispatch.status.returned": "back in the queue"
+  "dispatch.status.returned": "back in the queue",
+  "inspections.not_found": "This print is not waiting for inspection.",
+  "inspections.already_resolved": "This print has already been inspected.",
+  "inspections.field.good": "Good units"
 }
