@@ -73,6 +73,8 @@ def shared_tls_client_factory() -> Callable[[], httpx.AsyncClient]:
     seconds and blocks the event loop. `httpx.create_ssl_context()` with no arguments is the
     context httpx 0.28 builds for its default `verify=True` (`httpx/_config.py:23-40`); given
     as `verify=`, httpx uses it as it is (`:55-56`), so certificates are checked as before.
+    httpcore sets ALPN on the shared context at every connect, so it must never be handed to an
+    `http2=True` client.
     """
     context = httpx.create_ssl_context()
 

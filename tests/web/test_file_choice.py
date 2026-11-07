@@ -25,7 +25,7 @@ def _section(html, cls):
 
 
 def _images(html):
-    return re.findall(r'<img class="([^"]+)" src="([^"]+)" alt="" loading="lazy">', html)
+    return re.findall(r'<img class="([^"]+)" src="([^"]+)" alt="" loading="lazy"(?: onerror="[^"]*")?>', html)
 
 
 # ---- locale ------------------------------------------------------------------------
@@ -70,6 +70,30 @@ def test_every_file_has_an_image_or_the_placeholder(mixed, layout):
     large = [cls for cls, src in _images(_section(html, "tiles")) if "/file/" in src]
     assert small and all("thumb-sm" in cls for cls in small)
     assert large and all("thumb-lg" in cls for cls in large)
+
+
+@pytest.mark.parametrize("layout", ["list", "tiles"])
+def test_preview_covers_its_placeholder_and_gives_way_when_it_fails(mixed, layout):
+    """A loaded picture has an opaque background; a failed one removes itself (placeholder shows)."""
+    mixed.cookies.set("rb_layout_files", layout)
+    html = mixed.get("/articles/new?folder=1").text
+    imgs = re.findall(r"<img [^>]*/file/\d+/thumbnail[^>]*>", _section(html, "table-card" if layout == "list" else "tiles"))
+    assert imgs and all('onerror="this.remove()"' in tag for tag in imgs)
+    css = Path(__file__).resolve().parents[2] / "src/reprintbuddy/web/static/css/reprintbuddy.css"
+    rule = re.search(r"\.thumb-box > img \{([^}]*)\}", css.read_text(encoding="utf-8")).group(1)
+    assert "background: var(--bg)" in rule and "background: none" not in rule
+
+
+@pytest.mark.parametrize("layout", ["list", "tiles"])
+def test_long_file_names_wrap_inside_tile_and_row(mixed, layout):
+    mixed.cookies.set("rb_layout_files", layout)
+    html = mixed.get("/articles/new?folder=1").text
+    section = _section(html, "table-card" if layout == "list" else "tiles")
+    for name in ("Template A", "Template B", "Template C", "Template D"):
+        assert re.search(rf'<div class="file-name">[^<]*(?:<a [^>]*>)?{name}', section), name
+    css = Path(__file__).resolve().parents[2] / "src/reprintbuddy/web/static/css/reprintbuddy.css"
+    rule = re.search(r"\.file-name \{([^}]*)\}", css.read_text(encoding="utf-8")).group(1)
+    assert "overflow-wrap: anywhere" in rule and "min-width: 0" in rule
 
 
 def test_default_layout_holds_both(mixed):

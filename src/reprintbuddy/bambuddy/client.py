@@ -387,7 +387,11 @@ class HttpBambuddyClient:
         return f"{secure}://{rest}/ws?token={quote(token, safe='')}"
 
     async def check_connection(self) -> ConnectionCheck:
-        """Who owns the key and may it do everything Reprintbuddy needs? Never raises.
+        """Who owns the key and may it do everything Reprintbuddy needs? Maps the errors below.
+
+        Only the `BambuddyUnavailable` family (and `BambuddyRejected`) is mapped to a result; any
+        other exception (e.g. a key that cannot be sent as a header, a closed client) propagates.
+        `ping()` is the method that never raises.
 
         Mapping as in B1: network error, timeout, invalid address and 5xx are `unreachable`;
         401 `unauthorized`; 403 `forbidden`; 200 goes to `_evaluate`; everything else (HTML,

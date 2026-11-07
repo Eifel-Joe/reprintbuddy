@@ -3,9 +3,10 @@
 {% block title %}{{ t('articles.browse_title') }}{% endblock %}
 {% block content %}
 {#- Preview of a print file, `size` is "sm" (list) or "lg" (tile). Without a preview the placeholder shows and
-    no request is made; with one, the picture lies over the placeholder and is loaded lazily afterwards. -#}
+    no request is made; with one, the picture (opaque background) lies over the placeholder and is loaded lazily
+    afterwards; if it fails (404) it removes itself and the placeholder underneath shows. -#}
 {% macro preview(file, size) -%}
-{% if file.has_thumbnail %}<span class="thumb-box {{ size }}"><span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('package') }}</span><img class="thumb-{{ size }}" src="/articles/new/file/{{ file.id }}/thumbnail" alt="" loading="lazy"></span>{% else %}<span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('package') }}</span>{% endif %}
+{% if file.has_thumbnail %}<span class="thumb-box {{ size }}"><span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('package') }}</span><img class="thumb-{{ size }}" src="/articles/new/file/{{ file.id }}/thumbnail" alt="" loading="lazy" onerror="this.remove()"></span>{% else %}<span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('package') }}</span>{% endif %}
 {%- endmacro %}
 {#- A folder has no picture, only the folder symbol. -#}
 {% macro folder_mark(size) -%}
@@ -32,7 +33,7 @@
       <tr><td><div class="item">{{ folder_mark('sm') }}<a href="{{ base }}?folder={{ folder.id }}">{{ folder.name }}</a></div></td></tr>
     {% endfor %}
     {% for file in files %}
-      <tr><td><div class="item">{{ preview(file, 'sm') }}<div>
+      <tr><td><div class="item">{{ preview(file, 'sm') }}<div class="file-name">
         {%- if file.sliced %}<a href="{{ file_base }}/{{ file.id }}">{{ file.filename }}</a>
         {%- else %}{{ file.filename }}<p class="muted file-note">{{ t('articles.not_sliced') }}</p>{% endif -%}
       </div></div></td></tr>
@@ -46,9 +47,9 @@
   {% endfor %}
   {% for file in files %}
   {% if file.sliced %}
-  <a class="tile" href="{{ file_base }}/{{ file.id }}">{{ preview(file, 'lg') }}<div>{{ file.filename }}</div></a>
+  <a class="tile" href="{{ file_base }}/{{ file.id }}">{{ preview(file, 'lg') }}<div class="file-name">{{ file.filename }}</div></a>
   {% else %}
-  <div class="tile disabled">{{ preview(file, 'lg') }}<div>{{ file.filename }}<p class="muted file-note">{{ t('articles.not_sliced') }}</p></div></div>
+  <div class="tile disabled">{{ preview(file, 'lg') }}<div class="file-name">{{ file.filename }}<p class="muted file-note">{{ t('articles.not_sliced') }}</p></div></div>
   {% endif %}
   {% endfor %}
 </div>

@@ -3,7 +3,6 @@ import socket
 from pathlib import Path
 from typing import NamedTuple
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,7 +11,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.fake import FakeBambuddy
 from reprintbuddy.bambuddy.types import FilamentRequirement
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
-from reprintbuddy.web.app import create_app
+from reprintbuddy.web.app import create_app, shared_tls_client_factory
 
 ADMIN = "admin"
 PASSWORD = "password123"
@@ -104,14 +103,10 @@ def api_routes(app):
     return list(walk(app.routes))
 
 
-# One TLS context for every test client: httpx's default loads the CA certificates each time a
-# client or an app is built (most of a second). Same context as httpx's default (`verify=True`).
-_TLS = httpx.create_ssl_context()
-
-
-def http_client_factory() -> httpx.AsyncClient:
-    """A plain `httpx.AsyncClient` without loading the certificates again."""
-    return httpx.AsyncClient(verify=_TLS)
+# The production factory, built once at module level: one TLS context for the whole test session
+# (httpx's default loads the CA certificates each time a client is built, most of a second), and
+# every test client goes through the code that runs in production.
+http_client_factory = shared_tls_client_factory()
 
 
 def make_client(db_path, **create_kwargs) -> TestClient:
