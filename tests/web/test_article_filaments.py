@@ -296,7 +296,7 @@ def test_one_table_card_per_slot_inside_the_form(bb_client, fake_bambuddy):
     a = make(bb_client, slots=((1, "PLA", "#000000", 10.0), (2, "PLA", "#FFFFFF", 5.0)))
     page = bb_client.get(f"/articles/{a}/filaments").text
     form = re.search(rf'<form method="post" action="/articles/{a}/filaments".*?</form>', page, re.S).group(0)
-    assert form.count('<div class="card table-wrap table-card slot-group">') == 2
+    assert form.count('<div class="card table-wrap table-card slot-group" role="group"') == 2
     assert form.count('<input type="hidden" name="slot" value="') == 2
     assert 'class="live-stale"' in form and 'name="csrf_token"' in form
     assert re.search(r'<a class="btn secondary" href="/articles/\d+">Cancel</a>', form)
@@ -321,3 +321,40 @@ def test_form_region_holds_whole_cards_only(bb_client, fake_bambuddy):
     a = make(bb_client)
     piece = bb_client.get(f"/articles/{a}/filaments", headers={regions.HEADER: "form"}).text
     assert piece.count("<table") == 1 and "card-head" in piece
+
+
+# ---- review findings of v0.3.7 part A ------------------------------------------------------------
+
+
+def test_recorded_stock_says_from_which_day(bb_client, fake_bambuddy):
+    from datetime import timedelta
+
+    from factories import make_snapshot
+
+    two_blacks(fake_bambuddy)
+    a = make(bb_client)
+    bb_client.get(f"/articles/{a}/filaments")
+    yesterday = utcnow().date() - timedelta(days=1)
+    brand_a = sort_id(bb_client, "Brand A")
+    with sm_of(bb_client).begin() as s:
+        make_snapshot(s, yesterday, 1, brand_a, 640.0)
+    fake_bambuddy.unavailable = True
+    page = unescape(bb_client.get(f"/articles/{a}/filaments").text)
+    assert translate("en", "filament.stale", day=f"{yesterday:%Y-%m-%d}") in page
+    assert "640 g" in page
+
+
+def test_each_slot_is_a_named_group_and_each_choice_says_what_it_is(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", brand="Brand A", color_hex="#000000", color_name="Black")
+    fake_bambuddy.add_spool("PLA", brand="Brand A", subtype="Matte", color_hex="#000000", color_name="Black")
+    fake_bambuddy.add_spool("PLA", brand="Brand A", color_hex="#101010", color_name="Black")  # same name, other value
+    a = make(bb_client)
+    page = unescape(bb_client.get(f"/articles/{a}/filaments").text)
+    assert re.search(r'<div class="card table-wrap table-card slot-group" role="group" aria-labelledby="slot-1-caption">', page)
+    assert 'id="slot-1-caption"' in page
+    labels = re.findall(r'<input type="radio"[^>]*aria-label="([^"]*)"', page)
+    assert len(labels) == 3 and len(set(labels)) == 3  # subtype and colour value tell them apart
+    assert any("Matte" in label for label in labels)
+    rows = re.findall(r'<tr class="choice">.*?</tr>', page, re.S)
+    texts = {re.sub(r"<[^>]+>|\s+", " ", re.search(r"<label for=.*?</label>", r, re.S).group(0)).strip() for r in rows}
+    assert len(texts) == 3  # two "Brand A Black" rows show their colour value

@@ -5,7 +5,8 @@
 {% call ui.page_head("package", article_name, t('filament.map_sub')) %}{% endcall %}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {% call ui.region("form", "article-settings:" ~ article_id ~ " filament") %}
-{% if sorts_unknown %}<p class="alert" role="status">{{ t('filament.unknown') }}</p>{% endif %}
+{% if sorts_unknown %}<p class="alert" role="status">{{ t('filament.unknown') }}</p>
+{% elif stale_day %}<p class="alert" role="status">{{ t('filament.stale', day=stale_day) }}</p>{% endif %}
 <form method="post" action="/articles/{{ article_id }}/filaments" data-live-watch="article-settings:{{ article_id }}">
   {{ ui.live_stale() }}
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -14,9 +15,9 @@
     <p class="muted">{{ t('filament.intro') }}</p>
   </div>
   {% for r in slots %}
-  <div class="card table-wrap table-card slot-group">
+  <div class="card table-wrap table-card slot-group" role="group" aria-labelledby="slot-{{ r.slot }}-caption">
     <input type="hidden" name="slot" value="{{ r.slot }}">
-    <p class="slot-caption">{{ t('filament.slot_caption', slot=r.slot, material=r.material, grams=r.grams) }}
+    <p class="slot-caption" id="slot-{{ r.slot }}-caption">{{ t('filament.slot_caption', slot=r.slot, material=r.material, grams=r.grams) }}
       {%- if r.swatch %} <span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}{% if r.color %} {{ r.color }}{% endif %}</p>
     <table>
       <thead><tr>
@@ -29,9 +30,9 @@
       {% for c in r.choices %}
         <tr class="choice">
           <td class="check-col"><label class="hit"><input type="checkbox" id="tick-{{ r.slot }}-{{ c.id }}" name="tick_{{ r.slot }}" value="{{ c.id }}"{% if c.ticked %} checked{% endif %}{% if read_only %} disabled{% endif %}></label></td>
-          <td><label for="tick-{{ r.slot }}-{{ c.id }}">{% if c.swatch %}<span class="swatch" style="background: {{ c.swatch }}"></span>{% endif %}<strong>{{ c.brand }}</strong>{% if c.subtype %} {{ c.subtype }}{% endif %} {{ c.color }}</label></td>
+          <td><label for="tick-{{ r.slot }}-{{ c.id }}">{% if c.swatch %}<span class="swatch" style="background: {{ c.swatch }}"></span>{% endif %}<strong>{{ c.brand }}</strong>{% if c.subtype %} {{ c.subtype }}{% endif %} {{ c.color }}{% if c.show_value %} <span class="muted">{{ c.value }}</span>{% endif %}</label></td>
           <td class="num nowrap">{% if c.stock is not none %}{{ c.stock }} g{% else %}—{% endif %}</td>
-          <td class="check-col"><label class="hit"><input type="radio" name="reorder_{{ r.slot }}" value="{{ c.id }}"{% if c.reordered %} checked{% endif %}{% if read_only %} disabled{% endif %} aria-label="{{ t('filament.col.reordered') }}: {{ c.brand }} {{ c.color }}"></label></td>
+          <td class="check-col"><label class="hit"><input type="radio" name="reorder_{{ r.slot }}" value="{{ c.id }}"{% if c.reordered %} checked{% endif %}{% if read_only %} disabled{% endif %} aria-label="{{ t('filament.col.reordered') }}: {{ c.name }}"></label></td>
         </tr>
       {% else %}
         <tr><td colspan="4" class="muted">{{ t('filament.no_candidates') }}</td></tr>

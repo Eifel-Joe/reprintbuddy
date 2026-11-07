@@ -44,6 +44,7 @@ from reprintbuddy.web.forms import (
     saved_redirect,
 )
 from reprintbuddy.web.flash import flash
+from reprintbuddy.web.formatting import format_date
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
 from reprintbuddy.web.filament_view import BAMBUDDY_ERRORS, COLOR, spools_or_none
 from reprintbuddy.web.journal_view import journal_rows
@@ -728,14 +729,26 @@ _Typed = Mapping[int, tuple[set[str], str]]
 
 def _choice(sort: FilamentSort, stock: filament.SortStock | None, known: bool) -> dict[str, object]:
     """One spool sort to tick: brand, subtype, colour and stock (Spec 9.1)."""
+    name = (sort.color_name or "").strip()
+    value = color_mod.display_hex(sort.color_hex)
     return {
         "id": str(sort.id),
         "brand": sort.brand or "",
         "subtype": sort.subtype or "",
-        "color": (sort.color_name or "").strip() or color_mod.display_hex(sort.color_hex),
+        "color": name or value,
+        "value": value if name else "",  # shown when two choices of a slot read alike
         "swatch": sort.color_hex if sort.color_hex and COLOR.fullmatch(sort.color_hex) else None,
         "stock": f"{stock.stock_g:.0f}" if known and stock is not None else None,
     }
+
+
+def _tell_apart(choices: list[dict[str, object]]) -> None:
+    """Brand, subtype and colour name alike: the row and its radio name the colour value too."""
+    seen = Counter((c["brand"], c["subtype"], c["color"]) for c in choices)
+    for c in choices:
+        c["show_value"] = bool(c["value"]) and seen[(c["brand"], c["subtype"], c["color"])] > 1
+        words = [c["brand"], c["subtype"], c["color"], c["value"] if c["show_value"] else ""]
+        c["name"] = " ".join(str(w) for w in words if w)
 
 
 def _filament_page(request: Request, spools, article_id: int, typed: _Typed | None = None,
@@ -758,24 +771,26 @@ def _filament_page(request: Request, spools, article_id: int, typed: _Typed | No
             else:
                 ticked = {str(i) for i in g.ticked}
                 reordered = str(g.reordered) if g.reordered is not None else ""
+            choices = [
+                _choice(by_id[i], (sorts or {}).get(i), sorts is not None)
+                | {"ticked": str(i) in ticked, "reordered": str(i) == reordered}
+                for i in g.choices
+            ]
+            _tell_apart(choices)
             slots.append({
                 "slot": g.slot,
                 "grams": f"{g.grams:.1f}",
                 "material": g.material or "",
                 "color": color_mod.display_hex(g.color_hex) if g.color_hex else "",
                 "swatch": g.color_hex if g.color_hex and COLOR.fullmatch(g.color_hex) else None,
-                "choices": [
-                    _choice(by_id[i], (sorts or {}).get(i), sorts is not None)
-                    | {"ticked": str(i) in ticked, "reordered": str(i) == reordered}
-                    for i in g.choices
-                ],
+                "choices": choices,
             })
     if archived and error is None:
         error = translate(lang, "articles.edit_archived")
     return render(
         request, "article_filaments.html", status_code=status, active_nav="articles",
         article_id=article_id, article_name=name, slots=slots, sorts_unknown=sorts is None,
-        stock_day=day, read_only=archived, error=error,
+        stale_day=format_date(day, lang) if day else None, read_only=archived, error=error,
     )
 
 
