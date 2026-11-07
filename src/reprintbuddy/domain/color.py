@@ -1,5 +1,8 @@
 """Colour distance for filament sorts (Spec 9.1): CIEDE2000 between two hex colours.
 
+Migration 0006 imports `delta_e`, `similar` and `display_hex` from here: change their behaviour only
+together with a new revision that keeps the old result for databases not yet migrated.
+
 Pure functions, no I/O. Two spools whose colours are at most `SIMILAR` apart count as the same
 colour. The value 7 is a decision of the project (two blacks #000000 / #1A1A1A: 5.5, together;
 black / anthracite #333333: 13.4, apart).
