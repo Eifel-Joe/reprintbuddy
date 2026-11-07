@@ -180,6 +180,7 @@ def _page(
         articles=articles,
         manual=manual_values or dict(MANUAL_DEFAULTS),
         max_prints=workqueue.MAX_PRINTS,  # the limit of the prints fields
+        poll_now=get_bambuddy(request) is not None,  # the button needs a set-up Bambuddy
         error=error,
         error_for=error_for,
         **_bambuddy_view(request, db, bambuddy_fresh),
@@ -193,6 +194,39 @@ async def queue_page(request: Request):
     if not regions.requested(request):
         fresh = await _refresh_bambuddy_queue(request)
     return _page(request, bambuddy_fresh=fresh)
+
+
+# ---- query Bambuddy now (v0.3.6 p87) --------------------------------------------------------
+
+# The pages that carry the button; `next` may name only these (never an address from outside).
+POLL_RETURN_PAGES = frozenset({QUEUE_URL, "/"})
+
+
+@router.post("/queue/poll", dependencies=[Depends(verify_csrf)])
+async def queue_poll(request: Request):
+    """Ask the tick engine for a regular poll now (`Engine.request_poll`).
+
+    That only sets a flag: the engine's own loop polls, so a second click while a poll is asked
+    for merges with it, and the result reaches the open pages live (topic `bambuddy`). The
+    one-time token turns a double submit of the same form into "already done". Paused while an
+    update runs by the update guard, like every other write. Without a set-up Bambuddy nothing
+    is asked for.
+    """
+    form = await request.form()
+    target = str(form.get("next", ""))
+    target = target if target in POLL_RETURN_PAGES else QUEUE_URL
+    if get_bambuddy(request) is None:
+        flash(request, "queue.poll_unavailable", warning=True)
+        return RedirectResponse(target, status_code=303)
+    try:
+        with form_transaction(request, str(form.get("form_token", ""))):
+            pass  # nothing is written; the token is used up
+    except FormTokenUsed:
+        return duplicate_redirect(request, target)
+    except FormTokenInvalid as exc:
+        return _page(request, error=error_text(current_language(request), exc), status_code=error_status(exc))
+    request.app.state.ticker.request_poll()
+    return saved_redirect(request, target, "queue.poll_requested")
 
 
 # ---- manual prints (Spec 7.4) ----------------------------------------------------------------
