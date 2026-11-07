@@ -63,7 +63,7 @@ def test_spec12_step_9(bb_client, fake_bambuddy):
     assert found, "no slot_1 select on the mapping page"
     block = found.group(1)
     selected = re.findall(r'<option value="(\d+)" selected>([^<]*)</option>', block)
-    assert len(selected) == 1 and selected[0][1] == "Example Brand PLA Black"
+    assert len(selected) == 1 and selected[0][1] == "PLA Black"
     sort_id = int(selected[0][0])
     response = bb_client.post(
         f"/articles/{article_id}/filaments",
@@ -83,7 +83,7 @@ def test_spec12_step_9(bb_client, fake_bambuddy):
     tile = only_tile(bb_client, sort_id)
     assert stat(tile, "Stock") == "1100 g"
     assert stat(tile, "Demand") == "42 g"  # 42.5 g shown with :.0f; the next steps pin the exact value
-    assert stat(tile, "Safety cushion") == "2000 g"
+    assert stat(tile, "Lower limit") == "2000 g"
     assert "Suggestion: 1 × 1000 g" in tile
 
     # The demand is exactly 42.5 g: 1100 - 42.5 = 1057.5 >= 1057, but < 1058.

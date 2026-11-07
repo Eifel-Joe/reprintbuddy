@@ -37,7 +37,7 @@ def add_revision(scripts: Path, body: str) -> None:
             import sqlalchemy as sa
 
             revision = "0900"
-            down_revision = "0005"
+            down_revision = "0006"
             branch_labels = None
             depends_on = None
 
@@ -68,7 +68,7 @@ def test_failing_revision_leaves_nothing_behind(engine, scripts):
     with pytest.raises(RuntimeError, match="boom"):
         upgrade(engine, script_location=scripts)
     assert "junk" not in inspect(engine).get_table_names()
-    assert version(engine) == "0005"
+    assert version(engine) == "0006"
 
 
 def test_revision_that_breaks_foreign_keys_is_rolled_back(engine, scripts):
@@ -88,7 +88,7 @@ def test_revision_that_breaks_foreign_keys_is_rolled_back(engine, scripts):
         upgrade(engine, script_location=scripts)
     names = inspect(engine).get_table_names()
     assert "parent" not in names and "child" not in names
-    assert version(engine) == "0005"
+    assert version(engine) == "0006"
 
 
 def test_batch_alter_keeps_rows_that_other_tables_reference(engine, scripts):
@@ -145,12 +145,13 @@ def test_the_sessions_migration_adds_the_table_to_a_version_one_database(tmp_pat
     shutil.copytree(scripts, only_first)
     for path in [*(only_first / "versions").glob("0002*"), *(only_first / "versions").glob("0003*"),
                  *(only_first / "versions").glob("0004*"),
-                 *(only_first / "versions").glob("0005*")]:
+                 *(only_first / "versions").glob("0005*"),
+                 *(only_first / "versions").glob("0006*")]:
         path.unlink()
     upgrade(engine, script_location=only_first)
     assert version(engine) == "0001"
     assert "sessions" not in inspect(engine).get_table_names()
     upgrade(engine)  # the real scripts
-    assert version(engine) == "0005"
+    assert version(engine) == "0006"
     columns = {c["name"] for c in inspect(engine).get_columns("sessions")}
     assert columns == {"id", "created_at", "last_seen_at"}

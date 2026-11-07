@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-from factories import make_article, make_sort
+from factories import assign_sort, make_article, make_sort
 from reprintbuddy.domain import filament
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.models import ArticleFilament, FilamentSort
@@ -44,12 +44,20 @@ def test_suggest_case_insensitive(db):
 def test_suggest_none_when_ambiguous_or_missing(db):
     with db.begin() as s:
         make_sort(s)
-        make_sort(s, brand="Other Brand")
+        make_sort(s, subtype="Matte")
         sorts = _sorts(s)
-        assert filament.suggest_sort("PLA", "#000000", sorts) is None  # two brands
+        assert filament.suggest_sort("PLA", "#000000", sorts) is None  # two subtypes, same colour
         assert filament.suggest_sort("PLA", None, sorts) is None
         assert filament.suggest_sort(None, "#000000", sorts) is None
         assert filament.suggest_sort("PLA", "#123456", sorts) is None
+
+
+def test_suggest_takes_a_similar_colour(db):  # Spec 9.1: at most delta E 7
+    with db.begin() as s:
+        black = make_sort(s)
+        sorts = _sorts(s)
+        assert filament.suggest_sort("PLA", "#1A1A1A", sorts) == black.id  # 5.5 away
+        assert filament.suggest_sort("PLA", "#333333", sorts) is None  # 13.4 away
 
 
 def test_set_and_read_mapping(db):
@@ -93,3 +101,18 @@ def test_unmapped_slots_lists_active_only(db):
         old.archived_at = datetime(2026, 3, 1)
         filament.set_mapping(s, b.id, {1: sort.id})
         assert filament.unmapped_slots(s) == [(a.id, "Alpha", 1), (b.id, "Bravo", 2)]
+
+
+def test_assigned_sort_ids_only_of_active_articles(db):  # p46
+    with db.begin() as s:
+        used = make_sort(s, material="PLA")
+        both = make_sort(s, material="PETG")
+        archived_only = make_sort(s, material="ABS")
+        unused = make_sort(s, material="TPU")
+        assign_sort(s, used, name="One")
+        assign_sort(s, both, name="Two")
+        assign_sort(s, both, name="Three")
+        assign_sort(s, archived_only, name="Four", archived=True)
+        _article(s, name="Five")  # a slot without a sort counts for nothing
+        assert filament.assigned_sort_ids(s) == {used.id, both.id}
+        assert unused.id not in filament.assigned_sort_ids(s)

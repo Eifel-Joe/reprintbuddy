@@ -37,7 +37,8 @@ async def filament_list(request: Request):
     with write_transaction(request) as tx:  # entering new sorts is the one write (Entscheidung 4)
         sorts, day = filament.known_sorts(tx, spools)
     db = db_session(request)  # the rest only reads, on the request's normal session
-    directory = db.scalars(select(FilamentSort)).all()
+    assigned = filament.assigned_sort_ids(db)  # p46: only sorts that an active article uses
+    directory = [s for s in db.scalars(select(FilamentSort)) if s.id in assigned]
     configured = set(db.scalars(select(FilamentSettings.spool_filament_id)))
     demand = reorder.filament_demand(db)
     rows = []

@@ -15,9 +15,9 @@ def test_tables_exist(db):
     assert TABLES <= set(inspect(db.kw["bind"]).get_table_names())
 
 
-def test_head_is_0005(db):
+def test_head_is_0006(db):
     with db() as s:
-        assert s.execute(text("select version_num from alembic_version")).scalar() == "0005"
+        assert s.execute(text("select version_num from alembic_version")).scalar() == "0006"
 
 
 def test_make_sort_key_and_label(db):
@@ -25,11 +25,11 @@ def test_make_sort_key_and_label(db):
         plain = make_sort(s)
         matte = make_sort(s, subtype="Matte", color_name="matte", color_hex="#FFFFFF")
         unnamed = make_sort(s, material="PETG", color_name=None)
-        assert plain.sort_key == "example brand|pla||#000000"
-        assert plain.label == "Example Brand PLA Black"
-        assert matte.sort_key == "example brand|pla|matte|#ffffff"
-        assert matte.label == "Example Brand PLA Matte"
-        assert unnamed.label == "Example Brand PETG #000000"
+        assert plain.sort_key == "pla||#000000"
+        assert plain.label == "PLA Black"
+        assert matte.sort_key == "pla|matte|#ffffff"
+        assert matte.label == "PLA Matte"
+        assert unnamed.label == "PETG #000000"
         assert plain.first_seen_at is not None
 
 

@@ -106,7 +106,7 @@ class Spool:
     subtype: str | None
     brand: str | None
     color_name: str | None
-    color_hex: str | None  # `#RRGGBB`, from `rgba`
+    color_hex: str | None  # `#RRGGBB` from `rgba`; `#RRGGBBAA` when the alpha is not opaque (Spec 9.1)
     label_g: int  # nominal filament weight of a full spool (`label_weight`)
     remaining_g: float  # `label_weight - weight_used`, never below 0
     archived: bool  # `archived_at` is set

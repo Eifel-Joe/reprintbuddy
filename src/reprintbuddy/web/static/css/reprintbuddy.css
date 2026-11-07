@@ -939,7 +939,7 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
    or a heading itself. */
 .card.spaced { margin-bottom: 1.25rem; }
 .card.spaced > p:last-child { margin-bottom: 0; }
-.card.hint-card, .under-way-head { margin-top: 1.25rem; }
+.card.hint-card, .under-way-head, .file-hint { margin-top: 1.25rem; }
 form > .table-card ~ .btn { margin-top: 1.25rem; }
 /* The state of a filament sort (settings made or not) behind its name. */
 .table-card td.name .badges { margin-left: 0.4rem; vertical-align: middle; }

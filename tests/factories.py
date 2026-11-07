@@ -8,10 +8,10 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.bambuddy.types import Spool
 from reprintbuddy.domain import filament
 from reprintbuddy.models import (
     Article,
+    ArticleFilament,
     Dispatch,
     FilamentSettings,
     FilamentSnapshot,
@@ -22,6 +22,7 @@ from reprintbuddy.models import (
     SetPosition,
     SetPositionOption,
     WorkQueueEntry,
+    utcnow,
 )
 
 
@@ -110,23 +111,18 @@ def make_sort(
     *,
     material: str = "PLA",
     color_hex: str | None = "#000000",
-    brand: str | None = "Example Brand",
     subtype: str | None = None,
     color_name: str | None = "Black",
 ) -> FilamentSort:
     """A filament sort with key and label from `domain/filament.py` (one place for the rules)."""
-    spool = Spool(
-        id=0, material=material, subtype=subtype, brand=brand, color_name=color_name, color_hex=color_hex,
-        label_g=1000, remaining_g=1000.0, archived=False, created_at=None,
-    )
     sort = FilamentSort(
-        sort_key=filament.sort_key(spool),
-        brand=brand,
+        sort_key=filament.sort_key(material, subtype, color_hex),
+        brand=None,
         material=material,
         subtype=subtype,
         color_hex=color_hex,
         color_name=color_name,
-        label=filament.sort_label(spool),
+        label=filament.sort_label(material, subtype, color_name, color_hex),
     )
     s.add(sort)
     s.flush()
@@ -150,3 +146,14 @@ def make_filament_settings(s: Session, sort_id: int, **fields) -> FilamentSettin
     s.add(settings)
     s.flush()
     return settings
+
+
+def assign_sort(s: Session, sort: FilamentSort, *, name: str = "Assigned article", archived: bool = False,
+                **fields) -> Article:
+    """An article with one slot assigned to `sort` (the filament page lists only such sorts, p46)."""
+    article = make_article(s, name=name, **fields)
+    s.add(ArticleFilament(article_id=article.id, slot=1, grams=10.0, spool_filament_id=sort.id))
+    if archived:
+        article.archived_at = utcnow()
+    s.flush()
+    return article

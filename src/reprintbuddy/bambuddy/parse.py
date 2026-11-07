@@ -245,6 +245,23 @@ def normalize_color(value: object) -> str | None:
     return "#" + text[:6].upper()
 
 
+def normalize_spool_color(value: object) -> str | None:
+    """The colour of a spool: `#RRGGBB`, or `#RRGGBBAA` when the alpha part is not opaque.
+
+    Unlike a print file's colour (`normalize_color`, alpha dropped, Decision 8) a spool keeps a
+    transparency: alpha 00 means transparent and decides the filament sort (Spec 9.1). Bambuddy
+    always sends eight digits and appends an opaque `FF` to a six-digit colour, so an opaque spool
+    reads `#RRGGBB` as before.
+    """
+    text = normalize_color(value)
+    if text is None:
+        return None
+    digits = value.strip().removeprefix("#")  # `normalize_color` has checked that it is a string
+    if len(digits) == 8 and digits[6:].upper() != "FF":
+        return text + digits[6:].upper()
+    return text
+
+
 def parse_requirements(data: object) -> list[FilamentRequirement]:
     """The filament needs of one plate, from `data["filaments"]` (Bambuddy `library.py:3958-3973`)."""
     entries = _list(_object(data, "requirements answer").get("filaments"), "field 'filaments'")
@@ -318,7 +335,7 @@ def parse_spools(data: object) -> list[Spool]:
                 subtype=_opt(d, "subtype", str) or None,
                 brand=_opt(d, "brand", str) or None,
                 color_name=None if synthesized else (_opt(d, "color_name", str) or None),
-                color_hex=normalize_color(d.get("rgba")),
+                color_hex=normalize_spool_color(d.get("rgba")),
                 label_g=label,
                 remaining_g=max(0.0, float(label) - float(used)),
                 archived=bool(d.get("archived_at")),

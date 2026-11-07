@@ -6,7 +6,7 @@ Functions never commit; the caller owns the transaction.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Literal
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy.bambuddy.client import BambuddyClient
 from reprintbuddy.bambuddy.types import Spool
-from reprintbuddy.domain import rules
+from reprintbuddy.domain import color, rules
 from reprintbuddy.domain.catalog import _int_in
 from reprintbuddy.domain.catalog import _text as _form_text
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
@@ -43,50 +43,105 @@ def _text(value: str | None) -> str:
     return (value or "").strip()
 
 
-def sort_key(spool: Spool) -> str:
-    """Brand, material, subtype and colour decide the sort; the colour name does not (Entscheidung 2)."""
-    return "|".join(_norm(x) for x in (spool.brand, spool.material, spool.subtype, spool.color_hex))
+def _group(material: str | None, subtype: str | None) -> tuple[str, str]:
+    """Spools are compared by colour only inside one material and subtype (Spec 9.1)."""
+    return _norm(material), _norm(subtype)
 
 
-def sort_label(spool: Spool) -> str:
-    """Non-empty parts of brand, material, subtype, colour name; the hex stands in for a missing name."""
-    name = _text(spool.color_name)
+def sort_key(material: str | None, subtype: str | None, anchor_hex: str | None) -> str:
+    """Identity of a sort: material, subtype and the colour of its anchor spool. The brand is no part of
+    it (Spec 9.1); another spool joins a sort by colour distance, see `nearest_sort`."""
+    return "|".join((_norm(material), _norm(subtype), _norm(anchor_hex)))
+
+
+def sort_label(material: str | None, subtype: str | None, color_name: str | None,
+               color_hex: str | None) -> str:
+    """Non-empty parts of material, subtype and colour name; the hex stands in for a missing name."""
+    name = _text(color_name)
     if not name:
-        last = _text(spool.color_hex)
-    elif _norm(name) == _norm(spool.subtype):
+        last = color.display_hex(color_hex)
+    elif _norm(name) == _norm(subtype):
         last = ""  # the name repeats the subtype: shown once, and no hex in its place
     else:
         last = name
-    parts = [spool.brand, spool.material, spool.subtype, last]
-    return " ".join(_text(p) for p in parts if _text(p))
+    return " ".join(_text(p) for p in (material, subtype, last) if _text(p))
 
 
-def sync_sorts(session: Session, spools: Sequence[Spool]) -> dict[str, int]:
-    """Create missing sorts, keep label and colour name current; returns key -> sort id."""
-    ids: dict[str, int] = {}
+def nearest_sort(sorts: Iterable[FilamentSort], color_hex: str | None) -> FilamentSort | None:
+    """The sort of one material and subtype whose anchor colour is nearest to `color_hex`, if it is at most
+    `color.SIMILAR` away; a tie goes to the lower id. Without a usable colour only a sort without one
+    (or one written alike) matches. The anchor is fixed, so a chain A~B~C of colours does not merge."""
+    best: tuple[float, int] | None = None
+    found: FilamentSort | None = None
+    for sort in sorts:
+        distance = color.distance(sort.color_hex, color_hex)
+        if distance is None or distance > color.SIMILAR:
+            continue
+        if best is None or (distance, sort.id) < best:
+            best, found = (distance, sort.id), sort
+    return found
+
+
+def _sorts_by_group(session: Session) -> dict[tuple[str, str], list[FilamentSort]]:
+    groups: dict[tuple[str, str], list[FilamentSort]] = defaultdict(list)
+    for sort in session.scalars(select(FilamentSort).order_by(FilamentSort.id)):
+        groups[_group(sort.material, sort.subtype)].append(sort)
+    return groups
+
+
+def resolve_sorts(session: Session, spools: Sequence[Spool]) -> dict[int, int | None]:
+    """Spool id -> id of the stored sort it belongs to (None if there is none yet); writes nothing."""
+    groups = _sorts_by_group(session)
+    result: dict[int, int | None] = {}
     for spool in spools:
-        key = sort_key(spool)
-        sort = session.scalar(select(FilamentSort).where(FilamentSort.sort_key == key))
-        label = sort_label(spool)
-        if sort is None:
+        sort = nearest_sort(groups.get(_group(spool.material, spool.subtype), ()), spool.color_hex)
+        result[spool.id] = sort.id if sort is not None else None
+    return result
+
+
+def sync_sorts(session: Session, spools: Sequence[Spool]) -> dict[int, int]:
+    """Assign every spool to a sort and create the missing ones; returns spool id -> sort id.
+
+    Two passes, so that a second call with the same spools gives the same answer: first the anchors
+    are settled (spools by ascending id; a spool with no anchor within delta E 7 becomes the anchor
+    of a new sort), then every spool joins the nearest anchor of all. The anchor of a new sort is
+    thus the colour of its lowest-id spool, and the outcome does not depend on the order of the list.
+    The name of a sort comes from its lowest-id spool that has one; a spool without a name never
+    erases a known one.
+    """
+    groups = _sorts_by_group(session)
+    ordered = sorted(spools, key=lambda s: s.id)
+    for spool in ordered:  # pass 1: the anchors
+        group = groups[_group(spool.material, spool.subtype)]
+        if nearest_sort(group, spool.color_hex) is None:
             sort = FilamentSort(
-                sort_key=key,
-                brand=spool.brand,
-                material=spool.material,
-                subtype=spool.subtype,
+                sort_key=sort_key(spool.material, spool.subtype, spool.color_hex),
+                brand=None,
+                material=_text(spool.material),
+                subtype=_text(spool.subtype) or None,
                 color_hex=spool.color_hex,
-                color_name=spool.color_name,
-                label=label,
+                color_name=None,
+                label=sort_label(spool.material, spool.subtype, None, spool.color_hex),
             )
             session.add(sort)
             session.flush()
-        else:
-            if _text(spool.color_name):  # a spool without a name never erases a known one
-                sort.label = label
-                sort.color_name = spool.color_name
-            session.flush()
-        ids[key] = sort.id
-    return ids
+            group.append(sort)
+    assigned: dict[int, int] = {}
+    members: dict[int, list[Spool]] = defaultdict(list)
+    sorts: dict[int, FilamentSort] = {}
+    for spool in ordered:  # pass 2: the nearest anchor of all
+        sort = nearest_sort(groups[_group(spool.material, spool.subtype)], spool.color_hex)
+        assigned[spool.id] = sort.id
+        members[sort.id].append(spool)
+        sorts[sort.id] = sort
+    for sort_id, spools_of in members.items():
+        named = next((sp for sp in spools_of if _text(sp.color_name)), None)
+        if named is not None:
+            sort = sorts[sort_id]
+            sort.color_name = named.color_name
+            sort.label = sort_label(sort.material, sort.subtype, named.color_name, sort.color_hex)
+    session.flush()
+    return assigned
 
 
 def stock_by_sort(session: Session, spools: Sequence[Spool]) -> dict[int, SortStock]:
@@ -96,7 +151,7 @@ def stock_by_sort(session: Session, spools: Sequence[Spool]) -> dict[int, SortSt
     grams: dict[int, float] = defaultdict(float)
     count: dict[int, int] = defaultdict(int)
     for spool in live:
-        sort_id = ids[sort_key(spool)]
+        sort_id = ids[spool.id]
         grams[sort_id] += spool.remaining_g
         count[sort_id] += 1
     return {
@@ -139,7 +194,7 @@ def record_snapshot(session: Session, spools: Sequence[Spool], day: date) -> int
         if row is None:
             row = FilamentSnapshot(day=day, spool_id=spool.id)
             session.add(row)
-        row.spool_filament_id = ids[sort_key(spool)]
+        row.spool_filament_id = ids[spool.id]
         row.remaining_g = spool.remaining_g
         row.label_g = spool.label_g
         row.spool_created_at = spool.created_at
@@ -202,13 +257,14 @@ class SlotRow:
 def suggest_sort(
     material: str | None, color_hex: str | None, sorts: Mapping[int, SortStock]
 ) -> int | None:
-    """The one sort with the same material and colour; none or several give no suggestion (Spec 5.2)."""
+    """The one sort with the same material and a similar colour; none or several give no suggestion
+    (Spec 5.2, 9.1). A slot without material or colour gets none."""
     if not _norm(material) or not _norm(color_hex):
         return None
     hits = [
         sort_id
         for sort_id, sort in sorts.items()
-        if _norm(sort.material) == _norm(material) and _norm(sort.color_hex) == _norm(color_hex)
+        if _norm(sort.material) == _norm(material) and color.similar(sort.color_hex, color_hex)
     ]
     return hits[0] if len(hits) == 1 else None
 
@@ -252,6 +308,17 @@ def set_mapping(session: Session, article_id: int, mapping: Mapping[int, int | N
     for slot, sort_id in mapping.items():
         slots[slot].spool_filament_id = sort_id
     session.flush()
+
+
+def assigned_sort_ids(session: Session) -> set[int]:
+    """Ids of the sorts that a slot of a non-archived article uses (what the filament page lists)."""
+    rows = session.scalars(
+        select(ArticleFilament.spool_filament_id)
+        .join(Article, Article.id == ArticleFilament.article_id)
+        .where(Article.archived_at.is_(None), ArticleFilament.spool_filament_id.is_not(None))
+        .distinct()
+    )
+    return set(rows)
 
 
 def unmapped_slots(session: Session) -> list[tuple[int, str, int]]:

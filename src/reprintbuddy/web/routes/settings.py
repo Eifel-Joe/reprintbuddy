@@ -27,14 +27,14 @@ router = APIRouter()
 
 MAX_UPLOAD_BYTES = 64 * 1024
 
-# Tabs of the page: (key, icon, label key). Another feature adds its tab by appending a line
-# and rendering its cards when `current_tab` is its key.
+# Tabs of the page: (key, icon, label key). Another feature adds its tab as a line at the agreed
+# position (Automation sits second, p43) and renders its cards when `current_tab` is its key.
 SETTINGS_TABS: list[tuple[str, str, str]] = [
     ("general", "settings", "settings.tab.general"),
+    ("automation", "list-ordered", "settings.tab.automation"),
     ("bambuddy", "link", "settings.tab.bambuddy"),
     ("account", "user", "settings.tab.account"),
     ("maintenance", "download", "settings.tab.maintenance"),
-    ("automation", "list-ordered", "settings.tab.automation"),
 ]
 DEFAULT_TAB = "general"
 # The tab that shows the card of a section: a page re-rendered with an error opens it.

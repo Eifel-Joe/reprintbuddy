@@ -9,7 +9,8 @@ import httpx
 import pytest
 from test_archive_pages import act, make
 
-from conftest import csrf_of, finish_bambuddy_setup, form_token_of
+from conftest import csrf_of, finish_bambuddy_setup, form_token_of, sm_of
+from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.client import BambuddyRejected
 from reprintbuddy.web.i18n import translate
 
@@ -288,6 +289,58 @@ def test_folder_without_sliced_files_shows_the_empty_state(bb_client, fake_bambu
     html = bb_client.get(f"/articles/new?folder={folder.id}").text
     assert translate("en", "articles.no_files") in html
     assert "Only.3mf" not in html
+
+
+HIDDEN_EN = "Hidden unsliced files in this folder: {n}."
+HIDDEN_DE = "Ausgeblendete ungeslicte Dateien in diesem Ordner: {n}."
+
+
+def test_hidden_unsliced_hint_texts():
+    assert translate("en", "articles.hidden_unsliced", count=3).startswith(HIDDEN_EN.format(n=3))
+    assert translate("de", "articles.hidden_unsliced", count=3).startswith(HIDDEN_DE.format(n=3))
+    for lang in ("en", "de"):  # it says why: only sliced files (.gcode.3mf) can become an article
+        assert ".gcode.3mf" in translate(lang, "articles.hidden_unsliced", count=1)
+
+
+@pytest.mark.parametrize("layout", ["list", "tiles"])
+def test_hint_names_the_number_of_hidden_unsliced_files(mixed, layout):  # p42
+    mixed.cookies.set("rb_layout_files", layout)
+    html = mixed.get("/articles/new?folder=1").text
+    assert html.count(HIDDEN_EN.format(n=3)) == 1  # Template D, E and F
+    assert re.search(r'<p class="muted file-hint" role="status">' + re.escape(HIDDEN_EN.format(n=3)), html)
+    for hidden in ("Template D", "Template E", "Template F"):  # the hint names no file
+        assert hidden not in html
+
+
+def test_no_hint_without_unsliced_files(bb_client):  # p42
+    html = bb_client.get("/articles/new?folder=1").text
+    assert "Template A" in html
+    assert "Hidden unsliced" not in html
+
+
+def test_hint_counts_only_the_shown_folder(mixed, fake_bambuddy):  # p42
+    other = fake_bambuddy.add_folder("Other")
+    fake_bambuddy.add_file("Elsewhere.3mf", other.id, sliced=False)
+    assert HIDDEN_EN.format(n=3) in mixed.get("/articles/new?folder=1").text
+    assert HIDDEN_EN.format(n=1) in mixed.get(f"/articles/new?folder={other.id}").text
+    assert "Hidden unsliced" not in mixed.get("/articles/new").text  # root: no loose unsliced file
+
+
+def test_hint_stands_with_the_empty_state_when_only_unsliced_files_exist(bb_client, fake_bambuddy):  # p42
+    folder = fake_bambuddy.add_folder("Raw")
+    fake_bambuddy.add_file("Only.3mf", folder.id, sliced=False)
+    html = bb_client.get(f"/articles/new?folder={folder.id}").text
+    assert translate("en", "articles.no_files") in html
+    assert HIDDEN_EN.format(n=1) in html
+
+
+def test_hint_in_german_and_on_the_relink_page(mixed):  # p42
+    a = make(mixed, name="Template A", library_file_id=1, plate_id=1)
+    act(mixed, f"/articles/{a}", "archive")
+    assert HIDDEN_EN.format(n=3) in mixed.get(f"/articles/{a}/relink?folder=1").text
+    with sm_of(mixed).begin() as session:
+        st.set_setting(session, "language", "de", commit=False)
+    assert HIDDEN_DE.format(n=3) in mixed.get("/articles/new?folder=1").text
 
 
 def _call(client, fake, method, path, **kw):

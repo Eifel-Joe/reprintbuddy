@@ -201,7 +201,9 @@ def suggestions(
         sug = _suggest(
             "part", part.id, part.name, part.unit, stock=part.stock,
             demand=part_needs.get(part.id, 0), per_day=per_day, lead_days=part.lead_time_days,
-            safety=rules.safety_amount(part.safety_value, part.safety_unit, per_day),
+            safety=rules.reorder_floor(
+                rules.safety_amount(part.safety_value, part.safety_unit, per_day), part.min_stock
+            ),
             pack=part.pack_size, min_packs=part.min_order_packs, supplier=part.supplier,
             order_url=part.order_url,
         )
@@ -308,6 +310,7 @@ def close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: d
     """
     closed = 0
     live = None if spools is None else [s for s in spools if not s.archived]
+    sort_of = {} if live is None else filament.resolve_sorts(session, live)
     for mark in session.scalars(select(ReorderMark).where(ReorderMark.received_at.is_(None))).all():
         if mark.item_type == "part":
             arrived = session.scalar(
@@ -330,7 +333,7 @@ def close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: d
                 for s in live
                 if s.created_at is not None
                 and _naive_utc(s.created_at) > mark.marked_at
-                and filament.sort_key(s) == sort.sort_key
+                and sort_of[s.id] == sort.id
             )
             if grams >= mark.qty * settings.pack_grams:
                 mark.received_at = now

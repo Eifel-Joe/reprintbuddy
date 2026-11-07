@@ -56,8 +56,8 @@ TEXTS = {
         "Hier trägst du ein, welche gekauften Teile in diesem Artikel stecken und wie viele je Einheit. Sie werden vom Bestand abgezogen, sobald eine Einheit Bestand wird: bei der Prüfung „gut“, bei Handarbeit erst bei der Montage, und beim Einbuchen mit „Zukaufteile abziehen“.",
     ),
     "info.part_min_stock": (
-        "Below this stock the part shows as “below minimum”.",
-        "Liegt der Bestand darunter, steht das Teil auf „unter Minimum“.",
+        "Below this stock the part shows as “below minimum” and Reprintbuddy suggests an order, even if no article needs it.",
+        "Liegt der Bestand darunter, steht das Teil auf „unter Minimum“ und Reprintbuddy schlägt eine Bestellung vor, auch wenn kein Artikel es braucht.",
     ),
     "info.pack_size": (
         "How many pieces come in one pack. Order suggestions always count whole packs.",

@@ -315,6 +315,7 @@ async def _browse(request: Request, folder: str | None, base: str, file_base: st
         subfolders=subfolders,
         # Only sliced files can become an article, so only they are offered (Task 12); folders stay for navigation.
         files=sorted((f for f in files if f.sliced), key=lambda f: f.filename.casefold()),
+        hidden_unsliced=sum(1 for f in files if not f.sliced),  # p42: the hint says they exist
         base=base,
         file_base=file_base,
         layout=layout,
