@@ -489,5 +489,6 @@
   "assembly.empty": "No articles are waiting for assembly.",
   "assembly.book": "Book assembled",
   "assembly.done": "{name}: {n} assembled.",
-  "assembly.part_line": "{qty} per unit, stock {stock}"
+  "assembly.part_line": "{qty} per unit, stock {stock}",
+  "assembly.subtitle": "Booking assembled units: bought parts are used up and the stock grows"
 }

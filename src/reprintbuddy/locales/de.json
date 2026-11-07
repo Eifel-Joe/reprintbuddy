@@ -489,5 +489,6 @@
   "assembly.empty": "Kein Artikel wartet auf Montage.",
   "assembly.book": "Montiert buchen",
   "assembly.done": "{name}: {n} montiert.",
-  "assembly.part_line": "{qty} je Einheit, Bestand {stock}"
+  "assembly.part_line": "{qty} je Einheit, Bestand {stock}",
+  "assembly.subtitle": "Montierte Einheiten buchen: Zukaufteile werden verbraucht, der Bestand wächst"
 }

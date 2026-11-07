@@ -29,6 +29,7 @@ def assert_one_head(html, where):
         ("/", "layout-dashboard"),
         ("/bookings", "arrow-left-right"),
         ("/journal", "history"),
+        ("/assembly", "wrench"),
         ("/settings", "settings"),
         ("/nosuch", "circle-alert"),
     ],
@@ -75,6 +76,7 @@ def ids(ready_client):
         "/orders",
         "/orders/new",
         "/orders/{order}",
+        "/assembly",
     ],
 )
 def test_every_app_page_has_one_page_head(ready_client, ids, path):
@@ -183,7 +185,7 @@ def test_bare_pages_keep_logo_and_no_menu(tmp_path, ready_client):
     "path",
     [
         "/", "/articles", "/articles/{article}", "/articles/{article}/edit", "/sets", "/parts",
-        "/orders", "/orders/{order}", "/orders/new", "/bookings", "/journal", "/settings", "/nosuch",
+        "/orders", "/orders/{order}", "/orders/new", "/bookings", "/journal", "/settings", "/nosuch", "/assembly",
         "/parts/new", "/parts/{part}/edit", "/sets/new", "/sets/{set}/edit",
     ],
 )
@@ -200,6 +202,19 @@ def test_new_subtitles_use_their_keys(ready_client, ids):
                       ("/journal", "journal.subtitle"), ("/articles/{article}/edit", "articles.edit_subtitle")]:
         page = ready_client.get(path.format(**ids)).text
         assert f'<p class="page-sub">{translate("en", key)}</p>' in page, path
+
+
+def test_assembly_subtitle_says_what_the_page_is_for_in_both_languages(ready_client):
+    from reprintbuddy import settings as st
+
+    expected = {
+        "en": "Booking assembled units: bought parts are used up and the stock grows",
+        "de": "Montierte Einheiten buchen: Zukaufteile werden verbraucht, der Bestand wächst",
+    }
+    for language, text in expected.items():
+        with sm_of(ready_client).begin() as s:
+            st.set_setting(s, "language", language, commit=False)
+        assert f'<p class="page-sub">{text}</p>' in ready_client.get("/assembly").text, language
 
 
 def test_error_page_message_is_the_subtitle(ready_client):

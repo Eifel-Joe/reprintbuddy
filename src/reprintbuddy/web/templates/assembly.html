@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('nav.assembly') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("wrench", t('nav.assembly')) %}{% endcall %}
+{% call ui.page_head("wrench", t('nav.assembly'), t('assembly.subtitle')) %}{% endcall %}
 {% call ui.region("list", "article part") %}
 {# An error for an article that has no card (unknown, archived, nothing waiting any more) shows on top. #}
 {% if error and not rows|selectattr('article_id', 'equalto', error_article)|list %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
