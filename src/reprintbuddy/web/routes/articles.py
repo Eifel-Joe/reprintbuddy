@@ -200,9 +200,11 @@ def active_parts(db: Session) -> list[Part]:
 # ---- Bambuddy access ---------------------------------------------------------------------
 
 
-def _problem(request: Request, key: str, status: int = 200):
-    """The error page of the creation flow."""
-    return render(request, "article_browse.html", status_code=status, active_nav="articles", problem=key)
+def _problem(request: Request, key: str, status: int = 200, *, relink: bool = False):
+    """The error page of the file choice; `relink` gives it the subtitle of the relink path."""
+    return render(
+        request, "article_browse.html", status_code=status, active_nav="articles", problem=key, relink=relink
+    )
 
 
 async def _printers(client: BambuddyClient) -> list[Printer] | None:
@@ -276,18 +278,18 @@ async def articles_list(
 # ---- creation: browse folders and files, choose a plate ------------------------------------------
 
 
-async def _browse(request: Request, folder: str | None, base: str, file_base: str):
+async def _browse(request: Request, folder: str | None, base: str, file_base: str, *, relink: bool = False):
     if (redirect := listing.remember_layout(request, "files")) is not None:
         return redirect  # ?layout=... only sets the cookie
     client = get_bambuddy(request)
     if client is None:
-        return _problem(request, "articles.bambuddy_missing")
+        return _problem(request, "articles.bambuddy_missing", relink=relink)
     try:
         folder_id = bounded_int(folder)
         folders = await client.list_folders()
         files = await client.list_files(folder_id)
     except BAMBUDDY_ERRORS:
-        return _problem(request, "articles.bambuddy_error")
+        return _problem(request, "articles.bambuddy_error", relink=relink)
     by_id = {f.id: f for f in folders}
     crumbs, seen, current = [], set(), by_id.get(folder_id) if folder_id is not None else None
     while current is not None and current.id not in seen:
@@ -302,6 +304,7 @@ async def _browse(request: Request, folder: str | None, base: str, file_base: st
         "article_browse.html",
         active_nav="articles",
         problem=None,
+        relink=relink,
         crumbs=crumbs,
         up_id=crumbs[-2].id if len(crumbs) > 1 else None,
         in_folder=bool(crumbs),
@@ -335,16 +338,16 @@ async def _plates_page(
 ):
     client = get_bambuddy(request)
     if client is None:
-        return _problem(request, "articles.bambuddy_missing")
+        return _problem(request, "articles.bambuddy_missing", relink=relink_id is not None)
     try:
         file = await client.get_file(file_id)
         plates = await client.list_plates(file_id) if file is not None and file.sliced else []
     except BAMBUDDY_ERRORS:
-        return _problem(request, "articles.bambuddy_error")
+        return _problem(request, "articles.bambuddy_error", relink=relink_id is not None)
     if file is None:
-        return _problem(request, "articles.file_missing", 404)
+        return _problem(request, "articles.file_missing", 404, relink=relink_id is not None)
     if not file.sliced:
-        return _problem(request, "articles.not_sliced", 409)
+        return _problem(request, "articles.not_sliced", 409, relink=relink_id is not None)
     return render(
         request,
         "article_plates.html",
@@ -696,7 +699,7 @@ def _archived_article(db: Session, article_id: int) -> Article:
 async def relink_browse(request: Request, article_id: int, folder: str | None = None, db: Session = Depends(get_db)):
     _archived_article(db, article_id)
     base = f"/articles/{article_id}/relink"
-    return await _browse(request, folder, base, f"{base}/file")
+    return await _browse(request, folder, base, f"{base}/file", relink=True)
 
 
 @router.get("/articles/{article_id:int}/relink/file/{file_id:int}")
@@ -717,15 +720,15 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
     base = f"/articles/{article_id}/relink"
     client = get_bambuddy(request)
     if client is None:
-        return _problem(request, "articles.bambuddy_missing")
+        return _problem(request, "articles.bambuddy_missing", relink=True)
     try:  # read fresh from Bambuddy, outside of the write transaction
         read = await _read_plate(client, file_id, index)
     except NotSliced:
-        return _problem(request, "articles.not_sliced", 409)
+        return _problem(request, "articles.not_sliced", 409, relink=True)
     except BAMBUDDY_ERRORS:
-        return _problem(request, "articles.bambuddy_error")
+        return _problem(request, "articles.bambuddy_error", relink=True)
     if read is None:
-        return _problem(request, "articles.file_missing")
+        return _problem(request, "articles.file_missing", relink=True)
     file, plate, requirements, thumbnail = read
 
     def work(tx):

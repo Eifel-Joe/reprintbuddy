@@ -514,5 +514,6 @@
   "info.consume_parts": "Takes the bought parts this article needs off the parts stock for every unit booked in. Untick it when the parts were already deducted.",
   "info.host": "Network address Reprintbuddy listens on. 0.0.0.0 means: on all networks of the machine. Takes effect after a restart.",
   "info.about": "Explanation of {label}",
-  "articles.not_sliced": "Not sliced – slice it first and put the sliced file (.gcode.3mf) into Bambuddy."
+  "articles.not_sliced": "Not sliced – slice it first and put the sliced file (.gcode.3mf) into Bambuddy.",
+  "articles.relink_subtitle": "Choose another print file for this article"
 }

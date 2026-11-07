@@ -36,11 +36,46 @@ def test_not_sliced_texts_are_final():
     assert translate("de", "articles.not_sliced") == NOT_SLICED_DE
 
 
-def test_new_key_is_last_in_every_locale_file():
+def test_new_keys_are_appended_in_every_locale_file():
     folder = Path(__file__).resolve().parents[2] / "src" / "reprintbuddy" / "locales"
     for name in ("en.json", "de.json"):
         keys = list(json.loads((folder / name).read_text(encoding="utf-8")))
-        assert keys[-1] == "articles.not_sliced", name
+        assert keys[-2:] == ["articles.not_sliced", "articles.relink_subtitle"], name
+
+
+def test_relink_subtitle_texts_are_final():
+    assert translate("de", "articles.relink_subtitle") == "Eine andere Druckdatei für diesen Artikel wählen"
+    assert translate("en", "articles.relink_subtitle") == "Choose another print file for this article"
+
+
+def _sub(html):
+    return re.search(r'<p class="page-sub">(.*?)</p>', html, re.S).group(1)
+
+
+def test_relink_pages_have_the_relink_subtitle_and_create_pages_keep_theirs(mixed, fake_bambuddy):
+    a = make(mixed, name="Template A", library_file_id=1, plate_id=1)
+    act(mixed, f"/articles/{a}", "archive")
+    relink = translate("en", "articles.relink_subtitle")
+    create = translate("en", "articles.new_subtitle")
+    for path, status in [(f"/articles/{a}/relink", 200), (f"/articles/{a}/relink?folder=1", 200),
+                         (f"/articles/{a}/relink/file/4", 409), (f"/articles/{a}/relink/file/99", 404)]:
+        response = mixed.get(path)
+        assert response.status_code == status, path
+        assert _sub(response.text) == relink, path
+    fake_bambuddy.unavailable = True  # the problem page of the browse step
+    response = mixed.get(f"/articles/{a}/relink")
+    assert _sub(response.text) == relink
+    fake_bambuddy.unavailable = False
+    # the POST of the relink path ends on the same pages
+    path = f"/articles/{a}/relink/file/4/plate/1"
+    data = {"csrf_token": csrf_of(mixed, "/articles"), "form_token": form_token_of(mixed, "/articles/new/file/1/plate/1")}
+    response = mixed.post(path, data=data)
+    assert response.status_code == 409 and _sub(response.text) == relink
+    for path, status in [("/articles/new", 200), ("/articles/new?folder=1", 200), ("/articles/new/file/4", 409),
+                         ("/articles/new/file/99", 404)]:
+        response = mixed.get(path)
+        assert response.status_code == status, path
+        assert _sub(response.text) == create, path
 
 
 # ---- the two layouts -----------------------------------------------------------------
@@ -353,3 +388,4 @@ def test_not_sliced_note_is_a_card_with_head_and_button(mixed):
     _one_head(html, "circle-alert")
     assert '<div class="card"><p class="alert" role="alert">' + NOT_SLICED_EN in html
     assert 'class="btn secondary" href="/articles"' in html and 'class="btn-link" href' not in html
+

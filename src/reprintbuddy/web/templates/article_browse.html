@@ -12,7 +12,7 @@
 {% macro folder_mark(size) -%}
 <span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('folder') }}</span>
 {%- endmacro %}
-{% call ui.page_head("circle-alert" if problem else "package", t('articles.browse_title'), t('articles.new_subtitle')) %}{% endcall %}
+{% call ui.page_head("circle-alert" if problem else "package", t('articles.browse_title'), t('articles.relink_subtitle' if relink else 'articles.new_subtitle')) %}{% endcall %}
 {#- Back to the article list: a secondary button like the other lists have in their toolbar. -#}
 {% macro to_articles() -%}
 <div class="toolbar-actions"><a class="btn secondary" href="/articles">{{ ui.icon('package') }}{{ t('articles.title') }}</a></div>
