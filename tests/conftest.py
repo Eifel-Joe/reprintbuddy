@@ -11,7 +11,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.fake import FakeBambuddy
 from reprintbuddy.bambuddy.types import FilamentRequirement
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
-from reprintbuddy.web.app import create_app
+from reprintbuddy.web.app import create_app, shared_tls_client_factory
 
 ADMIN = "admin"
 PASSWORD = "password123"
@@ -103,9 +103,16 @@ def api_routes(app):
     return list(walk(app.routes))
 
 
+# The production factory, built once at module level: one TLS context for the whole test session
+# (httpx's default loads the CA certificates each time a client is built, most of a second), and
+# every test client goes through the code that runs in production.
+http_client_factory = shared_tls_client_factory()
+
+
 def make_client(db_path, **create_kwargs) -> TestClient:
     # No background tick loop unless a test asks for it (`with client:` would start it).
     create_kwargs.setdefault("run_engine", False)
+    create_kwargs.setdefault("http_client_factory", http_client_factory)
     app = create_app(db_path, **create_kwargs)
     app.state.login_failure_delay = 0  # tests do not wait; some tests set these themselves
     app.state.login_brake.delay = 0

@@ -119,6 +119,25 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await task
 
 
+def shared_tls_client_factory() -> Callable[[], httpx.AsyncClient]:
+    """A factory of `httpx.AsyncClient`s that all use one TLS context, built here, once.
+
+    Still one client per call (Decision 4 of B2): only the certificate loading is shared.
+    `httpx.AsyncClient()` loads the CA certificates every time it is built, which takes up to
+    seconds and blocks the event loop. `httpx.create_ssl_context()` with no arguments is the
+    context httpx 0.28 builds for its default `verify=True` (`httpx/_config.py:23-40`); given
+    as `verify=`, httpx uses it as it is (`:55-56`), so certificates are checked as before.
+    httpcore sets ALPN on the shared context at every connect, so it must never be handed to an
+    `http2=True` client.
+    """
+    context = httpx.create_ssl_context()
+
+    def factory() -> httpx.AsyncClient:
+        return httpx.AsyncClient(verify=context)
+
+    return factory
+
+
 def create_app(
     db_path: Path,
     http_client_factory: Callable[[], httpx.AsyncClient] | None = None,
@@ -147,7 +166,8 @@ def create_app(
     app.state.login_failure_delay = 0.5  # seconds of pause after a wrong password
     app.state.login_brake = FailureBrake()  # 10 failures in 60 s: every attempt waits 2 s
     app.state.hash_limiter = HashLimiter(capacity=2)  # at most two argon2 runs at once
-    app.state.http_client_factory = http_client_factory or httpx.AsyncClient
+    # Built at start, not on the first Bambuddy call: the TLS context is loaded before any page.
+    app.state.http_client_factory = http_client_factory or shared_tls_client_factory()
     # The client is built from the stored settings at every call; tests replace the factory.
     app.state.bambuddy_factory = make_http_factory(sessionmaker, app.state.http_client_factory)
     app.state.session_secret = secret  # also signs the one-time form tokens
