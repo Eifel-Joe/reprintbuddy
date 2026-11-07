@@ -236,3 +236,13 @@ def test_non_finite_float_is_unexpected(bad):
     data[0]["weight_used"] = json.loads(f'{{"v": {bad}}}')["v"]
     with pytest.raises(BambuddyUnexpected):
         parse_spools(data)
+
+
+@pytest.mark.parametrize("status,path", [("spoolman_status.json", SPOOLMAN_PATH), (None, BUILTIN_PATH)])
+async def test_list_spools_asks_for_archived_spools_too(respx_mock, status, path):
+    """Archived spools count when an old filament sort is converted (v0.3.7); Bambuddy leaves them
+    out unless asked (`include_archived`, both lists)."""
+    respx_mock.get(f"{API}/spoolman/status").respond(200, json=load(status) if status else OWN)
+    route = respx_mock.get(path, params={"include_archived": "true"}).respond(200, json=[])
+    await client().list_spools()
+    assert route.called

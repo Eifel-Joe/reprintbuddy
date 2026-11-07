@@ -297,3 +297,18 @@ def test_a_mark_without_settings_counts_the_default_unit_when_moved(db):
         filament.sync_sorts(s, [spool])
         (moved,) = open_marks(s)
         assert (moved.item_id, moved.qty) == (target.id, 8)
+
+
+async def test_archived_spools_reach_the_conversion_through_the_client(db):
+    """The list of the client (here the fake) carries archived spools, so the rule above holds in use:
+    Brand B's one living spool is no majority against two archived spools of Brand A."""
+    fake = FakeBambuddy()
+    fake.add_spool("PLA", brand="Brand A", color_hex="#000000", archived=True)
+    fake.add_spool("PLA", brand="Brand A", color_hex="#000000", archived=True)
+    fake.add_spool("PLA", brand="Brand B", color_hex="#1A1A1A")
+    with db.begin() as s:
+        old = make_legacy_sort(s)
+        mark(s, old.id, 2)
+        filament.known_sorts(s, await fake.list_spools())
+        (waiting,) = open_marks(s)
+        assert waiting.item_id == old.id and journal(s) == []

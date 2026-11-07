@@ -265,14 +265,17 @@ class HttpBambuddyClient:
         return _parse.parse_spool_mode(await self._get("/spoolman/status"))
 
     async def list_spools(self) -> list[Spool]:
-        """The spools of the running mode, and only of it (Decision 12).
+        """The spools of the running mode, and only of it (Decision 12), archived ones included
+        (`archived` set): an old filament sort counts them when it is converted (v0.3.7); every
+        caller leaves them out of the stock itself. Both lists hide them unless asked
+        (Bambuddy `inventory.py` and `spoolman_inventory.py`, `include_archived`).
 
         An unreachable Spoolman or a refused status is an error, never a reason to read the
         other list: its numbers would be stale or foreign.
         """
         mode = await self.spool_mode()
         path = "/spoolman/inventory/spools" if mode == "spoolman" else "/inventory/spools"
-        return _parse.parse_spools(await self._get(path))
+        return _parse.parse_spools(await self._get(path, {"include_archived": "true"}))
 
     async def get_queue_item(self, item_id: int) -> QueueItem | None:
         """`None`: the entry is gone (deleted, or removed with the history; Decision 3)."""

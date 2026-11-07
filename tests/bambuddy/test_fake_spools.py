@@ -38,13 +38,14 @@ async def test_archive_spool():
     keep = fake.add_spool("PLA")
     gone = fake.add_spool("PLA")
     fake.archive_spool(gone.id)
-    assert [s.id for s in await fake.list_spools()] == [keep.id]
+    assert [(s.id, s.archived) for s in await fake.list_spools()] == [(keep.id, False), (gone.id, True)]
 
 
-async def test_archived_spool_added_archived_is_excluded():
+async def test_archived_spools_are_listed_with_their_flag():
+    """Like the real client, which asks for `include_archived=true`: the callers filter themselves."""
     fake = FakeBambuddy()
     fake.add_spool("PLA", archived=True)
-    assert await fake.list_spools() == []
+    assert [s.archived for s in await fake.list_spools()] == [True]
 
 
 async def test_list_spools_unavailable():

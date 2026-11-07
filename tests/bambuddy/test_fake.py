@@ -368,8 +368,8 @@ async def test_enqueue_value_errors_before_any_effect(changes):
 async def test_spools_builtin():
     fake = FakeBambuddy()
     kept = fake.add_spool("PLA", remaining_g=250.0)
-    fake.add_spool("PLA", archived=True)
-    assert await fake.list_spools() == [kept]
+    archived = fake.add_spool("PLA", archived=True)
+    assert await fake.list_spools() == [kept, archived]  # archived ones too, flagged (as the client asks)
     assert kept.remaining_g == 250.0
 
 
@@ -409,7 +409,7 @@ async def test_add_spool_color_name_and_created_at():
     fake.set_remaining(spool.id, 10.0)
     assert (await fake.list_spools())[0].remaining_g == 10.0
     fake.archive_spool(spool.id)
-    assert await fake.list_spools() == []
+    assert [s.archived for s in await fake.list_spools()] == [True]
 
 
 def test_fake_matches_http_client_signatures():
