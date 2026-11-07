@@ -81,6 +81,10 @@
     {# Shown by live.js instead of reloading while a form of the page is changed: a new version
        runs, or the page could not fetch its regions (signed out, an error). #}
     <p id="live-version" class="live-stale" hidden role="status">{{ t('live.changed') }} <button type="button" class="btn-link" data-live-reload>{{ t('live.reload') }}</button></p>
+    {# A newer release exists (Spec 11.3a): one narrow line on every page; it links to the update card. #}
+    {% if update_version %}
+    <div class="update-banner" role="status">{{ ui.icon('download') }}<span>{{ t('update.banner', version=update_version) }} <a href="/settings?tab=maintenance#ops-update">{{ t('update.banner_link') }}</a></span></div>
+    {% endif %}
     {% if rights_notice and rights_later %}
     {# After "Later": the notice shrinks to one line until the person signs out. #}
     <div class="rights-banner" role="status">

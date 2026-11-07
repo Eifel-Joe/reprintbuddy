@@ -122,6 +122,15 @@
 <form class="switch-form" method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="form_token" value="{{ form_token() }}"><input type="hidden" name="enabled" value="{{ '0' if on else '1' }}"><input type="hidden" name="next" value="{{ next }}"><button type="submit" class="switch-btn" role="switch" aria-checked="{{ 'true' if on else 'false' }}" title="{{ label }}" aria-label="{{ label }}"><span class="switch-track" aria-hidden="true"></span></button></form>
 {%- endmacro %}
 
+{# "Query Bambuddy now" (v0.3.6 p87), for the head of a page: a small form with both tokens. `next` is
+   the page to return to (/queue or /). The page passes `poll_now` (a Bambuddy is set up); without it
+   nothing is drawn. #}
+{% macro poll_button(next) -%}
+{%- if poll_now -%}
+<form class="poll-now" method="post" action="/queue/poll"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="form_token" value="{{ form_token() }}"><input type="hidden" name="next" value="{{ next }}"><button class="btn secondary" type="submit">{{ icon('refresh-cw') }}{{ t('queue.poll_now') }}</button></form>
+{%- endif -%}
+{%- endmacro %}
+
 {# The symbols at the end of a table row: {% call ui.row_actions() %}…{% endcall %}. The column
    head is <th class="actions-col"><span class="sr-only">{{ t('list.col.actions') }}</span></th>. #}
 {% macro row_actions() -%}

@@ -13,6 +13,7 @@ import threading
 import time
 from collections.abc import AsyncIterator, Iterable
 
+LIVE_CHANNEL_TOPIC = "live-channel"  # the state of Bambuddy's live channel changed (not a stored change)
 RETRY_MS = 2000  # the browser waits this long before it connects again
 HEARTBEAT_SECONDS = 15.0  # a comment keeps proxies from closing a quiet stream
 COALESCE_SECONDS = 0.25  # notices that come in this soon after one another go out as one

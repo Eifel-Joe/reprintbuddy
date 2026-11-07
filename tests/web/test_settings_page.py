@@ -444,6 +444,7 @@ def test_all_settings_posts_require_csrf(ready_client):
         "/settings/restart",
         "/settings/server",
         "/settings/update",
+        "/settings/update/auto",
         "/settings/update/check",
     ]
     csrf_of(ready_client, "/settings")  # a session with a token exists

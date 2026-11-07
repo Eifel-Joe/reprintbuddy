@@ -23,6 +23,8 @@
       {% else %}{{ t('ops.update.not_checked') }}{% endif %}
     </p>
   </div>
+  {# The automatic check (Spec 11.3a): a switch that posts its wanted state; saved at once. #}
+  {% call ui.setting_row(t('ops.update.auto'), t('ops.update.auto_hint')) %}{{ ui.switch_post("/settings/update/auto", update_check, t('ops.update.auto'), "/settings?tab=maintenance") }}{% endcall %}
   {% if ops.state_key %}
   <div class="{% if ops.update.state in ('failed', 'rolled_back', 'rollback_failed') or ops.interrupted %}alert{% else %}notice{% endif %}" role="status">
     <strong>{{ t(ops.state_key) }}</strong>

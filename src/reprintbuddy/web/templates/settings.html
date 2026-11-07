@@ -100,6 +100,20 @@
   </form>
 </section>
 
+{# The live channel to Bambuddy (v0.3.6 p86): follows the listener live (topic live-channel). Only with a
+   stored address. Not connected: the regular query takes over, and the page says so. #}
+{% call ui.region("channel", "live-channel settings") %}
+{% if live_channel %}
+{% set channel_key = 'settings.channel.' ~ live_channel %}
+{% set channel_badge_key = 'settings.channel.badge.' ~ live_channel %}
+<section class="card section" id="live-channel">
+  {% call ui.card_head("link", t('settings.channel.title')) %}<span class="badge tone-{{ {'connected': 'ok', 'connecting': 'neutral', 'waiting': 'warn', 'no_right': 'warn'}.get(live_channel, 'neutral') }}">{{ t(channel_badge_key) }}</span>{% endcall %}
+  <p class="status">{{ t(channel_key, minutes=channel_retry_minutes) }}</p>
+  {% if live_channel != 'connected' %}<p class="muted">{{ t('settings.channel.fallback', poll=poll_minutes) }}</p>{% endif %}
+</section>
+{% endif %}
+{% endcall %}
+
 {% elif current_tab == 'account' %}
 <section class="card">
   {% call ui.card_head("user", t('settings.password')) %}<button class="btn" type="submit" form="settings-password">{{ t('settings.password_submit') }}</button>{% endcall %}

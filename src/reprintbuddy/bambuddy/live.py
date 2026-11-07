@@ -107,7 +107,9 @@ class LiveListener:
     time without a connection are lost, so the caller should look once.
 
     `state` is `"connecting"`, `"connected"`, `"waiting"` (a pause after a failure) or
-    `"no_right"` (Bambuddy refuses the channel; polling goes on without it).
+    `"no_right"` (Bambuddy refuses the channel; polling goes on without it). `on_state(state)`
+    is called after each change of it (not for the starting state, not for a repeat), so a page
+    that shows the state can follow it; it must be short and may not raise (an error is logged).
     """
 
     def __init__(
@@ -118,17 +120,34 @@ class LiveListener:
         connect: Callable[[str], Any] = connect,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         now: Callable[[], float] = time.monotonic,
+        on_state: Callable[[str], None] | None = None,
     ) -> None:
         self._client = client
         self._on_event = on_event
         self._connect = connect
         self._sleep = sleep
         self._now = now
-        self.state = "connecting"
+        self._on_state = on_state
+        self._state = "connecting"
         self._token: str | None = None
         self._token_at = 0.0
         self._failures = 0  # failed attempts since the last stable connection
         self._paused_in: str | None = None  # the state of the last pause; None after a connect
+
+    @property
+    def state(self) -> str:
+        return self._state
+
+    @state.setter
+    def state(self, value: str) -> None:
+        if value == self._state:
+            return
+        self._state = value
+        if self._on_state is not None:
+            try:
+                self._on_state(value)
+            except Exception:  # the page missing a change must not stop the channel
+                log.warning("Bambuddy live channel: reporting the state %r failed", value, exc_info=True)
 
     async def run(self) -> None:
         """Connect, listen, pause, again; only `CancelledError` leaves."""

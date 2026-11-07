@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from reprintbuddy import __version__
+from reprintbuddy import settings as st
 from reprintbuddy.ops.export import export_bytes
 from reprintbuddy.ops.server import (
     EffectiveServer,
@@ -207,6 +208,19 @@ async def update_check(request: Request):
         return _back("check_failed")
     app.state.version_info = info
     app.state.installed_tag = info.installed
+    return _back()
+
+
+@router.post("/settings/update/auto", dependencies=[Depends(verify_csrf)])
+async def update_auto(request: Request, db: Session = Depends(get_db)):
+    """The switch of the automatic check (Spec 11.3a): `enabled=1|0` is the wanted state, never a
+    toggle (two open tabs cannot turn each other back). A value that is neither changes nothing.
+    Ends the pause of the check loop, so a check that was switched on runs now."""
+    form = await request.form()
+    wanted = str(form.get("enabled", "")).strip()
+    if wanted in ("0", "1"):
+        st.set_setting(db, "update_check", wanted == "1")
+        request.app.state.update_check_wake.set()
     return _back()
 
 

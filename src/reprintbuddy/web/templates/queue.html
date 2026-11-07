@@ -11,7 +11,7 @@
 <form method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% if token %}<input type="hidden" name="form_token" value="{{ form_token() }}">{% endif %}{{ caller() }}</form>
 {%- endmacro %}
 
-{% call ui.page_head("list-ordered", t('queue.title'), t('queue.sub')) %}<a class="btn" href="#manual">{{ ui.icon('plus') }}{{ t('queue.manual') }}</a>{% endcall %}
+{% call ui.page_head("list-ordered", t('queue.title'), t('queue.sub')) %}{{ ui.poll_button("/queue") }}<a class="btn" href="#manual">{{ ui.icon('plus') }}{{ t('queue.manual') }}</a>{% endcall %}
 {% if error and error_for != 'manual' %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 
 {% call ui.region("summary", "queue article bambuddy") %}{{ ui.kpi_row(cards) }}{% endcall %}

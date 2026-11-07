@@ -675,3 +675,55 @@ async def test_real_library_handshake_refusal_is_no_right(respx_mock):
     assert sleeps.delays == [live.NO_RIGHT_DELAY]
     assert route.call_count == 2
     assert events.kinds == []
+
+
+# ---- the state reported to the caller (v0.3.6 p86) -------------------------------------------
+
+
+def listener_with_states(connect, sleeps, states: list[str]) -> live.LiveListener:
+    return live.LiveListener(
+        quick_client(), Events(), connect=connect, sleep=sleeps, now=Clock(), on_state=states.append
+    )
+
+
+async def test_on_state_reports_each_change_once(respx_mock):
+    tokens(respx_mock, "t1", "t2")
+    states: list[str] = []
+    subject = listener_with_states(FakeConnect(OSError("down"), OSError("down")), Sleeps(2), states)
+    await run_until_stopped(subject)
+    # Starting state "connecting" is not a change; a repeated state is not reported again.
+    assert states == ["waiting", "connecting", "waiting"]
+
+
+async def test_on_state_reports_connected_and_no_right(respx_mock):
+    tokens(respx_mock, "t1")
+    states: list[str] = []
+    connect = FakeConnect([])
+    subject = listener_with_states(connect, Sleeps(1), states)
+    task = asyncio.create_task(subject.run())
+    try:
+        for _ in range(1000):
+            await asyncio.sleep(0)
+            if connect.connections and connect.connections[0].waiting.is_set():
+                break
+        assert states == ["connected"]
+    finally:
+        await stop(task)
+
+    respx_mock.post(TOKEN_URL).respond(403, json={"detail": "Missing permission"})
+    denied: list[str] = []
+    await run_until_stopped(listener_with_states(FakeConnect(), Sleeps(1), denied))
+    assert denied == ["no_right"]
+
+
+async def test_a_failing_on_state_does_not_stop_the_listener(respx_mock):
+    tokens(respx_mock, "t1")
+
+    def broken(state: str) -> None:
+        raise RuntimeError("boom")
+
+    subject = live.LiveListener(
+        quick_client(), Events(), connect=FakeConnect(OSError("down")), sleep=Sleeps(1), now=Clock(), on_state=broken
+    )
+    await run_until_stopped(subject)
+    assert subject.state == "waiting"

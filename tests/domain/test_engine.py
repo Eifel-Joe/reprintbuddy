@@ -1058,6 +1058,53 @@ async def test_request_poll_runs_regular_tick(engine_env, monkeypatch):
     assert calls == [True, False, True]
 
 
+async def test_several_poll_requests_before_the_loop_wakes_run_one_poll(engine_env, monkeypatch):
+    """v0.3.6 p87: a second click on "Query Bambuddy now" while the first is still asked for
+    sets the same flag; the loop polls once."""
+    engine = engine_env.engine
+    calls = record_ticks(engine, monkeypatch)
+
+    async with running(engine, lambda: 60):
+        await wait_until(lambda: calls == [True])
+        engine.request_poll()
+        engine.request_poll()
+        engine.request_poll()
+        await wait_until(lambda: len(calls) == 2)
+        await asyncio.sleep(0.05)
+
+    assert calls == [True, True]
+
+
+async def test_poll_requests_during_a_running_poll_add_one_more(engine_env, monkeypatch):
+    """v0.3.6 p87: clicks while a poll runs are not lost (the poll may have read before the
+    print ended) and not multiplied: exactly one poll follows."""
+    engine = engine_env.engine
+    calls = []
+    release = asyncio.Event()
+    running_poll = asyncio.Event()
+
+    async def tick(*, poll):
+        calls.append(poll)
+        if len(calls) == 2:
+            running_poll.set()
+            await release.wait()
+        return TickResult(None, 0, 0)
+
+    monkeypatch.setattr(engine, "tick", tick)
+
+    async with running(engine, lambda: 60):
+        await wait_until(lambda: calls == [True])
+        engine.request_poll()
+        await wait_until(running_poll.is_set)  # the second poll is under way
+        engine.request_poll()
+        engine.request_poll()
+        release.set()
+        await wait_until(lambda: len(calls) == 3)
+        await asyncio.sleep(0.05)
+
+    assert calls == [True, True, True]
+
+
 # ---- p41: right after an update, ask Bambuddy again soon -------------------------------
 
 
