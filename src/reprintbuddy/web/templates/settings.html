@@ -2,97 +2,117 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('settings.title') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("settings", t('settings.title')) %}{% endcall %}
+{% call ui.page_head("settings", t('settings.title'), t('settings.subtitle')) %}{% endcall %}
 {% if notice %}{% if notice_warning %}<p class="alert" role="alert">{{ t(notice) }}</p>{% else %}<p class="notice" role="status">{{ t(notice) }}</p>{% endif %}{% endif %}
+{# One tab per topic; the tabs are links (`?tab=`), so the page works without JavaScript. #}
+{% set tab_items = [] %}
+{% for key, icon_name, label_key in settings_tabs %}{% set _ = tab_items.append((key, icon_name, t(label_key), '/settings?tab=' ~ key)) %}{% endfor %}
+{{ ui.tabs(tab_items, current_tab) }}
 
-<section class="card section">
-  <h2>{{ t('settings.language') }}</h2>
+<div class="settings-grid">
+{% if current_tab == 'general' %}
+<section class="card">
+  {% call ui.card_head("settings", t('settings.language')) %}<button class="btn" type="submit" form="settings-language">{{ t('settings.save') }}</button>{% endcall %}
   {% if error and error_section == 'language' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
-  <form method="post" action="/settings/language">
+  <form id="settings-language" method="post" action="/settings/language">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>{{ t('settings.language') }}
-      <select name="language">
+    {% call ui.setting_row(t('settings.language'), t('settings.language_hint'), "language") %}
+      <select id="language" name="language">
         <option value="en"{% if language == 'en' %} selected{% endif %}>{{ t('language.en') }}</option>
         <option value="de"{% if language == 'de' %} selected{% endif %}>{{ t('language.de') }}</option>
       </select>
-    </label>
-    <button class="btn" type="submit">{{ t('settings.save') }}</button>
+    {% endcall %}
   </form>
 </section>
 
-<section class="card section" id="bambuddy">
-  <h2>{{ t('settings.bambuddy') }}</h2>
+<section class="card">
+  {% call ui.card_head("settings", t('settings.server')) %}<button class="btn" type="submit" form="settings-server">{{ t('settings.save') }}</button>{% endcall %}
+  <p class="muted">{{ t('settings.restart_needed') }}</p>
+  {% if error and error_section == 'server' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
+  <form id="settings-server" method="post" action="/settings/server" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% call ui.setting_row(t('settings.host'), t('settings.host_hint'), "host", t('info.host')) %}
+      <input id="host" name="host" value="{{ host }}" autocomplete="off" required>
+    {% endcall %}
+    {% call ui.setting_row(t('settings.port'), t('settings.port_hint'), "port") %}
+      <input id="port" name="port" value="{{ port }}" inputmode="numeric" autocomplete="off" required>
+    {% endcall %}
+    <h3 class="card-sub">{{ t('settings.https') }}</h3>
+    <p class="muted">{{ t('settings.https_hint') }}</p>
+    <p class="status">{% if tls_cert_set %}{{ t('settings.tls_cert_stored') }}{% else %}{{ t('settings.tls_none') }}{% endif %}</p>
+    {# The PEM fields are wide: they sit under their label across the whole card. #}
+    <div class="setting-row stack">
+      <div class="setting-text"><label for="tls_cert">{{ t('settings.tls_cert') }}</label><span>{{ t('settings.tls_cert_hint') }}</span></div>
+      <div class="setting-control">
+        <textarea id="tls_cert" name="tls_cert" rows="3" spellcheck="false" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+        <input name="tls_cert_file" type="file" aria-label="{{ t('settings.tls_cert') }}">
+      </div>
+    </div>
+    <div class="setting-row stack">
+      <div class="setting-text"><label for="tls_key">{{ t('settings.tls_key') }}</label><span>{{ t('settings.tls_key_hint') }}{% if tls_key_mask %} {{ t('settings.secret_stored') }}{% endif %}</span></div>
+      <div class="setting-control">
+        <textarea id="tls_key" name="tls_key" rows="3" spellcheck="false" autocomplete="off"{% if tls_key_mask %} placeholder="{{ tls_key_mask }}"{% endif %}></textarea>
+        <input name="tls_key_file" type="file" aria-label="{{ t('settings.tls_key') }}">
+      </div>
+    </div>
+    {% if tls_cert_set %}
+    {% call ui.setting_row(t('settings.tls_remove'), "", "tls_remove") %}{{ ui.switch("tls_remove", false, t('settings.tls_remove'), "tls_remove") }}{% endcall %}
+    {% endif %}
+  </form>
+</section>
+
+<section class="card" id="ops-restart">
+  {% call ui.card_head("refresh-cw", t('ops.restart.title')) %}
+  <form method="post" action="/settings/restart">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn" type="submit">{{ t('ops.restart.button') }}</button>
+  </form>
+  {% endcall %}
+  {% if ops.message and ops.message in ('ops.msg.restart_failed',) %}<p class="alert" role="alert">{{ t(ops.message) }}</p>{% endif %}
+  {% if ops.running_url %}<p class="status">{{ t('ops.server.running', url=ops.running_url) }}</p>{% endif %}
+  {% if ops.restart_pending %}<p class="notice" role="status">{{ t('ops.server.pending') }}</p>{% endif %}
+</section>
+
+{% elif current_tab == 'bambuddy' %}
+<section class="card" id="bambuddy">
+  {% call ui.card_head("link", t('settings.bambuddy')) %}<button class="btn" type="submit" form="settings-bambuddy">{{ t('bambuddy.submit') }}</button>{% endcall %}
   <p class="muted">{{ t('settings.bambuddy_hint') }}</p>
   {% if error and error_section == 'bambuddy' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
   {% if bambuddy_owner %}<p class="status">{{ t('settings.bambuddy_owner', owner=bambuddy_owner) }}</p>{% endif %}
   {# What the check found: the one just made, or else the one of the start (a missing right). The guides are open. #}
   {% if error_section == 'bambuddy' %}{% with guide_link=True %}{% include "_bambuddy_result.html" %}{% endwith %}
   {% elif rights_notice %}{% with check=rights_notice, guide_link=True %}{% include "_bambuddy_result.html" %}{% endwith %}{% endif %}
-  <form method="post" action="/settings/bambuddy" autocomplete="off">
+  <form id="settings-bambuddy" method="post" action="/settings/bambuddy" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>{{ t('bambuddy.url') }}
-      <input name="bambuddy_address" value="{{ bambuddy_address }}" placeholder="{{ t('bambuddy.url_placeholder') }}" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>
-    </label>
-    <label>{{ t('bambuddy.api_key') }}
-      <input name="bambuddy_token" type="password" value="" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"{% if api_key_mask %} placeholder="{{ api_key_mask }}"{% endif %}>
-      {% if api_key_mask %}<span class="hint">{{ t('settings.secret_stored') }}</span>{% endif %}
-    </label>
-    <button class="btn" type="submit">{{ t('bambuddy.submit') }}</button>
+    {% call ui.setting_row(t('bambuddy.url'), t('settings.bambuddy_address_hint'), "bambuddy_address") %}
+      <input id="bambuddy_address" name="bambuddy_address" value="{{ bambuddy_address }}" placeholder="{{ t('bambuddy.url_placeholder') }}" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>
+    {% endcall %}
+    {% call ui.setting_row(t('bambuddy.api_key'), t('settings.bambuddy_key_hint') ~ (' ' ~ t('settings.secret_stored') if api_key_mask else ''), "bambuddy_token") %}
+      <input id="bambuddy_token" name="bambuddy_token" type="password" value="" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"{% if api_key_mask %} placeholder="{{ api_key_mask }}"{% endif %}>
+    {% endcall %}
   </form>
 </section>
 
-<section class="card section">
-  <h2>{{ t('settings.password') }}</h2>
+{% elif current_tab == 'account' %}
+<section class="card">
+  {% call ui.card_head("user", t('settings.password')) %}<button class="btn" type="submit" form="settings-password">{{ t('settings.password_submit') }}</button>{% endcall %}
   {% if error and error_section == 'password' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
-  <form method="post" action="/settings/password">
+  <form id="settings-password" method="post" action="/settings/password">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>{{ t('settings.password_current') }}
-      <input name="current_password" type="password" autocomplete="current-password" required>
-    </label>
-    <label>{{ t('settings.password_new') }}
-      <input name="new_password" type="password" autocomplete="new-password" required minlength="{{ min_password_length }}">
-    </label>
-    <label>{{ t('setup.password_repeat') }}
-      <input name="new_password_repeat" type="password" autocomplete="new-password" required minlength="{{ min_password_length }}">
-    </label>
-    <button class="btn" type="submit">{{ t('settings.password_submit') }}</button>
+    {% call ui.setting_row(t('settings.password_current'), "", "current_password") %}
+      <input id="current_password" name="current_password" type="password" autocomplete="current-password" required>
+    {% endcall %}
+    {% call ui.setting_row(t('settings.password_new'), "", "new_password") %}
+      <input id="new_password" name="new_password" type="password" autocomplete="new-password" required minlength="{{ min_password_length }}">
+    {% endcall %}
+    {% call ui.setting_row(t('setup.password_repeat'), t('settings.password_repeat_hint'), "new_password_repeat") %}
+      <input id="new_password_repeat" name="new_password_repeat" type="password" autocomplete="new-password" required minlength="{{ min_password_length }}">
+    {% endcall %}
   </form>
 </section>
 
-<section class="card section">
-  <h2>{{ t('settings.server') }}</h2>
-  <p class="muted">{{ t('settings.restart_needed') }}</p>
-  {% if error and error_section == 'server' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
-  <form method="post" action="/settings/server" enctype="multipart/form-data">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="row">
-      <label>{{ t('settings.host') }}
-        <input name="host" value="{{ host }}" autocomplete="off" required>
-      </label>
-      <label>{{ t('settings.port') }}
-        <input name="port" value="{{ port }}" inputmode="numeric" autocomplete="off" required>
-      </label>
-    </div>
-    <h3>{{ t('settings.https') }}</h3>
-    <p class="muted">{{ t('settings.https_hint') }}</p>
-    <p class="status">{% if tls_cert_set %}{{ t('settings.tls_cert_stored') }}{% else %}{{ t('settings.tls_none') }}{% endif %}</p>
-    <label>{{ t('settings.tls_cert') }}
-      <textarea name="tls_cert" rows="3" spellcheck="false" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
-      <input name="tls_cert_file" type="file">
-    </label>
-    <label>{{ t('settings.tls_key') }}
-      <textarea name="tls_key" rows="3" spellcheck="false" autocomplete="off"{% if tls_key_mask %} placeholder="{{ tls_key_mask }}"{% endif %}></textarea>
-      <input name="tls_key_file" type="file">
-      {% if tls_key_mask %}<span class="hint">{{ t('settings.secret_stored') }}</span>{% endif %}
-    </label>
-    {% if tls_cert_set %}
-    <label class="check">
-      <input name="tls_remove" type="checkbox">
-      <span>{{ t('settings.tls_remove') }}</span>
-    </label>
-    {% endif %}
-    <button class="btn" type="submit">{{ t('settings.save') }}</button>
-  </form>
-</section>
+{% elif current_tab == 'maintenance' %}
 {% include "settings_ops.html" %}
+{% endif %}
+</div>
 {% endblock %}

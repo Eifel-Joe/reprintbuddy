@@ -44,6 +44,10 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 - Bambuddy 1.3 or newer, with its own spool management or with Spoolman (**Spoolman is
   optional**). Reprintbuddy reads the filament stock through Bambuddy and never talks to
   Spoolman itself.
+- **Print files stored directly in Bambuddy's file manager**, uploaded and sliced
+  (`.gcode.3mf`). Linked external folders are not enough: Bambuddy keeps no checksum for
+  their files and does not re-read plates and filament when it rescans them, so a changed
+  version would go unnoticed.
 - A **dedicated Bambuddy user** `reprintbuddy` in its **own Bambuddy group** with the rights
   listed under *First run*, and an **API key** of that user. The dedicated user makes
   Reprintbuddy's own jobs recognisable in Bambuddy. The setup guides you through it.
@@ -57,18 +61,18 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 ## Installation
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.0/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.3/install/install.sh)"
 ```
 
 Run it as root inside the container. Fresh Debian containers often come without curl; the first part installs it.
-The tag in the address (`v0.3.0`) is the version that gets installed; installer and code are guaranteed to belong
+The tag in the address (`v0.3.3`) is the version that gets installed; installer and code are guaranteed to belong
 together. To skip the language question, add the language:
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.0/install/install.sh)" _ --language de
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.3/install/install.sh)" _ --language de
 ```
 
-To install another version, put its tag into the address, for example `v0.3.0` for `<tag>`:
+To install another version, put its tag into the address, for example `v0.3.3` for `<tag>`:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"

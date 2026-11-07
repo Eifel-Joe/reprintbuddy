@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('overview.title') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("layout-dashboard", t('overview.title')) %}{% endcall %}
+{% call ui.page_head("layout-dashboard", t('overview.title'), t('overview.subtitle')) %}{% endcall %}
 <div class="card">
   <p class="muted">{{ t('overview.empty') }}</p>
 </div>

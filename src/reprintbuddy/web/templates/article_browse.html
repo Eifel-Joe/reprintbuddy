@@ -12,7 +12,7 @@
 {% macro folder_mark(size) -%}
 <span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('folder') }}</span>
 {%- endmacro %}
-{% call ui.page_head("package", t('articles.browse_title')) %}{% endcall %}
+{% call ui.page_head("package", t('articles.browse_title'), t('articles.new_subtitle')) %}{% endcall %}
 {% if problem %}
 <p class="alert" role="alert">{{ t(problem) }}</p>
 <p><a class="btn-link" href="/articles">{{ t('articles.title') }}</a></p>

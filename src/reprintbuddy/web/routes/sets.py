@@ -13,9 +13,10 @@ from reprintbuddy.domain.catalog import PositionInput, SetInput
 from reprintbuddy.domain.errors import DomainError
 from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.models import Article, ProductSet, SetPosition, SetPositionOption
-from reprintbuddy.web import listing
+from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
+from reprintbuddy.web.i18n import translate
 from reprintbuddy.web.forms import (
     bounded_int,
     duplicate_redirect,
@@ -104,9 +105,9 @@ def _form_page(request, db, *, product_set, values, rows_values, rows, error=Non
 async def sets_list(
     request: Request, view: str = "active", q: str | None = None, db: Session = Depends(get_db)
 ):
-    """Overview with short summary, search, status filter and tiles or list (Spec 10.1).
+    """Overview with key figure cards, search, status filter and tiles or list (Spec 10.1).
 
-    Same rules as the article list: the summary counts all sets of the view, the filter counts
+    Same rules as the article list: the cards count all sets of the view, the filter counts
     follow the search, the list shows what passes both. The archive has no status filter.
     """
     if (redirect := listing.remember_layout(request, "sets")) is not None:
@@ -117,14 +118,19 @@ async def sets_list(
     every = catalog.list_sets(db, archived=archived)
     found = [row for row in every if listing.matches(q, row.name, row.sku)]
     counts = Counter(row.status for row in found)
-    summary_items = [] if archived else summarize((row.status for row in every), ("not_deliverable",))
+    lang = current_language(request)
+    t = lambda key: translate(lang, key)  # noqa: E731
+    icon, label, named = ("archive", "kpi.sets_archived", []) if archived else (
+        "boxes", "kpi.sets", summarize((row.status for row in every), ("not_deliverable",))
+    )
+    cards = kpis.state_cards(t, "set", icon, len(every), t(label), named)
     keep = (("status", status), ("view", "archived" if archived else None))
     layout = listing.layout_of(request, "sets")
     return render(
         request, "sets_list.html", active_nav="sets", archived=archived,
         rows=[row for row in found if status is None or row.status == status],
         total=len(every),
-        summary_items=summary_items,
+        kpis=cards,
         filters=listing.filter_links(request, states, counts, len(found), status),
         layout=layout,
         layout_links=listing.layout_links(request, layout),
@@ -212,7 +218,7 @@ def _archive_action(action, flash_key: str):
         return await run_form_action(
             request,
             work=work,
-            success_url=f"/sets/{set_id}/edit",
+            success_url="/sets",  # back to the list; an archived set leaves it, that is right
             flash_key=flash_key,
             on_error=lambda text, status, exc: _edit_again(request, db, product_set, text, status),
         )

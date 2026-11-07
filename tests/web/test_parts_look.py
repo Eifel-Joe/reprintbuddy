@@ -11,6 +11,11 @@ from reprintbuddy import settings as st
 from reprintbuddy.domain import stock
 from reprintbuddy.models import Part, utcnow
 from reprintbuddy.web import regions
+from reprintbuddy.web.i18n import translate
+
+
+def en(key, **params):
+    return translate("en", key, **params)
 
 
 def add(client, **fields):
@@ -24,8 +29,13 @@ def two_states(client):
     add(client, name="Magnet 10x2", stock=2, min_stock=5)
 
 
-def summary_of(page):
-    return re.search(r'<p class="summary">(.*?)</p>', page, re.S).group(1)
+def kpis_of(page):
+    """The cards of the summary region as (value, label) pairs."""
+    block = regions.extract(page, ["summary"])["summary"]
+    return [
+        (int(value), label)
+        for value, label in re.findall(r'<span class="kpi-value">(\d+)</span><span class="kpi-label">(.*?)</span>', block)
+    ]
 
 
 def text_of(html):
@@ -55,8 +65,8 @@ def test_part_badges(ready_client, fields, text, classes):
 def test_parts_summary_and_filter(ready_client):
     two_states(ready_client)
     page = ready_client.get("/parts").text
-    assert text_of(summary_of(page)) == "2 parts · 1 below minimum"
-    assert summary_of(page).count('class="dot tone-bad"') == 1
+    assert kpis_of(page) == [(2, "Parts"), (1, "below minimum")]
+    assert '<p class="summary">' not in page
     only = ready_client.get("/parts?status=below_min").text
     assert "Magnet 10x2" in list_of(only) and "Insert M4" not in list_of(only)
     filters = region_of(only, "filters")
@@ -68,7 +78,12 @@ def test_parts_summary_in_german(ready_client):
     with sm_of(ready_client).begin() as s:
         st.set_setting(s, "language", "de", commit=False)
     two_states(ready_client)
-    assert text_of(summary_of(ready_client.get("/parts").text)) == "2 Zukaufteile · 1 unter Minimum"
+    assert kpis_of(ready_client.get("/parts").text) == [(2, "Zukaufteile"), (1, "unter Minimum")]
+
+
+def test_kpi_cards_skip_states_without_entries(ready_client):
+    add(ready_client, name="Insert M4", stock=5, min_stock=5)
+    assert kpis_of(ready_client.get("/parts").text) == [(1, "Parts")]
 
 
 def test_unknown_part_filter_is_ignored(ready_client):
@@ -107,10 +122,13 @@ def test_parts_list_and_tiles(ready_client):
     assert "Example Supplier" in table
     assert '<th class="num">Order unit</th>' in table  # short header; the form keeps the long label
     tiles = re.search(r'<div class="tiles">.*', listing, re.S).group(0)
-    tile = re.search(rf'<a class="tile" href="/parts/{part_id}/edit">.*?</a>', tiles, re.S).group(0)
-    assert "Spring 5mm" in tile and '<span class="badge tone-bad">below minimum</span>' in tile
+    by_name = {re.search(r'class="tile-link"[^>]*>([^<]*)</a>', t).group(1): t
+               for t in tiles.split('<div class="tile">')[1:]}  # one piece per tile
+    tile = by_name["Spring 5mm"]
+    assert f'<a class="tile-link" href="/parts/{part_id}/edit">Spring 5mm</a>' in tile
+    assert '<span class="badge tone-bad">below minimum</span>' in tile
     assert 'aria-valuenow="50"' in tile  # 3 of 6
-    supplier_tile = re.search(r'<a class="tile"[^>]*>(?:(?!</a>).)*Insert M4.*?</a>', tiles, re.S).group(0)
+    supplier_tile = by_name["Insert M4"]
     assert 'class="tile-foot"' in supplier_tile and "Example Supplier" in supplier_tile
     assert 'class="tile-foot"' not in tile  # no supplier, no footer
 
@@ -131,7 +149,7 @@ def test_archived_parts_show_the_archived_badge_and_no_filters(ready_client):
     assert '<span class="badge tone-neutral">Archived</span>' in list_of(page)
     assert "below minimum" not in list_of(page)
     assert 'data-live-region="filters"' not in page
-    assert text_of(summary_of(page)) == "1 part"
+    assert kpis_of(page) == [(1, "Archived parts")]
 
 
 def test_parts_view_choice_is_its_own(ready_client):
@@ -215,3 +233,149 @@ def test_part_edit_region_follows_a_booking_made_elsewhere(ready_client):
         stock.count_part(s, part_id, 12, "user")
     piece = ready_client.get(f"/parts/{part_id}/edit", headers={regions.HEADER: "form"}).text
     assert re.search(r"<strong>12</strong>\s*pcs", piece)
+
+
+SUPPLIER_LINK = ('<a href="https://shop.example/insert-m4" target="_blank" rel="noopener noreferrer">'
+                 'Example Supplier</a>')
+
+
+def nested_links(html):
+    """Links inside links, which browsers do not allow (they split the outer one)."""
+    from html.parser import HTMLParser
+
+    found, depth = [], [0]
+
+    class Walk(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            if tag == "a":
+                if depth[0]:
+                    found.append(dict(attrs).get("href"))
+                depth[0] += 1
+
+        def handle_endtag(self, tag):
+            if tag == "a":
+                depth[0] -= 1
+
+    Walk().feed(html)
+    return found
+
+
+def test_supplier_links_to_the_order_page_in_list_and_tile(ready_client):  # Spec 5.3
+    part_id = add(ready_client, name="Insert M4", supplier="Example Supplier",
+                  order_url="https://shop.example/insert-m4")
+    listing = list_of(ready_client.get("/parts").text)
+    table = re.search(r"<table>.*?</table>", listing, re.S).group(0)
+    tiles = re.search(r'<div class="tiles">.*', listing, re.S).group(0)
+    assert SUPPLIER_LINK in table and SUPPLIER_LINK in tiles
+    assert nested_links(listing) == []
+    assert re.search(rf'<div class="tile">.*?<a class="tile-link" href="/parts/{part_id}/edit">Insert M4</a>',
+                     tiles, re.S)
+
+
+def test_supplier_without_order_link_is_plain_text(ready_client):
+    add(ready_client, name="Insert M4", supplier="Example Supplier")
+    listing = list_of(ready_client.get("/parts").text)
+    assert "Example Supplier" in listing
+    assert not re.search(r"<a [^>]*>\s*Example Supplier", listing)
+    assert nested_links(listing) == []
+
+
+def test_part_form_head_has_a_button_back_to_the_parts(ready_client):
+    part_id = add(ready_client, name="Insert M4")
+    for path in (f"/parts/{part_id}/edit", "/parts/new"):
+        head = re.search(r'<header class="page-head">.*?</header>\s*<div class="toolbar">.*?</div>\s*</div>',
+                         ready_client.get(path).text, re.S)
+        assert head, path
+        assert re.search(r'<a class="btn secondary" href="/parts">.*?#puzzle.*?Parts</a>', head.group(0), re.S), path
+
+
+def test_head_has_subtitle_and_new_button(ready_client):
+    page = ready_client.get("/parts").text
+    head = page[page.index('<header class="page-head">') : page.index("</header>")]
+    assert f'<p class="page-sub">{en("parts.subtitle")}</p>' in head
+    assert en("parts.subtitle") == "Bought parts built into articles: stock, minimum stock, supplier"
+    actions = head[head.index('<div class="page-actions">') :]
+    assert 'href="/parts/new"' in actions and en("parts.new") in actions
+    assert 'href="/parts/new"' not in page[page.index('<div class="toolbar">') : page.index("<!--live:list-->")]
+
+
+def row_actions_of(page):
+    block = list_of(page)
+    return block[block.index('<td class="actions-col">') :].split("</td>")[0]
+
+
+def row_token(page, part_id, verb="archive"):
+    form = re.search(rf'<form class="icon-form"[^>]*action="/parts/{part_id}/{verb}">(.*?)</form>', page, re.S).group(1)
+    return re.search(r'name="form_token" value="([^"]+)"', form).group(1)
+
+
+def test_row_has_edit_journal_and_archive(ready_client):
+    part_id = add(ready_client, name="Insert M4")
+    page = ready_client.get("/parts").text
+    cell = row_actions_of(page)
+    assert f'href="/parts/{part_id}/edit"' in cell and f'title="{en("parts.edit")}"' in cell
+    assert f'href="/journal?part={part_id}"' in cell and f'title="{en("journal.title")}"' in cell
+    assert f'<form class="icon-form" method="post" action="/parts/{part_id}/archive">' in cell
+    assert 'name="csrf_token"' in cell and 'name="form_token"' in cell
+    assert f'title="{en("catalog.archive")}"' in cell and "/restore" not in cell
+    assert f'<span class="sr-only">{en("list.col.actions")}</span>' in list_of(page)
+    assert list_of(page).count(f"/parts/{part_id}/archive") == 1  # tiles have no actions
+
+
+def test_archived_row_has_journal_and_restore(ready_client):
+    part_id = add(ready_client, name="Old Clip", archived_at=utcnow())
+    cell = row_actions_of(ready_client.get("/parts?view=archived").text)
+    assert f'href="/journal?part={part_id}"' in cell and f'action="/parts/{part_id}/restore"' in cell
+    assert "/edit" not in cell and "/archive" not in cell.replace("archive-restore", "")
+
+
+def test_archive_from_the_row_goes_back_to_the_list(ready_client):
+    part_id = add(ready_client, name="Insert M4")
+    page = ready_client.get("/parts").text
+    response = ready_client.post(
+        f"/parts/{part_id}/archive",
+        data={"csrf_token": csrf_of(ready_client, "/parts"), "form_token": row_token(page, part_id)},
+    )
+    assert response.status_code == 303 and response.headers["location"] == "/parts"
+    with sm_of(ready_client).begin() as s:
+        assert s.get(Part, part_id).archived_at is not None
+
+
+def test_archive_from_the_row_is_refused_when_an_article_uses_the_part(ready_client):
+    from factories import make_article
+    from reprintbuddy.models import ArticlePart
+
+    part_id = add(ready_client, name="Insert M4")
+    with sm_of(ready_client).begin() as s:
+        article = make_article(s, name="Template A")
+        s.add(ArticlePart(article_id=article.id, part_id=part_id, qty_per_unit=1))
+    page = ready_client.get("/parts").text
+    response = ready_client.post(
+        f"/parts/{part_id}/archive",
+        data={"csrf_token": csrf_of(ready_client, "/parts"), "form_token": row_token(page, part_id)},
+    )
+    assert response.status_code != 303 and response.status_code == 200  # the status the route uses for a refusal
+    assert en("parts.archive_in_use", article="Template A") in response.text
+    assert f'data-live-watch="part-settings:{part_id}"' in response.text  # it lands on the part's form
+    with sm_of(ready_client).begin() as s:
+        assert s.get(Part, part_id).archived_at is None
+
+
+def test_summary_region_carries_cards_and_fresh_form_tokens(ready_client):
+    part_id = add(ready_client, name="Insert M4", stock=0, min_stock=5)
+    response = ready_client.get("/parts", headers={regions.HEADER: "summary list"})
+    assert 'data-live-region="summary"' in response.text and 'class="kpis"' in response.text
+    token = row_token(response.text, part_id)
+    again = ready_client.post(
+        f"/parts/{part_id}/archive",
+        data={"csrf_token": csrf_of(ready_client, "/parts"), "form_token": token},
+    )
+    assert again.status_code == 303  # the token of the refetched region is valid
+
+
+def test_part_form_head_has_a_subtitle(ready_client):
+    part_id = add(ready_client, name="Insert M4")
+    for path in (f"/parts/{part_id}/edit", "/parts/new"):
+        head = re.search(r'<header class="page-head">.*?</header>', ready_client.get(path).text, re.S).group(0)
+        assert f'<p class="page-sub">{en("parts.form_subtitle")}</p>' in head, path
+    assert en("parts.form_subtitle") == "Stock, minimum stock and supplier of the part"

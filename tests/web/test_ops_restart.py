@@ -43,8 +43,8 @@ def test_restart_failure_reported(ops_env):
     ops_env.runner.on(RESTART_CMD, CommandResult(1, stderr="sudo: a password is required"))
     response = post_restart(ops_env)
     assert response.status_code == 303
-    assert response.headers["location"] == "/settings?ops=restart_failed#ops-restart"
-    page = ops_env.client.get("/settings?ops=restart_failed")
+    assert response.headers["location"] == "/settings?tab=general&ops=restart_failed#ops-restart"
+    page = ops_env.client.get("/settings?tab=general&ops=restart_failed")
     assert "Restart failed" in page.text
     assert "password is required" not in page.text
 
@@ -72,10 +72,11 @@ def test_settings_shows_running_and_pending(ops_env):
 
 
 def test_unknown_ops_message_ignored(ops_env):
-    response = ops_env.client.get("/settings?ops=foo")
-    assert response.status_code == 200
-    assert "ops.msg" not in response.text
-    assert "Restart failed" not in response.text
+    for url in ("/settings?ops=foo", "/settings?tab=maintenance&ops=foo", "/settings?tab=general&ops=foo"):
+        response = ops_env.client.get(url)
+        assert response.status_code == 200
+        assert "ops.msg" not in response.text
+        assert "Restart failed" not in response.text
 
 
 def test_ops_messages_have_texts():

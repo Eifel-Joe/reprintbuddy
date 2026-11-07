@@ -76,9 +76,11 @@ async def test_later_attempts_do_not_wait(respx_mock):
         return httpx.Response(200, json=auth_me())
 
     respx_mock.get(ME).mock(side_effect=answer)
+    # Both clients are built before the clock runs (see test_first_attempt_waits_at_most_the_first_wait).
+    clients = iter([httpx.AsyncClient(), httpx.AsyncClient()])
     monitor = RightsMonitor()
-    await monitor.ensure(credentials, http_client_factory)  # the first attempt waits, and fails
-    await asyncio.wait_for(monitor.ensure(credentials, http_client_factory), timeout=1)  # does not wait
+    await monitor.ensure(credentials, lambda: next(clients))  # the first attempt waits, and fails
+    await asyncio.wait_for(monitor.ensure(credentials, lambda: next(clients)), timeout=1)  # does not wait
     assert not release.is_set()
     assert monitor.status == "unknown"
     release.set()
@@ -126,11 +128,17 @@ async def test_first_attempt_waits_at_most_the_first_wait(respx_mock, monkeypatc
         return httpx.Response(200, json=auth_me())
 
     respx_mock.get(ME).mock(side_effect=answer)
+    # The client is built before the clock runs. Building one loads the TLS certificates
+    # synchronously, which takes over a second on a busy Windows machine and would block the
+    # loop inside the measured time; the test is about the wait, not about building a client.
+    # Only one check runs, so the factory hands out this one client once.
+    client = httpx.AsyncClient()
     monitor = RightsMonitor()
-    await asyncio.wait_for(monitor.ensure(credentials, http_client_factory), timeout=1)
+    await asyncio.wait_for(monitor.ensure(credentials, lambda: client), timeout=1)
     assert monitor.status == "unknown"  # too slow: the page is shown without a notice
     # a second page does not wait for the same slow check, and does not start another one
-    await asyncio.wait_for(monitor.ensure(credentials, http_client_factory), timeout=1)
+    await asyncio.wait_for(monitor.ensure(credentials, lambda: client), timeout=1)
+    assert monitor.attempts == 1
     release.set()
     await settle(monitor)
     assert monitor.status == "ok"

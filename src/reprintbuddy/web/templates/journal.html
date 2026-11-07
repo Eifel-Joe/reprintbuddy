@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('journal.title') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("history", t('journal.title')) %}{% endcall %}
+{% call ui.page_head("history", t('journal.title'), t('journal.subtitle')) %}{% endcall %}
 {% call ui.region("journal", "journal") %}
 {% include "_journal_table.html" %}
 <p>

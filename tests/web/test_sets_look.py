@@ -11,10 +11,20 @@ from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog, stock
 from reprintbuddy.models import ProductSet, utcnow
 from reprintbuddy.web import regions
+from reprintbuddy.web.i18n import translate
 
 
-def summary_of(page):
-    return re.search(r'<p class="summary">(.*?)</p>', page, re.S).group(1)
+def en(key, **params):
+    return translate("en", key, **params)
+
+
+def kpis_of(page):
+    """The cards of the summary region as (value, label) pairs."""
+    block = regions.extract(page, ["summary"])["summary"]
+    return [
+        (int(value), label)
+        for value, label in re.findall(r'<span class="kpi-value">(\d+)</span><span class="kpi-label">(.*?)</span>', block)
+    ]
 
 
 def text_of(html):
@@ -62,7 +72,8 @@ def test_set_badges(ready_client, stock_of_article, text, classes):
 def test_sets_summary_filter_and_search(ready_client):
     two_states(ready_client)
     page = ready_client.get("/sets").text
-    assert text_of(summary_of(page)) == "2 sets · 1 not deliverable"
+    assert kpis_of(page) == [(2, "Sets"), (1, "not deliverable")]
+    assert '<p class="summary">' not in page
     only = ready_client.get("/sets?status=not_deliverable").text
     assert "Big Set" in list_of(only) and "Starter Set" not in list_of(only)
     filters = region_of(only, "filters")
@@ -81,7 +92,12 @@ def test_sets_summary_in_german(ready_client):
     with sm_of(ready_client).begin() as s:
         st.set_setting(s, "language", "de", commit=False)
     two_states(ready_client)
-    assert text_of(summary_of(ready_client.get("/sets").text)) == "2 Sets · 1 nicht lieferbar"
+    assert kpis_of(ready_client.get("/sets").text) == [(2, "Sets"), (1, "nicht lieferbar")]
+
+
+def test_kpi_cards_skip_states_without_entries(ready_client):
+    set_with(ready_client, "Starter Set", stock=2)
+    assert kpis_of(ready_client.get("/sets").text) == [(1, "Sets")]
 
 
 def test_sets_list_and_tiles(ready_client):
@@ -114,7 +130,7 @@ def test_archived_sets_show_the_archived_badge_and_no_filters(ready_client):
     assert '<span class="badge tone-neutral">Archived</span>' in list_of(page)
     assert "not deliverable" not in list_of(page)
     assert 'data-live-region="filters"' not in page
-    assert text_of(summary_of(page)) == "1 set"
+    assert kpis_of(page) == [(1, "Archived sets")]
 
 
 def test_sets_view_choice_is_its_own(ready_client):
@@ -203,3 +219,85 @@ def test_set_badge_sits_in_the_badges_wrapper_like_the_articles(ready_client):
     set_with(ready_client, "Starter Set", stock=1)
     listing = list_of(ready_client.get("/sets").text)
     assert listing.count('<span class="badges"><span class="badge tone-ok">deliverable</span></span>') == 2
+
+
+def test_set_form_head_has_a_button_back_to_the_sets(ready_client):
+    set_id, _ = set_with(ready_client, "Starter Set", stock=1)
+    for path in (f"/sets/{set_id}/edit", "/sets/new"):
+        head = re.search(r'<header class="page-head">.*?</header>\s*<div class="toolbar">.*?</div>\s*</div>',
+                         ready_client.get(path).text, re.S)
+        assert head, path
+        assert re.search(r'<a class="btn secondary" href="/sets">.*?#boxes.*?Sets</a>', head.group(0), re.S), path
+
+
+def test_head_has_subtitle_and_new_button(ready_client):
+    page = ready_client.get("/sets").text
+    head = page[page.index('<header class="page-head">') : page.index("</header>")]
+    assert f'<p class="page-sub">{en("sets.subtitle")}</p>' in head
+    assert en("sets.subtitle") == "Bundles of articles sold together"
+    actions = head[head.index('<div class="page-actions">') :]
+    assert 'href="/sets/new"' in actions and en("sets.new") in actions
+    assert 'href="/sets/new"' not in page[page.index('<div class="toolbar">') : page.index("<!--live:list-->")]
+
+
+def row_actions_of(page):
+    block = list_of(page)
+    return block[block.index('<td class="actions-col">') :].split("</td>")[0]
+
+
+def row_token(page, set_id, verb="archive"):
+    form = re.search(rf'<form class="icon-form"[^>]*action="/sets/{set_id}/{verb}">(.*?)</form>', page, re.S).group(1)
+    return re.search(r'name="form_token" value="([^"]+)"', form).group(1)
+
+
+def test_row_has_edit_and_archive_but_no_journal(ready_client):
+    set_id, _ = set_with(ready_client, "Starter Set", stock=1)
+    page = ready_client.get("/sets").text
+    cell = row_actions_of(page)
+    assert f'href="/sets/{set_id}/edit"' in cell and f'title="{en("sets.edit")}"' in cell
+    assert f'<form class="icon-form" method="post" action="/sets/{set_id}/archive">' in cell
+    assert 'name="csrf_token"' in cell and 'name="form_token"' in cell
+    assert f'title="{en("catalog.archive")}"' in cell and "/restore" not in cell and "/journal" not in cell
+    assert f'<span class="sr-only">{en("list.col.actions")}</span>' in list_of(page)
+    assert list_of(page).count(f"/sets/{set_id}/archive") == 1  # tiles have no actions
+
+
+def test_archived_row_has_only_restore(ready_client):
+    set_id, _ = set_with(ready_client, "Old Set", stock=0)
+    with sm_of(ready_client).begin() as s:
+        s.get(ProductSet, set_id).archived_at = utcnow()
+    cell = row_actions_of(ready_client.get("/sets?view=archived").text)
+    assert f'action="/sets/{set_id}/restore"' in cell
+    assert "/edit" not in cell and "/journal" not in cell and "/archive" not in cell.replace("archive-restore", "")
+
+
+def test_archive_from_the_row_goes_back_to_the_list(ready_client):
+    set_id, _ = set_with(ready_client, "Starter Set", stock=1)
+    page = ready_client.get("/sets").text
+    response = ready_client.post(
+        f"/sets/{set_id}/archive",
+        data={"csrf_token": csrf_of(ready_client, "/sets"), "form_token": row_token(page, set_id)},
+    )
+    assert response.status_code == 303 and response.headers["location"] == "/sets"
+    with sm_of(ready_client).begin() as s:
+        assert s.get(ProductSet, set_id).archived_at is not None
+
+
+def test_summary_region_carries_cards_and_fresh_form_tokens(ready_client):
+    set_id, _ = set_with(ready_client, "Starter Set", stock=0)
+    response = ready_client.get("/sets", headers={regions.HEADER: "summary list"})
+    assert 'data-live-region="summary"' in response.text and 'class="kpis"' in response.text
+    token = row_token(response.text, set_id)
+    again = ready_client.post(
+        f"/sets/{set_id}/archive",
+        data={"csrf_token": csrf_of(ready_client, "/sets"), "form_token": token},
+    )
+    assert again.status_code == 303  # the token of the refetched region is valid
+
+
+def test_set_form_head_has_a_subtitle(ready_client):
+    set_id, _ = set_with(ready_client, "Starter Set", stock=1)
+    for path in (f"/sets/{set_id}/edit", "/sets/new"):
+        head = re.search(r'<header class="page-head">.*?</header>', ready_client.get(path).text, re.S).group(0)
+        assert f'<p class="page-sub">{en("sets.form_subtitle")}</p>' in head, path
+    assert en("sets.form_subtitle") == "Name and positions of the set"
