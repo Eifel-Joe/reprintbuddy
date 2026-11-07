@@ -1,6 +1,7 @@
 """The full backup file (Spec 11.6): write it, read it back, refuse anything else."""
 
 import json
+import os
 import sqlite3
 import zipfile
 from datetime import UTC, datetime
@@ -498,3 +499,177 @@ def test_replace_refuses_a_missing_candidate(live, work):
     with pytest.raises(FileNotFoundError):
         fb.replace_database(work / "nothing.db", live, now=NOW)
     assert not (live.parent / "backups").exists()
+
+
+# --- review findings: crafted files ---------------------------------------------------------
+
+
+def patch_central(path: Path, name: str, offset: int, value: bytes) -> None:
+    """Overwrite a field of the central directory entry of `name` (see APPNOTE 4.3.12)."""
+    data = bytearray(path.read_bytes())
+    start = 0
+    while True:
+        start = data.index(b"PK\x01\x02", start)
+        length = int.from_bytes(data[start + 28 : start + 30], "little")
+        if data[start + 46 : start + 46 + length] == name.encode():
+            data[start + offset : start + offset + len(value)] = value
+            path.write_bytes(bytes(data))
+            return
+        start += 4
+
+
+@pytest.mark.parametrize("method", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA])
+def test_only_stored_or_deflated_members(live, work, method):
+    """bzip2 and LZMA decompress whole blocks without an output limit (a ZIP bomb)."""
+    content = members(plain_backup(live, work).path)
+    path = work / "y.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("manifest.json", content["manifest.json"], compress_type=method)
+        archive.writestr("database.sqlite", content["database.sqlite"])
+    with pytest.raises(fb.NotABackup):
+        fb.read_manifest(path)
+
+
+def test_unknown_compression_method(live, work):
+    path = rewrite(plain_backup(live, work).path, work / "y.zip")
+    patch_central(path, "manifest.json", 10, (9).to_bytes(2, "little"))  # deflate64
+    with pytest.raises(fb.NotABackup):
+        fb.read_manifest(path)
+
+
+def test_encrypted_member_must_be_stored(live, work):
+    content = members(sealed_backup(live, work).path)
+    path = work / "y.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("manifest.json", content["manifest.json"])
+        archive.writestr("database.sqlite.enc", content["database.sqlite.enc"], compress_type=zipfile.ZIP_DEFLATED)
+    with pytest.raises(fb.NotABackup):
+        fb.read_manifest(path)
+
+
+def test_zip_password_flag(live, work):
+    path = rewrite(plain_backup(live, work).path, work / "y.zip")
+    patch_central(path, "database.sqlite", 8, (1).to_bytes(2, "little"))
+    with pytest.raises(fb.NotABackup):
+        fb.read_manifest(path)
+
+
+def test_inflated_database_is_counted(live, work, monkeypatch):
+    path = sealed_backup(live, work).path
+    manifest = fb.read_manifest(path)
+    monkeypatch.setattr(fb, "MAX_DATABASE_BYTES", 4096)  # smaller than the database inside
+    with pytest.raises(fb.TooLarge):
+        fb.extract_database(path, manifest, "sicher-genug-1", work / "c.db")
+    assert not (work / "c.db").exists()
+
+
+def test_plain_database_is_counted(live, work, monkeypatch):
+    path = plain_backup(live, work).path
+    manifest = fb.read_manifest(path)
+    monkeypatch.setattr(fb, "MAX_DATABASE_BYTES", 4096)
+    with pytest.raises(fb.TooLarge):
+        fb.extract_database(path, manifest, None, work / "c.db")
+    assert not (work / "c.db").exists()
+
+
+def test_plain_database_longer_than_the_manifest_says(live, work):
+    source = plain_backup(live, work).path
+    manifest = manifest_of(source)
+    manifest["database"]["size"] = 1000
+    path = rewrite(source, work / "y.zip", manifest_json=json.dumps(manifest).encode())
+    with pytest.raises(fb.Damaged):
+        fb.extract_database(path, fb.read_manifest(path), None, work / "c.db")
+    assert not (work / "c.db").exists()
+
+
+def schema_change(tmp_path, work, *statements: str):
+    path = make_db(tmp_path / "other" / "reprintbuddy.db")
+    con = sqlite3.connect(path)
+    con.execute("PRAGMA foreign_keys=OFF")
+    for statement in statements:
+        con.execute(statement)
+    con.commit()
+    con.close()
+    return fb.create_backup(path, work_dir=work, password=None, now=NOW).path
+
+
+def test_object_named_like_an_internal_one_is_seen(tmp_path, work):
+    path = schema_change(
+        tmp_path, work, "CREATE TRIGGER sqliteXsneaky AFTER INSERT ON users BEGIN DELETE FROM settings; END"
+    )
+    with pytest.raises(fb.Incompatible):
+        read_back(path, work)
+
+
+def test_changed_columns_are_seen(tmp_path, work):
+    path = schema_change(
+        tmp_path,
+        work,
+        "CREATE TABLE users_new (id INTEGER, username BLOB, password_hash, PRIMARY KEY (id))",
+        "INSERT INTO users_new SELECT * FROM users",
+        "DROP TABLE users",
+        "ALTER TABLE users_new RENAME TO users",
+    )
+    with pytest.raises(fb.Incompatible):
+        read_back(path, work)
+
+
+def test_dropped_index_is_seen(tmp_path, work):
+    con = sqlite3.connect(make_db(tmp_path / "probe" / "p.db"))
+    name = con.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL LIMIT 1"
+    ).fetchone()[0]
+    con.close()
+    path = schema_change(tmp_path, work, f'DROP INDEX "{name}"')
+    with pytest.raises(fb.Incompatible):
+        read_back(path, work)
+
+
+def test_odd_table_name_is_incompatible_not_an_error(tmp_path, work):
+    path = schema_change(tmp_path, work, 'CREATE TABLE "a""b" (x)')
+    with pytest.raises(fb.Incompatible):
+        read_back(path, work)
+
+
+def test_utf16_database_is_refused(tmp_path, work):
+    path = tmp_path / "other" / "reprintbuddy.db"
+    path.parent.mkdir()
+    con = sqlite3.connect(path)
+    con.execute("PRAGMA encoding = 'UTF-16le'")
+    con.execute("CREATE TABLE t (x)")
+    con.execute("DROP TABLE t")
+    con.commit()
+    con.close()
+    make_db(path)
+    created = fb.create_backup(path, work_dir=work, password=None, now=NOW)
+    with pytest.raises(fb.Incompatible):
+        read_back(created.path, work)
+
+
+# --- review findings: files on the disk ----------------------------------------------------
+
+
+def test_save_upload_stops_at_the_limit(work):
+    import io
+
+    target = work / "upload.zip"
+    with pytest.raises(fb.TooLarge):
+        fb.save_upload(io.BytesIO(b"x" * 5000), target, limit=4096)
+    assert not target.exists()
+    assert fb.save_upload(io.BytesIO(b"x" * 4096), target, limit=4096) == 4096
+
+
+def test_clear_work_dir(work):
+    (work / "a.zip").write_bytes(b"1")
+    (work / "b.db").write_bytes(b"2")
+    fb.clear_work_dir(work, keep=[work / "b.db"])
+    assert [p.name for p in work.iterdir()] == ["b.db"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="file modes are POSIX")
+def test_files_are_private(live, work):
+    created = sealed_backup(live, work)
+    assert created.path.stat().st_mode & 0o777 == 0o600
+    target = work / "c.db"
+    fb.extract_database(created.path, fb.read_manifest(created.path), "sicher-genug-1", target)
+    assert target.stat().st_mode & 0o777 == 0o600

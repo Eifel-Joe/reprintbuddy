@@ -37,7 +37,7 @@ import shutil
 import sqlite3
 import zipfile
 import zlib
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -295,9 +295,19 @@ def _version_tuple(version: str) -> tuple[int, int, int] | None:
     return None if match is None else tuple(int(part) for part in match.groups())  # type: ignore[return-value]
 
 
-def _read_limited(archive: zipfile.ZipFile, name: str, limit: int) -> bytes:
-    """Read one member, at most `limit` bytes, whatever its header claims."""
-    chunks: list[bytes] = []
+# bzip2 and LZMA decompress a whole block per read, with no limit on the output: a few
+# hundred bytes can ask for gigabytes. Only these two methods are read; the sealed database
+# does not compress anyway and is always stored.
+_METHODS = {
+    MANIFEST: (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED),
+    PLAIN: (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED),
+    SEALED: (zipfile.ZIP_STORED,),
+}
+_READ_ERRORS = (zipfile.BadZipFile, zlib.error, EOFError, OSError, NotImplementedError)
+
+
+def _copy_member(archive: zipfile.ZipFile, name: str, sink: Callable[[bytes], object], limit: int) -> int:
+    """Pass one member to `sink` in chunks; more than `limit` bytes raise TooLarge."""
     total = 0
     try:
         with archive.open(name) as member:
@@ -305,10 +315,17 @@ def _read_limited(archive: zipfile.ZipFile, name: str, limit: int) -> bytes:
                 total += len(chunk)
                 if total > limit:
                     raise TooLarge("member larger than allowed")
-                chunks.append(chunk)
-    except (zipfile.BadZipFile, zlib.error, EOFError, OSError) as error:
+                sink(chunk)
+    except _READ_ERRORS as error:
         raise Damaged("member cannot be read") from error
-    return b"".join(chunks)
+    return total
+
+
+def _read_limited(archive: zipfile.ZipFile, name: str, limit: int) -> bytes:
+    """Read one member, at most `limit` bytes, whatever its header claims."""
+    buffer = bytearray()
+    _copy_member(archive, name, buffer.extend, limit)
+    return bytes(buffer)
 
 
 def _decode(value: Any, size: int) -> bytes:
@@ -411,6 +428,11 @@ def read_manifest(path: Path) -> Manifest:
         member_info = archive.getinfo(member)
         if (manifest_info.flag_bits | member_info.flag_bits) & 0x1:
             raise NotABackup("password-protected ZIP entries")
+        if (
+            manifest_info.compress_type not in _METHODS[MANIFEST]
+            or member_info.compress_type not in _METHODS[member]
+        ):
+            raise NotABackup("unexpected compression method")
         if manifest_info.file_size > MAX_MANIFEST_BYTES:
             raise NotABackup("manifest too large")
         if member_info.file_size > MAX_DATABASE_BYTES + bc.TAG_BYTES:
@@ -422,21 +444,29 @@ def read_manifest(path: Path) -> Manifest:
     return _parse_manifest(raw, member)
 
 
-def _inflate(packed: bytes) -> bytes:
+def _inflate_to(packed: bytes, handle: IO[bytes]) -> None:
+    """Decompress into the file chunk by chunk: the database is never twice in memory."""
     inflater = zlib.decompressobj()
+    total = 0
+    data = packed
     try:
-        data = inflater.decompress(packed, MAX_DATABASE_BYTES + 1)
+        while True:
+            chunk = inflater.decompress(data, _CHUNK)
+            data = inflater.unconsumed_tail
+            total += len(chunk)
+            if total > MAX_DATABASE_BYTES:
+                raise TooLarge("database too large")
+            handle.write(chunk)
+            if inflater.eof or not (data or chunk):
+                break
     except zlib.error as error:
         raise Damaged("cannot decompress") from error
-    if len(data) > MAX_DATABASE_BYTES or inflater.unconsumed_tail:
-        raise TooLarge("database too large")
     if not inflater.eof or inflater.unused_data:
         raise Damaged("compressed data incomplete")
-    return data
 
 
 def extract_database(path: Path, manifest: Manifest, password: str | None, target: Path) -> None:
-    """Write the database of the backup to `target`, or raise without writing anything."""
+    """Write the database of the backup to `target`, or raise and leave no file behind."""
     with zipfile.ZipFile(path) as archive:
         if manifest.encrypted:
             sealing = manifest.sealing
@@ -446,41 +476,84 @@ def extract_database(path: Path, manifest: Manifest, password: str | None, targe
             key, check = bc.derive_key(password, sealing.salt, sealing.params)
             if not bc.check_matches(check, sealing.check):
                 raise WrongPassword("wrong password")
+            # Stored, not compressed (see `_METHODS`): never larger than the uploaded file.
             sealed = _read_limited(archive, SEALED, MAX_DATABASE_BYTES + bc.TAG_BYTES)
             try:
                 packed = bc.open_sealed(key, sealing.nonce, sealed, manifest.raw)
             except bc.DecryptError as error:
                 raise Damaged("the data does not open") from error
-            data = _inflate(packed)
-        else:
-            data = _read_limited(archive, PLAIN, MAX_DATABASE_BYTES)
-            if len(data) != manifest.size or hashlib.sha256(data).hexdigest() != manifest.sha256:
+            del sealed
+            try:
+                with private_file(target) as handle:
+                    _inflate_to(packed, handle)
+            except BaseException:
+                remove_database_files(target)
+                raise
+            return
+        assert manifest.size is not None
+        if manifest.size > MAX_DATABASE_BYTES:
+            raise TooLarge("database too large")
+        digest = hashlib.sha256()
+        try:
+            with private_file(target) as handle:
+
+                def sink(chunk: bytes) -> None:
+                    digest.update(chunk)
+                    handle.write(chunk)
+
+                try:
+                    written = _copy_member(archive, PLAIN, sink, manifest.size)
+                except TooLarge as error:
+                    raise Damaged("longer than the manifest says") from error
+            if written != manifest.size or digest.hexdigest() != manifest.sha256:
                 raise Damaged("checksum does not match")
-    with private_file(target) as handle:
-        handle.write(data)
+        except BaseException:
+            remove_database_files(target)
+            raise
 
 
 def _structure(path: Path) -> dict[str, Any]:
-    """What a database consists of: its objects and the columns of each table.
+    """What a database consists of: its objects, and per table the columns (name, type,
+    NOT NULL, primary key, generated), indexes (unique, origin, columns) and foreign keys.
 
-    Names and columns, not the SQL text: the text of the same table differs between the
-    SQLAlchemy versions that created it, and an install updates its packages.
+    Not the SQL text: the text of the same table differs between the SQLAlchemy versions
+    that created it, and an install updates its packages. Internal objects are the ones
+    whose name starts with `sqlite_` (substr: in LIKE the `_` would match any character).
+    Names go in as parameters of the table-valued pragmas, never into the SQL text.
     """
     con = sqlite3.connect(str(path))
     try:
         objects = sorted(
             con.execute(
-                "SELECT type, name, tbl_name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"
+                "SELECT type, name, tbl_name FROM sqlite_master WHERE substr(name, 1, 7) <> 'sqlite_'"
             ).fetchall()
         )
-        columns = {
-            name: [(row[1], row[5], row[6]) for row in con.execute(f'PRAGMA table_xinfo("{name}")')]
-            for kind, name, _ in objects
-            if kind == "table"
-        }
+        tables: dict[str, Any] = {}
+        for kind, name, _ in objects:
+            if kind != "table":
+                continue
+            columns = con.execute(
+                'SELECT name, upper(type), "notnull", pk, hidden FROM pragma_table_xinfo(?) ORDER BY cid',
+                (name,),
+            ).fetchall()
+            indexes = []
+            for index, unique, origin, partial in con.execute(
+                'SELECT name, "unique", origin, partial FROM pragma_index_list(?)', (name,)
+            ).fetchall():
+                parts = con.execute(
+                    "SELECT name FROM pragma_index_info(?) ORDER BY seqno", (index,)
+                ).fetchall()
+                shown = "" if index.startswith("sqlite_autoindex_") else index
+                indexes.append((shown, unique, origin, partial, tuple(parts)))
+            keys = con.execute(
+                'SELECT "table", "from", "to", on_update, on_delete '
+                "FROM pragma_foreign_key_list(?) ORDER BY id, seq",
+                (name,),
+            ).fetchall()
+            tables[name] = {"columns": columns, "indexes": sorted(indexes), "foreign_keys": keys}
     finally:
         con.close()
-    return {"objects": objects, "columns": columns}
+    return {"objects": objects, "tables": tables}
 
 
 def verify_database(candidate: Path, manifest: Manifest, *, work_dir: Path) -> None:
@@ -494,6 +567,9 @@ def verify_database(candidate: Path, manifest: Manifest, *, work_dir: Path) -> N
             con.execute("PRAGMA cell_size_check=ON")
             if con.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
                 raise Damaged("integrity check failed")
+            # A UTF-16 database breaks every connection the service already has open.
+            if con.execute("PRAGMA encoding").fetchone() != ("UTF-8",):
+                raise Incompatible("not UTF-8")
             try:
                 found = con.execute("SELECT version_num FROM alembic_version").fetchall()
             except sqlite3.OperationalError as error:
@@ -525,7 +601,11 @@ def verify_database(candidate: Path, manifest: Manifest, *, work_dir: Path) -> N
             upgrade(engine)
         finally:
             engine.dispose()
-        if _structure(trial) != _structure(fresh):
+        try:
+            differs = _structure(trial) != _structure(fresh)
+        except sqlite3.Error as error:
+            raise Incompatible("the structure cannot be read") from error
+        if differs:
             raise Incompatible("the structure differs from a Reprintbuddy database")
     finally:
         remove_database_files(trial)
