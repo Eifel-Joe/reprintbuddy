@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 import httpx
-from conftest import REQUIRED, auth_me, mock_auth_me
+from conftest import REQUIRED, auth_me, http_client_factory, mock_auth_me
 
 from reprintbuddy.bambuddy.connection import EDITOR_LABELS, KEY_RIGHT_FOR, REQUIRED_PERMISSIONS, ConnectionCheck
 from reprintbuddy.web.i18n import load_locales
@@ -28,7 +28,7 @@ async def settle(monitor: RightsMonitor) -> None:
 async def test_missing_right_sets_notice(respx_mock):
     mock_auth_me(respx_mock, permissions=[p for p in REQUIRED if p != "inventory:read"])
     monitor = RightsMonitor()
-    await monitor.ensure(credentials, httpx.AsyncClient)
+    await monitor.ensure(credentials, http_client_factory)
     assert monitor.status == "missing"
     assert monitor.notice is not None
     assert monitor.notice.missing == ("inventory:read",)
@@ -37,28 +37,28 @@ async def test_missing_right_sets_notice(respx_mock):
 async def test_all_rights_ok(respx_mock):
     route = mock_auth_me(respx_mock)
     monitor = RightsMonitor()
-    await monitor.ensure(credentials, httpx.AsyncClient)
+    await monitor.ensure(credentials, http_client_factory)
     assert monitor.status == "ok"
     assert monitor.notice is None
-    await monitor.ensure(credentials, httpx.AsyncClient)
+    await monitor.ensure(credentials, http_client_factory)
     assert route.call_count == 1  # once per start, not once per page
 
 
 async def test_admin_owner_with_all_rights_is_ok(respx_mock):
     mock_auth_me(respx_mock, is_admin=True)
     monitor = RightsMonitor()
-    await monitor.ensure(credentials, httpx.AsyncClient)
+    await monitor.ensure(credentials, http_client_factory)
     assert monitor.status == "ok"
 
 
 async def test_unreachable_retries_on_next_call(respx_mock):
     route = respx_mock.get(ME).mock(side_effect=httpx.ConnectError("down"))
     monitor = RightsMonitor()
-    await monitor.ensure(credentials, httpx.AsyncClient)
+    await monitor.ensure(credentials, http_client_factory)
     assert monitor.status == "unknown"
     assert monitor.notice is None
     assert route.call_count == 1
-    await monitor.ensure(credentials, httpx.AsyncClient)
+    await monitor.ensure(credentials, http_client_factory)
     await settle(monitor)
     assert route.call_count == 2
     assert monitor.attempts == 2
@@ -77,8 +77,8 @@ async def test_later_attempts_do_not_wait(respx_mock):
 
     respx_mock.get(ME).mock(side_effect=answer)
     monitor = RightsMonitor()
-    await monitor.ensure(credentials, httpx.AsyncClient)  # the first attempt waits, and fails
-    await asyncio.wait_for(monitor.ensure(credentials, httpx.AsyncClient), timeout=1)  # does not wait
+    await monitor.ensure(credentials, http_client_factory)  # the first attempt waits, and fails
+    await asyncio.wait_for(monitor.ensure(credentials, http_client_factory), timeout=1)  # does not wait
     assert not release.is_set()
     assert monitor.status == "unknown"
     release.set()
@@ -89,7 +89,7 @@ async def test_later_attempts_do_not_wait(respx_mock):
 async def test_unauthorized_is_not_a_missing_right(respx_mock):
     mock_auth_me(respx_mock, status=401)
     monitor = RightsMonitor()
-    await monitor.ensure(credentials, httpx.AsyncClient)
+    await monitor.ensure(credentials, http_client_factory)
     assert monitor.status == "unknown"
     assert monitor.notice is None
 
@@ -109,8 +109,8 @@ async def test_concurrent_ensure_runs_one_check(respx_mock):
         release.set()
 
     await asyncio.gather(
-        monitor.ensure(credentials, httpx.AsyncClient),
-        monitor.ensure(credentials, httpx.AsyncClient),
+        monitor.ensure(credentials, http_client_factory),
+        monitor.ensure(credentials, http_client_factory),
         open_the_gate(),
     )
     assert route.call_count == 1
@@ -127,10 +127,10 @@ async def test_first_attempt_waits_at_most_the_first_wait(respx_mock, monkeypatc
 
     respx_mock.get(ME).mock(side_effect=answer)
     monitor = RightsMonitor()
-    await asyncio.wait_for(monitor.ensure(credentials, httpx.AsyncClient), timeout=1)
+    await asyncio.wait_for(monitor.ensure(credentials, http_client_factory), timeout=1)
     assert monitor.status == "unknown"  # too slow: the page is shown without a notice
     # a second page does not wait for the same slow check, and does not start another one
-    await asyncio.wait_for(monitor.ensure(credentials, httpx.AsyncClient), timeout=1)
+    await asyncio.wait_for(monitor.ensure(credentials, http_client_factory), timeout=1)
     release.set()
     await settle(monitor)
     assert monitor.status == "ok"
@@ -147,7 +147,7 @@ async def test_a_late_old_check_does_not_overwrite_a_newer_verdict(respx_mock, m
 
     respx_mock.get(ME).mock(side_effect=answer)
     monitor = RightsMonitor()
-    await monitor.ensure(credentials, httpx.AsyncClient)  # gives up waiting, the check goes on
+    await monitor.ensure(credentials, http_client_factory)  # gives up waiting, the check goes on
     assert monitor.status == "unknown"
     monitor.record(ConnectionCheck(True, "ok", owner="reprintbuddy"))  # a new key was saved: all rights
     release.set()
@@ -159,7 +159,7 @@ async def test_a_verdict_taken_before_the_check_starts_running_wins_too(respx_mo
     """The credentials were read in `ensure`: a verdict taken right after is newer than they are."""
     respx_mock.get(ME).respond(200, json=auth_me(permissions=["printers:read"]))
     monitor = RightsMonitor()
-    task = asyncio.create_task(monitor.ensure(credentials, httpx.AsyncClient))
+    task = asyncio.create_task(monitor.ensure(credentials, http_client_factory))
     await asyncio.sleep(0)  # `ensure` has read the credentials and created the check, which has not run yet
     monitor.record(ConnectionCheck(True, "ok", owner="reprintbuddy"))
     await task
@@ -184,7 +184,7 @@ async def test_a_failing_check_is_logged_without_secrets(caplog):
 async def test_without_setup_nothing_is_checked(respx_mock):
     route = respx_mock.get(ME).respond(200, json=auth_me())
     monitor = RightsMonitor()
-    await monitor.ensure(lambda: None, httpx.AsyncClient)
+    await monitor.ensure(lambda: None, http_client_factory)
     assert route.call_count == 0
     assert monitor.status == "unknown"
     assert monitor.attempts == 0

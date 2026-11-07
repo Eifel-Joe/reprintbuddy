@@ -3,6 +3,7 @@ import socket
 from pathlib import Path
 from typing import NamedTuple
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -103,7 +104,18 @@ def api_routes(app):
     return list(walk(app.routes))
 
 
+# One TLS context for every test client: httpx's default loads the CA certificates each time a
+# client or an app is built (most of a second). Same context as httpx's default (`verify=True`).
+_TLS = httpx.create_ssl_context()
+
+
+def http_client_factory() -> httpx.AsyncClient:
+    """A plain `httpx.AsyncClient` without loading the certificates again."""
+    return httpx.AsyncClient(verify=_TLS)
+
+
 def make_client(db_path, **create_kwargs) -> TestClient:
+    create_kwargs.setdefault("http_client_factory", http_client_factory)
     app = create_app(db_path, **create_kwargs)
     app.state.login_failure_delay = 0  # tests do not wait; some tests set these themselves
     app.state.login_brake.delay = 0
