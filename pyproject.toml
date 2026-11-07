@@ -23,6 +23,7 @@ dependencies = [
     "httpx>=0.27",
     "tzdata>=2024.1",
     "websockets>=13",
+    "segno>=1.6",
 ]
 
 [project.optional-dependencies]
@@ -32,6 +33,8 @@ dev = [
     "respx>=0.21",
     "PyYAML>=6",
     "trustme>=1.1",
+    "zxing-cpp>=2",  # reads the QR codes back in the tests
+    "Pillow>=10",
 ]
 
 [project.scripts]
