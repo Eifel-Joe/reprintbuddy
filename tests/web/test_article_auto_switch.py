@@ -265,3 +265,38 @@ def test_switching_reports_the_article(db):
     with db.begin() as s:
         catalog.set_auto_enabled(s, a, True)
     assert sent == [frozenset({"article", f"article:{a}", f"article-settings:{a}"})]
+
+
+# ---- the column head over the switch of the list (p83) ---------------------------------------
+
+
+def head_cells(part):
+    head = re.search(r"<thead>.*?</thead>", part, re.S).group(0)
+    return re.findall(r"<th[^>]*>.*?</th>", head, re.S)
+
+
+def test_list_has_a_column_head_automation_over_the_switch(ready_client):
+    a = article(ready_client, "Template A", target_model="A1", auto_enabled=True)
+    page = ready_client.get("/articles").text
+    table = table_part(page)
+    cells = head_cells(table)
+    names = [re.sub(r"<[^>]+>", "", c).strip() for c in cells]
+    assert en("articles.field.auto_enabled") in names
+    index = names.index(en("articles.field.auto_enabled"))
+    # the switch sits in the cell under that head, not among the row actions
+    row = re.search(r"<tbody>.*?<tr>(.*?)</tr>", table, re.S).group(1)
+    tds = re.findall(r"<td[^>]*>.*?</td>", row, re.S)
+    assert len(tds) == len(cells)
+    assert f'action="/articles/{a}/auto"' in tds[index]
+    assert f'action="/articles/{a}/auto"' not in tds[-1]
+    assert "auto-col" in cells[index]
+
+
+def test_archive_list_has_no_automation_column(ready_client):
+    with sm_of(ready_client).begin() as s:
+        make_article(s, target_model="A1", archived_at=datetime(2026, 1, 1))
+    table = table_part(ready_client.get("/articles?view=archived").text)
+    names = [re.sub(r"<[^>]+>", "", c).strip() for c in head_cells(table)]
+    assert en("articles.field.auto_enabled") not in names
+    row = re.search(r"<tbody>.*?<tr>(.*?)</tr>", table, re.S).group(1)
+    assert len(re.findall(r"<td[^>]*>.*?</td>", row, re.S)) == len(names)

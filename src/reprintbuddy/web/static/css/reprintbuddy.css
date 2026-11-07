@@ -620,6 +620,9 @@ a.btn, button.btn { display: inline-flex; align-items: center; justify-content: 
 td a.icon-btn:hover { text-decoration: none; }
 .icon-form { display: inline-flex; margin: 0; }
 .row-actions { display: flex; justify-content: flex-end; gap: 2px; }
+/* The column of the automation switch (p83): narrow, head and switch centred. */
+th.auto-col, td.auto-col { width: 1%; white-space: nowrap; text-align: center; padding-top: 2px; padding-bottom: 2px; }
+td.auto-col .switch-form { vertical-align: middle; }
 th.actions-col, td.actions-col { width: 1%; white-space: nowrap; padding-top: 2px; padding-bottom: 2px; }
 
 /* Switch: a checkbox in the shape of a switch (also label.check input[type=checkbox]). */
