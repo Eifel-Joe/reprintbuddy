@@ -1,5 +1,5 @@
 /* The order of Reprintbuddy's own queue by dragging (Spec 7.2, Design 5). Own code, no library
-   (main session, 06.11.2026); should it not work reliably on a phone, SortableJS replaces it, so
+   (main session, 06.11.2026); the entries are table rows since p45; should it not work reliably on a phone, SortableJS replaces it, so
    everything about dragging lives in this one file.
 
    The grip of an entry (.drag-handle; `touch-action: none` in the style sheet) takes mouse and
@@ -108,6 +108,7 @@
       offsetY: 0,
       next: nextEntry(row, null), // where the entry goes back to
       placeholder: null,
+      cells: null,
       lifted: false,
       scrollStep: 0,
       scrollTimer: null
@@ -132,10 +133,25 @@
       details.open = false;
     });
     var box = row.getBoundingClientRect();
-    var placeholder = document.createElement("li");
+    // A table row loses its columns once it is taken out of the table: on a wide screen every cell
+    // keeps the width it has now (a stacked row on a phone is a grid and needs none).
+    var cells = Array.prototype.slice.call(row.children);
+    if (window.getComputedStyle(row).display === "table-row") {
+      var widths = cells.map(function (cell) {
+        return cell.getBoundingClientRect().width;
+      });
+      cells.forEach(function (cell, index) {
+        cell.style.width = widths[index] + "px";
+      });
+      drag.cells = cells;
+    }
+    var placeholder = document.createElement("tr");
     placeholder.className = "queue-placeholder";
     placeholder.setAttribute("aria-hidden", "true");
-    placeholder.style.height = box.height + "px";
+    var gap = document.createElement("td");
+    gap.colSpan = cells.length;
+    gap.style.height = box.height + "px";
+    placeholder.appendChild(gap);
     drag.list.insertBefore(placeholder, row);
     drag.placeholder = placeholder;
     drag.offsetY = drag.startY - box.top;
@@ -263,6 +279,9 @@
     row.style.left = "";
     row.style.width = "";
     row.style.top = "";
+    (state.cells || []).forEach(function (cell) {
+      cell.style.width = "";
+    });
     if (commit) {
       state.list.insertBefore(row, state.placeholder);
     }
