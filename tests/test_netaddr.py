@@ -69,8 +69,21 @@ def test_loopback_wildcard_link_local_and_names_are_not_usable(text):
     assert netaddr.usable(text) is None
 
 
-def test_an_ipv6_zone_is_dropped_or_refused_never_kept():
-    assert netaddr.usable("fd12:3456::1%eth0") in (None, "fd12:3456::1")
+def test_an_ipv6_zone_is_refused():
+    assert netaddr.usable("fd12:3456::1%eth0") is None
+
+
+def test_an_ipv4_address_in_ipv6_form_is_returned_as_ipv4():
+    assert netaddr.usable("::ffff:203.0.113.5") == "203.0.113.5"
+    assert netaddr.connection_address(("::ffff:203.0.113.5", 8080)) == "203.0.113.5"
+
+
+def test_loopback_in_ipv6_form_is_still_loopback():
+    assert netaddr.usable("::ffff:127.0.0.1") is None
+
+
+def test_a_unix_socket_server_value_gives_none():
+    assert netaddr.connection_address(("/run/reprintbuddy.sock", None)) is None
 
 
 # ---- the address the connection came in on ----

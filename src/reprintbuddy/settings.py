@@ -27,7 +27,7 @@ DEFAULTS: dict[str, object] = {
     "automation": False,
     "queue_running": True,
     "update_check": True,  # the automatic check for new versions (Spec 11.3a)
-    "qr_base_url": None,  # the start of the address inside the QR codes (Spec 8.4); none = the address in use
+    "qr_base_url": None,  # the start of the address inside the QR codes (Spec 8.4); none = the server's own network address (found by Reprintbuddy)
     "bambuddy_url": None,
     "bambuddy_username": None,
     "bambuddy_api_key": None,

@@ -11,7 +11,7 @@ itself, without sending a single packet:
    query goes out either);
 3. else the same question for the private networks, for a machine without a default route.
 
-Nothing found (loopback only, a container without network): the caller keeps the address of the
+Only IPv4 is searched in steps 2 and 3. Nothing found (loopback only, a container without network): the caller keeps the address of the
 request, and the page warns that a phone cannot open it.
 """
 
@@ -32,13 +32,18 @@ _DISCARD_PORT = 9
 
 def usable(text: object) -> str | None:
     """`text` when it is an address another device can reach (not loopback, not the wildcard, not
-    link-local, not multicast); otherwise None. Names, blanks and zone ids ("%eth0") are refused."""
+    link-local, not multicast); otherwise None. Names, blanks and zone ids ("%eth0") are refused.
+    An IPv4 address in its IPv6 form (`::ffff:a.b.c.d`, as a dual-stack server reports it) is
+    returned as the plain IPv4 address."""
     if not isinstance(text, str) or not text or "%" in text:
         return None
     try:
         address = ipaddress.ip_address(text)
     except ValueError:
         return None
+    mapped = getattr(address, "ipv4_mapped", None)
+    if mapped is not None:  # ::ffff:a.b.c.d is an IPv4 address a dual-stack server reports
+        return usable(str(mapped))
     if (
         address.is_loopback
         or address.is_unspecified

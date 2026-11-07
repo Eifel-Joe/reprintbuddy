@@ -16,7 +16,15 @@ from reprintbuddy.web.bambuddy_check import (
     validate_address,
     validate_key,
 )
-from reprintbuddy.web.deps import current_language, flash, get_db, render, start_session, take_verdict
+from reprintbuddy.web.deps import (
+    current_language,
+    flash,
+    get_db,
+    render,
+    start_session,
+    take_remembered_page,
+    take_verdict,
+)
 
 router = APIRouter()
 
@@ -150,7 +158,9 @@ async def bambuddy_connect_submit(request: Request, db: Session = Depends(get_db
     st.apply_check(db, url, api_key, check)  # one transaction
     request.app.state.live_listener.wake(reconnect=True)  # p97: the channel tries with the new key at once
     take_verdict(request, check)  # this start has checked the new key
+    page = take_remembered_page(request)  # the page opened before the setup (a scanned QR code)
     if check.owner_is_admin:
-        flash(request, "bambuddy.admin_warning", warning=True)  # saved, but the person is told
+        # Saved, but the person is told; the warning is read on the settings, the page is dropped.
+        flash(request, "bambuddy.admin_warning", warning=True)
         return RedirectResponse("/settings?tab=bambuddy", status_code=303)
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(page, status_code=303)
