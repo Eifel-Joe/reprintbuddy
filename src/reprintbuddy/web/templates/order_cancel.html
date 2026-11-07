@@ -11,9 +11,11 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="form_token" value="{{ form_token_value }}">
     <input type="hidden" name="confirm" value="yes">
+    {%- if next_url %}
+    <input type="hidden" name="next" value="{{ next_url }}">{% endif %}
     <label>{{ t('journal.field.note') }} <input name="note" value="{{ note }}" maxlength="500"></label>
     <button class="btn" type="submit">{{ t('orders.cancel_yes') }}</button>
-    <a class="btn-link" href="/orders/{{ order.id }}">{{ t('orders.cancel_keep') }}</a>
+    <a class="btn-link" href="{{ next_url or '/orders/' ~ order.id }}">{{ t('orders.cancel_keep') }}</a>
   </form>
 </section>
 {% endblock %}

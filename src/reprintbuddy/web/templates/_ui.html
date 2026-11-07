@@ -99,9 +99,11 @@
 <a class="icon-btn" href="{{ href }}" title="{{ label }}" aria-label="{{ label }}">{{ icon(icon_name) }}</a>
 {%- endmacro %}
 
-{# Symbol button that posts (archive, restore, cancel): a small form with both tokens. #}
-{% macro icon_post(icon_name, label, action) -%}
-<form class="icon-form" method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="form_token" value="{{ form_token() }}"><button type="submit" class="icon-btn" title="{{ label }}" aria-label="{{ label }}">{{ icon(icon_name) }}</button></form>
+{# Symbol button that posts (archive, restore, cancel): a small form with both tokens.
+   `fields` is optional: a list of (name, value) pairs that become extra hidden inputs
+   (escaped), e.g. fields=[("next", "/orders")]. #}
+{% macro icon_post(icon_name, label, action, fields=[]) -%}
+<form class="icon-form" method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="form_token" value="{{ form_token() }}">{% for field_name, field_value in fields %}<input type="hidden" name="{{ field_name }}" value="{{ field_value }}">{% endfor %}<button type="submit" class="icon-btn" title="{{ label }}" aria-label="{{ label }}">{{ icon(icon_name) }}</button></form>
 {%- endmacro %}
 
 {# The symbols at the end of a table row: {% call ui.row_actions() %}…{% endcall %}. The column
