@@ -25,7 +25,12 @@ log = logging.getLogger(__name__)
 # an hour, so that a start without network (a container that boots before the router) does not
 # leave the notice silent for a whole day.
 CHECK_INTERVAL = 24 * 3600  # seconds between two successful checks
-RETRY_AFTER_FAILURE = 3600  # seconds until the next try after a failed check or a skipped round
+RETRY_AFTER_FAILURE = 3600  # seconds until the next try after a failed check
+# p105 (v0.3.7): a round skipped because an update runs is tried again in seconds, like the tick
+# engine does (`engine.UPDATE_RETRY_SECONDS`, p41). Root: the first check after a restart falls into
+# the update unit that is still running; it had waited an hour (the failure pause). Rejected: waiting
+# on the update unit itself (the check only knows `busy()`). Tests: test_autocheck.py "p105".
+UPDATE_RETRY = 5  # seconds until the next try after a round skipped for a running update
 
 
 class AutoCheck:
@@ -33,8 +38,8 @@ class AutoCheck:
 
     `enabled()` reads the setting afresh each round; `is_install()` says whether the installation
     can be checked at all; `busy()` whether an update runs (its files are in motion, so the round
-    is skipped); `check()` is the blocking check; `store(info)` keeps a good result; `wait(delay)`
-    pauses (the app lets the settings switch end it early).
+    is skipped and tried again in `UPDATE_RETRY` seconds); `check()` is the blocking check;
+    `store(info)` keeps a good result; `wait(delay)` pauses (the app lets the settings switch end it early).
     """
 
     def __init__(
@@ -61,7 +66,7 @@ class AutoCheck:
         if not self._enabled():
             return CHECK_INTERVAL  # the settings switch wakes the pause
         if self._busy():
-            return RETRY_AFTER_FAILURE
+            return UPDATE_RETRY
         try:
             info = await asyncio.to_thread(self._check)
         except Exception as exc:  # the remote, the network, git: any failure is silent

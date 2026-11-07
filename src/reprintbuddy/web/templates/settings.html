@@ -11,7 +11,8 @@
 
 <div class="settings-grid">
 {% if current_tab == 'general' %}
-{# Two columns, each card under the one above it (p85): a grid in rows left a gap under the language card. #}
+{# Two columns on every tab, each card under the one above it (p85, p104): a grid in rows left a gap
+   under the shorter card of a row. On a narrow screen the columns follow each other. #}
 <div class="settings-col">
 <section class="card">
   {% call ui.card_head("settings", t('settings.language')) %}<button class="btn" type="submit" form="settings-language">{{ t('settings.save') }}</button>{% endcall %}
@@ -66,7 +67,7 @@
       </div>
     </div>
     <div class="setting-row stack">
-      <div class="setting-text"><label for="tls_key">{{ t('settings.tls_key') }}</label><span>{{ t('settings.tls_key_hint') }}{% if tls_key_mask %} {{ t('settings.secret_stored') }}{% endif %}</span></div>
+      <div class="setting-text"><label for="tls_key">{{ t('settings.tls_key') }}</label><span>{% if tls_key_mask %}{{ ui.with_stored(t('settings.tls_key_hint'), t('settings.secret_stored')) }}{% else %}{{ t('settings.tls_key_hint') }}{% endif %}</span></div>
       <div class="setting-control">
         <textarea id="tls_key" name="tls_key" rows="3" spellcheck="false" autocomplete="off"{% if tls_key_mask %} placeholder="{{ tls_key_mask }}"{% endif %}></textarea>
         <input name="tls_key_file" type="file" aria-label="{{ t('settings.tls_key') }}">
@@ -81,6 +82,7 @@
 </div>
 
 {% elif current_tab == 'bambuddy' %}
+<div class="settings-col">
 <section class="card" id="bambuddy">
   {% call ui.card_head("link", t('settings.bambuddy')) %}<button class="btn" type="submit" form="settings-bambuddy">{{ t('bambuddy.submit') }}</button>{% endcall %}
   <p class="muted">{{ t('settings.bambuddy_hint') }}</p>
@@ -91,15 +93,18 @@
   {% elif rights_notice %}{% with check=rights_notice, guide_link=True %}{% include "_bambuddy_result.html" %}{% endwith %}{% endif %}
   <form id="settings-bambuddy" method="post" action="/settings/bambuddy" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    {% call ui.setting_row(t('bambuddy.url'), t('settings.bambuddy_address_hint'), "bambuddy_address") %}
+    {# Stacked (p107): an address with its port does not fit the narrow field of a row. #}
+    {% call ui.setting_row(t('bambuddy.url'), t('settings.bambuddy_address_hint'), "bambuddy_address", stack=true) %}
       <input id="bambuddy_address" name="bambuddy_address" value="{{ bambuddy_address }}" placeholder="{{ t('bambuddy.url_placeholder') }}" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>
     {% endcall %}
-    {% call ui.setting_row(t('bambuddy.api_key'), t('settings.bambuddy_key_hint') ~ (' ' ~ t('settings.secret_stored') if api_key_mask else ''), "bambuddy_token") %}
+    {% call ui.setting_row(t('bambuddy.api_key'), ui.with_stored(t('settings.bambuddy_key_hint'), t('settings.secret_stored')) if api_key_mask else t('settings.bambuddy_key_hint'), "bambuddy_token") %}
       <input id="bambuddy_token" name="bambuddy_token" type="password" value="" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"{% if api_key_mask %} placeholder="{{ api_key_mask }}"{% endif %}>
     {% endcall %}
   </form>
 </section>
+</div>
 
+<div class="settings-col">
 {# The live channel to Bambuddy (v0.3.6 p86): follows the listener live (topic live-channel). Only with a
    stored address. Not connected: the regular query takes over, and the page says so. #}
 {% call ui.region("channel", "live-channel settings") %}
@@ -113,8 +118,10 @@
 </section>
 {% endif %}
 {% endcall %}
+</div>
 
 {% elif current_tab == 'account' %}
+<div class="settings-col">
 <section class="card">
   {% call ui.card_head("user", t('settings.password')) %}<button class="btn" type="submit" form="settings-password">{{ t('settings.password_submit') }}</button>{% endcall %}
   {% if error and error_section == 'password' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
@@ -131,10 +138,13 @@
     {% endcall %}
   </form>
 </section>
+</div>
+<div class="settings-col"></div>
 
 {% elif current_tab == 'automation' %}
 {# Automation (Spec 7.3, 7.6, 7.7). A live region on the settings topic: saved on another
    device, it is fetched again; while its form is changed or in use, live.js leaves it alone. #}
+<div class="settings-col">
 {% call ui.region("automation", "settings") %}
 <section class="card section" id="automation">
   {% call ui.card_head("list-ordered", t('settings.automation')) %}<button class="btn" type="submit" form="automation-form">{{ t('settings.save') }}</button>{% endcall %}
@@ -149,6 +159,8 @@
   </form>
 </section>
 {% endcall %}
+</div>
+<div class="settings-col"></div>
 {% elif current_tab == 'maintenance' %}
 {% include "settings_ops.html" %}
 {% endif %}

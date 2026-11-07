@@ -1,3 +1,6 @@
+import html
+import re
+
 import httpx
 import pytest
 from conftest import ADMIN, api_routes, auth_me, csrf_of, PASSWORD
@@ -532,3 +535,107 @@ def test_settings_list_has_bambuddys_label_purpose_and_where_to_fix(ready_client
     response = post(ready_client, "/settings/bambuddy", **bambuddy_form())
     assert "Create Queue" in response.text and "damit Reprintbuddy Nachdrucke einreihen kann" in response.text
     assert "Manage Queue" in response.text
+
+
+# p106 (v0.3.7): "… mit dem Reprintbuddy arbeitet Ein Wert ist gespeichert." – the field's hint and
+# the sentence "a value is stored" ran together without a full stop.
+STORED_SENTENCE = {"en": "A value is stored.", "de": "Ein Wert ist gespeichert."}
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+@pytest.mark.parametrize("tab,field", [("bambuddy", "bambuddy_token"), ("general", "tls_key")])
+def test_hint_and_stored_sentence_are_separate_sentences(ready_client, tls_pair, language, tab, field):
+    cert, key = tls_pair
+    with ready_client.app.state.sessionmaker() as s:
+        st.set_setting(s, "language", language)
+        st.set_setting(s, "tls_cert", cert)
+        st.set_setting(s, "tls_key", key)
+    page = ready_client.get(f"/settings?tab={tab}").text
+    hint = re.search(rf'<label for="{field}">.*?<span>(.*?)</span>', page, re.S)
+    assert hint, "the field has a hint"
+    text = html.unescape(hint.group(1))
+    sentence = STORED_SENTENCE[language]
+    assert sentence in text
+    before = text.split(sentence)[0].rstrip()
+    assert before.endswith("."), f"no full stop before the stored sentence: {text!r}"
+    assert "  " not in text
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+def test_hints_of_secret_fields_end_with_a_full_stop_on_their_own(language):
+    import json
+    from importlib.resources import files
+
+    texts = json.loads(files("reprintbuddy.locales").joinpath(f"{language}.json").read_text(encoding="utf-8"))
+    for key in ("settings.bambuddy_key_hint", "settings.tls_key_hint"):
+        assert texts[key].endswith("."), key
+
+
+def test_a_hint_that_already_ends_in_a_full_stop_gets_no_second_one(ready_client):
+    env = ready_client.app.state.templates.env
+    template = env.from_string('{% import "_ui.html" as ui %}{{ ui.with_stored(hint, "Stored.") }}')
+    assert template.render(hint="One.").strip() == "One. Stored."
+    assert template.render(hint="One").strip() == "One. Stored."
+    assert template.render(hint="Really?").strip() == "Really? Stored."
+    assert template.render(hint="One", ).strip() == "One. Stored."
+
+
+# p97 (v0.3.7): "check and save" wakes the live channel; a failed check wakes nothing.
+
+
+class WakeRecorder:
+    """Stands in for the live listener of the app: records every wake."""
+
+    def __init__(self):
+        self.wakes: list[bool] = []
+        self.state = "no_right"
+
+    def wake(self, *, reconnect: bool = False) -> None:
+        self.wakes.append(reconnect)
+
+
+def test_a_saved_connection_wakes_the_live_channel(ready_client, respx_mock):
+    recorder = ready_client.app.state.live_listener = WakeRecorder()
+    respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me())
+    response = post(ready_client, "/settings/bambuddy", **bambuddy_form())
+    assert response.status_code == 303
+    assert recorder.wakes == [False]  # same address, same key: a standing connection is left alone
+
+
+def test_a_new_key_or_address_replaces_a_standing_connection(ready_client, respx_mock):
+    recorder = ready_client.app.state.live_listener = WakeRecorder()
+    respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me())
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_token="bb_new"))
+    respx_mock.get(f"{NEW_URL}/api/v1/auth/me").respond(200, json=auth_me())
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address=NEW_URL, bambuddy_token="bb_other"))
+    assert recorder.wakes == [True, True]
+
+
+def test_the_same_key_typed_again_counts_as_unchanged(ready_client, respx_mock):
+    recorder = ready_client.app.state.live_listener = WakeRecorder()
+    respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me())
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_token="bb_testkey"))
+    assert recorder.wakes == [False]
+
+
+def test_a_failed_check_wakes_nothing(ready_client, respx_mock):
+    recorder = ready_client.app.state.live_listener = WakeRecorder()
+    respx_mock.get(f"{NEW_URL}/api/v1/auth/me").respond(401)
+    response = post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address=NEW_URL, bambuddy_token="bb_x"))
+    assert response.status_code == 200
+    respx_mock.get(f"{OLD_URL}/api/v1/auth/me").mock(side_effect=httpx.ConnectError("x"))
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_token="bb_y"))
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address="", bambuddy_token="bb_z"))
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address="not an address"))
+    assert recorder.wakes == []
+
+
+def test_a_changed_path_prefix_replaces_a_standing_connection(ready_client, respx_mock):
+    # Review of v0.3.7: scheme, host and port are the same, the path prefix of a reverse proxy is not.
+    recorder = ready_client.app.state.live_listener = WakeRecorder()
+    respx_mock.get(f"{OLD_URL}/bb/api/v1/auth/me").respond(200, json=auth_me())
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address=f"{OLD_URL}/bb", bambuddy_token="bb_testkey"))
+    assert recorder.wakes == [True]
+    respx_mock.get(f"{OLD_URL}/bb/api/v1/auth/me").respond(200, json=auth_me())
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address=f"{OLD_URL}/bb/"))  # only a trailing slash
+    assert recorder.wakes == [True, False]

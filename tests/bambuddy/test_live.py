@@ -727,3 +727,159 @@ async def test_a_failing_on_state_does_not_stop_the_listener(respx_mock):
     )
     await run_until_stopped(subject)
     assert subject.state == "waiting"
+
+
+# ---- waking the listener (v0.3.7 p97) -----------------------------------------------------
+# A new key or new rights must not wait for the pause (up to 15 minutes): "check and save" in the
+# settings wakes the listener, which tries again at once with a fresh token.
+
+
+class HoldingSleep:
+    """A pause that lasts until it is cancelled (the real 15 minutes): records each delay."""
+
+    def __init__(self) -> None:
+        self.delays: list[float] = []
+
+    async def __call__(self, delay: float) -> None:
+        self.delays.append(delay)
+        await asyncio.Event().wait()
+
+
+async def until(condition, *, steps: int = 2000) -> None:
+    for _ in range(steps):
+        if condition():
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("did not happen in time")
+
+
+@pytest.mark.parametrize(
+    ("first", "fresh_token"),
+    [([refused(403)] * 2, "t3"), ([OSError("down")], "t2")],
+    ids=["no_right", "waiting"],
+)
+async def test_wake_ends_the_pause_and_tries_again_with_a_fresh_token(respx_mock, first, fresh_token):
+    # no_right: t1 refused, t2 refused (the second try), pause; the wake fetches t3. waiting: t1, pause, t2.
+    route = tokens(respx_mock, "t1", "t2", "t3")
+    connect = FakeConnect(*first, [])
+    sleeps = HoldingSleep()
+    events = Events()
+    subject = listener(connect, events, sleeps)
+    task = asyncio.create_task(subject.run())
+    try:
+        await until(lambda: subject.state in ("no_right", "waiting") and len(sleeps.delays) == 1)
+        assert events.kinds == []
+        subject.wake()
+        await until(lambda: subject.state == "connected")
+        assert connect.urls[-1] == f"{WS}?token={fresh_token}"
+        assert route.call_count == len(connect.urls)  # a token for every attempt: the old one is not reused
+        assert events.kinds == ["connected"]
+        assert len(sleeps.delays) == 1  # no second pause has begun
+    finally:
+        await stop(task)
+
+
+async def test_wake_starts_the_pauses_over(respx_mock):
+    # Without a wake the second pause is 15 s; after a wake the failures count from the start again.
+    tokens(respx_mock, "t1", "t2", "t3")
+    connect = FakeConnect(OSError("down"), OSError("down"), OSError("down"))
+    sleeps = HoldingSleep()
+    subject = listener(connect, Events(), sleeps)
+    task = asyncio.create_task(subject.run())
+    try:
+        await until(lambda: len(sleeps.delays) == 1)
+        subject.wake()
+        await until(lambda: len(sleeps.delays) == 2)
+        assert sleeps.delays == [5, 5]  # not [5, 15]
+    finally:
+        await stop(task)
+
+
+async def test_wake_while_connected_changes_nothing_by_default(respx_mock):
+    route = tokens(respx_mock, "t1", "t2")
+    connect = FakeConnect([])
+    subject = listener(connect, Events(), HoldingSleep())
+    task = asyncio.create_task(subject.run())
+    try:
+        await until(lambda: connect.connections and connect.connections[0].waiting.is_set())
+        subject.wake()
+        for _ in range(50):
+            await asyncio.sleep(0)
+        assert subject.state == "connected"
+        assert len(connect.connections) == 1 and not connect.connections[0].closed
+        assert route.call_count == 1
+    finally:
+        await stop(task)
+
+
+async def test_wake_with_reconnect_replaces_a_live_connection(respx_mock):
+    # A new address or key: the connection that stands belongs to the old one.
+    route = tokens(respx_mock, "t1", "t2")
+    connect = FakeConnect([], [])
+    events = Events()
+    subject = listener(connect, events, HoldingSleep())
+    task = asyncio.create_task(subject.run())
+    try:
+        await until(lambda: connect.connections and connect.connections[0].waiting.is_set())
+        subject.wake(reconnect=True)
+        await until(lambda: len(connect.connections) == 2 and connect.connections[1].waiting.is_set())
+        assert connect.connections[0].closed
+        assert connect.urls == [f"{WS}?token=t1", f"{WS}?token=t2"]
+        assert route.call_count == 2
+        assert subject.state == "connected"
+        assert events.kinds == ["connected", "connected"]  # the poll after every connect
+    finally:
+        await stop(task)
+
+
+async def test_a_wake_before_run_is_not_lost_and_does_no_harm(respx_mock):
+    tokens(respx_mock, "t1")
+    connect = FakeConnect([])
+    subject = listener(connect, Events(), HoldingSleep())
+    subject.wake(reconnect=True)
+    task = asyncio.create_task(subject.run())
+    try:
+        await until(lambda: connect.connections and connect.connections[-1].waiting.is_set())
+        assert subject.state == "connected"
+    finally:
+        await stop(task)
+
+
+class SlowClose(FakeConnection):
+    """A connection whose closing takes a while (the close handshake)."""
+
+    async def __aexit__(self, *exc) -> None:
+        self.closed = True
+        await asyncio.sleep(0.2)
+
+
+async def test_a_shutdown_during_a_restart_ends_run(respx_mock):
+    # Review of v0.3.7: the cancel of the lifespan arrived while the old connection was closing and was
+    # swallowed with the cancel of the connection; `run()` then connected again and the app hung.
+    tokens(respx_mock, "t1", "t2")
+    slow = SlowClose([])
+
+    def connect(url, **options):
+        return slow
+
+    subject = listener(connect, Events(), HoldingSleep())
+    task = asyncio.create_task(subject.run())
+    await until(lambda: slow.waiting.is_set())
+    subject.wake(reconnect=True)
+    for _ in range(5):  # the old connection is closing now
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=2)
+
+
+async def test_a_shutdown_while_the_pause_is_ended_ends_run(respx_mock):
+    tokens(respx_mock, "t1", "t2")
+    connect = FakeConnect(OSError("down"), [])
+    subject = listener(connect, Events(), HoldingSleep())
+    task = asyncio.create_task(subject.run())
+    await until(lambda: subject.state == "waiting")
+    subject.wake()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=2)

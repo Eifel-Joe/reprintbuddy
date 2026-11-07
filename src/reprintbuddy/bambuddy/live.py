@@ -133,6 +133,7 @@ class LiveListener:
         self._token_at = 0.0
         self._failures = 0  # failed attempts since the last stable connection
         self._paused_in: str | None = None  # the state of the last pause; None after a connect
+        self._restart = asyncio.Event()  # set by `wake`: end the pause (or the connection) now
 
     @property
     def state(self) -> str:
@@ -149,11 +150,58 @@ class LiveListener:
             except Exception:  # the page missing a change must not stop the channel
                 log.warning("Bambuddy live channel: reporting the state %r failed", value, exc_info=True)
 
+    def wake(self, *, reconnect: bool = False) -> None:
+        """Try again now (v0.3.7 p97): a new key, new rights or a new address must not wait for the pause.
+
+        A pause ends at once; the next attempt starts over with a fresh token and the short pauses.
+        A connection that stands is left alone, unless `reconnect` (the address or the key changed:
+        it belongs to the old one) - then it is closed and opened anew. Safe to call before `run`
+        has started (the wake is kept) and from the event loop only.
+
+        Root: the pause after "no right" is 15 minutes, and a new key had to wait for it (in the
+        test only a restart helped). Rejected: ending the pause by cancelling the whole task from
+        outside (the caller would need to know about `run`'s task and its state).
+        Tests: test_live.py "waking the listener".
+        """
+        if self._state == "connected" and not reconnect:
+            return
+        self._restart.set()
+
     async def run(self) -> None:
         """Connect, listen, pause, again; only `CancelledError` leaves."""
         while True:
-            delay = await self._cycle()
-            await self._sleep(delay)
+            delay = await self._until_restart(self._cycle())
+            if delay is not None:
+                await self._until_restart(self._sleep(delay))
+
+    async def _until_restart(self, work: Awaitable[Any]) -> Any:
+        """Run `work` until it ends or `wake` asks for a restart; None after a restart.
+
+        A restart drops the token and the failures counted so far: whatever went wrong before may
+        have been the old key.
+        """
+        job = asyncio.ensure_future(work)
+        waiter = asyncio.ensure_future(self._restart.wait())
+        try:
+            await asyncio.wait({job, waiter}, return_when=asyncio.FIRST_COMPLETED)
+            if job.done():
+                return job.result()  # also raises what the work raised (a cancelled pause ends `run`)
+            self._restart.clear()
+            self._token = None
+            self._failures = 0
+            self._paused_in = None
+            return None
+        finally:
+            for task in (job, waiter):
+                if not task.done():
+                    task.cancel()
+            # `asyncio.wait` never swallows a cancel of the caller: awaiting each child inside
+            # `suppress(CancelledError)` did, and a shutdown during the close of the old connection
+            # left `run()` alive (review of v0.3.7). Test: "a shutdown during a restart".
+            await asyncio.wait({job, waiter})
+            for task in (job, waiter):
+                if not task.cancelled():
+                    task.exception()  # retrieved: nobody is told about it twice
 
     async def _cycle(self) -> float:
         """One attempt (two after a refusal); the pause to take afterwards."""

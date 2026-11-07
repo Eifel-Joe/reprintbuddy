@@ -149,3 +149,38 @@ async def test_no_listener_without_run_engine(db_path):
         assert app.state.live_task is None
         await asyncio.sleep(0.05)
     assert connect.urls == []
+
+
+async def test_a_wake_ends_the_long_pause_of_the_real_app(db_path):  # p97
+    """Refused twice, the channel pauses (here: for ever, in the app: 15 minutes); `wake` is the way out."""
+    from websockets.datastructures import Headers
+    from websockets.exceptions import InvalidStatus
+    from websockets.http11 import Response
+
+    refusal = InvalidStatus(Response(403, "Forbidden", Headers()))
+    attempts: list[str] = []
+
+    def connect(url, **kwargs):
+        attempts.append(url)
+        if len(attempts) <= 2:
+            return Refusing(refusal)
+        return Connection([])
+
+    app = make_app(db_path, connect)
+    polls_of(app)
+    async with app.router.lifespan_context(app):
+        await wait_for(lambda: app.state.live_listener.state == "no_right")
+        app.state.live_listener.wake()
+        await wait_for(lambda: app.state.live_listener.state == "connected")
+    assert len(attempts) == 3
+
+
+class Refusing:
+    def __init__(self, exc):
+        self.exc = exc
+
+    async def __aenter__(self):
+        raise self.exc
+
+    async def __aexit__(self, *exc):
+        return None

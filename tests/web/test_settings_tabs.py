@@ -231,6 +231,41 @@ def test_general_tab_columns(ready_client):  # p85
     assert 'id="settings-server"' in second and 'id="ops-restart"' not in second
 
 
-def test_other_tabs_have_no_columns(ready_client):  # p85: single cards keep the plain grid
-    for tab in ("automation", "bambuddy", "account", "maintenance"):
-        assert 'class="settings-col"' not in ready_client.get(f"/settings?tab={tab}").text
+COLUMNS_OF_TAB = {  # p104: the cards of each tab, per column, by the id a card (or its form) carries
+    "general": [["settings-language", "ops-restart"], ["settings-server"]],
+    "automation": [["automation-form"], []],
+    "bambuddy": [["settings-bambuddy"], ["live-channel"]],
+    "account": [["settings-password"], []],
+    "maintenance": [["ops-update", "ops-backup"], ["ops-restore", "ops-export"]],
+}
+
+
+def _columns(page: str) -> list[str]:
+    grid = page[page.index('class="settings-grid"') :]
+    return re.findall(r'<div class="settings-col">(.*?)\n</div>', grid, re.S)
+
+
+@pytest.mark.parametrize("tab", list(COLUMNS_OF_TAB))
+def test_every_tab_sits_in_two_columns_without_gaps(ready_client, tab):  # p104
+    """The grid in rows put a card under the tall card of its row and left a gap (maintenance tab).
+    On every tab the cards are in two columns, each card under the one above it."""
+    page = ready_client.get(f"/settings?tab={tab}").text
+    columns = _columns(page)
+    assert len(columns) == 2, tab
+    for column, wanted in zip(columns, COLUMNS_OF_TAB[tab], strict=True):
+        ids = re.findall(r'id="((?:settings-[a-z]+|ops-[a-z]+|automation-form|live-channel))"', column)
+        assert ids == wanted, (tab, ids)
+    # No card outside a column: the number of cards equals the number in the columns.
+    grid = page[page.index('class="settings-grid"') :]
+    assert grid.count('<section class="card') == sum(c.count('<section class="card') for c in columns), tab
+
+
+def test_bambuddy_address_field_has_the_whole_card_width(ready_client):  # p107
+    """The address with its port was cut off in a field of 18 rem: its row stacks (label above,
+    field across the card), like the wide PEM fields."""
+    page = ready_client.get("/settings?tab=bambuddy").text
+    row = re.search(r'<div class="(setting-row[^"]*)"><div class="setting-text"><label for="bambuddy_address"', page)
+    assert row, "the address row"
+    assert "stack" in row.group(1).split()
+    key_row = re.search(r'<div class="(setting-row[^"]*)"><div class="setting-text"><label for="bambuddy_token"', page)
+    assert "stack" not in key_row.group(1).split()  # the key field stays as it was

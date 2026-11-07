@@ -158,8 +158,15 @@
 
 {# One line of a settings card: label and grey hint left, the control (call block) right.
    `info_text` (optional) adds an info button behind the label (see `info`). #}
-{% macro setting_row(label, hint="", for_id="", info_text="") -%}
-<div class="setting-row"><div class="setting-text">{% if info_text %}<div class="label-row"><label{% if for_id %} for="{{ for_id }}"{% endif %}>{{ label }}</label>{{ info(info_text, label) }}</div>{% else %}<label{% if for_id %} for="{{ for_id }}"{% endif %}>{{ label }}</label>{% endif %}{% if hint %}<span>{{ hint }}</span>{% endif %}</div><div class="setting-control">{{ caller() }}</div></div>
+{# A field's hint followed by the sentence "a value is stored" (p106): the two texts are separate
+   sentences. The hint texts end in a full stop themselves; this adds one where a hint lacks it, so
+   the two never run together ("… arbeitet Ein Wert ist gespeichert."). #}
+{% macro with_stored(hint, stored) -%}
+{{ hint }}{% if hint and hint[-1] not in '.!?' %}.{% endif %} {{ stored }}
+{%- endmacro %}
+
+{% macro setting_row(label, hint="", for_id="", info_text="", stack=false) -%}
+<div class="setting-row{% if stack %} stack{% endif %}"><div class="setting-text">{% if info_text %}<div class="label-row"><label{% if for_id %} for="{{ for_id }}"{% endif %}>{{ label }}</label>{{ info(info_text, label) }}</div>{% else %}<label{% if for_id %} for="{{ for_id }}"{% endif %}>{{ label }}</label>{% endif %}{% if hint %}<span>{{ hint }}</span>{% endif %}</div><div class="setting-control">{{ caller() }}</div></div>
 {%- endmacro %}
 
 

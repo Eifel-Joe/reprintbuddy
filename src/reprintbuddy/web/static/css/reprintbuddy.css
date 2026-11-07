@@ -616,7 +616,10 @@ a.btn, button.btn { display: inline-flex; align-items: center; justify-content: 
 .kpi-icon.tone-info { background: var(--info-soft); color: var(--info); }
 .kpi-icon.tone-neutral { background: var(--neutral-soft); color: var(--text-2); }
 .kpi-value { font-size: 20px; font-weight: 700; line-height: 1.1; }
-.kpi-label { color: var(--muted); font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; }
+/* A label breaks between words, and inside a word only where it has no other way (p66: "Zurückgehaltene
+   Einträge" broke after "Zurückgehalte" on a phone). `hyphens: auto` needs <html lang> to follow the
+   interface language, which it does (base.html). */
+.kpi-label { color: var(--muted); font-size: 12px; margin-top: 2px; overflow-wrap: break-word; hyphens: auto; }
 
 /* Symbol buttons at the end of a row: small picture, 44 px target. */
 .icon-btn {
@@ -698,6 +701,10 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 
 @media (max-width: 899px) {
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Two cards side by side on a phone: a slimmer card leaves the label room for a long German word. */
+  .kpi { gap: 10px; padding: 12px 10px; }
+  .kpi-icon { flex-basis: 32px; width: 32px; height: 32px; }
+  .kpi-icon .icon { width: 17px; height: 17px; }
   .settings-grid { grid-template-columns: minmax(0, 1fr); }
   .setting-row { flex-wrap: wrap; }
 }
@@ -852,6 +859,8 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .setting-row.stack .setting-control { width: 100%; flex: none; }
 .setting-row.stack .setting-control textarea { width: 100%; margin-top: 0; }
 .setting-row.stack .setting-control input[type="file"] { margin-top: 6px; }
+/* A text field of a stacked row (the Bambuddy address, p107) takes the whole card width. */
+.setting-row.stack .setting-control input:not([type="checkbox"]):not([type="file"]) { width: 100%; }
 .facts p { margin: 0 0 0.25rem; font-size: 13px; }
 @media (max-width: 899px) {
   .setting-row .setting-control { width: 100%; flex: 1 1 100%; }

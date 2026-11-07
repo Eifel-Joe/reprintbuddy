@@ -59,6 +59,26 @@ def test_no_right_names_the_missing_rights(ready_client):
     assert "Read Status" in page
 
 
+# p108 (v0.3.7): the notice says which right is missing where, and that a key's rights cannot be
+# changed afterwards in Bambuddy (its pages only create and delete keys): a new key is needed.
+NO_RIGHT_WORDS = {
+    "en": ("websocket:connect", "Read Status", "group", "cannot change", "new key"),
+    "de": ("websocket:connect", "Status lesen", "Gruppe", "nicht ändern", "neuen Schlüssel"),
+}
+
+
+@pytest.mark.parametrize("lang", ["en", "de"])
+def test_no_right_says_which_right_and_that_a_new_key_is_needed(ready_client, lang):
+    with sm_of(ready_client).begin() as s:
+        st.set_setting(s, "language", lang)
+    set_state(ready_client, "no_right")
+    page = channel_region(ready_client.get(TAB).text)
+    for word in NO_RIGHT_WORDS[lang]:
+        assert word in page, (lang, word)
+    if lang == "de":
+        assert "Read Status" not in page  # Bambuddy's German page says "Status lesen"
+
+
 def test_nothing_without_a_stored_address(ready_client):
     """Without a stored address the whole page is not offered (the set-up comes first)."""
     with sm_of(ready_client).begin() as s:

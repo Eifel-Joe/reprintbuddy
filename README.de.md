@@ -151,6 +151,8 @@ Einrichtung akzeptiert.
 
    Lege dann den Benutzer `reprintbuddy` in dieser Gruppe an. Sein Passwort brauchst du nur
    einmal, um den Schlüssel zu erzeugen; Reprintbuddy fragt es nicht ab und speichert es nicht.
+   Ein fehlendes Recht kannst du in der Gruppe jederzeit ergänzen; einen neuen Schlüssel brauchst
+   du dafür nicht.
 3. **API-Schlüssel:** Melde dich in Bambuddy ab und als `reprintbuddy` an (ein Schlüssel gehört
    immer dem angemeldeten Benutzer). Öffne *Einstellungen → API-Schlüssel → Schlüssel erstellen*
    und stelle ihn genau so ein: Name „Reprintbuddy“; *Status lesen* (*Read Status*) **an**;
@@ -158,12 +160,18 @@ Einrichtung akzeptiert.
    *Manage Library*, *Manage Inventory*, *Manage Maintenance*, *Manage Archives*,
    *Manage Projects*, *Allow Cloud Access*, *Update Electricity Price*, *Send Notifications*).
    Kopiere den Schlüssel
-   sofort (Bambuddy zeigt ihn nur einmal) und melde dich wieder ab.
+   sofort (Bambuddy zeigt ihn nur einmal) und melde dich wieder ab. Die Rechte eines Schlüssels
+   lassen sich in Bambuddy nicht nachträglich ändern (die Oberfläche kann Schlüssel nur erzeugen
+   und löschen): fehlt ein Recht am Schlüssel, zum Beispiel *Status lesen*, erzeuge einen neuen
+   Schlüssel und trage ihn unter *Einstellungen → Bambuddy* ein.
 4. **Bambuddy anbinden:** Trage die Adresse von Bambuddy und den Schlüssel ein. Reprintbuddy
    fragt Bambuddy (`GET /api/v1/auth/me`), wem der Schlüssel gehört und welche Rechte er wirklich
    hat, und zeigt Besitzer und jedes nötige Recht mit Haken oder Kreuz. Die Oberfläche öffnet
    sich erst, wenn kein Recht fehlt. Ein Schlüssel eines Administrators wird angenommen, mit der
-   Warnung, dass er mehr darf als nötig. Dieselbe Prüfung gibt es unter *Einstellungen*.
+   Warnung, dass er mehr darf als nötig. Dieselbe Prüfung gibt es unter *Einstellungen*. Ein
+   fehlendes Recht der Gruppe `Reprintbuddy` wird in Bambuddy (*Einstellungen → Benutzer*)
+   ergänzt, ein neuer Schlüssel ist nicht nötig. Fehlt ein Recht am Schlüssel selbst, ist ein
+   neuer Schlüssel nötig.
 
    Die beiden Felder sind so gekennzeichnet, dass Passwort-Manager sie nicht mit deinen eigenen
    Zugangsdaten füllen.

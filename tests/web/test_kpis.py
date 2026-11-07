@@ -1,5 +1,7 @@
 """The cards of the key figures: the total always, one card per state with a count above zero."""
 
+import re
+
 import pytest
 
 from reprintbuddy.web.kpis import Kpi, state_cards
@@ -91,3 +93,38 @@ def test_reorder_cards_only_the_total_when_nothing_is_open():
 
     cards = reorder_cards(t, filament=0, parts=0, under_way=0)
     assert [(c.value, c.tone) for c in cards] == [(0, "accent")]
+
+
+# ---- p66 (v0.3.7): the label of a figure does not break in the middle of a word ----------------
+
+
+def _css(client):
+    return client.get("/static/css/reprintbuddy.css").text.replace("\r\n", "\n")
+
+
+def test_kpi_label_breaks_between_words_not_anywhere(ready_client):
+    css = _css(ready_client)
+    rule = re.search(r"\n\.kpi-label \{([^}]*)\}", css)
+    assert rule, "the rule of .kpi-label"
+    body = rule.group(1)
+    assert "overflow-wrap: anywhere" not in body  # `anywhere` breaks "Zurückgehaltene" after any letter
+    assert "overflow-wrap: break-word" in body  # a word is broken only where it cannot fit at all
+    assert "hyphens: auto" in body  # and then with a hyphen, which needs <html lang>
+
+
+def test_kpi_is_slimmer_on_a_phone(ready_client):
+    # Two cards side by side leave a label 86 px at 375 px; "Zurückgehaltene" needs about 90.
+    css = _css(ready_client)
+    phone = "".join(re.findall(r"@media \(max-width: 899px\) \{(.*?)\n\}", css, re.S))
+    assert re.search(r"\.kpi \{[^}]*padding: 12px 10px", phone)
+    assert re.search(r"\.kpi-icon \{[^}]*width: 32px", phone)
+
+
+def test_html_lang_follows_the_interface_language(ready_client):
+    from conftest import sm_of
+    from reprintbuddy import settings as st
+
+    for language in ("de", "en"):
+        with sm_of(ready_client).begin() as session:
+            st.set_setting(session, "language", language)
+        assert f'<html lang="{language}">' in ready_client.get("/queue").text
