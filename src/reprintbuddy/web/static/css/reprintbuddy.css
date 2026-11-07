@@ -694,14 +694,15 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 
 /* Label and button side by side; the label keeps its own `for`, the control follows below. */
 .field { margin-bottom: 1rem; }
-.label-row { display: flex; align-items: center; gap: 0.15rem; color: var(--text-2); font-size: 0.9rem; }
+.label-row { display: flex; align-items: center; gap: 0.5rem; color: var(--text-2); font-size: 0.9rem; }
 .label-row label { margin: 0; }
-/* The button reaches 10 px above and below its row; the gap keeps that off the control. */
+/* The button reaches 10 px above and below its row; the gap keeps that off the control. Sideways its
+   hit area starts exactly where the label ends: the gap (0.5rem) is as wide as the negative margin. */
 .field > .label-row { margin-bottom: 0.6rem; }
 .field > input:not([type="checkbox"]), .field > select, .field > textarea { margin-top: 0; }
 .setting-text .label-row { color: var(--text); font-size: 13.5px; }
 /* A switch with a button behind it: the label stays a label and only it toggles the switch. */
-.check-row { display: flex; align-items: center; gap: 0.15rem; margin-bottom: 1rem; }
+.check-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
 .check-row > label.check { flex: 0 1 auto; margin-bottom: 0; }
 
 .info { display: inline-block; flex: 0 0 auto; }

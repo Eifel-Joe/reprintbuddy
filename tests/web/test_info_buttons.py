@@ -35,24 +35,24 @@ TEXTS = {
         "Wohin Bambuddy den Druck schickt: an ein Druckermodell, dann druckt jeder freie Drucker dieses Modells, oder an einen bestimmten Drucker.",
     ),
     "info.min_stock": (
-        "When the stock plus everything already planned, printing or awaiting inspection drops below this number, a reprint is due. Minimum stock 0 and buffer 0: never by itself.",
-        "Fällt der Bestand samt allem, was schon geplant, gedruckt oder geprüft wird, unter diese Zahl, wird nachgedruckt. Mindestbestand 0 und Puffer 0: nie von selbst.",
+        "A reprint is due when the available units (stock minus reserved) plus everything already planned, printing, awaiting inspection or awaiting assembly fall below this number. Minimum stock 0 and buffer 0: never by itself.",
+        "Nachgedruckt wird, wenn die verfügbaren Stück (Bestand minus Reserviertes) plus alles, was schon geplant, im Druck, zu prüfen oder zu montieren ist, unter diese Zahl fallen. Mindestbestand 0 und Puffer 0: nie von selbst.",
     ),
     "info.buffer": (
-        "How much is reprinted beyond the minimum stock. Reprints fill up to minimum stock plus buffer.",
-        "So viel wird über den Mindestbestand hinaus nachgedruckt. Aufgefüllt wird bis Mindestbestand plus Puffer.",
+        "A reprint fills up not just to the minimum stock but to minimum stock plus buffer.",
+        "Ein Nachdruck füllt nicht nur bis zum Mindestbestand auf, sondern bis Mindestbestand plus Puffer.",
     ),
     "info.needs_assembly": (
-        "Printed parts that passed inspection first wait for assembly with the bought parts and only count as stock afterwards.",
-        "Gedruckte Teile, die die Prüfung bestanden haben, warten erst auf die Montage mit den Zukaufteilen und zählen erst danach zum Bestand.",
+        "Good units from inspection first wait for assembly and only count as stock after “Book assembled”; the bought parts are deducted then.",
+        "Gute Einheiten aus der Prüfung warten erst auf die Montage und zählen erst nach der Buchung „Montiert buchen“ zum Bestand; dabei werden die Zukaufteile abgezogen.",
     ),
     "info.auto_enabled": (
-        "When on, Reprintbuddy queues reprints of this article in Bambuddy by itself as soon as the stock falls below the minimum stock, until minimum stock plus buffer is reached. Off: Reprintbuddy only shows that a reprint is due.",
-        "Ist sie an, reiht Reprintbuddy für diesen Artikel selbst Nachdrucke in Bambuddy ein, sobald der Bestand unter den Mindestbestand fällt, bis Mindestbestand plus Puffer erreicht sind. Aus: Reprintbuddy zeigt nur an, dass nachgedruckt werden sollte.",
+        "On: Reprintbuddy plans reprints of this article by itself as soon as it drops below the minimum stock, and passes them to Bambuddy bit by bit until minimum stock plus buffer is reached. Only works while the main automation switch is on too; off: Reprintbuddy only shows that a reprint is due.",
+        "An: Reprintbuddy plant für diesen Artikel selbst Nachdrucke, sobald der Mindestbestand unterschritten ist, und gibt sie nach und nach an Bambuddy weiter, bis Mindestbestand plus Puffer erreicht sind. Wirkt nur, wenn auch der Hauptschalter Automatik an ist; aus: Reprintbuddy zeigt nur an, dass nachgedruckt werden sollte.",
     ),
     "info.has_parts": (
-        "Enter which bought parts are built into this article and how many per unit. They are taken off the parts stock at assembly and when booking in with “Deduct parts”.",
-        "Hier trägst du ein, welche gekauften Teile in diesem Artikel verbaut sind und wie viele je Einheit. Sie werden bei der Montage und beim Einbuchen mit „Zukaufteile abziehen“ vom Bestand abgezogen.",
+        "Enter which bought parts go into this article and how many per unit. They are taken off the parts stock when a unit becomes stock: at inspection “good”, with manual work only at assembly, and when booking in with “Deduct parts”.",
+        "Hier trägst du ein, welche gekauften Teile in diesem Artikel stecken und wie viele je Einheit. Sie werden vom Bestand abgezogen, sobald eine Einheit Bestand wird: bei der Prüfung „gut“, bei Handarbeit erst bei der Montage, und beim Einbuchen mit „Zukaufteile abziehen“.",
     ),
     "info.part_min_stock": (
         "Below this stock the part shows as “below minimum”.",
@@ -71,12 +71,12 @@ TEXTS = {
         "Tage von der Bestellung bis zum Eintreffen. Bestellvorschläge rechnen den Verbrauch in dieser Zeit mit ein.",
     ),
     "info.safety_value": (
-        "This reserve, in days or pieces, should still be left after the lead time. If it gets tighter, Reprintbuddy suggests an order.",
-        "Diese Reserve, in Tagen oder Stück, soll nach der Lieferzeit noch übrig sein. Wird es knapper, schlägt Reprintbuddy eine Bestellung vor.",
+        "Reserve that should still be left after the lead time: as a quantity or as so many days of usage (unit next to it). If it would get tighter, Reprintbuddy suggests an order.",
+        "Reserve, die nach der Lieferzeit noch übrig sein soll: als Stückzahl oder als Verbrauch so vieler Tage (Einheit daneben). Würde es knapper, schlägt Reprintbuddy eine Bestellung vor.",
     ),
     "info.consume_parts": (
-        "Takes the bought parts this article needs off the parts stock for every unit booked in.",
-        "Zieht die Zukaufteile, die dieser Artikel braucht, für jede eingebuchte Einheit vom Zukaufteil-Bestand ab.",
+        "Takes the bought parts this article needs off the parts stock for every unit booked in. Untick it when the parts were already deducted.",
+        "Zieht die Zukaufteile, die dieser Artikel braucht, für jede eingebuchte Einheit vom Zukaufteil-Bestand ab. Abwählen, wenn die Teile schon abgezogen sind.",
     ),
     "info.host": (
         "Network address Reprintbuddy listens on. 0.0.0.0 means: on all networks of the machine. Takes effect after a restart.",
@@ -366,7 +366,53 @@ def test_css_popup_is_pinned_under_the_button_and_inside_the_screen(ready_client
     assert "z-index" in pop
     # The card is the frame of the popup, so it can never leave the card (and so the screen).
     assert "position: relative" in rules_of(css, ".card")
-    assert "none" in rules_of(css, ".info summary") or "list-style: none" in rules_of(css, ".info summary")
+    assert "list-style: none" in rules_of(css, ".info summary")  # no disclosure triangle
+
+
+def test_css_popup_width_rule_is_the_agreed_one(ready_client):
+    pop = rules_of(ready_client.get(CSS).text, ".info-pop")
+    assert "width: min(18rem, calc(100% - 2.5rem))" in pop
+    assert "max-width: calc(100vw - 2rem)" in pop
+    assert "left: 1.25rem" in pop  # the padding of the card: the popup starts at its content edge
+
+
+def _rem(rule, prop):
+    return float(re.search(rf"(?:^|[ ;]){prop}: (-?[0-9.]+)rem", rule).group(1))
+
+
+def test_css_button_hit_area_does_not_reach_into_the_label(ready_client):
+    css = ready_client.get(CSS).text
+    summary = rules_of(css, ".info summary")
+    reach = -float(re.search(r"margin: (-?[0-9.]+)rem (-?[0-9.]+)rem;", summary).group(2))  # sideways, in rem
+    assert reach > 0
+    # The gap between label and button is at least as wide as the hit area reaches to the label.
+    for selector in (".label-row", ".check-row"):
+        assert _rem(rules_of(css, selector), "gap") >= reach, selector
+
+
+MACROS = re.compile(r"ui\.(?:info|field|check_row)\(|ui\.setting_row\([^%]*?,[^%]*?,[^%]*?,\s*t\('info\.")
+CARD = re.compile(r'class="card[ "]')
+
+
+def test_info_buttons_are_only_used_in_templates_that_sit_in_a_card():
+    """The popup is framed by `.card`: every template that uses the macros has a card itself or is
+    included only by templates that have one (a pragmatic check of the text, not of the DOM)."""
+    templates = {p.name: p.read_text(encoding="utf-8") for p in (STATIC.parent / "templates").glob("*.html")}
+    users = [name for name, text in templates.items() if name != "_ui.html" and MACROS.search(text)]
+    assert {"_article_fields.html", "_article_parts.html", "part_form.html", "bookings.html", "settings.html"} <= set(users)
+    for name in users:
+        if CARD.search(templates[name]):
+            continue
+        includers = [
+            other for other, text in templates.items()
+            if re.search(rf'{{% include "{re.escape(name)}" %}}', text)
+        ]
+        assert includers, f"{name} uses info buttons outside of a card"
+        for other in includers:
+            if not CARD.search(templates[other]):
+                # one more level: the partial is included by a partial that a card page includes
+                outer = [o for o, t in templates.items() if re.search(rf'{{% include "{re.escape(other)}" %}}', t)]
+                assert outer and all(CARD.search(templates[o]) for o in outer), (name, other)
 
 
 def test_css_rows_keep_the_switch_look_and_the_label_rule(ready_client):
