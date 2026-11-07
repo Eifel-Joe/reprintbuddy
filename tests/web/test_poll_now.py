@@ -88,7 +88,21 @@ def test_without_csrf_token_nothing_happens(bb_client, polls):
 def test_without_form_token_nothing_happens(bb_client, polls):
     response = bb_client.post(ACTION, data={"csrf_token": csrf_of(bb_client, "/queue")})
     assert polls == []
-    assert response.status_code in (400, 409, 422)
+    assert response.status_code == 303
+    assert translate("en", "form.expired") in bb_client.get("/queue").text
+
+
+@pytest.mark.parametrize("page", ["/queue", "/"])
+def test_a_forged_form_token_goes_back_to_the_page_it_came_from(bb_client, polls, page):
+    """Review of v0.3.6: the notice about an expired form belongs on the page of the button."""
+    form = poll_form(bb_client.get(page).text)
+    back = re.search(r'name="next" value="([^"]*)"', form).group(1)
+    data = {"csrf_token": csrf_of(bb_client, page), "form_token": "forged", "next": back}
+    response = bb_client.post(ACTION, data=data)
+    assert response.status_code == 303
+    assert response.headers["location"] == page
+    assert polls == []
+    assert translate("en", "form.expired") in bb_client.get(page).text
 
 
 def test_post_without_bambuddy_asks_for_nothing(ready_client):

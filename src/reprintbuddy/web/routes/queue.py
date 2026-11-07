@@ -223,8 +223,11 @@ async def queue_poll(request: Request):
             pass  # nothing is written; the token is used up
     except FormTokenUsed:
         return duplicate_redirect(request, target)
-    except FormTokenInvalid as exc:
-        return _page(request, error=error_text(current_language(request), exc), status_code=error_status(exc))
+    except FormTokenInvalid:
+        # An expired or forged form: back to the page of the button (not the queue page under
+        # this address), with the usual notice.
+        flash(request, "form.expired", warning=True)
+        return RedirectResponse(target, status_code=303)
     request.app.state.ticker.request_poll()
     return saved_redirect(request, target, "queue.poll_requested")
 
