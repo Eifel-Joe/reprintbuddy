@@ -16,7 +16,9 @@ CSS = "/static/css/reprintbuddy.css"
 
 
 def css_text(client):
-    return client.get(CSS).text
+    # A Windows checkout with core.autocrlf serves the stylesheet with CRLF; "$" in the
+    # patterns below must not depend on that.
+    return client.get(CSS).text.replace("\r\n", "\n")
 
 
 def test_form_inputs_are_capped_at_40rem(ready_client):
