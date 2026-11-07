@@ -301,6 +301,7 @@ td a:hover, .btn-link:hover { text-decoration: underline; }
 
 .crumbs { color: var(--text-2); }
 .crumbs a, .plain-list a { color: var(--accent); text-decoration: none; }
+.crumbs a { display: inline-flex; align-items: center; min-height: 2.75rem; }
 .plain-list { list-style: none; margin: 0; padding: 0; }
 .plain-list li { padding: 0.45rem 0; border-bottom: 1px solid var(--line); }
 .plain-list li:last-child { border-bottom: 0; }
@@ -480,6 +481,21 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
   display: block; flex: 0 0 auto; width: 40px; height: 40px; border-radius: 6px; background: var(--bg);
 }
 .thumb-sm { object-fit: contain; }
+/* Large picture of a file tile; the placeholder keeps the size without a picture. */
+.thumb-lg { display: block; flex: 0 0 auto; width: 100%; height: 150px; border-radius: 8px; background: var(--bg); object-fit: contain; }
+.thumb-placeholder.thumb-lg { display: flex; }
+.thumb-placeholder.thumb-lg .icon { width: 2.5rem; height: 2.5rem; }
+/* A picture laid over its own placeholder: if Bambuddy has no picture after all (the route answers
+   404), the picture removes itself (onerror in the markup) and the placeholder underneath shows. A
+   loaded picture has an opaque background: Bambu thumbnails are often transparent PNGs, and the
+   dashed frame and icon must not show through them. */
+.thumb-box { position: relative; display: block; flex: 0 0 auto; }
+.thumb-box.sm { width: 40px; height: 40px; }
+.thumb-box.lg { width: 100%; height: 150px; }
+.thumb-box > img { position: absolute; inset: 0; width: 100%; height: 100%; background: var(--bg); }
+.thumb-box > .thumb-placeholder { width: 100%; height: 100%; }
+/* A long print file name without spaces wraps inside its tile or row instead of widening the page. */
+.file-name { min-width: 0; overflow-wrap: anywhere; }
 .thumb-placeholder { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); border: 1px dashed var(--line); }
 
 @media (max-width: 599px) {
@@ -790,12 +806,13 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 
 /* ---- info buttons (templates/_ui.html: info, field, check_row) ------------ */
 
-/* The card is the frame of every popup (see .info-pop). */
+/* Positioned boxes that keep what is taken out of the flow inside the card (the visually hidden
+   texts, the hidden default button); the popups are framed by their own row (see .info-pop). */
 .card { position: relative; }
 
 /* Label and button side by side; the label keeps its own `for`, the control follows below. */
 .field { margin-bottom: 1rem; }
-.label-row { display: flex; align-items: center; gap: 0.5rem; color: var(--text-2); font-size: 0.9rem; }
+.label-row { position: relative; display: flex; align-items: center; gap: 0.5rem; color: var(--text-2); font-size: 0.9rem; }
 .label-row label { margin: 0; }
 /* The button reaches 10 px above and below its row; the gap keeps that off the control. Sideways its
    hit area starts exactly where the label ends: the gap (0.5rem) is as wide as the negative margin. */
@@ -803,10 +820,11 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .field > input:not([type="checkbox"]), .field > select, .field > textarea { margin-top: 0; }
 .setting-text .label-row { color: var(--text); font-size: 13.5px; }
 /* A switch with a button behind it: the label stays a label and only it toggles the switch. */
-.check-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
+.check-row { position: relative; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
 .check-row > label.check { flex: 0 1 auto; margin-bottom: 0; }
 
-.info { display: inline-block; flex: 0 0 auto; }
+/* --info-x: where the popup starts in its row; info.js sets it under the button. */
+.info { --info-x: 0px; display: inline-block; flex: 0 0 auto; }
 .info summary {
   display: flex; align-items: center; justify-content: center;
   min-width: 2.75rem; min-height: 2.75rem; margin: -0.6rem -0.5rem;
@@ -817,11 +835,14 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .info summary:hover, .info[open] > summary { color: var(--text); }
 .info summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* Pinned under the button: it opens in the flow just below it (top stays auto) and is framed by
-   the card, from the card's content edge, at most 18rem and never wider than the card or the
-   screen. So it stays on the screen at 320 px as well as at 1280 px, with no script. */
+   the row of its label and button (.label-row, .check-row), so a field in the second column of a
+   grid gets its popup at its own place, not at the card's edge. Horizontally it starts at the
+   row's left edge; info.js moves it (--info-x) under the button and keeps it inside the field and
+   the screen. Without the script it still sits under its field. At most 18rem, at least 14rem
+   unless the screen is narrower. */
 .info-pop {
-  position: absolute; left: 1.25rem; z-index: 30;
-  width: min(18rem, calc(100% - 2.5rem)); max-width: calc(100vw - 2rem);
+  position: absolute; left: var(--info-x, 0px); z-index: 30;
+  width: min(18rem, max(100%, 14rem)); max-width: calc(100vw - 2rem);
   margin-top: 0.55rem; padding: 0.7rem 0.85rem;
   background: #2a2b2f; border: 1px solid var(--line); border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);

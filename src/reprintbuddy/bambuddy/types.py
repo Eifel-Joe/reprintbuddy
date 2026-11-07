@@ -1,9 +1,10 @@
-"""Data classes of Bambuddy's answers. B2 completes `QueueItem` and `Spool`."""
+"""Data classes of Bambuddy's answers."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,9 @@ class LibraryFile:
     folder_id: int | None
     fingerprint: str | None  # changes with every new version of the file (B2 defines the source)
     printer_model: str | None  # the model the file was sliced for
+    # Both flags come last and have defaults, so every earlier construction stays valid.
+    has_thumbnail: bool = False  # the file list carries a `thumbnail_path`
+    sliced: bool = True  # a sliced file (`.gcode.3mf`), the only kind that can become an article
 
 
 @dataclass(frozen=True)
@@ -85,17 +89,21 @@ class QueueItem:
     error_message: str | None
 
 
+# Which spool management Bambuddy runs: its own ("builtin") or Spoolman ("spoolman").
+SpoolMode = Literal["builtin", "spoolman"]
+
+
 @dataclass(frozen=True)
 class Spool:
-    """Fields follow plan assumption S1 (B6); B2's version replaces this on merge."""
+    """One spool of the running inventory mode; the same fields for both lists (Decision 12)."""
 
     id: int
     material: str
     subtype: str | None
     brand: str | None
     color_name: str | None
-    color_hex: str | None  # "#RRGGBB"
-    label_g: int
-    remaining_g: float
-    archived: bool
-    created_at: datetime | None
+    color_hex: str | None  # `#RRGGBB`, from `rgba`
+    label_g: int  # nominal filament weight of a full spool (`label_weight`)
+    remaining_g: float  # `label_weight - weight_used`, never below 0
+    archived: bool  # `archived_at` is set
+    created_at: datetime | None  # naive UTC

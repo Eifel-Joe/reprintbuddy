@@ -59,8 +59,8 @@
         <td class="actions-col">{% call ui.row_actions() %}
           {%- if not archived %}{{ ui.icon_button('pencil', t('articles.edit'), '/articles/' ~ row.id ~ '/edit') }}{% endif %}
           {{- ui.icon_button('history', t('journal.title'), '/journal?article=' ~ row.id) }}
-          {%- if archived %}{{ ui.icon_post('archive-restore', t('catalog.restore'), '/articles/' ~ row.id ~ '/restore') }}
-          {%- else %}{{ ui.icon_post('archive', t('catalog.archive'), '/articles/' ~ row.id ~ '/archive') }}{% endif %}
+          {%- if archived %}{{ ui.icon_post('archive-restore', t('catalog.restore'), '/articles/' ~ row.id ~ '/restore', [('next', '/articles')]) }}
+          {%- else %}{{ ui.icon_post('archive', t('catalog.archive'), '/articles/' ~ row.id ~ '/archive', [('next', '/articles')]) }}{% endif %}
         {% endcall %}</td>
       </tr>
     {% endfor %}

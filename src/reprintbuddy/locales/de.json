@@ -743,5 +743,7 @@
   "info.filament_min_order_packs": "So viele Spulen muss eine Bestellung mindestens haben. Ein Vorschlag ist nie kleiner.",
   "info.filament_mapping": "Welche Filamentsorte jeder Slot der Druckdatei nimmt. Reprintbuddy rechnet den Bedarf dieses Artikels je Sorte; ein Slot ohne Zuordnung wird nicht gezählt. Ein Vorschlag aus Material und Farbe wird erst mit „Speichern“ übernommen.",
   "info.reorder_packs": "Wie viele Bestelleinheiten du bestellst, vorbelegt mit dem Vorschlag. Nach „als bestellt markieren“ zählt diese Menge als unterwegs, und der Vorschlag meldet sich erst wieder, wenn sie eingetroffen ist.",
-  "info.about": "Erklärung zu {label}"
+  "info.about": "Erklärung zu {label}",
+  "articles.not_sliced": "Nicht geslict – erst slicen und die geslicte Datei (.gcode.3mf) in Bambuddy ablegen.",
+  "articles.relink_subtitle": "Eine andere Druckdatei für diesen Artikel wählen"
 }

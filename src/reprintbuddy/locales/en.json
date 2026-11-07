@@ -743,5 +743,7 @@
   "info.filament_min_order_packs": "The fewest spools one order may have. A suggestion is never smaller.",
   "info.filament_mapping": "Which filament sort each slot of the print file takes. Reprintbuddy counts the demand of this article per sort; a slot without an assignment is not counted. A suggestion from material and colour is only saved when you save.",
   "info.reorder_packs": "How many order units you are ordering, filled in with the suggestion. After “mark as ordered” this amount counts as on its way, and the suggestion does not come back until it has arrived.",
-  "info.about": "Explanation of {label}"
+  "info.about": "Explanation of {label}",
+  "articles.not_sliced": "Not sliced – slice it first and put the sliced file (.gcode.3mf) into Bambuddy.",
+  "articles.relink_subtitle": "Choose another print file for this article"
 }
