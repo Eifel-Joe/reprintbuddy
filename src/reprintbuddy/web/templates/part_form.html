@@ -2,9 +2,8 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{% if part %}{{ t('parts.edit') }}{% else %}{{ t('parts.new') }}{% endif %}{% endblock %}
 {% block content %}
-{% call ui.page_head("puzzle", part.name if part else t('parts.new')) %}
-{% if part and part.archived_at %}<p class="summary">{{ ui.badge('part', 'archived') }}</p>{% endif %}
-{% endcall %}
+{% set sub %}{{ t('parts.form_subtitle') }}{% if part and part.archived_at %} · {{ ui.badge('part', 'archived') }}{% endif %}{% endset %}
+{% call ui.page_head("puzzle", part.name if part else t('parts.new'), sub) %}{% endcall %}
 <div class="toolbar">
   <div class="toolbar-actions">
     <a class="btn secondary" href="/parts">{{ ui.icon('puzzle') }}{{ t('parts.title') }}</a>
@@ -41,31 +40,31 @@
       {% endif %}
     </div>
     <div class="row">
-      <label>{{ t('parts.field.min_stock') }}
-        <input name="min_stock" inputmode="numeric" value="{{ values.min_stock }}">
-      </label>
-      <label>{{ t('parts.field.pack_size') }}
-        <input name="pack_size" inputmode="numeric" value="{{ values.pack_size }}">
-      </label>
+      {% call ui.field("part-min_stock", t('parts.field.min_stock'), t('info.part_min_stock')) %}
+        <input id="part-min_stock" name="min_stock" inputmode="numeric" value="{{ values.min_stock }}">
+      {% endcall %}
+      {% call ui.field("part-pack_size", t('parts.field.pack_size'), t('info.pack_size')) %}
+        <input id="part-pack_size" name="pack_size" inputmode="numeric" value="{{ values.pack_size }}">
+      {% endcall %}
     </div>
     <div class="row">
-      <label>{{ t('parts.field.min_order_packs') }}
-        <input name="min_order_packs" inputmode="numeric" value="{{ values.min_order_packs }}">
-      </label>
-      <label>{{ t('parts.field.lead_time_days') }}
-        <input name="lead_time_days" inputmode="numeric" value="{{ values.lead_time_days }}">
-      </label>
+      {% call ui.field("part-min_order_packs", t('parts.field.min_order_packs'), t('info.min_order_packs')) %}
+        <input id="part-min_order_packs" name="min_order_packs" inputmode="numeric" value="{{ values.min_order_packs }}">
+      {% endcall %}
+      {% call ui.field("part-lead_time_days", t('parts.field.lead_time_days'), t('info.lead_time_days')) %}
+        <input id="part-lead_time_days" name="lead_time_days" inputmode="numeric" value="{{ values.lead_time_days }}">
+      {% endcall %}
     </div>
     <div class="row">
-      <label>{{ t('parts.field.safety_value') }}
-        <input name="safety_value" inputmode="numeric" value="{{ values.safety_value }}">
-      </label>
-      <label>{{ t('parts.field.safety_unit') }}
-        <select name="safety_unit">
+      {% call ui.field("part-safety_value", t('parts.field.safety_value'), t('info.safety_value')) %}
+        <input id="part-safety_value" name="safety_value" inputmode="numeric" value="{{ values.safety_value }}">
+      {% endcall %}
+      {% call ui.field("part-safety_unit", t('parts.field.safety_unit')) %}
+        <select id="part-safety_unit" name="safety_unit">
           <option value="days"{% if values.safety_unit == 'days' %} selected{% endif %}>{{ t('parts.safety_unit.days') }}</option>
           <option value="qty"{% if values.safety_unit == 'qty' %} selected{% endif %}>{{ t('parts.safety_unit.qty') }}</option>
         </select>
-      </label>
+      {% endcall %}
     </div>
     <label>{{ t('parts.field.supplier') }}
       <input name="supplier" value="{{ values.supplier }}" maxlength="200">

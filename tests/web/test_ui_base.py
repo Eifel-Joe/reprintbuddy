@@ -88,13 +88,13 @@ def test_status_colours_in_the_style_sheet(ready_client):
     assert ".badge.flag" in css
 
 
-def test_macros_render_icon_badge_and_summary(ready_client):
+def test_macros_render_icon_badge_and_page_head(ready_client):
     env = ready_client.app.state.templates.env
     source = (
         '{% import "_ui.html" as ui with context %}'
         '{{ ui.icon("plus", "x") }}|{{ ui.badge("article", "overbooked") }}|{{ ui.badge("article", "ok") }}'
         '|{{ ui.badge("order", "paused") }}|{{ ui.badge("article", "archived") }}'
-        '|{{ ui.summary("article", tc("summary.articles", 3), [("below_min", 2), ("ok", 1)]) }}'
+        '|{% call ui.page_head("package", "Sub", "A &amp; B") %}{% endcall %}'
         '|{% call ui.page_head("package", "Title") %}<p>sub</p>{% endcall %}'
     )
     html = env.from_string(source).render(lang="en", app_version=__version__)
@@ -103,7 +103,6 @@ def test_macros_render_icon_badge_and_summary(ready_client):
     assert '<span class="badge tone-ok">enough</span>' in html
     assert '<span class="badge tone-neutral">paused</span>' in html
     assert '<span class="badge tone-neutral">Archived</span>' in html
-    assert '<p class="summary">3 articles' in html
-    assert '<span class="dot tone-bad"></span>2 below minimum' in html
+    assert '<h1>Sub</h1><p class="page-sub">A &amp;amp; B</p></div></header>' in html
     assert '<header class="page-head"><span class="page-icon">' in html
-    assert "<h1>Title</h1><p>sub</p>" in html
+    assert '<h1>Title</h1></div><div class="page-actions"><p>sub</p></div></header>' in html

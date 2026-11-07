@@ -30,16 +30,19 @@ def bambuddy_form(**over):
 
 
 def test_page_renders_all_sections(ready_client):
-    response = ready_client.get("/settings")
-    assert response.status_code == 200
+    texts = ""
+    for tab in ("general", "bambuddy", "account"):
+        response = ready_client.get(f"/settings?tab={tab}")
+        assert response.status_code == 200
+        texts += response.text
     for action in (
         "/settings/language",
         "/settings/bambuddy",
         "/settings/password",
         "/settings/server",
     ):
-        assert f'action="{action}"' in response.text
-    assert OLD_URL in response.text
+        assert f'action="{action}"' in texts
+    assert OLD_URL in ready_client.get("/settings?tab=bambuddy").text
 
 
 def test_language_change(ready_client):
@@ -144,15 +147,15 @@ def test_bambuddy_unreachable_changes_nothing(ready_client, respx_mock):
 
 
 def test_settings_shows_owner(ready_client):
-    page = ready_client.get("/settings").text
+    page = ready_client.get("/settings?tab=bambuddy").text
     assert "Saved key owner: reprintbuddy" in page
 
 
 def test_settings_no_username_field_and_no_checkbox(ready_client):
     import re
 
-    page = ready_client.get("/settings").text
-    section = page[page.index('action="/settings/bambuddy"') : page.index('action="/settings/password"')]
+    page = ready_client.get("/settings?tab=bambuddy").text
+    section = page[page.index('action="/settings/bambuddy"') : page.index("</form>", page.index('action="/settings/bambuddy"'))]
     assert "bambuddy_username" not in section and 'type="checkbox"' not in section
     assert sorted(re.findall(r'<input[^>]*\bname="([^"]+)"', section)) == ["bambuddy_address", "bambuddy_token", "csrf_token"]
 
@@ -160,7 +163,7 @@ def test_settings_no_username_field_and_no_checkbox(ready_client):
 def test_settings_autocomplete_attributes(ready_client):
     import re
 
-    page = ready_client.get("/settings").text
+    page = ready_client.get("/settings?tab=bambuddy").text
     address = re.search(r'<input[^>]*name="bambuddy_address"[^>]*>', page).group(0)
     token = re.search(r'<input[^>]*name="bambuddy_token"[^>]*>', page).group(0)
     assert 'autocomplete="off"' in address

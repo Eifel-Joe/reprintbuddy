@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('articles.edit') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("package", article.name) %}{% endcall %}
+{% call ui.page_head("package", article.name, t('articles.edit_subtitle')) %}{% endcall %}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {#- Fresh values come in while the form is untouched; once it is changed or has the focus it
     stays as it is and says so when the settings change elsewhere (Design 4.6). -#}

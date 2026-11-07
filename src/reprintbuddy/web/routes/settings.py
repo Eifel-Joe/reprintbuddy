@@ -26,6 +26,28 @@ router = APIRouter()
 
 MAX_UPLOAD_BYTES = 64 * 1024
 
+# Tabs of the page: (key, icon, label key). Another feature adds its tab by appending a line
+# and rendering its cards when `current_tab` is its key.
+SETTINGS_TABS: list[tuple[str, str, str]] = [
+    ("general", "settings", "settings.tab.general"),
+    ("bambuddy", "link", "settings.tab.bambuddy"),
+    ("account", "user", "settings.tab.account"),
+    ("maintenance", "download", "settings.tab.maintenance"),
+]
+DEFAULT_TAB = "general"
+# The tab that shows the card of a section: a page re-rendered with an error opens it.
+SECTION_TAB = {
+    "language": "general",
+    "server": "general",
+    "bambuddy": "bambuddy",
+    "password": "account",
+}
+
+
+def _tab_from_query(request: Request) -> str:
+    key = request.query_params.get("tab", DEFAULT_TAB)
+    return key if key in {tab[0] for tab in SETTINGS_TABS} else DEFAULT_TAB
+
 
 def _page(
     request: Request,
@@ -44,12 +66,15 @@ def _page(
         "port": st.get_setting(db, "port"),
     }
     values.update(typed)
+    current_tab = SECTION_TAB.get(section or "") or _tab_from_query(request)
     return render(
         request,
         "settings.html",
         active_nav="settings",
         error=error,
         error_section=section,
+        settings_tabs=SETTINGS_TABS,
+        current_tab=current_tab,
         api_key_mask=st.display_value("bambuddy_api_key", st.get_setting(db, "bambuddy_api_key")),
         tls_key_mask=st.display_value("tls_key", st.get_setting(db, "tls_key")),
         tls_cert_set=bool(st.get_setting(db, "tls_cert")),
@@ -60,9 +85,11 @@ def _page(
     )
 
 
-def _saved(request: Request, key: str = "settings.saved", *, warning: bool = False) -> RedirectResponse:
+def _saved(
+    request: Request, key: str = "settings.saved", *, warning: bool = False, tab: str = DEFAULT_TAB
+) -> RedirectResponse:
     flash(request, key, warning=warning)
-    return RedirectResponse("/settings", status_code=303)
+    return RedirectResponse(f"/settings?tab={tab}", status_code=303)
 
 
 @router.get("/settings")
@@ -77,7 +104,7 @@ async def save_language(request: Request, db: Session = Depends(get_db)):
         st.set_setting(db, "language", str(form.get("language", "")))
     except ValueError:
         return _page(request, db, "settings.invalid_value", "language")
-    return _saved(request)
+    return _saved(request, tab=SECTION_TAB["language"])
 
 
 @router.post("/settings/bambuddy", dependencies=[Depends(verify_csrf)])
@@ -119,8 +146,8 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     st.apply_check(db, url, api_key, check)
     take_verdict(request, check)  # a fixed key clears the notice at once
     if check.owner_is_admin:
-        return _saved(request, "bambuddy.admin_warning", warning=True)
-    return _saved(request)
+        return _saved(request, "bambuddy.admin_warning", warning=True, tab=SECTION_TAB["bambuddy"])
+    return _saved(request, tab=SECTION_TAB["bambuddy"])
 
 
 @router.post("/settings/password", dependencies=[Depends(verify_csrf)])
@@ -144,7 +171,7 @@ async def change_password(request: Request, db: Session = Depends(get_db)):
     await limiter.run(accounts.set_password, db, user.username, new)
     # Every other session ends with the old password; this one is issued anew.
     start_session(request, user, db)
-    return _saved(request, "settings.password_changed")
+    return _saved(request, "settings.password_changed", tab=SECTION_TAB["password"])
 
 
 async def _pem_input(form, text_field: str, file_field: str) -> str | None:
@@ -212,5 +239,5 @@ async def save_server(request: Request, db: Session = Depends(get_db)):
     db.commit()
     # Ports below 1024 need CAP_NET_BIND_SERVICE: the installed service has it, others may not.
     if port < 1024:
-        return _saved(request, "settings.privileged_port", warning=True)
-    return _saved(request, "settings.restart_needed")
+        return _saved(request, "settings.privileged_port", warning=True, tab=SECTION_TAB["server"])
+    return _saved(request, "settings.restart_needed", tab=SECTION_TAB["server"])

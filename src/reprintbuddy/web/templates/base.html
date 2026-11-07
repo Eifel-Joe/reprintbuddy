@@ -30,21 +30,35 @@
     ('settings', 'settings', '/settings', t('nav.settings')),
   ] %}
   {% for id, icon_name, href, label in items %}
-    <a class="nav-link{% if id == active %} active{% endif %}" href="{{ href }}">{{ ui.icon(icon_name) }}<span class="nav-label">{{ label }}</span></a>
+    <a class="nav-link{% if id == active %} active{% endif %}" href="{{ href }}" title="{{ label }}">{{ ui.icon(icon_name) }}<span class="nav-label">{{ label }}</span></a>
   {% endfor %}
 {% endmacro %}
 
 {% macro nav_footer() %}
   {% if open_bambuddy_url %}
-    <a class="nav-link nav-external" href="{{ open_bambuddy_url }}" target="_blank" rel="noopener noreferrer">{{ ui.icon('external-link') }}<span class="nav-label">{{ t('nav.open_bambuddy') }}</span></a>
+    <a class="nav-link nav-external" href="{{ open_bambuddy_url }}" target="_blank" rel="noopener noreferrer" title="{{ t('nav.open_bambuddy') }}" aria-label="{{ t('nav.open_bambuddy') }}">{{ ui.icon('external-link') }}<span class="nav-label">{{ t('nav.open_bambuddy') }}</span></a>
   {% endif %}
   <form method="post" action="/logout">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="nav-link nav-button" type="submit">{{ ui.icon('log-out') }}<span class="nav-label">{{ t('nav.logout') }}</span></button>
+    <button class="nav-link nav-button" type="submit" title="{{ t('nav.logout') }}" aria-label="{{ t('nav.logout') }}">{{ ui.icon('log-out') }}<span class="nav-label">{{ t('nav.logout') }}</span></button>
   </form>
 {% endmacro %}
 
+{# Version and the button that folds the menu. Without JavaScript the button is a link that sets
+   the cookie and comes back; sidebar.js takes over the click. Not in the phone menu. #}
+{% macro nav_version(collapsible) %}
+  <div class="nav-version-row">
+    <span class="nav-version">v{{ app_version }}</span>
+    {% if collapsible %}
+    {# The page's own address; a page that answered a POST has none (that address only answers POST), then the start page. #}
+    {% set here = live_src or '/' %}
+    <a class="nav-collapse" id="sidebar-toggle" href="/ui/sidebar?collapsed={{ 0 if sidebar_collapsed else 1 }}&amp;next={{ here|urlencode }}" data-label-collapse="{{ t('nav.collapse') }}" data-label-expand="{{ t('nav.expand') }}" title="{{ t('nav.expand') if sidebar_collapsed else t('nav.collapse') }}" aria-label="{{ t('nav.expand') if sidebar_collapsed else t('nav.collapse') }}">{{ ui.icon('chevrons-left', 'icon-collapse') }}{{ ui.icon('chevrons-right', 'icon-expand') }}</a>
+    {% endif %}
+  </div>
+{% endmacro %}
+
 {% block shell %}
+{% set sidebar_collapsed = request.cookies.get('rb_sidebar') == 'collapsed' %}
 {# Messages for the next page. While the dialog about a missing right covers the page they are
    shown inside it, where the person can see them. A request for regions of the page leaves them
    for the page that is shown next (two tabs, one cookie). #}
@@ -52,16 +66,16 @@
 {% set dialog_open = (rights_notice and not rights_later) or rights_success %}
 {# The live channel compares v= with the running version: encoded, so a "+" stays a "+" (read as a
    space, every page of a version like 0.3.0+local.1 would reload without end). #}
-<div class="app" id="app" data-live="/live?v={{ app_version|urlencode }}" data-live-state="{{ live_state }}" data-live-src="{{ live_src or '' }}">
+<div class="app{% if sidebar_collapsed %} sidebar-collapsed{% endif %}" id="app" data-live="/live?v={{ app_version|urlencode }}" data-live-state="{{ live_state }}" data-live-src="{{ live_src or '' }}">
   <details class="mobile-menu">
-    <summary><span class="brand">{{ brand() }}</span></summary>
+    <summary><span class="brand">{{ brand() }}</span><span class="menu-button">{{ ui.icon('menu') }}</span><span class="sr-only">{{ t('nav.menu') }}</span></summary>
     <nav class="sidebar-nav">{{ nav_links(active_nav) }}</nav>
-    <div class="sidebar-footer">{{ nav_footer() }}</div>
+    <div class="sidebar-footer">{{ nav_footer() }}{{ nav_version(false) }}</div>
   </details>
   <aside class="sidebar">
     <div class="brand">{{ brand() }}</div>
     <nav class="sidebar-nav">{{ nav_links(active_nav) }}</nav>
-    <div class="sidebar-footer">{{ nav_footer() }}</div>
+    <div class="sidebar-footer">{{ nav_footer() }}{{ nav_version(true) }}</div>
   </aside>
   <main class="content">
     {# Shown by live.js instead of reloading while a form of the page is changed: a new version
@@ -70,7 +84,7 @@
     {% if rights_notice and rights_later %}
     {# After "Later": the notice shrinks to one line until the person signs out. #}
     <div class="rights-banner" role="status">
-      <span>{{ t('rights.banner', rights=rights_names) }} <a href="/settings#bambuddy">{{ t('rights.details') }}</a></span>
+      <span>{{ t('rights.banner', rights=rights_names) }} <a href="/settings?tab=bambuddy#bambuddy">{{ t('rights.details') }}</a></span>
       <form method="post" action="/bambuddy/rights/recheck">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="next" value="{{ rights_next }}">
@@ -88,6 +102,8 @@
 {# Keeps the page live (Spec 10.5); bare.html replaces this block, so pages without the menu
    have no live channel. Without JavaScript the page works as before. #}
 <script src="/static/js/live.js?v={{ app_version }}" defer></script>
+<script src="/static/js/sidebar.js?v={{ app_version }}" defer></script>
+<script src="/static/js/info.js?v={{ app_version }}" defer></script>
 {% endblock %}
 </body>
 </html>

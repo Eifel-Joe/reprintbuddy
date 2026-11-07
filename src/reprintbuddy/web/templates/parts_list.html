@@ -16,16 +16,14 @@
 {{ ui.bar(item.fill, 'archived' if archived else item.status) }}
 {%- endmacro %}
 
-{% call ui.page_head("puzzle", t('parts.title') ~ (' · ' ~ t('catalog.archived') if archived else '')) %}
-{% call ui.region("summary", "part") %}{{ ui.summary("part", tc('summary.parts', total), summary_items) }}{% endcall %}
-{% endcall %}
+{% call ui.page_head("puzzle", t('parts.title') ~ (' · ' ~ t('catalog.archived') if archived else ''), t('parts.subtitle')) %}<a class="btn" href="/parts/new">{{ ui.icon('plus') }}{{ t('parts.new') }}</a>{% endcall %}
+{% call ui.region("summary", "part") %}{{ ui.kpi_row(kpis) }}{% endcall %}
 
 <div class="toolbar">
   {{ ui.search_form(q, t('parts.field.name'), keep=search_keep) }}
   {% if not archived %}{% call ui.region("filters", "part") %}{{ ui.filter_bar("part", filters) }}{% endcall %}{% endif %}
   {{ ui.layout_toggle(layout_links) }}
   <div class="toolbar-actions">
-    <a class="btn" href="/parts/new">{{ ui.icon('plus') }}{{ t('parts.new') }}</a>
     {% if archived %}<a class="btn secondary" href="/parts">{{ ui.icon('archive') }}{{ t('catalog.show_active') }}</a>
     {%- else %}<a class="btn secondary" href="/parts?view=archived">{{ ui.icon('archive') }}{{ t('catalog.archived') }}</a>{% endif %}
   </div>
@@ -48,7 +46,7 @@
         <th class="num">{{ t('parts.field.min_stock') }}</th>
         <th class="num">{{ t('parts.col.pack') }}</th>
         <th>{{ t('parts.field.supplier') }}</th>
-        <th></th>
+        <th class="actions-col"><span class="sr-only">{{ t('list.col.actions') }}</span></th>
       </tr>
     </thead>
     <tbody>
@@ -61,7 +59,12 @@
         <td class="num target">{{ part.min_stock }}{{ min_bar(item) }}</td>
         <td class="num">{{ part.pack_size }}</td>
         <td>{% if part.supplier %}{{ supplier(part) }}{% endif %}</td>
-        <td><a href="/journal?part={{ part.id }}">{{ t('journal.title') }}</a></td>
+        <td class="actions-col">{% call ui.row_actions() %}
+          {%- if not archived %}{{ ui.icon_button('pencil', t('parts.edit'), '/parts/' ~ part.id ~ '/edit') }}{% endif %}
+          {{- ui.icon_button('history', t('journal.title'), '/journal?part=' ~ part.id) }}
+          {%- if archived %}{{ ui.icon_post('archive-restore', t('catalog.restore'), '/parts/' ~ part.id ~ '/restore') }}
+          {%- else %}{{ ui.icon_post('archive', t('catalog.archive'), '/parts/' ~ part.id ~ '/archive') }}{% endif %}
+        {% endcall %}</td>
       </tr>
     {% endfor %}
     </tbody>

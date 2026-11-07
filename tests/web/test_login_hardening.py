@@ -133,7 +133,7 @@ def test_minimum_password_length_comes_from_one_constant(db_path, monkeypatch):
 
 def test_settings_page_uses_the_same_constant(ready_client, monkeypatch):
     monkeypatch.setattr(auth, "MIN_PASSWORD_LENGTH", 11)
-    page = ready_client.get("/settings").text
+    page = ready_client.get("/settings?tab=account").text
     assert 'minlength="11"' in page
     assert "at least 11 characters" in page
 

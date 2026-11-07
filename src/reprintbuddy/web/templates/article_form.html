@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('articles.new') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("package", t('articles.new')) %}{% endcall %}
+{% call ui.page_head("package", t('articles.new'), t('articles.new_subtitle')) %}{% endcall %}
 <section class="card section">
   <div class="plate-head">
     <img class="thumb" src="/articles/new/file/{{ file.id }}/plate/{{ plate.index }}/thumbnail" alt="">

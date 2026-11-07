@@ -1,0 +1,46 @@
+{#- The purchased parts of an article (Spec 5.2), part of the create and the edit form.
+    A checkbox opens the list of the parts in use: per row a part, its quantity per unit and a
+    button to remove the row. CSS shows the list only while the box is ticked; unticking only
+    hides it, so nothing typed is lost until the form is saved. Without JavaScript, "add" and
+    "remove" send the form, which comes back with the row added or removed and nothing saved;
+    article_parts.js does both in place. A part chosen in one row is not offered in another. -#}
+{% import "_ui.html" as ui with context %}
+{% macro part_row(index, row, taken) -%}
+{#- The number and the part's name tell the rows apart for a screen reader; article_parts.js keeps them current. -#}
+{% set n = index + 1 if index is number else "" %}
+<div class="part-row" data-parts-row>
+  <select name="parts_part" data-label="{{ t('bookings.field.part') }}" aria-label="{{ t('bookings.field.part') }} {{ n }}"{% if values.focus == index %} autofocus{% endif %}>
+    <option value="">{{ t('articles.part_choose') }}</option>
+    {% for part in parts %}{% set id = part.id | string %}{% set elsewhere = id != row.part and id in taken %}
+    <option value="{{ id }}"{% if id == row.part %} selected{% endif %}{% if elsewhere %} disabled hidden{% endif %}>{{ part.name }}</option>
+    {% endfor %}
+  </select>
+  <input name="parts_qty" inputmode="numeric" value="{{ row.qty }}" data-label="{{ t('articles.field.qty_per_unit') }}" aria-label="{{ t('articles.field.qty_per_unit') }} {{ n }}">
+  <button class="icon-btn" type="submit" name="parts_remove" value="{{ index }}" title="{{ t('articles.part_remove') }}" formnovalidate data-parts-remove>{{ ui.icon('x') }}<span>{{ t('articles.part_remove') }}</span><span class="sr-only" data-parts-name>{% for part in parts %}{% if part.id | string == row.part %}{{ part.name }}{% endif %}{% endfor %}</span></button>
+</div>
+{%- endmacro %}
+{% set rows = values.part_rows or [{"part": "", "qty": ""}] %}
+{% set taken = rows | map(attribute="part") | list %}
+<div class="parts-field" data-parts>
+  {#- Enter in a text field presses the first submit button: that must be Save, not add or remove. -#}
+  <button class="default-submit" type="submit" tabindex="-1" aria-hidden="true">{{ t('common.save') }}</button>
+  {% call ui.check_row(t('info.has_parts'), t('articles.field.has_parts')) %}
+  <label class="check">
+    <input name="has_parts" type="checkbox"{% if values.has_parts %} checked{% endif %}>
+    <span>{{ t('articles.field.has_parts') }}</span>
+  </label>
+  {% endcall %}
+  <fieldset class="parts-list" id="article-parts">
+    <legend>{{ t('articles.parts_title') }}</legend>
+    <p class="hint">{{ t('articles.parts_hint') }}</p>
+    <div class="part-head" aria-hidden="true"><span>{{ t('bookings.field.part') }}</span><span>{{ t('articles.part_qty_head') }}</span><span></span></div>
+    <div class="part-rows" data-parts-rows>
+      {% for row in rows %}
+      {{ part_row(loop.index0, row, taken) }}
+      {% endfor %}
+    </div>
+    <template data-parts-template>{{ part_row("new", {"part": "", "qty": ""}, []) }}</template>
+    <button class="btn secondary" type="submit" name="parts_add" value="1" formnovalidate data-parts-add{% if values.focus == "add" %} autofocus{% endif %}>{{ ui.icon('plus') }}<span>{{ t('articles.part_add') }}</span></button>
+  </fieldset>
+</div>
+<script src="/static/js/article_parts.js?v={{ app_version }}" defer></script>
