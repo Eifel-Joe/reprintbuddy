@@ -28,10 +28,10 @@
       <tbody>
       {% for c in r.choices %}
         <tr class="choice">
-          <td class="check-col"><input type="checkbox" id="tick-{{ r.slot }}-{{ c.id }}" name="tick_{{ r.slot }}" value="{{ c.id }}"{% if c.ticked %} checked{% endif %}{% if read_only %} disabled{% endif %}></td>
+          <td class="check-col"><label class="hit"><input type="checkbox" id="tick-{{ r.slot }}-{{ c.id }}" name="tick_{{ r.slot }}" value="{{ c.id }}"{% if c.ticked %} checked{% endif %}{% if read_only %} disabled{% endif %}></label></td>
           <td><label for="tick-{{ r.slot }}-{{ c.id }}">{% if c.swatch %}<span class="swatch" style="background: {{ c.swatch }}"></span>{% endif %}<strong>{{ c.brand }}</strong>{% if c.subtype %} {{ c.subtype }}{% endif %} {{ c.color }}</label></td>
           <td class="num nowrap">{% if c.stock is not none %}{{ c.stock }} g{% else %}—{% endif %}</td>
-          <td class="check-col"><input type="radio" name="reorder_{{ r.slot }}" value="{{ c.id }}"{% if c.reordered %} checked{% endif %}{% if read_only %} disabled{% endif %} aria-label="{{ t('filament.col.reordered') }}: {{ c.brand }} {{ c.color }}"></td>
+          <td class="check-col"><label class="hit"><input type="radio" name="reorder_{{ r.slot }}" value="{{ c.id }}"{% if c.reordered %} checked{% endif %}{% if read_only %} disabled{% endif %} aria-label="{{ t('filament.col.reordered') }}: {{ c.brand }} {{ c.color }}"></label></td>
         </tr>
       {% else %}
         <tr><td colspan="4" class="muted">{{ t('filament.no_candidates') }}</td></tr>

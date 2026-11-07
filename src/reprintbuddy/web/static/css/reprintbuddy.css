@@ -1010,5 +1010,11 @@ form > .btn + .btn.secondary { margin-left: 0.5rem; }
 .slot-group { margin-bottom: 0.75rem; }
 .slot-group .slot-caption { margin: 0; padding: 0.6rem 0.75rem; font-weight: 600; border-bottom: 1px solid var(--line); }
 .slot-group th.check-col, .slot-group td.check-col { width: 1%; white-space: nowrap; text-align: center; }
-.slot-group td.check-col input { width: 1.1rem; height: 1.1rem; margin: 0; accent-color: var(--accent); }
-.slot-group td label { cursor: pointer; }
+.slot-group td.check-col { padding-top: 0; padding-bottom: 0; }
+.slot-group label.hit { display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin: 0; cursor: pointer; }
+.slot-group label.hit input { width: 1.1rem; height: 1.1rem; margin: 0; accent-color: var(--accent); }
+.slot-group td { vertical-align: middle; }
+.slot-group td label { margin: 0; color: var(--text); font-size: inherit; cursor: pointer; }
+@media (max-width: 480px) {
+  .slot-group th, .slot-group td { padding-left: 0.35rem; padding-right: 0.35rem; }
+}
