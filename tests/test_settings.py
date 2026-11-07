@@ -27,6 +27,7 @@ EXPECTED_DEFAULTS = {
     "port": 8080,
     "tls_cert": None,
     "tls_key": None,
+    "update_check": True,  # v0.3.6, Spec 11.3a: the automatic check for new versions is on
 }
 
 
