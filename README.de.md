@@ -235,9 +235,22 @@ Bei falschem Port: `reprintbuddy set-port 8080 && systemctl restart reprintbuddy
 
 ## Sicherung und Export
 
-Alles liegt unter `/var/lib/reprintbuddy`, die Proxmox-Sicherung des Containers erfasst es also.
-*Einstellungen → Export* lädt alle Daten als JSON-Datei herunter, **ohne** API-Schlüssel,
-Passwörter, den privaten HTTPS-Schlüssel und das Sitzungsgeheimnis.
+Reprintbuddy bringt eine eigene vollständige Sicherung mit, unabhängig davon, wie der Rechner oder
+Container sonst gesichert wird. Unter *Einstellungen → Update und Sicherung*:
+
+- **Vollständige Sicherung** lädt die ganze Datenbank als eine `.zip`-Datei herunter: alle Daten
+  und Einstellungen, **auch** den Bambuddy-Schlüssel, den Passwort-Hash, den privaten
+  HTTPS-Schlüssel und das Sitzungsgeheimnis. Mit Passwort (8 bis 1024 Zeichen) wird sie
+  verschlüsselt (Argon2id und AES-256-GCM); das Passwort wird nirgends gespeichert, ohne es lässt
+  sich die Sicherung nicht wiederherstellen. **Ohne Passwort kommt jeder, der die Datei hat, an die
+  Schlüssel und kann sich anmelden.**
+- **Wiederherstellen** nimmt so eine Datei (höchstens 128 MB). Reprintbuddy prüft, dass sie eine
+  Sicherung von Reprintbuddy in dieser oder einer älteren Version ist (eine ältere Datenbank wird
+  beim Start migriert, eine neuere abgelehnt), fragt bei Verschlüsselung nach dem Passwort, sichert
+  die laufende Datenbank wie vor einem Update, ersetzt sie und startet neu. Danach gelten
+  Benutzername und Passwort aus der Sicherung, und alle melden sich neu an.
+- **Export** lädt alle Daten als JSON-Datei herunter, **ohne** API-Schlüssel, Passwörter, den
+  privaten HTTPS-Schlüssel und das Sitzungsgeheimnis.
 
 Eine Datenbanksicherung von Hand zurückspielen:
 
