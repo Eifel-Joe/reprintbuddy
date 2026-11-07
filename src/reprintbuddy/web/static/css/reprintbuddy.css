@@ -383,6 +383,15 @@ table.keytable td.off { color: var(--muted); }
   padding: 0.7rem 0.9rem; margin: 0 0 1rem;
   border: 1px solid var(--danger); background: rgba(239, 68, 68, 0.12); border-radius: 8px;
 }
+/* A newer release exists (Spec 11.3a): one narrow line above the page, quieter than the notice about a missing right. */
+.update-banner {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.4rem 0.8rem; margin: 0 0 1rem;
+  border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 8px;
+  font-size: 0.9rem;
+}
+.update-banner .icon { flex: none; color: var(--accent); }
+.update-banner a { color: var(--accent); font-weight: 600; white-space: nowrap; }
 .rights-banner a { color: var(--accent); }
 .rights-banner form { margin: 0; }
 @media (max-width: 899px) {

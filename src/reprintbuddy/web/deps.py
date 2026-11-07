@@ -16,6 +16,7 @@ from reprintbuddy.bambuddy.client import BambuddyClient
 from reprintbuddy.bambuddy.connection import ConnectionCheck
 from reprintbuddy import settings as st
 from reprintbuddy.models import User
+from reprintbuddy.ops.versions import parse_release_tag
 from reprintbuddy.web import regions
 from reprintbuddy.web.csrf import csrf_token
 from reprintbuddy.web.i18n import translate, translate_count
@@ -127,6 +128,7 @@ def render(request: Request, name: str, status_code: int = 200, **context: objec
     context["live_src"] = _own_address(request) if request.method == "GET" else None
     context["live_region_mode"] = bool(asked)  # base.html then leaves the queued messages
     _add_rights_notice(request, context)
+    _add_update_notice(request, context, session)
     response = request.app.state.templates.TemplateResponse(
         request, name, context, status_code=status_code
     )
@@ -143,6 +145,21 @@ def render(request: Request, name: str, status_code: int = 200, **context: objec
             "Vary": regions.HEADER,
         },
     )
+
+
+def _add_update_notice(request: Request, context: dict[str, object], session) -> None:
+    """`update_version` for the bar of base.html: the newest release, when the automatic check (or
+    the button) found one newer than the installed one (Spec 11.3a).
+
+    Only for an installation on a real release tag: a development build counts as older than every
+    release and would show the bar for ever. Switched off in the settings, nothing is shown.
+    """
+    context["update_version"] = None
+    info = getattr(request.app.state, "version_info", None)
+    if info is None or not info.update_available or parse_release_tag(info.installed or "") is None:
+        return
+    if st.get_setting(session, "update_check"):
+        context["update_version"] = info.newest
 
 
 def _own_address(request: Request) -> str:

@@ -27,8 +27,10 @@ from reprintbuddy.changes import install_change_feed
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.domain import filament, status
 from reprintbuddy.domain.engine import Engine
+from reprintbuddy.ops.autocheck import AutoCheck
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.running import update_running
+from reprintbuddy.ops.versions import VersionInfo, check_versions, is_git_install
 from reprintbuddy.web import deps
 from reprintbuddy.web.flash import pop_flashes
 from reprintbuddy.web.formatting import fill_percent, local_date, local_dt
@@ -131,6 +133,43 @@ class _LiveClient:
         return self._channel("ws_url").ws_url(token)
 
 
+def _install_auto_check(app: FastAPI) -> None:
+    """The automatic check for new versions (v0.3.6, Spec 11.3a), started with the app's loop.
+
+    A good result goes where the button "Check for updates" puts its own (`version_info`,
+    `installed_tag`), so there is one state. The settings switch sets `update_check_wake`,
+    which ends the pause at once: switched on, the next round is now.
+    """
+    wake = asyncio.Event()
+    app.state.update_check_wake = wake
+
+    def enabled() -> bool:
+        with app.state.sessionmaker() as session:
+            return bool(st.get_setting(session, "update_check"))
+
+    def store(info: VersionInfo) -> None:
+        app.state.version_info = info
+        app.state.installed_tag = info.installed
+
+    async def wait(delay: float) -> None:
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(wake.wait(), delay)
+        wake.clear()
+
+    def check() -> VersionInfo:  # blocking (git); `AutoCheck` runs it in a thread
+        ops = app.state.ops
+        return check_versions(ops.install_dir, ops.runner, now=datetime.now(UTC))
+
+    app.state.auto_check = AutoCheck(
+        enabled=enabled,
+        is_install=lambda: is_git_install(app.state.ops.install_dir),
+        busy=lambda: update_running(app.state.db_path.parent, app.state.ops.runner, datetime.now(UTC)),
+        check=check,
+        store=store,
+        wait=wait,
+    )
+
+
 @contextlib.asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Run the tick engine and Bambuddy's live listener in the background (`run_engine`)."""
@@ -142,7 +181,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state.ticker.run(lambda: _poll_seconds(app)), name="ticker"
         )
         live_task = asyncio.create_task(app.state.live_listener.run(), name="bambuddy-live")
-        tasks = [ticker_task, live_task]
+        # The check for new versions (Spec 11.3a): its own task, so neither the tick nor a page waits for git.
+        tasks = [ticker_task, live_task, asyncio.create_task(app.state.auto_check.run(), name="update-check")]
     app.state.ticker_task = ticker_task
     app.state.live_task = live_task
     try:
@@ -238,6 +278,7 @@ def create_app(
         **live_options,
     )
     app.state.live_task = None
+    _install_auto_check(app)
 
     # Templates and texts are read now and never again: an update replaces the files while this
     # process still answers, and it must go on rendering what it started with.

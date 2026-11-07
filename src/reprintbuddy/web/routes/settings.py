@@ -88,6 +88,7 @@ def _page(
         tls_key_mask=st.display_value("tls_key", st.get_setting(db, "tls_key")),
         tls_cert_set=bool(st.get_setting(db, "tls_cert")),
         ops=ops_view(request, db),
+        update_check=bool(st.get_setting(db, "update_check")),  # the switch of the automatic check
         # The live channel row: only with a stored address (without one there is nothing to connect to).
         live_channel=request.app.state.live_listener.state if values["bambuddy_address"] else None,
         channel_retry_minutes=NO_RIGHT_DELAY // 60,

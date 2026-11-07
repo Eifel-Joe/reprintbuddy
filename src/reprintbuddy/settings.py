@@ -25,6 +25,7 @@ DEFAULTS: dict[str, object] = {
     "insert_next": False,
     "automation": False,
     "queue_running": True,
+    "update_check": True,  # the automatic check for new versions (Spec 11.3a)
     "bambuddy_url": None,
     "bambuddy_username": None,
     "bambuddy_api_key": None,
@@ -137,6 +138,7 @@ _VALIDATORS: dict[str, Callable[[Any], object]] = {
     "insert_next": _bool,
     "automation": _bool,
     "queue_running": _bool,
+    "update_check": _bool,
     "bambuddy_url": _optional_url,
     "bambuddy_username": _optional_nonempty,
     "bambuddy_api_key": _api_key,
