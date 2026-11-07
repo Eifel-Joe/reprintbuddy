@@ -90,3 +90,15 @@ def test_assemble_after_flag_removed(db):
     with db.begin() as s:
         art = s.get(Article, aid)
         assert (art.awaiting_assembly, art.stock) == (0, 1)
+
+
+def test_list_awaiting_of_one_article_and_thumbnail_flag(db):
+    with db.begin() as s:
+        a = make_article(s, name="Template A", awaiting_assembly=2, thumbnail=b"png")
+        b = make_article(s, name="Template B", awaiting_assembly=1)
+        ids = (a.id, b.id)
+    with db.begin() as s:
+        rows = inspection.list_awaiting_assembly(s, article_id=ids[0])
+        assert [(r.article_id, r.has_thumbnail) for r in rows] == [(ids[0], True)]
+        assert [r.article_id for r in inspection.list_awaiting_assembly(s)] == list(ids)
+        assert inspection.list_awaiting_assembly(s, article_id=999) == []

@@ -219,19 +219,24 @@ class AssemblyRow:
     name: str
     awaiting: int
     parts: list[PartNeed]
+    has_thumbnail: bool = False
 
 
-def list_awaiting_assembly(session: Session) -> list[AssemblyRow]:
-    """Active articles with units waiting for assembly, by name, with their parts.
+def list_awaiting_assembly(session: Session, article_id: int | None = None) -> list[AssemblyRow]:
+    """Active articles with units waiting for assembly, by name, with their parts; only
+    `article_id` if given (the filtered list).
 
     Not filtered by `needs_assembly`: units already waiting must stay bookable
     after the flag is switched off (decision 4).
     """
-    articles = session.scalars(
+    query = (
         select(Article)
         .where(Article.archived_at.is_(None), Article.awaiting_assembly > 0)
         .order_by(Article.name, Article.id)
-    ).all()
+    )
+    if article_id is not None:
+        query = query.where(Article.id == article_id)
+    articles = session.scalars(query).all()
     rows: list[AssemblyRow] = []
     for article in articles:
         needs = session.execute(
@@ -246,6 +251,7 @@ def list_awaiting_assembly(session: Session) -> list[AssemblyRow]:
                 name=article.name,
                 awaiting=article.awaiting_assembly,
                 parts=[PartNeed(p.id, p.name, qty, p.stock) for p, qty in needs],
+                has_thumbnail=article.thumbnail is not None,
             )
         )
     return rows

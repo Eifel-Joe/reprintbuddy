@@ -233,14 +233,21 @@ async def api_resolve(inspection_id: int, request: Request):
     }
 
 
-def _assembly_page(request: Request, db: Session, *, error_article: int | None = None,
-                   error: str | None = None, values: dict[str, str] | None = None, status: int = 200):
+ASSEMBLY_URL = "/assembly"
+
+
+def _assembly_page(request: Request, db: Session, *, article: object = None,
+                   error_article: int | None = None, error: str | None = None,
+                   values: dict[str, str] | None = None, status: int = 200):
+    """The list; `article` is the raw `article` value of the address or the form (the filter)."""
+    flt = listing.article_filter(db, article, ASSEMBLY_URL)
     return render(
         request,
         "assembly.html",
         status_code=status,
         active_nav="assembly",
-        rows=inspection.list_awaiting_assembly(db),
+        rows=inspection.list_awaiting_assembly(db, article_id=flt.id if flt else None),
+        article_filter=flt,
         error_article=error_article,
         error=error,
         values=values or {},
@@ -249,29 +256,31 @@ def _assembly_page(request: Request, db: Session, *, error_article: int | None =
 
 @router.get("/assembly")
 async def assembly_page(request: Request, db: Session = Depends(get_db)):
-    return _assembly_page(request, db)
+    return _assembly_page(request, db, article=request.query_params.get("article"))
 
 
 @router.post("/assembly/{article_id:int}", dependencies=[Depends(verify_csrf)])
 async def book_assembly(article_id: int, request: Request, db: Session = Depends(get_db)):
     form = await request.form()
-    values = {k: str(v) for k, v in form.items() if k not in ("csrf_token", "form_token")}
+    article = form.get("article")
+    back = listing.with_article(ASSEMBLY_URL, listing.article_id_of(article))
+    values = {k: str(v) for k, v in form.items() if k not in ("csrf_token", "form_token", "article")}
     try:
         qty = parse_int(form.get("qty"), field="bookings.field.qty", min=1, max=MAX_QTY)
         note = parse_text(form.get("note"), field="journal.field.note", max_len=stock.MAX_NOTE)
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            article = _active_article(tx, article_id)
-            name = article.name
+            article_row = _active_article(tx, article_id)
+            name = article_row.name
             shortages = inspection.assemble(tx, article_id, qty, "user", note)
             messages = _shortages(tx, shortages)
     except FormTokenUsed:
-        return duplicate_redirect(request, "/assembly")
+        return duplicate_redirect(request, back)
     except (DomainError, FormTokenInvalid) as exc:
         return _assembly_page(
-            request, db, error_article=article_id, error=error_text(current_language(request), exc),
-            values=values, status=error_status(exc),
+            request, db, article=article, error_article=article_id,
+            error=error_text(current_language(request), exc), values=values, status=error_status(exc),
         )
     flash(request, "assembly.done", name=name, n=qty)
     for key, message_params in messages:
         flash(request, key, warning=key in WARNING_KEYS, **message_params)
-    return RedirectResponse("/assembly", status_code=303)
+    return RedirectResponse(back, status_code=303)

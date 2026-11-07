@@ -954,6 +954,11 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .line input[type="number"] { min-height: 2.75rem; margin: 0; max-width: none; }
 .line .btn { min-height: 2.75rem; margin: 0; white-space: nowrap; }
 .inspect-cols { grid-template-columns: 2.75rem minmax(0, 1fr) 5rem 7rem 8.5rem; }
+.assembly-cols { grid-template-columns: minmax(0, 1fr) 7rem 7rem 11rem; }
+/* The bought parts of an article, small under its name; red where the stock does not cover the wait. */
+.line-parts { display: flex; flex-wrap: wrap; gap: 0 14px; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 12px; }
+.line-parts .neg { color: var(--danger); }
+.assembly-awaiting { font-size: 15px; font-weight: 600; }
 /* The whole label is the hit area of the tick box: 44 px. */
 .inspect-select { display: flex; align-items: center; justify-content: center; width: 2.75rem; min-height: 2.75rem; margin: 0; cursor: pointer; }
 .inspect-soll { font-size: 15px; font-weight: 600; }
@@ -965,6 +970,11 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
   .inspect-line .line-cell.num { grid-area: soll; text-align: left; }
   .inspect-line .line-cell:not(.num) { grid-area: scrap; }
   .inspect-line .btn { grid-area: btn; width: 100%; }
+  .assembly-cols.line { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "main main" "awaiting qty" "btn btn"; }
+  .assembly-line .line-main { grid-area: main; }
+  .assembly-line .line-cell.num { grid-area: awaiting; text-align: left; }
+  .assembly-line .line-cell:not(.num) { grid-area: qty; }
+  .assembly-line .btn { grid-area: btn; width: 100%; }
   .line-label { display: block; }
 }
 
