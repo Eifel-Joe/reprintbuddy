@@ -628,3 +628,14 @@ def test_a_failed_check_wakes_nothing(ready_client, respx_mock):
     post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address="", bambuddy_token="bb_z"))
     post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address="not an address"))
     assert recorder.wakes == []
+
+
+def test_a_changed_path_prefix_replaces_a_standing_connection(ready_client, respx_mock):
+    # Review of v0.3.7: scheme, host and port are the same, the path prefix of a reverse proxy is not.
+    recorder = ready_client.app.state.live_listener = WakeRecorder()
+    respx_mock.get(f"{OLD_URL}/bb/api/v1/auth/me").respond(200, json=auth_me())
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address=f"{OLD_URL}/bb", bambuddy_token="bb_testkey"))
+    assert recorder.wakes == [True]
+    respx_mock.get(f"{OLD_URL}/bb/api/v1/auth/me").respond(200, json=auth_me())
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address=f"{OLD_URL}/bb/"))  # only a trailing slash
+    assert recorder.wakes == [True, False]

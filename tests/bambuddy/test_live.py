@@ -843,3 +843,43 @@ async def test_a_wake_before_run_is_not_lost_and_does_no_harm(respx_mock):
         assert subject.state == "connected"
     finally:
         await stop(task)
+
+
+class SlowClose(FakeConnection):
+    """A connection whose closing takes a while (the close handshake)."""
+
+    async def __aexit__(self, *exc) -> None:
+        self.closed = True
+        await asyncio.sleep(0.2)
+
+
+async def test_a_shutdown_during_a_restart_ends_run(respx_mock):
+    # Review of v0.3.7: the cancel of the lifespan arrived while the old connection was closing and was
+    # swallowed with the cancel of the connection; `run()` then connected again and the app hung.
+    tokens(respx_mock, "t1", "t2")
+    slow = SlowClose([])
+
+    def connect(url, **options):
+        return slow
+
+    subject = listener(connect, Events(), HoldingSleep())
+    task = asyncio.create_task(subject.run())
+    await until(lambda: slow.waiting.is_set())
+    subject.wake(reconnect=True)
+    for _ in range(5):  # the old connection is closing now
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=2)
+
+
+async def test_a_shutdown_while_the_pause_is_ended_ends_run(respx_mock):
+    tokens(respx_mock, "t1", "t2")
+    connect = FakeConnect(OSError("down"), [])
+    subject = listener(connect, Events(), HoldingSleep())
+    task = asyncio.create_task(subject.run())
+    await until(lambda: subject.state == "waiting")
+    subject.wake()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=2)

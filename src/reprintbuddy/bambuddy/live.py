@@ -24,7 +24,6 @@ errors only by their type.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import inspect
 import json
 import logging
@@ -196,9 +195,13 @@ class LiveListener:
             for task in (job, waiter):
                 if not task.done():
                     task.cancel()
+            # `asyncio.wait` never swallows a cancel of the caller: awaiting each child inside
+            # `suppress(CancelledError)` did, and a shutdown during the close of the old connection
+            # left `run()` alive (review of v0.3.7). Test: "a shutdown during a restart".
+            await asyncio.wait({job, waiter})
             for task in (job, waiter):
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
+                if not task.cancelled():
+                    task.exception()  # retrieved: nobody is told about it twice
 
     async def _cycle(self) -> float:
         """One attempt (two after a refusal); the pause to take afterwards."""
