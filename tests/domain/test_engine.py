@@ -1150,3 +1150,49 @@ def test_unknown_own_user_has_its_own_translated_warning(engine_env):
     for lang in ("de", "en"):
         text = translate(lang, "warning.resolve_no_user")
         assert text != "warning.resolve_no_user" and "{" not in text
+
+
+# ---- a wait that times out early is still the due poll ---------------------------------
+
+
+def time_out_early(engine, monkeypatch):
+    """The wait ends by timeout well before the deadline, as asyncio may do on Windows
+    (`loop._clock_resolution` 0.015625 s): a timeout within the clock resolution counts
+    as reached. Halved here, so the test does not depend on the clock."""
+
+    async def wait(timeout):
+        try:
+            await asyncio.wait_for(engine._wake.wait(), timeout=timeout / 2)
+        except TimeoutError:
+            return False
+        return True
+
+    monkeypatch.setattr(engine, "_wait_for_wake", wait)
+
+
+async def test_early_timeout_still_runs_the_due_poll(engine_env, monkeypatch):
+    """The wait timed out, so the poll is due: a regular tick, never a short one."""
+    engine = engine_env.engine
+    calls = record_ticks(engine, monkeypatch)
+    time_out_early(engine, monkeypatch)
+
+    async with running(engine, lambda: 0.2):
+        await wait_until(lambda: len(calls) >= 3)
+
+    assert calls[:3] == [True, True, True]
+
+
+async def test_early_timeout_after_update_skip_still_polls(engine_env, monkeypatch):
+    """p41 with an early timeout: the retry after an update is a regular tick."""
+    import reprintbuddy.domain.engine as engine_module
+
+    monkeypatch.setattr(engine_module, "UPDATE_RETRY_SECONDS", 0.1)
+    engine = engine_env.engine
+    calls = record_update_ticks(engine, monkeypatch, updates=1)
+    time_out_early(engine, monkeypatch)
+
+    async with running(engine, lambda: 60):
+        await wait_until(lambda: len(calls) >= 2)
+        await asyncio.sleep(0.15)
+
+    assert calls == [True, True]

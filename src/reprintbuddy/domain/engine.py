@@ -388,6 +388,14 @@ class Engine:
 
     # ---- the loop ------------------------------------------------------------------------
 
+    async def _wait_for_wake(self, timeout: float) -> bool:
+        """Wait for `request_tick`/`request_poll` at most `timeout` s; False: timed out."""
+        try:
+            await asyncio.wait_for(self._wake.wait(), timeout=timeout)
+        except TimeoutError:
+            return False
+        return True
+
     async def run(self, poll_seconds: Callable[[], float]) -> None:
         """Tick until cancelled: a regular tick at once and every `poll_seconds()`, a short
         one on `request_tick()`. Requests never push the next poll back."""
@@ -396,13 +404,20 @@ class Engine:
         interval = DEFAULT_POLL_SECONDS
         while True:
             wait = next_poll_at - loop.time()
+            timed_out = False
             if wait > 0 and not self._poll_requested:
-                try:
-                    await asyncio.wait_for(self._wake.wait(), timeout=wait)
-                except TimeoutError:
-                    pass
+                timed_out = not await self._wait_for_wake(wait)
             self._wake.clear()
-            poll = self._poll_requested or loop.time() >= next_poll_at
+            # Root cause: asyncio lets a timeout fire up to `loop._clock_resolution` before
+            # its deadline (0.015625 s on Windows); `loop.time() >= next_poll_at` was then
+            # false and the due poll ran as a short tick, one round late (seen with p41's
+            # retry, present since B4).
+            # Fix: a wait that ended by timeout ended because the poll is due - the wait
+            # was computed up to `next_poll_at` - so it counts as the poll.
+            # NOT-TO-DO: comparing with `next_poll_at - loop._clock_resolution` relies on
+            # a private attribute and on how far early the loop may fire.
+            # See test_engine.py::test_early_timeout_still_runs_the_due_poll.
+            poll = self._poll_requested or timed_out or loop.time() >= next_poll_at
             problem: str | None = None
             if poll:
                 self._poll_requested = False
