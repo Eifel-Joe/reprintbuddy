@@ -60,18 +60,18 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 ## Installation
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.2/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.3/install/install.sh)"
 ```
 
 Als root im Container ausführen. Frische Debian-Container bringen oft kein curl mit; der erste Teil installiert es.
-Der Tag in der Adresse (`v0.3.2`) ist die Version, die installiert wird; Skript und Code gehören sicher zusammen.
+Der Tag in der Adresse (`v0.3.3`) ist die Version, die installiert wird; Skript und Code gehören sicher zusammen.
 Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.2/install/install.sh)" _ --language de
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.3/install/install.sh)" _ --language de
 ```
 
-Für eine andere Version setze ihren Tag in die Adresse (für `<tag>` zum Beispiel `v0.3.2`):
+Für eine andere Version setze ihren Tag in die Adresse (für `<tag>` zum Beispiel `v0.3.3`):
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
