@@ -172,8 +172,10 @@ def test_edit_parts(ready_client):
         insert = make_part(s, name="Insert M4").id
         hex_key = make_part(s, name="Hex key 2").id
         a = make_article(s).id
-    ready_client.post(f"/articles/{a}/edit", data=edit_fields(ready_client, a, **{f"part_{insert}": "2", f"part_{hex_key}": "1"}))
-    ready_client.post(f"/articles/{a}/edit", data=edit_fields(ready_client, a, **{f"part_{insert}": "2", f"part_{hex_key}": "0"}))
+    ready_client.post(f"/articles/{a}/edit", data=edit_fields(
+        ready_client, a, has_parts="on", parts_part=[str(insert), str(hex_key)], parts_qty=["2", "1"]))
+    ready_client.post(f"/articles/{a}/edit", data=edit_fields(
+        ready_client, a, has_parts="on", parts_part=[str(insert)], parts_qty=["2"]))
     with sm_of(ready_client).begin() as s:
         assert {l.part_id: l.qty_per_unit for l in s.scalars(select(ArticlePart))} == {insert: 2}
 

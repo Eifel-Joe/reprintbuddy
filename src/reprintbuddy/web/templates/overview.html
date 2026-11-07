@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('overview.title') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("layout-dashboard", t('overview.title')) %}{% endcall %}
+{% call ui.page_head("layout-dashboard", t('overview.title'), t('overview.subtitle')) %}{% endcall %}
 {# Pauses and warnings (Spec 7.7, 10.2) until B7 builds the overview around them. #}
 {% call ui.region("warnings", "bambuddy queue article settings") %}{% include "_warnings.html" %}{% endcall %}
 <div class="card">

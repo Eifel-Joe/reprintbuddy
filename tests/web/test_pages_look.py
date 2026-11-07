@@ -29,6 +29,7 @@ def assert_one_head(html, where):
         ("/", "layout-dashboard"),
         ("/bookings", "arrow-left-right"),
         ("/journal", "history"),
+        ("/assembly", "wrench"),
         ("/settings", "settings"),
         ("/nosuch", "circle-alert"),
     ],
@@ -75,6 +76,7 @@ def ids(ready_client):
         "/orders",
         "/orders/new",
         "/orders/{order}",
+        "/assembly",
     ],
 )
 def test_every_app_page_has_one_page_head(ready_client, ids, path):
@@ -177,3 +179,112 @@ def test_bare_pages_keep_logo_and_no_menu(tmp_path, ready_client):
         assert "sidebar-nav" not in page.text, name
         assert "brand-mark-large" in page.text, name
         assert "page-head" not in page.text, name  # the logo is the head of these pages
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/", "/articles", "/articles/{article}", "/articles/{article}/edit", "/sets", "/parts",
+        "/orders", "/orders/{order}", "/orders/new", "/bookings", "/journal", "/settings", "/nosuch", "/assembly",
+        "/parts/new", "/parts/{part}/edit", "/sets/new", "/sets/{set}/edit",
+    ],
+)
+def test_every_page_with_the_menu_has_a_subtitle(ready_client, ids, path):
+    page = ready_client.get(path.format(**ids)).text
+    assert "sidebar-nav" in page, path
+    assert page.count('class="page-sub"') == 1, path
+
+
+def test_new_subtitles_use_their_keys(ready_client, ids):
+    from reprintbuddy.web.i18n import translate
+
+    for path, key in [("/", "overview.subtitle"), ("/bookings", "bookings.subtitle"),
+                      ("/journal", "journal.subtitle"), ("/articles/{article}/edit", "articles.edit_subtitle")]:
+        page = ready_client.get(path.format(**ids)).text
+        assert f'<p class="page-sub">{translate("en", key)}</p>' in page, path
+
+
+def test_assembly_subtitle_says_what_the_page_is_for_in_both_languages(ready_client):
+    from reprintbuddy import settings as st
+
+    expected = {
+        "en": "Booking assembled units: bought parts are used up and the stock grows",
+        "de": "Montierte Einheiten buchen: Zukaufteile werden verbraucht, der Bestand wächst",
+    }
+    for language, text in expected.items():
+        with sm_of(ready_client).begin() as s:
+            st.set_setting(s, "language", language, commit=False)
+        assert f'<p class="page-sub">{text}</p>' in ready_client.get("/assembly").text, language
+
+
+def test_error_page_message_is_the_subtitle(ready_client):
+    page = ready_client.get("/nosuch").text
+    assert re.search(r'<p class="page-sub">[^<]+</p>', page)
+    assert 'class="summary"' not in page
+
+
+def test_archived_badge_of_part_and_set_forms_sits_in_the_subtitle(ready_client):
+    from factories import make_set
+    from reprintbuddy.models import utcnow
+
+    with sm_of(ready_client).begin() as s:
+        a = make_article(s, name="Template A").id
+        part = make_part(s, name="Insert M4", archived_at=utcnow()).id
+        pset = make_set(s, "Set A", [(1, [a])])
+        pset.archived_at = utcnow()
+        set_id = pset.id
+    for path in (f"/parts/{part}/edit", f"/sets/{set_id}/edit"):
+        page = ready_client.get(path).text
+        assert re.search(r'<p class="page-sub">[^<]*<span class="badge[^>]*>[^<]*</span></p>', page), path
+        assert 'class="page-actions"' not in page, path
+
+
+def test_no_template_uses_the_old_summary():
+    for p in sorted(TEMPLATES_DIR.rglob("*.html")):
+        text = p.read_text(encoding="utf-8")
+        assert "ui.summary" not in text and 'class="summary"' not in text, p.name
+
+
+def test_article_detail_head_has_edit_as_main_button(ready_client, ids):
+    page = ready_client.get(f"/articles/{ids['article']}").text
+    head = page.split("</header>")[0]
+    assert re.search(r'<div class="page-actions"><a class="btn" href="/articles/\d+/edit">.*?#pencil', head, re.S)
+    assert "article:" in page and 'data-live-region="head"' in page
+
+
+def test_order_cancel_confirmation_page_has_a_subtitle(ready_client, ids):
+    order = ids["order"]
+    data = {
+        "csrf_token": csrf_of(ready_client, f"/orders/{order}"),
+        "form_token": form_token_of(ready_client, f"/orders/{order}", f"/orders/{order}/cancel"),
+    }
+    page = ready_client.post(f"/orders/{order}/cancel", data=data)
+    assert page.status_code == 200
+    assert "sidebar-nav" in page.text and page.text.count('class="page-sub"') == 1
+
+
+def _detail_head(client, article_id):
+    page = client.get(f"/articles/{article_id}").text
+    return page, regions.extract(page, ["head"])["head"]
+
+
+def test_article_detail_number_and_badges_sit_in_the_subtitle(ready_client):
+    from reprintbuddy.models import utcnow
+
+    with sm_of(ready_client).begin() as s:
+        a = make_article(s, name="Template A", sku="A-100", paused=True, archived_at=utcnow()).id
+    _page, head = _detail_head(ready_client, a)
+    sub = re.search(r'<p class="page-sub">(.*?)</p>', head, re.S).group(1)
+    assert "A-100" in sub and sub.count('class="badge') == 3
+
+
+def test_article_detail_edit_is_in_the_head_region_unless_archived(ready_client):
+    from reprintbuddy.models import utcnow
+
+    with sm_of(ready_client).begin() as s:
+        live = make_article(s, name="Template A").id
+        gone = make_article(s, name="Template B", archived_at=utcnow()).id
+    _page, head = _detail_head(ready_client, live)
+    assert f'href="/articles/{live}/edit"' in head
+    _page, head = _detail_head(ready_client, gone)
+    assert "/edit" not in head

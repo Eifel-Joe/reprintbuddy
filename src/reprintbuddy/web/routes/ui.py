@@ -5,25 +5,19 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
+from reprintbuddy.web.deps import safe_next
+
 router = APIRouter()
 
 COOKIE = "rb_sidebar"
 _COOKIE_AGE = 365 * 24 * 3600
 
 
-def _local_path(target: str) -> str:
-    r"""Only a path of this server: `//host`, `/\host` and full addresses would send the person
-    to another site, so they become `/`."""
-    if target.startswith("/") and not target.startswith(("//", "/\\")) and "\\" not in target:
-        return target
-    return "/"
-
-
 @router.get("/ui/sidebar")
 async def sidebar_toggle(request: Request, collapsed: str = "0", next: str = "/") -> RedirectResponse:
     """Remember whether the menu is folded (cookie) and go back to the page. The gate has already
     sent a person who is not signed in to the sign-in page."""
-    response = RedirectResponse(_local_path(next), status_code=303)
+    response = RedirectResponse(safe_next(next), status_code=303)
     if collapsed == "1":
         response.set_cookie(
             COOKIE,

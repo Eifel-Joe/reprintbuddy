@@ -41,7 +41,7 @@ def save(client, **fields):
 
 
 def test_defaults_shown(ready_client):
-    page = ready_client.get("/settings").text
+    page = ready_client.get("/settings?tab=automation").text
     assert 'id="automation"' in page
     assert not checked(page, "automation")
     assert not checked(page, "queue_stopped")
@@ -51,7 +51,7 @@ def test_defaults_shown(ready_client):
 
 
 def test_automation_card_is_a_live_region(ready_client):
-    page = ready_client.get("/settings").text
+    page = ready_client.get("/settings?tab=automation").text
     assert "<!--live:automation-->" in page and "<!--/live:automation-->" in page
     assert 'data-live-region="automation" data-live-topics="settings"' in page
     region = page[page.index("<!--live:automation-->") : page.index("<!--/live:automation-->")]
@@ -63,7 +63,7 @@ def test_save_all(ready_client):
         ready_client, automation="on", queue_stopped="on", queue_cap="3", insert_next="on", poll_minutes="30"
     )
     assert response.status_code == 303
-    assert response.headers["location"] == "/settings#automation"
+    assert response.headers["location"] == "/settings?tab=automation"
     assert stored(ready_client) == {
         "automation": True,
         "queue_running": False,
@@ -71,7 +71,7 @@ def test_save_all(ready_client):
         "insert_next": True,
         "poll_minutes": 30,
     }
-    page = ready_client.get("/settings").text
+    page = ready_client.get("/settings?tab=automation").text
     assert checked(page, "automation") and checked(page, "queue_stopped") and checked(page, "insert_next")
     assert value(page, "queue_cap") == "3" and value(page, "poll_minutes") == "30"
 
@@ -114,7 +114,7 @@ def test_automation_requires_csrf(ready_client):
 def test_automation_german(ready_client):
     with sm_of(ready_client)() as s:
         st.set_setting(s, "language", "de")
-    page = ready_client.get("/settings").text
+    page = ready_client.get("/settings?tab=automation").text
     for text in (
         "Automatik (Hauptschalter)",
         "Warteschlange anhalten",
@@ -157,3 +157,27 @@ def test_refused_poll_interval_asks_for_no_poll(ready_client):
 
     assert stored(ready_client)["poll_minutes"] == 15
     assert calls == []
+
+
+def test_automation_card_only_on_its_own_tab(ready_client):
+    for tab in ("general", "bambuddy", "account", "maintenance"):
+        page = ready_client.get(f"/settings?tab={tab}").text
+        assert 'id="automation-form"' not in page, tab
+    assert 'id="automation-form"' in ready_client.get("/settings?tab=automation").text
+
+
+def test_automation_has_its_own_tab_link(ready_client):
+    page = ready_client.get("/settings").text
+    assert re.search(r'<a class="tab" href="/settings\?tab=automation">', page)
+    assert en("settings.tab.automation") == "Automation"
+    assert translate("de", "settings.tab.automation") == "Automatik"
+
+
+def test_invalid_value_reopens_the_automation_tab(ready_client):
+    """The error page shows the automation tab (not the default one), with the typed value."""
+    response = save(ready_client, queue_cap="abc", poll_minutes="30", automation="on")
+    assert response.status_code == 200
+    assert re.search(r'<a class="tab active" href="/settings\?tab=automation" aria-current="page">', response.text)
+    assert 'id="automation-form"' in response.text
+    assert en("settings.invalid_queue_cap") in response.text
+    assert value(response.text, "queue_cap") == "abc"

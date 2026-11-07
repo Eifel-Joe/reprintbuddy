@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('articles.choose_plate') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("package", file.filename) %}<p class="summary">{{ t('articles.choose_plate') }}</p>{% endcall %}
+{% call ui.page_head("package", file.filename, t('articles.choose_plate')) %}{% endcall %}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 <div class="plate-grid">
   {% for plate in plates %}

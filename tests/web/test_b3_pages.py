@@ -22,7 +22,7 @@ PAGES = [
 
 
 def test_all_b3_get_pages_without_bambuddy(ready_client):  # Review Focus 4
-    assert ready_client.app.state.bambuddy_factory is None
+    assert ready_client.app.state.bambuddy_factory() is None
     for page in PAGES:
         response = ready_client.get(page)
         assert response.status_code == 200, page

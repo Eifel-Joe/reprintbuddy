@@ -280,3 +280,6 @@ def test_all_b4_get_pages_without_bambuddy(ready_client):
         article_id = make_article(s, name="Template A").id
     for path in ("/queue", "/articles", f"/articles/{article_id}", "/settings"):
         assert client.get(path).status_code == 200, path
+    automation_tab = client.get("/settings?tab=automation")
+    assert automation_tab.status_code == 200
+    assert 'id="automation-form"' in automation_tab.text

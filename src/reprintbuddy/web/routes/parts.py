@@ -14,10 +14,11 @@ from reprintbuddy.domain.errors import DomainError
 from reprintbuddy.domain.status import STATES, PartStatus, part_status, summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Part
-from reprintbuddy.web import listing
+from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.formatting import fill_percent
+from reprintbuddy.web.i18n import translate
 from reprintbuddy.web.forms import (
     duplicate_redirect,
     run_form_action,
@@ -107,9 +108,9 @@ def _item(part: Part) -> PartItem:
 async def parts_list(
     request: Request, view: str = "active", q: str | None = None, db: Session = Depends(get_db)
 ):
-    """Overview with short summary, search, status filter and tiles or list (Spec 10.1).
+    """Overview with key figure cards, search, status filter and tiles or list (Spec 10.1).
 
-    Same rules as the article list: the summary counts all parts of the view, the filter counts
+    Same rules as the article list: the cards count all parts of the view, the filter counts
     follow the search, the list shows what passes both. The archive has no status filter.
     """
     if (redirect := listing.remember_layout(request, "parts")) is not None:
@@ -120,14 +121,19 @@ async def parts_list(
     every = [_item(part) for part in catalog.list_parts(db, archived=archived)]
     found = [item for item in every if listing.matches(q, item.part.name)]
     counts = Counter(item.status for item in found)
-    summary_items = [] if archived else summarize((item.status for item in every), ("below_min",))
+    lang = current_language(request)
+    t = lambda key: translate(lang, key)  # noqa: E731
+    icon, label, named = ("archive", "kpi.parts_archived", []) if archived else (
+        "puzzle", "kpi.parts", summarize((item.status for item in every), ("below_min",))
+    )
+    cards = kpis.state_cards(t, "part", icon, len(every), t(label), named)
     keep = (("status", status), ("view", "archived" if archived else None))
     layout = listing.layout_of(request, "parts")
     return render(
         request, "parts_list.html", active_nav="parts", archived=archived,
         items=[item for item in found if status is None or item.status == status],
         total=len(every),
-        summary_items=summary_items,
+        kpis=cards,
         filters=listing.filter_links(request, states, counts, len(found), status),
         layout=layout,
         layout_links=listing.layout_links(request, layout),

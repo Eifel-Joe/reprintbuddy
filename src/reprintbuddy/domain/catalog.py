@@ -123,14 +123,21 @@ def target_options(
         current, current_model = "", None
     if printers is None:
         return [TargetOption(current, current_model, None)]
-    models = sorted({p.model for p in printers} | ({file_model} if file_model else set()))
+    # A printer in maintenance is only temporarily away: not offered anew (neither alone nor
+    # through its model), but a target that already names it keeps its name and model.
+    offered = [p for p in printers if p.active]
+    models = sorted({p.model for p in offered} | ({file_model} if file_model else set()))
     options = [TargetOption(f"model:{m}", m, None) for m in models]
     options += [
         TargetOption(f"printer:{p.id}", p.model, p.name)
-        for p in sorted(printers, key=lambda p: (p.name, p.id))
+        for p in sorted(offered, key=lambda p: (p.name, p.id))
     ]
     if current and current not in {o.value for o in options}:
-        options.append(TargetOption(current, current_model, None))
+        known = next((p for p in printers if f"printer:{p.id}" == current), None)
+        if known is not None:
+            options.append(TargetOption(current, known.model, known.name))
+        else:
+            options.append(TargetOption(current, current_model, None))
     options.append(TargetOption("", None, None))
     return options
 

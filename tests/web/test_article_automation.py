@@ -88,8 +88,9 @@ def test_list_shows_in_bambuddy(ready_client):  # Spec 10.1: "Nachdruck läuft" 
     assert table_part(page).count(note) == 1  # under the badge in the list
     assert tiles_part(page).count(note) == 1  # in the tile footer
     assert re.search(rf'class="tile-foot">.*?{re.escape(note)}', tiles_part(page), re.S)
-    # no new column: the list keeps article, status, stock, available, target
-    assert len(re.findall(r"<th[ >]", table_part(page))) == 5
+    # no new column: the list keeps article, status, stock, available, target and the
+    # actions column of the new look
+    assert len(re.findall(r"<th[ >]", table_part(page))) == 6
     german(ready_client)
     assert de("tile.in_bambuddy", n=1) in ready_client.get("/articles").text
 

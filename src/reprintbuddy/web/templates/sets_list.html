@@ -11,16 +11,14 @@
 {{ position.qty }} × {% if position.is_choice %}({{ position.article_names|join(' | ') }}){% else %}{{ position.article_names[0] if position.article_names else '–' }}{% endif %}
 {%- endmacro %}
 
-{% call ui.page_head("boxes", t('sets.title') ~ (' · ' ~ t('catalog.archived') if archived else '')) %}
-{% call ui.region("summary", "set article") %}{{ ui.summary("set", tc('summary.sets', total), summary_items) }}{% endcall %}
-{% endcall %}
+{% call ui.page_head("boxes", t('sets.title') ~ (' · ' ~ t('catalog.archived') if archived else ''), t('sets.subtitle')) %}<a class="btn" href="/sets/new">{{ ui.icon('plus') }}{{ t('sets.new') }}</a>{% endcall %}
+{% call ui.region("summary", "set article") %}{{ ui.kpi_row(kpis) }}{% endcall %}
 
 <div class="toolbar">
   {{ ui.search_form(q, t('list.search_placeholder'), keep=search_keep) }}
   {% if not archived %}{% call ui.region("filters", "set article") %}{{ ui.filter_bar("set", filters) }}{% endcall %}{% endif %}
   {{ ui.layout_toggle(layout_links) }}
   <div class="toolbar-actions">
-    <a class="btn" href="/sets/new">{{ ui.icon('plus') }}{{ t('sets.new') }}</a>
     {% if archived %}<a class="btn secondary" href="/sets">{{ ui.icon('archive') }}{{ t('catalog.show_active') }}</a>
     {%- else %}<a class="btn secondary" href="/sets?view=archived">{{ ui.icon('archive') }}{{ t('catalog.archived') }}</a>{% endif %}
   </div>
@@ -42,6 +40,7 @@
         <th>{{ t('list.col.status') }}</th>
         <th class="num">{{ t('articles.col.available') }}</th>
         <th>{{ t('sets.positions') }}</th>
+        <th class="actions-col"><span class="sr-only">{{ t('list.col.actions') }}</span></th>
       </tr>
     </thead>
     <tbody>
@@ -55,6 +54,10 @@
           {% for position in row.positions %}{{ position_text(position) }}{% if not loop.last %}<br>{% endif %}
           {% endfor %}
         </td>
+        <td class="actions-col">{% call ui.row_actions() %}
+          {%- if archived %}{{ ui.icon_post('archive-restore', t('catalog.restore'), '/sets/' ~ row.id ~ '/restore') }}
+          {%- else %}{{ ui.icon_button('pencil', t('sets.edit'), '/sets/' ~ row.id ~ '/edit') }}{{ ui.icon_post('archive', t('catalog.archive'), '/sets/' ~ row.id ~ '/archive') }}{% endif %}
+        {% endcall %}</td>
       </tr>
     {% endfor %}
     </tbody>
