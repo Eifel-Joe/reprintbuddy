@@ -169,8 +169,9 @@ Einrichtung akzeptiert.
    hat, und zeigt Besitzer und jedes nötige Recht mit Haken oder Kreuz. Die Oberfläche öffnet
    sich erst, wenn kein Recht fehlt. Ein Schlüssel eines Administrators wird angenommen, mit der
    Warnung, dass er mehr darf als nötig. Dieselbe Prüfung gibt es unter *Einstellungen*. Ein
-   fehlendes Recht der Gruppe `Reprintbuddy` wird dort ergänzt, ein neuer Schlüssel ist nicht
-   nötig. Fehlt ein Recht am Schlüssel selbst, ist ein neuer Schlüssel nötig.
+   fehlendes Recht der Gruppe `Reprintbuddy` wird in Bambuddy (*Einstellungen → Benutzer*)
+   ergänzt, ein neuer Schlüssel ist nicht nötig. Fehlt ein Recht am Schlüssel selbst, ist ein
+   neuer Schlüssel nötig.
 
    Die beiden Felder sind so gekennzeichnet, dass Passwort-Manager sie nicht mit deinen eigenen
    Zugangsdaten füllen.

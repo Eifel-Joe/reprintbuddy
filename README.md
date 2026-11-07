@@ -163,8 +163,8 @@ DNS names, are accepted only after setup.
    shows the owner and each required right with a check or a cross. The interface opens only
    when no right is missing. A key that belongs to an administrator is accepted, with a
    warning that it may do more than needed. The same check is under *Settings*. A missing
-   right of the group `Reprintbuddy` is added there; a new key is not needed. A missing right at
-   the key itself needs a new key.
+   right of the group `Reprintbuddy` is added in Bambuddy (*Settings → Users*); a new key is not
+   needed. A missing right at the key itself needs a new key.
 
    The two fields are marked so that password managers do not fill in your own credentials.
 
