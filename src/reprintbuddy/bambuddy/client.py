@@ -6,6 +6,7 @@ import json
 import logging
 from contextlib import AbstractAsyncContextManager
 from typing import Callable, Protocol, runtime_checkable
+from urllib.parse import quote
 
 import httpx
 
@@ -194,7 +195,8 @@ class HttpBambuddyClient:
             raise BambuddyRejected(_detail(response), status=404)
         return response.headers.get("content-type", ""), response.content
 
-    async def _post(self, path: str, body: dict) -> object:
+    async def _post(self, path: str, body: dict | None = None) -> object:
+        """A POST; without `body` the request has no body at all."""
         response = await self._send("POST", path, body=body)
         if response.status_code == 404:
             raise BambuddyRejected(_detail(response), status=404)
@@ -332,6 +334,29 @@ class HttpBambuddyClient:
         if req.insert_position is not None:
             body["insert_position"] = req.insert_position
         return _parse.parse_queue_item(await self._post("/queue/", body))
+
+    # ---- the live channel (Spec 7.6; not in the Protocol, B4's interface stays as it is) ----
+    async def ws_token(self) -> str:
+        """A token for Bambuddy's live channel, valid 60 minutes (B2 Task 9).
+
+        The third POST and no write: it changes nothing in the queue, the printers or the
+        library. It needs the group right `websocket:connect`; without it Bambuddy answers
+        403 (`BambuddyRejected`). An answer without a non-empty text `token` is
+        `BambuddyUnexpected`. The token is never part of an error message.
+        """
+        data = await self._post("/auth/ws-token")
+        token = data.get("token") if isinstance(data, dict) else None
+        if not isinstance(token, str) or not token:
+            raise BambuddyUnexpected("POST /auth/ws-token: answer has no token")
+        return token
+
+    def ws_url(self, token: str) -> str:
+        """The live channel's address: `ws://…/api/v1/ws?token=…` (`wss://` for https)."""
+        scheme, sep, rest = self._api.partition("://")
+        secure = {"http": "ws", "https": "wss"}.get(scheme.lower())
+        if not sep or secure is None:
+            raise ValueError("the Bambuddy address is no http or https address")
+        return f"{secure}://{rest}/ws?token={quote(token, safe='')}"
 
     async def check_connection(self) -> ConnectionCheck:
         """Who owns the key and may it do everything Reprintbuddy needs? Never raises.

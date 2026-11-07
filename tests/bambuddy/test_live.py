@@ -1,0 +1,549 @@
+"""Bambuddy's live channel, client side (B2 Task 9, Spec 7.6).
+
+The token comes over HTTP (respx); the connection is a scripted stand-in passed as
+`connect`, and `sleep` and `now` are injected, so no test waits for real time. Two tests
+run the real `websockets` library against a local server on 127.0.0.1.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+
+import httpx
+import pytest
+from websockets.asyncio.server import serve
+from websockets.datastructures import Headers
+from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK, InvalidStatus
+from websockets.frames import Close
+from websockets.http11 import Response
+
+from reprintbuddy.bambuddy import live
+from reprintbuddy.bambuddy.client import (
+    BambuddyRejected,
+    BambuddyUnavailable,
+    BambuddyUnexpected,
+    HttpBambuddyClient,
+)
+from fixtures import API, KEY, client
+
+# One TLS context for every client of this module: building it per call costs most of a
+# second, and the listener asks for a token at almost every attempt.
+_TLS = httpx.create_ssl_context()
+
+
+def quick_client() -> HttpBambuddyClient:
+    return client(lambda: httpx.AsyncClient(verify=_TLS))
+
+
+TOKEN_URL = f"{API}/auth/ws-token"
+WS = "ws://bambuddy.test:8000/api/v1/ws"
+
+
+# ---- the token and the address (HttpBambuddyClient) --------------------------------------
+
+
+async def test_ws_token(respx_mock):
+    route = respx_mock.post(TOKEN_URL).respond(json={"token": "t1"})
+    assert await client().ws_token() == "t1"
+    request = route.calls.last.request
+    assert request.headers["X-API-Key"] == KEY
+    assert request.content == b""
+
+
+@pytest.mark.parametrize(
+    ("answer", "error"),
+    [
+        (httpx.Response(403, json={"detail": "Missing permission"}), BambuddyRejected),
+        (httpx.Response(200, json={}), BambuddyUnexpected),
+        (httpx.Response(200, json={"token": ""}), BambuddyUnexpected),
+        (httpx.Response(200, json={"token": 7}), BambuddyUnexpected),
+        (httpx.Response(200, json=["t1"]), BambuddyUnexpected),
+        (httpx.Response(500), BambuddyUnavailable),
+    ],
+    ids=["403", "no-token", "empty-token", "number", "list", "500"],
+)
+async def test_ws_token_errors(respx_mock, answer, error):
+    respx_mock.post(TOKEN_URL).mock(return_value=answer)
+    with pytest.raises(error) as caught:
+        await client().ws_token()
+    if error is BambuddyRejected:
+        assert caught.value.status == 403
+    if error is BambuddyUnavailable:
+        assert not isinstance(caught.value, BambuddyUnexpected)
+
+
+def test_ws_url():
+    plain = HttpBambuddyClient("http://bambuddy.test:8000/", KEY, httpx.AsyncClient)
+    assert plain.ws_url("a+b") == "ws://bambuddy.test:8000/api/v1/ws?token=a%2Bb"
+    secure = HttpBambuddyClient("https://bambuddy.test:8000/", KEY, httpx.AsyncClient)
+    assert secure.ws_url("t1") == "wss://bambuddy.test:8000/api/v1/ws?token=t1"
+    prefixed = HttpBambuddyClient("http://bambuddy.test/bb", KEY, httpx.AsyncClient)
+    assert prefixed.ws_url("x/y&z") == "ws://bambuddy.test/bb/api/v1/ws?token=x%2Fy%26z"
+
+
+# ---- a scripted connection ---------------------------------------------------------------
+
+
+def closed(code: int) -> ConnectionClosedError:
+    return ConnectionClosedError(Close(code, ""), None)
+
+
+def closed_ok() -> ConnectionClosedOK:
+    return ConnectionClosedOK(Close(1000, ""), Close(1000, ""), True)
+
+
+def refused(status: int) -> InvalidStatus:
+    return InvalidStatus(Response(status, "Forbidden", Headers()))
+
+
+class FakeConnection:
+    """`recv` plays a script: texts are messages, exceptions are raised, callables are run.
+
+    An exhausted script waits forever (an open, quiet connection).
+    """
+
+    def __init__(self, script) -> None:
+        self.script = list(script)
+        self.closed = False
+        self.waiting = asyncio.Event()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        self.closed = True
+
+    async def recv(self):
+        while self.script:
+            item = self.script.pop(0)
+            if callable(item):
+                item()
+                continue
+            if isinstance(item, BaseException):
+                raise item
+            return item
+        self.waiting.set()
+        await asyncio.Event().wait()
+
+
+class FakeConnect:
+    """Stands in for `websockets.asyncio.client.connect`.
+
+    Each session is a script for one connection, or an exception (or a function of the URL
+    giving one) raised while connecting.
+    """
+
+    def __init__(self, *sessions) -> None:
+        self.sessions = list(sessions)
+        self.urls: list[str] = []
+        self.connections: list[FakeConnection] = []
+
+    def __call__(self, url: str):
+        self.urls.append(url)
+        session = self.sessions.pop(0) if self.sessions else []
+        if callable(session):
+            session = session(url)
+        if isinstance(session, BaseException):
+            return _Failing(session)
+        connection = FakeConnection(session)
+        self.connections.append(connection)
+        return connection
+
+
+class _Failing:
+    def __init__(self, exc: BaseException) -> None:
+        self.exc = exc
+
+    async def __aenter__(self):
+        raise self.exc
+
+    async def __aexit__(self, *exc) -> None:  # pragma: no cover - never entered
+        return None
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.t = 1000.0
+
+    def __call__(self) -> float:
+        return self.t
+
+    def advance(self, seconds: float):
+        def step() -> None:
+            self.t += seconds
+
+        return step
+
+
+class Sleeps:
+    """Records each pause; the pause number `stop_at` cancels, ending `run()`."""
+
+    def __init__(self, stop_at: int) -> None:
+        self.delays: list[float] = []
+        self.stop_at = stop_at
+        self.watch = lambda: None  # runs at the start of each pause
+
+    async def __call__(self, delay: float) -> None:
+        self.watch()
+        self.delays.append(delay)
+        if len(self.delays) >= self.stop_at:
+            raise asyncio.CancelledError
+
+
+class Events:
+    def __init__(self) -> None:
+        self.kinds: list[str] = []
+
+    def __call__(self, kind: str) -> None:
+        self.kinds.append(kind)
+
+
+def tokens(respx_mock, *names: str):
+    """`ws-token` answers with these tokens in turn."""
+    return respx_mock.post(TOKEN_URL).mock(
+        side_effect=[httpx.Response(200, json={"token": name}) for name in names]
+    )
+
+
+def listener(connect, on_event, sleeps, clock=None) -> live.LiveListener:
+    return live.LiveListener(quick_client(), on_event, connect=connect, sleep=sleeps, now=clock or Clock())
+
+
+async def run_until_stopped(subject: live.LiveListener) -> None:
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(subject.run(), timeout=5)
+
+
+# ---- the listener ------------------------------------------------------------------------
+
+
+def test_constants():
+    assert live.TRIGGER_TYPES == frozenset(
+        {"print_start", "print_complete", "queue_item_acked", "queue_item_failed"}
+    )
+    assert live.TOKEN_MAX_AGE == 55 * 60
+    assert live.RETRY_DELAYS == (5, 15, 60, 300)
+    assert live.NO_RIGHT_DELAY == 900
+
+
+def test_logged_address_has_no_query_and_no_user():
+    assert live._without_query("wss://u:pw@bambuddy.test:8000/api/v1/ws?token=t1") == (
+        "wss://bambuddy.test:8000/api/v1/ws"
+    )
+
+
+async def test_triggers_only_on_trigger_types(respx_mock):
+    tokens(respx_mock, "t1")
+    messages = [
+        json.dumps({"type": "printer_status", "printer_id": 1}),
+        json.dumps({"type": "print_complete", "printer_id": 1}),
+        "kein json",
+        "[]",
+        json.dumps({"type": 5}),
+        json.dumps({"type": "queue_item_failed", "item_id": 3}),
+        json.dumps({"type": "inventory_changed"}),
+        closed(1006),
+    ]
+    events = Events()
+    connect = FakeConnect(messages)
+    await run_until_stopped(listener(connect, events, Sleeps(1)))
+    assert events.kinds == ["connected", "print_complete", "queue_item_failed"]
+    assert connect.urls == [f"{WS}?token=t1"]
+
+
+async def test_bytes_messages_are_read(respx_mock):
+    tokens(respx_mock, "t1")
+    events = Events()
+    connect = FakeConnect([json.dumps({"type": "print_start"}).encode(), closed(1006)])
+    await run_until_stopped(listener(connect, events, Sleeps(1)))
+    assert events.kinds == ["connected", "print_start"]
+
+
+async def test_async_callback(respx_mock):
+    tokens(respx_mock, "t1")
+    seen: list[str] = []
+
+    async def on_event(kind: str) -> None:
+        await asyncio.sleep(0)
+        seen.append(kind)
+
+    connect = FakeConnect([json.dumps({"type": "queue_item_acked"}), closed(1006)])
+    await run_until_stopped(listener(connect, on_event, Sleeps(1)))
+    assert seen == ["connected", "queue_item_acked"]
+
+
+async def test_callback_error_does_not_stop(respx_mock, caplog):
+    tokens(respx_mock, "t1")
+    seen: list[str] = []
+
+    def on_event(kind: str) -> None:
+        seen.append(kind)
+        if len(seen) == 1:
+            raise RuntimeError("callback broke")
+
+    connect = FakeConnect([json.dumps({"type": "print_start"}), closed(1006)])
+    with caplog.at_level(logging.ERROR, logger="reprintbuddy.bambuddy.live"):
+        await run_until_stopped(listener(connect, on_event, Sleeps(1)))
+    assert seen == ["connected", "print_start"]
+    assert "callback broke" in caplog.text
+    assert any(record.exc_info for record in caplog.records)
+
+
+async def test_reconnect_with_pause_and_token_reuse(respx_mock):
+    route = tokens(respx_mock, "t1")
+    events = Events()
+    connect = FakeConnect([closed(1006)], [closed_ok()], [])
+    sleeps = Sleeps(3)
+    task = asyncio.create_task(listener(connect, events, sleeps).run())
+    for _ in range(1000):
+        await asyncio.sleep(0)
+        if len(connect.connections) == 3 and connect.connections[2].waiting.is_set():
+            break
+    assert sleeps.delays == [5, 15]
+    assert route.call_count == 1
+    assert connect.urls == [f"{WS}?token=t1"] * 3
+    assert events.kinds == ["connected"] * 3
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_retry_delays_grow_to_the_last(respx_mock):
+    tokens(respx_mock, "t1")
+    connect = FakeConnect(*[OSError("down")] * 6)
+    sleeps = Sleeps(6)
+    await run_until_stopped(listener(connect, Events(), sleeps))
+    assert sleeps.delays == [5, 15, 60, 300, 300, 300]
+
+
+async def test_token_unavailable_waits(respx_mock):
+    respx_mock.post(TOKEN_URL).respond(500)
+    subject = listener(FakeConnect(), Events(), Sleeps(2))
+    await run_until_stopped(subject)
+    assert subject.state == "waiting"
+
+
+async def test_token_renewed_when_old(respx_mock):
+    route = tokens(respx_mock, "t1", "t2")
+    clock = Clock()
+    connect = FakeConnect([clock.advance(56 * 60), closed(1006)], [closed(1006)])
+    await run_until_stopped(listener(connect, Events(), Sleeps(2), clock))
+    assert route.call_count == 2
+    assert connect.urls == [f"{WS}?token=t1", f"{WS}?token=t2"]
+
+
+async def test_token_kept_when_young(respx_mock):
+    route = tokens(respx_mock, "t1", "t2")
+    clock = Clock()
+    connect = FakeConnect([clock.advance(54 * 60), closed(1006)], [closed(1006)])
+    await run_until_stopped(listener(connect, Events(), Sleeps(2), clock))
+    assert route.call_count == 1
+    assert connect.urls == [f"{WS}?token=t1"] * 2
+
+
+@pytest.mark.parametrize("refusal", [closed(4401), refused(403)], ids=["close-4401", "handshake-403"])
+async def test_4401_refetches_token_once(respx_mock, refusal):
+    route = tokens(respx_mock, "t1", "t2")
+    sleeps = Sleeps(1)
+    at_connect: list[tuple[int, list[float]]] = []
+
+    def on_event(kind: str) -> None:
+        at_connect.append((route.call_count, list(sleeps.delays)))
+
+    connect = FakeConnect(refusal, [closed(1006)])
+    await run_until_stopped(listener(connect, on_event, sleeps))
+    assert at_connect == [(2, [])]
+    assert connect.urls == [f"{WS}?token=t1", f"{WS}?token=t2"]
+    assert sleeps.delays == [5]
+
+
+@pytest.mark.parametrize("cause", ["token-403", "4401-twice", "handshake-403-twice"])
+async def test_no_right(respx_mock, cause):
+    if cause == "token-403":
+        route = respx_mock.post(TOKEN_URL).respond(403, json={"detail": "Missing permission"})
+        connect = FakeConnect()
+    else:
+        route = tokens(respx_mock, "t1", "t2", "t3", "t4")
+        refusal = closed(4401) if cause == "4401-twice" else refused(403)
+        connect = FakeConnect(*[refusal] * 4)
+    events = Events()
+    sleeps = Sleeps(2)
+    states: list[str] = []
+    subject = listener(connect, events, sleeps)
+    sleeps.watch = lambda: states.append(subject.state)
+    await run_until_stopped(subject)
+    assert states == ["no_right", "no_right"]
+    assert sleeps.delays == [live.NO_RIGHT_DELAY, live.NO_RIGHT_DELAY]
+    assert events.kinds == []
+    if cause == "token-403":
+        assert route.call_count == 2  # tried again after the pause
+        assert connect.urls == []
+    else:
+        assert route.call_count == 4
+        assert len(connect.urls) == 4
+
+
+async def test_other_close_codes_wait(respx_mock):
+    tokens(respx_mock, "t1")
+    connect = FakeConnect([closed(1011)], [closed(4000)])
+    subject = listener(connect, Events(), Sleeps(2))
+    await run_until_stopped(subject)
+    assert subject.state == "waiting"
+
+
+async def test_backoff_resets_after_stable_connection(respx_mock):
+    tokens(respx_mock, "t1")
+    clock = Clock()
+    connect = FakeConnect(OSError("down"), OSError("down"), [clock.advance(61), closed(1006)])
+    sleeps = Sleeps(3)
+    await run_until_stopped(listener(connect, Events(), sleeps, clock))
+    assert sleeps.delays == [5, 15, 5]
+
+
+async def test_backoff_not_reset_by_short_connection(respx_mock):
+    tokens(respx_mock, "t1")
+    clock = Clock()
+    connect = FakeConnect(OSError("down"), OSError("down"), [clock.advance(59), closed(1006)])
+    sleeps = Sleeps(3)
+    await run_until_stopped(listener(connect, Events(), sleeps, clock))
+    assert sleeps.delays == [5, 15, 60]
+
+
+async def test_state_connected_while_open(respx_mock):
+    tokens(respx_mock, "t1")
+    connect = FakeConnect([])
+    subject = listener(connect, Events(), Sleeps(1))
+    assert subject.state == "connecting"
+    task = asyncio.create_task(subject.run())
+    for _ in range(1000):
+        await asyncio.sleep(0)
+        if connect.connections and connect.connections[0].waiting.is_set():
+            break
+    assert subject.state == "connected"
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.parametrize("where", ["waiting", "receiving"])
+async def test_cancel_stops_cleanly(respx_mock, where):
+    tokens(respx_mock, "t1")
+    sleeping = asyncio.Event()
+
+    async def sleep(delay: float) -> None:
+        sleeping.set()
+        await asyncio.Event().wait()
+
+    connect = FakeConnect([closed(1006)] if where == "waiting" else [])
+    subject = live.LiveListener(quick_client(), Events(), connect=connect, sleep=sleep, now=Clock())
+    task = asyncio.create_task(subject.run())
+    if where == "waiting":
+        await asyncio.wait_for(sleeping.wait(), timeout=2)
+    else:
+        for _ in range(1000):
+            await asyncio.sleep(0)
+            if connect.connections and connect.connections[0].waiting.is_set():
+                break
+        assert subject.state == "connected"
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert connect.connections[0].closed
+
+
+async def test_unexpected_error_does_not_leave_run(respx_mock):
+    tokens(respx_mock, "t1")
+
+    def broken(url: str):
+        raise ValueError("bug in the address")
+
+    subject = live.LiveListener(quick_client(), Events(), connect=broken, sleep=Sleeps(2), now=Clock())
+    await run_until_stopped(subject)
+    assert subject.state == "waiting"
+
+
+@pytest.mark.parametrize("case", ["token-403", "4401", "network"])
+async def test_secret_never_logged(respx_mock, caplog, case):
+    secret = "tok-SECRET-123"
+    if case == "token-403":
+        respx_mock.post(TOKEN_URL).respond(403, json={"detail": "Missing permission"})
+        connect = FakeConnect()
+    else:
+        tokens(respx_mock, secret, secret, secret)
+        if case == "4401":
+            connect = FakeConnect(closed(4401), refused(403), [closed(1006)])
+        else:
+            connect = FakeConnect(lambda url: OSError(f"cannot reach {url}"))
+    with caplog.at_level(logging.DEBUG):
+        await run_until_stopped(listener(connect, Events(), Sleeps(1)))
+    assert caplog.text  # something was logged at all
+    assert KEY not in caplog.text
+    assert secret not in caplog.text
+    assert "token=" not in caplog.text
+
+
+# ---- the real library against a local server ---------------------------------------------
+
+
+async def test_real_library_round_trip(respx_mock):
+    async def process_request(connection, request):
+        if request.path != "/api/v1/ws?token=t1":
+            return connection.respond(403, "")
+        return None
+
+    async def handler(connection):
+        await connection.send(json.dumps({"type": "printer_status"}))
+        await connection.send(json.dumps({"type": "print_complete"}))
+        await connection.wait_closed()
+
+    async with serve(handler, "127.0.0.1", 0, process_request=process_request) as server:
+        port = server.sockets[0].getsockname()[1]
+        base = f"http://127.0.0.1:{port}"
+        respx_mock.post(f"{base}/api/v1/auth/ws-token").respond(json={"token": "t1"})
+        both = asyncio.Event()
+        seen: list[str] = []
+
+        def on_event(kind: str) -> None:
+            seen.append(kind)
+            if len(seen) == 2:
+                both.set()
+
+        subject = live.LiveListener(HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), on_event)
+        task = asyncio.create_task(subject.run())
+        try:
+            await asyncio.wait_for(both.wait(), timeout=5)
+            assert subject.state == "connected"
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+    assert seen == ["connected", "print_complete"]
+
+
+async def test_real_library_handshake_refusal_is_no_right(respx_mock):
+    """Bambuddy closes before accepting; its server answers the handshake with HTTP 403."""
+
+    async def process_request(connection, request):
+        return connection.respond(403, "")
+
+    async def handler(connection):  # pragma: no cover - never accepted
+        await connection.wait_closed()
+
+    async with serve(handler, "127.0.0.1", 0, process_request=process_request) as server:
+        port = server.sockets[0].getsockname()[1]
+        base = f"http://127.0.0.1:{port}"
+        route = respx_mock.post(f"{base}/api/v1/auth/ws-token").mock(
+            side_effect=[httpx.Response(200, json={"token": name}) for name in ("t1", "t2")]
+        )
+        events = Events()
+        sleeps = Sleeps(1)
+        subject = live.LiveListener(
+            HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), events, sleep=sleeps, now=Clock()
+        )
+        await run_until_stopped(subject)
+    assert subject.state == "no_right"
+    assert sleeps.delays == [live.NO_RIGHT_DELAY]
+    assert route.call_count == 2
+    assert events.kinds == []
