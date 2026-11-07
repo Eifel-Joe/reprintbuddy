@@ -545,7 +545,7 @@ div.tile:hover, div.tile:focus-within { border-color: var(--accent); }
 
 /* ---- look like Bambuddy (Spec 10.1, 06.11.2026) ---- */
 
-.nav-link { font-size: 13.5px; padding: 8px 10px; gap: 0.6rem; }
+.nav-link { font-size: 13.5px; padding: 8px 10px; gap: 0.6rem; min-height: 2.75rem; } /* 44 px target on the PC too (p70) */
 .nav-link.active:hover { background: var(--accent); color: #fff; }
 
 /* Text for screen readers only (the menu button shows a symbol). */
@@ -603,6 +603,11 @@ a.btn, button.btn { display: inline-flex; align-items: center; justify-content: 
 .page-head h1 { font-size: 22px; font-weight: 650; line-height: 1.25; }
 .page-sub { margin: 0.25rem 0 0; color: var(--muted); font-size: 13px; }
 .page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-left: auto; }
+/* On a phone the main button of a page takes the full width (p71). */
+@media (max-width: 375px) {
+  .page-actions { flex: 1 1 100%; margin-left: 0; }
+  .page-actions > .btn:not(.secondary) { flex: 1 1 100%; }
+}
 
 /* Key figures. */
 .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 1rem; }
@@ -618,8 +623,10 @@ a.btn, button.btn { display: inline-flex; align-items: center; justify-content: 
 .kpi-value { font-size: 20px; font-weight: 700; line-height: 1.1; }
 /* A label breaks between words, and inside a word only where it has no other way (p66: "Zurückgehaltene
    Einträge" broke after "Zurückgehalte" on a phone). `hyphens: auto` needs <html lang> to follow the
-   interface language, which it does (base.html). */
-.kpi-label { color: var(--muted); font-size: 12px; margin-top: 2px; overflow-wrap: break-word; hyphens: auto; }
+   interface language, which it does (base.html). English words are not hyphenated at all (p112: a
+   hyphen in the middle of an English key figure looked like a typing error); a German word is. */
+.kpi-label { color: var(--muted); font-size: 12px; margin-top: 2px; overflow-wrap: break-word; hyphens: manual; }
+html[lang="de"] .kpi-label { hyphens: auto; }
 
 /* Symbol buttons at the end of a row: small picture, 44 px target. */
 .icon-btn {
