@@ -196,6 +196,17 @@ def values_of_input(data: ArticleInput, parts: list[Part]) -> dict[str, object]:
     }
 
 
+# The errors that belong to one field of the form: shown under the field, not in the alert on top.
+FIELD_ERRORS = {"articles.field_auto_needs_target": "auto_enabled"}
+
+
+def form_error(lang: str, exc: DomainError | FormTokenInvalid) -> tuple[str | None, dict[str, str]]:
+    """(text for the alert on top, texts by field) of a rejected form."""
+    text = error_text(lang, exc)
+    field = FIELD_ERRORS.get(exc.key) if isinstance(exc, DomainError) else None
+    return (None, {field: text}) if field else (text, {})
+
+
 def active_parts(db: Session) -> list[Part]:
     return catalog.list_parts(db)
 
@@ -436,6 +447,7 @@ def _plate_form(
     parts: list[Part],
     values: Mapping[str, object],
     error: str | None = None,
+    field_errors: Mapping[str, str] | None = None,
     status: int = 200,
 ):
     lang = current_language(request)
@@ -446,6 +458,7 @@ def _plate_form(
         "article_form.html",
         status_code=status,
         active_nav="articles",
+        field_errors=field_errors or {},
         action=action,
         file=file,
         plate=plate,
@@ -518,10 +531,11 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
         return duplicate_redirect(request, "/articles")
     except (DomainError, FormTokenInvalid) as exc:
         printers = await _printers(client)
+        error, field_errors = form_error(lang, exc)
         return _plate_form(
             request, action=action, file=file, plate=plate, requirements=requirements,
             printers=printers, parts=parts, values=values,
-            error=error_text(lang, exc), status=error_status(exc),
+            error=error, field_errors=field_errors, status=error_status(exc),
         )
     return saved_redirect(request, f"/articles/{article_id}", "articles.created", name=article_name)
 
@@ -627,7 +641,7 @@ async def _printers_for_edit(request: Request) -> list[Printer] | None:
     return await _printers(client) if client is not None else None
 
 
-def _edit_page(request, db, article, printers, values, error=None, status=200):
+def _edit_page(request, db, article, printers, values, error=None, status=200, field_errors=None):
     lang = current_language(request)
     selected = str(values["target"])
     options = catalog.target_options(printers, None, current=selected)
@@ -638,6 +652,7 @@ def _edit_page(request, db, article, printers, values, error=None, status=200):
         status_code=status,
         active_nav="articles",
         article=article,
+        field_errors=field_errors or {},
         target_choices=target_choices(lang, options, selected),
         printers_unavailable=printers is None,
         parts=parts,
@@ -690,9 +705,10 @@ async def article_update(request: Request, article_id: int, db: Session = Depend
             catalog.update_article(tx, article_id, data)
     except DomainError as exc:
         printers = await _printers_for_edit(request)
+        error, field_errors = form_error(current_language(request), exc)
         return _edit_page(
             request, db, article, printers, values,
-            error=error_text(current_language(request), exc), status=error_status(exc),
+            error=error, field_errors=field_errors, status=error_status(exc),
         )
     return saved_redirect(request, f"/articles/{article_id}", "articles.saved", name=data.name)
 

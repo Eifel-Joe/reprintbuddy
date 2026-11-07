@@ -41,4 +41,5 @@
   <span>{{ t('articles.field.auto_enabled') }}</span>
 </label>
 {% endcall %}
+{% if field_errors and field_errors.auto_enabled %}<p class="field-error" role="alert">{{ field_errors.auto_enabled }}</p>{% endif %}
 {% if parts %}{% include "_article_parts.html" %}{% endif %}

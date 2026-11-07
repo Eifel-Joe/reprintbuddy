@@ -536,6 +536,7 @@
   "articles.auto_on": "Automation on: {name}.",
   "articles.auto_off": "Automation off: {name}.",
   "articles.auto_needs_target": "Automation of {name} was not switched on: set a print target first.",
+  "articles.field_auto_needs_target": "The automation needs a print target: choose one first or switch the automation off.",
   "articles.auto_archived": "{name} is archived and has no automation. Restore it first.",
   "articles.auto_bad_value": "The automation switch sent no valid state. Nothing was changed.",
   "articles.confirm_file": "Confirm print file",

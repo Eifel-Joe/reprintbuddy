@@ -231,6 +231,9 @@ a.btn { text-decoration: none; }
   color: var(--text);
 }
 
+/* The error of one field of a form, under the field (p52). */
+.field-error { margin: 0.3rem 0 1rem; color: var(--danger); font-size: 0.85rem; }
+
 .steps { padding-left: 1.25rem; color: var(--text-2); }
 .steps li { margin-bottom: 0.35rem; }
 

@@ -536,6 +536,7 @@
   "articles.auto_on": "Automatik an: {name}.",
   "articles.auto_off": "Automatik aus: {name}.",
   "articles.auto_needs_target": "Automatik von {name} nicht eingeschaltet: Erst ein Druckziel setzen.",
+  "articles.field_auto_needs_target": "Automatik braucht ein Druckziel: erst eines wählen oder Automatik ausschalten.",
   "articles.auto_archived": "{name} ist archiviert und hat keine Automatik. Erst wiederherstellen.",
   "articles.auto_bad_value": "Der Automatik-Schalter hat keinen gültigen Zustand geschickt. Nichts wurde geändert.",
   "articles.confirm_file": "Druckdatei bestätigen",
