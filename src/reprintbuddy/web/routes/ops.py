@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from reprintbuddy import __version__
+from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.export import export_bytes
 from reprintbuddy.ops.server import (
     EffectiveServer,
@@ -144,6 +145,9 @@ def ops_view(request: Request, session: Session) -> OpsView:
         view.installed = _installed(request)
         view.version_info = getattr(app.state, "version_info", None)
     view.update = read_status(_data_dir(request))
+    if not request.app.state.restore.active:
+        # Uploads nobody confirmed and downloads that were cut off hold every secret.
+        fullbackup.clear_work_dir(fullbackup.work_dir_for(app.state.db_path), older_than=fullbackup.STALE_AFTER)
     view.busy = update_running(_data_dir(request), request.app.state.ops.runner, _utc_now())
     view.interrupted = view.update.state in BUSY_STATES and not view.busy
     if view.interrupted:

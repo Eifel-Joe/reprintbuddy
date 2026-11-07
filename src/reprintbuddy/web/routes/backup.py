@@ -6,7 +6,8 @@ with a CSRF token, never by a link a browser could prefetch.
 Restoring takes two steps. The upload is checked at once (shape, manifest, version) and
 waits in the work folder; the page then says what the file is and asks for the password
 if it is encrypted. Only the confirmation decrypts, checks the database, backs up the
-running one and replaces it. The upload waits for one hour at most, one at a time.
+running one and replaces it. The upload waits for one hour at most, one per browser; the
+page carries its token, so a second tab with another upload cannot swap the file under it.
 
 While the database is replaced and until the restart, `app.state.restore` pauses every
 write (see `ops.update_guard`) and the engine (its `update_running` is true). An update
@@ -45,7 +46,7 @@ router = APIRouter()
 
 MAX_PASSWORD_LENGTH = 1024
 SESSION_KEY = "restore_upload"
-UPLOAD_MAX_AGE = timedelta(hours=1)
+UPLOAD_MAX_AGE = fb.STALE_AFTER
 # Room for the CSRF field and the multipart boundaries around the file itself.
 MULTIPART_OVERHEAD = 64 * 1024
 _TOKEN = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
@@ -53,8 +54,9 @@ _TOKEN = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
 @dataclass
 class RestoreState:
-    """`running` from the decision to replace until the process ends; `restart_pending`
-    when the database is replaced but the restart failed."""
+    """`running` from the decision to replace until the database is replaced; then
+    `restart_pending` until the process ends (signing in and the restart button work again,
+    in case the restart does not happen)."""
 
     phase: Literal["idle", "running", "restart_pending"] = "idle"
 
@@ -93,6 +95,7 @@ async def download_backup(request: Request) -> Response:
     if password and not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
         return _back("backup_length", "ops-backup")
     work = fb.ensure_work_dir(_work_dir(request))
+    fb.clear_work_dir(work, older_than=fb.STALE_AFTER)
     try:
         # Argon2 needs 64 MiB and noticeable time: through the limiter, like a login.
         created = await request.app.state.hash_limiter.run(
@@ -117,13 +120,18 @@ async def download_backup(request: Request) -> Response:
 # --- restoring -------------------------------------------------------------------------------
 
 
+def _staged_token(request: Request) -> str | None:
+    info = request.session.get(SESSION_KEY)
+    token = info.get("token") if isinstance(info, dict) else None
+    return token if isinstance(token, str) and _TOKEN.fullmatch(token) else None
+
+
 def _staged(request: Request) -> Path | None:
     """The upload of this browser that waits for confirmation, if it is still valid."""
     info = request.session.get(SESSION_KEY)
-    if not isinstance(info, dict):
-        return None
-    token, at = info.get("token"), info.get("at")
-    if not isinstance(token, str) or not _TOKEN.fullmatch(token) or not isinstance(at, str):
+    token = _staged_token(request)
+    at = info.get("at") if isinstance(info, dict) else None
+    if token is None or not isinstance(at, str):
         return None
     path = _work_dir(request) / f"upload-{token}.zip"
     try:
@@ -156,15 +164,21 @@ async def restore_upload(request: Request) -> Response:
     length = request.headers.get("content-length", "")
     if not length.isdigit() or int(length) > fb.MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD:
         return _back("restore_too_large", "ops-restore")
-    await verify_csrf(request)
+    # Parsed once, with limits; `verify_csrf` reads the same form (Starlette keeps it).
     form = await request.form(max_files=1, max_fields=4)
+    await verify_csrf(request)
     upload = form.get("backup_file")
     if not isinstance(upload, UploadFile) or not upload.filename:
         return _back("restore_nofile", "ops-restore")
+    # The guard let this request in before the body was read; a restore may have begun since.
+    # No `await` from here to the cleanup: its candidate is never deleted under it.
+    if request.app.state.restore.active:
+        await upload.close()
+        return _back("restore_busy", "ops-restore")
 
-    _discard(request)
+    _discard(request)  # the earlier upload of this browser; other browsers keep theirs
     work = fb.ensure_work_dir(_work_dir(request))
-    fb.clear_work_dir(work)  # one upload at a time; leftovers of earlier attempts go too
+    fb.clear_work_dir(work, older_than=fb.STALE_AFTER)
     token = secrets.token_urlsafe(24)
     target = work / f"upload-{token}.zip"
     try:
@@ -188,6 +202,7 @@ def _confirm_page(request: Request, manifest: fb.Manifest, error: str | None = N
         request,
         "restore_confirm.html",
         manifest=manifest,
+        upload_token=_staged_token(request),
         older=manifest.schema_revision != known_revisions()[-1],
         error=error,
         active_nav="settings",
@@ -216,10 +231,13 @@ async def restore_cancel(request: Request) -> Response:
 @router.post("/settings/restore", dependencies=[Depends(verify_csrf)])
 async def restore_confirm(request: Request) -> Response:
     app = request.app
-    path = _staged(request)
-    if path is None:
-        return _back("restore_expired", "ops-restore")
     form = await request.form()
+    path = _staged(request)
+    expected = _staged_token(request)
+    shown = str(form.get("upload_token") or "")
+    # The file this page showed, not one another tab uploaded in the meantime.
+    if path is None or expected is None or not secrets.compare_digest(shown.encode(), expected.encode()):
+        return _back("restore_expired", "ops-restore")
     password = str(form.get("backup_password") or "")[: 4 * MAX_PASSWORD_LENGTH]
     work = fb.ensure_work_dir(_work_dir(request))
     candidate = work / f"candidate-{secrets.token_hex(8)}.db"
@@ -259,18 +277,19 @@ async def restore_confirm(request: Request) -> Response:
                 now=_now(),
                 protect=_protected(request),
             )
-    except Exception as error:  # noqa: BLE001 - whatever failed, the running database is the old one
+    except Exception as error:  # noqa: BLE001 - it fails before or in the one-step copy: nothing changed
         state.phase = "idle"
         _remove(candidate)
         _discard(request)
         log.warning("restore failed: %s", type(error).__name__)
         return _back("restore_failed", "ops-restore")
+    # The old process holds state of the old database in memory (engine, rights): writes
+    # and the engine stay paused until it is gone. Signing in and the restart button work,
+    # in case the restart below fails or systemd takes it and nothing happens.
+    state.phase = "restart_pending"
     _discard(request)
 
     result = await run_in_threadpool(request_restart, app.state.ops.runner)
     if not result.ok:
-        # The old process holds state of the old database in memory (engine, rights):
-        # writes and the engine stay paused until somebody restarts it.
-        state.phase = "restart_pending"
         log.warning("restart after restore failed: %s", (result.stderr or "").strip()[:300])
     return render(request, "restored.html", restarted=result.ok, active_nav="settings")

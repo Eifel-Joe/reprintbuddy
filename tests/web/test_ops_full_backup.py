@@ -51,8 +51,16 @@ def upload(env, content: bytes, name="backup.zip"):
 
 
 def confirm(env, password=""):
+    """Press the button of the confirmation page (with the token of the upload it shows)."""
+    import re
+
+    page = env.client.get("/settings/restore")
+    found = re.search(r'name="upload_token" value="([^"]*)"', page.text) if page.status_code == 200 else None
     token = csrf_of(env.client, "/settings")
-    return env.client.post("/settings/restore", data={"csrf_token": token, "backup_password": password})
+    return env.client.post(
+        "/settings/restore",
+        data={"csrf_token": token, "backup_password": password, "upload_token": found.group(1) if found else ""},
+    )
 
 
 def queue_cap(env):
@@ -424,3 +432,121 @@ def test_failed_replace_changes_nothing(ops_env, monkeypatch):
     assert not ops_env.client.app.state.ticker.update_running()
     assert queue_cap(ops_env) == 9
     assert ops_env.runner.calls == []
+
+
+# --- review findings ---------------------------------------------------------------------------
+
+
+def staged_token(env):
+    page = env.client.get("/settings/restore").text
+    import re
+
+    return re.search(r'name="upload_token" value="([^"]+)"', page).group(1)
+
+
+def confirm_with(env, upload_token, password=""):
+    token = csrf_of(env.client, "/settings")
+    return env.client.post(
+        "/settings/restore",
+        data={"csrf_token": token, "backup_password": password, "upload_token": upload_token},
+    )
+
+
+def test_confirm_restores_the_file_the_page_showed(ops_env):
+    """Two tabs: the page of the first upload must not restore the second one."""
+    first = made_backup(ops_env)
+    upload(ops_env, first)
+    shown = staged_token(ops_env)
+    set_queue_cap(ops_env, 33)
+    upload(ops_env, made_backup(ops_env))  # another tab, another file
+    set_queue_cap(ops_env, 9)
+    response = confirm_with(ops_env, shown)
+    assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_expired#ops-restore"
+    assert queue_cap(ops_env) == 9
+    assert ops_env.runner.calls == []
+
+
+def test_confirm_needs_the_upload_token(ops_env):
+    upload(ops_env, made_backup(ops_env))
+    response = confirm_with(ops_env, "")
+    assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_expired#ops-restore"
+
+
+def test_confirm_checks_for_an_update_itself(ops_env, monkeypatch):
+    from reprintbuddy.web.routes import ops as routes
+
+    upload(ops_env, made_backup(ops_env))
+    shown = staged_token(ops_env)
+    mark_update_running(ops_env)
+    monkeypatch.setattr(routes, "restore_blocks", lambda _request: False)
+    monkeypatch.setattr(routes, "update_running", lambda *_args: False)  # past the guard
+    response = confirm_with(ops_env, shown)
+    assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_busy#ops-restore"
+    assert backups(ops_env) == []
+
+
+def test_confirm_checks_for_another_restore_itself(ops_env, monkeypatch):
+    from reprintbuddy.web.routes import ops as routes
+
+    upload(ops_env, made_backup(ops_env))
+    shown = staged_token(ops_env)
+    ops_env.client.app.state.restore.phase = "running"
+    monkeypatch.setattr(routes, "restore_blocks", lambda _request: False)
+    response = confirm_with(ops_env, shown)
+    assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_busy#ops-restore"
+    assert backups(ops_env) == []
+
+
+def test_upload_checks_for_a_running_restore_itself(ops_env, monkeypatch):
+    from reprintbuddy.web.routes import ops as routes
+
+    work = fb.ensure_work_dir(fb.work_dir_for(ops_env.db_path))
+    (work / "candidate-of-the-other-tab.db").write_bytes(b"x")
+    ops_env.client.app.state.restore.phase = "running"
+    monkeypatch.setattr(routes, "restore_blocks", lambda _request: False)
+    response = upload(ops_env, made_backup(ops_env))
+    assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_busy#ops-restore"
+    assert work_files(ops_env) == ["candidate-of-the-other-tab.db"]
+
+
+def test_upload_leaves_other_recent_files_alone(ops_env):
+    work = fb.ensure_work_dir(fb.work_dir_for(ops_env.db_path))
+    (work / "candidate-of-the-other-tab.db").write_bytes(b"x")
+    upload(ops_env, made_backup(ops_env))
+    assert "candidate-of-the-other-tab.db" in work_files(ops_env)
+
+
+def test_stale_files_go_when_the_page_is_shown(ops_env):
+    import os
+    import time
+
+    work = fb.ensure_work_dir(fb.work_dir_for(ops_env.db_path))
+    stale = work / "backup-cut-off.zip"
+    stale.write_bytes(b"x")
+    past = time.time() - 7200
+    os.utime(stale, (past, past))
+    ops_env.client.get(MAINTENANCE)
+    assert work_files(ops_env) == []
+
+
+def test_upload_form_is_parsed_with_limits(ops_env):
+    token = csrf_of(ops_env.client, "/settings")
+    response = ops_env.client.post(
+        "/settings/restore/upload",
+        data={"csrf_token": token, **{f"field{i}": "x" for i in range(10)}},
+        files={"backup_file": ("backup.zip", b"x", "application/zip")},
+    )
+    assert response.status_code == 400
+    assert work_files(ops_env) == []
+
+
+def test_after_the_replace_sign_in_and_restart_are_possible(ops_env, monkeypatch):
+    """systemd took the restart, but the process lives on: nobody must be locked out."""
+    upload(ops_env, made_backup(ops_env))
+    confirm(ops_env)
+    assert ops_env.client.app.state.restore.phase == "restart_pending"
+    token = csrf_of(ops_env.client, "/login")
+    signed_in = ops_env.client.post("/login", data={"csrf_token": token, "username": ADMIN, "password": PASSWORD})
+    assert signed_in.status_code == 303
+    token = csrf_of(ops_env.client, "/settings")
+    assert ops_env.client.post("/settings/restart", data={"csrf_token": token}).status_code == 200
