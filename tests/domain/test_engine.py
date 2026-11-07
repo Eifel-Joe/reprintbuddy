@@ -738,6 +738,24 @@ async def test_collect_warnings(engine_env):
     )
 
 
+async def test_paused_without_reason_gets_the_general_text(engine_env):
+    """Final review 9: a pause without a reason never reads "Name: "."""
+    from reprintbuddy.domain.engine import warning_text
+
+    env = engine_env
+    update_article(env.sm, env.article_id, paused=True, pause_reason=None)
+
+    found = warnings(env.sm, EngineStatus(configured=True, reachable=True))
+
+    assert found == [
+        EngineWarning(
+            "warning.article_paused",
+            {"name": "Template A", "reason": translate("en", "status.paused")},
+        )
+    ]
+    assert warning_text("en", found[0]) == "Template A: paused"
+
+
 async def test_collect_warnings_order(engine_env):
     env = engine_env
     with env.sm.begin() as s:

@@ -475,7 +475,8 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
         .order_by(Article.name, Article.id)
     ).all()
     for name, reason in paused:
-        text = translate(lang, f"pause.reason.{reason}") if reason else ""
+        # A pause without a reason (older data) gets the general word, never "Name: ".
+        text = translate(lang, f"pause.reason.{reason}" if reason else "status.paused")
         add("article_paused", name=name, reason=text)
     return found
 
