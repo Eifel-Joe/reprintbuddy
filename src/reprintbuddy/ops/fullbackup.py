@@ -39,20 +39,23 @@ import zipfile
 import zlib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import IO, Any
 
 from reprintbuddy import __version__
+from reprintbuddy import settings as st
 from reprintbuddy.db import known_revisions, make_engine, upgrade
 from reprintbuddy.ops import backupcrypto as bc
 from reprintbuddy.ops.backup import (
     KEEP_BACKUPS,
     backup_database,
     backup_dir_for,
+    connect_existing,
     prune_backups,
     restore_database,
 )
+from reprintbuddy.ops.tls import validate_tls_pair
 
 FORMAT = "reprintbuddy-backup"
 FORMAT_VERSION = 1
@@ -68,6 +71,9 @@ MAX_MANIFEST_BYTES = 64 * 1024
 KDF = bc.DEFAULT_KDF  # tests use smaller parameters
 
 WORK_DIRNAME = "restore"
+# An upload waits this long for its confirmation; older files in the work folder are gone
+# at the next visit of the page (a closed tab, a download that was cut off).
+STALE_AFTER = timedelta(hours=1)
 _CHUNK = 1024 * 1024
 _SQLITE_HEADER = b"SQLite format 3\x00"
 _VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:[.+-][0-9A-Za-z.+-]*)?$")
@@ -147,13 +153,19 @@ def ensure_work_dir(work_dir: Path) -> Path:
     return work_dir
 
 
-def clear_work_dir(work_dir: Path, *, keep: Iterable[Path] = ()) -> None:
-    """Delete what earlier attempts left behind (a crash, a closed browser tab)."""
+def clear_work_dir(
+    work_dir: Path, *, keep: Iterable[Path] = (), older_than: timedelta | None = None
+) -> None:
+    """Delete what earlier attempts left behind (a crash, a closed browser tab, a download
+    that was cut off). With `older_than`, only files not touched for that long."""
     kept = {Path(path).name for path in keep}
+    limit = None if older_than is None else datetime.now().timestamp() - older_than.total_seconds()
     if work_dir.is_dir():
         for path in work_dir.iterdir():
-            if path.name not in kept and path.is_file():
-                with contextlib.suppress(OSError):
+            if path.name in kept or not path.is_file():
+                continue
+            with contextlib.suppress(OSError):
+                if limit is None or path.stat().st_mtime < limit:
                     path.unlink()
 
 
@@ -321,11 +333,11 @@ def _copy_member(archive: zipfile.ZipFile, name: str, sink: Callable[[bytes], ob
     return total
 
 
-def _read_limited(archive: zipfile.ZipFile, name: str, limit: int) -> bytes:
-    """Read one member, at most `limit` bytes, whatever its header claims."""
+def _read_limited(archive: zipfile.ZipFile, name: str, limit: int) -> bytearray:
+    """Read one member, at most `limit` bytes, whatever its header claims (not copied again)."""
     buffer = bytearray()
     _copy_member(archive, name, buffer.extend, limit)
-    return bytes(buffer)
+    return buffer
 
 
 def _decode(value: Any, size: int) -> bytes:
@@ -438,7 +450,7 @@ def read_manifest(path: Path) -> Manifest:
         if member_info.file_size > MAX_DATABASE_BYTES + bc.TAG_BYTES:
             raise TooLarge("database too large")
         try:
-            raw = _read_limited(archive, MANIFEST, MAX_MANIFEST_BYTES)
+            raw = bytes(_read_limited(archive, MANIFEST, MAX_MANIFEST_BYTES))
         except (Damaged, TooLarge) as error:
             raise NotABackup("manifest cannot be read") from error
     return _parse_manifest(raw, member)
@@ -517,16 +529,15 @@ def _structure(path: Path) -> dict[str, Any]:
     NOT NULL, primary key, generated), indexes (unique, origin, columns) and foreign keys.
 
     Not the SQL text: the text of the same table differs between the SQLAlchemy versions
-    that created it, and an install updates its packages. Internal objects are the ones
-    whose name starts with `sqlite_` (substr: in LIKE the `_` would match any character).
-    Names go in as parameters of the table-valued pragmas, never into the SQL text.
+    that created it, and an install updates its packages. Only SQLite's own tables and the
+    indexes it makes for UNIQUE and PRIMARY KEY are left out, by exact name: a trigger
+    written straight into `sqlite_master` may carry any reserved name. Names go in as
+    parameters of the table-valued pragmas, never into the SQL text.
     """
-    con = sqlite3.connect(str(path))
+    con = _open_untrusted(path)
     try:
         objects = sorted(
-            con.execute(
-                "SELECT type, name, tbl_name FROM sqlite_master WHERE substr(name, 1, 7) <> 'sqlite_'"
-            ).fetchall()
+            row for row in con.execute("SELECT type, name, tbl_name FROM sqlite_master").fetchall() if not _internal(row)
         )
         tables: dict[str, Any] = {}
         for kind, name, _ in objects:
@@ -556,15 +567,139 @@ def _structure(path: Path) -> dict[str, Any]:
     return {"objects": objects, "tables": tables}
 
 
+_INTERNAL_TABLES = frozenset({"sqlite_sequence", "sqlite_stat1", "sqlite_stat2", "sqlite_stat3", "sqlite_stat4"})
+
+
+def _internal(row: tuple[str, str, str]) -> bool:
+    kind, name, _ = row
+    return (kind == "table" and name in _INTERNAL_TABLES) or (
+        kind == "index" and name.startswith("sqlite_autoindex_")
+    )
+
+
+def _open_untrusted(path: Path) -> sqlite3.Connection:
+    """Open a database file that may be crafted: it must exist, its schema may not call
+    functions (`trusted_schema`), and nothing may write to its schema (`DEFENSIVE`)."""
+    con = connect_existing(path)
+    con.execute("PRAGMA trusted_schema=OFF")
+    defensive = getattr(sqlite3, "SQLITE_DBCONFIG_DEFENSIVE", None)  # Python 3.12 and later
+    if defensive is not None:
+        con.setconfig(defensive, True)
+    return con
+
+
+def _quote(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _create(path: Path, revision: str) -> None:
+    """A new, empty Reprintbuddy database at `revision`, made by this version's migrations."""
+    engine = make_engine(path)
+    try:
+        upgrade(engine, revision=revision)
+    finally:
+        engine.dispose()
+    _chmod_private(path)
+
+
+def _copy_rows(source: Path, target: Path) -> None:
+    """Copy every row of the backup into the new database; nothing of the schema."""
+    con = _open_untrusted(target)
+    try:
+        con.execute("PRAGMA foreign_keys=OFF")
+        con.execute("ATTACH DATABASE ? AS src", (f"{source.resolve().as_uri()}?mode=ro",))
+        tables = [
+            name
+            for (name,) in con.execute(
+                "SELECT name FROM main.sqlite_master WHERE type = 'table' "
+                "AND substr(name, 1, 7) <> 'sqlite_' AND name <> 'alembic_version'"
+            )
+        ]
+        for table in tables:
+            columns = ", ".join(
+                _quote(name)
+                for (name,) in con.execute(
+                    "SELECT name FROM pragma_table_xinfo(?, 'main') WHERE hidden = 0 ORDER BY cid", (table,)
+                )
+            )
+            con.execute(f"INSERT INTO main.{_quote(table)} ({columns}) SELECT {columns} FROM src.{_quote(table)}")
+        has_sequence = con.execute(
+            "SELECT count(*) FROM src.sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'"
+        ).fetchone()[0]
+        if has_sequence and _has_table(con, "sqlite_sequence"):
+            # AUTOINCREMENT must go on where it was: an id is never handed out twice.
+            con.execute("DELETE FROM main.sqlite_sequence")
+            marks = ", ".join("?" for _ in tables) or "''"
+            con.execute(
+                f"INSERT INTO main.sqlite_sequence (name, seq) SELECT name, seq FROM src.sqlite_sequence "
+                f"WHERE name IN ({marks})",
+                tables,
+            )
+        con.commit()
+        if con.execute("PRAGMA main.foreign_key_check").fetchall():
+            raise Damaged("rows refer to rows that are not there")
+        con.execute("DETACH DATABASE src")
+        con.execute("PRAGMA journal_mode=DELETE")
+    finally:
+        con.close()
+
+
+def _check_settings(path: Path) -> None:
+    """Every stored setting must be one the service can start with (a broken one would stop
+    it at the start, and only a shell could help then)."""
+    con = _open_untrusted(path)
+    try:
+        stored = dict(con.execute("SELECT key, value FROM settings").fetchall())
+    finally:
+        con.close()
+    values: dict[str, object] = {}
+    for key, raw in stored.items():
+        try:
+            values[key] = json.loads(raw)
+        except (TypeError, ValueError) as error:
+            raise Damaged("a setting is no JSON") from error
+    for key, value in values.items():
+        if key == "session_secret":
+            if not isinstance(value, str) or len(value) < 32:
+                raise Incompatible("the session secret is unusable")
+            continue
+        if key not in st.DEFAULTS:
+            continue  # written by a version that knew more settings; nothing reads it
+        try:
+            st.validate(key, value)
+        except (KeyError, ValueError) as error:
+            raise Incompatible("a setting this version cannot use") from error
+    cert, key = values.get("tls_cert"), values.get("tls_key")
+    if cert and key:  # HTTPS runs only with both (`settings.tls_enabled`)
+        try:
+            validate_tls_pair(str(cert or ""), str(key or ""))
+        except ValueError as error:
+            raise Incompatible("the HTTPS certificate and key do not work") from error
+
+
 def verify_database(candidate: Path, manifest: Manifest, *, work_dir: Path) -> None:
-    """Is this an intact Reprintbuddy database that this version can migrate and run?"""
+    """Check the database of a backup and rebuild it in place from this version's migrations.
+
+    The file decides nothing but the rows: its schema is compared with a new database of the
+    same revision and then thrown away, and the rows go into that new database. Triggers,
+    views, CHECKs, defaults or anything else a crafted file might carry never reach the
+    running database. A trial migration of the result to this version must succeed, and the
+    settings must be ones the service can start with. The candidate keeps the revision of the
+    backup; the start of the service migrates it (Spec 11.6).
+    """
     with open(candidate, "rb") as handle:
         if handle.read(len(_SQLITE_HEADER)) != _SQLITE_HEADER:
             raise Damaged("not an SQLite database")
     try:
-        con = sqlite3.connect(str(candidate))
+        con = _open_untrusted(candidate)
         try:
             con.execute("PRAGMA cell_size_check=ON")
+            # Virtual tables run their own code, also in the integrity check (FTS5 since 3.44).
+            virtual = con.execute(
+                "SELECT 1 FROM sqlite_master WHERE upper(substr(ltrim(sql), 1, 14)) = 'CREATE VIRTUAL' LIMIT 1"
+            ).fetchone()
+            if virtual is not None:
+                raise Incompatible("virtual tables")
             if con.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
                 raise Damaged("integrity check failed")
             # A UTF-16 database breaks every connection the service already has open.
@@ -582,12 +717,23 @@ def verify_database(candidate: Path, manifest: Manifest, *, work_dir: Path) -> N
     if found != [(manifest.schema_revision,)]:
         raise NotABackup("database revision differs from the manifest")
 
-    # A trial migration on a throw-away copy, compared with a database made from scratch.
     token = secrets.token_hex(8)
+    rebuilt = work_dir / f"rebuilt-{token}.db"
     trial = work_dir / f"trial-{token}.db"
-    fresh = work_dir / f"fresh-{token}.db"
     try:
-        shutil.copyfile(candidate, trial)
+        _create(rebuilt, manifest.schema_revision)
+        try:
+            differs = _structure(candidate) != _structure(rebuilt)
+        except sqlite3.Error as error:
+            raise Incompatible("the structure cannot be read") from error
+        if differs:
+            raise Incompatible("the structure differs from a Reprintbuddy database")
+        try:
+            _copy_rows(candidate, rebuilt)
+        except sqlite3.DatabaseError as error:
+            raise Damaged("the rows do not fit") from error
+
+        shutil.copyfile(rebuilt, trial)
         _chmod_private(trial)
         engine = make_engine(trial)
         try:
@@ -596,27 +742,23 @@ def verify_database(candidate: Path, manifest: Manifest, *, work_dir: Path) -> N
             raise Incompatible("the migration fails") from error
         finally:
             engine.dispose()
-        engine = make_engine(fresh)
         try:
-            upgrade(engine)
-        finally:
-            engine.dispose()
-        try:
-            differs = _structure(trial) != _structure(fresh)
+            _check_settings(trial)
         except sqlite3.Error as error:
-            raise Incompatible("the structure cannot be read") from error
-        if differs:
-            raise Incompatible("the structure differs from a Reprintbuddy database")
+            raise Incompatible("the settings cannot be read") from error
+
+        remove_database_files(candidate)
+        os.replace(rebuilt, candidate)
     finally:
         remove_database_files(trial)
-        remove_database_files(fresh)
+        remove_database_files(rebuilt)
 
 
 # --- replacing -----------------------------------------------------------------------------
 
 
 def _page_size(path: Path) -> int:
-    con = sqlite3.connect(str(path), timeout=30)
+    con = connect_existing(path)
     try:
         return int(con.execute("PRAGMA page_size").fetchone()[0])
     finally:
@@ -628,7 +770,7 @@ def _prepare(candidate: Path, page_size: int) -> None:
 
     SQLite cannot copy pages of another size into a database in WAL mode.
     """
-    con = sqlite3.connect(str(candidate))
+    con = connect_existing(candidate)
     try:
         con.execute("PRAGMA journal_mode=DELETE")
         if _has_table(con, "sessions"):
@@ -660,8 +802,12 @@ def replace_database(
     backup_dir = backup_dir_for(db_path)
     before = backup_database(db_path, backup_dir, label="before-restore", now=now)
     restore_database(candidate, db_path)
-    remove_database_files(candidate)
-    prune_backups(backup_dir, keep, protect=[before, *protect])
+    # From here the database is replaced: tidying up may fail, the restore has not.
+    try:
+        remove_database_files(candidate)
+        prune_backups(backup_dir, keep, protect=[before, *protect])
+    except OSError:
+        pass
     return before
 
 

@@ -39,7 +39,9 @@ class KdfParams:
 
 # RFC 9106, second recommended option ("low memory"): t=3, 64 MiB, p=4.
 DEFAULT_KDF = KdfParams(time_cost=3, memory_cost=64 * 1024, parallelism=4)
-_LIMITS = {"time_cost": (1, 10), "memory_cost": (8 * 1024, 256 * 1024), "parallelism": (1, 8)}
+# No more memory than this version asks for itself: two restores may run at once (the
+# limiter that also serves logins), and a file must not decide how much RAM they take.
+_LIMITS = {"time_cost": (1, 10), "memory_cost": (8 * 1024, 64 * 1024), "parallelism": (1, 8)}
 
 
 class DecryptError(Exception):

@@ -4,7 +4,7 @@ import json
 import os
 import sqlite3
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -673,3 +673,146 @@ def test_files_are_private(live, work):
     target = work / "c.db"
     fb.extract_database(created.path, fb.read_manifest(created.path), "sicher-genug-1", target)
     assert target.stat().st_mode & 0o777 == 0o600
+
+
+# --- security review: nothing of the schema comes from the file -----------------------------
+
+
+def schema_of(path: Path) -> list[tuple]:
+    return rows(path, "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name")
+
+
+def test_hidden_trigger_written_into_the_schema_is_refused(tmp_path, work):
+    """`writable_schema` can plant a trigger with a reserved name SQLite never lets one create."""
+    path = make_db(tmp_path / "other" / "reprintbuddy.db")
+    con = sqlite3.connect(path)
+    con.execute("PRAGMA writable_schema=ON")
+    con.execute(
+        "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('trigger', 'sqlite_bd', "
+        "'users', 0, 'CREATE TRIGGER sqlite_bd AFTER UPDATE ON users BEGIN UPDATE users SET password_hash = ''x''; END')"
+    )
+    con.commit()
+    con.close()
+    created = fb.create_backup(path, work_dir=work, password=None, now=NOW)
+    with pytest.raises(fb.Incompatible):
+        read_back(created.path, work)
+
+
+def test_restored_schema_is_built_from_the_migrations(tmp_path, work):
+    """A CHECK (or a default, a collation …) the structure check does not compare never arrives."""
+    path = schema_change(
+        tmp_path,
+        work,
+        "CREATE TABLE users_new (id INTEGER NOT NULL, username VARCHAR NOT NULL, password_hash VARCHAR NOT NULL "
+        "CHECK (password_hash = 'KNOWN'), PRIMARY KEY (id), UNIQUE (username))",
+        "DROP TABLE users",
+        "ALTER TABLE users_new RENAME TO users",
+    )
+    db = read_back(path, work)
+    fresh = make_db(tmp_path / "fresh" / "reprintbuddy.db")
+    assert schema_of(db) == schema_of(fresh)
+    assert "KNOWN" not in str(schema_of(db))
+
+
+def test_rows_are_copied_into_the_rebuilt_database(live, work):
+    db = read_back(plain_backup(live, work).path, work)
+    assert setting(db, "bambuddy_api_key") == API_KEY
+    assert rows(db, "SELECT username FROM users") == [("admin",)]
+    assert rows(db, "PRAGMA foreign_key_check") == []
+    assert rows(db, "PRAGMA journal_mode") == [("delete",)]
+
+
+def test_older_database_is_rebuilt_at_its_own_revision(tmp_path, work):
+    older = known_revisions()[-2]
+    path = make_db(tmp_path / "old" / "reprintbuddy.db", revision=older)
+    db = read_back(fb.create_backup(path, work_dir=work, password=None, now=NOW).path, work)
+    fresh = make_db(tmp_path / "fresh" / "reprintbuddy.db", revision=older)
+    assert schema_of(db) == schema_of(fresh)
+
+
+def test_virtual_table_is_refused_before_the_integrity_check(tmp_path, work):
+    con = sqlite3.connect(":memory:")
+    try:
+        con.execute("CREATE VIRTUAL TABLE t USING fts5(x)")
+    except sqlite3.OperationalError:
+        pytest.skip("this SQLite has no FTS5")
+    finally:
+        con.close()
+    path = schema_change(tmp_path, work, "CREATE VIRTUAL TABLE notes USING fts5(x)")
+    with pytest.raises(fb.Incompatible):
+        read_back(path, work)
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "error"),
+    [
+        ("queue_cap", "not json", fb.Damaged),
+        ("queue_cap", json.dumps(-5), fb.Incompatible),
+        ("bambuddy_url", json.dumps("ftp://somewhere"), fb.Incompatible),
+        ("session_secret", json.dumps(42), fb.Incompatible),
+        ("tls_key", json.dumps("-----BEGIN PRIVATE KEY-----\nnot a key\n-----END PRIVATE KEY-----\n"), fb.Incompatible),
+    ],
+)
+def test_settings_that_would_stop_the_start_are_refused(tmp_path, work, key, value, error):
+    path = make_db(tmp_path / "other" / "reprintbuddy.db")
+    con = sqlite3.connect(path)
+    con.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+    if key == "tls_key":
+        cert = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+        con.execute("INSERT INTO settings (key, value) VALUES ('tls_cert', ?)", (json.dumps(cert),))
+    con.commit()
+    con.close()
+    created = fb.create_backup(path, work_dir=work, password=None, now=NOW)
+    with pytest.raises(error):
+        read_back(created.path, work)
+
+
+def test_a_valid_https_pair_is_accepted(tmp_path, work):
+    from conftest import make_tls_pair
+
+    cert, key = make_tls_pair()
+    path = make_db(tmp_path / "other" / "reprintbuddy.db")
+    maker = make_sessionmaker(make_engine(path))
+    with maker() as session:
+        st.set_setting(session, "tls_cert", cert)
+        st.set_setting(session, "tls_key", key)
+    read_back(fb.create_backup(path, work_dir=work, password=None, now=NOW).path, work)
+
+
+def test_memory_cost_is_limited_to_the_default():
+    assert not bc.params_allowed(bc.KdfParams(time_cost=3, memory_cost=128 * 1024, parallelism=4))
+
+
+def test_a_vanished_candidate_never_becomes_an_empty_database(live, work, monkeypatch):
+    """Between the check and the copy the file may go: SQLite must not create an empty one."""
+    missing = work / "gone.db"
+    monkeypatch.setattr(Path, "is_file", lambda self: True)
+    with pytest.raises(sqlite3.OperationalError):
+        fb.replace_database(missing, live, now=NOW)
+    assert not missing.exists()
+    assert setting(live, "queue_cap") == 7
+
+
+def test_cleanup_after_the_copy_does_not_fail_the_restore(live, work, monkeypatch):
+    candidate = read_back(plain_backup(live, work).path, work)
+
+    def broken(*args, **kwargs):
+        raise OSError("cannot list the backups")
+
+    monkeypatch.setattr(fb, "prune_backups", broken)
+    fb.replace_database(candidate, live, now=NOW)  # no exception: the database is replaced
+    assert rows(live, "SELECT count(*) FROM sessions") == [(0,)]
+
+
+def test_clear_work_dir_can_keep_recent_files(work):
+    import os as _os
+    import time
+
+    old = work / "upload-old.zip"
+    new = work / "upload-new.zip"
+    old.write_bytes(b"1")
+    new.write_bytes(b"2")
+    past = time.time() - 7200
+    _os.utime(old, (past, past))
+    fb.clear_work_dir(work, older_than=timedelta(hours=1))
+    assert [p.name for p in work.iterdir()] == ["upload-new.zip"]

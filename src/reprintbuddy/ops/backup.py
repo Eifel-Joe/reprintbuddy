@@ -26,11 +26,20 @@ def backup_dir_for(db_path: Path) -> Path:
     return db_path.parent / BACKUP_DIRNAME
 
 
-def _copy(source: Path, target: Path) -> None:
+def connect_existing(path: Path, *, timeout: float = 30) -> sqlite3.Connection:
+    """Open a database that must already exist.
+
+    `sqlite3.connect` quietly creates an empty database for a missing file; copied over the
+    running one, that would end in a first-run setup. `mode=rw` fails instead.
+    """
+    return sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=rw", uri=True, timeout=timeout)
+
+
+def _copy(source: Path, target: Path, *, target_exists: bool = False) -> None:
     """Copy the content of one SQLite database into another, both closed afterwards."""
-    src = sqlite3.connect(str(source), timeout=30)
+    src = connect_existing(source)
     try:
-        dst = sqlite3.connect(str(target), timeout=30)
+        dst = connect_existing(target) if target_exists else sqlite3.connect(str(target), timeout=30)
         try:
             src.backup(dst)
         finally:
@@ -64,7 +73,7 @@ def restore_database(backup: Path, db_path: Path) -> None:
     """Replace the content of the database by the backup; safe while the service has it open."""
     if not backup.is_file():
         raise FileNotFoundError(str(backup))
-    _copy(backup, db_path)
+    _copy(backup, db_path, target_exists=True)
 
 
 def prune_backups(
