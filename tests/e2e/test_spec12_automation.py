@@ -3,7 +3,8 @@
 The operator's steps go through the web pages (article, settings, orders, queue, article detail);
 the ticks are run by hand (`run_tick`). Bambuddy is the in-memory fake: the test changes
 the state of its prints (completed, deleted, switched off) the way Bambuddy would.
-Step 6 (the reprint for an unclear case) and step 4 on its own page come with B5.
+Steps 4 and 6 go through the page "To check" (plan B5 Task 6): the count of good pieces
+and the reprint for the pieces that were not good.
 """
 
 import asyncio
@@ -15,9 +16,8 @@ from conftest import csrf_of, form_token_of, run_tick, sm_of
 from factories import make_article
 from reprintbuddy import settings as st
 from reprintbuddy.domain import dispatch as dispatch_domain
-from reprintbuddy.domain import stock
 from reprintbuddy.domain.workqueue import OPEN_STATES
-from reprintbuddy.models import Article, Dispatch, Inspection, WorkQueueEntry, utcnow
+from reprintbuddy.models import Article, Dispatch, Inspection, WorkQueueEntry
 from reprintbuddy.web.i18n import translate
 
 FORM = "/articles/new/file/1/plate/1"
@@ -151,18 +151,17 @@ def open_count(client) -> int:
         return dispatch_domain.open_count(s)
 
 
-def done_inspection(client, dispatch_id: int, good: int) -> None:
-    """The operator counts the good pieces: the stock books them, the inspection line gets its count."""
-    with sm_of(client).begin() as s:
-        stock.inspect_good(s, article_id_of(client, dispatch_id), good, "user")
-        line = s.scalar(select(Inspection).where(Inspection.dispatch_id == dispatch_id))
-        line.good_units = good
-        line.resolved_at = utcnow()
-
-
-def article_id_of(client, dispatch_id: int) -> int:
+def confirm_inspection(client, dispatch_id: int, good: int) -> None:
+    """Page "To check": the operator counts the good pieces of the print and presses "Confirm"."""
     with sm_of(client)() as s:
-        return s.get(Dispatch, dispatch_id).article_id
+        inspection_id = s.scalar(select(Inspection.id).where(Inspection.dispatch_id == dispatch_id))
+    assert inspection_id is not None
+    post_form(client, "/inspection", f"/inspection/{inspection_id}", good=str(good))
+
+
+def open_inspections(client) -> int:
+    with sm_of(client)() as s:
+        return len(s.scalars(select(Inspection.id).where(Inspection.resolved_at.is_(None))).all())
 
 
 # ---- the test -------------------------------------------------------------------------------
@@ -195,9 +194,16 @@ def test_spec12_steps(ready_client, fake_bambuddy):
     assert numbers(client, article_id) == (0, 0, 1)
     assert len(fake.enqueued) == 1 and len(bambuddy_queue(fake)) == 0
 
-    # Step 4: the count of good pieces: stock 1, available 1; the next tick adds nothing.
-    done_inspection(client, first.id, good=1)
+    # Step 4: the count of good pieces on the page "To check": stock 1, available 1;
+    # the next tick adds nothing.
+    assert open_inspections(client) == 1
+    assert "Template A" in client.get("/inspection").text
+    confirm_inspection(client, first.id, good=1)
     assert numbers(client, article_id) == (1, 0, 0)
+    assert open_inspections(client) == 0
+    done = client.get("/inspection").text
+    assert en("inspections.done", name="Template A", good=1, scrap=0) in done
+    assert en("inspections.replacement_created") not in done
     tick(client, poll=False)
     assert numbers(client, article_id) == (1, 0, 0)
     assert len(fake.enqueued) == 1
@@ -225,7 +231,30 @@ def test_spec12_steps(ready_client, fake_bambuddy):
     last_item_id = last_dispatch(client).bambuddy_item_id
     assert last_item_id is not None
 
-    # Step 7: the print vanishes from Bambuddy; a regular tick pauses the article, later ticks do nothing.
+    # Step 6: Bambuddy finishes that print, a regular tick books it; on the page "To check" no piece
+    # is good: exactly one replacement entry at the front of Reprintbuddy's queue, handed over
+    # by the next tick as a new print in Bambuddy.
+    fake.set_status(last_item_id, "completed")
+    tick(client, poll=True)
+    assert open_inspections(client) == 1
+    entries_before_scrap = entries_of(client)
+    confirm_inspection(client, last_dispatch(client).id, good=0)
+    assert open_inspections(client) == 0
+    replacement_page = client.get("/inspection").text
+    assert en("inspections.done", name="Template A", good=0, scrap=1) in replacement_page
+    assert en("inspections.replacement_created") in replacement_page
+    assert entries_of(client) == [(article_id, 1, "scrap"), *entries_before_scrap]
+    assert len(entry_ids(client)) == len(entries_before_scrap) + 1
+    enqueued_before = len(fake.enqueued)
+    tick(client, poll=False)
+    assert len(fake.enqueued) == enqueued_before + 1
+    assert entries_of(client) == entries_before_scrap
+    replacement_item_id = last_dispatch(client).bambuddy_item_id
+    assert replacement_item_id is not None and replacement_item_id != last_item_id
+    last_item_id = replacement_item_id
+
+    # Step 7: the replacement print (still open) vanishes from Bambuddy; a regular tick pauses the
+    # article, later ticks do nothing.
     fake.delete_item(last_item_id)
     tick(client, poll=True)
     row = article_row(client, article_id)
@@ -235,7 +264,7 @@ def test_spec12_steps(ready_client, fake_bambuddy):
     entries_before = entry_ids(client)
     tick(client, poll=True)
     tick(client, poll=False)
-    assert len(fake.enqueued) == 2
+    assert len(fake.enqueued) == 3
     assert len(bambuddy_queue(fake)) == 0
     assert entry_ids(client) == entries_before
 
@@ -249,13 +278,13 @@ def test_spec12_steps(ready_client, fake_bambuddy):
     assert entries_of(client) == [(article_id, 1, "manual"), (article_id, 1, "manual")]
     tick(client, poll=False)
     assert open_count(client) == 1
-    assert len(fake.enqueued) == 3
+    assert len(fake.enqueued) == 4
     ((_open_id, _status, open_item),) = open_dispatches(client)
     fake.set_status(open_item, "completed")
     tick(client, poll=False)  # not yet polled: the cap still holds
-    assert len(fake.enqueued) == 3
-    tick(client, poll=True)  # the regular tick books the completion and hands the second over
     assert len(fake.enqueued) == 4
+    tick(client, poll=True)  # the regular tick books the completion and hands the second over
+    assert len(fake.enqueued) == 5
     assert open_count(client) == 1
 
     # Step 10: Bambuddy switched off; the warning shows, stock stays where it was.
@@ -268,7 +297,7 @@ def test_spec12_steps(ready_client, fake_bambuddy):
     tick(client, poll=True)
     assert en("warning.bambuddy_unreachable") in client.get("/queue").text
     assert numbers(client, article_id) == before
-    assert len(fake.enqueued) == 4
+    assert len(fake.enqueued) == 5
     assert article_row(client, article_id).paused is False
     assert open_dispatches(client) == open_before
 
@@ -283,3 +312,10 @@ def test_all_b4_get_pages_without_bambuddy(ready_client):
     automation_tab = client.get("/settings?tab=automation")
     assert automation_tab.status_code == 200
     assert 'id="automation-form"' in automation_tab.text
+
+
+def test_all_b5_get_pages_without_bambuddy(ready_client):
+    client = ready_client
+    client.app.state.bambuddy_factory = None  # no Bambuddy configured
+    for path in ("/inspection", "/assembly", "/api/inspections"):
+        assert client.get(path).status_code == 200, path

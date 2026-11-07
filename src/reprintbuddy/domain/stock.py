@@ -359,35 +359,41 @@ def add_provisional(
 
 
 def inspect_good(
-    session: Session, article_id: int, n: int, actor: Actor, note: str | None = None
+    session: Session, article_id: int, n: int, actor: Actor, note: str | None = None, *,
+    details: dict | None = None,
 ) -> list[PartShortage]:
     """Inspection good (Spec 8.2): provisional − n; stock + n, or awaiting assembly + n."""
     article = _article(session, article_id)
     if article.needs_assembly:
         return _simple(
             session, "inspection_good", article_id, n, actor, note,
-            {"provisional": -1, "awaiting_assembly": 1},
+            {"provisional": -1, "awaiting_assembly": 1}, extra_details=details,
         )
     return _simple(
         session, "inspection_good", article_id, n, actor, note,
-        {"provisional": -1, "stock": 1}, parts_cause="inspection_good",
+        {"provisional": -1, "stock": 1}, parts_cause="inspection_good", extra_details=details,
     )
 
 
 def inspect_scrap(
-    session: Session, article_id: int, n: int, actor: Actor, note: str | None = None
+    session: Session, article_id: int, n: int, actor: Actor, note: str | None = None, *,
+    details: dict | None = None,
 ) -> None:
     """Inspection scrap (Spec 8.2): provisional − n."""
-    _simple(session, "inspection_scrap", article_id, n, actor, note, {"provisional": -1})
+    _simple(
+        session, "inspection_scrap", article_id, n, actor, note, {"provisional": -1},
+        extra_details=details,
+    )
 
 
 def assemble(
-    session: Session, article_id: int, n: int, actor: Actor, note: str | None = None
+    session: Session, article_id: int, n: int, actor: Actor, note: str | None = None, *,
+    details: dict | None = None,
 ) -> list[PartShortage]:
     """Assembly (Spec 8.3): awaiting assembly − n, stock + n, parts − n × quantity per unit."""
     return _simple(
         session, "assembly", article_id, n, actor, note,
-        {"awaiting_assembly": -1, "stock": 1}, parts_cause="assembly",
+        {"awaiting_assembly": -1, "stock": 1}, parts_cause="assembly", extra_details=details,
     )
 
 
