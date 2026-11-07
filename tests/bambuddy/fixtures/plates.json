@@ -1,0 +1,62 @@
+{
+  "file_id": 5,
+  "filename": "Template A.gcode.3mf",
+  "plates": [
+    {
+      "index": 1,
+      "name": "Object 1",
+      "objects": [
+        "Object 1"
+      ],
+      "object_count": 1,
+      "has_thumbnail": true,
+      "thumbnail_url": "/api/v1/library/files/5/plate-thumbnail/1",
+      "print_time_seconds": 3720,
+      "filament_used_grams": 47.7,
+      "filaments": [
+        {
+          "slot_id": 1,
+          "type": "PLA",
+          "color": "#000000",
+          "tray_info_idx": "",
+          "used_grams": 42.5,
+          "used_meters": 14.25
+        },
+        {
+          "slot_id": 2,
+          "type": "PLA",
+          "color": "#FFFFFF",
+          "tray_info_idx": "",
+          "used_grams": 5.2,
+          "used_meters": 1.74
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "name": "Object 2",
+      "objects": [
+        "Object 2"
+      ],
+      "object_count": 1,
+      "has_thumbnail": true,
+      "thumbnail_url": "/api/v1/library/files/5/plate-thumbnail/2",
+      "print_time_seconds": 1510,
+      "filament_used_grams": 18.3,
+      "filaments": [
+        {
+          "slot_id": 1,
+          "type": "PLA",
+          "color": "#000000",
+          "tray_info_idx": "",
+          "used_grams": 18.3,
+          "used_meters": 6.14
+        }
+      ]
+    }
+  ],
+  "is_multi_plate": true,
+  "embedded_printer": "Preset",
+  "embedded_process": "Preset",
+  "design_overrides": []
+}

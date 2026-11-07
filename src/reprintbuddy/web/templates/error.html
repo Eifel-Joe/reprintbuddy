@@ -2,6 +2,6 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t(title_key) }}{% endblock %}
 {% block content %}
-{% call ui.page_head("circle-alert", t(title_key)) %}<p class="summary">{{ t(message_key) }}</p>{% endcall %}
+{% call ui.page_head("circle-alert", t(title_key), t(message_key)) %}{% endcall %}
 <p><a class="btn" href="/">{{ t('error.back') }}</a></p>
 {% endblock %}

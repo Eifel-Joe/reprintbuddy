@@ -7,9 +7,8 @@
 {#- Outside the regions and above the order, so a long order on a phone does not hide it. -#}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {% call ui.region("main", "order:" ~ order.id ~ " article") %}
-{% call ui.page_head("receipt", order.reference) %}
-<p class="summary">{{ order.order_date|local_date }} · {{ ui.badge('order', order.display_status) }}</p>
-{% endcall %}
+{% set sub %}{{ order.order_date|local_date }} · {{ ui.badge('order', order.display_status) }}{% endset %}
+{% call ui.page_head("receipt", order.reference, sub) %}{% endcall %}
 {% if order.note %}
 <section class="card section">
   <dl class="props">

@@ -15,16 +15,14 @@
 {{ ui.bar(fill_percent(row.available, row.target), 'archived' if archived else row.status) }}
 {%- endmacro %}
 
-{% call ui.page_head("package", t('articles.title') ~ (' · ' ~ t('catalog.archived') if archived else '')) %}
-{% call ui.region("summary", "article") %}{{ ui.summary("article", tc('summary.articles', total), summary_items) }}{% endcall %}
-{% endcall %}
+{% call ui.page_head("package", t('articles.title') ~ (' · ' ~ t('catalog.archived') if archived else ''), t('articles.subtitle')) %}<a class="btn" href="/articles/new">{{ ui.icon('plus') }}{{ t('articles.new') }}</a>{% endcall %}
+{% call ui.region("summary", "article") %}{{ ui.kpi_row(kpis) }}{% endcall %}
 
 <div class="toolbar">
   {{ ui.search_form(q, t('list.search_placeholder'), keep=search_keep) }}
   {% if not archived %}{% call ui.region("filters", "article") %}{{ ui.filter_bar("article", filters) }}{% endcall %}{% endif %}
   {{ ui.layout_toggle(layout_links) }}
   <div class="toolbar-actions">
-    <a class="btn" href="/articles/new">{{ ui.icon('plus') }}{{ t('articles.new') }}</a>
     <a class="btn secondary" href="/journal">{{ ui.icon('history') }}{{ t('journal.title') }}</a>
     {% if archived %}<a class="btn secondary" href="/articles">{{ ui.icon('archive') }}{{ t('catalog.show_active') }}</a>
     {%- else %}<a class="btn secondary" href="/articles?view=archived">{{ ui.icon('archive') }}{{ t('catalog.archived') }}</a>{% endif %}
@@ -47,6 +45,7 @@
         <th class="num">{{ t('articles.col.stock') }}</th>
         <th class="num">{{ t('articles.col.available') }}</th>
         <th class="num">{{ t('articles.target_quantity') }}</th>
+        <th class="actions-col"><span class="sr-only">{{ t('list.col.actions') }}</span></th>
       </tr>
     </thead>
     <tbody>
@@ -57,6 +56,12 @@
         <td class="num">{{ row.stock }}</td>
         <td class="num{% if row.available < 0 %} neg{% endif %}">{{ row.available }}</td>
         <td class="num target">{{ row.target }}{{ target_bar(row) }}</td>
+        <td class="actions-col">{% call ui.row_actions() %}
+          {%- if not archived %}{{ ui.icon_button('pencil', t('articles.edit'), '/articles/' ~ row.id ~ '/edit') }}{% endif %}
+          {{- ui.icon_button('history', t('journal.title'), '/journal?article=' ~ row.id) }}
+          {%- if archived %}{{ ui.icon_post('archive-restore', t('catalog.restore'), '/articles/' ~ row.id ~ '/restore') }}
+          {%- else %}{{ ui.icon_post('archive', t('catalog.archive'), '/articles/' ~ row.id ~ '/archive') }}{% endif %}
+        {% endcall %}</td>
       </tr>
     {% endfor %}
     </tbody>

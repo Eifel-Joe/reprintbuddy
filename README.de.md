@@ -45,6 +45,10 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 - Bambuddy 1.3 oder neuer, mit eigener Spulenverwaltung oder mit Spoolman (**Spoolman ist
   optional**). Reprintbuddy liest den Filamentbestand über Bambuddy und spricht nie selbst
   mit Spoolman.
+- **Druckdateien direkt in Bambuddys Dateimanager**, hochgeladen und geslict (`.gcode.3mf`).
+  Extern eingebundene Ordner reichen nicht: Für ihre Dateien führt Bambuddy keine Prüfsumme
+  und liest Platten und Filament beim erneuten Einlesen nicht neu, eine geänderte Fassung
+  bliebe unbemerkt.
 - Ein **eigener Bambuddy-Benutzer** `reprintbuddy` in einer **eigenen Bambuddy-Gruppe** mit den
   Rechten, die unter *Erster Aufruf* stehen, und ein **API-Schlüssel** dieses Benutzers. Der
   eigene Benutzer macht Reprintbuddys Aufträge in Bambuddy erkennbar. Die Einrichtung
@@ -60,18 +64,18 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 ## Installation
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.1/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.3/install/install.sh)"
 ```
 
 Als root im Container ausführen. Frische Debian-Container bringen oft kein curl mit; der erste Teil installiert es.
-Der Tag in der Adresse (`v0.3.1`) ist die Version, die installiert wird; Skript und Code gehören sicher zusammen.
+Der Tag in der Adresse (`v0.3.3`) ist die Version, die installiert wird; Skript und Code gehören sicher zusammen.
 Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.1/install/install.sh)" _ --language de
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.3/install/install.sh)" _ --language de
 ```
 
-Für eine andere Version setze ihren Tag in die Adresse (für `<tag>` zum Beispiel `v0.3.1`):
+Für eine andere Version setze ihren Tag in die Adresse (für `<tag>` zum Beispiel `v0.3.3`):
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"

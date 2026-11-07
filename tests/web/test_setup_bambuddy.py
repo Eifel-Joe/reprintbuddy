@@ -89,9 +89,9 @@ def test_setup_steps_close_after_setup(ready_client):
     """Entering the key (step c) and the start page stay closed once Bambuddy is connected."""
     for path in ("/setup/bambuddy", CONNECT):
         closed = ready_client.get(path)
-        assert closed.status_code == 303 and closed.headers["location"] == "/settings", path
+        assert closed.status_code == 303 and closed.headers["location"] == "/settings?tab=bambuddy", path
     response = ready_client.post(CONNECT, data={})
-    assert response.status_code == 303 and response.headers["location"] == "/settings"
+    assert response.status_code == 303 and response.headers["location"] == "/settings?tab=bambuddy"
 
 
 def test_guide_pages_stay_readable_after_setup_as_a_plain_guide(ready_client):
@@ -103,7 +103,7 @@ def test_guide_pages_stay_readable_after_setup_as_a_plain_guide(ready_client):
         html = page.text
         assert "of 4" not in html and "Next" not in html, path  # no step counter, no way on
         assert f'href="{CONNECT}"' not in html, path
-        assert 'href="/settings"' in html and "Back to the settings" in html, path
+        assert 'href="/settings?tab=bambuddy"' in html and "Back to the settings" in html, path
     assert "Read Filaments" in ready_client.get(USER_PAGE).text
     assert "Read Status" in ready_client.get(KEY_PAGE).text
 
@@ -171,8 +171,8 @@ def test_connect_with_an_administrator_key_warns_on_the_next_page(admin_client, 
     mock_auth_me(respx_mock, is_admin=True)
     token = csrf_of(admin_client, CONNECT)
     response = admin_client.post(CONNECT, data=_form(token))
-    assert response.status_code == 303 and response.headers["location"] == "/settings"
-    page = admin_client.get("/settings").text
+    assert response.status_code == 303 and response.headers["location"] == "/settings?tab=bambuddy"
+    page = admin_client.get("/settings?tab=bambuddy").text
     text = "The key belongs to an administrator"
     tag = page[page.rindex("<p", 0, page.index(text)) : page.index(text)]
     assert 'class="alert"' in tag and 'role="alert"' in tag

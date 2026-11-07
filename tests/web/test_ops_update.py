@@ -46,18 +46,18 @@ def calls_with(env, word):
 
 
 def test_update_unavailable_without_git(ops_env):
-    page = ops_env.client.get("/settings").text
+    page = ops_env.client.get("/settings?tab=maintenance").text
     assert "need an installation made with the install script" in page
     assert 'action="/settings/update"' not in page
     response = check(ops_env)
     assert response.status_code == 303
-    assert response.headers["location"] == "/settings?ops=not_git#ops-update"
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=not_git#ops-update"
     assert ops_env.runner.calls == []
 
 
 def test_settings_shows_installed(ops_env):
     git_env(ops_env)
-    page = ops_env.client.get("/settings").text
+    page = ops_env.client.get("/settings?tab=maintenance").text
     assert "Installed version: v0.1.0" in page
     assert "Not checked yet." in page
 
@@ -67,13 +67,13 @@ def test_dev_build_shown(ops_env, monkeypatch):
 
     monkeypatch.setattr(routes, "__version__", "0.1.0.dev0")
     git_env(ops_env, describe=None)
-    assert "development build 0.1.0.dev0" in ops_env.client.get("/settings").text
+    assert "development build 0.1.0.dev0" in ops_env.client.get("/settings?tab=maintenance").text
 
 
 def test_installed_tag_is_read_once_per_process(ops_env):
     git_env(ops_env)
     for _ in range(3):
-        ops_env.client.get("/settings")
+        ops_env.client.get("/settings?tab=maintenance")
     assert len(calls_with(ops_env, "describe")) == 1
 
 
@@ -81,8 +81,8 @@ def test_check_shows_newest(ops_env):
     git_env(ops_env)
     response = check(ops_env)
     assert response.status_code == 303
-    assert response.headers["location"] == "/settings#ops-update"
-    page = ops_env.client.get("/settings").text
+    assert response.headers["location"] == "/settings?tab=maintenance#ops-update"
+    page = ops_env.client.get("/settings?tab=maintenance").text
     assert "Newest release: v0.2.0" in page
     assert "Update to v0.2.0" in page
 
@@ -90,7 +90,7 @@ def test_check_shows_newest(ops_env):
 def test_check_up_to_date(ops_env):
     git_env(ops_env, remote=REMOTE_ONE)
     check(ops_env)
-    page = ops_env.client.get("/settings").text
+    page = ops_env.client.get("/settings?tab=maintenance").text
     assert "Reprintbuddy is up to date." in page
     assert "Update to" not in page
 
@@ -98,8 +98,8 @@ def test_check_up_to_date(ops_env):
 def test_check_failure_message(ops_env):
     git_env(ops_env, remote=CommandResult(128, "", "fatal: unable to access 'https://example.invalid/x'"))
     response = check(ops_env)
-    assert response.headers["location"] == "/settings?ops=check_failed#ops-update"
-    page = ops_env.client.get("/settings?ops=check_failed").text
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=check_failed#ops-update"
+    page = ops_env.client.get("/settings?tab=maintenance&ops=check_failed").text
     assert "The check for updates failed" in page
     assert "unable to access" not in page
 
@@ -109,7 +109,7 @@ def test_update_starts_unit(ops_env):
     check(ops_env)
     response = post(ops_env, "/settings/update")
     assert response.status_code == 303
-    assert response.headers["location"] == "/settings#ops-update"
+    assert response.headers["location"] == "/settings?tab=maintenance#ops-update"
     assert ops_env.runner.calls[-1] == START_UPDATE_CMD
     status = read_status(data_dir(ops_env))
     assert (status.state, status.from_tag, status.to_tag) == ("queued", "v0.1.0", "v0.2.0")
@@ -120,7 +120,7 @@ def test_update_refused_when_busy(ops_env):
     check(ops_env)
     write_status(data_dir(ops_env), UpdateStatus(state="running", step="install", started_at=now() - timedelta(minutes=1)))
     response = post(ops_env, "/settings/update")
-    assert response.headers["location"] == "/settings?ops=busy#ops-update"
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=busy#ops-update"
     assert START_UPDATE_CMD not in ops_env.runner.calls
 
 
@@ -130,8 +130,8 @@ def test_double_click_starts_one_helper(ops_env):
     token = csrf_of(ops_env.client, "/settings")
     first = post(ops_env, "/settings/update", token)
     second = post(ops_env, "/settings/update", token)
-    assert first.headers["location"] == "/settings#ops-update"
-    assert second.headers["location"] == "/settings?ops=busy#ops-update"
+    assert first.headers["location"] == "/settings?tab=maintenance#ops-update"
+    assert second.headers["location"] == "/settings?tab=maintenance&ops=busy#ops-update"
     assert ops_env.runner.calls.count(START_UPDATE_CMD) == 1
 
 
@@ -146,7 +146,7 @@ def test_stale_status_allows_update(ops_env):
 def test_update_without_check_refused(ops_env):
     git_env(ops_env)
     response = post(ops_env, "/settings/update")
-    assert response.headers["location"] == "/settings?ops=no_update#ops-update"
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=no_update#ops-update"
     assert START_UPDATE_CMD not in ops_env.runner.calls
 
 
@@ -154,12 +154,12 @@ def test_update_when_up_to_date_refused(ops_env):
     git_env(ops_env, remote=REMOTE_ONE)
     check(ops_env)
     response = post(ops_env, "/settings/update")
-    assert response.headers["location"] == "/settings?ops=no_update#ops-update"
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=no_update#ops-update"
 
 
 def test_update_without_git_refused(ops_env):
     response = post(ops_env, "/settings/update")
-    assert response.headers["location"] == "/settings?ops=not_git#ops-update"
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=not_git#ops-update"
     assert ops_env.runner.calls == []
 
 
@@ -168,7 +168,7 @@ def test_update_start_failure(ops_env):
     check(ops_env)
     ops_env.runner.on(START_UPDATE_CMD, CommandResult(1, "", "sudo: a password is required\nmore"))
     response = post(ops_env, "/settings/update")
-    assert response.headers["location"] == "/settings?ops=start_failed#ops-update"
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=start_failed#ops-update"
     status = read_status(data_dir(ops_env))
     assert status.state == "failed" and status.step == "start"
     assert status.message == "start: sudo: a password is required"
@@ -196,11 +196,11 @@ def test_status_json_requires_login(ops_env):
 def test_poll_script_only_when_busy(ops_env):
     git_env(ops_env)
     write_status(data_dir(ops_env), UpdateStatus(state="queued", step="start", started_at=now()))
-    page = ops_env.client.get("/settings").text
+    page = ops_env.client.get("/settings?tab=maintenance").text
     assert 'data-status-url="/settings/update/status"' in page
     assert "/static/js/ops.js" in page
     write_status(data_dir(ops_env), UpdateStatus(state="succeeded", step="done", started_at=now(), finished_at=now()))
-    assert "update-status" not in ops_env.client.get("/settings").text
+    assert "update-status" not in ops_env.client.get("/settings?tab=maintenance").text
 
 
 def test_state_is_shown_with_message_and_backup(ops_env):
@@ -212,7 +212,7 @@ def test_state_is_shown_with_message_and_backup(ops_env):
             message="install: boom <b>", backup="/var/lib/reprintbuddy/backups/x.db",
         ),
     )
-    page = ops_env.client.get("/settings").text
+    page = ops_env.client.get("/settings?tab=maintenance").text
     assert "Update failed, previous version restored" in page
     assert "install: boom &lt;b&gt;" in page
     assert "/var/lib/reprintbuddy/backups/x.db" in page
@@ -336,7 +336,7 @@ def test_dead_unit_releases_a_stale_busy_state(ops_env):
     token = csrf_of(ops_env.client, "/settings")
     write_status(data_dir(ops_env), UpdateStatus(state="running", step="install", started_at=now() - timedelta(minutes=5)))
     unit_state(ops_env, "inactive")
-    page = ops_env.client.get("/settings").text
+    page = ops_env.client.get("/settings?tab=maintenance").text
     assert "Update was interrupted" in page
     assert "Installing packages" in page  # the step it stopped at
     assert "update-status" not in page  # no polling for something that is gone
@@ -349,7 +349,7 @@ def test_failed_unit_releases_a_queued_state(ops_env):
     write_status(data_dir(ops_env), UpdateStatus(state="queued", step="start", from_tag="v0.1.0", to_tag="v0.2.0", started_at=now() - timedelta(minutes=2)))
     unit_state(ops_env, "failed")
     response = post(ops_env, "/settings/update")
-    assert response.headers["location"] == "/settings#ops-update"  # not "busy": a new update starts
+    assert response.headers["location"] == "/settings?tab=maintenance#ops-update"  # not "busy": a new update starts
     assert ops_env.runner.calls[-1] == START_UPDATE_CMD
 
 
@@ -379,14 +379,14 @@ def test_unknown_unit_state_keeps_the_block(ops_env):
 def test_stale_running_state_is_shown_as_interrupted_not_as_running(ops_env):
     git_env(ops_env)
     write_status(data_dir(ops_env), UpdateStatus(state="running", step="health", started_at=now() - timedelta(minutes=45)))
-    page = ops_env.client.get("/settings").text
+    page = ops_env.client.get("/settings?tab=maintenance").text
     assert "Update was interrupted" in page
     assert "Update is running" not in page
 
 
 def test_idle_page_asks_systemd_nothing(ops_env):
     git_env(ops_env)
-    ops_env.client.get("/settings")
+    ops_env.client.get("/settings?tab=maintenance")
     assert not [c for c in ops_env.runner.calls if "systemctl" in c[0] or "show" in c]
 
 
@@ -398,7 +398,7 @@ def test_package_version_is_shown_when_it_differs_from_the_tag(ops_env, monkeypa
 
     monkeypatch.setattr(routes, "__version__", "0.1.0.dev0")
     git_env(ops_env)  # tag v0.1.0, package 0.1.0.dev0
-    page = ops_env.client.get("/settings").text
+    page = ops_env.client.get("/settings?tab=maintenance").text
     assert "Installed version: v0.1.0 (package version 0.1.0.dev0)" in page
 
 
@@ -407,6 +407,6 @@ def test_package_version_is_not_repeated_when_it_matches(ops_env, monkeypatch):
 
     monkeypatch.setattr(routes, "__version__", "0.1.0")
     git_env(ops_env)
-    page = ops_env.client.get("/settings").text
+    page = ops_env.client.get("/settings?tab=maintenance").text
     assert "Installed version: v0.1.0" in page
     assert "package version" not in page

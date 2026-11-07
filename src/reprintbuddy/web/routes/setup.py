@@ -83,7 +83,7 @@ BASE = "/setup/bambuddy"
 def _closed(db: Session) -> RedirectResponse | None:
     """Once Bambuddy is connected the pages are closed; the settings page takes over."""
     if st.bambuddy_configured(db):
-        return RedirectResponse("/settings", status_code=303)
+        return RedirectResponse("/settings?tab=bambuddy", status_code=303)
     return None
 
 
@@ -151,5 +151,5 @@ async def bambuddy_connect_submit(request: Request, db: Session = Depends(get_db
     take_verdict(request, check)  # this start has checked the new key
     if check.owner_is_admin:
         flash(request, "bambuddy.admin_warning", warning=True)  # saved, but the person is told
-        return RedirectResponse("/settings", status_code=303)
+        return RedirectResponse("/settings?tab=bambuddy", status_code=303)
     return RedirectResponse("/", status_code=303)

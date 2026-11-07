@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('articles.browse_title') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("package", t('articles.browse_title')) %}{% endcall %}
+{% call ui.page_head("package", t('articles.browse_title'), t('articles.new_subtitle')) %}{% endcall %}
 {% if problem %}
 <p class="alert" role="alert">{{ t(problem) }}</p>
 <p><a class="btn-link" href="/articles">{{ t('articles.title') }}</a></p>

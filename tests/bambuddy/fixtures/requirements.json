@@ -1,0 +1,25 @@
+{
+  "file_id": 5,
+  "filename": "Template A.gcode.3mf",
+  "plate_id": 1,
+  "filaments": [
+    {
+      "slot_id": 1,
+      "type": "PLA",
+      "color": "#000000",
+      "used_grams": 42.5,
+      "used_meters": 14.25,
+      "tray_info_idx": "",
+      "used_in_plate": true
+    },
+    {
+      "slot_id": 2,
+      "type": "PLA",
+      "color": "#FFFFFF",
+      "used_grams": 5.2,
+      "used_meters": 1.74,
+      "tray_info_idx": "",
+      "used_in_plate": true
+    }
+  ]
+}

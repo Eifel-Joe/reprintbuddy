@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from itertools import zip_longest
 from collections.abc import Mapping
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -20,12 +21,12 @@ from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, Bambu
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
 from reprintbuddy.domain import catalog, pauses, workqueue
 from reprintbuddy.domain.catalog import ArticleInput, TargetOption
-from reprintbuddy.domain.errors import DomainError
+from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.domain import stock as stock_mod
 from reprintbuddy.models import Article, ArticleFilament, ArticlePart, Dispatch, Part, WorkQueueEntry
-from reprintbuddy.web import listing
+from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, release_connection, render
 from reprintbuddy.web.forms import (
@@ -68,15 +69,79 @@ def target_choices(lang: str, options: list[TargetOption], selected: str) -> lis
     return choices
 
 
-def parse_article_form(form, part_ids: list[int], *, default_target: str) -> ArticleInput:
+# ---- purchased parts in the form (Spec 5.2) ---------------------------------------------------
+
+MAX_PART_QTY = 1000
+MAX_PART_ROWS = 200  # more rows than any article has parts; a forged form cannot make it grow further
+_ROW_INDEX = re.compile(r"[0-9]{1,3}")
+
+
+def _all_part_rows(form) -> list[dict[str, str]]:
+    pairs = zip_longest(form.getlist("parts_part"), form.getlist("parts_qty"), fillvalue="")
+    return [{"part": str(part).strip(), "qty": str(qty).strip()} for part, qty in pairs]
+
+
+def part_rows(form) -> list[dict[str, str]]:
+    """The rows of the parts list as typed, to show the form again: at most MAX_PART_ROWS."""
+    return _all_part_rows(form)[:MAX_PART_ROWS]
+
+
+def parse_parts(form, parts: list[Part]) -> dict[int, int]:
+    """The parts in use (part id -> quantity per unit); none while the box is not ticked.
+
+    A row without a part is ignored. Each part may be chosen once, with a quantity of at least 1;
+    whether it exists and is active is for the catalog to say. Raises ValidationError or NotFoundError."""
+    if not parse_bool(form.get("has_parts")):
+        return {}
+    names = {str(part.id): part.name for part in parts}
+    chosen: dict[int, int] = {}
+    rows = _all_part_rows(form)
+    if len(rows) > MAX_PART_ROWS:  # not cut off: a part in a later row would be lost quietly
+        raise ValidationError("articles.part_too_many", max=MAX_PART_ROWS)
+    for row in rows:
+        if not row["part"]:
+            continue
+        part_id = bounded_int(row["part"])
+        if part_id is None:
+            raise NotFoundError("parts.not_found")
+        # A part the form does not offer (gone, or archived after the page was opened) goes on to
+        # the catalog, which knows which of the two it is and says so.
+        name = names.get(row["part"], row["part"])
+        if part_id in chosen:
+            raise ValidationError("articles.part_twice", name=name)
+        try:
+            chosen[part_id] = parse_int(row["qty"], field="articles.field.qty_per_unit", min=1, max=MAX_PART_QTY)
+        except ValidationError:
+            raise ValidationError("articles.part_qty_invalid", name=name, min=1, max=MAX_PART_QTY) from None
+    return chosen
+
+
+def change_part_rows(form, values: dict[str, object]) -> bool:
+    """Adding or removing a row without JavaScript: True when the form is only to be shown again.
+
+    Nothing is saved then and the one-time token is not used up. The new row, or else the add
+    button, gets the focus, so the page opens where the user was."""
+    rows = values["part_rows"]
+    assert isinstance(rows, list)
+    if form.get("parts_add") is not None:
+        if len(rows) < MAX_PART_ROWS:
+            rows.append({"part": "", "qty": ""})
+        values["has_parts"] = True  # adding a part means parts are needed
+        values["focus"] = len(rows) - 1
+        return True
+    raw = form.get("parts_remove")
+    if raw is None:
+        return False
+    if _ROW_INDEX.fullmatch(str(raw)) and int(str(raw)) < len(rows):
+        del rows[int(str(raw))]
+    values["focus"] = "add"
+    return True
+
+
+def parse_article_form(form, parts: list[Part], *, default_target: str) -> ArticleInput:
     """Read the article settings from a form; raises ValidationError for bad input."""
     raw_target = form.get("target")
     target_model, printer_id = catalog.parse_target(default_target if raw_target is None else str(raw_target))
-    parts: dict[int, int] = {}
-    for part_id in part_ids:
-        qty = parse_int(form.get(f"part_{part_id}"), field="articles.field.qty_per_unit", min=0, max=1000, default=0)
-        if qty:
-            parts[part_id] = qty
     return ArticleInput(
         name=parse_text(form.get("name"), field="articles.field.name", max_len=200, required=True),
         sku=parse_text(form.get("sku"), field="catalog.field.sku", max_len=64),
@@ -87,11 +152,11 @@ def parse_article_form(form, part_ids: list[int], *, default_target: str) -> Art
         printer_id=printer_id,
         needs_assembly=parse_bool(form.get("needs_assembly")),
         auto_enabled=parse_bool(form.get("auto_enabled")),
-        parts=parts,
+        parts=parse_parts(form, parts),
     )
 
 
-def typed_values(form, part_ids: list[int]) -> dict[str, object]:
+def typed_values(form) -> dict[str, object]:
     """What was typed, for showing the form again after an error."""
     return {
         "name": str(form.get("name", "")),
@@ -102,11 +167,14 @@ def typed_values(form, part_ids: list[int]) -> dict[str, object]:
         "target": str(form.get("target", "")),
         "needs_assembly": parse_bool(form.get("needs_assembly")),
         "auto_enabled": parse_bool(form.get("auto_enabled")),
-        "parts": {pid: str(form.get(f"part_{pid}", "")) for pid in part_ids},
+        "has_parts": parse_bool(form.get("has_parts")),
+        "part_rows": part_rows(form),
+        "focus": None,
     }
 
 
-def values_of_input(data: ArticleInput, part_ids: list[int]) -> dict[str, object]:
+def values_of_input(data: ArticleInput, parts: list[Part]) -> dict[str, object]:
+    in_use = [part for part in parts if part.id in data.parts]  # in the order of the offered parts
     return {
         "name": data.name,
         "sku": data.sku or "",
@@ -116,7 +184,9 @@ def values_of_input(data: ArticleInput, part_ids: list[int]) -> dict[str, object
         "target": catalog.target_value(data.target_model, data.printer_id),
         "needs_assembly": data.needs_assembly,
         "auto_enabled": data.auto_enabled,
-        "parts": {pid: str(data.parts.get(pid, 0)) for pid in part_ids},
+        "has_parts": bool(in_use),
+        "part_rows": [{"part": str(part.id), "qty": str(data.parts[part.id])} for part in in_use],
+        "focus": None,
     }
 
 
@@ -162,7 +232,7 @@ async def _read_plate(client: BambuddyClient, file_id: int, index: int):
 async def articles_list(
     request: Request, view: str = "active", q: str | None = None, db: Session = Depends(get_db)
 ):
-    """Overview with short summary, search, status filter and tiles or list (Spec 10.1).
+    """Overview with key figure cards, search, status filter and tiles or list (Spec 10.1).
 
     The summary counts all articles of the view; the filter counts follow the search; the list
     shows what passes both. The archive has no status filter: its badge is "archived".
@@ -175,18 +245,20 @@ async def articles_list(
     every = catalog.list_articles(db, archived=archived)
     found = [row for row in every if listing.matches(q, row.name, row.sku)]
     counts = Counter(row.status for row in found)
-    summary_items: list[tuple[str, int]] = []
-    if not archived:  # "enough" is not counted: the summary names what needs attention
-        summary_items = summarize((row.status for row in every), ("overbooked", "below_min", "low"))
-        if paused := sum(row.paused for row in every):
-            summary_items.append(("paused", paused))
+    lang = current_language(request)
+    t = lambda key: translate(lang, key)  # noqa: E731
+    # "enough" and "paused" get no card: the cards name what needs attention
+    icon, label, named = ("archive", "kpi.articles_archived", []) if archived else (
+        "package", "kpi.articles", summarize((row.status for row in every), ("overbooked", "below_min", "low"))
+    )
+    cards = kpis.state_cards(t, "article", icon, len(every), t(label), named)
     keep = (("status", status), ("view", "archived" if archived else None))
     layout = listing.layout_of(request, "articles")
     return render(
         request, "articles_list.html", active_nav="articles", archived=archived,
         rows=[row for row in found if status is None or row.status == status],
         total=len(every),
-        summary_items=summary_items,
+        kpis=cards,
         filters=listing.filter_links(request, states, counts, len(found), status),
         layout=layout,
         layout_links=listing.layout_links(request, layout),
@@ -365,7 +437,7 @@ async def articles_plate_form(request: Request, file_id: int, index: int, db: Se
         return _problem(request, "articles.file_missing", 404)
     file, plate, requirements, _thumbnail = read
     parts = active_parts(db)
-    values = values_of_input(catalog.default_article_input(file), [p.id for p in parts])
+    values = values_of_input(catalog.default_article_input(file), parts)
     return _plate_form(
         request, action=f"/articles/new/file/{file_id}/plate/{index}", file=file, plate=plate,
         requirements=requirements, printers=printers, parts=parts, values=values,
@@ -386,12 +458,17 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
         return _problem(request, "articles.file_missing")
     file, plate, requirements, thumbnail = read
     parts = active_parts(db)
-    part_ids = [p.id for p in parts]
     action = f"/articles/new/file/{file_id}/plate/{index}"
     lang = current_language(request)
+    values = typed_values(form)
+    if change_part_rows(form, values):
+        return _plate_form(
+            request, action=action, file=file, plate=plate, requirements=requirements,
+            printers=await _printers(client), parts=parts, values=values,
+        )
     try:
         data = parse_article_form(
-            form, part_ids, default_target=catalog.target_value(file.printer_model, None)
+            form, parts, default_target=catalog.target_value(file.printer_model, None)
         )
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
             article = catalog.create_article(
@@ -404,7 +481,7 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
         printers = await _printers(client)
         return _plate_form(
             request, action=action, file=file, plate=plate, requirements=requirements,
-            printers=printers, parts=parts, values=typed_values(form, part_ids),
+            printers=printers, parts=parts, values=values,
             error=error_text(lang, exc), status=error_status(exc),
         )
     return saved_redirect(request, f"/articles/{article_id}", "articles.created", name=article_name)
@@ -519,7 +596,7 @@ def _edit_page(request, db, article, printers, values, error=None, status=200):
     )
 
 
-def _article_values(db: Session, article: Article, part_ids: list[int]) -> dict[str, object]:
+def _article_values(db: Session, article: Article, parts: list[Part]) -> dict[str, object]:
     links = dict(db.execute(select(ArticlePart.part_id, ArticlePart.qty_per_unit).where(ArticlePart.article_id == article.id)).all())
     data = ArticleInput(
         name=article.name, sku=article.sku, units_per_print=article.units_per_print,
@@ -527,7 +604,7 @@ def _article_values(db: Session, article: Article, part_ids: list[int]) -> dict[
         printer_id=article.printer_id, needs_assembly=article.needs_assembly,
         auto_enabled=article.auto_enabled, parts=links,
     )
-    return values_of_input(data, part_ids)
+    return values_of_input(data, parts)
 
 
 def _edit_refused(request: Request, db: Session, article: Article):
@@ -543,8 +620,7 @@ async def article_edit(request: Request, article_id: int, db: Session = Depends(
     if article.archived_at is not None:
         return _edit_refused(request, db, article)
     printers = await _printers_for_edit(request)
-    part_ids = [p.id for p in active_parts(db)]
-    return _edit_page(request, db, article, printers, _article_values(db, article, part_ids))
+    return _edit_page(request, db, article, printers, _article_values(db, article, active_parts(db)))
 
 
 @router.post("/articles/{article_id:int}/edit", dependencies=[Depends(verify_csrf)])
@@ -553,16 +629,19 @@ async def article_update(request: Request, article_id: int, db: Session = Depend
     if article.archived_at is not None:
         return _edit_refused(request, db, article)
     form = await request.form()
-    part_ids = [p.id for p in active_parts(db)]
+    parts = active_parts(db)
+    values = typed_values(form)
+    if change_part_rows(form, values):
+        return _edit_page(request, db, article, await _printers_for_edit(request), values)
     stored = catalog.target_value(article.target_model, article.printer_id)
     try:
-        data = parse_article_form(form, part_ids, default_target=stored)
+        data = parse_article_form(form, parts, default_target=stored)
         with write_transaction(request) as tx:
             catalog.update_article(tx, article_id, data)
     except DomainError as exc:
         printers = await _printers_for_edit(request)
         return _edit_page(
-            request, db, article, printers, typed_values(form, part_ids),
+            request, db, article, printers, values,
             error=error_text(current_language(request), exc), status=error_status(exc),
         )
     return saved_redirect(request, f"/articles/{article_id}", "articles.saved", name=data.name)

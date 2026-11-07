@@ -27,7 +27,7 @@ def test_export_requires_login(ops_env):
 
 
 def test_settings_has_export_link(ops_env):
-    assert 'href="/settings/export"' in ops_env.client.get("/settings").text
+    assert 'href="/settings/export"' in ops_env.client.get("/settings?tab=maintenance").text
 
 
 def test_export_runs_no_commands(ops_env):
