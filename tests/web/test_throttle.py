@@ -3,6 +3,7 @@
 import asyncio
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 from conftest import ADMIN, PASSWORD, csrf_of, make_client
@@ -183,26 +184,50 @@ def _login(client, password):
     return client.post("/login", data={"csrf_token": token, "username": ADMIN, "password": password})
 
 
-def test_many_failed_logins_slow_down_every_further_attempt(ready_client):
+@pytest.fixture
+def pauses(monkeypatch):
+    """The pauses the login asks for, in order, instead of really waiting for them.
+
+    p81: these tests used to measure wall-clock time ("took at least 0.4 s", "took less than
+    3 s"). Under load the four hashes alone took longer than the 3 s, and on Windows a timer may
+    fire up to ~16 ms early. What matters is which pause the login asked for, so that is what is
+    recorded: the login module gets a stand-in for `asyncio` whose `sleep` only writes it down.
+    """
+    asked: list[float] = []
+
+    async def record(seconds):
+        asked.append(seconds)
+
+    monkeypatch.setattr("reprintbuddy.web.routes.auth.asyncio", SimpleNamespace(sleep=record))
+    return asked
+
+
+def test_many_failed_logins_slow_down_every_further_attempt(ready_client, pauses):
     ready_client.cookies.clear()
     brake = ready_client.app.state.login_brake
     brake.threshold, brake.delay = 3, 0.4
+    ready_client.app.state.login_failure_delay = 0.5
     for _ in range(3):
         assert _login(ready_client, "wrong-password").status_code == 200
-    started = time.monotonic()
+    assert pauses == [0.5, 0.5, 0.5]  # a pause per failure, no brake yet
+    pauses.clear()
     response = _login(ready_client, PASSWORD)  # even the right password waits
     assert response.status_code == 303
-    assert time.monotonic() - started >= 0.4
+    assert pauses == [0.4]
 
 
-def test_the_brake_is_not_felt_before_the_threshold(ready_client):
+def test_the_brake_is_not_felt_before_the_threshold(ready_client, pauses):
     ready_client.cookies.clear()
     brake = ready_client.app.state.login_brake
     brake.threshold, brake.delay = 5, 3.0
-    started = time.monotonic()
+    ready_client.app.state.login_failure_delay = 0.5
     for _ in range(4):
         _login(ready_client, "wrong-password")
-    assert time.monotonic() - started < 3.0
+    assert pauses == [0.5] * 4  # the failure pause only: the brake's 3.0 s is not among them
+    _login(ready_client, "wrong-password")  # the fifth failure reaches the threshold ...
+    assert 3.0 not in pauses
+    _login(ready_client, "wrong-password")  # ... and from now on every attempt waits
+    assert 3.0 in pauses
 
 
 def test_a_successful_login_is_not_counted_as_a_failure(ready_client):
