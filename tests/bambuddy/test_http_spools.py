@@ -136,6 +136,36 @@ def test_spool_color_missing_or_malformed_is_none():
     assert spools[0].color_hex is None and spools[1].color_hex is None
 
 
+@pytest.mark.parametrize(
+    "rgba, shown",
+    [  # Bambuddy always sends eight digits (`_spoolman_helpers.py`, an opaque FF is appended to six)
+        ("000000FF", "#000000"),  # opaque: as before, no alpha part
+        ("ff0000ff", "#FF0000"),
+        ("00000000", "#00000000"),  # transparent (Spec 9.1): the alpha part stays
+        ("FFFFFF00", "#FFFFFF00"),
+        ("00000080", "#00000080"),  # partly transparent
+        ("#000000", "#000000"),
+    ],
+)
+def test_spool_colour_keeps_an_alpha_that_is_not_opaque(rgba, shown):
+    data = load("spools_builtin.json")
+    data[0]["rgba"] = rgba
+    assert parse_spools(data)[0].color_hex == shown
+
+
+def test_a_transparent_spool_from_the_parser_is_a_sort_of_its_own(db):  # Spec 9.1
+    from reprintbuddy.domain import filament
+
+    data = load("spools_builtin.json")
+    data[0]["rgba"], data[1]["rgba"] = "000000FF", "00000000"
+    data[1]["material"], data[1]["subtype"] = data[0]["material"], data[0]["subtype"]
+    black, clear = parse_spools(data)[:2]
+    assert (black.material, black.subtype) == (clear.material, clear.subtype)
+    with db.begin() as s:
+        ids = filament.sync_sorts(s, [black, clear])
+        assert ids[black.id] != ids[clear.id]
+
+
 @pytest.mark.parametrize("key", ["id", "material", "label_weight", "weight_used"])
 def test_spool_required_fields(key):
     data = load("spools_builtin.json")
