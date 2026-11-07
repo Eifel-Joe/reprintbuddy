@@ -20,6 +20,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.live import NO_RIGHT_DELAY
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops.tls import validate_tls_pair
+from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.routes.auth import password_confirmed
@@ -71,6 +72,7 @@ def _page(
         "bambuddy_address": st.get_setting(db, "bambuddy_url") or "",
         "bambuddy_owner": st.get_setting(db, "bambuddy_username") or "",
         "qr_base_url": st.get_setting(db, "qr_base_url") or "",
+        "qr_automatic": qr_view.automatic_base(request),
         "host": st.get_setting(db, "host"),
         "port": st.get_setting(db, "port"),
         "automation": st.get_setting(db, "automation"),

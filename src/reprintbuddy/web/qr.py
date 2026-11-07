@@ -16,6 +16,8 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 
 from reprintbuddy import settings as st
+from reprintbuddy.ops.server import base_url
+from reprintbuddy.web import netaddr
 
 # Error correction M (about 15 % can be damaged): a code on a shelf gets scratched and dusty, and
 # the short address keeps it a small, coarse pattern anyway. Quiet zone of 4 modules is the standard.
@@ -27,11 +29,31 @@ _PNG_SCALE = 10  # pixels per module: a version 3 code is about 370 pixels wide
 _SVG_SCALE = 8
 
 
+def automatic_base(request: Request) -> str:
+    """The start of the address when nothing is entered: this server's own address in the network,
+    with its port (Spec 8.4), which Reprintbuddy finds itself (`netaddr`). The address it listens
+    on if that is a specific one, else the one the connection came in on, else the one of the
+    default route. The port and HTTPS come from the running server. Without any network address
+    (loopback only) the address of this very request stays, and the page warns about it."""
+    ops = getattr(request.app.state, "ops", None)
+    effective = getattr(ops, "effective", None)
+    host = (
+        (netaddr.usable(effective.host) if effective is not None else None)
+        or netaddr.connection_address(request.scope.get("server"))
+        or netaddr.machine_address()
+    )
+    if host is None:
+        return str(request.base_url).rstrip("/")
+    tls = effective.tls if effective is not None else request.url.scheme == "https"
+    port = effective.port if effective is not None else (request.url.port or (443 if tls else 80))
+    return base_url(host, port, tls)
+
+
 def base_address(request: Request, db: Session) -> str:
-    """The start of the address in the codes: the address entered in the settings, else the one this
-    very request came in on (no trailing slash)."""
+    """The start of the address in the codes: the address entered in the settings (a special case:
+    a name, a proxy), else the server's own address (no trailing slash)."""
     entered = st.get_setting(db, "qr_base_url")
-    return str(entered) if entered else str(request.base_url).rstrip("/")
+    return str(entered) if entered else automatic_base(request)
 
 
 def article_address(base: str, article_id: int) -> str:

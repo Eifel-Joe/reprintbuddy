@@ -38,6 +38,7 @@
       <div class="setting-text"><label for="qr_base_url">{{ t('settings.qr_address') }}</label><span>{{ t('settings.qr_address_hint') }}</span></div>
       <div class="setting-control">
         <input id="qr_base_url" name="qr_base_url" type="text" inputmode="url" value="{{ qr_base_url }}" autocomplete="off" spellcheck="false" placeholder="{{ t('settings.qr_placeholder') }}">
+        <p class="muted">{{ t('settings.qr_automatic', address=qr_automatic) }}</p>
       </div>
     </div>
   </form>
