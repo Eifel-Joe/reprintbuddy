@@ -25,7 +25,7 @@
         <td>{{ r.material }}</td>
         <td class="num nowrap">{% if r.stock is not none %}{{ r.stock }} g{% else %}—{% endif %}</td>
         <td class="num nowrap">{% if r.spools is not none %}{{ r.spools }}{% else %}—{% endif %}</td>
-        <td class="num{% if r.per_day is not none %} nowrap{% endif %}">{% if r.per_day is not none %}{{ r.per_day }} g{% else %}<span class="muted">{{ t('filament.no_history') }}</span>{% endif %}</td>
+        <td class="num{% if r.per_day is not none %} nowrap{% endif %}">{% if r.per_day is not none %}{{ r.per_day|num }} g{% else %}<span class="muted">{{ t('filament.no_history') }}</span>{% endif %}</td>
         <td class="num nowrap">{% if r.demand is not none %}{{ r.demand }} g{% else %}—{% endif %}</td>
         <td class="actions-col">{% call ui.row_actions() -%}
           {{ ui.icon_button('pencil' if r.configured else 'settings', t('filament.edit_settings' if r.configured else 'filament.configure'), '/filament/' ~ r.id) }}

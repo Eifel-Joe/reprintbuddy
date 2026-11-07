@@ -40,6 +40,22 @@ def local_date(context, day: date | None) -> str:
     return format_date(day, context.get("lang", "en")) if day is not None else ""
 
 
+def format_decimal(value: float, digits: int, lang: str) -> str:
+    """A number for display with `digits` decimals: a comma in German, a point otherwise (p58).
+
+    This is the one place that decides the separator. Display values are never written with
+    `f"{x:.1f}"` (always a point); `tests/web/test_decimal_display.py` keeps the routes honest.
+    """
+    text = f"{value:.{digits}f}"
+    return text.replace(".", ",") if lang == "de" else text
+
+
+@pass_context
+def decimal(context, value: float | None, digits: int = 1) -> str:
+    """Jinja filter `num`: `{{ grams|num }}` or `{{ x|num(2) }}`, in the language of the request."""
+    return format_decimal(value, digits, context.get("lang", "en")) if value is not None else ""
+
+
 def fill_percent(available: int, target: int) -> int | None:
     """How full a stock is against its target, 0 to 100; `None` without a target."""
     if target <= 0:

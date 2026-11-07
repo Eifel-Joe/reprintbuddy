@@ -18,7 +18,7 @@
     <div class="tile-stats">
       <span>{{ t('reorder.col.stock') }} <strong>{{ r.stock }} {{ r.unit }}</strong></span>
       <span>{{ t('reorder.col.demand') }} <strong>{{ r.demand }} {{ r.unit }}</strong></span>
-      <span>{{ t('reorder.col.usage') }} <strong>{% if r.per_day is not none %}{{ t('reorder.per_day_days', per_day=r.per_day, unit=r.unit, days=r.lead_days) }}{% else %}{{ t('filament.no_history') }}{% endif %}</strong></span>
+      <span>{{ t('reorder.col.usage') }} <strong>{% if r.per_day is not none %}{{ t('reorder.per_day_days', per_day=r.per_day|num, unit=r.unit, days=r.lead_days) }}{% else %}{{ t('filament.no_history') }}{% endif %}</strong></span>
       <span>{{ t('reorder.col.safety') }} <strong>{{ r.safety }} {{ r.unit }}</strong></span>
     </div>
     <p class="reorder-detail">{{ t('reorder.detail', suggestion=r.suggestion) }}{% if r.supplier %} · {{ r.supplier }}{% endif %}{% if r.order_url %} · <a href="{{ r.order_url }}" target="_blank" rel="noopener noreferrer">{{ t('reorder.open_link') }}</a>{% endif %}</p>
