@@ -419,7 +419,8 @@ def test_archive_refused_from_the_list_still_shows_the_detail_page_with_the_reas
 def test_the_detail_page_forms_stay_on_the_detail_page(ready_client):
     a = add(ready_client, name="Template A")
     detail = ready_client.get(f"/articles/{a}").text
-    assert f'action="/articles/{a}/archive"' in detail and 'name="next"' not in detail
+    form = re.search(rf'<form[^>]*action="/articles/{a}/archive">(.*?)</form>', detail, re.S).group(1)
+    assert 'name="next"' not in form  # the detail page's own button sends no list to go back to
     response = ready_client.post(
         f"/articles/{a}/archive",
         data={"csrf_token": csrf_of(ready_client, f"/articles/{a}"), "form_token": re.search(r'name="form_token" value="([^"]+)"', detail).group(1)},
