@@ -220,6 +220,13 @@ def safe_next(value: str | None) -> str:
     return "/"
 
 
+def local_next(form) -> str:
+    """The local path in the form's `next` field: the list an action started from. "" when there is
+    none or it is foreign (`safe_next` turns anything non-local into "/", which counts as none)."""
+    target = safe_next(str(form.get("next", "")))
+    return "" if target == "/" else target
+
+
 def logged_in_user(request: Request, session: Session) -> User | None:
     """The user of a live session; None when the cookie is missing, forged or the session ended."""
     uid = request.session.get(UID_KEY)
