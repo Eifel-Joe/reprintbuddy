@@ -389,3 +389,17 @@ def test_not_sliced_note_is_a_card_with_head_and_button(mixed):
     assert '<div class="card"><p class="alert" role="alert">' + NOT_SLICED_EN in html
     assert 'class="btn secondary" href="/articles"' in html and 'class="btn-link" href' not in html
 
+
+def test_problem_card_keeps_a_gap_to_the_button_below():
+    """The card sits in a `section` (its bottom margin is the gap), the button in the toolbar below it."""
+    template = Path(__file__).resolve().parents[2] / "src" / "reprintbuddy" / "web" / "templates" / "article_browse.html"
+    text = template.read_text(encoding="utf-8")
+    assert re.search(r'<div class="section"><div class="card"><p class="alert" role="alert">\{\{ t\(problem\) \}\}</p></div></div>\s*<div class="toolbar">', text)
+    css = (template.parents[1] / "static" / "css" / "reprintbuddy.css").read_text(encoding="utf-8")
+    assert re.search(r"^\.section \{ margin-bottom: 1\.25rem; \}", css, re.M)
+
+
+def test_not_sliced_page_wraps_card_in_section(mixed):
+    html = mixed.get("/articles/new/file/4").text
+    assert '<div class="section"><div class="card"><p class="alert" role="alert">' + NOT_SLICED_EN in html
+    assert re.search(r'</div></div>\s*<div class="toolbar"><div class="toolbar-actions"><a class="btn secondary" href="/articles"', html)

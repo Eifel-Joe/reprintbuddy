@@ -18,7 +18,7 @@
 <div class="toolbar-actions"><a class="btn secondary" href="/articles">{{ ui.icon('package') }}{{ t('articles.title') }}</a></div>
 {%- endmacro %}
 {% if problem %}
-<div class="card"><p class="alert" role="alert">{{ t(problem) }}</p></div>
+<div class="section"><div class="card"><p class="alert" role="alert">{{ t(problem) }}</p></div></div>
 <div class="toolbar">{{ to_articles() }}</div>
 {% else %}
 <div class="toolbar">
