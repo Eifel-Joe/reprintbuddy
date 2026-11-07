@@ -558,6 +558,31 @@ async def test_duplicates_of_two_ticks_are_both_kept(engine_env):
     assert env.engine.status.duplicates == [[90, 91], [first.id, second.id]]
 
 
+async def test_poll_notes_whether_the_queue_list_was_read(engine_env):
+    """Final review 4: `bambuddy_queue_ok` follows the poll's read of Bambuddy's queue."""
+    env = engine_env
+    assert env.engine.status.bambuddy_queue_ok is False
+
+    await env.engine.tick(poll=True)
+    assert env.engine.status.bambuddy_queue_ok is True
+
+    env.fake.fail_next("list_queue", BambuddyRejected("Forbidden", status=403))
+    await env.engine.tick(poll=True)
+    assert env.engine.status.bambuddy_queue_ok is False
+
+    await env.engine.tick(poll=True)
+    assert env.engine.status.bambuddy_queue_ok is True
+
+    env.fake.fail_next("list_queue", BambuddyUnavailable("timeout"))
+    await env.engine.tick(poll=True)
+    assert env.engine.status.bambuddy_queue_ok is False
+
+    await env.engine.tick(poll=True)
+    env.fake.unavailable = True  # the poll is cut short before the list
+    await env.engine.tick(poll=True)
+    assert env.engine.status.bambuddy_queue_ok is False
+
+
 async def test_printer_in_maintenance_waits_without_pause(engine_env):
     env = engine_env
     printer = env.fake.add_printer("Printer 4", "A1", active=False)

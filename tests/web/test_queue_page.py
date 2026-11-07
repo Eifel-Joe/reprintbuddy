@@ -514,6 +514,41 @@ def test_bambuddy_stale_list_is_kept(bb_client, fake_bambuddy):
     assert stale_start in part
 
 
+def stale_start():
+    return esc(en("queue.bambuddy_stale", at="\x00").split("\x00")[0])
+
+
+def test_region_after_a_good_read_is_not_stale(bb_client, fake_bambuddy):
+    """Final review 4: freshness follows the last read of the list, not `reachable`."""
+    fake_bambuddy.add_foreign_item("Other print")
+    bb_client.get("/queue")
+    status = bb_client.app.state.ticker.status
+    assert status.bambuddy_queue_ok is True
+    status.configured = True  # as the first tick finds it (the fake is set after the start)
+    status.reachable = False  # e.g. a hand-over without an answer
+
+    part = bb_client.get("/queue", headers={regions.HEADER: "bambuddy"}).text
+
+    assert "Other print" in part
+    assert stale_start() not in part
+
+
+def test_region_after_a_failed_read_is_stale(bb_client, fake_bambuddy):
+    fake_bambuddy.add_foreign_item("Other print")
+    bb_client.get("/queue")
+    fake_bambuddy.unavailable = True
+    bb_client.get("/queue")
+    status = bb_client.app.state.ticker.status
+    assert status.bambuddy_queue_ok is False
+    status.configured = True
+    status.reachable = True
+
+    part = bb_client.get("/queue", headers={regions.HEADER: "bambuddy"}).text
+
+    assert "Other print" in part
+    assert stale_start() in part
+
+
 def test_full_page_stores_the_list_in_the_status(bb_client, fake_bambuddy):
     item = fake_bambuddy.add_foreign_item("Other print")
     bb_client.get("/queue")
@@ -554,8 +589,10 @@ def test_full_page_publishes_bambuddy_only_on_change(bb_client, fake_bambuddy):
     bb_client.get("/queue")
     assert published == [frozenset({"bambuddy"})] * 2
     fake_bambuddy.unavailable = True
-    bb_client.get("/queue")  # a failed call changes nothing
-    assert len(published) == 2
+    bb_client.get("/queue")  # the list is no longer current: told once
+    assert len(published) == 3
+    bb_client.get("/queue")  # a second failed call changes nothing
+    assert len(published) == 3
 
 
 # ---- warnings ----------------------------------------------------------------------------

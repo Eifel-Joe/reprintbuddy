@@ -76,16 +76,21 @@ async def _refresh_bambuddy_queue(request: Request) -> bool:
     client = get_bambuddy(request)
     if client is None:
         return False
+    ticker = request.app.state.ticker
+    status = ticker.status
     try:
         items = await client.list_queue()
     except (BambuddyUnavailable, BambuddyRejected) as exc:
         log.info("queue page: Bambuddy's queue could not be read: %s", exc)
+        # Open pages learn once that their list is no longer current.
+        if status.bambuddy_queue_ok:
+            status.bambuddy_queue_ok = False
+            request.app.state.live.publish(frozenset({"bambuddy"}))
         return False
-    ticker = request.app.state.ticker
-    status = ticker.status
-    changed = status.bambuddy_queue != items
+    changed = status.bambuddy_queue != items or not status.bambuddy_queue_ok
     status.bambuddy_queue = items
     status.bambuddy_queue_at = ticker.now()
+    status.bambuddy_queue_ok = True
     if changed:
         request.app.state.live.publish(frozenset({"bambuddy"}))
     return True
@@ -114,8 +119,8 @@ def kpi_cards(t: Callable[[str], str], entries: list[workqueue.EntryRow], open_p
 def _bambuddy_view(request: Request, db: Session, fresh: bool | None) -> dict[str, object]:
     status = request.app.state.ticker.status
     items = status.bambuddy_queue
-    if fresh is None:  # a region or the answer to a form: what the engine knows
-        fresh = status.configured and status.reachable is not False
+    if fresh is None:  # a region or the answer to a form: the last read of the list
+        fresh = status.configured and status.bambuddy_queue_ok
     own_ids = dispatch.own_item_ids(db)
     username = st.get_setting(db, "bambuddy_username")
     rows = [

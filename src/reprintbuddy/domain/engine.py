@@ -68,6 +68,9 @@ class EngineStatus:
     skipped_for_update: bool = False
     bambuddy_queue: list[QueueItem] | None = None
     bambuddy_queue_at: datetime | None = None
+    # Whether the last read of Bambuddy's queue (poll or queue page) was answered: the
+    # queue page marks the list as old by this, not by `reachable` (final review 4).
+    bambuddy_queue_ok: bool = False
     hook_errors: dict[str, str] = field(default_factory=dict)
     error: str | None = None
     # Articles whose printer is in maintenance mode (assumption A9): skipped, not paused.
@@ -210,6 +213,7 @@ class Engine:
 
         def cut_short() -> None:
             status.reachable = False
+            status.bambuddy_queue_ok = False  # the list was not read again
             if error is not None:
                 status.poll_error = error
 
@@ -235,10 +239,12 @@ class Engine:
         try:
             status.bambuddy_queue = await client.list_queue()
             status.bambuddy_queue_at = self.now()
+            status.bambuddy_queue_ok = True
         except BambuddyUnavailable:
             cut_short()
             return
         except BambuddyRejected as exc:
+            status.bambuddy_queue_ok = False
             error = str(exc)
         status.poll_error = error  # the poll reached its end
 
