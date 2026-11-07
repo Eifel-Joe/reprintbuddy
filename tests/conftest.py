@@ -112,6 +112,11 @@ http_client_factory = shared_tls_client_factory()
 def make_client(db_path, **create_kwargs) -> TestClient:
     # No background tick loop unless a test asks for it (`with client:` would start it).
     create_kwargs.setdefault("run_engine", False)
+    # Never the system's install directory: with the engine on, the automatic check for new
+    # versions would run a real `git ls-remote` wherever that is a git copy (a container, CI).
+    from reprintbuddy.ops.context import OpsContext
+
+    create_kwargs.setdefault("ops", OpsContext(install_dir=db_path.parent / "no-install"))
     create_kwargs.setdefault("http_client_factory", http_client_factory)
     app = create_app(db_path, **create_kwargs)
     app.state.login_failure_delay = 0  # tests do not wait; some tests set these themselves

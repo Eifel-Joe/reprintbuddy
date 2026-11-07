@@ -181,3 +181,51 @@ async def test_the_app_runs_the_check_at_start(tmp_path, fake_runner):
                 await asyncio.sleep(0.01)
     assert app.state.version_info.newest == "v0.2.0"
     assert app.state.installed_tag == "v0.1.0"
+
+
+async def test_the_real_pause_ends_when_the_switch_wakes_it(tmp_path, fake_runner):
+    """The pause of the real loop (app.py) ends by the wake event: switched on, the check runs now."""
+    install = tmp_path / "opt"
+    ops = OpsContext(install_dir=install, runner=fake_runner)
+    client = make_client(tmp_path / "x.db", ops=ops, run_engine=True, live_sleep=_never_sleep)
+    app = client.app
+    app.state.bambuddy_factory = lambda: None
+    git_env(SimpleNamespace(install_dir=install, runner=fake_runner))
+    with sm_of(client).begin() as s:
+        st.set_setting(s, "update_check", False)
+
+    def asked() -> int:
+        return len([c for c in fake_runner.calls if "ls-remote" in c])
+
+    async with app.router.lifespan_context(app):
+        await asyncio.sleep(0.2)  # the loop has had its round: switched off, it asks nothing
+        assert asked() == 0
+        with sm_of(client).begin() as s:
+            st.set_setting(s, "update_check", True)
+        app.state.update_check_wake.set()  # what the switch route does
+        async with asyncio.timeout(5):
+            while asked() == 0:
+                await asyncio.sleep(0.01)
+        await asyncio.sleep(0.1)
+        assert not app.state.update_check_wake.is_set()  # used up: no round after round
+        assert asked() == 1
+
+
+async def test_a_running_update_skips_the_round(ops_env):
+    from datetime import UTC, datetime, timedelta
+
+    from reprintbuddy.ops.status import UpdateStatus, write_status
+
+    git_env(ops_env)
+    started = datetime.now(UTC) - timedelta(minutes=1)
+    write_status(ops_env.db_path.parent, UpdateStatus(state="running", step="install", started_at=started))
+    assert await ops_env.client.app.state.auto_check.run_once() == 3600
+    assert [c for c in ops_env.runner.calls if "ls-remote" in c] == []
+
+
+def test_a_test_app_never_looks_at_the_systems_install_dir(tmp_path):
+    """With the engine on, the check would run a real `git ls-remote` wherever the default install
+    directory is a git copy (a container, Linux CI); the test apps get an install dir of their own."""
+    from reprintbuddy.ops.service import INSTALL_DIR
+
+    assert make_client(tmp_path / "d.db").app.state.ops.install_dir != INSTALL_DIR
