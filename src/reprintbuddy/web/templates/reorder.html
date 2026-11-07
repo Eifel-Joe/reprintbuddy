@@ -53,7 +53,7 @@
         <td class="name">{{ m.label }}: {{ m.packs }} × {{ m.size }} {{ m.unit }}</td>
         <td class="nowrap">{{ m.day }}</td>
         <td class="actions-col">{% call ui.row_actions() -%}
-          {{ ui.icon_post('check', t('reorder.received'), '/reorder/marks/' ~ m.id ~ '/received') }}
+          {{ ui.icon_post('check', t('reorder.received'), '/reorder/marks/' ~ m.id ~ '/received', subject=m.label) }}
         {%- endcall %}</td>
       </tr>
     {% endfor %}

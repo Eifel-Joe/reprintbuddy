@@ -60,10 +60,10 @@
         <td class="num">{{ part.pack_size }}</td>
         <td>{% if part.supplier %}{{ supplier(part) }}{% endif %}</td>
         <td class="actions-col">{% call ui.row_actions() %}
-          {%- if not archived %}{{ ui.icon_button('pencil', t('parts.edit'), '/parts/' ~ part.id ~ '/edit') }}{% endif %}
-          {{- ui.icon_button('history', t('journal.title'), '/journal?part=' ~ part.id) }}
-          {%- if archived %}{{ ui.icon_post('archive-restore', t('catalog.restore'), '/parts/' ~ part.id ~ '/restore') }}
-          {%- else %}{{ ui.icon_post('archive', t('catalog.archive'), '/parts/' ~ part.id ~ '/archive') }}{% endif %}
+          {%- if not archived %}{{ ui.icon_button('pencil', t('parts.edit'), '/parts/' ~ part.id ~ '/edit', part.name) }}{% endif %}
+          {{- ui.icon_button('history', t('journal.title'), '/journal?part=' ~ part.id, part.name) }}
+          {%- if archived %}{{ ui.icon_post('archive-restore', t('catalog.restore'), '/parts/' ~ part.id ~ '/restore', subject=part.name) }}
+          {%- else %}{{ ui.icon_post('archive', t('catalog.archive'), '/parts/' ~ part.id ~ '/archive', subject=part.name) }}{% endif %}
         {% endcall %}</td>
       </tr>
     {% endfor %}

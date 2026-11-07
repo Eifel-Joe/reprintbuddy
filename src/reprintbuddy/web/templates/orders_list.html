@@ -49,8 +49,8 @@
         <td>{{ items(order) }}</td>
         <td>{{ ui.badge('order', order.display_status) }}</td>
         <td class="actions-col">{% call ui.row_actions() %}
-          {{- ui.icon_button('eye', t('orders.view'), '/orders/' ~ order.id) }}
-          {%- if not closed %}{{ ui.icon_post('x', t('orders.cancel'), '/orders/' ~ order.id ~ '/cancel', fields=[('next', '/orders')]) }}{% endif %}
+          {{- ui.icon_button('eye', t('orders.view'), '/orders/' ~ order.id, order.reference) }}
+          {%- if not closed %}{{ ui.icon_post('x', t('orders.cancel'), '/orders/' ~ order.id ~ '/cancel', fields=[('next', '/orders')], subject=order.reference) }}{% endif %}
         {% endcall %}</td>
       </tr>
     {% endfor %}
