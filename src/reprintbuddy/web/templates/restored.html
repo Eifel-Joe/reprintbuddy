@@ -6,7 +6,11 @@
 {% block content %}
 {% call ui.page_head("archive-restore", t('ops.restore.done_title')) %}{% endcall %}
 <section class="card section">
-  {% if restarted %}
+  {% if restarted and new_url %}
+  <p>{{ t('ops.restore.done') }}</p>
+  <p>{{ t('ops.restart.new_address', url=new_url) }}</p>
+  <p><a href="{{ new_url }}/login">{{ new_url }}/login</a></p>
+  {% elif restarted %}
   <p>{{ t('ops.restore.done') }}</p>
   <meta http-equiv="refresh" content="60;url=/login">
   <div id="restart-wait" data-health-url="/healthz" data-return-url="/login">
@@ -15,6 +19,7 @@
   <script src="/static/js/ops.js?v={{ app_version }}" defer></script>
   {% else %}
   <p class="alert" role="alert">{{ t('ops.restore.restart_failed') }}</p>
+  {% if new_url %}<p>{{ t('ops.restart.new_address', url=new_url) }}</p>{% endif %}
   <p><a class="btn" href="/login">{{ t('ops.restore.sign_in') }}</a></p>
   {% endif %}
 </section>

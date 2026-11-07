@@ -816,3 +816,37 @@ def test_clear_work_dir_can_keep_recent_files(work):
     _os.utime(old, (past, past))
     fb.clear_work_dir(work, older_than=timedelta(hours=1))
     assert [p.name for p in work.iterdir()] == ["upload-new.zip"]
+
+
+# --- final review -----------------------------------------------------------------------------
+
+
+def test_virtual_table_in_odd_spelling_is_refused_by_its_kind(tmp_path, work):
+    """`CREATE<tab>VIRTUAL` written into the schema passes a text match; the table list knows."""
+    con = sqlite3.connect(":memory:")
+    try:
+        con.execute("CREATE VIRTUAL TABLE t USING fts5(x)")
+    except sqlite3.OperationalError:
+        pytest.skip("this SQLite has no FTS5")
+    finally:
+        con.close()
+    path = make_db(tmp_path / "other" / "reprintbuddy.db")
+    con = sqlite3.connect(path)
+    con.execute("CREATE VIRTUAL TABLE notes USING fts5(x)")
+    con.execute("PRAGMA writable_schema=ON")
+    con.execute("UPDATE sqlite_master SET sql = replace(sql, 'CREATE VIRTUAL', 'CREATE' || char(9) || 'VIRTUAL') WHERE name = 'notes'")
+    con.commit()
+    con.close()
+    created = fb.create_backup(path, work_dir=work, password=None, now=NOW)
+    with pytest.raises(fb.Incompatible, match="virtual tables"):
+        read_back(created.path, work)
+
+
+def test_only_stored_or_deflated_database_member(live, work):
+    content = members(plain_backup(live, work).path)
+    path = work / "y.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("manifest.json", content["manifest.json"])
+        archive.writestr("database.sqlite", content["database.sqlite"], compress_type=zipfile.ZIP_BZIP2)
+    with pytest.raises(fb.NotABackup):
+        fb.read_manifest(path)

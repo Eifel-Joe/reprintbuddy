@@ -582,7 +582,8 @@ def _open_untrusted(path: Path) -> sqlite3.Connection:
     functions (`trusted_schema`), and nothing may write to its schema (`DEFENSIVE`)."""
     con = connect_existing(path)
     con.execute("PRAGMA trusted_schema=OFF")
-    defensive = getattr(sqlite3, "SQLITE_DBCONFIG_DEFENSIVE", None)  # Python 3.12 and later
+    # Python 3.12 and later; on 3.11 the file still decides nothing, only its rows are copied.
+    defensive = getattr(sqlite3, "SQLITE_DBCONFIG_DEFENSIVE", None)
     if defensive is not None:
         con.setconfig(defensive, True)
     return con
@@ -695,8 +696,10 @@ def verify_database(candidate: Path, manifest: Manifest, *, work_dir: Path) -> N
         try:
             con.execute("PRAGMA cell_size_check=ON")
             # Virtual tables run their own code, also in the integrity check (FTS5 since 3.44).
+            # Asked by kind, not by the SQL text: "CREATE<tab>VIRTUAL" or a comment between the
+            # words, written straight into the schema, would pass a text match.
             virtual = con.execute(
-                "SELECT 1 FROM sqlite_master WHERE upper(substr(ltrim(sql), 1, 14)) = 'CREATE VIRTUAL' LIMIT 1"
+                "SELECT 1 FROM pragma_table_list WHERE type IN ('virtual', 'shadow') LIMIT 1"
             ).fetchone()
             if virtual is not None:
                 raise Incompatible("virtual tables")

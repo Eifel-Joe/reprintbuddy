@@ -17,8 +17,10 @@ are taken without an `await` between the check and setting the state.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+import time
 import secrets
 import sqlite3
 from dataclasses import dataclass
@@ -37,11 +39,13 @@ from reprintbuddy.auth import MIN_PASSWORD_LENGTH
 from reprintbuddy.db import known_revisions
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops import running
+from reprintbuddy.ops.server import address_changed, base_url, effective_from_settings
 from reprintbuddy.ops.service import request_restart
 from reprintbuddy.ops.status import read_status
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render
 from reprintbuddy.web.routes.auth import password_confirmed
+from reprintbuddy.web.routes.ops import _display_host
 
 log = logging.getLogger("reprintbuddy.ops")
 router = APIRouter()
@@ -271,7 +275,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         _remove(candidate)
         _discard(request)
         return _back(f"restore_{error.code}", "ops-restore")
-    except (OSError, sqlite3.Error) as error:
+    except Exception as error:  # noqa: BLE001 - a full disk in a migration, say: nothing was changed
         _remove(candidate)
         _discard(request)
         log.warning("restore check failed: %s", type(error).__name__)
@@ -284,6 +288,15 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         _remove(candidate)
         return _back("restore_busy", "ops-restore")
     state.phase = "running"
+    # A write that passed the guard just before this line may still be under way; it would
+    # land in the restored database with what it read from the old one. This request is one.
+    deadline = time.monotonic() + app.state.restore_write_wait
+    while app.state.writes_in_flight > 1:
+        if time.monotonic() > deadline:
+            state.phase = "idle"
+            _remove(candidate)
+            return _back("restore_busy", "ops-restore")
+        await asyncio.sleep(0.02)
     try:
         async with app.state.ticker.hold():
             await run_in_threadpool(
@@ -305,7 +318,14 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
     state.phase = "restart_pending"
     _discard(request)
 
+    # Address, port and HTTPS come with the backup: say where the service answers next.
+    new_url = None
+    running_server = app.state.ops.effective
+    if running_server is not None:
+        saved = effective_from_settings(db)
+        if address_changed(saved, running_server):
+            new_url = base_url(_display_host(request, saved), saved.port, saved.tls)
     result = await run_in_threadpool(request_restart, app.state.ops.runner)
     if not result.ok:
         log.warning("restart after restore failed: %s", (result.stderr or "").strip()[:300])
-    return render(request, "restored.html", restarted=result.ok, active_nav="settings")
+    return render(request, "restored.html", restarted=result.ok, new_url=new_url, active_nav="settings")

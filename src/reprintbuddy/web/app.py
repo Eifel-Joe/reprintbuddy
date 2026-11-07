@@ -224,6 +224,8 @@ def create_app(
     app.state.rights = RightsMonitor()  # what the stored key may do, checked once per start
     app.state.live = live
     app.state.restore = backup_routes.RestoreState()  # Spec 11.6: pauses writes and the engine
+    app.state.writes_in_flight = 0  # counted by the update guard; a restore waits for them
+    app.state.restore_write_wait = 30.0  # seconds a restore waits for those writes
     app.state.version = __version__  # the live channel tells pages of another version to reload
     # The tick engine (plan B4): the app's own sessionmaker, so the change feed reports its
     # writes like any other; its runtime status goes to the pages as topic "bambuddy".

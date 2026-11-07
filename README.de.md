@@ -250,7 +250,9 @@ Container sonst gesichert wird. Unter *Einstellungen → Update und Sicherung*:
   beim Start migriert, eine neuere abgelehnt), fragt nach dem Anmelde-Passwort und bei Verschlüsselung
   nach dem Passwort der Sicherung, sichert
   die laufende Datenbank wie vor einem Update, ersetzt sie und startet neu. Danach gelten
-  Benutzername und Passwort aus der Sicherung, und alle melden sich neu an.
+  Benutzername und Passwort aus der Sicherung, und alle melden sich neu an. Auch Adresse, Port und
+  HTTPS kommen aus der Sicherung; passen sie auf einem neuen Rechner nicht, richten
+  `reprintbuddy set-host` und `set-port` (siehe *Kommandozeile*) sie wieder.
 - **Export** lädt alle Daten als JSON-Datei herunter, **ohne** API-Schlüssel, Passwörter, den
   privaten HTTPS-Schlüssel und das Sitzungsgeheimnis.
 

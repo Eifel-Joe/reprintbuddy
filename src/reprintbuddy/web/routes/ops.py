@@ -169,7 +169,11 @@ def restore_blocks(request: Request) -> bool:
 
 
 async def update_guard(request: Request, call_next) -> Response:
-    """Pause every write while an update or a restore runs (see `UPDATE_EXEMPT_PATHS`)."""
+    """Pause every write while an update or a restore runs (see `UPDATE_EXEMPT_PATHS`).
+
+    The writes it lets through are counted while they run: a restore waits for the ones
+    that passed just before it began.
+    """
     if request.method in WRITE_METHODS and restore_blocks(request):
         state = request.app.state.restore
         return render(
@@ -192,7 +196,14 @@ async def update_guard(request: Request, call_next) -> Response:
                 title_key="error.generic.title",
                 message_key="ops.update.in_progress",
             )
-    return await call_next(request)
+    if request.method not in WRITE_METHODS:
+        return await call_next(request)
+    state = request.app.state
+    state.writes_in_flight += 1
+    try:
+        return await call_next(request)
+    finally:
+        state.writes_in_flight -= 1
 
 
 @router.get("/settings/export")

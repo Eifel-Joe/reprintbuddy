@@ -237,7 +237,9 @@ Under *Settings → Update and backup*:
   backup of this or an older version (an older database is migrated at the start, a newer one is
   refused), asks for your sign-in password and, if the file is encrypted, its password, backs up the running database as before an
   update, replaces it and restarts. Afterwards the user name and password of the backup apply
-  and everybody signs in again.
+  and everybody signs in again. Listen address, port and HTTPS come from the backup too; on a new
+  machine where they do not fit, `reprintbuddy set-host` and `set-port` (see *Command line*) put
+  them right.
 - **Export** downloads all data as a JSON file, **without** API keys, passwords, the private
   HTTPS key and the session secret.
 

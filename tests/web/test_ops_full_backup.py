@@ -625,3 +625,66 @@ def test_sign_in_password_waits_for_the_brake(ops_env, monkeypatch):
         brake.record_failure()
     download(ops_env, login=PASSWORD)
     assert 2.0 in waited
+
+
+# --- final review -----------------------------------------------------------------------------
+
+
+def test_restore_says_where_the_backup_listens(ops_env, tmp_path):
+    """Address, port and HTTPS come with the backup: the page says where to go after the restart."""
+    other = make_client(tmp_path / "other.db")
+    with other.app.state.sessionmaker() as session:
+        auth.create_admin(session, ADMIN, PASSWORD)
+        st.set_setting(session, "port", 8099)
+    content = fb.create_backup(tmp_path / "other.db", work_dir=tmp_path / "w", password=None, now=datetime.now(UTC))
+    upload(ops_env, content.path.read_bytes())
+    response = confirm(ops_env)
+    assert response.status_code == 200
+    assert "After the restart Reprintbuddy is reachable at http://testserver:8099." in response.text
+    assert 'data-health-url="/healthz"' not in response.text  # nothing waits for the old address
+
+
+def test_unexpected_error_in_the_check_is_a_message(ops_env, monkeypatch):
+    upload(ops_env, made_backup(ops_env))
+
+    def broken(*args, **kwargs):
+        from sqlalchemy.exc import OperationalError
+
+        raise OperationalError("CREATE TABLE", {}, Exception("database or disk is full"))
+
+    monkeypatch.setattr(fb, "verify_database", broken)
+    response = confirm(ops_env)
+    assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_failed#ops-restore"
+    assert work_files(ops_env) == []
+    assert ops_env.client.app.state.restore.phase == "idle"
+
+
+def test_restore_waits_for_writes_already_under_way(ops_env):
+    """A write that passed the guard just before the restore began must finish first."""
+    content = made_backup(ops_env)
+    set_queue_cap(ops_env, 9)
+    upload(ops_env, content)
+    app = ops_env.client.app
+    app.state.restore_write_wait = 0.2
+    app.state.writes_in_flight += 1  # another request is still writing
+    response = confirm(ops_env)
+    app.state.writes_in_flight -= 1
+    assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_busy#ops-restore"
+    assert app.state.restore.phase == "idle"
+    assert queue_cap(ops_env) == 9 and backups(ops_env) == []
+
+
+def test_writes_are_counted_while_they_run(ops_env, monkeypatch):
+    seen = []
+    from reprintbuddy.web.routes import settings as settings_routes
+
+    real = settings_routes.st.set_setting
+
+    def spy(*args, **kwargs):
+        seen.append(ops_env.client.app.state.writes_in_flight)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(settings_routes.st, "set_setting", spy)
+    post(ops_env, "/settings/language", language="de")
+    assert seen and seen[0] == 1
+    assert ops_env.client.app.state.writes_in_flight == 0
