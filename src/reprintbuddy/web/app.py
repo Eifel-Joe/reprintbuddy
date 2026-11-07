@@ -25,7 +25,7 @@ from reprintbuddy.bambuddy.factory import make_http_factory
 from reprintbuddy.bambuddy.live import LiveListener
 from reprintbuddy.changes import install_change_feed
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
-from reprintbuddy.domain import status
+from reprintbuddy.domain import filament, status
 from reprintbuddy.domain.engine import Engine
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.running import update_running
@@ -48,6 +48,8 @@ from reprintbuddy.web.routes import orders as orders_routes
 from reprintbuddy.web.routes import ops as ops_routes
 from reprintbuddy.web.routes import overview as overview_routes
 from reprintbuddy.web.routes import rights as rights_routes
+from reprintbuddy.web.routes import filament as filament_routes
+from reprintbuddy.web.routes import reorder as reorder_routes
 from reprintbuddy.web.routes import parts as parts_routes
 from reprintbuddy.web.routes import queue as queue_routes
 from reprintbuddy.web.routes import settings as settings_routes
@@ -218,6 +220,7 @@ def create_app(
         update_running=lambda: update_running(db_path.parent, app.state.ops.runner, datetime.now(UTC)),
         publish=live.publish,
     )
+    app.state.ticker.add_poll_hook("filament", filament.poll_hook)  # the daily record and receipt check (B6)
     app.state.run_engine = run_engine
     app.state.ticker_task = None  # the background loop while the app runs (see _lifespan)
     # Bambuddy's live channel (Spec 7.6): a message that may have changed the queue, and every
@@ -286,6 +289,8 @@ def create_app(
     app.include_router(settings_routes.router)
     app.include_router(rights_routes.router)
     app.include_router(parts_routes.router)
+    app.include_router(filament_routes.router)
+    app.include_router(reorder_routes.router)
     app.include_router(articles_routes.router)
     app.include_router(journal_routes.router)
     app.include_router(sets_routes.router)

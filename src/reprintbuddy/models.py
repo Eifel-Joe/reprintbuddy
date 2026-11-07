@@ -333,3 +333,80 @@ class Inspection(Base):
         DateTime, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+
+
+# ---- B6: filament stock and reorder suggestions --------------------------------------
+
+
+class FilamentSort(Base):
+    """A kind of filament as Bambuddy's spools show it; `id` is what `spool_filament_id` means."""
+
+    __tablename__ = "filament_sorts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sort_key: Mapped[str] = mapped_column(String, unique=True)
+    brand: Mapped[str | None] = mapped_column(String, default=None)
+    material: Mapped[str] = mapped_column(String)
+    subtype: Mapped[str | None] = mapped_column(String, default=None)
+    color_hex: Mapped[str | None] = mapped_column(String, default=None)
+    color_name: Mapped[str | None] = mapped_column(String, default=None)
+    label: Mapped[str] = mapped_column(String)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
+    )
+
+
+class FilamentSettings(Base):
+    __tablename__ = "filament_settings"
+    __table_args__ = (
+        CheckConstraint("safety_unit IN ('days', 'grams')", name="ck_filament_settings_unit"),
+        CheckConstraint("pack_grams >= 1", name="ck_filament_settings_pack_grams"),
+        CheckConstraint("min_order_packs >= 1", name="ck_filament_settings_min_order_packs"),
+    )
+
+    spool_filament_id: Mapped[int] = mapped_column(ForeignKey("filament_sorts.id"), primary_key=True)
+    lead_time_days: Mapped[int] = _int(0)
+    safety_value: Mapped[int] = _int(0)
+    safety_unit: Mapped[str] = mapped_column(String, default="days", server_default="days")
+    pack_grams: Mapped[int] = _int(1000)
+    min_order_packs: Mapped[int] = _int(1)
+    supplier: Mapped[str | None] = mapped_column(String, default=None)
+    order_url: Mapped[str | None] = mapped_column(String, default=None)
+
+
+class FilamentSnapshot(Base):
+    """One row per UTC day and spool: what Bambuddy reported (the source of the usage)."""
+
+    __tablename__ = "filament_snapshots"
+    __table_args__ = (
+        Index("uq_filament_snapshots_day_spool", "day", "spool_id", unique=True),
+        Index("ix_filament_snapshots_sort_day", "spool_filament_id", "day"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    day: Mapped[date] = mapped_column(Date)
+    spool_id: Mapped[int]
+    spool_filament_id: Mapped[int] = mapped_column(ForeignKey("filament_sorts.id"))
+    remaining_g: Mapped[float] = mapped_column(Float)
+    label_g: Mapped[int]
+    spool_created_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+
+
+class ReorderMark(Base):
+    """'Ordered': a suggestion the user has acted on; `qty` counts order units. Not a booking."""
+
+    __tablename__ = "reorder_marks"
+    __table_args__ = (
+        CheckConstraint("item_type IN ('filament', 'part')", name="ck_reorder_marks_item_type"),
+        CheckConstraint("qty >= 1", name="ck_reorder_marks_qty"),
+        Index("ix_reorder_marks_item", "item_type", "item_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_type: Mapped[str] = mapped_column(String)
+    item_id: Mapped[int]  # filament_sorts.id or parts.id, by item_type
+    qty: Mapped[int]
+    marked_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
+    )
+    received_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)

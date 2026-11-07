@@ -20,7 +20,7 @@
 {% endcall %}
 {% if error %}<p class="alert" role="alert">{{ error }}{% if relink_offer %} <a href="/articles/{{ article.id }}/relink">{{ t('articles.choose_other_file') }}</a>{% endif %}</p>{% endif %}
 
-{% call ui.region("main", "article:" ~ article.id ~ " part") %}
+{% call ui.region("main", "article:" ~ article.id ~ " part filament") %}
 <section class="card section wide">
   <div class="detail-head">
     {% if article.thumbnail %}<img class="thumb" src="/articles/{{ article.id }}/thumbnail" alt="">{% endif %}
@@ -121,14 +121,15 @@
   {% if filaments %}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>{{ t('articles.filament.slot') }}</th><th>{{ t('articles.filament.material') }}</th><th>{{ t('articles.filament.color') }}</th><th class="num">{{ t('articles.filament.grams') }}</th></tr></thead>
+      <thead><tr><th>{{ t('articles.filament.slot') }}</th><th>{{ t('articles.filament.material') }}</th><th>{{ t('articles.filament.color') }}</th><th class="num">{{ t('articles.filament.grams') }}</th><th>{{ t('filament.sort') }}</th></tr></thead>
       <tbody>
       {% for r in filaments %}
-        <tr><td>{{ r.slot }}</td><td>{{ r.material }}</td><td>{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}{{ r.color }}</td><td class="num">{{ r.grams }}</td></tr>
+        <tr><td>{{ r.slot }}</td><td>{{ r.material }}</td><td>{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}{{ r.color }}</td><td class="num">{{ r.grams }}</td><td>{{ r.sort or '–' }}</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
+  {% if not article.archived_at %}<p><a class="btn-link" href="/articles/{{ article.id }}/filaments">{{ t('filament.map_link') }}</a></p>{% endif %}
   {% else %}
   <p class="muted">{{ t('articles.filament_none') }}</p>
   {% endif %}

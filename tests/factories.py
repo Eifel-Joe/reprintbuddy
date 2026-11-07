@@ -8,9 +8,14 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from reprintbuddy.bambuddy.types import Spool
+from reprintbuddy.domain import filament
 from reprintbuddy.models import (
     Article,
     Dispatch,
+    FilamentSettings,
+    FilamentSnapshot,
+    FilamentSort,
     Order,
     Part,
     ProductSet,
@@ -98,3 +103,50 @@ def make_dispatch(
     s.add(dispatch)
     s.flush()
     return dispatch
+
+
+def make_sort(
+    s: Session,
+    *,
+    material: str = "PLA",
+    color_hex: str | None = "#000000",
+    brand: str | None = "Example Brand",
+    subtype: str | None = None,
+    color_name: str | None = "Black",
+) -> FilamentSort:
+    """A filament sort with key and label from `domain/filament.py` (one place for the rules)."""
+    spool = Spool(
+        id=0, material=material, subtype=subtype, brand=brand, color_name=color_name, color_hex=color_hex,
+        label_g=1000, remaining_g=1000.0, archived=False, created_at=None,
+    )
+    sort = FilamentSort(
+        sort_key=filament.sort_key(spool),
+        brand=brand,
+        material=material,
+        subtype=subtype,
+        color_hex=color_hex,
+        color_name=color_name,
+        label=filament.sort_label(spool),
+    )
+    s.add(sort)
+    s.flush()
+    return sort
+
+
+def make_snapshot(
+    s: Session, day: date, spool_id: int, sort_id: int, grams: float, **fields
+) -> FilamentSnapshot:
+    fields.setdefault("label_g", 1000)
+    snapshot = FilamentSnapshot(
+        day=day, spool_id=spool_id, spool_filament_id=sort_id, remaining_g=grams, **fields
+    )
+    s.add(snapshot)
+    s.flush()
+    return snapshot
+
+
+def make_filament_settings(s: Session, sort_id: int, **fields) -> FilamentSettings:
+    settings = FilamentSettings(spool_filament_id=sort_id, **fields)
+    s.add(settings)
+    s.flush()
+    return settings

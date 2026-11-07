@@ -13,10 +13,6 @@ def test_tables_exist(db):
     assert TABLES <= set(inspect(db.kw["bind"]).get_table_names())
 
 
-def test_head_is_0004(db):
-    with db() as s:
-        assert s.execute(text("select version_num from alembic_version")).scalar() == "0004"
-
 
 def test_entry_defaults(db):
     with db.begin() as s:

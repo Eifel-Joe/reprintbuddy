@@ -15,9 +15,17 @@ from reprintbuddy.changes import CLASSIFIED, install_change_feed
 from reprintbuddy.domain import catalog, orders, stock
 from reprintbuddy.domain.catalog import ArticleInput, PositionInput, SetInput
 from reprintbuddy.domain.errors import StockLimitError
-from reprintbuddy.models import Article, Base, Inspection, Part
+from reprintbuddy.models import Article, Base, FilamentSettings, Inspection, Part, ReorderMark
 from reprintbuddy.web.formtoken import consume_form_token, issue_form_token
-from factories import make_article, make_dispatch, make_entry, make_order, make_part, make_set
+from factories import (
+    make_article,
+    make_dispatch,
+    make_entry,
+    make_order,
+    make_part,
+    make_set,
+    make_sort,
+)
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "reprintbuddy"
 
@@ -283,3 +291,40 @@ def test_feed_is_scoped_to_its_sessionmaker(db, published):
     assert published == []
     with db() as s:
         assert s.scalar(select(Part.id)) is not None
+
+
+def test_filament_sorts_and_reorder_marks_report_their_kind(db, published):
+    with db.begin() as s:
+        make_sort(s)
+    assert published == [frozenset({"filament"})]
+    published.clear()
+    with db.begin() as s:
+        s.add(ReorderMark(item_type="filament", item_id=1, qty=1))
+    assert published == [frozenset({"reorder"})]
+
+
+def test_filament_settings_report_their_own_topic(db, published):
+    with db.begin() as s:
+        sort_id = make_sort(s).id
+    published.clear()
+    with db.begin() as s:
+        s.add(FilamentSettings(spool_filament_id=sort_id))
+    assert published == [frozenset({"filament", f"filament-settings:{sort_id}"})]
+    published.clear()
+    with db.begin() as s:
+        make_sort(s, color_hex="#ffffff")  # another sort or a snapshot does not touch this form
+    assert all(f"filament-settings:{sort_id}" not in topics for topics in published)
+
+
+def test_saving_filament_settings_reports_only_a_real_change(db, published):
+    with db.begin() as s:
+        sort_id = make_sort(s).id
+        s.add(FilamentSettings(spool_filament_id=sort_id))
+    published.clear()
+    with db.begin() as s:
+        s.get(FilamentSettings, sort_id).supplier = "Example Supplier"
+    assert published == [frozenset({"filament", f"filament-settings:{sort_id}"})]
+    published.clear()
+    with db.begin() as s:
+        s.get(FilamentSettings, sort_id).supplier = "Example Supplier"  # same value
+    assert published == []

@@ -510,6 +510,9 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
 .table-card td.positions { white-space: nowrap; }
 /* A long supplier or article name without spaces wraps inside the tile instead of widening the page. */
 .tile-foot span { min-width: 0; overflow-wrap: anywhere; }
+/* Reorder tile: the detail line (amount, supplier, order link) wraps a long supplier name too. */
+.reorder-detail { overflow-wrap: anywhere; }
+.reorder-detail a { color: var(--accent); text-decoration: none; }
 
 /* ---- orders (Bestellungen) ------------------------------------------------- */
 /* What an order holds, in its tile: one line per set or article. */
@@ -872,3 +875,22 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .inspect-select { flex: 0 0 auto; align-items: center; min-height: 2.75rem; margin: 0; padding-left: 0.5rem; color: var(--text-2); font-size: 13px; cursor: pointer; }
 .inspect-form input[type="number"] { min-height: 2.75rem; }
 .inspect-form .btn { margin-top: 0.25rem; }
+
+/* ---- filament and reorder pages (B6) -------------------------------------- */
+
+/* Cards one above the other on a page: a region is display: contents, so the gap sits on a card
+   or a heading itself. */
+.card.spaced { margin-bottom: 1.25rem; }
+.card.spaced > p:last-child { margin-bottom: 0; }
+.card.hint-card, .under-way-head { margin-top: 1.25rem; }
+form > .table-card ~ .btn { margin-top: 1.25rem; }
+/* The state of a filament sort (settings made or not) behind its name. */
+.table-card td.name .badges { margin-left: 0.4rem; vertical-align: middle; }
+/* Save and Cancel as two buttons side by side. */
+form > .btn + .btn.secondary { margin-left: 0.5rem; }
+/* Reorder tile: the pack field has an info button, so the tile is the frame of its popup (as the
+   card is elsewhere); field and button of the foot sit on one baseline. */
+.tile { position: relative; }
+.reorder-mark { align-items: flex-end; }
+.reorder-mark .field { margin-bottom: 0; }
+.reorder-mark input[type="number"] { width: 6rem; }

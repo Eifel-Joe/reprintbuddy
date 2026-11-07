@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% block title %}{{ label }}{% endblock %}
+{% block content %}
+{% call ui.page_head("disc-3", label, t('filament.settings_sub')) %}{% endcall %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% call ui.region("form", "filament-settings:" ~ sort_id) %}
+<section class="card section">
+  {% call ui.card_head("settings", t('filament.settings_card')) %}{% endcall %}
+  <form method="post" action="/filament/{{ sort_id }}" data-live-watch="filament-settings:{{ sort_id }}">
+    {{ ui.live_stale() }}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="row">
+      {% call ui.field("filament-lead_time_days", t('filament.field.lead_time_days'), t('info.filament_lead_time')) %}
+        <input id="filament-lead_time_days" name="lead_time_days" inputmode="numeric" value="{{ values.lead_time_days }}">
+      {% endcall %}
+      {% call ui.field("filament-pack_grams", t('filament.field.pack_grams'), t('info.filament_pack_grams')) %}
+        <input id="filament-pack_grams" name="pack_grams" inputmode="numeric" value="{{ values.pack_grams }}">
+      {% endcall %}
+    </div>
+    <div class="row">
+      {% call ui.field("filament-safety_value", t('filament.field.safety_value'), t('info.filament_safety')) %}
+        <input id="filament-safety_value" name="safety_value" inputmode="numeric" value="{{ values.safety_value }}">
+      {% endcall %}
+      {% call ui.field("filament-safety_unit", t('filament.field.safety_unit')) %}
+        <select id="filament-safety_unit" name="safety_unit">
+          <option value="days"{% if values.safety_unit == 'days' %} selected{% endif %}>{{ t('filament.safety_unit.days') }}</option>
+          <option value="grams"{% if values.safety_unit == 'grams' %} selected{% endif %}>{{ t('filament.safety_unit.grams') }}</option>
+        </select>
+      {% endcall %}
+    </div>
+    {% call ui.field("filament-min_order_packs", t('filament.field.min_order_packs'), t('info.filament_min_order_packs')) %}
+      <input id="filament-min_order_packs" name="min_order_packs" inputmode="numeric" value="{{ values.min_order_packs }}">
+    {% endcall %}
+    {% call ui.field("filament-supplier", t('filament.field.supplier')) %}
+      <input id="filament-supplier" name="supplier" value="{{ values.supplier }}" maxlength="200">
+    {% endcall %}
+    {% call ui.field("filament-order_url", t('filament.field.order_url')) %}
+      <input id="filament-order_url" name="order_url" value="{{ values.order_url }}" maxlength="2000" inputmode="url">
+    {% endcall %}
+    <button class="btn" type="submit">{{ t('common.save') }}</button>
+    <a class="btn secondary" href="/filament">{{ t('common.cancel') }}</a>
+  </form>
+</section>
+{% endcall %}
+{% endblock %}

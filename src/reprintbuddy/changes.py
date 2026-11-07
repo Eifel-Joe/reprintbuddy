@@ -8,8 +8,8 @@ transaction and `after_rollback` discards. Raw SQL is not seen; tests forbid it 
 the migrations.
 
 Topics: `article`, `article:<id>`, `article-settings:<id>`, `part`, `part:<id>`,
-`part-settings:<id>`, `set`, `set:<id>`, `order`, `order:<id>`, `journal`, `settings`,
-`queue`, `inspection`, `bambuddy`.
+`part-settings:<id>`, `filament-settings:<sort id>`, `set`, `set:<id>`, `order`, `order:<id>`, `journal`, `settings`,
+`queue`, `inspection`, `filament`, `reorder`, `bambuddy`.
 `…-settings:<id>` only when a column of the edit form changes, so a booking does not tell
 an open edit form that its article changed when only the stock did.
 
@@ -32,6 +32,9 @@ from reprintbuddy.models import (
     ArticleFilament,
     ArticlePart,
     Dispatch,
+    FilamentSettings,
+    FilamentSnapshot,
+    FilamentSort,
     FormToken,
     Inspection,
     JournalEntry,
@@ -40,6 +43,7 @@ from reprintbuddy.models import (
     OrderLine,
     Part,
     ProductSet,
+    ReorderMark,
     SetPosition,
     SetPositionOption,
     Setting,
@@ -70,6 +74,10 @@ _KIND: dict[type, str] = {
     WorkQueueEntry: "queue",
     Dispatch: "queue",
     Inspection: "inspection",
+    FilamentSort: "filament",
+    FilamentSettings: "filament",
+    FilamentSnapshot: "filament",
+    ReorderMark: "reorder",
 }
 
 CLASSIFIED: frozenset[type] = frozenset(_KIND) | IGNORED
@@ -132,6 +140,10 @@ def topics_of(obj: object, change: Change) -> set[str]:
         return topics
     if cls in (ArticleFilament, ArticlePart):
         return {"article", f"article:{obj.article_id}", f"article-settings:{obj.article_id}"}
+    if cls is FilamentSettings:
+        # The settings form of a sort watches only its own settings; the heartbeat writes
+        # day rows of other tables, which must not tell an open form that it changed.
+        return {"filament", f"filament-settings:{obj.spool_filament_id}"}
     if cls is ProductSet:
         return {"set", f"set:{obj.id}"}
     if cls is SetPosition:
