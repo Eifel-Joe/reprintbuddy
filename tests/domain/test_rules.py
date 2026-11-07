@@ -6,6 +6,7 @@ from reprintbuddy.domain.rules import (
     consumption_per_day,
     coverage,
     needs_reorder,
+    reorder_floor,
     order_ready,
     prints_for_units,
     prints_needed,
@@ -126,6 +127,12 @@ def test_needs_reorder():  # Spec 9.3
     kw = dict(stock=1100, demand=200, per_day=50, lead_days=4)
     assert needs_reorder(**kw, safety=500) is False  # 1100 - 200 - 200 = 700
     assert needs_reorder(**kw, safety=800) is True
+
+
+def test_reorder_floor_is_the_larger_value():  # Spec 9.3
+    assert reorder_floor(30.0, 20) == 30.0
+    assert reorder_floor(5.0, 20) == 20.0
+    assert reorder_floor(0.0, 0) == 0.0
 
 
 def test_suggest_packs_rounds_to_pack():  # Spec 9.3

@@ -118,6 +118,56 @@ def test_archived_part_no_suggestion(db):
         assert reorder.suggestions(s, sorts=None, today=TODAY) == []
 
 
+def test_part_under_min_stock_suggests_without_demand(db):  # Spec 9.3: floor = max(safety, min stock)
+    with db.begin() as s:
+        part = make_part(
+            s, stock=18, min_stock=20, pack_size=50, min_order_packs=1, safety_value=0,
+            safety_unit="qty",
+        )
+        (sug,) = reorder.suggestions(s, sorts=None, today=TODAY)
+        assert (sug.item_id, sug.demand, sug.packs, sug.pack_size) == (part.id, 0, 1, 50)
+        assert sug.safety == 20  # the floor the suggestion was computed with
+
+
+def test_part_at_min_stock_no_suggestion(db):
+    with db.begin() as s:
+        make_part(s, stock=20, min_stock=20, pack_size=50, safety_value=0, safety_unit="qty")
+        assert reorder.suggestions(s, sorts=None, today=TODAY) == []
+
+
+def test_part_floor_is_the_larger_of_safety_and_min_stock(db):
+    with db.begin() as s:
+        # safety 30 beats min stock 20: stock 25 is below 30, 5 are missing -> one pack
+        make_part(s, name="A", stock=25, min_stock=20, pack_size=50, safety_value=30, safety_unit="qty")
+        # min stock 40 beats safety 5: stock 35 is below 40
+        make_part(s, name="B", stock=35, min_stock=40, pack_size=50, safety_value=5, safety_unit="qty")
+        # both met: no suggestion (the floors do not add up)
+        make_part(s, name="C", stock=30, min_stock=20, pack_size=50, safety_value=10, safety_unit="qty")
+        got = reorder.suggestions(s, sorts=None, today=TODAY)
+        assert [(x.label, x.safety) for x in got] == [("A", 30), ("B", 40)]
+
+
+def test_part_min_stock_zero_changes_nothing(db):
+    with db.begin() as s:
+        make_part(s, stock=0, min_stock=0, pack_size=50, safety_value=0, safety_unit="qty")
+        assert reorder.suggestions(s, sorts=None, today=TODAY) == []
+
+
+def test_part_min_stock_with_demand_counts_both(db):
+    with db.begin() as s:
+        # stock 10, demand 6, floor 20: 20 + 6 - 10 = 16 missing -> one pack of 50
+        part_with_demand(s, stock=10, safety_value=0, min_stock=20)
+        (sug,) = reorder.suggestions(s, sorts=None, today=TODAY)
+        assert sug.demand == 6 and sug.packs == 1
+
+
+def test_count_suggestions_counts_part_under_min_stock(db):
+    with db.begin() as s:
+        make_part(s, stock=18, min_stock=20, pack_size=50, safety_value=0, safety_unit="qty")
+        make_part(s, name="Fine", stock=50, min_stock=20, pack_size=50)
+        assert reorder.count_suggestions(s, TODAY) == 1
+
+
 def test_count_suggestions_without_record(db):
     with db.begin() as s:
         sort = filament_setup(s)

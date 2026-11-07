@@ -593,7 +593,7 @@
   "reorder.col.stock": "Bestand",
   "reorder.col.demand": "Bedarf",
   "reorder.col.usage": "Verbrauch × Lieferzeit",
-  "reorder.col.safety": "Sicherheitspolster",
+  "reorder.col.safety": "Untergrenze",
   "reorder.per_day_days": "{per_day} {unit}/Tag × {days} Tage",
   "reorder.suggest_filament": "{packs} × {size} {unit}",
   "reorder.suggest_part": "{packs} × {size} ({total} {unit})",

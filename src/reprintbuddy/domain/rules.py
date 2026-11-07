@@ -127,6 +127,14 @@ def safety_amount(value: float, unit: str, per_day: float) -> float:
     return float(value)
 
 
+def reorder_floor(safety: float, min_stock: float) -> float:
+    """Untergrenze eines Zukaufteils: der größere Wert aus Sicherheitspolster und Mindestbestand (Spec 9.3).
+
+    The two do not add up. A filament sort has no minimum stock and uses its safety stock alone.
+    """
+    return max(safety, float(min_stock))
+
+
 def needs_reorder(
     *, stock: float, demand: float, per_day: float, lead_days: int, safety: float
 ) -> bool:

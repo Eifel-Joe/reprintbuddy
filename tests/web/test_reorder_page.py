@@ -305,3 +305,14 @@ def test_pack_field_has_an_info_button_and_keeps_its_name(bb_client, fake_bambud
             == translate("en", "info.reorder_packs")
         assert 'class="info"' not in re.search(r"<label\b.*?</label>", tile, re.S).group(0)
     assert len(set(ids)) == 2  # one id per tile
+
+
+def test_part_under_min_stock_is_listed_without_any_demand(bb_client):  # p48, Spec 9.3
+    with sm_of(bb_client).begin() as s:
+        make_part(
+            s, name="Washer", stock=18, min_stock=20, pack_size=50, safety_value=0, safety_unit="qty",
+        )
+    html = bb_client.get("/reorder").text
+    assert "Washer" in html
+    assert "20 pcs" in html and "Lower limit" in html
+    assert "1 × 50" in html or "1 x 50" in html

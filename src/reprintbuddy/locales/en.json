@@ -593,7 +593,7 @@
   "reorder.col.stock": "Stock",
   "reorder.col.demand": "Demand",
   "reorder.col.usage": "Usage × lead time",
-  "reorder.col.safety": "Safety cushion",
+  "reorder.col.safety": "Lower limit",
   "reorder.per_day_days": "{per_day} {unit}/day × {days} days",
   "reorder.suggest_filament": "{packs} × {size} {unit}",
   "reorder.suggest_part": "{packs} × {size} ({total} {unit})",

@@ -201,7 +201,9 @@ def suggestions(
         sug = _suggest(
             "part", part.id, part.name, part.unit, stock=part.stock,
             demand=part_needs.get(part.id, 0), per_day=per_day, lead_days=part.lead_time_days,
-            safety=rules.safety_amount(part.safety_value, part.safety_unit, per_day),
+            safety=rules.reorder_floor(
+                rules.safety_amount(part.safety_value, part.safety_unit, per_day), part.min_stock
+            ),
             pack=part.pack_size, min_packs=part.min_order_packs, supplier=part.supplier,
             order_url=part.order_url,
         )
