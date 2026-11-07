@@ -16,11 +16,11 @@ from factories import make_article
 from reprintbuddy import settings as st
 from reprintbuddy.domain import dispatch as dispatch_domain
 from reprintbuddy.domain import stock
+from reprintbuddy.domain.workqueue import OPEN_STATES
 from reprintbuddy.models import Article, Dispatch, Inspection, WorkQueueEntry, utcnow
 from reprintbuddy.web.i18n import translate
 
 FORM = "/articles/new/file/1/plate/1"
-OPEN = ("sending", "unclear", "queued", "printing")
 
 
 def en(key, **params):
@@ -99,6 +99,13 @@ def entry_ids(client) -> list[int]:
         return list(s.scalars(select(WorkQueueEntry.id).order_by(WorkQueueEntry.position, WorkQueueEntry.id)))
 
 
+def entries_of(client) -> list[tuple[int, int, str]]:
+    """Reprintbuddy's work queue in order: (article, prints, origin)."""
+    with sm_of(client)() as s:
+        rows = s.scalars(select(WorkQueueEntry).order_by(WorkQueueEntry.position, WorkQueueEntry.id))
+        return [(e.article_id, e.prints, e.origin) for e in rows]
+
+
 # ---- the ticks and the facts behind the pages -----------------------------------------------
 
 
@@ -128,7 +135,7 @@ def open_dispatches(client) -> list[tuple[int, str, int | None]]:
     with sm_of(client)() as s:
         return [
             (d.id, d.status, d.bambuddy_item_id)
-            for d in s.scalars(select(Dispatch).where(Dispatch.status.in_(OPEN)).order_by(Dispatch.id))
+            for d in s.scalars(select(Dispatch).where(Dispatch.status.in_(OPEN_STATES)).order_by(Dispatch.id))
         ]
 
 
@@ -194,6 +201,7 @@ def test_spec12_steps(ready_client, fake_bambuddy):
     tick(client, poll=False)
     assert numbers(client, article_id) == (1, 0, 0)
     assert len(fake.enqueued) == 1
+    assert entry_ids(client) == []
 
     # Step 5: queue stopped; an order takes the one piece: one entry in Reprintbuddy, nothing in Bambuddy.
     set_automation(client, stopped=True)
@@ -237,6 +245,8 @@ def test_spec12_steps(ready_client, fake_bambuddy):
     set_automation(client, cap=1)
     manual_print(client, article_id)
     manual_print(client, article_id)
+    # Exactly the two prints by hand; no tick has run since the pause was lifted.
+    assert entries_of(client) == [(article_id, 1, "manual"), (article_id, 1, "manual")]
     tick(client, poll=False)
     assert open_count(client) == 1
     assert len(fake.enqueued) == 3
@@ -250,6 +260,8 @@ def test_spec12_steps(ready_client, fake_bambuddy):
 
     # Step 10: Bambuddy switched off; the warning shows, stock stays where it was.
     before = numbers(client, article_id)
+    open_before = open_dispatches(client)
+    assert [status for _, status, _ in open_before] == ["queued"]
     with sm_of(client)() as s:
         assert st.get_setting(s, "bambuddy_url") == "http://bambuddy.test:8000"
     fake.unavailable = True
@@ -257,6 +269,8 @@ def test_spec12_steps(ready_client, fake_bambuddy):
     assert en("warning.bambuddy_unreachable") in client.get("/queue").text
     assert numbers(client, article_id) == before
     assert len(fake.enqueued) == 4
+    assert article_row(client, article_id).paused is False
+    assert open_dispatches(client) == open_before
 
 
 def test_all_b4_get_pages_without_bambuddy(ready_client):
