@@ -6,15 +6,17 @@
     article_parts.js does both in place. A part chosen in one row is not offered in another. -#}
 {% import "_ui.html" as ui with context %}
 {% macro part_row(index, row, taken) -%}
+{#- The number and the part's name tell the rows apart for a screen reader; article_parts.js keeps them current. -#}
+{% set n = index + 1 if index is number else "" %}
 <div class="part-row" data-parts-row>
-  <select name="parts_part" aria-label="{{ t('bookings.field.part') }}"{% if values.focus == index %} autofocus{% endif %}>
+  <select name="parts_part" data-label="{{ t('bookings.field.part') }}" aria-label="{{ t('bookings.field.part') }} {{ n }}"{% if values.focus == index %} autofocus{% endif %}>
     <option value="">{{ t('articles.part_choose') }}</option>
     {% for part in parts %}{% set id = part.id | string %}{% set elsewhere = id != row.part and id in taken %}
     <option value="{{ id }}"{% if id == row.part %} selected{% endif %}{% if elsewhere %} disabled hidden{% endif %}>{{ part.name }}</option>
     {% endfor %}
   </select>
-  <input name="parts_qty" inputmode="numeric" value="{{ row.qty }}" aria-label="{{ t('articles.field.qty_per_unit') }}">
-  <button class="btn secondary" type="submit" name="parts_remove" value="{{ index }}" formnovalidate data-parts-remove>{{ ui.icon('x') }}<span>{{ t('articles.part_remove') }}</span></button>
+  <input name="parts_qty" inputmode="numeric" value="{{ row.qty }}" data-label="{{ t('articles.field.qty_per_unit') }}" aria-label="{{ t('articles.field.qty_per_unit') }} {{ n }}">
+  <button class="btn secondary" type="submit" name="parts_remove" value="{{ index }}" formnovalidate data-parts-remove>{{ ui.icon('x') }}<span>{{ t('articles.part_remove') }}</span><span class="sr-only" data-parts-name>{% for part in parts %}{% if part.id | string == row.part %}{{ part.name }}{% endif %}{% endfor %}</span></button>
 </div>
 {%- endmacro %}
 {% set rows = values.part_rows or [{"part": "", "qty": ""}] %}

@@ -49,6 +49,18 @@
         option.hidden = elsewhere;
       });
     });
+    each(block.querySelectorAll("[data-parts-rows] [data-parts-row]"), function (row, i) {
+      // the number and the part's name tell the rows apart for a screen reader
+      each(row.querySelectorAll("[data-label]"), function (field) {
+        field.setAttribute("aria-label", field.getAttribute("data-label") + " " + (i + 1));
+      });
+      var name = row.querySelector("[data-parts-name]");
+      var select = row.querySelector("select");
+      if (name && select) {
+        var chosen = select.options[select.selectedIndex];
+        name.textContent = chosen && chosen.value ? chosen.textContent : "";
+      }
+    });
     var add = block.querySelector("[data-parts-add]");
     var template = block.querySelector("[data-parts-template]");
     if (add && template) {

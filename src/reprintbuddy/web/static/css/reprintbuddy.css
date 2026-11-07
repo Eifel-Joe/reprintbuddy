@@ -536,3 +536,5 @@ div.tile:hover, div.tile:focus-within { border-color: var(--accent); }
   /* on the phone the remove button shows only its cross; the word stays for screen readers */
   .part-row .btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

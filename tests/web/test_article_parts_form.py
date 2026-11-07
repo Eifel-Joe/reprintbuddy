@@ -390,3 +390,25 @@ def test_the_script_ticks_the_box_when_a_row_is_added():
     """As on the server: adding a part means parts are needed (a browser without :has shows the list always)."""
     source = SCRIPT.read_text(encoding="utf-8")
     assert 'input[name="has_parts"]' in source and ".checked = true" in source
+
+
+# ---- accessibility: rows can be told apart --------------------------------------------------
+
+
+def test_rows_are_numbered_and_the_remove_button_names_its_part(ready_client):
+    a, insert, hex_key = article_with_parts(ready_client)
+    with sm_of(ready_client).begin() as s:
+        s.add(ArticlePart(article_id=a, part_id=hex_key, qty_per_unit=1))
+    form = re.sub(r"<template.*?</template>", "", form_of(ready_client.get(f"/articles/{a}/edit").text), flags=re.S)
+    assert f'aria-label="{en("bookings.field.part")} 1"' in form and f'aria-label="{en("bookings.field.part")} 2"' in form
+    assert f'aria-label="{en("articles.field.qty_per_unit")} 2"' in form
+    removes = re.findall(r"<button[^>]*data-parts-remove[^>]*>(.*?)</button>", form, re.S)
+    assert len(removes) == 2
+    assert 'class="sr-only" data-parts-name>Hex key 2<' in removes[0]
+    assert 'class="sr-only" data-parts-name>Insert M4<' in removes[1]
+    assert en("articles.part_remove") in removes[0]  # the visible word stays part of the name
+
+
+def test_the_script_keeps_the_labels_of_added_and_removed_rows_current():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "data-label" in source and "data-parts-name" in source and "aria-label" in source
