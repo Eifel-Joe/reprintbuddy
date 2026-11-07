@@ -48,6 +48,10 @@ router = APIRouter()
 BAMBUDDY_ERRORS = (BambuddyUnavailable, BambuddyRejected)
 
 
+class NotSliced(Exception):
+    """The chosen print file is not sliced: it cannot become an article (Task 11)."""
+
+
 # ---- shared form helpers (also used by the edit page) ----------------------------------
 
 
@@ -143,6 +147,8 @@ async def _read_plate(client: BambuddyClient, file_id: int, index: int):
     file = await client.get_file(file_id)
     if file is None:
         return None
+    if not file.sliced:  # before any plate, filament or preview request
+        raise NotSliced
     plate = next((p for p in await client.list_plates(file_id) if p.index == index), None)
     if plate is None:
         return None
@@ -199,6 +205,8 @@ async def articles_list(
 
 
 async def _browse(request: Request, folder: str | None, base: str, file_base: str):
+    if (redirect := listing.remember_layout(request, "files")) is not None:
+        return redirect  # ?layout=... only sets the cookie
     client = get_bambuddy(request)
     if client is None:
         return _problem(request, "articles.bambuddy_missing")
@@ -216,6 +224,7 @@ async def _browse(request: Request, folder: str | None, base: str, file_base: st
         current = by_id.get(current.parent_id) if current.parent_id is not None else None
     crumbs.reverse()
     subfolders = sorted((f for f in folders if f.parent_id == folder_id), key=lambda f: f.name.casefold())
+    layout = listing.layout_of(request, "files")
     return render(
         request,
         "article_browse.html",
@@ -228,6 +237,8 @@ async def _browse(request: Request, folder: str | None, base: str, file_base: st
         files=sorted(files, key=lambda f: f.filename.casefold()),
         base=base,
         file_base=file_base,
+        layout=layout,
+        layout_links=listing.layout_links(request, layout),
     )
 
 
@@ -254,11 +265,13 @@ async def _plates_page(
         return _problem(request, "articles.bambuddy_missing")
     try:
         file = await client.get_file(file_id)
-        plates = await client.list_plates(file_id) if file is not None else []
+        plates = await client.list_plates(file_id) if file is not None and file.sliced else []
     except BAMBUDDY_ERRORS:
         return _problem(request, "articles.bambuddy_error")
     if file is None:
         return _problem(request, "articles.file_missing", 404)
+    if not file.sliced:
+        return _problem(request, "articles.not_sliced", 409)
     return render(
         request,
         "article_plates.html",
@@ -289,6 +302,20 @@ async def articles_thumbnail(request: Request, file_id: int, index: int):
     except BAMBUDDY_ERRORS:
         return Response(status_code=404)
     return Response(data, media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
+
+
+@router.get("/articles/new/file/{file_id:int}/thumbnail")
+async def articles_file_thumbnail(request: Request, file_id: int):
+    """The preview of a print file in the file choice (also used when relinking). Any problem is a
+    404, so the page keeps its placeholder; nothing is stored here."""
+    client = get_bambuddy(request)
+    if client is None:
+        return Response(status_code=404)
+    try:
+        content_type, data = await client.file_thumbnail(file_id)
+    except BAMBUDDY_ERRORS:
+        return Response(status_code=404)
+    return Response(data, media_type=content_type, headers={"Cache-Control": "private, max-age=300"})
 
 
 _COLOR = re.compile(r"#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?")
@@ -354,6 +381,8 @@ async def articles_plate_form(request: Request, file_id: int, index: int, db: Se
     try:
         read = await _read_plate(client, file_id, index)
         printers = await client.list_printers() if read is not None else None
+    except NotSliced:
+        return _problem(request, "articles.not_sliced", 409)
     except BAMBUDDY_ERRORS:
         return _problem(request, "articles.bambuddy_error")
     if read is None:
@@ -375,6 +404,8 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
         return _problem(request, "articles.bambuddy_missing")
     try:  # everything from Bambuddy is read first, outside of the write transaction
         read = await _read_plate(client, file_id, index)
+    except NotSliced:
+        return _problem(request, "articles.not_sliced", 409)
     except BAMBUDDY_ERRORS:
         return _problem(request, "articles.bambuddy_error")
     if read is None:
@@ -609,6 +640,8 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
         return _problem(request, "articles.bambuddy_missing")
     try:  # read fresh from Bambuddy, outside of the write transaction
         read = await _read_plate(client, file_id, index)
+    except NotSliced:
+        return _problem(request, "articles.not_sliced", 409)
     except BAMBUDDY_ERRORS:
         return _problem(request, "articles.bambuddy_error")
     if read is None:

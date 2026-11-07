@@ -180,6 +180,20 @@ def parse_folders(data: object) -> list[LibraryFolder]:
     return out
 
 
+def _has_text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_sliced(file_type: str | None, filename: str) -> bool:
+    """Sliced for our purpose: Bambuddy's `file_type` is `gcode.3mf` (it judges by the zip content,
+    `library.py:249-280`). Old entries (before Bambuddy #1600) may still say `3mf` for a
+    `.gcode.3mf`, and a missing type follows the name. A raw `.gcode` cannot be queued for a
+    Bambu printer in network mode (`library.py:338-368`), so it does not count."""
+    if file_type == "gcode.3mf":
+        return True
+    return file_type in (None, "3mf") and filename.lower().endswith(".gcode.3mf")
+
+
 def parse_file(data: object) -> LibraryFile:
     """One library file (`FileListResponse` / `FileResponse`, Bambuddy `schemas/library.py`).
 
@@ -192,6 +206,8 @@ def parse_file(data: object) -> LibraryFile:
         folder_id=_opt(d, "folder_id", int),
         fingerprint=_opt(d, "file_hash", str) or None,
         printer_model=_opt(d, "sliced_for_model", str) or None,
+        has_thumbnail=_has_text(d.get("thumbnail_path")),
+        sliced=_is_sliced(_opt(d, "file_type", str), _req(d, "filename", str)),
     )
 
 

@@ -62,6 +62,23 @@ from reprintbuddy.bambuddy import parse as _parse  # noqa: E402
 
 _PNG_HEAD = bytes([0x89]) + b"PNG" + bytes([0x0D, 0x0A, 0x1A, 0x0A])
 
+# Preview images of library files: Bambuddy names the type by the file extension
+# (`library.py:5794-5831`), so it is not always PNG. Declared type and magic bytes must agree.
+_IMAGE_KINDS = ("image/png", "image/jpeg", "image/gif", "image/webp")
+
+
+def _image_kind_of(content: bytes) -> str | None:
+    if content.startswith(_PNG_HEAD):
+        return "image/png"
+    if content.startswith(bytes([0xFF, 0xD8, 0xFF])):
+        return "image/jpeg"
+    if content[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 HttpFactory = Callable[[], AbstractAsyncContextManager[httpx.AsyncClient]]
 
 
@@ -78,6 +95,8 @@ class BambuddyClient(Protocol):
     async def list_plates(self, file_id: int) -> list[Plate]: ...
 
     async def plate_thumbnail(self, file_id: int, plate_index: int) -> bytes: ...
+
+    async def file_thumbnail(self, file_id: int) -> tuple[str, bytes]: ...
 
     async def filament_requirements(
         self, file_id: int, plate_id: int
@@ -227,6 +246,15 @@ class HttpBambuddyClient:
         if kind not in ("", "image/png") or not content.startswith(_PNG_HEAD):
             raise BambuddyUnexpected(f"GET {path}: answer is no PNG image")
         return content
+
+    async def file_thumbnail(self, file_id: int) -> tuple[str, bytes]:
+        """(content type, bytes) of the file's preview; 404 is `BambuddyRejected`."""
+        path = f"/library/files/{file_id}/thumbnail"
+        content_type, content = await self._get_bytes(path)
+        kind = content_type.split(";", 1)[0].strip().lower()
+        if kind not in _IMAGE_KINDS or _image_kind_of(content) != kind:
+            raise BambuddyUnexpected(f"GET {path}: answer is no supported image")
+        return kind, content
 
     async def filament_requirements(self, file_id: int, plate_id: int) -> list[FilamentRequirement]:
         data = await self._get(

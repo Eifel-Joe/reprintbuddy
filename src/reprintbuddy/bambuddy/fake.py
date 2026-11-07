@@ -23,7 +23,7 @@ from reprintbuddy.bambuddy.types import (
 # first ("the answer got lost"). Every other method has no effect, so it fails at once.
 _EFFECT_METHODS = frozenset({"ensure_batch", "enqueue"})
 _FAILABLE_METHODS = _EFFECT_METHODS | {
-    "list_folders", "list_files", "get_file", "list_plates", "plate_thumbnail",
+    "list_folders", "list_files", "get_file", "list_plates", "plate_thumbnail", "file_thumbnail",
     "filament_requirements", "list_printers", "spool_mode", "list_spools",
     "get_queue_item", "list_queue", "find_items_by_batch",
 }
@@ -69,8 +69,12 @@ class FakeBambuddy:
         printer_model: str | None = "A1",
         plates: int = 1,
         fingerprint: str = "v1",
+        has_thumbnail: bool = True,
+        sliced: bool = True,
     ) -> LibraryFile:
-        file = LibraryFile(self._next_file, filename, folder_id, fingerprint, printer_model)
+        file = LibraryFile(
+            self._next_file, filename, folder_id, fingerprint, printer_model, has_thumbnail, sliced
+        )
         self._next_file += 1
         self._files[file.id] = file
         self._plates[file.id] = plates
@@ -127,6 +131,13 @@ class FakeBambuddy:
         if file_id not in self._files or not 1 <= plate_index <= self._plates[file_id]:
             raise BambuddyRejected(f"unknown plate {file_id}:{plate_index}")
         return b"\x89PNG\r\n\x1a\n" + f"{file_id}:{plate_index}".encode()
+
+    async def file_thumbnail(self, file_id: int) -> tuple[str, bytes]:
+        self._enter("file_thumbnail")
+        file = self._files.get(file_id)
+        if file is None or not file.has_thumbnail:
+            raise BambuddyRejected(f"no thumbnail for file {file_id}", status=404)
+        return "image/png", b"\x89PNG\r\n\x1a\n" + f"file:{file_id}".encode()
 
     async def filament_requirements(
         self, file_id: int, plate_id: int

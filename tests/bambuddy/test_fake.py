@@ -23,7 +23,7 @@ def test_protocol_matches_master_plan():
         "ping", "list_folders", "list_files", "get_file", "list_plates",
         "plate_thumbnail", "filament_requirements", "ensure_batch", "enqueue",
         "get_queue_item", "list_queue", "find_items_by_batch", "list_spools",
-        "list_printers", "spool_mode",
+        "list_printers", "spool_mode", "file_thumbnail",
     }
     for name in names:
         assert inspect.iscoroutinefunction(getattr(BambuddyClient, name)), name

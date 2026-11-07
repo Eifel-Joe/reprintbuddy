@@ -2,29 +2,60 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('articles.browse_title') }}{% endblock %}
 {% block content %}
+{#- Preview of a print file, `size` is "sm" (list) or "lg" (tile). Without a preview the placeholder shows and
+    no request is made; with one, the picture lies over the placeholder and is loaded lazily afterwards. -#}
+{% macro preview(file, size) -%}
+{% if file.has_thumbnail %}<span class="thumb-box {{ size }}"><span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('package') }}</span><img class="thumb-{{ size }}" src="/articles/new/file/{{ file.id }}/thumbnail" alt="" loading="lazy"></span>{% else %}<span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('package') }}</span>{% endif %}
+{%- endmacro %}
+{#- A folder has no picture, only the folder symbol. -#}
+{% macro folder_mark(size) -%}
+<span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('folder') }}</span>
+{%- endmacro %}
 {% call ui.page_head("package", t('articles.browse_title')) %}{% endcall %}
 {% if problem %}
 <p class="alert" role="alert">{{ t(problem) }}</p>
 <p><a class="btn-link" href="/articles">{{ t('articles.title') }}</a></p>
 {% else %}
-<p class="crumbs">
-  <a href="{{ base }}">{{ t('articles.folder_root') }}</a>
-  {% for folder in crumbs %} / <a href="{{ base }}?folder={{ folder.id }}">{{ folder.name }}</a>{% endfor %}
-</p>
-<div class="card">
-  {% if subfolders or files %}
-  <ul class="plain-list">
+<div class="toolbar">
+  <p class="crumbs">
+    <a href="{{ base }}">{{ t('articles.folder_root') }}</a>
+    {% for folder in crumbs %} / <a href="{{ base }}?folder={{ folder.id }}">{{ folder.name }}</a>{% endfor %}
+  </p>
+  {{ ui.layout_toggle(layout_links) }}
+</div>
+{% if subfolders or files %}
+{% call ui.collection(layout) %}
+<div class="card table-wrap table-card">
+  <table>
+    <tbody>
     {% for folder in subfolders %}
-    <li><a href="{{ base }}?folder={{ folder.id }}">{{ folder.name }}</a></li>
+      <tr><td><div class="item">{{ folder_mark('sm') }}<a href="{{ base }}?folder={{ folder.id }}">{{ folder.name }}</a></div></td></tr>
     {% endfor %}
     {% for file in files %}
-    <li><a href="{{ file_base }}/{{ file.id }}">{{ file.filename }}</a></li>
+      <tr><td><div class="item">{{ preview(file, 'sm') }}<div>
+        {%- if file.sliced %}<a href="{{ file_base }}/{{ file.id }}">{{ file.filename }}</a>
+        {%- else %}{{ file.filename }}<p class="muted file-note">{{ t('articles.not_sliced') }}</p>{% endif -%}
+      </div></div></td></tr>
     {% endfor %}
-  </ul>
-  {% else %}
-  <p class="muted">{{ t('articles.no_files') }}</p>
-  {% endif %}
+    </tbody>
+  </table>
 </div>
+<div class="tiles">
+  {% for folder in subfolders %}
+  <a class="tile" href="{{ base }}?folder={{ folder.id }}">{{ folder_mark('lg') }}<div>{{ folder.name }}</div></a>
+  {% endfor %}
+  {% for file in files %}
+  {% if file.sliced %}
+  <a class="tile" href="{{ file_base }}/{{ file.id }}">{{ preview(file, 'lg') }}<div>{{ file.filename }}</div></a>
+  {% else %}
+  <div class="tile disabled">{{ preview(file, 'lg') }}<div>{{ file.filename }}<p class="muted file-note">{{ t('articles.not_sliced') }}</p></div></div>
+  {% endif %}
+  {% endfor %}
+</div>
+{% endcall %}
+{% else %}
+<div class="card"><p class="muted">{{ t('articles.no_files') }}</p></div>
+{% endif %}
 <p><a class="btn-link" href="/articles">{{ t('articles.title') }}</a></p>
 {% endif %}
 {% endblock %}

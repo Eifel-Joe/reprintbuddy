@@ -481,6 +481,20 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
   display: block; flex: 0 0 auto; width: 40px; height: 40px; border-radius: 6px; background: var(--bg);
 }
 .thumb-sm { object-fit: contain; }
+/* Large picture of a file tile; the placeholder keeps the size without a picture (Task 11). */
+.thumb-lg { display: block; flex: 0 0 auto; width: 100%; height: 150px; border-radius: 8px; background: var(--bg); object-fit: contain; }
+.thumb-placeholder.thumb-lg { display: flex; }
+.thumb-placeholder.thumb-lg .icon { width: 2.5rem; height: 2.5rem; }
+/* A picture laid over its own placeholder: if Bambuddy has no picture after all (the route answers
+   404), the placeholder underneath stays visible without any script. */
+.thumb-box { position: relative; display: block; flex: 0 0 auto; }
+.thumb-box.sm { width: 40px; height: 40px; }
+.thumb-box.lg { width: 100%; height: 150px; }
+.thumb-box > img { position: absolute; inset: 0; width: 100%; height: 100%; background: none; }
+.thumb-box > .thumb-placeholder { width: 100%; height: 100%; }
+/* A print file that is not sliced: listed, but not a link. */
+.tile.disabled { opacity: 0.8; }
+.file-note { margin: 0.2rem 0 0; font-size: 0.85rem; }
 .thumb-placeholder { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); border: 1px dashed var(--line); }
 
 @media (max-width: 599px) {

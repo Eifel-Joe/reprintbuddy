@@ -445,5 +445,6 @@
   "tile.to_assemble": "{n} zur Montage",
   "rights.ok_title": "Bambuddy-Rechte vollständig",
   "rights.continue": "Weiter",
-  "parts.col.pack": "Bestelleinheit"
+  "parts.col.pack": "Bestelleinheit",
+  "articles.not_sliced": "Nicht geslict – erst slicen und die geslicte Datei (.gcode.3mf) in Bambuddy ablegen."
 }

@@ -21,6 +21,9 @@ class LibraryFile:
     folder_id: int | None
     fingerprint: str | None  # changes with every new version of the file (B2 defines the source)
     printer_model: str | None  # the model the file was sliced for
+    # Both flags come last and have defaults, so every earlier construction stays valid.
+    has_thumbnail: bool = False  # the file list carries a `thumbnail_path`
+    sliced: bool = True  # a sliced file (`.gcode.3mf`), the only kind that can become an article
 
 
 @dataclass(frozen=True)

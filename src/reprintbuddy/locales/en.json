@@ -445,5 +445,6 @@
   "tile.to_assemble": "{n} to assemble",
   "rights.ok_title": "Bambuddy rights complete",
   "rights.continue": "Continue",
-  "parts.col.pack": "Order unit"
+  "parts.col.pack": "Order unit",
+  "articles.not_sliced": "Not sliced – slice it first and put the sliced file (.gcode.3mf) into Bambuddy."
 }
