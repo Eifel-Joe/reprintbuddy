@@ -442,6 +442,7 @@ def test_all_settings_posts_require_csrf(ready_client):
         "/settings/bambuddy",
         "/settings/language",
         "/settings/password",
+        "/settings/qr",
         "/settings/restart",
         "/settings/restore",
         "/settings/restore/cancel",

@@ -145,7 +145,7 @@ def test_signed_out_gets_no_picture(ready_client, article_id):
         ("http://app.localhost", True),
         ("https://shelf.example.com", False),
         ("http://testserver", False),
-        ("http://10.0.0.5:8080", False),
+        ("http://203.0.113.5:8080", False),
         ("not a url", False),
     ],
 )

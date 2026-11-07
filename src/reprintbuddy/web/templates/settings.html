@@ -34,9 +34,9 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {# A web address is long: the field sits under its label across the whole card, like the PEM fields. #}
     <div class="setting-row stack">
-      <div class="setting-text"><div class="label-row"><label for="qr_base_url">{{ t('settings.qr_address') }}</label>{{ ui.info(t('info.qr_address'), t('settings.qr_address')) }}</div><span>{{ t('settings.qr_address_hint') }}</span></div>
+      <div class="setting-text"><label for="qr_base_url">{{ t('settings.qr_address') }}</label><span>{{ t('settings.qr_address_hint') }}</span></div>
       <div class="setting-control">
-        <input id="qr_base_url" name="qr_base_url" type="text" inputmode="url" value="{{ qr_base_url }}" autocomplete="off" spellcheck="false" placeholder="https://">
+        <input id="qr_base_url" name="qr_base_url" type="text" inputmode="url" value="{{ qr_base_url }}" autocomplete="off" spellcheck="false" placeholder="{{ t('settings.qr_placeholder') }}">
       </div>
     </div>
   </form>

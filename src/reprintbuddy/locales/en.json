@@ -84,7 +84,7 @@
   "settings.qr_title": "QR codes",
   "settings.qr_address": "Address for QR codes",
   "settings.qr_address_hint": "The start of the address inside the QR codes of the articles, for example https://stock.example.com. Empty: the address Reprintbuddy is called on right now.",
-  "info.qr_address": "A QR code carries the address of the article in Reprintbuddy. A phone scanning it must be able to reach that address, so enter the address under which Reprintbuddy is reached in your network (not localhost). Codes already printed keep their old address; change it before you print them.",
+  "settings.qr_placeholder": "https://stock.example.com",
   "qr.title": "QR code",
   "qr.hint": "For the shelf compartment. Scanning it opens what waits for this article: prints to check, units to assemble, or else this page.",
   "qr.alt": "QR code of {name}",

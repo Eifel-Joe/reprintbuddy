@@ -84,7 +84,7 @@
   "settings.qr_title": "QR-Codes",
   "settings.qr_address": "Adresse für QR-Codes",
   "settings.qr_address_hint": "Der Anfang der Adresse in den QR-Codes der Artikel, zum Beispiel https://lager.example.com. Leer: die Adresse, unter der Reprintbuddy gerade aufgerufen wird.",
-  "info.qr_address": "Ein QR-Code enthält die Adresse des Artikels in Reprintbuddy. Ein Handy, das ihn scannt, muss diese Adresse erreichen können. Trag deshalb die Adresse ein, unter der Reprintbuddy in deinem Netz erreichbar ist (nicht localhost). Schon gedruckte Codes behalten ihre alte Adresse; ändere sie vor dem Ausdrucken.",
+  "settings.qr_placeholder": "https://lager.example.com",
   "qr.title": "QR-Code",
   "qr.hint": "Fürs Regalfach. Beim Scannen öffnet sich, was für diesen Artikel ansteht: Drucke zu prüfen, Einheiten zu montieren, sonst diese Seite.",
   "qr.alt": "QR-Code von {name}",
