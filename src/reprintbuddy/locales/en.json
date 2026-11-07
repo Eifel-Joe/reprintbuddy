@@ -498,5 +498,20 @@
   "assembly.book": "Book assembled",
   "assembly.done": "{name}: {n} assembled.",
   "assembly.part_line": "{qty} per unit, stock {stock}",
-  "assembly.subtitle": "Booking assembled units: bought parts are used up and the stock grows"
+  "assembly.subtitle": "Booking assembled units: bought parts are used up and the stock grows",
+  "info.units_per_print": "How many units one print of this plate yields, usually 1. Reprintbuddy uses it to work out how many prints a reprint needs.",
+  "info.target": "Where Bambuddy sends the print: to a printer model, so any free printer of that model prints it, or to one particular printer.",
+  "info.min_stock": "When the stock plus everything already planned, printing or awaiting inspection drops below this number, a reprint is due. Minimum stock 0 and buffer 0: never by itself.",
+  "info.buffer": "How much is reprinted beyond the minimum stock. Reprints fill up to minimum stock plus buffer.",
+  "info.needs_assembly": "Printed parts that passed inspection first wait for assembly with the bought parts and only count as stock afterwards.",
+  "info.auto_enabled": "When on, Reprintbuddy queues reprints of this article in Bambuddy by itself as soon as the stock falls below the minimum stock, until minimum stock plus buffer is reached. Off: Reprintbuddy only shows that a reprint is due.",
+  "info.has_parts": "Enter which bought parts are built into this article and how many per unit. They are taken off the parts stock at assembly and when booking in with “Deduct parts”.",
+  "info.part_min_stock": "Below this stock the part shows as “below minimum”.",
+  "info.pack_size": "How many pieces come in one pack. Order suggestions always count whole packs.",
+  "info.min_order_packs": "The fewest packs one order may have.",
+  "info.lead_time_days": "Days from ordering to arrival. Order suggestions include what is used during this time.",
+  "info.safety_value": "This reserve, in days or pieces, should still be left after the lead time. If it gets tighter, Reprintbuddy suggests an order.",
+  "info.consume_parts": "Takes the bought parts this article needs off the parts stock for every unit booked in.",
+  "info.host": "Network address Reprintbuddy listens on. 0.0.0.0 means: on all networks of the machine. Takes effect after a restart.",
+  "info.about": "Explanation of {label}"
 }

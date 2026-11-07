@@ -1,4 +1,7 @@
-{# The settings of an article (Spec 5.2): shared by the create and the edit form. #}
+{# The settings of an article (Spec 5.2): shared by the create and the edit form.
+   A field with an info button keeps its label and control as siblings (ui.field), a switch keeps its
+   <label class="check"> and gets the button behind it (ui.check_row); see _ui.html. #}
+{% import "_ui.html" as ui with context %}
 <label>{{ t('articles.field.name') }}
   <input name="name" value="{{ values.name }}" maxlength="200" required>
 </label>
@@ -6,32 +9,36 @@
   <input name="sku" value="{{ values.sku }}" maxlength="64">
 </label>
 <div class="row">
-  <label>{{ t('articles.field.units_per_print') }}
-    <input name="units_per_print" inputmode="numeric" value="{{ values.units_per_print }}">
-  </label>
-  <label>{{ t('articles.field.target') }}
-    <select name="target">
+  {% call ui.field("article-units_per_print", t('articles.field.units_per_print'), t('info.units_per_print')) %}
+    <input id="article-units_per_print" name="units_per_print" inputmode="numeric" value="{{ values.units_per_print }}">
+  {% endcall %}
+  {% call ui.field("article-target", t('articles.field.target'), t('info.target')) %}
+    <select id="article-target" name="target">
       {% for choice in target_choices %}
       <option value="{{ choice.value }}"{% if choice.selected %} selected{% endif %}>{{ choice.label }}</option>
       {% endfor %}
     </select>
     {% if printers_unavailable %}<span class="hint">{{ t('articles.printers_unavailable') }}</span>{% endif %}
-  </label>
+  {% endcall %}
 </div>
 <div class="row">
-  <label>{{ t('articles.field.min_stock') }}
-    <input name="min_stock" inputmode="numeric" value="{{ values.min_stock }}">
-  </label>
-  <label>{{ t('articles.field.buffer') }}
-    <input name="buffer" inputmode="numeric" value="{{ values.buffer }}">
-  </label>
+  {% call ui.field("article-min_stock", t('articles.field.min_stock'), t('info.min_stock')) %}
+    <input id="article-min_stock" name="min_stock" inputmode="numeric" value="{{ values.min_stock }}">
+  {% endcall %}
+  {% call ui.field("article-buffer", t('articles.field.buffer'), t('info.buffer')) %}
+    <input id="article-buffer" name="buffer" inputmode="numeric" value="{{ values.buffer }}">
+  {% endcall %}
 </div>
+{% call ui.check_row(t('info.needs_assembly'), t('articles.field.needs_assembly')) %}
 <label class="check">
   <input name="needs_assembly" type="checkbox"{% if values.needs_assembly %} checked{% endif %}>
   <span>{{ t('articles.field.needs_assembly') }}</span>
 </label>
+{% endcall %}
+{% call ui.check_row(t('info.auto_enabled'), t('articles.field.auto_enabled')) %}
 <label class="check">
   <input name="auto_enabled" type="checkbox"{% if values.auto_enabled %} checked{% endif %}>
   <span>{{ t('articles.field.auto_enabled') }}</span>
 </label>
+{% endcall %}
 {% if parts %}{% include "_article_parts.html" %}{% endif %}

@@ -113,10 +113,12 @@
     <label>{{ t('bookings.field.qty') }}
       <input name="qty" inputmode="numeric" value="{{ v.get('qty', '') }}" required>
     </label>
+    {% call ui.check_row(t('info.consume_parts'), t('bookings.consume_parts')) %}
     <label class="check">
       <input name="consume_parts" type="checkbox"{% if consume_checked %} checked{% endif %}>
       <span>{{ t('bookings.consume_parts') }}</span>
     </label>
+    {% endcall %}
     <label>{{ t('journal.field.note') }} <input name="note" value="{{ v.get('note', '') }}" maxlength="500"></label>
     <button class="btn" type="submit">{{ t('bookings.book') }}</button>
   </form>

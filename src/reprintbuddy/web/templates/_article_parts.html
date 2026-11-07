@@ -24,10 +24,12 @@
 <div class="parts-field" data-parts>
   {#- Enter in a text field presses the first submit button: that must be Save, not add or remove. -#}
   <button class="default-submit" type="submit" tabindex="-1" aria-hidden="true">{{ t('common.save') }}</button>
+  {% call ui.check_row(t('info.has_parts'), t('articles.field.has_parts')) %}
   <label class="check">
     <input name="has_parts" type="checkbox"{% if values.has_parts %} checked{% endif %}>
     <span>{{ t('articles.field.has_parts') }}</span>
   </label>
+  {% endcall %}
   <fieldset class="parts-list" id="article-parts">
     <legend>{{ t('articles.parts_title') }}</legend>
     <p class="hint">{{ t('articles.parts_hint') }}</p>

@@ -31,7 +31,7 @@
   {% if error and error_section == 'server' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
   <form id="settings-server" method="post" action="/settings/server" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    {% call ui.setting_row(t('settings.host'), t('settings.host_hint'), "host") %}
+    {% call ui.setting_row(t('settings.host'), t('settings.host_hint'), "host", t('info.host')) %}
       <input id="host" name="host" value="{{ host }}" autocomplete="off" required>
     {% endcall %}
     {% call ui.setting_row(t('settings.port'), t('settings.port_hint'), "port") %}

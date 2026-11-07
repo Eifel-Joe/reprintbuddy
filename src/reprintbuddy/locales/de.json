@@ -498,5 +498,20 @@
   "assembly.book": "Montiert buchen",
   "assembly.done": "{name}: {n} montiert.",
   "assembly.part_line": "{qty} je Einheit, Bestand {stock}",
-  "assembly.subtitle": "Montierte Einheiten buchen: Zukaufteile werden verbraucht, der Bestand wächst"
+  "assembly.subtitle": "Montierte Einheiten buchen: Zukaufteile werden verbraucht, der Bestand wächst",
+  "info.units_per_print": "Wie viele Einheiten ein Druck dieser Platte liefert, meist 1. Danach rechnet Reprintbuddy aus, wie viele Drucke ein Nachdruck braucht.",
+  "info.target": "Wohin Bambuddy den Druck schickt: an ein Druckermodell, dann druckt jeder freie Drucker dieses Modells, oder an einen bestimmten Drucker.",
+  "info.min_stock": "Fällt der Bestand samt allem, was schon geplant, gedruckt oder geprüft wird, unter diese Zahl, wird nachgedruckt. Mindestbestand 0 und Puffer 0: nie von selbst.",
+  "info.buffer": "So viel wird über den Mindestbestand hinaus nachgedruckt. Aufgefüllt wird bis Mindestbestand plus Puffer.",
+  "info.needs_assembly": "Gedruckte Teile, die die Prüfung bestanden haben, warten erst auf die Montage mit den Zukaufteilen und zählen erst danach zum Bestand.",
+  "info.auto_enabled": "Ist sie an, reiht Reprintbuddy für diesen Artikel selbst Nachdrucke in Bambuddy ein, sobald der Bestand unter den Mindestbestand fällt, bis Mindestbestand plus Puffer erreicht sind. Aus: Reprintbuddy zeigt nur an, dass nachgedruckt werden sollte.",
+  "info.has_parts": "Hier trägst du ein, welche gekauften Teile in diesem Artikel verbaut sind und wie viele je Einheit. Sie werden bei der Montage und beim Einbuchen mit „Zukaufteile abziehen“ vom Bestand abgezogen.",
+  "info.part_min_stock": "Liegt der Bestand darunter, steht das Teil auf „unter Minimum“.",
+  "info.pack_size": "So viele Stück kommen in einer Packung. Bestellvorschläge rechnen immer in ganzen Packungen.",
+  "info.min_order_packs": "So viele Packungen muss eine Bestellung mindestens haben.",
+  "info.lead_time_days": "Tage von der Bestellung bis zum Eintreffen. Bestellvorschläge rechnen den Verbrauch in dieser Zeit mit ein.",
+  "info.safety_value": "Diese Reserve, in Tagen oder Stück, soll nach der Lieferzeit noch übrig sein. Wird es knapper, schlägt Reprintbuddy eine Bestellung vor.",
+  "info.consume_parts": "Zieht die Zukaufteile, die dieser Artikel braucht, für jede eingebuchte Einheit vom Zukaufteil-Bestand ab.",
+  "info.host": "Netzwerkadresse, auf der Reprintbuddy erreichbar ist. 0.0.0.0 heißt: auf allen Netzwerken des Rechners. Wird nach einem Neustart wirksam.",
+  "info.about": "Erklärung zu {label}"
 }

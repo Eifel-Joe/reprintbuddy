@@ -131,7 +131,43 @@
 <div class="card-head"><h2>{{ icon(icon_name) }}{{ title }}</h2><div>{{ caller() }}</div></div>
 {%- endmacro %}
 
-{# One line of a settings card: label and grey hint left, the control (call block) right. #}
-{% macro setting_row(label, hint="", for_id="") -%}
-<div class="setting-row"><div class="setting-text"><label{% if for_id %} for="{{ for_id }}"{% endif %}>{{ label }}</label>{% if hint %}<span>{{ hint }}</span>{% endif %}</div><div class="setting-control">{{ caller() }}</div></div>
+{# One line of a settings card: label and grey hint left, the control (call block) right.
+   `info_text` (optional) adds an info button behind the label (see `info`). #}
+{% macro setting_row(label, hint="", for_id="", info_text="") -%}
+<div class="setting-row"><div class="setting-text">{% if info_text %}<div class="label-row"><label{% if for_id %} for="{{ for_id }}"{% endif %}>{{ label }}</label>{{ info(info_text, label) }}</div>{% else %}<label{% if for_id %} for="{{ for_id }}"{% endif %}>{{ label }}</label>{% endif %}{% if hint %}<span>{{ hint }}</span>{% endif %}</div><div class="setting-control">{{ caller() }}</div></div>
+{%- endmacro %}
+
+
+{# ---- info buttons (explanations of the less obvious fields) ---- #}
+
+{# The button: a <details>, so it opens and closes without JavaScript (Tab, Enter or Space on the
+   <summary>; info.js adds "close on outside tap and Escape, one open at a time"). `text` is the
+   explanation (already translated, escaped here); `label` names the field for a screen reader.
+   Never put it inside a <label> that wraps a field or a checkbox: a click on the <summary> could
+   reach the label and tick the box or focus the field. Use the two wrappers below, which put
+   the button next to the label instead of in it.
+   The popup is pinned under the button (it opens in the flow just below the <summary>) and
+   framed by the card: horizontally it starts at the card's content edge and is at most 18rem and
+   never wider than the card, so it cannot leave the screen at any width from 320 px up without a
+   script (a button in the right column of a row cannot know that it is near the edge). #}
+{% macro info(text, label) -%}
+{%- set name = t('info.about', label=label) -%}
+<details class="info"><summary title="{{ name }}" aria-label="{{ name }}">{{ icon('info') }}</summary><div class="info-pop" role="note">{{ text }}</div></details>
+{%- endmacro %}
+
+{# A field with an info button, for fields whose <label> used to wrap the control: the label
+   (connected by `for`/`id`, so a click still focuses the field) and the button are siblings in
+   `.label-row`, the control comes from the call block and must carry `id`:
+   {% call ui.field("article-buffer", "Buffer", explanation) %}<input id="article-buffer" name="buffer">{% endcall %}
+   Only the names and values of the control matter to the server; the markup around them does not.
+   Without `info_text` there is no button; use that for the neighbour of such a field in a row, so
+   both controls start at the same height. #}
+{% macro field(id, label, info_text="") -%}
+<div class="field"><div class="label-row"><label for="{{ id }}">{{ label }}</label>{% if info_text %}{{ info(info_text, label) }}{% endif %}</div>{{ caller() }}</div>
+{%- endmacro %}
+
+{# A checkbox (switch) with an info button: the call block holds the unchanged
+   `<label class="check">…</label>`; the button follows it in `.check-row`, outside the label. #}
+{% macro check_row(info_text, label) -%}
+<div class="check-row">{{ caller() }}{{ info(info_text, label) }}</div>
 {%- endmacro %}
