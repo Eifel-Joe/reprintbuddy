@@ -68,9 +68,9 @@ class AllGoodResult:
     shortages: list[PartShortage]
 
 
-def list_open(session: Session) -> list[InspectionRow]:
-    """The prints waiting for inspection, oldest first."""
-    rows = session.execute(
+def list_open(session: Session, article_id: int | None = None) -> list[InspectionRow]:
+    """The prints waiting for inspection, oldest first; only those of `article_id` if given."""
+    query = (
         select(
             Inspection.id,
             Inspection.article_id,
@@ -83,8 +83,10 @@ def list_open(session: Session) -> list[InspectionRow]:
         .join(Article, Article.id == Inspection.article_id)
         .where(Inspection.resolved_at.is_(None))
         .order_by(Inspection.created_at, Inspection.id)
-    ).all()
-    return [InspectionRow(*row) for row in rows]
+    )
+    if article_id is not None:
+        query = query.where(Inspection.article_id == article_id)
+    return [InspectionRow(*row) for row in session.execute(query).all()]
 
 
 def _current(session: Session, inspection_id: int) -> Inspection | None:
@@ -149,14 +151,49 @@ def resolve(
     return _book(session, row, good_units, actor, note)
 
 
+def resolve_scrap(
+    session: Session, inspection_id: int, scrap_units: int, actor: Actor, note: str | None = None
+) -> ResolveResult:
+    """Confirm a print by its scrap: good units = the units of the print minus `scrap_units`.
+
+    This is the input of the list (Spec 8.2: "Ausschuss", default 0). The units of the print are
+    read here, inside the caller's write transaction, so the split is always against the print as
+    it stands now. The booking is the one of `resolve`.
+    """
+    row = _current(session, inspection_id)
+    if row is None:
+        raise NotFoundError("inspections.not_found")
+    if row.resolved_at is not None:
+        raise ConflictError("inspections.already_resolved")
+    if (
+        isinstance(scrap_units, bool)
+        or not isinstance(scrap_units, int)
+        or not 0 <= scrap_units <= row.units
+    ):
+        raise ValidationError(
+            "form.invalid_number", field="inspections.field.scrap", min=0, max=row.units
+        )
+    return _book(session, row, row.units - scrap_units, actor, note)
+
+
 def resolve_all_good(
-    session: Session, inspection_ids: Sequence[int], actor: Actor
+    session: Session,
+    inspection_ids: Sequence[int],
+    actor: Actor,
+    article_id: int | None = None,
 ) -> AllGoodResult:
-    """All units good for each given inspection; unknown or already inspected ones are skipped."""
+    """All units good for each given inspection; unknown or already inspected ones are skipped.
+
+    With `article_id` only the prints of that article are touched (the filtered list): the check
+    is made here against the stored print, whatever the request carries. Prints of other articles
+    are no part of the request and are not counted as skipped.
+    """
     resolved = skipped = 0
     shortages: list[PartShortage] = []
     for inspection_id in inspection_ids:
         row = _current(session, inspection_id)
+        if row is not None and article_id is not None and row.article_id != article_id:
+            continue
         if row is None or row.resolved_at is not None:
             skipped += 1
             continue

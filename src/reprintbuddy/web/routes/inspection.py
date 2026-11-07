@@ -15,6 +15,7 @@ from reprintbuddy.domain import inspection, stock
 from reprintbuddy.domain.errors import ConflictError, DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Article, Inspection
+from reprintbuddy.web import listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.flash import flash
@@ -41,9 +42,12 @@ def kpi_cards(lang: str, rows: list[inspection.InspectionRow]) -> list[Kpi]:
     ]
 
 
-def _inspection_page(request: Request, db: Session, *, error_inspection: int | None = None,
-                     error: str | None = None, values: dict[str, str] | None = None, status: int = 200):
-    rows = inspection.list_open(db)
+def _inspection_page(request: Request, db: Session, *, article: object = None,
+                     error_inspection: int | None = None, error: str | None = None,
+                     values: dict[str, str] | None = None, status: int = 200):
+    """The list; `article` is the raw `article` value of the address or the form (the filter)."""
+    flt = listing.article_filter(db, article, INSPECTION_URL)
+    rows = inspection.list_open(db, article_id=flt.id if flt else None)
     return render(
         request,
         "inspection.html",
@@ -51,70 +55,82 @@ def _inspection_page(request: Request, db: Session, *, error_inspection: int | N
         active_nav="inspection",
         rows=rows,
         cards=kpi_cards(current_language(request), rows),
+        article_filter=flt,
         error_inspection=error_inspection,
         error=error,
         values=values or {},
     )
 
 
+def _back(article: object) -> str:
+    """The list the action came from: with its filter, if it had one."""
+    return listing.with_article(INSPECTION_URL, listing.article_id_of(article))
+
+
 @router.get("/inspection")
 async def inspection_page(request: Request, db: Session = Depends(get_db)):
-    return _inspection_page(request, db)
+    return _inspection_page(request, db, article=request.query_params.get("article"))
 
 
 # The fixed path first: "all-good" must not be read as an id (the id route only takes digits).
 @router.post("/inspection/all-good", dependencies=[Depends(verify_csrf)])
 async def resolve_all_good(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
+    article = form.get("article")
+    article_id = listing.article_id_of(article)
     # Words that are no id are dropped; the same id twice counts once.
     ids = list(dict.fromkeys(int(v) for v in form.getlist("ids") if _ID.fullmatch(str(v))))
     try:
         if not ids:
             return _inspection_page(
-                request, db, error=translate(current_language(request), "inspections.none_selected"), status=200
+                request, db, article=article,
+                error=translate(current_language(request), "inspections.none_selected"), status=200,
             )
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            result = inspection.resolve_all_good(tx, ids, "user")
+            # With a filter the server takes only the prints of that article, whatever ids came in.
+            result = inspection.resolve_all_good(tx, ids, "user", article_id=article_id)
             messages = _shortages(tx, result.shortages)
     except FormTokenUsed:
-        return duplicate_redirect(request, INSPECTION_URL)
+        return duplicate_redirect(request, _back(article))
     except (DomainError, FormTokenInvalid) as exc:
         return _inspection_page(
-            request, db, error=error_text(current_language(request), exc), status=error_status(exc)
+            request, db, article=article, error=error_text(current_language(request), exc),
+            status=error_status(exc),
         )
     flash(request, "inspections.all_done", resolved=result.resolved, skipped=result.skipped)
     for key, message_params in messages:
         flash(request, key, warning=key in WARNING_KEYS, **message_params)
-    return RedirectResponse(INSPECTION_URL, status_code=303)
+    return RedirectResponse(_back(article), status_code=303)
 
 
 @router.post("/inspection/{inspection_id:int}", dependencies=[Depends(verify_csrf)])
 async def resolve_inspection(inspection_id: int, request: Request, db: Session = Depends(get_db)):
     form = await request.form()
-    values = {k: str(v) for k, v in form.items() if k not in ("csrf_token", "form_token")}
+    article = form.get("article")
+    values = {k: str(v) for k, v in form.items() if k not in ("csrf_token", "form_token", "article")}
     try:
-        good = parse_int(form.get("good"), field="inspections.field.good", min=0, max=MAX_GOOD)
-        note = parse_text(form.get("note"), field="journal.field.note", max_len=stock.MAX_NOTE)
+        # "Ausschuss", default 0 (Spec 8.2): good units are the units of the print minus the scrap.
+        scrap = parse_int(form.get("scrap"), field="inspections.field.scrap", min=0, max=MAX_GOOD, default=0)
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            result = inspection.resolve(tx, inspection_id, good, "user", note)
+            result = inspection.resolve_scrap(tx, inspection_id, scrap, "user")
             name = tx.scalar(
                 select(Article.name).join(Inspection, Inspection.article_id == Article.id)
                 .where(Inspection.id == inspection_id)
             )
             messages = _shortages(tx, result.shortages)
     except FormTokenUsed:
-        return duplicate_redirect(request, INSPECTION_URL)
+        return duplicate_redirect(request, _back(article))
     except (DomainError, FormTokenInvalid) as exc:
         return _inspection_page(
-            request, db, error_inspection=inspection_id, error=error_text(current_language(request), exc),
-            values=values, status=error_status(exc),
+            request, db, article=article, error_inspection=inspection_id,
+            error=error_text(current_language(request), exc), values=values, status=error_status(exc),
         )
     flash(request, "inspections.done", name=name, good=result.good, scrap=result.scrap)
     if result.replacement_entry_id is not None:
         flash(request, "inspections.replacement_created")
     for key, message_params in messages:
         flash(request, key, warning=key in WARNING_KEYS, **message_params)
-    return RedirectResponse(INSPECTION_URL, status_code=303)
+    return RedirectResponse(_back(article), status_code=303)
 
 
 # ---- JSON interface (Spec 8.2): the same domain functions as the page, for a shelf display ----------
@@ -135,11 +151,13 @@ def _api_error(request: Request, exc: DomainError) -> JSONResponse:
     )
 
 
-def _good_units(raw: bytes) -> int:
-    """`good_units` of a JSON body `{"good_units": <whole number>}`; nothing else is accepted.
+def _counts(raw: bytes) -> tuple[int | None, int | None]:
+    """`(good_units, scrap_units)` of a JSON body; one of them or both, whole numbers, nothing else.
 
-    No `bool` (`true` is an int in Python), no `1.0`, no text: a display that sends the wrong
-    type is told so instead of being guessed at. The range is checked by the domain.
+    `scrap_units` is the input of the list (Spec 8.2: good = units of the print minus scrap);
+    `good_units` stays for the displays that already send it. No `bool` (`true` is an int in
+    Python), no `1.0`, no text: a display that sends the wrong type is told so instead of being
+    guessed at. The range, and that both add up to the units, is checked against the print.
     """
     try:
         body = json.loads(raw)
@@ -147,17 +165,29 @@ def _good_units(raw: bytes) -> int:
         raise ValidationError("inspections.invalid_body") from None
     if not isinstance(body, dict):
         raise ValidationError("inspections.invalid_body")
-    if "good_units" not in body:
-        raise ValidationError("form.required", field="inspections.field.good")
-    value = body["good_units"]
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValidationError("form.invalid_number", field="inspections.field.good", min=0, max=MAX_GOOD)
-    return value
+    if "good_units" not in body and "scrap_units" not in body:
+        raise ValidationError("inspections.invalid_body")
+    counts: list[int | None] = []
+    for key, field in (("good_units", "inspections.field.good"), ("scrap_units", "inspections.field.scrap")):
+        if key not in body:
+            counts.append(None)
+            continue
+        value = body[key]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValidationError("form.invalid_number", field=field, min=0, max=MAX_GOOD)
+        counts.append(value)
+    return counts[0], counts[1]
 
 
 @router.get("/api/inspections")
-async def api_list(db: Session = Depends(get_db)):
-    rows = inspection.list_open(db)
+async def api_list(request: Request, db: Session = Depends(get_db)):
+    raw_article = request.query_params.get("article")
+    article_id = listing.article_id_of(raw_article)
+    if raw_article is not None and article_id is None:
+        return _api_error(request, ValidationError(
+            "form.invalid_number", field="articles.title", min=1, max=MAX_QTY
+        ))
+    rows = inspection.list_open(db, article_id=article_id)
     return {
         "inspections": [
             {
@@ -183,9 +213,15 @@ async def api_resolve(inspection_id: int, request: Request):
     except RuntimeError:
         raw = b""
     try:
-        good = _good_units(raw)
+        good, scrap = _counts(raw)
         with write_transaction(request) as tx:
-            result = inspection.resolve(tx, inspection_id, good, "user")
+            if scrap is None:
+                result = inspection.resolve(tx, inspection_id, good, "user")
+            else:
+                units = tx.scalar(select(Inspection.units).where(Inspection.id == inspection_id))
+                if good is not None and units is not None and good + scrap != units:
+                    raise ValidationError("inspections.counts_mismatch", units=units)
+                result = inspection.resolve_scrap(tx, inspection_id, scrap, "user")
     except DomainError as exc:
         return _api_error(request, exc)
     return {

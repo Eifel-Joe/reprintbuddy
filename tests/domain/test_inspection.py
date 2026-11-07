@@ -335,3 +335,103 @@ def test_concurrent_resolve_books_once(db):  # Review Focus 1
     with db.begin() as s:
         assert counters(s, ids[0]) == (0, 1, 0)
         assert len(journal(s, "inspection_good")) == 1
+
+
+# ---- the input of the list: scrap, not good units (p88; Spec 8.2) ------------------------------
+
+
+def test_resolve_scrap_zero_means_all_good(db):
+    with db.begin() as s:
+        a = make_article(s)
+        row, _ = finished_print(s, a.id, units=3)
+        ids = (a.id, row.id)
+    with db.begin() as s:
+        result = inspection.resolve_scrap(s, ids[1], 0, "user")
+        assert (result.good, result.scrap, result.replacement_entry_id) == (3, 0, None)
+    with db.begin() as s:
+        assert counters(s, ids[0]) == (0, 3, 0)
+        assert s.get(Inspection, ids[1]).good_units == 3
+
+
+def test_resolve_scrap_books_the_rest_as_good_and_replaces_the_scrap(db):
+    with db.begin() as s:
+        a = make_article(s)
+        row, _ = finished_print(s, a.id, units=4)
+        ids = (a.id, row.id)
+    with db.begin() as s:
+        result = inspection.resolve_scrap(s, ids[1], 3, "user")
+        assert (result.good, result.scrap) == (1, 3)
+        assert result.replacement_entry_id is not None
+    with db.begin() as s:
+        assert counters(s, ids[0]) == (0, 1, 0)
+        assert journal(s, "inspection_scrap")[0].qty == 3
+        assert s.get(Inspection, ids[1]).good_units == 1
+
+
+@pytest.mark.parametrize("bad", [-1, "units+1", True, 1.5, "2"])
+def test_resolve_scrap_rejects_out_of_range(db, bad):
+    with db.begin() as s:
+        a = make_article(s)
+        row, _ = finished_print(s, a.id, units=2)
+        ids = (a.id, row.id)
+    value = 3 if bad == "units+1" else bad
+    with pytest.raises(ValidationError) as info:
+        with db.begin() as s:
+            inspection.resolve_scrap(s, ids[1], value, "user")
+    assert info.value.key == "form.invalid_number"
+    assert info.value.params["field"] == "inspections.field.scrap"
+    assert (info.value.params["min"], info.value.params["max"]) == (0, 2)
+    with db.begin() as s:
+        assert counters(s, ids[0]) == (2, 0, 0)
+        assert s.get(Inspection, ids[1]).resolved_at is None
+
+
+def test_resolve_scrap_twice_and_unknown(db):
+    with db.begin() as s:
+        a = make_article(s)
+        row, _ = finished_print(s, a.id, units=1)
+        rid = row.id
+    with db.begin() as s:
+        inspection.resolve_scrap(s, rid, 0, "user")
+    with pytest.raises(ConflictError) as info:
+        with db.begin() as s:
+            inspection.resolve_scrap(s, rid, 0, "user")
+    assert info.value.key == "inspections.already_resolved"
+    with pytest.raises(NotFoundError):
+        with db.begin() as s:
+            inspection.resolve_scrap(s, 999, 0, "user")
+
+
+# ---- the list and "all good" of one article (p88) ---------------------------------------------
+
+
+def test_list_open_of_one_article(db):
+    with db.begin() as s:
+        a = make_article(s, name="Template A")
+        b = make_article(s, name="Template B")
+        ra = finished_print(s, a.id)[0].id
+        finished_print(s, b.id)
+        ids = (a.id, ra)
+    with db.begin() as s:
+        rows = inspection.list_open(s, article_id=ids[0])
+        assert [r.id for r in rows] == [ids[1]]
+        assert len(inspection.list_open(s)) == 2
+        assert inspection.list_open(s, article_id=999) == []
+
+
+def test_resolve_all_good_of_one_article_leaves_the_others_open(db):
+    """The server filters by article itself: ids of other articles in the request are not touched,
+    even if they arrive (a form that carries more than the page showed, prints that came later)."""
+    with db.begin() as s:
+        a = make_article(s, name="Template A")
+        b = make_article(s, name="Template B")
+        ra = [finished_print(s, a.id, units=2)[0].id for _ in range(2)]
+        rb = finished_print(s, b.id, units=3)[0].id
+        ids = (a.id, b.id, *ra, rb)
+    with db.begin() as s:
+        result = inspection.resolve_all_good(s, [ids[2], ids[3], ids[4]], "user", article_id=ids[0])
+        assert (result.resolved, result.skipped) == (2, 0)  # the foreign one is no part of it
+    with db.begin() as s:
+        assert counters(s, ids[0]) == (0, 4, 0)
+        assert counters(s, ids[1]) == (3, 0, 0)  # still provisional, still waiting
+        assert s.get(Inspection, ids[4]).resolved_at is None

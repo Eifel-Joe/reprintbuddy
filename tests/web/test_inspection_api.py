@@ -122,6 +122,15 @@ def test_api_message_follows_the_language(ready_client):
         ({"good_units": None}, None),
         ({"good_units": -1}, None),
         ({"good_units": 2}, None),  # more than the units of the print
+        ({"scrap_units": "0"}, None),
+        ({"scrap_units": True}, None),
+        ({"scrap_units": 0.0}, None),
+        ({"scrap_units": None}, None),
+        ({"scrap_units": -1}, None),
+        ({"scrap_units": 2}, None),  # more than the units of the print
+        ({"scrap_units": 10**30}, None),
+        ({"good_units": 1, "scrap_units": 1}, None),  # together not the units of the print
+        ({"good_units": 0, "scrap_units": 0}, None),
         ({"good_units": 10**30}, None),
         ([], None),
         ([1], None),
@@ -138,7 +147,9 @@ def test_api_invalid_body(ready_client, body, raw):  # Review Focus 3
     assert response.status_code == 422
     payload = response.json()
     assert set(payload) == {"error", "message"}
-    assert payload["error"] in {"form.required", "form.invalid_number", "inspections.invalid_body"}
+    assert payload["error"] in {
+        "form.required", "form.invalid_number", "inspections.invalid_body", "inspections.counts_mismatch"
+    }
     assert payload["message"]
     assert count(ready_client, Article, a, "stock") == 0
     assert count(ready_client, Article, a, "provisional") == 1
@@ -193,7 +204,7 @@ def test_browser_and_api_share_domain(ready_client):
     _, i1 = finished(ready_client, "Template A")
     _, i2 = finished(ready_client, "Template B")
     assert api_post(ready_client, i1, {"good_units": 1}).status_code == 200
-    response, _ = confirm(ready_client, i2, good="1")
+    response, _ = confirm(ready_client, i2, scrap="0")
     assert response.status_code == 303
     with sm_of(ready_client).begin() as s:
         rows = s.scalars(select(JournalEntry).where(JournalEntry.kind == "inspection_good")).all()
@@ -208,3 +219,49 @@ def test_api_form_body_with_token_field_is_refused_not_a_server_error(ready_clie
     assert response.status_code == 422
     assert response.json()["error"] == "inspections.invalid_body"
     assert open_count(ready_client) == 1
+
+
+# ---- scrap_units: the input of the list (p88; Spec 8.2) -----------------------------------------
+
+
+def test_api_resolve_by_scrap_units(ready_client):
+    with sm_of(ready_client).begin() as s:
+        other = make_article(s, name="Template Z").id
+        make_entry(s, other, 1)
+    a, i = finished(ready_client, units=3)
+    response = api_post(ready_client, i, {"scrap_units": 2})
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["good"], body["scrap"]) == (1, 2)
+    assert isinstance(body["replacement_entry_id"], int)
+    assert count(ready_client, Article, a, "stock") == 1
+
+
+def test_api_scrap_units_zero_is_all_good(ready_client):
+    a, i = finished(ready_client, units=2)
+    body = api_post(ready_client, i, {"scrap_units": 0}).json()
+    assert (body["good"], body["scrap"], body["replacement_entry_id"]) == (2, 0, None)
+    assert count(ready_client, Article, a, "stock") == 2
+
+
+def test_api_both_counts_are_taken_when_they_add_up_to_the_units(ready_client):
+    a, i = finished(ready_client, units=3)
+    body = api_post(ready_client, i, {"good_units": 2, "scrap_units": 1}).json()
+    assert (body["good"], body["scrap"]) == (2, 1)
+
+
+def test_api_both_counts_that_do_not_add_up_are_refused(ready_client):
+    a, i = finished(ready_client, units=3)
+    response = api_post(ready_client, i, {"good_units": 1, "scrap_units": 1})
+    assert response.status_code == 422
+    assert response.json()["error"] == "inspections.counts_mismatch"
+    assert open_count(ready_client) == 1
+
+
+def test_api_list_of_one_article(ready_client):
+    a, ia = finished(ready_client, "Template A")
+    b, ib = finished(ready_client, "Template B")
+    rows = ready_client.get(LIST_URL, params={"article": a}).json()["inspections"]
+    assert [r["id"] for r in rows] == [ia]
+    assert len(ready_client.get(LIST_URL).json()["inspections"]) == 2
+    assert ready_client.get(LIST_URL, params={"article": "abc"}).status_code == 422

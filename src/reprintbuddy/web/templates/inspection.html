@@ -5,51 +5,59 @@
 {% call ui.page_head("clipboard-check", t('nav.inspection'), t('inspections.subtitle')) %}{% endcall %}
 {% call ui.region("summary", "inspection") %}{{ ui.kpi_row(cards) }}{% endcall %}
 {% call ui.region("list", "inspection article") %}
-{# An error for a print that has no card (unknown, inspected meanwhile) or for the "all good" buttons shows on top. #}
+{# An error for a print that has no row (unknown, inspected meanwhile) or for the "all good" buttons shows on top. #}
 {% if error and not rows|selectattr('id', 'equalto', error_inspection)|list %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% if article_filter %}<div class="toolbar">{{ ui.article_chip(article_filter) }}</div>{% endif %}
 {% if not rows %}
-<section class="card section"><p class="muted">{{ t('inspections.empty') }}</p></section>
+<section class="card section"><p class="muted">{{ t('inspections.empty_article' if article_filter else 'inspections.empty') }}</p></section>
 {% else %}
-{# Two forms: "selected" takes the ticked boxes of the cards (form attribute), "all" carries every id. #}
+{# Two forms: "selected" takes the ticked boxes of the rows (form attribute), "all" carries the id of every row
+   shown. With a filter both carry its article too: the server then touches only that article's prints. #}
 <div class="toolbar inspect-toolbar">
   <form id="inspect-selected" method="post" action="/inspection/all-good">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="form_token" value="{{ form_token() }}">
+    {% if article_filter %}<input type="hidden" name="article" value="{{ article_filter.id }}">{% endif %}
     <button class="btn secondary" type="submit">{{ ui.icon('check') }}{{ t('inspections.selected_good') }}</button>
   </form>
   <form id="inspect-all" method="post" action="/inspection/all-good">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="form_token" value="{{ form_token() }}">
     <input type="hidden" name="all" value="1">
+    {% if article_filter %}<input type="hidden" name="article" value="{{ article_filter.id }}">{% endif %}
     {% for row in rows %}<input type="hidden" name="ids" value="{{ row.id }}">{% endfor %}
     <button class="btn" type="submit">{{ ui.icon('check') }}{{ t('inspections.all_good') }}</button>
   </form>
+  {{ ui.info(t('info.inspection_scrap'), t('inspections.field.scrap')) }}
+</div>
+<div class="card line-list inspect-list">
+  <div class="line-head inspect-cols" aria-hidden="true">
+    <span></span><span>{{ t('inspections.col.print') }}</span><span class="num">{{ t('inspections.col.target') }}</span><span>{{ t('inspections.field.scrap') }}</span><span></span>
+  </div>
+  {% for row in rows %}
+  {% set v = values if error_inspection == row.id else {} %}
+  <div class="line-wrap">
+    {% if error_inspection == row.id and error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+    <form method="post" action="/inspection/{{ row.id }}" class="line inspect-line inspect-cols">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="form_token" value="{{ form_token() }}">
+      {% if article_filter %}<input type="hidden" name="article" value="{{ article_filter.id }}">{% endif %}
+      <label class="check inspect-select"><input type="checkbox" name="ids" value="{{ row.id }}" form="inspect-selected" aria-label="{{ t('inspections.select_print', name=row.article_name) }}"></label>
+      <div class="line-main">
+        {% if row.has_thumbnail %}<img class="thumb-sm" src="/articles/{{ row.article_id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb-placeholder">{{ ui.icon('package') }}</span>{% endif %}
+        <div class="line-title">
+          <a class="line-name" href="/articles/{{ row.article_id }}">{{ row.article_name }}</a>
+          <div class="line-meta"><span>{{ t('inspections.finished_at', at=row.created_at|local_dt) }}</span>{% if row.needs_assembly %}<span class="badge tone-info">{{ t('inspections.goes_to_assembly') }}</span>{% endif %}</div>
+        </div>
+      </div>
+      <div class="line-cell num"><span class="line-label">{{ t('inspections.col.target') }}</span><span class="inspect-soll num">{{ row.units }}</span></div>
+      <div class="line-cell"><label class="line-label" for="scrap-{{ row.id }}">{{ t('inspections.field.scrap') }}</label>
+        <input id="scrap-{{ row.id }}" name="scrap" type="number" inputmode="numeric" min="0" max="{{ row.units }}" step="1" value="{{ v.get('scrap', '0') }}"></div>
+      <button class="btn" type="submit">{{ t('inspections.confirm') }}</button>
+    </form>
+  </div>
+  {% endfor %}
 </div>
 {% endif %}
-{% for row in rows %}
-{% set v = values if error_inspection == row.id else {} %}
-<section class="card section inspect-card">
-  <div class="inspect-head">
-    {% if row.has_thumbnail %}<img class="thumb-sm" src="/articles/{{ row.article_id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb-placeholder">{{ ui.icon('package') }}</span>{% endif %}
-    <div class="inspect-title">
-      <a class="inspect-name" href="/articles/{{ row.article_id }}">{{ row.article_name }}</a>
-      <div class="inspect-meta"><span>{{ t('inspections.finished_at', at=row.created_at|local_dt) }}</span><span>{{ tc('inspections.units', row.units) }}</span>{% if row.needs_assembly %}<span class="badge tone-info">{{ t('inspections.goes_to_assembly') }}</span>{% endif %}</div>
-    </div>
-    <label class="check inspect-select"><input type="checkbox" name="ids" value="{{ row.id }}" form="inspect-selected"><span>{{ t('inspections.select') }}</span></label>
-  </div>
-  {% if error_inspection == row.id and error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
-  <form method="post" action="/inspection/{{ row.id }}" class="inspect-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <input type="hidden" name="form_token" value="{{ form_token() }}">
-    {% call ui.field("good-" ~ row.id, t('inspections.field.good'), t('info.inspection_good')) %}
-    <input id="good-{{ row.id }}" name="good" type="number" inputmode="numeric" min="0" max="{{ row.units }}" step="1" value="{{ v.get('good', row.units) }}" required>
-    {% endcall %}
-    {% call ui.field("note-" ~ row.id, t('journal.field.note')) %}
-    <input id="note-{{ row.id }}" name="note" value="{{ v.get('note', '') }}" maxlength="500">
-    {% endcall %}
-    <button class="btn" type="submit">{{ t('inspections.confirm') }}</button>
-  </form>
-</section>
-{% endfor %}
 {% endcall %}
 {% endblock %}
