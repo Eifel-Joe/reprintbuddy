@@ -610,6 +610,7 @@
   "inspections.not_found": "This print is not waiting for inspection.",
   "inspections.already_resolved": "This print has already been inspected.",
   "inspections.field.good": "Good units",
+  "inspections.invalid_body": "The request body must be a JSON object with the whole number good_units.",
   "inspections.subtitle": "Finished prints waiting for the count of good pieces",
   "inspections.empty": "No prints are waiting for inspection.",
   "inspections.units.one": "{n} unit",

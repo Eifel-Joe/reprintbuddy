@@ -610,6 +610,7 @@
   "inspections.not_found": "Dieser Druck wartet nicht auf Prüfung.",
   "inspections.already_resolved": "Dieser Druck ist schon geprüft.",
   "inspections.field.good": "Gute Einheiten",
+  "inspections.invalid_body": "Der Anfragekörper muss ein JSON-Objekt mit der ganzen Zahl good_units sein.",
   "inspections.subtitle": "Fertige Drucke, die auf die Zählung der guten Stücke warten",
   "inspections.empty": "Es warten keine Drucke auf die Prüfung.",
   "inspections.units.one": "{n} Einheit",

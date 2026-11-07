@@ -2,22 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import re
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import inspection, stock
-from reprintbuddy.domain.errors import DomainError
+from reprintbuddy.domain.errors import ConflictError, DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Article, Inspection
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.forms import duplicate_redirect, error_status, error_text, parse_int, parse_text
-from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
+from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
 from reprintbuddy.web.i18n import translate
 from reprintbuddy.web.kpis import Kpi
 from reprintbuddy.web.routes.bookings import WARNING_KEYS, _active_article, _shortages
@@ -113,6 +115,86 @@ async def resolve_inspection(inspection_id: int, request: Request, db: Session =
     for key, message_params in messages:
         flash(request, key, warning=key in WARNING_KEYS, **message_params)
     return RedirectResponse(INSPECTION_URL, status_code=303)
+
+
+# ---- JSON interface (Spec 8.2): the same domain functions as the page, for a shelf display ----------
+
+
+def _api_error(request: Request, exc: DomainError) -> JSONResponse:
+    """`{"error": <key>, "message": <text in the user's language>}` with the status of the error."""
+    if isinstance(exc, ValidationError):
+        status = 422
+    elif isinstance(exc, NotFoundError):
+        status = 404
+    elif isinstance(exc, ConflictError):
+        status = 409
+    else:  # e.g. a stock limit: the request conflicts with the stock as it is now
+        status = 409
+    return JSONResponse(
+        {"error": exc.key, "message": error_text(current_language(request), exc)}, status_code=status
+    )
+
+
+def _good_units(raw: bytes) -> int:
+    """`good_units` of a JSON body `{"good_units": <whole number>}`; nothing else is accepted.
+
+    No `bool` (`true` is an int in Python), no `1.0`, no text: a display that sends the wrong
+    type is told so instead of being guessed at. The range is checked by the domain.
+    """
+    try:
+        body = json.loads(raw)
+    except (ValueError, RecursionError):  # not JSON, not UTF-8, nested too deep
+        raise ValidationError("inspections.invalid_body") from None
+    if not isinstance(body, dict):
+        raise ValidationError("inspections.invalid_body")
+    if "good_units" not in body:
+        raise ValidationError("form.required", field="inspections.field.good")
+    value = body["good_units"]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValidationError("form.invalid_number", field="inspections.field.good", min=0, max=MAX_GOOD)
+    return value
+
+
+@router.get("/api/inspections")
+async def api_list(db: Session = Depends(get_db)):
+    rows = inspection.list_open(db)
+    return {
+        "inspections": [
+            {
+                "id": r.id,
+                "article_id": r.article_id,
+                "article_name": r.article_name,
+                "units": r.units,
+                "needs_assembly": r.needs_assembly,
+                # The database holds naive UTC; the interface says so.
+                "created_at": r.created_at.replace(tzinfo=UTC).isoformat(),
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.post("/api/inspections/{inspection_id:int}", dependencies=[Depends(verify_csrf)])
+async def api_resolve(inspection_id: int, request: Request):
+    # Read before the write transaction: no awaiting inside it. A form body (token in a field
+    # instead of the header) has been read by `verify_csrf` already and is no JSON anyway.
+    try:
+        raw = await request.body()
+    except RuntimeError:
+        raw = b""
+    try:
+        good = _good_units(raw)
+        with write_transaction(request) as tx:
+            result = inspection.resolve(tx, inspection_id, good, "user")
+    except DomainError as exc:
+        return _api_error(request, exc)
+    return {
+        "id": result.inspection_id,
+        "good": result.good,
+        "scrap": result.scrap,
+        "replacement_entry_id": result.replacement_entry_id,
+        "part_shortages": [{"part_id": s.part_id, "needed": s.needed, "had": s.had} for s in result.shortages],
+    }
 
 
 def _assembly_page(request: Request, db: Session, *, error_article: int | None = None,
