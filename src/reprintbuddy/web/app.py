@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import httpx
 from fastapi import FastAPI, Request
@@ -20,7 +20,9 @@ from starlette.templating import Jinja2Templates
 
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
+from reprintbuddy.bambuddy.client import BambuddyUnavailable
 from reprintbuddy.bambuddy.factory import make_http_factory
+from reprintbuddy.bambuddy.live import LiveListener
 from reprintbuddy.changes import install_change_feed
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.domain import status
@@ -103,18 +105,50 @@ def _poll_seconds(app: FastAPI) -> float:
         return 60.0 * int(st.get_setting(session, "poll_minutes"))
 
 
+class _LiveClient:
+    """What the live listener asks of a client, answered by the client of the moment.
+
+    The app's `bambuddy_factory` is asked afresh on each call, so changed settings take effect
+    at the next connect. No Bambuddy set up (the factory gives None), or a client without a
+    live channel, counts as "unavailable": the listener pauses and tries later.
+    """
+
+    def __init__(self, app: FastAPI) -> None:
+        self._app = app
+
+    def _channel(self, method: str) -> Any:
+        client = deps.bambuddy_client(self._app)
+        if client is None or not hasattr(client, method):
+            raise BambuddyUnavailable("no Bambuddy live channel available")
+        return client
+
+    async def ws_token(self) -> str:
+        return await self._channel("ws_token").ws_token()
+
+    def ws_url(self, token: str) -> str:
+        return self._channel("ws_url").ws_url(token)
+
+
 @contextlib.asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Run the tick engine in the background while the app serves (`run_engine`)."""
-    task: asyncio.Task[None] | None = None
+    """Run the tick engine and Bambuddy's live listener in the background (`run_engine`)."""
+    tasks: list[asyncio.Task[None]] = []
+    ticker_task: asyncio.Task[None] | None = None
+    live_task: asyncio.Task[None] | None = None
     if app.state.run_engine:
-        task = asyncio.create_task(app.state.ticker.run(lambda: _poll_seconds(app)), name="ticker")
-    app.state.ticker_task = task
+        ticker_task = asyncio.create_task(
+            app.state.ticker.run(lambda: _poll_seconds(app)), name="ticker"
+        )
+        live_task = asyncio.create_task(app.state.live_listener.run(), name="bambuddy-live")
+        tasks = [ticker_task, live_task]
+    app.state.ticker_task = ticker_task
+    app.state.live_task = live_task
     try:
         yield
     finally:
-        if task is not None:
+        for task in tasks:
             task.cancel()
+        for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
@@ -144,6 +178,8 @@ def create_app(
     *,
     ops: OpsContext | None = None,
     run_engine: bool = True,
+    live_connect: Callable[..., Any] | None = None,
+    live_sleep: Callable[[float], Awaitable[None]] | None = None,
 ) -> FastAPI:
     engine = make_engine(db_path)
     upgrade(engine)
@@ -184,6 +220,17 @@ def create_app(
     )
     app.state.run_engine = run_engine
     app.state.ticker_task = None  # the background loop while the app runs (see _lifespan)
+    # Bambuddy's live channel (Spec 7.6): a message that may have changed the queue, and every
+    # connect, only flag the engine; the poll runs in the engine's own loop task.
+    live_options: dict[str, Any] = {}
+    if live_connect is not None:  # tests; the default is the library's `connect`
+        live_options["connect"] = live_connect
+    if live_sleep is not None:
+        live_options["sleep"] = live_sleep
+    app.state.live_listener = LiveListener(
+        _LiveClient(app), lambda kind: app.state.ticker.request_poll(), **live_options
+    )
+    app.state.live_task = None
 
     # Templates and texts are read now and never again: an update replaces the files while this
     # process still answers, and it must go on rendering what it started with.
