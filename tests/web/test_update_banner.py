@@ -214,12 +214,13 @@ async def test_the_real_pause_ends_when_the_switch_wakes_it(tmp_path, fake_runne
 async def test_a_running_update_skips_the_round(ops_env):
     from datetime import UTC, datetime, timedelta
 
+    from reprintbuddy.ops.autocheck import UPDATE_RETRY
     from reprintbuddy.ops.status import UpdateStatus, write_status
 
     git_env(ops_env)
     started = datetime.now(UTC) - timedelta(minutes=1)
     write_status(ops_env.db_path.parent, UpdateStatus(state="running", step="install", started_at=started))
-    assert await ops_env.client.app.state.auto_check.run_once() == 3600
+    assert await ops_env.client.app.state.auto_check.run_once() == UPDATE_RETRY  # p105: within seconds
     assert [c for c in ops_env.runner.calls if "ls-remote" in c] == []
 
 
