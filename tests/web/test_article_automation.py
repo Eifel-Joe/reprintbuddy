@@ -309,3 +309,15 @@ def test_article_automation_german(ready_client):
     page = ready_client.get(f"/articles/{a}").text
     assert "Pause aufheben" in page and "Deckung" in page and "In Arbeit" in page
     assert "Druckdatei bestätigen" in ready_client.get(f"/articles/{b}").text
+
+
+def test_relink_offers_the_articles_own_plate(bb_client):
+    """Final review 6: an active article may choose its own plate again (a new file version)."""
+    a = article(bb_client, library_file_id=1, plate_id=1, paused=True, pause_reason="file_changed")
+    page = bb_client.get(f"/articles/{a}/relink/file/1").text
+    assert f'action="/articles/{a}/relink/file/1/plate/1"' in page
+    assert esc_text(en("articles.plate_taken_by", name="Template A")) not in page
+
+
+def esc_text(text):
+    return str(escape(text))

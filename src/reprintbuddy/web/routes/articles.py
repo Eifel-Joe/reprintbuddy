@@ -237,12 +237,15 @@ async def articles_new(request: Request, folder: str | None = None):
     return await _browse(request, folder, "/articles/new", "/articles/new/file")
 
 
-def _taken_plates(db: Session, file_id: int) -> dict[int, str]:
-    rows = db.execute(
-        select(Article.plate_id, Article.name).where(
-            Article.library_file_id == file_id, Article.archived_at.is_(None)
-        )
-    ).all()
+def _taken_plates(db: Session, file_id: int, besides: int | None = None) -> dict[int, str]:
+    """Plates of the file held by an active article; `besides` (the one relinked) is left
+    out, so it can choose its own plate again, as the domain allows (`_plate_holder`)."""
+    query = select(Article.plate_id, Article.name).where(
+        Article.library_file_id == file_id, Article.archived_at.is_(None)
+    )
+    if besides is not None:
+        query = query.where(Article.id != besides)
+    rows = db.execute(query).all()
     return {plate_id: name for plate_id, name in rows}
 
 
@@ -267,7 +270,7 @@ async def _plates_page(
         active_nav="articles",
         file=file,
         plates=plates,
-        taken=_taken_plates(db, file_id),
+        taken=_taken_plates(db, file_id, besides=relink_id),
         file_base=file_base,
         relink_id=relink_id,
         relink_archived=relink_archived,
