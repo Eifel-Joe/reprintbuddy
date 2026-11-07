@@ -515,6 +515,49 @@ async def test_duplicates_kept_after_settling(engine_env):
     )
 
 
+async def test_duplicates_warning_ends_when_pause_is_lifted(engine_env):
+    """Final review 2: the duplicate warning does not stay once the pause is lifted."""
+    from reprintbuddy.domain.pauses import lift_pause
+
+    env = engine_env
+    env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
+    await env.engine.tick(poll=False)
+    with env.sm() as s:
+        batch_id = s.get(Dispatch, 1).bambuddy_batch_id
+    (first,) = await env.fake.find_items_by_batch(batch_id)
+    second = await env.fake.enqueue(EnqueueRequest(1, 1, "A1", None, batch_id, False, None))
+    await env.engine.tick(poll=False)
+    assert "warning.duplicates" in keys(env.sm, env.engine.status)
+
+    with env.sm.begin() as s:
+        lift_pause(s, env.article_id, "user")
+    await env.engine.tick(poll=False)
+
+    assert env.engine.status.duplicates == []
+    assert "warning.duplicates" not in keys(env.sm, env.engine.status)
+
+
+async def test_duplicates_of_two_ticks_are_both_kept(engine_env):
+    """A later report does not drop a group whose article is still paused."""
+    env = engine_env
+    env.engine.status.duplicates = [[90, 91]]
+    with env.sm.begin() as s:
+        make_dispatch(s, env.article_id, status="queued", bambuddy_item_id=90)
+        pause_article(s, env.article_id, "unclear", "auto")
+    other = second_article(env.sm)
+    env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
+    await env.engine.tick(poll=False)
+    with env.sm() as s:
+        row = s.scalars(select(Dispatch).where(Dispatch.article_id == other)).one()
+        batch_id = row.bambuddy_batch_id
+    (first,) = await env.fake.find_items_by_batch(batch_id)
+    second = await env.fake.enqueue(EnqueueRequest(2, 1, "A1", None, batch_id, False, None))
+
+    await env.engine.tick(poll=False)
+
+    assert env.engine.status.duplicates == [[90, 91], [first.id, second.id]]
+
+
 async def test_printer_in_maintenance_waits_without_pause(engine_env):
     env = engine_env
     printer = env.fake.add_printer("Printer 4", "A1", active=False)

@@ -473,6 +473,7 @@
   "journal.kind.print_failed": "Print failed",
   "journal.kind.print_cancelled": "Print cancelled in Bambuddy",
   "journal.kind.print_missing": "Print gone from Bambuddy",
+  "journal.kind.print_duplicates": "Print found more than once in Bambuddy",
   "journal.kind.automation_paused": "Automation paused",
   "journal.kind.automation_resumed": "Automation resumed",
   "journal.kind.article_file_confirmed": "Print file confirmed",

@@ -473,6 +473,7 @@
   "journal.kind.print_failed": "Druck fehlgeschlagen",
   "journal.kind.print_cancelled": "Druck in Bambuddy abgebrochen",
   "journal.kind.print_missing": "Druck in Bambuddy verschwunden",
+  "journal.kind.print_duplicates": "Druck mehrfach in Bambuddy gefunden",
   "journal.kind.automation_paused": "Automatik pausiert",
   "journal.kind.automation_resumed": "Automatik fortgesetzt",
   "journal.kind.article_file_confirmed": "Druckdatei bestätigt",

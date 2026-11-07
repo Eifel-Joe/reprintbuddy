@@ -175,6 +175,7 @@ class Engine:
 
         with self.sm() as session:
             status.cap_reached = self._cap_reached(session)
+            self._prune_duplicates(session)
         status.last_tick_at = self.now()
         return TickResult(None, created, dispatched)
 
@@ -190,10 +191,11 @@ class Engine:
         report = await dispatch.resolve_pending(client, self.sm)
         status.reachable = reachable and report.reachable
         status.unresolved = report.unresolved
-        # Duplicates are reported once, when they are settled: keep them until the next
-        # report names new ones (a restart clears them; the article stays paused).
-        if report.duplicates:
-            status.duplicates = report.duplicates
+        # Duplicates are reported once, when they are settled: keep each group while its
+        # article stays paused (`_prune_duplicates`); the journal keeps the ids for good.
+        for ids in report.duplicates:
+            if ids not in status.duplicates:
+                status.duplicates.append(ids)
 
     async def _poll(self, client: BambuddyClient) -> None:
         """Step 5: ask Bambuddy about everything; a refusal ends only its own part.
@@ -302,6 +304,24 @@ class Engine:
             else:  # "unclear" or "not_sent": Bambuddy did not answer
                 status.reachable = False
             return dispatched
+
+    def _prune_duplicates(self, session: Session) -> None:
+        """Drop duplicate groups whose article is no longer paused (final review 2).
+
+        Lifting the pause is the user's answer to the warning. A group without a print
+        of its own (cannot happen: the first id was adopted) is dropped as well.
+        """
+        kept = []
+        for ids in self.status.duplicates:
+            paused = session.scalar(
+                select(Article.paused)
+                .join(Dispatch, Dispatch.article_id == Article.id)
+                .where(Dispatch.bambuddy_item_id.in_(ids))
+                .limit(1)
+            )
+            if paused:
+                kept.append(ids)
+        self.status.duplicates = kept
 
     def _cap_reached(self, session: Session) -> bool:
         """Step 8: the cap holds back a print that could otherwise go now."""

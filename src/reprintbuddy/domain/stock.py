@@ -53,6 +53,7 @@ KINDS: frozenset[str] = frozenset(
         "print_failed",
         "print_cancelled",
         "print_missing",
+        "print_duplicates",
         "automation_paused",
         "automation_resumed",
         "article_file_confirmed",

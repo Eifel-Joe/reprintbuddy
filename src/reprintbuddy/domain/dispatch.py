@@ -459,9 +459,19 @@ async def resolve_pending(client: BambuddyClient, sm: sessionmaker) -> ResolveRe
             report.resolved += 1
             if len(items) > 1:
                 ids = [i.id for i in items]
+                article_id = _dispatch(session, dispatch_id).article_id
+                # Always written down: the pause below writes nothing when the article
+                # is already paused, and the warning lives only in memory.
+                write_journal(
+                    session,
+                    kind="print_duplicates",
+                    actor="auto",
+                    article_id=article_id,
+                    details={"dispatch_id": dispatch_id, "batch_id": batch_id, "item_ids": ids},
+                )
                 pause_article(
                     session,
-                    _dispatch(session, dispatch_id).article_id,
+                    article_id,
                     "unclear",
                     "auto",
                     details={"dispatch_id": dispatch_id, "item_ids": ids},
