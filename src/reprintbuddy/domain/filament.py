@@ -254,6 +254,17 @@ def set_mapping(session: Session, article_id: int, mapping: Mapping[int, int | N
     session.flush()
 
 
+def assigned_sort_ids(session: Session) -> set[int]:
+    """Ids of the sorts that a slot of a non-archived article uses (what the filament page lists)."""
+    rows = session.scalars(
+        select(ArticleFilament.spool_filament_id)
+        .join(Article, Article.id == ArticleFilament.article_id)
+        .where(Article.archived_at.is_(None), ArticleFilament.spool_filament_id.is_not(None))
+        .distinct()
+    )
+    return set(rows)
+
+
 def unmapped_slots(session: Session) -> list[tuple[int, str, int]]:
     """(article id, name, slot) of every slot without a sort, active articles only."""
     stmt = (

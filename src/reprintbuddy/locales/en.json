@@ -548,7 +548,7 @@
   "filament.no_history": "no history yet",
   "filament.configured": "Configured",
   "filament.configure": "Configure",
-  "filament.no_sorts": "No filament sorts known yet.",
+  "filament.no_sorts": "No filament sorts are used yet. A sort appears here once you assign it to an article.",
   "filament.col.sort": "Filament sort",
   "filament.col.stock": "Stock",
   "filament.col.spools": "Spools",

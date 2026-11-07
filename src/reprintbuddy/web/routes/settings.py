@@ -27,8 +27,8 @@ router = APIRouter()
 
 MAX_UPLOAD_BYTES = 64 * 1024
 
-# Tabs of the page: (key, icon, label key). Another feature adds its tab by appending a line
-# and rendering its cards when `current_tab` is its key.
+# Tabs of the page: (key, icon, label key). Another feature adds its tab as a line at the agreed
+# position (Automation sits second, p43) and renders its cards when `current_tab` is its key.
 SETTINGS_TABS: list[tuple[str, str, str]] = [
     ("general", "settings", "settings.tab.general"),
     ("automation", "list-ordered", "settings.tab.automation"),

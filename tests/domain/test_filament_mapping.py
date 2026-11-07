@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-from factories import make_article, make_sort
+from factories import assign_sort, make_article, make_sort
 from reprintbuddy.domain import filament
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.models import ArticleFilament, FilamentSort
@@ -93,3 +93,18 @@ def test_unmapped_slots_lists_active_only(db):
         old.archived_at = datetime(2026, 3, 1)
         filament.set_mapping(s, b.id, {1: sort.id})
         assert filament.unmapped_slots(s) == [(a.id, "Alpha", 1), (b.id, "Bravo", 2)]
+
+
+def test_assigned_sort_ids_only_of_active_articles(db):  # p46
+    with db.begin() as s:
+        used = make_sort(s, material="PLA")
+        both = make_sort(s, material="PETG")
+        archived_only = make_sort(s, material="ABS")
+        unused = make_sort(s, material="TPU")
+        assign_sort(s, used, name="One")
+        assign_sort(s, both, name="Two")
+        assign_sort(s, both, name="Three")
+        assign_sort(s, archived_only, name="Four", archived=True)
+        _article(s, name="Five")  # a slot without a sort counts for nothing
+        assert filament.assigned_sort_ids(s) == {used.id, both.id}
+        assert unused.id not in filament.assigned_sort_ids(s)

@@ -548,7 +548,7 @@
   "filament.no_history": "noch kein Verlauf",
   "filament.configured": "eingestellt",
   "filament.configure": "einstellen",
-  "filament.no_sorts": "Noch keine Filamentsorten bekannt.",
+  "filament.no_sorts": "Noch keine Filamentsorte in Gebrauch. Eine Sorte erscheint hier, sobald du sie einem Artikel zuordnest.",
   "filament.col.sort": "Filamentsorte",
   "filament.col.stock": "Bestand",
   "filament.col.spools": "Spulen",

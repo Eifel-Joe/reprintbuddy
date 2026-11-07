@@ -6,7 +6,7 @@ from datetime import timedelta
 import pytest
 
 from conftest import csrf_of, sm_of
-from factories import make_article, make_filament_settings, make_snapshot, make_sort
+from factories import assign_sort, make_article, make_filament_settings, make_snapshot, make_sort
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.client import BambuddyRejected
 from reprintbuddy.models import ArticleFilament, FilamentSettings, utcnow
@@ -16,9 +16,18 @@ def rows_of(html):
     return re.findall(r"<tr>(.*?)</tr>", html, re.S)
 
 
+def use_sort(client, **sort_fields):
+    """A sort (key as the fake spool's) used by an active article: the page lists it (p46)."""
+    with sm_of(client).begin() as s:
+        sort = make_sort(s, **sort_fields)
+        assign_sort(s, sort, name=f"Uses {sort.id}")
+        return sort.id
+
+
 def test_filament_list_live(bb_client, fake_bambuddy):  # Spec 9.1
     fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black", remaining_g=800.0)
     fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black", remaining_g=300.0)
+    use_sort(bb_client)
     page = bb_client.get("/filament")
     assert page.status_code == 200
     lines = [r for r in rows_of(page.text) if "Example Brand PLA Black" in r]
@@ -32,6 +41,7 @@ def test_configured_sort_links_to_form(bb_client, fake_bambuddy):
     with sm_of(bb_client).begin() as s:
         sort = make_sort(s)  # same key as the spool: one directory entry
         make_filament_settings(s, sort.id)
+        assign_sort(s, sort)
     page = bb_client.get("/filament")
     assert f'href="/filament/{sort.id}"' in page.text and "Configured" in page.text
 
@@ -40,6 +50,7 @@ def test_filament_page_unavailable_uses_snapshot(bb_client, fake_bambuddy):  # R
     yesterday = utcnow().date() - timedelta(days=1)
     with sm_of(bb_client).begin() as s:
         sort = make_sort(s)
+        assign_sort(s, sort)
         make_snapshot(s, yesterday, 1, sort.id, 640.0)
     fake_bambuddy.unavailable = True
     page = bb_client.get("/filament")
@@ -50,6 +61,7 @@ def test_filament_page_unavailable_uses_snapshot(bb_client, fake_bambuddy):  # R
 def test_filament_page_unknown_without_record(bb_client, fake_bambuddy):  # Anti-Ziel 4
     with sm_of(bb_client).begin() as s:
         sort = make_sort(s)
+        assign_sort(s, sort)
     fake_bambuddy.unavailable = True
     page = bb_client.get("/filament")
     assert page.status_code == 200
@@ -139,7 +151,7 @@ def test_unknown_sort_is_404(ready_client):
 
 def test_filament_german(bb_client, fake_bambuddy):
     fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
-    sid = sort_id_of(bb_client)  # same key as the spool
+    sid = use_sort(bb_client)  # same key as the spool
     with sm_of(bb_client).begin() as s:
         st.set_setting(s, "language", "de", commit=False)
     page = bb_client.get("/filament").text
@@ -162,6 +174,7 @@ def test_nav_filament_active(bb_client, path):
 def test_sort_label_links_to_settings_and_hint_links_are_cell_links(bb_client, fake_bambuddy):
     fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
     with sm_of(bb_client).begin() as s:
+        assign_sort(s, make_sort(s))
         art = make_article(s, name="Template A")
         s.add(ArticleFilament(article_id=art.id, slot=1, grams=10.0, material="PETG", color_hex="#FFFFFF"))
         art_id = art.id
@@ -176,6 +189,7 @@ def test_filament_page_rejected_spool_list_is_not_a_500(bb_client, fake_bambuddy
     yesterday = utcnow().date() - timedelta(days=1)
     with sm_of(bb_client).begin() as s:
         sort = make_sort(s)
+        assign_sort(s, sort)
         make_snapshot(s, yesterday, 1, sort.id, 640.0)
     fake_bambuddy.fail_next("list_spools", BambuddyRejected("forbidden", status=403))
     page = bb_client.get("/filament")
@@ -185,6 +199,7 @@ def test_filament_page_rejected_spool_list_is_not_a_500(bb_client, fake_bambuddy
 
 def test_filament_list_spool_without_color_name(bb_client, fake_bambuddy):
     fake_bambuddy.add_spool("PLA", subtype="Matte", color_hex="#000000", color_name=None)
+    use_sort(bb_client, subtype="Matte", color_name=None)
     page = bb_client.get("/filament")
     assert page.status_code == 200
     lines = [r for r in rows_of(page.text) if "Example Brand PLA Matte #000000" in r]
@@ -240,6 +255,8 @@ def test_list_head_has_symbol_title_and_sub(bb_client, fake_bambuddy):
 def test_list_key_figures_match_the_rows(bb_client, fake_bambuddy):
     spool_pair(fake_bambuddy)
     fake_bambuddy.add_spool("PETG", color_hex="#FFFFFF", color_name="White", remaining_g=250.0)
+    use_sort(bb_client)
+    use_sort(bb_client, material="PETG", color_hex="#FFFFFF", color_name="White")
     page = bb_client.get("/filament").text
     summary = regions.extract(page, ["summary"])["summary"]
     cards = {label: value for value, label in kpi_cards(summary)}
@@ -281,6 +298,8 @@ def test_list_is_a_table_card_with_symbol_buttons(bb_client, fake_bambuddy):
     with sm_of(bb_client).begin() as s:
         configured = make_sort(s, material="PETG", color_hex="#FFFFFF", color_name="White")
         make_filament_settings(s, configured.id)
+        assign_sort(s, configured)
+        assign_sort(s, make_sort(s), name="Black user")
         cid = configured.id
     page = bb_client.get("/filament").text
     assert '<div class="card table-wrap table-card">' in page
@@ -354,3 +373,79 @@ def test_settings_error_page_keeps_the_card(ready_client):
     r = post(ready_client, sid, pack_grams="0")
     assert r.status_code == 200 and 'role="alert"' in r.text and 'class="card-head"' in r.text
     assert 'value="Example Supplier"' in r.text
+
+
+# ---- p46: the page lists only sorts that an active article uses --------------------------------
+
+
+def test_unassigned_sort_is_not_listed_or_counted(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black", remaining_g=800.0)
+    fake_bambuddy.add_spool("PETG", color_hex="#FF0000", color_name="Red", remaining_g=500.0)
+    with sm_of(bb_client).begin() as s:
+        black = make_sort(s)  # the spool's sort, used by an article
+        assign_sort(s, black)
+    html = bb_client.get("/filament").text
+    assert len([r for r in rows_of(html) if "Example Brand" in r]) == 1
+    assert "Example Brand PLA Black" in html and "PETG" not in html
+    cards = {label: value for value, label in kpi_cards(regions.extract(html, ["summary"])["summary"])}
+    assert cards[en("kpi.filament_sorts")] == "1"
+    assert cards[en("kpi.filament_stock")] == "800" and cards[en("kpi.filament_spools")] == "1"
+
+
+def test_sort_of_an_archived_article_is_not_listed(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    with sm_of(bb_client).begin() as s:
+        assign_sort(s, make_sort(s), archived=True)
+    html = bb_client.get("/filament").text
+    assert "Example Brand PLA Black" not in html
+    assert "No filament sorts" in html
+
+
+def test_sort_used_by_two_articles_is_listed_once(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    with sm_of(bb_client).begin() as s:
+        sort = make_sort(s)
+        assign_sort(s, sort, name="One")
+        assign_sort(s, sort, name="Two")
+    html = bb_client.get("/filament").text
+    assert len([r for r in rows_of(html) if "Example Brand PLA Black" in r]) == 1
+
+
+def test_assigning_in_the_article_makes_the_sort_appear(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    with sm_of(bb_client).begin() as s:
+        sort = make_sort(s)
+        art = make_article(s, name="Template A")
+        s.add(ArticleFilament(article_id=art.id, slot=1, grams=10.0, material="PLA", color_hex="#000000"))
+        art_id = art.id
+    assert "Example Brand PLA Black" not in bb_client.get("/filament").text
+    token = csrf_of(bb_client, f"/articles/{art_id}/filaments")
+    r = bb_client.post(
+        f"/articles/{art_id}/filaments", data={"csrf_token": token, "slot_1": str(sort.id)},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303, r.text[:300]
+    assert "Example Brand PLA Black" in bb_client.get("/filament").text
+
+
+def test_article_page_still_offers_every_sort(bb_client, fake_bambuddy):  # Spec 9.3: the full choice stays
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    fake_bambuddy.add_spool("PETG", color_hex="#FF0000", color_name="Red")
+    with sm_of(bb_client).begin() as s:
+        art = make_article(s, name="Template A")
+        s.add(ArticleFilament(article_id=art.id, slot=1, grams=10.0, material="PLA", color_hex="#000000"))
+        art_id = art.id
+    html = bb_client.get(f"/articles/{art_id}/filaments").text
+    assert "Example Brand PLA Black" in html and "Example Brand PETG Red" in html
+
+
+def test_settings_of_an_unassigned_sort_stay_reachable_by_url(bb_client):
+    sid = sort_id_of(bb_client)
+    assert bb_client.get(f"/filament/{sid}").status_code == 200
+
+
+def test_empty_page_says_how_a_sort_gets_here(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    html = bb_client.get("/filament").text
+    assert "Example Brand PLA Black" not in html
+    assert "article" in re.search(r'<p class="muted">(No filament sorts[^<]*)</p>', html).group(1).lower()
