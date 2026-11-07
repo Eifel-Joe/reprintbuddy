@@ -217,3 +217,20 @@ def test_secret_fields_stay_empty_and_every_form_has_a_csrf_token(ready_client, 
     bambuddy = ready_client.get("/settings?tab=bambuddy").text
     token = re.search(r'<input[^>]*name="bambuddy_token"[^>]*>', bambuddy).group(0)
     assert 'value=""' in token and 'placeholder="' in token
+
+
+def test_general_tab_columns(ready_client):  # p85
+    """The grid put the restart card in a row under the tall server card, with a gap below the
+    language card. Now the cards sit in two columns: language and restart, then server."""
+    page = ready_client.get("/settings").text
+    columns = re.findall(r'<div class="settings-col">(.*?)\n</div>', page, re.S)
+    assert len(columns) == 2
+    first, second = columns
+    assert 'id="settings-language"' in first and 'id="ops-restart"' in first
+    assert first.index('id="settings-language"') < first.index('id="ops-restart"')
+    assert 'id="settings-server"' in second and 'id="ops-restart"' not in second
+
+
+def test_other_tabs_have_no_columns(ready_client):  # p85: single cards keep the plain grid
+    for tab in ("automation", "bambuddy", "account", "maintenance"):
+        assert 'class="settings-col"' not in ready_client.get(f"/settings?tab={tab}").text

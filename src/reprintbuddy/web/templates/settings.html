@@ -11,6 +11,8 @@
 
 <div class="settings-grid">
 {% if current_tab == 'general' %}
+{# Two columns, each card under the one above it (p85): a grid in rows left a gap under the language card. #}
+<div class="settings-col">
 <section class="card">
   {% call ui.card_head("settings", t('settings.language')) %}<button class="btn" type="submit" form="settings-language">{{ t('settings.save') }}</button>{% endcall %}
   {% if error and error_section == 'language' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
@@ -24,6 +26,21 @@
     {% endcall %}
   </form>
 </section>
+
+<section class="card" id="ops-restart">
+  {% call ui.card_head("refresh-cw", t('ops.restart.title')) %}
+  <form method="post" action="/settings/restart">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn" type="submit">{{ t('ops.restart.button') }}</button>
+  </form>
+  {% endcall %}
+  {% if ops.message and ops.message in ('ops.msg.restart_failed',) %}<p class="alert" role="alert">{{ t(ops.message) }}</p>{% endif %}
+  {% if ops.running_url %}<p class="status">{{ t('ops.server.running', url=ops.running_url) }}</p>{% endif %}
+  {% if ops.restart_pending %}<p class="notice" role="status">{{ t('ops.server.pending') }}</p>{% endif %}
+</section>
+</div>
+
+<div class="settings-col">
 
 <section class="card">
   {% call ui.card_head("settings", t('settings.server')) %}<button class="btn" type="submit" form="settings-server">{{ t('settings.save') }}</button>{% endcall %}
@@ -61,17 +78,7 @@
   </form>
 </section>
 
-<section class="card" id="ops-restart">
-  {% call ui.card_head("refresh-cw", t('ops.restart.title')) %}
-  <form method="post" action="/settings/restart">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="btn" type="submit">{{ t('ops.restart.button') }}</button>
-  </form>
-  {% endcall %}
-  {% if ops.message and ops.message in ('ops.msg.restart_failed',) %}<p class="alert" role="alert">{{ t(ops.message) }}</p>{% endif %}
-  {% if ops.running_url %}<p class="status">{{ t('ops.server.running', url=ops.running_url) }}</p>{% endif %}
-  {% if ops.restart_pending %}<p class="notice" role="status">{{ t('ops.server.pending') }}</p>{% endif %}
-</section>
+</div>
 
 {% elif current_tab == 'bambuddy' %}
 <section class="card" id="bambuddy">

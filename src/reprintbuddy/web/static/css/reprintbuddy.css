@@ -672,6 +672,9 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 
 /* Settings cards: head with symbol and Save, then one line per setting; two columns in a grid. */
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+/* A column of cards inside the grid: the cards follow each other with the normal gap (p85). */
+.settings-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.settings-col > .card { margin: 0; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0.5rem; }
 .card-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 650; }
 .card-head h2 .icon { width: 17px; height: 17px; color: var(--accent); }
