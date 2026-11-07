@@ -165,8 +165,8 @@
 {{ hint }}{% if hint and hint[-1] not in '.!?' %}.{% endif %} {{ stored }}
 {%- endmacro %}
 
-{% macro setting_row(label, hint="", for_id="", info_text="") -%}
-<div class="setting-row"><div class="setting-text">{% if info_text %}<div class="label-row"><label{% if for_id %} for="{{ for_id }}"{% endif %}>{{ label }}</label>{{ info(info_text, label) }}</div>{% else %}<label{% if for_id %} for="{{ for_id }}"{% endif %}>{{ label }}</label>{% endif %}{% if hint %}<span>{{ hint }}</span>{% endif %}</div><div class="setting-control">{{ caller() }}</div></div>
+{% macro setting_row(label, hint="", for_id="", info_text="", stack=false) -%}
+<div class="setting-row{% if stack %} stack{% endif %}"><div class="setting-text">{% if info_text %}<div class="label-row"><label{% if for_id %} for="{{ for_id }}"{% endif %}>{{ label }}</label>{{ info(info_text, label) }}</div>{% else %}<label{% if for_id %} for="{{ for_id }}"{% endif %}>{{ label }}</label>{% endif %}{% if hint %}<span>{{ hint }}</span>{% endif %}</div><div class="setting-control">{{ caller() }}</div></div>
 {%- endmacro %}
 
 

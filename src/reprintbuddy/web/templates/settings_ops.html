@@ -1,5 +1,7 @@
 {# Maintenance tab of the settings page: update, full backup, restore and export (Spec 11.6).
-   (The restart card is on the General tab.) #}
+   (The restart card is on the General tab.) Two columns (p104): update and backup | restore and export,
+   in this order on a narrow screen too. #}
+<div class="settings-col">
 <section class="card" id="ops-update">
   {% call ui.card_head("refresh-cw", t('ops.update.title')) %}
   {% if ops.git_install and not ops.busy %}
@@ -72,7 +74,9 @@
   </form>
   <div class="warning-card tone-warn" role="note">{{ ui.icon('triangle-alert') }}<p>{{ t('ops.backup.warning') }}</p></div>
 </section>
+</div>
 
+<div class="settings-col">
 <section class="card" id="ops-restore">
   {% call ui.card_head("archive-restore", t('ops.restore.title')) %}<button class="btn" type="submit" form="ops-restore-form">{{ t('ops.restore.upload_button') }}</button>{% endcall %}
   {% if ops.message and ops.message_card == 'restore' %}<p class="alert" role="alert">{{ t(ops.message) }}</p>{% endif %}
@@ -90,3 +94,4 @@
   {% call ui.card_head("download", t('ops.export.title')) %}<a class="btn" href="/settings/export">{{ t('ops.export.button') }}</a>{% endcall %}
   <p class="muted">{{ t('ops.export.text') }}</p>
 </section>
+</div>

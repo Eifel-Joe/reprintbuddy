@@ -852,6 +852,8 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .setting-row.stack .setting-control { width: 100%; flex: none; }
 .setting-row.stack .setting-control textarea { width: 100%; margin-top: 0; }
 .setting-row.stack .setting-control input[type="file"] { margin-top: 6px; }
+/* A text field of a stacked row (the Bambuddy address, p107) takes the whole card width. */
+.setting-row.stack .setting-control input:not([type="checkbox"]):not([type="file"]) { width: 100%; }
 .facts p { margin: 0 0 0.25rem; font-size: 13px; }
 @media (max-width: 899px) {
   .setting-row .setting-control { width: 100%; flex: 1 1 100%; }
