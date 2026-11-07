@@ -234,7 +234,8 @@ async def _browse(request: Request, folder: str | None, base: str, file_base: st
         up_id=crumbs[-2].id if len(crumbs) > 1 else None,
         in_folder=bool(crumbs),
         subfolders=subfolders,
-        files=sorted(files, key=lambda f: f.filename.casefold()),
+        # Only sliced files can become an article, so only they are offered (Task 12); folders stay for navigation.
+        files=sorted((f for f in files if f.sliced), key=lambda f: f.filename.casefold()),
         base=base,
         file_base=file_base,
         layout=layout,

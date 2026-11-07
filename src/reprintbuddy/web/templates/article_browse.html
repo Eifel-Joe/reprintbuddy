@@ -34,8 +34,7 @@
     {% endfor %}
     {% for file in files %}
       <tr><td><div class="item">{{ preview(file, 'sm') }}<div class="file-name">
-        {%- if file.sliced %}<a href="{{ file_base }}/{{ file.id }}">{{ file.filename }}</a>
-        {%- else %}{{ file.filename }}<p class="muted file-note">{{ t('articles.not_sliced') }}</p>{% endif -%}
+        <a href="{{ file_base }}/{{ file.id }}">{{ file.filename }}</a>
       </div></div></td></tr>
     {% endfor %}
     </tbody>
@@ -46,11 +45,7 @@
   <a class="tile" href="{{ base }}?folder={{ folder.id }}">{{ folder_mark('lg') }}<div>{{ folder.name }}</div></a>
   {% endfor %}
   {% for file in files %}
-  {% if file.sliced %}
   <a class="tile" href="{{ file_base }}/{{ file.id }}">{{ preview(file, 'lg') }}<div class="file-name">{{ file.filename }}</div></a>
-  {% else %}
-  <div class="tile disabled">{{ preview(file, 'lg') }}<div class="file-name">{{ file.filename }}<p class="muted file-note">{{ t('articles.not_sliced') }}</p></div></div>
-  {% endif %}
   {% endfor %}
 </div>
 {% endcall %}

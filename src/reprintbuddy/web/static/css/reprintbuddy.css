@@ -496,9 +496,6 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
 .thumb-box > .thumb-placeholder { width: 100%; height: 100%; }
 /* A long print file name without spaces wraps inside its tile or row instead of widening the page. */
 .file-name { min-width: 0; overflow-wrap: anywhere; }
-/* A print file that is not sliced: listed, but not a link. */
-.tile.disabled { opacity: 0.8; }
-.file-note { margin: 0.2rem 0 0; font-size: 0.85rem; }
 .thumb-placeholder { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); border: 1px dashed var(--line); }
 
 @media (max-width: 599px) {

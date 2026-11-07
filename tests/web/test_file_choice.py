@@ -48,9 +48,11 @@ def test_new_key_is_last_in_every_locale_file():
 
 @pytest.fixture
 def mixed(bb_client, fake_bambuddy):
-    """Folder 1 holds Template A (1), Template B (2), plus one without image and one unsliced."""
+    """Folder 1 holds Template A (1), Template B (2), one sliced without image (3) and unsliced ones (4-6)."""
     fake_bambuddy.add_file("Template C.gcode.3mf", 1, has_thumbnail=False)  # id 3
     fake_bambuddy.add_file("Template D.3mf", 1, sliced=False)  # id 4
+    fake_bambuddy.add_file("Template E.stl", 1, sliced=False)  # id 5
+    fake_bambuddy.add_file("Template F.gcode", 1, sliced=False)  # id 6
     return bb_client
 
 
@@ -64,7 +66,7 @@ def test_every_file_has_an_image_or_the_placeholder(mixed, layout):
         sources = [src for _cls, src in _images(section)]
         assert THUMB.format(id=1) in sources and THUMB.format(id=2) in sources
         assert THUMB.format(id=3) not in sources  # no image: no request, the placeholder
-        assert THUMB.format(id=4) in sources  # unsliced files may keep their preview
+        assert THUMB.format(id=4) not in sources  # unsliced files are not shown at all
         assert "thumb-placeholder" in section
     small = [cls for cls, src in _images(_section(html, "table-card")) if "/file/" in src]
     large = [cls for cls, src in _images(_section(html, "tiles")) if "/file/" in src]
@@ -89,7 +91,7 @@ def test_long_file_names_wrap_inside_tile_and_row(mixed, layout):
     mixed.cookies.set("rb_layout_files", layout)
     html = mixed.get("/articles/new?folder=1").text
     section = _section(html, "table-card" if layout == "list" else "tiles")
-    for name in ("Template A", "Template B", "Template C", "Template D"):
+    for name in ("Template A", "Template B", "Template C"):
         assert re.search(rf'<div class="file-name">[^<]*(?:<a [^>]*>)?{name}', section), name
     css = Path(__file__).resolve().parents[2] / "src/reprintbuddy/web/static/css/reprintbuddy.css"
     rule = re.search(r"\.file-name \{([^}]*)\}", css.read_text(encoding="utf-8")).group(1)
@@ -202,19 +204,55 @@ def test_twenty_images_build_no_new_tls_context(admin_client, respx_mock, monkey
 # ---- only sliced files ---------------------------------------------------------------------
 
 
+def _names(section):
+    return re.findall(r'<div class="file-name">\s*(?:<a [^>]*>)?([^<]+)', section)
+
+
 @pytest.mark.parametrize("layout", ["list", "tiles"])
-def test_unsliced_file_is_listed_with_note_but_not_selectable(mixed, fake_bambuddy, layout):
+def test_only_sliced_files_and_folders_are_listed(mixed, fake_bambuddy, layout):
     mixed.cookies.set("rb_layout_files", layout)
+    fake_bambuddy.add_file("Old.gcode.3mf", 1)  # id 7, an old entry that is sliced by its name
+    fake_bambuddy.add_folder("Sub", 1)
     html = mixed.get("/articles/new?folder=1").text
-    assert "Template D.3mf" in html
     for part in ("table-card", "tiles"):
         section = _section(html, part)
-        assert NOT_SLICED_EN in section
-        assert 'href="/articles/new/file/4"' not in section
-        assert 'href="/articles/new/file/1"' in section  # sliced files stay links
-    assert html.count(NOT_SLICED_EN) == 2  # once per rendering, only for the unsliced file
-    for name in ("list_plates", "filament_requirements", "plate_thumbnail"):
-        assert name not in fake_bambuddy.calls
+        names = sorted(n.strip() for n in _names(section))
+        assert names == ["Old.gcode.3mf", "Template A.gcode.3mf", "Template B.gcode.3mf", "Template C.gcode.3mf"]
+        for hidden in ("Template D", "Template E", "Template F", "Not sliced", "Nicht geslict"):
+            assert hidden not in section
+        assert ">Sub<" in section
+        assert 'href="/articles/new/file/1"' in section and 'href="/articles/new/file/7"' in section
+        for hidden_id in (4, 5, 6):
+            assert f"/articles/new/file/{hidden_id}" not in section
+    assert NOT_SLICED_EN not in html
+
+
+def test_both_layouts_list_the_same_names(mixed):
+    html = mixed.get("/articles/new?folder=1").text
+    assert sorted(_names(_section(html, "table-card"))) == sorted(_names(_section(html, "tiles")))
+    assert len(_names(_section(html, "tiles"))) == 3
+
+
+def test_no_request_for_hidden_files(mixed, fake_bambuddy):
+    html = mixed.get("/articles/new?folder=1").text
+    for hidden_id in (4, 5, 6):
+        assert THUMB.format(id=hidden_id) not in html
+    assert "file_thumbnail" not in fake_bambuddy.calls
+
+
+def test_relink_browse_hides_unsliced_files_too(mixed):
+    a = make(mixed, name="Template A", library_file_id=1, plate_id=1)
+    act(mixed, f"/articles/{a}", "archive")
+    html = mixed.get(f"/articles/{a}/relink?folder=1").text
+    assert "Template A" in html and "Template D" not in html and "Template E" not in html
+
+
+def test_folder_without_sliced_files_shows_the_empty_state(bb_client, fake_bambuddy):
+    folder = fake_bambuddy.add_folder("Raw")
+    fake_bambuddy.add_file("Only.3mf", folder.id, sliced=False)
+    html = bb_client.get(f"/articles/new?folder={folder.id}").text
+    assert translate("en", "articles.no_files") in html
+    assert "Only.3mf" not in html
 
 
 def _call(client, fake, method, path, **kw):
