@@ -643,7 +643,6 @@
   "queue.state.waiting": "wartet",
   "queue.state.held": "zurückgehalten",
   "queue.article_paused": "Artikel pausiert",
-  "queue.created_at": "angelegt {at}",
   "queue.field.article": "Artikel",
   "queue.field.where": "Stelle in der Warteschlange",
   "queue.where.end": "Am Ende",

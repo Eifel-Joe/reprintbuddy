@@ -444,6 +444,11 @@ def _candidates(
     Own user, same file and plate as the article, made after the send (less the clock
     tolerance) and held by no print yet. An entry without `created_at` cannot be placed in
     time, so it is none.
+
+    File and plate are the article's at the time of the search: a print does not store
+    them (no migration in v0.3.5). Choosing another file while a print is unclear makes
+    the real entry no candidate; the print becomes `missing` and the article pauses -
+    safe (nothing is sent twice), only an unneeded pause.
     """
     if article is None:
         return []
