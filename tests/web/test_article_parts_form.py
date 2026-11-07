@@ -384,3 +384,9 @@ def test_a_link_to_an_archived_part_survives_editing(ready_client):
     for fields in ({"has_parts": "on", "parts_part": [str(insert)], "parts_qty": ["5"]}, {}):
         assert ready_client.post(f"/articles/{a}/edit", data=edit_fields(ready_client, a, **fields)).status_code == 303
     assert links(ready_client) == {(a, hex_key): 3}  # unticked: the active link is gone, the archived stays
+
+
+def test_the_script_ticks_the_box_when_a_row_is_added():
+    """As on the server: adding a part means parts are needed (a browser without :has shows the list always)."""
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert 'input[name="has_parts"]' in source and ".checked = true" in source

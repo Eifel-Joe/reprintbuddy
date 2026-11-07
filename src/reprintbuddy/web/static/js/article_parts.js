@@ -74,6 +74,10 @@
     }
     event.preventDefault(); // no round trip to the server
     if (add) {
+      var box = block.querySelector('input[name="has_parts"]');
+      if (box) {
+        box.checked = true; // adding a part means parts are needed, as on the server
+      }
       var row = newRow(block);
       refresh(block);
       row.querySelector("select").focus();
