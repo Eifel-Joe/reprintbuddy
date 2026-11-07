@@ -34,14 +34,4 @@
   <input name="auto_enabled" type="checkbox"{% if values.auto_enabled %} checked{% endif %}>
   <span>{{ t('articles.field.auto_enabled') }}</span>
 </label>
-{% if parts %}
-<h3>{{ t('articles.parts_title') }}</h3>
-<p class="hint">{{ t('articles.parts_hint') }}</p>
-<div class="row">
-  {% for part in parts %}
-  <label>{{ part.name }}
-    <input name="part_{{ part.id }}" inputmode="numeric" value="{{ values.parts[part.id] }}">
-  </label>
-  {% endfor %}
-</div>
-{% endif %}
+{% if parts %}{% include "_article_parts.html" %}{% endif %}

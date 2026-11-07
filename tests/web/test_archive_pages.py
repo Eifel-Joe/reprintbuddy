@@ -194,7 +194,8 @@ def test_archived_absent_from_selections(bb_client):
         catalog.archive_article(s, b)
         catalog.archive_part(s, hex_key)
     form = bb_client.get("/articles/new/file/1/plate/1").text
-    assert f'name="part_{insert}"' in form and f'name="part_{hex_key}"' not in form
+    offered = re.search(r'<select[^>]*name="parts_part"[^>]*>(.*?)</select>', form, re.S).group(1)
+    assert f'<option value="{insert}"' in offered and f'<option value="{hex_key}"' not in form
     new_set = bb_client.get("/sets/new").text
     assert f'<option value="{a}"' in new_set and f'<option value="{b}"' not in new_set
     new_order = bb_client.get("/orders/new").text
