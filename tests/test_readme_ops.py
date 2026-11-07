@@ -288,3 +288,17 @@ def test_readme_status_line_is_true(name, status):
     text = read(name)
     assert status in text
     assert "no release yet" not in text and "noch keine Version veröffentlicht" not in text
+
+
+@pytest.mark.parametrize(
+    ("name", "group_later", "key_later"),
+    [
+        ("README.md", "add a missing right to the group at any time", "cannot be changed afterwards"),
+        ("README.de.md", "jederzeit ergänzen", "nicht nachträglich ändern"),
+    ],
+)
+def test_readme_says_which_rights_can_be_added_later_and_which_need_a_new_key(name, group_later, key_later):
+    """p109: a missing right of the group is added there; a missing right at the key needs a new key."""
+    text = " ".join(read(name).split())  # the sentences are wrapped
+    assert group_later in text
+    assert key_later in text

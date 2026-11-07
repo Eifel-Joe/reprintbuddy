@@ -81,7 +81,7 @@ def test_update_adds_a_right_shows_dialog(rights_client, respx_mock):
     html = rights_client.get("/").text
     assert "rights-dialog" in html
     assert "Read Filaments" in html and "filaments:read" in html
-    assert "in the group" in html  # where it can be added
+    assert "Group right" in html  # where it can be added
     assert "Read Inventory" in html and "inventory:read" in html  # the others are listed, as granted
     assert html.count('aria-label="missing"') == 1 and html.count('aria-label="granted"') == 6
 
@@ -109,7 +109,7 @@ def test_details_link_leads_to_details(missing_client):
     assert 'id="bambuddy"' in settings
     section = settings[settings.index('id="bambuddy"') : settings.index('action="/settings/bambuddy"')]
     assert "<code>inventory:read</code>" in section and "Read Inventory" in section
-    assert "in the group" in section  # where it can be missing
+    assert "Group right" in section and "Key right" in section  # where it can be missing
     assert 'href="/setup/bambuddy/user"' in section and 'href="/setup/bambuddy/key"' in section
 
 
@@ -534,3 +534,73 @@ def test_setup_with_full_rights_marks_the_key_as_checked(admin_client, respx_moc
     )
     assert response.status_code == 303
     assert admin_client.app.state.rights.status == "ok"
+
+
+# --- p109 (v0.3.7): group right or key right, and when a new key is needed --------------------
+# Bambuddy's interface only creates and deletes keys; the rights of an existing key cannot be
+# changed. A right missing in the group is added there, a right missing at the key needs a new key.
+
+SPEC = {
+    "en": (
+        "does not let you change the rights of an existing key",
+        "you do not need a new key",
+    ),
+    "de": (
+        "die Rechte eines vorhandenen Schlüssels nicht ändern lässt",
+        "ein neuer Schlüssel ist nicht nötig",
+    ),
+}
+KIND = {"en": ("Group right", "Key right"), "de": ("Gruppenrecht", "Schlüsselrecht")}
+
+
+def _use_language(client, language):
+    with client.app.state.sessionmaker() as s:
+        st.set_setting(s, "language", language)
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+def test_dialog_says_group_right_key_right_and_when_a_new_key_is_needed(missing_client, language):
+    _use_language(missing_client, language)
+    dialog = missing_client.get("/").text
+    dialog = dialog[dialog.index('class="rights-dialog"') :]
+    for phrase in SPEC[language]:
+        assert phrase in dialog, (language, phrase)
+    group, key = KIND[language]
+    line = dialog[dialog.index('class="where"') :]
+    line = line[: line.index("</span>")]
+    assert group in line and key in line  # per missing right: which one is a group right, which a key right
+    assert "Read Status" in line  # inventory:read is covered at the key by "Read Status"
+    assert 'href="/setup/bambuddy/user"' in line and 'href="/setup/bambuddy/key"' in line
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+def test_the_intro_no_longer_promises_that_no_new_key_is_ever_needed(missing_client, language):
+    _use_language(missing_client, language)
+    html = missing_client.get("/").text
+    intro = re.search(r'<p id="rights-intro">(.*?)</p>', html, re.S).group(1)
+    assert "new key" not in intro and "neuen Schlüssel" not in intro and "neuer Schlüssel" not in intro
+
+
+def test_a_missing_queue_right_names_the_key_right_manage_queue(rights_client, respx_mock):
+    mock_auth_me(respx_mock, permissions=[p for p in REQUIRED if p != "queue:create"])
+    line = rights_client.get("/").text
+    line = line[line.index('class="where"') :]
+    assert "Manage Queue" in line[: line.index("</span>")]
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+def test_settings_result_carries_the_same_statement(missing_client, language):
+    _use_language(missing_client, language)
+    _post(missing_client, LATER, next="/")
+    settings = missing_client.get("/settings?tab=bambuddy").text
+    for phrase in SPEC[language]:
+        assert phrase in settings, (language, phrase)
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+def test_the_guides_tell_what_can_be_changed_later(missing_client, language):
+    _use_language(missing_client, language)
+    user = missing_client.get("/setup/bambuddy/user").text
+    key = missing_client.get("/setup/bambuddy/key").text
+    assert ("add a missing right to the group at any time" if language == "en" else "jederzeit ergänzen") in user
+    assert ("cannot be changed afterwards" if language == "en" else "nicht nachträglich ändern") in key

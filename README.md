@@ -147,18 +147,24 @@ DNS names, are accepted only after setup.
    without it Bambuddy hides the Settings menu).
 
    Then create the user `reprintbuddy` in this group. Its password is needed only once, to
-   create the key; Reprintbuddy neither asks for it nor stores it.
+   create the key; Reprintbuddy neither asks for it nor stores it. You can add a missing right
+   to the group at any time; a new key is not needed for that.
 3. **API key:** sign out of Bambuddy and sign in as `reprintbuddy` (a key always belongs to
    the user who is signed in). Open *Settings → API keys → Create key* and set it exactly like this:
    name "Reprintbuddy"; *Read Status* **on**; *Manage Queue* **on**; all others **off**
    (*Control Printer*, *Manage Library*, *Manage Inventory*, *Manage Maintenance*,
    *Manage Archives*, *Manage Projects*, *Allow Cloud Access*, *Update Electricity Price*,
    *Send Notifications*). Copy the key at once (Bambuddy shows it only one time) and sign out again.
+   The rights of a key cannot be changed afterwards in Bambuddy (its pages only create and
+   delete keys): if a right at the key is missing, for example *Read Status*, create a new
+   key and enter it under *Settings → Bambuddy*.
 4. **Connect Bambuddy:** enter the Bambuddy address and the key. Reprintbuddy asks Bambuddy
    (`GET /api/v1/auth/me`) whom the key belongs to and which rights it can really use, and
    shows the owner and each required right with a check or a cross. The interface opens only
    when no right is missing. A key that belongs to an administrator is accepted, with a
-   warning that it may do more than needed. The same check is under *Settings*.
+   warning that it may do more than needed. The same check is under *Settings*. A missing
+   right of the group `Reprintbuddy` is added there; a new key is not needed. A missing right at
+   the key itself needs a new key.
 
    The two fields are marked so that password managers do not fill in your own credentials.
 

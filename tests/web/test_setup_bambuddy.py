@@ -499,7 +499,7 @@ def test_missing_permission_names_group_and_key(admin_client, respx_mock):
     read_item = _item(page, "library:read_all")
     assert "Read Status" in read_item and "Manage Queue" not in read_item
     assert f'href="{USER_PAGE}"' in read_item and f'href="{KEY_PAGE}"' in read_item
-    assert "where it can be missing" in queue_item.lower()
+    assert "group right" in queue_item.lower() and "key right" in queue_item.lower()
 
 
 def test_which_key_right_covers_which_permission(admin_client, respx_mock):
@@ -516,7 +516,7 @@ def test_which_key_right_covers_which_permission(admin_client, respx_mock):
     page = admin_client.post(CONNECT, data=_form(token)).text
     assert "Read Status" in _item(page, "printers:read")
     assert "Manage Queue" in _item(page, "queue:create")
-    assert "Wo es fehlen kann" in _item(page, "queue:create")
+    assert "Gruppenrecht" in _item(page, "queue:create") and "Schlüsselrecht" in _item(page, "queue:create")
 
 
 def test_guide_names_the_rights_for_creating_the_key(admin_client):
