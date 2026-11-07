@@ -836,3 +836,18 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 
 /* The list/tiles switch is hit with a thumb too. */
 .layout-toggle a { min-height: 2.75rem; min-width: 2.75rem; }
+
+/* ---- page "To check": one card per finished print ---------------------------- */
+.inspect-toolbar { align-items: center; gap: 0.6rem; }
+.inspect-toolbar form { margin: 0; }
+.inspect-toolbar .btn { display: inline-flex; align-items: center; gap: 0.45rem; }
+.inspect-card .inspect-head { display: flex; align-items: center; gap: 10px; min-width: 0; margin-bottom: 0.75rem; }
+.inspect-title { display: flex; flex: 1 1 auto; flex-direction: column; gap: 3px; min-width: 0; }
+/* At least 44 px to tap, like .queue-name. */
+.inspect-name { display: inline-flex; align-items: center; align-self: flex-start; max-width: 100%; min-height: 2.75rem; color: var(--text); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.inspect-name:hover { color: var(--accent); }
+.inspect-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; color: var(--muted); font-size: 12px; }
+/* The whole label is the hit area of the tick box: 44 px high. */
+.inspect-select { flex: 0 0 auto; align-items: center; min-height: 2.75rem; margin: 0; padding-left: 0.5rem; color: var(--text-2); font-size: 13px; cursor: pointer; }
+.inspect-form input[type="number"] { min-height: 2.75rem; }
+.inspect-form .btn { margin-top: 0.25rem; }
