@@ -12,10 +12,14 @@
 {% macro folder_mark(size) -%}
 <span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('folder') }}</span>
 {%- endmacro %}
-{% call ui.page_head("package", t('articles.browse_title'), t('articles.new_subtitle')) %}{% endcall %}
+{% call ui.page_head("circle-alert" if problem else "package", t('articles.browse_title'), t('articles.new_subtitle')) %}{% endcall %}
+{#- Back to the article list: a secondary button like the other lists have in their toolbar. -#}
+{% macro to_articles() -%}
+<div class="toolbar-actions"><a class="btn secondary" href="/articles">{{ ui.icon('package') }}{{ t('articles.title') }}</a></div>
+{%- endmacro %}
 {% if problem %}
-<p class="alert" role="alert">{{ t(problem) }}</p>
-<p><a class="btn-link" href="/articles">{{ t('articles.title') }}</a></p>
+<div class="card"><p class="alert" role="alert">{{ t(problem) }}</p></div>
+<div class="toolbar">{{ to_articles() }}</div>
 {% else %}
 <div class="toolbar">
   <p class="crumbs">
@@ -23,6 +27,7 @@
     {% for folder in crumbs %} / <a href="{{ base }}?folder={{ folder.id }}">{{ folder.name }}</a>{% endfor %}
   </p>
   {{ ui.layout_toggle(layout_links) }}
+  {{ to_articles() }}
 </div>
 {% if subfolders or files %}
 {% call ui.collection(layout) %}
@@ -52,6 +57,5 @@
 {% else %}
 <div class="card"><p class="muted">{{ t('articles.no_files') }}</p></div>
 {% endif %}
-<p><a class="btn-link" href="/articles">{{ t('articles.title') }}</a></p>
 {% endif %}
 {% endblock %}

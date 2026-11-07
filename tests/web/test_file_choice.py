@@ -299,3 +299,52 @@ def test_sliced_files_still_work(mixed):
     assert mixed.get("/articles/new/file/1").status_code == 200
     assert mixed.get("/articles/new/file/1/plate/1").status_code == 200
     assert mixed.get("/articles/new/file/3/plate/1").status_code == 200  # no image, still sliced
+
+
+# ---- the new look: head, toolbar, buttons ------------------------------------------------
+
+
+def _one_head(html, icon):
+    assert html.count('class="page-head"') == 1 and len(re.findall(r"<h1[\s>]", html)) == 1
+    found = re.search(r'<header class="page-head"><span class="page-icon">.*?#([a-z0-9-]+)"', html, re.S)
+    assert found and found.group(1) == icon
+
+
+def test_file_choice_has_head_toolbar_and_a_back_button_like_the_other_lists(mixed):
+    html = mixed.get("/articles/new?folder=1").text
+    _one_head(html, "package")
+    assert "page-sub" in html and "Create an article from a print file" in html
+    toolbar = html[html.index('<div class="toolbar">') : html.index('<div class="collection')]
+    assert 'class="crumbs"' in toolbar and 'class="layout-toggle"' in toolbar
+    assert re.search(r'<div class="toolbar-actions"><a class="btn secondary" href="/articles">', toolbar)
+    assert 'class="btn-link" href' not in html
+
+
+def test_relink_file_choice_has_the_same_look(mixed):
+    a = make(mixed, name="Template A", library_file_id=1, plate_id=1)
+    act(mixed, f"/articles/{a}", "archive")
+    html = mixed.get(f"/articles/{a}/relink?folder=1").text
+    _one_head(html, "package")
+    assert 'class="toolbar-actions"' in html and 'class="btn-link" href' not in html
+
+
+def test_empty_state_is_a_card(mixed, fake_bambuddy):
+    html = mixed.get("/articles/new?folder=1").text
+    assert 'class="btn-link" href' not in html
+    empty = mixed.get("/articles/new?folder=999").text
+    assert '<div class="card"><p class="muted">' in empty and 'class="collection' not in empty
+
+
+def test_plate_step_has_head_and_back_button(mixed):
+    html = mixed.get("/articles/new/file/1").text
+    _one_head(html, "package")
+    assert 'class="toolbar-actions"><a class="btn secondary"' in html and 'class="btn-link" href' not in html
+
+
+def test_not_sliced_note_is_a_card_with_head_and_button(mixed):
+    response = mixed.get("/articles/new/file/4")
+    assert response.status_code == 409
+    html = response.text
+    _one_head(html, "circle-alert")
+    assert '<div class="card"><p class="alert" role="alert">' + NOT_SLICED_EN in html
+    assert 'class="btn secondary" href="/articles"' in html and 'class="btn-link" href' not in html
