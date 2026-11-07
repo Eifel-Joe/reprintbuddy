@@ -18,7 +18,7 @@ from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Article, SetPosition, SetPositionOption, utcnow
 from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_db, render, safe_next
+from reprintbuddy.web.deps import current_language, get_db, local_next, render
 from reprintbuddy.web.formatting import to_local
 from reprintbuddy.web.forms import (
     bounded_int,
@@ -257,16 +257,9 @@ async def order_detail(request: Request, order_id: int, db: Session = Depends(ge
     return _detail_page(request, db, order_id)
 
 
-def _next_of(form) -> str:
-    """The local path in `next` (the list an action started from); "" when there is none or it
-    is foreign (`safe_next` turns anything non-local into "/", which counts as none)."""
-    target = safe_next(str(form.get("next", "")))
-    return "" if target == "/" else target
-
-
 async def _act(request: Request, order_id: int, db: Session, action, flash_key: str):
     form = await request.form()
-    after = _next_of(form) or f"/orders/{order_id}"
+    after = local_next(form) or f"/orders/{order_id}"
     try:
         orders.get_order(db, order_id)
     except DomainError:
@@ -304,6 +297,6 @@ async def order_cancel(request: Request, order_id: int, db: Session = Depends(ge
         return render(
             request, "order_cancel.html", active_nav="orders", order=view,
             note=str(form.get("note", "")), form_token_value=str(form.get("form_token", "")),
-            next_url=_next_of(form),
+            next_url=local_next(form),
         )
     return await _act(request, order_id, db, orders.cancel_order, "orders.cancelled")

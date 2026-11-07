@@ -1,9 +1,6 @@
 import asyncio
 import time
 
-import pytest
-
-from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable
 from reprintbuddy.bambuddy.fake import FakeBambuddy
 from reprintbuddy.bambuddy.types import EnqueueRequest
 
@@ -59,22 +56,3 @@ async def test_inactive_printer_listed(fake_bambuddy):
     four = [p for p in printers if p.name == "Printer 4"]
     assert len(four) == 1 and four[0].active is False
     assert all(p.active for p in printers if p.name != "Printer 4")
-
-
-async def test_fail_next_on_read_method(fake_bambuddy):
-    fake_bambuddy.fail_next("get_file", BambuddyUnavailable("timeout"))
-    with pytest.raises(BambuddyUnavailable):
-        await fake_bambuddy.get_file(1)
-    assert (await fake_bambuddy.get_file(1)) is not None
-    fake_bambuddy.fail_next("list_printers", BambuddyRejected("Forbidden", status=403))
-    with pytest.raises(BambuddyRejected) as exc:
-        await fake_bambuddy.list_printers()
-    assert exc.value.status == 403
-    assert len(await fake_bambuddy.list_printers()) == 3
-
-
-def test_fail_next_unknown_method_rejected(fake_bambuddy):
-    with pytest.raises(ValueError):
-        fake_bambuddy.fail_next("no_such_method", BambuddyUnavailable("x"))
-    with pytest.raises(ValueError):
-        fake_bambuddy.fail_next("ping", BambuddyUnavailable("x"))

@@ -114,8 +114,9 @@ def test_no_slate_left_in_tokens(ready_client):
 
 def test_css_every_variable_used_is_defined(ready_client):
     css = ready_client.get("/static/css/reprintbuddy.css").text
-    root = re.search(r":root \{([^}]*)\}", css).group(1)
-    defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", root))
+    # Declared anywhere: the tokens in :root, and values a rule hands to its own parts (`--info-x`).
+    code = re.sub(r"/\*.*?\*/", "", css, flags=re.S)  # a name in a comment is not a definition
+    defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", code))
     used = set(re.findall(r"var\((--[a-z0-9-]+)", css))
     assert used - defined == set()
 

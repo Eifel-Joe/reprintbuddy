@@ -3,7 +3,7 @@
 {% block title %}{{ t('articles.choose_plate') }}{% endblock %}
 {% block content %}
 {% call ui.page_head("package", file.filename, t('articles.choose_plate')) %}{% endcall %}
-{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% if error %}<div class="card"><p class="alert" role="alert">{{ error }}</p></div>{% endif %}
 <div class="plate-grid">
   {% for plate in plates %}
   <div class="card plate">
@@ -25,5 +25,5 @@
   </div>
   {% endfor %}
 </div>
-<p><a class="btn-link" href="{{ back }}">{{ t('articles.back') }}</a></p>
+<div class="toolbar"><div class="toolbar-actions"><a class="btn secondary" href="{{ back }}">{{ ui.icon('chevrons-left') }}{{ t('articles.back') }}</a></div></div>
 {% endblock %}

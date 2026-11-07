@@ -147,9 +147,10 @@
    reach the label and tick the box or focus the field. Use the two wrappers below, which put
    the button next to the label instead of in it.
    The popup is pinned under the button (it opens in the flow just below the <summary>) and
-   framed by the card: horizontally it starts at the card's content edge and is at most 18rem and
-   never wider than the card, so it cannot leave the screen at any width from 320 px up without a
-   script (a button in the right column of a row cannot know that it is near the edge). #}
+   framed by the row of label and button (.label-row, .check-row), not by the card: a field in the
+   second column of a grid gets its popup at its own place. info.js sets --info-x so it starts
+   under the button and stays inside the field and the screen; without the script it starts at
+   the left edge of its field. At most 18rem wide. Keep the button inside one of the two rows. #}
 {% macro info(text, label) -%}
 {%- set name = t('info.about', label=label) -%}
 <details class="info"><summary title="{{ name }}" aria-label="{{ name }}">{{ icon('info') }}</summary><div class="info-pop" role="note">{{ text }}</div></details>

@@ -683,5 +683,7 @@
   "info.consume_parts": "Zieht die Zukaufteile, die dieser Artikel braucht, für jede eingebuchte Einheit vom Zukaufteil-Bestand ab. Abwählen, wenn die Teile schon abgezogen sind.",
   "info.host": "Netzwerkadresse, auf der Reprintbuddy erreichbar ist. 0.0.0.0 heißt: auf allen Netzwerken des Rechners. Wird nach einem Neustart wirksam.",
   "info.inspection_good": "Wie viele der fertigen Stücke gut sind. Was nicht gut ist, wird als Ausschuss abgeschrieben, und ein Ersatzdruck kommt vorn in die Warteschlange.",
-  "info.about": "Erklärung zu {label}"
+  "info.about": "Erklärung zu {label}",
+  "articles.not_sliced": "Nicht geslict – erst slicen und die geslicte Datei (.gcode.3mf) in Bambuddy ablegen.",
+  "articles.relink_subtitle": "Eine andere Druckdatei für diesen Artikel wählen"
 }
