@@ -106,8 +106,18 @@ def make_engine(db_path: Path) -> Engine:
     return engine
 
 
-def upgrade(engine: Engine, script_location: Path | None = None) -> None:
+def known_revisions(script_location: Path | None = None) -> list[str]:
+    """Every migration revision this version knows, oldest first."""
+    from alembic.script import ScriptDirectory
+
+    scripts = ScriptDirectory(str(script_location or _MIGRATIONS_DIR))
+    return [script.revision for script in reversed(list(scripts.walk_revisions()))]
+
+
+def upgrade(engine: Engine, script_location: Path | None = None, *, revision: str = "head") -> None:
     """Run `alembic upgrade head` against this engine, without alembic.ini.
+
+    `revision` exists for tests that need a database of an older version.
 
     The migration runs on its own connection with foreign keys switched off
     (SQLite cannot rebuild a referenced table otherwise; PRAGMA foreign_keys has
@@ -124,7 +134,7 @@ def upgrade(engine: Engine, script_location: Path | None = None) -> None:
     try:
         with migration_engine.begin() as connection:
             cfg.attributes["connection"] = connection
-            command.upgrade(cfg, "head")
+            command.upgrade(cfg, revision)
             if connection.exec_driver_sql("PRAGMA foreign_key_check").all():
                 raise RuntimeError("migration left foreign key violations; rolled back")
     finally:

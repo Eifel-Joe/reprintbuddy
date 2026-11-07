@@ -17,6 +17,7 @@ from starlette.concurrency import run_in_threadpool
 
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
+from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.export import export_bytes
 from reprintbuddy.ops.server import (
     EffectiveServer,
@@ -48,9 +49,19 @@ from reprintbuddy.web.deps import get_db, render
 log = logging.getLogger("reprintbuddy.ops")
 router = APIRouter()
 
-OPS_MESSAGES = frozenset(
-    {"restart_failed", "check_failed", "busy", "no_update", "start_failed", "not_git"}
-)
+# Message code from the address -> the card that shows it.
+OPS_MESSAGES: dict[str, str] = {
+    "restart_failed": "restart",
+    **{code: "update" for code in ("check_failed", "busy", "no_update", "start_failed", "not_git")},
+    **{code: "backup" for code in ("backup_mismatch", "backup_length", "backup_failed", "backup_login")},
+    **{
+        f"restore_{code}": "restore"
+        for code in (
+            "nofile", "foreign", "too_new", "too_large", "damaged",
+            "incompatible", "failed", "expired", "busy",
+        )
+    },
+}
 
 # POST routes that stay usable while an update runs: asking GitHub, the update button
 # itself (it answers "busy" on its own), signing out, and the two buttons of the notice
@@ -68,6 +79,13 @@ UPDATE_EXEMPT_PATHS = frozenset(
     }
 )
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+# While a restore replaces the database only signing out passes; when it is replaced but the
+# restart failed, also signing in (everybody was signed out) and the restart button.
+RESTORE_EXEMPT_PATHS = frozenset({"/logout"})
+RESTART_PENDING_EXEMPT_PATHS = frozenset({"/logout", "/login", "/settings/restart"})
+# Not counted as writes a restore waits for: they are open without a sign-in (a slow or
+# braked login attempt must not hold a restore off) and change no data of the database.
+UNCOUNTED_PREFIXES = ("/login", "/logout", "/setup")
 
 
 @dataclass
@@ -75,6 +93,7 @@ class OpsView:
     running_url: str | None
     restart_pending: bool
     message: str | None  # translation key of a message, or None
+    message_card: str | None = None  # the card that shows it ("update", "backup", …)
     git_install: bool = False
     installed: str | None = None
     dev_version: str = __version__
@@ -123,12 +142,16 @@ def ops_view(request: Request, session: Session) -> OpsView:
     message = f"ops.msg.{code}" if code in OPS_MESSAGES else None
 
     view = OpsView(running_url=running_url, restart_pending=pending, message=message)
+    view.message_card = OPS_MESSAGES.get(code or "")
     view.dev_version = __version__  # read now, so it is the version of the running code
     view.git_install = is_git_install(ops.install_dir)
     if view.git_install:
         view.installed = _installed(request)
         view.version_info = getattr(app.state, "version_info", None)
     view.update = read_status(_data_dir(request))
+    if not request.app.state.restore.active:
+        # Uploads nobody confirmed and downloads that were cut off hold every secret.
+        fullbackup.clear_work_dir(fullbackup.work_dir_for(app.state.db_path), older_than=fullbackup.STALE_AFTER)
     view.busy = update_running(_data_dir(request), request.app.state.ops.runner, _utc_now())
     view.interrupted = view.update.state in BUSY_STATES and not view.busy
     if view.interrupted:
@@ -140,8 +163,33 @@ def ops_view(request: Request, session: Session) -> OpsView:
     return view
 
 
+def restore_blocks(request: Request) -> bool:
+    """Does a restore pause this write (see `RESTORE_EXEMPT_PATHS`)?"""
+    state = getattr(request.app.state, "restore", None)
+    if state is None or not state.active:
+        return False
+    allowed = RESTART_PENDING_EXEMPT_PATHS if state.phase == "restart_pending" else RESTORE_EXEMPT_PATHS
+    return request.url.path not in allowed
+
+
 async def update_guard(request: Request, call_next) -> Response:
-    """Pause every write while an update runs (see `UPDATE_EXEMPT_PATHS`)."""
+    """Pause every write while an update or a restore runs (see `UPDATE_EXEMPT_PATHS`).
+
+    The writes it lets through are counted while they run: a restore waits for the ones
+    that passed just before it began.
+    """
+    if request.method in WRITE_METHODS and restore_blocks(request):
+        state = request.app.state.restore
+        return render(
+            request,
+            "error.html",
+            status_code=503,
+            layout="base.html",
+            title_key="error.generic.title",
+            message_key="ops.restore.restart_pending"
+            if state.phase == "restart_pending"
+            else "ops.restore.in_progress",
+        )
     if request.method in WRITE_METHODS and request.url.path not in UPDATE_EXEMPT_PATHS:
         if update_running(_data_dir(request), request.app.state.ops.runner, _utc_now()):
             return render(
@@ -152,7 +200,14 @@ async def update_guard(request: Request, call_next) -> Response:
                 title_key="error.generic.title",
                 message_key="ops.update.in_progress",
             )
-    return await call_next(request)
+    if request.method not in WRITE_METHODS or request.url.path.startswith(UNCOUNTED_PREFIXES):
+        return await call_next(request)
+    state = request.app.state
+    state.writes_in_flight += 1
+    try:
+        return await call_next(request)
+    finally:
+        state.writes_in_flight -= 1
 
 
 @router.get("/settings/export")
@@ -233,7 +288,8 @@ async def update_start(request: Request):
         return _back("not_git")
     data_dir = _data_dir(request)
     now = _utc_now()
-    if update_running(data_dir, ops.runner, now):
+    # A restore that is replacing the database (or waits for its restart) counts as busy.
+    if app.state.restore.active or update_running(data_dir, ops.runner, now):
         return _back("busy")
     info: VersionInfo | None = getattr(app.state, "version_info", None)
     if info is None or not info.update_available:

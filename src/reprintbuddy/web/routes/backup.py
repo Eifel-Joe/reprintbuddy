@@ -1,0 +1,339 @@
+"""Full backup and restore on the settings page (Spec 11.6).
+
+Downloading is a POST: the file holds every secret, so it is made only on a button press
+with a CSRF token, never by a link a browser could prefetch.
+
+Restoring takes two steps. The upload is checked at once (shape, manifest, version) and
+waits in the work folder; the page then says what the file is and asks for the password
+if it is encrypted. Only the confirmation decrypts, checks the database, backs up the
+running one and replaces it. The upload waits for one hour at most, one per browser; the
+page carries its token, so a second tab with another upload cannot swap the file under it.
+
+While the database is replaced and until the restart, `app.state.restore` pauses every
+write (see `ops.update_guard`) and the engine (its `update_running` is true). An update
+cannot start meanwhile, and a restore cannot start while an update runs: both decisions
+are taken without an `await` between the check and setting the state.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+import time
+import secrets
+import sqlite3
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import FileResponse, RedirectResponse, Response
+from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile
+
+from reprintbuddy.auth import MIN_PASSWORD_LENGTH
+from reprintbuddy.db import known_revisions
+from reprintbuddy.ops import fullbackup as fb
+from reprintbuddy.ops import running
+from reprintbuddy.ops.server import address_changed, base_url, effective_from_settings
+from reprintbuddy.ops.service import request_restart
+from reprintbuddy.ops.status import read_status
+from reprintbuddy.web.csrf import verify_csrf
+from reprintbuddy.web.deps import get_db, render
+from reprintbuddy.web.routes.auth import password_confirmed
+from reprintbuddy.web.routes.ops import _display_host
+
+log = logging.getLogger("reprintbuddy.ops")
+router = APIRouter()
+
+MAX_PASSWORD_LENGTH = 1024
+SESSION_KEY = "restore_upload"
+UPLOAD_MAX_AGE = fb.STALE_AFTER
+# Room for the CSRF field and the multipart boundaries around the file itself.
+MULTIPART_OVERHEAD = 64 * 1024
+_TOKEN = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+
+
+@dataclass
+class RestoreState:
+    """`running` from the decision to replace until the database is replaced; then
+    `restart_pending` until the process ends (signing in and the restart button work again,
+    in case the restart does not happen)."""
+
+    phase: Literal["idle", "running", "restart_pending"] = "idle"
+
+    @property
+    def active(self) -> bool:
+        return self.phase != "idle"
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _back(code: str | None, anchor: str) -> RedirectResponse:
+    query = f"&ops={code}" if code else ""
+    return RedirectResponse(f"/settings?tab=maintenance{query}#{anchor}", status_code=303)
+
+
+def _work_dir(request: Request) -> Path:
+    return fb.work_dir_for(request.app.state.db_path)
+
+
+def _remove(*paths: Path) -> None:
+    for path in paths:
+        fb.remove_database_files(path)
+
+
+# --- downloading -----------------------------------------------------------------------------
+
+
+@router.post("/settings/backup", dependencies=[Depends(verify_csrf)])
+async def download_backup(request: Request, db: Session = Depends(get_db)) -> Response:
+    form = await request.form()
+    password = str(form.get("backup_password") or "")
+    if password != str(form.get("backup_password_repeat") or ""):
+        return _back("backup_mismatch", "ops-backup")
+    if password and not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
+        return _back("backup_length", "ops-backup")
+    login = str(form.get("login_password") or "")[: 4 * MAX_PASSWORD_LENGTH]
+    if not await password_confirmed(request, db, login):
+        return _back("backup_login", "ops-backup")
+    work = fb.ensure_work_dir(_work_dir(request))
+    fb.clear_work_dir(work, older_than=fb.STALE_AFTER)
+    try:
+        # Argon2 needs 64 MiB and noticeable time: through the limiter, like a login.
+        created = await request.app.state.hash_limiter.run(
+            fb.create_backup,
+            request.app.state.db_path,
+            work_dir=work,
+            password=password or None,
+            now=_now(),
+        )
+    except (OSError, sqlite3.Error, fb.BackupError) as error:
+        log.warning("backup failed: %s", type(error).__name__)  # never the message: no paths, no values
+        return _back("backup_failed", "ops-backup")
+    return FileResponse(
+        created.path,
+        media_type="application/zip",
+        filename=created.filename,
+        headers={"Cache-Control": "no-store"},
+        background=BackgroundTask(_remove, created.path),
+    )
+
+
+# --- restoring -------------------------------------------------------------------------------
+
+
+def _staged_token(request: Request) -> str | None:
+    info = request.session.get(SESSION_KEY)
+    token = info.get("token") if isinstance(info, dict) else None
+    return token if isinstance(token, str) and _TOKEN.fullmatch(token) else None
+
+
+def _staged(request: Request) -> Path | None:
+    """The upload of this browser that waits for confirmation, if it is still valid."""
+    info = request.session.get(SESSION_KEY)
+    token = _staged_token(request)
+    at = info.get("at") if isinstance(info, dict) else None
+    if token is None or not isinstance(at, str):
+        return None
+    path = _work_dir(request) / f"upload-{token}.zip"
+    try:
+        expired = _now() - datetime.fromisoformat(at) > UPLOAD_MAX_AGE
+    except (TypeError, ValueError):
+        expired = True
+    if expired:
+        _remove(path)
+        return None
+    return path if path.is_file() else None
+
+
+def _discard(request: Request) -> None:
+    path = _staged(request)
+    request.session.pop(SESSION_KEY, None)
+    if path is not None:
+        _remove(path)
+
+
+def _protected(request: Request) -> list[Path]:
+    """A backup named by a failed rollback must survive the pruning (as in the update)."""
+    status = read_status(request.app.state.db_path.parent)
+    return [Path(status.backup)] if status.state == "rollback_failed" and status.backup else []
+
+
+@router.post("/settings/restore/upload")
+async def restore_upload(request: Request) -> Response:
+    # The size is checked before anything reads the body: the CSRF check would parse the
+    # whole form, and Starlette keeps file parts of any size in a temporary file.
+    length = request.headers.get("content-length", "")
+    if not length.isdigit() or int(length) > fb.MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD:
+        return _back("restore_too_large", "ops-restore")
+    # Parsed once, with limits; `verify_csrf` reads the same form (Starlette keeps it).
+    form = await request.form(max_files=1, max_fields=4)
+    await verify_csrf(request)
+    upload = form.get("backup_file")
+    if not isinstance(upload, UploadFile) or not upload.filename:
+        return _back("restore_nofile", "ops-restore")
+    # The guard let this request in before the body was read; a restore may have begun since.
+    # No `await` from here to the cleanup: its candidate is never deleted under it.
+    if request.app.state.restore.active:
+        await upload.close()
+        return _back("restore_busy", "ops-restore")
+
+    _discard(request)  # the earlier upload of this browser; other browsers keep theirs
+    work = fb.ensure_work_dir(_work_dir(request))
+    fb.clear_work_dir(work, older_than=fb.STALE_AFTER)
+    token = secrets.token_urlsafe(24)
+    target = work / f"upload-{token}.zip"
+    try:
+        await run_in_threadpool(fb.save_upload, upload.file, target, limit=fb.MAX_UPLOAD_BYTES)
+        await run_in_threadpool(fb.read_manifest, target)
+    except fb.BackupError as error:
+        _remove(target)
+        return _back(f"restore_{error.code}", "ops-restore")
+    except OSError as error:
+        _remove(target)
+        log.warning("restore upload failed: %s", type(error).__name__)
+        return _back("restore_failed", "ops-restore")
+    finally:
+        await upload.close()
+    request.session[SESSION_KEY] = {"token": token, "at": _now().isoformat()}
+    return RedirectResponse("/settings/restore", status_code=303)
+
+
+def _confirm_page(
+    request: Request, manifest: fb.Manifest, error: str | None = None, field: str | None = None
+) -> Response:
+    return render(
+        request,
+        "restore_confirm.html",
+        manifest=manifest,
+        upload_token=_staged_token(request),
+        older=manifest.schema_revision != known_revisions()[-1],
+        error=error,
+        error_field=field,
+        active_nav="settings",
+    )
+
+
+@router.get("/settings/restore")
+async def restore_page(request: Request) -> Response:
+    path = _staged(request)
+    if path is None:
+        return _back(None, "ops-restore")
+    try:
+        manifest = await run_in_threadpool(fb.read_manifest, path)
+    except (fb.BackupError, OSError):
+        _discard(request)
+        return _back("restore_expired", "ops-restore")
+    return _confirm_page(request, manifest)
+
+
+@router.post("/settings/restore/cancel", dependencies=[Depends(verify_csrf)])
+async def restore_cancel(request: Request) -> Response:
+    _discard(request)
+    return _back(None, "ops-restore")
+
+
+@router.post("/settings/restore", dependencies=[Depends(verify_csrf)])
+async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Response:
+    app = request.app
+    form = await request.form()
+    path = _staged(request)
+    expected = _staged_token(request)
+    shown = str(form.get("upload_token") or "")
+    # The file this page showed, not one another tab uploaded in the meantime.
+    if path is None or expected is None or not secrets.compare_digest(shown.encode(), expected.encode()):
+        return _back("restore_expired", "ops-restore")
+    password = str(form.get("backup_password") or "")[: 4 * MAX_PASSWORD_LENGTH]
+    login = str(form.get("login_password") or "")[: 4 * MAX_PASSWORD_LENGTH]
+    if not await password_confirmed(request, db, login):
+        try:
+            manifest_shown = await run_in_threadpool(fb.read_manifest, path)
+        except (fb.BackupError, OSError):
+            _discard(request)
+            return _back("restore_expired", "ops-restore")
+        return _confirm_page(request, manifest_shown, "ops.restore.login_wrong", "login")  # the upload stays
+    work = fb.ensure_work_dir(_work_dir(request))
+    candidate = work / f"candidate-{secrets.token_hex(8)}.db"
+
+    manifest: fb.Manifest | None = None
+    try:
+        manifest = await run_in_threadpool(fb.read_manifest, path)
+        await app.state.hash_limiter.run(fb.extract_database, path, manifest, password, candidate)
+        await run_in_threadpool(fb.verify_database, candidate, manifest, work_dir=work)
+    except (fb.PasswordNeeded, fb.WrongPassword) as error:
+        _remove(candidate)
+        assert manifest is not None
+        return _confirm_page(request, manifest, f"ops.restore.{error.code}", "backup")  # the upload stays
+    except fb.BackupError as error:
+        _remove(candidate)
+        _discard(request)
+        return _back(f"restore_{error.code}", "ops-restore")
+    except Exception as error:  # noqa: BLE001 - a full disk in a migration, say: nothing was changed
+        _remove(candidate)
+        _discard(request)
+        log.warning("restore check failed: %s", type(error).__name__)
+        return _back("restore_failed", "ops-restore")
+
+    # From the check to setting the state there is no `await`: an update cannot slip in.
+    state: RestoreState = app.state.restore
+    data_dir = app.state.db_path.parent
+    if state.active or running.update_running(data_dir, app.state.ops.runner, _now()):
+        _remove(candidate)
+        return _back("restore_busy", "ops-restore")
+    state.phase = "running"
+    # A write that passed the guard just before this line may still be under way; it would
+    # land in the restored database with what it read from the old one. This request is one.
+    deadline = time.monotonic() + app.state.restore_write_wait
+    try:
+        while app.state.writes_in_flight > 1:
+            if time.monotonic() > deadline:
+                state.phase = "idle"
+                _remove(candidate)
+                return _back("restore_busy", "ops-restore")
+            await asyncio.sleep(0.02)
+    except BaseException:  # cancelled while waiting (shutdown, …): nothing is replaced yet
+        state.phase = "idle"
+        _remove(candidate)
+        raise
+    try:
+        async with app.state.ticker.hold():
+            await run_in_threadpool(
+                fb.replace_database,
+                candidate,
+                app.state.db_path,
+                now=_now(),
+                protect=_protected(request),
+            )
+    except Exception as error:  # noqa: BLE001 - it fails before or in the one-step copy: nothing changed
+        state.phase = "idle"
+        _remove(candidate)
+        _discard(request)
+        log.warning("restore failed: %s", type(error).__name__)
+        return _back("restore_failed", "ops-restore")
+    # The old process holds state of the old database in memory (engine, rights): writes
+    # and the engine stay paused until it is gone. Signing in and the restart button work,
+    # in case the restart below fails or systemd takes it and nothing happens.
+    state.phase = "restart_pending"
+    _discard(request)
+
+    # Address, port and HTTPS come with the backup: say where the service answers next.
+    new_url = None
+    running_server = app.state.ops.effective
+    try:
+        if running_server is not None:
+            saved = effective_from_settings(db)
+            if address_changed(saved, running_server):
+                new_url = base_url(_display_host(request, saved), saved.port, saved.tls)
+    except Exception as error:  # noqa: BLE001 - only a hint; the restart must be asked for anyway
+        log.warning("address after restore unreadable: %s", type(error).__name__)
+    result = await run_in_threadpool(request_restart, app.state.ops.runner)
+    if not result.ok:
+        log.warning("restart after restore failed: %s", (result.stderr or "").strip()[:300])
+    return render(request, "restored.html", restarted=result.ok, new_url=new_url, active_nav="settings")

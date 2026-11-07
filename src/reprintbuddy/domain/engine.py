@@ -22,6 +22,7 @@ after a restart fills it again.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 import dataclasses
 import logging
@@ -145,6 +146,20 @@ class Engine:
         """Ask `run` for a regular tick now (e.g. Bambuddy reported a change)."""
         self._poll_requested = True
         self._wake.set()
+
+    @contextlib.asynccontextmanager
+    async def hold(self):
+        """Wait until a running tick is finished and keep every other tick out meanwhile.
+
+        A restore replaces the database under the engine (Spec 11.6). The caller makes
+        `update_running()` true first: a tick that waited for the lock then gives up
+        instead of running on the new database with what it read from the old one.
+        """
+        async with self._lock:
+            yield
+
+    def held(self) -> bool:
+        return self._lock.locked()
 
     # ---- the tick ------------------------------------------------------------------------
 
