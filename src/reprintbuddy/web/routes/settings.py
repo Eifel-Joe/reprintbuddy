@@ -15,6 +15,7 @@ from starlette.datastructures import UploadFile
 
 from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
+from reprintbuddy.bambuddy.live import NO_RIGHT_DELAY
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops.tls import validate_tls_pair
 from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
@@ -87,6 +88,9 @@ def _page(
         tls_key_mask=st.display_value("tls_key", st.get_setting(db, "tls_key")),
         tls_cert_set=bool(st.get_setting(db, "tls_cert")),
         ops=ops_view(request, db),
+        # The live channel row: only with a stored address (without one there is nothing to connect to).
+        live_channel=request.app.state.live_listener.state if values["bambuddy_address"] else None,
+        channel_retry_minutes=NO_RIGHT_DELAY // 60,
         **permission_context(),
         check=check,
         **values,

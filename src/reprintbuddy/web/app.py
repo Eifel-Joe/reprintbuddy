@@ -34,7 +34,7 @@ from reprintbuddy.web.flash import pop_flashes
 from reprintbuddy.web.formatting import fill_percent, local_date, local_dt
 from reprintbuddy.web.formtoken import issue_form_token
 from reprintbuddy.web.i18n import load_locales
-from reprintbuddy.web.live import LiveBroker
+from reprintbuddy.web.live import LIVE_CHANNEL_TOPIC, LiveBroker
 from reprintbuddy.web.preload import PreloadedLoader
 from reprintbuddy.web.rights import RightsMonitor
 from reprintbuddy.web.throttle import FailureBrake, HashLimiter
@@ -231,7 +231,11 @@ def create_app(
     if live_sleep is not None:
         live_options["sleep"] = live_sleep
     app.state.live_listener = LiveListener(
-        _LiveClient(app), lambda kind: app.state.ticker.request_poll(), **live_options
+        _LiveClient(app),
+        lambda kind: app.state.ticker.request_poll(),
+        # The settings page shows the state of the channel live (v0.3.6 p86).
+        on_state=lambda state: live.publish(frozenset({LIVE_CHANNEL_TOPIC})),
+        **live_options,
     )
     app.state.live_task = None
 
