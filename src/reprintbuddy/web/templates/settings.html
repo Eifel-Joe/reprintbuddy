@@ -28,6 +28,21 @@
   </form>
 </section>
 
+<section class="card" id="qr-address">
+  {% call ui.card_head("qr-code", t('settings.qr_title')) %}<button class="btn" type="submit" form="settings-qr">{{ t('settings.save') }}</button>{% endcall %}
+  {% if error and error_section == 'qr' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
+  <form id="settings-qr" method="post" action="/settings/qr">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {# A web address is long: the field sits under its label across the whole card, like the PEM fields. #}
+    <div class="setting-row stack">
+      <div class="setting-text"><label for="qr_base_url">{{ t('settings.qr_address') }}</label><span>{{ t('settings.qr_address_hint') }}</span></div>
+      <div class="setting-control">
+        <input id="qr_base_url" name="qr_base_url" type="text" inputmode="url" value="{{ qr_base_url }}" autocomplete="off" spellcheck="false" placeholder="{{ t('settings.qr_placeholder') }}">
+      </div>
+    </div>
+  </form>
+</section>
+
 <section class="card" id="ops-restart">
   {% call ui.card_head("refresh-cw", t('ops.restart.title')) %}
   <form method="post" action="/settings/restart">

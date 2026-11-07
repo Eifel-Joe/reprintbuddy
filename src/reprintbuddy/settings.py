@@ -7,6 +7,7 @@ Sensitive values are only ever shown as `MASK`; see `display_value`.
 from __future__ import annotations
 
 import json
+import re
 import secrets
 from typing import Any, Callable
 from urllib.parse import urlsplit
@@ -26,6 +27,7 @@ DEFAULTS: dict[str, object] = {
     "automation": False,
     "queue_running": True,
     "update_check": True,  # the automatic check for new versions (Spec 11.3a)
+    "qr_base_url": None,  # the start of the address inside the QR codes (Spec 8.4); none = the address in use
     "bambuddy_url": None,
     "bambuddy_username": None,
     "bambuddy_api_key": None,
@@ -122,6 +124,38 @@ def _optional_url(value: Any) -> str | None:
     raise ValueError("address must start with http:// or https://")
 
 
+_HOST_LABEL = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?", re.IGNORECASE)
+
+
+def _qr_base_url(value: Any) -> str | None:
+    """The start of the address a QR code carries (Spec 8.4): scheme, host, port and, behind a
+    reverse proxy, a path. No credentials (the code is printed and stuck to a shelf), no query or
+    fragment (the article's path is appended), no blank, control or backslash character."""
+    if value is None:
+        return None
+    text = _optional_url(value)  # scheme, host, port; a trailing slash is dropped
+    assert text is not None
+    if any(char in text for char in "?#\\") or any(char.isspace() or not char.isprintable() for char in text):
+        raise ValueError("address must be a plain web address without query or fragment")
+    if "@" in text:  # user:password@host (also a path with an @ is not worth the doubt)
+        raise ValueError("address must not contain credentials")
+    parts = urlsplit(text)
+    if parts.netloc.endswith(":"):  # a port sign without a port
+        raise ValueError("address has an invalid host or port")
+    if not parts.netloc.startswith("["):  # an IPv6 address in brackets was parsed by `_optional_url`
+        try:
+            labels = (parts.hostname or "").encode("idna").decode("ascii").split(".")  # umlauts are fine
+        except UnicodeError:
+            raise ValueError("address has an invalid host or port") from None
+        if not all(_HOST_LABEL.fullmatch(label) for label in labels):
+            raise ValueError("address has an invalid host or port")
+    if any(char in parts.path for char in "<>\"'") or any(
+        segment in (".", "..") for segment in parts.path.split("/")
+    ):
+        raise ValueError("address has an invalid path")
+    return text
+
+
 def _optional_pem(value: Any) -> str | None:
     if value is None:
         return None
@@ -139,6 +173,7 @@ _VALIDATORS: dict[str, Callable[[Any], object]] = {
     "automation": _bool,
     "queue_running": _bool,
     "update_check": _bool,
+    "qr_base_url": _qr_base_url,
     "bambuddy_url": _optional_url,
     "bambuddy_username": _optional_nonempty,
     "bambuddy_api_key": _api_key,

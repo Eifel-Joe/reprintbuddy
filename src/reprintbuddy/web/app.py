@@ -55,6 +55,7 @@ from reprintbuddy.web.routes import rights as rights_routes
 from reprintbuddy.web.routes import filament as filament_routes
 from reprintbuddy.web.routes import reorder as reorder_routes
 from reprintbuddy.web.routes import parts as parts_routes
+from reprintbuddy.web.routes import qr as qr_routes
 from reprintbuddy.web.routes import queue as queue_routes
 from reprintbuddy.web.routes import settings as settings_routes
 from reprintbuddy.web.routes import sets as sets_routes
@@ -360,6 +361,7 @@ def create_app(
     app.include_router(bookings_routes.router)
     app.include_router(queue_routes.router)
     app.include_router(inspection_routes.router)
+    app.include_router(qr_routes.router)
     app.include_router(ops_routes.router)
     app.include_router(backup_routes.router)
     app.include_router(live_routes.router)

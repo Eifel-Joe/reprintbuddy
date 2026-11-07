@@ -28,6 +28,7 @@ EXPECTED_DEFAULTS = {
     "tls_cert": None,
     "tls_key": None,
     "update_check": True,  # v0.3.6, Spec 11.3a: the automatic check for new versions is on
+    "qr_base_url": None,  # v0.3.7, Spec 8.4: the address inside the QR codes; none = the address in use
 }
 
 
@@ -262,3 +263,64 @@ def test_apply_check_overwrites_an_older_owner(session):
     st.apply_check(session, "http://h:8000", "bb_key2", _check(owner="reprintbuddy"))
     assert st.get_setting(session, "bambuddy_username") == "reprintbuddy"
     assert st.get_setting(session, "bambuddy_api_key") == "bb_key2"
+
+
+# ---- the address for QR codes (Spec 8.4) ----
+
+
+@pytest.mark.parametrize(
+    ("given", "stored"),
+    [
+        ("https://shelf.example.com", "https://shelf.example.com"),
+        ("https://shelf.example.com/", "https://shelf.example.com"),
+        ("  http://shelf.example.com:8080/  ", "http://shelf.example.com:8080"),
+        ("https://example.com/stock/", "https://example.com/stock"),  # behind a reverse proxy path
+        ("http://203.0.113.5:8080", "http://203.0.113.5:8080"),
+        ("http://[::1]:8080", "http://[::1]:8080"),
+        ("http://lager-pi", "http://lager-pi"),  # a name without a dot: a home network
+        ("https://lager.example.com/a..b", "https://lager.example.com/a..b"),  # inside a name, no segment
+        (None, None),
+    ],
+)
+def test_qr_base_url_is_normalised(given, stored):
+    assert st.validate("qr_base_url", given) == stored
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "shelf.example.com",
+        "ftp://shelf.example.com",
+        "https://",
+        "https://user:secret@shelf.example.com",
+        "https://user@shelf.example.com",
+        "https://shelf.example.com?x=1",
+        "https://shelf.example.com/#top",
+        "https://shelf.example.com:0",
+        "https://shelf.example.com:99999",
+        "https://shelf.example.com/a b",
+        "https://shelf.example.com/\\evil",
+        "",
+        "   ",
+        5,
+        "https://shelf.example.com:",
+        "http://shelf.example.com;x",
+        "https://-/",
+        "https://shelf..example.com",
+        "https://shelf.example.com/<script>",
+        'https://shelf.example.com/"x',
+        "https://shelf.example.com:8080/../x",
+        "https://shelf.example.com/a/./b",
+    ],
+)
+def test_qr_base_url_refuses_what_cannot_be_the_start_of_an_address(bad):
+    with pytest.raises(ValueError) as caught:
+        st.validate("qr_base_url", bad)
+    assert "secret" not in str(caught.value)
+
+
+def test_qr_base_url_is_stored_and_read(session):
+    st.set_setting(session, "qr_base_url", "https://shelf.example.com/")
+    assert st.get_setting(session, "qr_base_url") == "https://shelf.example.com"
+    st.set_setting(session, "qr_base_url", None)
+    assert st.get_setting(session, "qr_base_url") is None

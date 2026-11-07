@@ -45,6 +45,7 @@ DEFAULT_TAB = "general"
 SECTION_TAB = {
     "language": "general",
     "server": "general",
+    "qr": "general",
     "bambuddy": "bambuddy",
     "password": "account",
     "automation": "automation",
@@ -69,6 +70,7 @@ def _page(
         "language": st.get_setting(db, "language"),
         "bambuddy_address": st.get_setting(db, "bambuddy_url") or "",
         "bambuddy_owner": st.get_setting(db, "bambuddy_username") or "",
+        "qr_base_url": st.get_setting(db, "qr_base_url") or "",
         "host": st.get_setting(db, "host"),
         "port": st.get_setting(db, "port"),
         "automation": st.get_setting(db, "automation"),
@@ -122,6 +124,19 @@ async def save_language(request: Request, db: Session = Depends(get_db)):
     except ValueError:
         return _page(request, db, "settings.invalid_value", "language")
     return _saved(request, tab=SECTION_TAB["language"])
+
+
+@router.post("/settings/qr", dependencies=[Depends(verify_csrf)])
+async def save_qr(request: Request, db: Session = Depends(get_db)):
+    """The address inside the QR codes (Spec 8.4). Empty removes it: the codes then carry the
+    address Reprintbuddy is called on."""
+    form = await request.form()
+    typed = str(form.get("qr_base_url", "")).strip()
+    try:
+        st.set_setting(db, "qr_base_url", typed or None)
+    except ValueError:
+        return _page(request, db, "settings.invalid_qr_base_url", "qr", qr_base_url=typed)
+    return _saved(request, tab=SECTION_TAB["qr"])
 
 
 @router.post("/settings/bambuddy", dependencies=[Depends(verify_csrf)])

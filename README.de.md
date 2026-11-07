@@ -327,3 +327,8 @@ Reprintbuddy steht unter der GNU Affero General Public License, Version 3 oder
 später (AGPL-3.0-or-later). Siehe [LICENSE](LICENSE).
 
 Copyright (C) 2026 Eifel-Joe
+
+Bestandteile Dritter mit eigener Lizenz: die Symbole stammen von
+[Lucide](https://lucide.dev) (ISC, Lizenztext in `src/reprintbuddy/web/static/icons/`);
+die QR-Codes zeichnet [segno](https://github.com/heuer/segno) (BSD-3-Clause), das als
+Abhängigkeit von PyPI installiert wird und nicht Teil dieses Repositories ist.

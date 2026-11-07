@@ -33,6 +33,7 @@ def test_the_tab_table_has_the_agreed_shape():
     assert SECTION_TAB == {
         "language": "general",
         "server": "general",
+        "qr": "general",
         "bambuddy": "bambuddy",
         "password": "account",
         "automation": "automation",
@@ -49,7 +50,7 @@ def test_five_tabs_general_active_with_its_cards(ready_client):
         ("", "/settings?tab=maintenance"),
     ]
     assert 'aria-current="page"' in page
-    assert card_forms(page) == ["settings-language", "settings-server"]
+    assert card_forms(page) == ["settings-language", "settings-qr", "settings-server"]
     assert 'id="ops-restart"' in page
     assert 'action="/settings/password"' not in page
     assert 'action="/settings/bambuddy"' not in page
@@ -80,7 +81,7 @@ def test_each_tab_shows_only_its_cards(ready_client):
 def test_an_unknown_tab_opens_general(ready_client, query):
     page = ready_client.get("/settings" + query).text
     assert tab_links(page)[0] == (" active", "/settings?tab=general")
-    assert card_forms(page) == ["settings-language", "settings-server"]
+    assert card_forms(page) == ["settings-language", "settings-qr", "settings-server"]
 
 
 def test_a_wrong_password_reopens_the_account_tab_with_the_error(ready_client):
