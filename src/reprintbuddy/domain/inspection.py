@@ -112,6 +112,8 @@ def _book(
         stock.inspect_scrap(session, row.article_id, scrap, actor, note, details=details)
         # The current units per print count, not the ones at hand-over (plan B5 decision 2);
         # a replacement is wanted whatever the automation or a pause says (Spec 7.5).
+        # An article with an open inspection is never archived (archiving refuses while units
+        # are provisional), so add_replacement cannot refuse it here.
         replacement = workqueue.add_replacement(
             session,
             row.article_id,
