@@ -89,7 +89,9 @@ def test_a_tie_goes_to_the_lower_id(db):
         assert journal(s)[0].details["into"] == lower.id
 
 
-def test_without_a_living_spool_settings_are_dropped_and_the_mark_closed(db):
+def test_without_a_target_the_legacy_sort_waits(db):
+    """No spool of the list belongs to it: nothing is dropped or closed, no journal row (Hauptsitzung,
+    07.11.2026: a closed mark would let the next suggestion order twice)."""
     fake = FakeBambuddy()
     with db.begin() as s:
         old = make_legacy_sort(s, subtype="Matte")
@@ -99,14 +101,38 @@ def test_without_a_living_spool_settings_are_dropped_and_the_mark_closed(db):
             fake.add_spool("PLA", brand="Brand A"),  # no subtype: not a spool of a Matte sort
             fake.add_spool("PETG", brand="Brand A", subtype="Matte"),
         ]
-        filament.sync_sorts(s, spools)
-        assert s.scalars(select(FilamentSettings)).all() == []
-        assert old_mark.received_at is not None and old_mark.item_id == old.id
+        assert filament.sync_sorts(s, spools) and filament.convert_legacy(s, spools, {}) == 0
+        assert s.get(FilamentSettings, old.id).lead_time_days == 4
+        assert old_mark.received_at is None and old_mark.item_id == old.id
+        assert journal(s) == []
+
+
+def test_all_spools_archived_waits_then_a_new_spool_of_the_sort_is_the_target(db):
+    """The ordered sort was used up: its spools are archived and no spool sort of them exists yet, so
+    the open mark waits under "on its way" (Brand B, a living member, is no majority). A new spool of
+    the same spool sort arrives: the archived spools count for the majority, the mark moves there."""
+    fake = FakeBambuddy()
+    archived = [
+        fake.add_spool("PLA", brand="Brand A", color_hex="#000000", archived=True),
+        fake.add_spool("PLA", brand="Brand A", color_hex="#000000", archived=True),
+    ]
+    other = fake.add_spool("PLA", brand="Brand B", color_hex="#1A1A1A")  # a member too, but only one
+    with db.begin() as s:
+        old = make_legacy_sort(s)
+        make_filament_settings(s, old.id, pack_grams=1000)
+        old_mark = mark(s, old.id, 2)
+        filament.known_sorts(s, [*archived, other])  # Brand A has 2 of its spools, Brand B 1
+        filament.record_snapshot(s, [*archived, other], DAY)
+        assert old_mark.received_at is None and old_mark.item_id == old.id and journal(s) == []
+    fresh = fake.add_spool("PLA", brand="Brand A", color_hex="#000000")
+    with db.begin() as s:
+        filament.known_sorts(s, [*archived, other, fresh])
+        target = s.scalar(select(FilamentSort).where(FilamentSort.brand == "Brand A", FilamentSort.legacy.is_(False)))
+        (moved,) = open_marks(s)
+        assert moved.item_id == target.id  # 3 of Brand A (2 archived) beat 1 of Brand B
+        assert s.get(FilamentSettings, target.id).pack_grams == 1000
         (row,) = journal(s)
-        assert row.details["into"] is None and row.details["into_label"] is None
-        assert (row.details["settings"], row.details["marks"]) == ("dropped", "closed")
-        dropped = row.details["dropped_settings"]
-        assert (dropped["lead_time_days"], dropped["pack_grams"], dropped["supplier"]) == (4, 750, None)
+        assert row.details["into"] == target.id
 
 
 def test_settings_of_the_target_win(db):
@@ -166,9 +192,9 @@ def test_convert_legacy_counts_the_sorts_it_converted(db):
         make_legacy_sort(s, material="ABS")  # holds nothing
         target = make_sort(s, brand="Brand A")
         spool = fake.add_spool("PLA", brand="Brand A")
-        assert filament.convert_legacy(s, [spool], {spool.id: target.id}) == 2
+        assert filament.convert_legacy(s, [spool], {spool.id: target.id}) == 1  # the PETG sort has no spool: waits
         assert filament.convert_legacy(s, [spool], {spool.id: target.id}) == 0
-        assert len(journal(s)) == 2
+        assert len(journal(s)) == 1
 
 
 def test_a_legacy_sort_holding_nothing_writes_no_journal(db):

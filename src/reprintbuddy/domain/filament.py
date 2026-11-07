@@ -93,12 +93,13 @@ def resolve_sorts(session: Session, spools: Sequence[Spool]) -> dict[int, int | 
     return {s.id: (known[k].id if (k := _spool_key(s)) in known else None) for s in spools}
 
 
-def sync_sorts(session: Session, spools: Sequence[Spool]) -> dict[int, int]:
+def sync_sorts(session: Session, spools: Sequence[Spool], archived: Sequence[Spool] = ()) -> dict[int, int]:
     """Assign every spool to its spool sort and create the missing ones; returns spool id -> sort id.
 
     The name of a sort comes from its lowest-id spool that has one; a spool without a name never
     erases a known one. The daily rows of every listed spool follow it to its spool sort (the history
-    belongs to the spool), and the sorts of 0006 are converted once (`convert_legacy`).
+    belongs to the spool), and the sorts of 0006 are converted once (`convert_legacy`; the
+    `archived` spools of the list count there for the majority, they get no sort here).
     """
     known = _current_sorts(session)
     ordered = sorted(spools, key=lambda s: s.id)
@@ -130,7 +131,7 @@ def sync_sorts(session: Session, spools: Sequence[Spool]) -> dict[int, int]:
             sort.color_name = spool.color_name
             sort.label = sort_label(sort.brand, sort.material, sort.subtype, spool.color_name, sort.color_hex)
     _follow_spools(session, assigned)
-    convert_legacy(session, ordered, assigned)
+    convert_legacy(session, ordered, assigned, archived)
     session.flush()
     return assigned
 
@@ -176,16 +177,20 @@ _SETTINGS = (
 )
 
 
-def convert_legacy(session: Session, spools: Sequence[Spool], assigned: Mapping[int, int]) -> int:
+def convert_legacy(
+    session: Session, spools: Sequence[Spool], assigned: Mapping[int, int], archived: Sequence[Spool] = ()
+) -> int:
     """Move the settings and open "ordered" marks of the sorts of 0006 to spool sorts; returns how
     many legacy sorts had something to move. Runs with every spool list; once done, nothing is left.
 
-    The spools of a legacy sort are found by the rule it was built with (`_legacy_nearest`). The
-    target is the spool sort with the most of them (a tie: the lower id). Settings move only to a
-    target without settings, else they are dropped; open marks move to the target (two open marks
-    there become one, the order units add up, the earlier day stays), without a target they are
-    closed. Each converted sort gets a journal row. Legacy sorts stay as hidden rows, so that old
-    received marks and the daily rows of spools that are gone keep a sort to point at.
+    The spools of a legacy sort (living and archived) are found by the rule it was built with
+    (`_legacy_nearest`). The target is the spool sort (by key) with the most of them, a tie to the
+    lower id. If that spool sort is not stored yet (all its spools archived) or no spool belongs to the
+    legacy sort, it waits: nothing is dropped or closed, the mark stays "on its way" and a later list
+    converts (Hauptsitzung 07.11.2026, against ordering twice). Settings move only to a target
+    without settings, else they are dropped; open marks move to the target in its order units (two
+    open marks there become one). Each converted sort gets a journal row. Legacy sorts stay as
+    hidden rows, so that old received marks and the daily rows of gone spools keep a sort to point at.
     """
     pending = [
         sort
@@ -194,7 +199,7 @@ def convert_legacy(session: Session, spools: Sequence[Spool], assigned: Mapping[
         )
         if session.get(FilamentSettings, sort.id) is not None or _open_filament_marks(session, sort.id)
     ]
-    if not pending or not spools:
+    if not pending or not (spools or archived):
         # An empty list (a fresh Bambuddy, another spool mode) is no evidence that the spools are gone:
         # nothing is dropped or closed, the next list with spools converts (review v0.3.7 A, 1).
         return 0
@@ -204,19 +209,27 @@ def convert_legacy(session: Session, spools: Sequence[Spool], assigned: Mapping[
     groups: dict[tuple[str, str], list[FilamentSort]] = defaultdict(list)
     for sort in all_legacy:
         groups[(_norm(sort.material), _norm(sort.subtype))].append(sort)
-    members: dict[int, list[int]] = defaultdict(list)
-    for spool in spools:
+    stored = _current_sorts(session)
+    members: dict[int, list[str]] = defaultdict(list)
+    for spool in [*spools, *archived]:
         home = _legacy_nearest(groups.get((_norm(spool.material), _norm(spool.subtype)), ()), spool.color_hex)
-        if home is not None and spool.id in assigned:
-            members[home.id].append(assigned[spool.id])
+        if home is not None:
+            members[home.id].append(_spool_key(spool))
     now = utcnow()
+    converted = 0
     for old in pending:
         counts = Counter(members.get(old.id, ()))
-        target_id = min(counts, key=lambda sid: (-counts[sid], sid)) if counts else None
-        target = session.get(FilamentSort, target_id) if target_id is not None else None
+        if not counts:
+            continue  # no spool of it in the list: it waits
+        # most spools first; a tie to the stored sort with the lower id, unknown sorts last
+        key = min(counts, key=lambda k: (-counts[k], stored[k].id if k in stored else float("inf"), k))
+        target = stored.get(key)
+        if target is None:
+            continue  # the winning spool sort has only archived spools so far: it waits
         _convert_one(session, old, target, now)
+        converted += 1
     session.flush()
-    return len(pending)
+    return converted
 
 
 def _open_filament_marks(session: Session, sort_id: int) -> list[ReorderMark]:
@@ -233,11 +246,9 @@ def _open_filament_marks(session: Session, sort_id: int) -> list[ReorderMark]:
     )
 
 
-def _convert_one(session: Session, old: FilamentSort, target: FilamentSort | None, now: datetime) -> None:
-    details: dict[str, object] = {"from": old.id, "from_label": old.label, "into": None, "into_label": None}
+def _convert_one(session: Session, old: FilamentSort, target: FilamentSort, now: datetime) -> None:
+    details: dict[str, object] = {"from": old.id, "from_label": old.label, "into": target.id, "into_label": target.label}
     notes = []
-    if target is not None:
-        details["into"], details["into_label"] = target.id, target.label
     settings = session.get(FilamentSettings, old.id)
     # without settings a mark counts in the default unit, as "on its way" shows it (reorder.open_marks)
     old_pack = settings.pack_grams if settings is not None else FilamentSettingsInput.pack_grams
@@ -245,7 +256,7 @@ def _convert_one(session: Session, old: FilamentSort, target: FilamentSort | Non
         values = {f: getattr(settings, f) for f in _SETTINGS}
         session.delete(settings)
         session.flush()
-        if target is not None and session.get(FilamentSettings, target.id) is None:
+        if session.get(FilamentSettings, target.id) is None:
             session.add(FilamentSettings(spool_filament_id=target.id, **values))
             details["settings"] = "moved"
             notes.append("settings moved")
@@ -255,34 +266,27 @@ def _convert_one(session: Session, old: FilamentSort, target: FilamentSort | Non
             notes.append("settings dropped")
     marks = _open_filament_marks(session, old.id)
     if marks:
-        if target is not None:
-            target_settings = session.get(FilamentSettings, target.id)
-            new_pack = target_settings.pack_grams if target_settings is not None else FilamentSettingsInput.pack_grams
-            for mark in marks:
-                mark.item_id = target.id
-                if old_pack != new_pack:
-                    # the target orders in other units: the same grams, rounded up to whole units
-                    mark.qty = max(1, math.ceil(mark.qty * old_pack / new_pack))
-            session.flush()
-            joined = _open_filament_marks(session, target.id)
-            if len(joined) > 1:
-                joined[0].qty = sum(m.qty for m in joined)
-                for mark in joined[1:]:
-                    session.delete(mark)
-            details["marks"] = "moved"
-            notes.append("ordered mark moved")
-        else:
-            for mark in marks:
-                mark.received_at = now
-            details["marks"] = "closed"
-            notes.append("ordered mark closed")
-    into = target.label if target is not None else "no spool sort (no spool left)"
+        target_settings = session.get(FilamentSettings, target.id)
+        new_pack = target_settings.pack_grams if target_settings is not None else FilamentSettingsInput.pack_grams
+        for mark in marks:
+            mark.item_id = target.id
+            if old_pack != new_pack:
+                # the target orders in other units: the same grams, rounded up to whole units
+                mark.qty = max(1, math.ceil(mark.qty * old_pack / new_pack))
+        session.flush()
+        joined = _open_filament_marks(session, target.id)
+        if len(joined) > 1:
+            joined[0].qty = sum(m.qty for m in joined)
+            for mark in joined[1:]:
+                session.delete(mark)
+        details["marks"] = "moved"
+        notes.append("ordered mark moved")
     session.add(
         JournalEntry(
             actor="auto",
             kind="filament_sorts_converted",
             qty=0,
-            note=f"{old.label} -> {into}: " + ", ".join(notes),
+            note=f"{old.label} -> {target.label}: " + ", ".join(notes),
             details=details,
         )
     )
@@ -295,7 +299,7 @@ def _convert_one(session: Session, old: FilamentSort, target: FilamentSort | Non
 def stock_by_sort(session: Session, spools: Sequence[Spool]) -> dict[int, SortStock]:
     """Live stock per spool sort: the summed `remaining_g` of the non-archived spools (Spec 9.1)."""
     live = [s for s in spools if not s.archived]
-    ids = sync_sorts(session, live)
+    ids = sync_sorts(session, live, [s for s in spools if s.archived])
     grams: dict[int, float] = defaultdict(float)
     count: dict[int, int] = defaultdict(int)
     for spool in live:
@@ -337,7 +341,7 @@ def stock_from_snapshots(session: Session) -> tuple[dict[int, SortStock], date |
 def record_snapshot(session: Session, spools: Sequence[Spool], day: date) -> int:
     """One row per non-archived spool and day; a second call on the same day overwrites."""
     live = [s for s in spools if not s.archived]
-    ids = sync_sorts(session, live)
+    ids = sync_sorts(session, live, [s for s in spools if s.archived])
     for spool in live:
         row = session.scalar(
             select(FilamentSnapshot).where(
