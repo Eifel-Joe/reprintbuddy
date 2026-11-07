@@ -1,3 +1,6 @@
+import html
+import re
+
 import httpx
 import pytest
 from conftest import ADMIN, api_routes, auth_me, csrf_of, PASSWORD
@@ -532,3 +535,46 @@ def test_settings_list_has_bambuddys_label_purpose_and_where_to_fix(ready_client
     response = post(ready_client, "/settings/bambuddy", **bambuddy_form())
     assert "Create Queue" in response.text and "damit Reprintbuddy Nachdrucke einreihen kann" in response.text
     assert "Manage Queue" in response.text
+
+
+# p106 (v0.3.7): "… mit dem Reprintbuddy arbeitet Ein Wert ist gespeichert." – the field's hint and
+# the sentence "a value is stored" ran together without a full stop.
+STORED_SENTENCE = {"en": "A value is stored.", "de": "Ein Wert ist gespeichert."}
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+@pytest.mark.parametrize("tab,field", [("bambuddy", "bambuddy_token"), ("general", "tls_key")])
+def test_hint_and_stored_sentence_are_separate_sentences(ready_client, tls_pair, language, tab, field):
+    cert, key = tls_pair
+    with ready_client.app.state.sessionmaker() as s:
+        st.set_setting(s, "language", language)
+        st.set_setting(s, "tls_cert", cert)
+        st.set_setting(s, "tls_key", key)
+    page = ready_client.get(f"/settings?tab={tab}").text
+    hint = re.search(rf'<label for="{field}">.*?<span>(.*?)</span>', page, re.S)
+    assert hint, "the field has a hint"
+    text = html.unescape(hint.group(1))
+    sentence = STORED_SENTENCE[language]
+    assert sentence in text
+    before = text.split(sentence)[0].rstrip()
+    assert before.endswith("."), f"no full stop before the stored sentence: {text!r}"
+    assert "  " not in text
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+def test_hints_of_secret_fields_end_with_a_full_stop_on_their_own(language):
+    import json
+    from importlib.resources import files
+
+    texts = json.loads(files("reprintbuddy.locales").joinpath(f"{language}.json").read_text(encoding="utf-8"))
+    for key in ("settings.bambuddy_key_hint", "settings.tls_key_hint"):
+        assert texts[key].endswith("."), key
+
+
+def test_a_hint_that_already_ends_in_a_full_stop_gets_no_second_one(ready_client):
+    env = ready_client.app.state.templates.env
+    template = env.from_string('{% import "_ui.html" as ui %}{{ ui.with_stored(hint, "Stored.") }}')
+    assert template.render(hint="One.").strip() == "One. Stored."
+    assert template.render(hint="One").strip() == "One. Stored."
+    assert template.render(hint="Really?").strip() == "Really? Stored."
+    assert template.render(hint="One", ).strip() == "One. Stored."

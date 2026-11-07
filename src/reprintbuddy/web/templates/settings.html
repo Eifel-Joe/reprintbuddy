@@ -66,7 +66,7 @@
       </div>
     </div>
     <div class="setting-row stack">
-      <div class="setting-text"><label for="tls_key">{{ t('settings.tls_key') }}</label><span>{{ t('settings.tls_key_hint') }}{% if tls_key_mask %} {{ t('settings.secret_stored') }}{% endif %}</span></div>
+      <div class="setting-text"><label for="tls_key">{{ t('settings.tls_key') }}</label><span>{% if tls_key_mask %}{{ ui.with_stored(t('settings.tls_key_hint'), t('settings.secret_stored')) }}{% else %}{{ t('settings.tls_key_hint') }}{% endif %}</span></div>
       <div class="setting-control">
         <textarea id="tls_key" name="tls_key" rows="3" spellcheck="false" autocomplete="off"{% if tls_key_mask %} placeholder="{{ tls_key_mask }}"{% endif %}></textarea>
         <input name="tls_key_file" type="file" aria-label="{{ t('settings.tls_key') }}">
@@ -94,7 +94,7 @@
     {% call ui.setting_row(t('bambuddy.url'), t('settings.bambuddy_address_hint'), "bambuddy_address") %}
       <input id="bambuddy_address" name="bambuddy_address" value="{{ bambuddy_address }}" placeholder="{{ t('bambuddy.url_placeholder') }}" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>
     {% endcall %}
-    {% call ui.setting_row(t('bambuddy.api_key'), t('settings.bambuddy_key_hint') ~ (' ' ~ t('settings.secret_stored') if api_key_mask else ''), "bambuddy_token") %}
+    {% call ui.setting_row(t('bambuddy.api_key'), ui.with_stored(t('settings.bambuddy_key_hint'), t('settings.secret_stored')) if api_key_mask else t('settings.bambuddy_key_hint'), "bambuddy_token") %}
       <input id="bambuddy_token" name="bambuddy_token" type="password" value="" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"{% if api_key_mask %} placeholder="{{ api_key_mask }}"{% endif %}>
     {% endcall %}
   </form>
