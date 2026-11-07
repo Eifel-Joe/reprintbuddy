@@ -202,7 +202,7 @@ class FakeBambuddy:
         return [
             spool
             for spool_id, spool in sorted(self._spools.items())
-            if self._spool_lists[spool_id] == mode and not spool.archived
+            if self._spool_lists[spool_id] == mode  # archived ones too, as the real client asks for them
         ]
 
     # ---- print queue -------------------------------------------------------

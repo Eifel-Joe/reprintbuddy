@@ -37,14 +37,16 @@ async def filament_list(request: Request):
     with write_transaction(request) as tx:  # entering new sorts is the one write (Entscheidung 4)
         sorts, day = filament.known_sorts(tx, spools)
     db = db_session(request)  # the rest only reads, on the request's normal session
-    assigned = filament.assigned_sort_ids(db)  # p46: only sorts that an active article uses
-    directory = [s for s in db.scalars(select(FilamentSort)) if s.id in assigned]
+    ticked = filament.ticked_sort_ids(db)  # only spool sorts ticked in an active article (Spec 9.3)
+    reordered = set(filament.reorder_groups(db))
+    directory = [s for s in db.scalars(select(FilamentSort)) if s.id in ticked and not s.legacy]
     configured = set(db.scalars(select(FilamentSettings.spool_filament_id)))
     demand = reorder.filament_demand(db)
     rows = []
     for sort in directory:
         entry = sorts.get(sort.id) if sorts is not None else None
         per_day, days = filament.consumption(db, sort.id, today)
+        is_reordered = sort.id in reordered
         rows.append({
             "id": sort.id,
             "label": sort.label,
@@ -53,7 +55,8 @@ async def filament_list(request: Request):
             "stock": f"{entry.stock_g:.0f}" if entry is not None else None,
             "spools": entry.spools if entry is not None else None,
             "per_day": f"{per_day:.1f}" if days else None,
-            "demand": f"{demand.get(sort.id, 0.0):.0f}",
+            "demand": f"{demand.get(sort.id, 0.0):.0f}" if is_reordered else None,
+            "reordered": is_reordered,
             "configured": sort.id in configured,
         })
     unmapped = filament.unmapped_slots(db)
@@ -65,7 +68,7 @@ async def filament_list(request: Request):
         lambda key: translate(lang, key), len(rows),
         sum(int(r["stock"]) for r in rows if r["stock"] is not None) if known else None,
         sum(r["spools"] for r in rows if r["spools"] is not None) if known else None,
-        sum(1 for r in rows if not r["configured"]),
+        sum(1 for r in rows if r["reordered"] and not r["configured"]),  # only these get suggestions
     )
     return render(
         request, "filament_list.html", active_nav="filament", rows=rows, unmapped=unmapped, cards=cards,
@@ -83,7 +86,7 @@ def _settings_page(request: Request, sort: FilamentSort, values: dict[str, str],
 
 def _get_sort(db: Session, sort_id: int) -> FilamentSort:
     sort = db.get(FilamentSort, sort_id)
-    if sort is None:
+    if sort is None or sort.legacy:  # a sort of 0006 waits for its conversion and has no page
         raise HTTPException(status_code=404)
     return sort
 

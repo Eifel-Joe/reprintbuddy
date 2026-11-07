@@ -21,12 +21,12 @@
     {% for r in rows %}
       <tr>
         <td class="name">{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}<a href="/filament/{{ r.id }}">{{ r.label }}</a>
-          <span class="badges"><span class="badge tone-{{ 'ok' if r.configured else 'warn' }}">{{ t('filament.configured' if r.configured else 'filament.not_configured') }}</span></span></td>
+          <span class="badges">{% if r.reordered %}<span class="badge tone-{{ 'ok' if r.configured else 'warn' }}">{{ t('filament.configured' if r.configured else 'filament.not_configured') }}</span>{% else %}<span class="badge tone-neutral">{{ t('filament.not_reordered') }}</span>{% endif %}</span></td>
         <td>{{ r.material }}</td>
         <td class="num nowrap">{% if r.stock is not none %}{{ r.stock }} g{% else %}—{% endif %}</td>
         <td class="num nowrap">{% if r.spools is not none %}{{ r.spools }}{% else %}—{% endif %}</td>
         <td class="num{% if r.per_day is not none %} nowrap{% endif %}">{% if r.per_day is not none %}{{ r.per_day }} g{% else %}<span class="muted">{{ t('filament.no_history') }}</span>{% endif %}</td>
-        <td class="num nowrap">{{ r.demand }} g</td>
+        <td class="num nowrap">{% if r.demand is not none %}{{ r.demand }} g{% else %}—{% endif %}</td>
         <td class="actions-col">{% call ui.row_actions() -%}
           {{ ui.icon_button('pencil' if r.configured else 'settings', t('filament.edit_settings' if r.configured else 'filament.configure'), '/filament/' ~ r.id) }}
         {%- endcall %}</td>

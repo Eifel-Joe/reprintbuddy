@@ -1,265 +1,261 @@
-"""Which sort a spool belongs to: material, subtype and a similar colour, never the brand (Spec 9.1)."""
+"""Which spool sort a spool belongs to: brand, material, subtype and colour value, exactly (Spec 9.1).
 
-from datetime import datetime, timedelta
-from itertools import permutations
+Nothing is merged any more: two brands of the same colour are two spool sorts, and so are two
+colours a few delta E apart. Which sorts an article may use is ticked per slot (test_filament_groups).
+"""
+
+import dataclasses
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import func, select
 
-from factories import make_filament_settings, make_sort
+from factories import make_filament_settings, make_legacy_sort, make_snapshot, make_sort
 from reprintbuddy.bambuddy.fake import FakeBambuddy
-from reprintbuddy.domain import color, filament, reorder
-from reprintbuddy.models import FilamentSort, ReorderMark
+from reprintbuddy.domain import filament, reorder
+from reprintbuddy.models import FilamentSnapshot, FilamentSort, ReorderMark
 
-BLACK, NEAR_BLACK, ANTHRACITE = "#000000", "#1A1A1A", "#333333"  # 0 / 5.5 / 13.4 apart from black
-RED, DARK_RED = "#FF0000", "#B30000"  # 16 apart
+BLACK, NEAR_BLACK = "#000000", "#1A1A1A"  # 5.5 apart: similar, but not the same colour value
 NOW = datetime(2026, 11, 6, 12, 0)
+DAY = date(2026, 11, 6)
 
 
 def sort_count(s):
     return s.scalar(select(func.count()).select_from(FilamentSort))
 
 
-def test_similar_colours_form_one_sort_whatever_the_brand(db):
+# ---- key and label -----------------------------------------------------------------------------
+
+
+def test_key_and_label_carry_the_brand():
+    assert filament.sort_key("Brand A", "PLA", None, "#000000") == "brand a|pla||#000000"
+    assert filament.sort_key(" Brand A ", " pla ", " Matte", " #AABBCC ") == "brand a|pla|matte|#aabbcc"
+    assert filament.sort_key(None, "PLA", None, None) == "|pla||"
+    assert filament.sort_label("Brand A", "PLA", None, "Black", "#000000") == "Brand A PLA Black"
+    assert filament.sort_label("Brand A", "PLA", "Matte", None, "#000000") == "Brand A PLA Matte #000000"
+    assert filament.sort_label(None, "PLA", None, "  ", "#000000") == "PLA #000000"
+    assert filament.sort_label("Brand A", "PLA", "Matte", "matte", None) == "Brand A PLA Matte"
+
+
+def test_alpha_is_part_of_the_key():
+    opaque = filament.sort_key("Brand A", "PETG", None, "#000000")
+    clear = filament.sort_key("Brand A", "PETG", None, "#00000000")
+    half = filament.sort_key("Brand A", "PETG", None, "#00000080")
+    assert len({opaque, clear, half}) == 3
+    assert filament.sort_label("Brand A", "PETG", None, None, "#00000000") == "Brand A PETG transparent"
+    assert filament.sort_label("Brand A", "PETG", None, None, "#00000080") == "Brand A PETG #000000"
+
+
+def test_two_brands_of_one_colour_are_two_sorts(db):
     fake = FakeBambuddy()
-    a = fake.add_spool("PETG", brand="Brand One", color_hex=BLACK, color_name="Black")
-    b = fake.add_spool("PETG", brand="Brand Two", color_hex=NEAR_BLACK, color_name="Schwarz")
+    a = fake.add_spool("PETG", brand="Brand A", color_hex=BLACK, color_name="Black")
+    b = fake.add_spool("PETG", brand="Brand B", color_hex=BLACK, color_name="Black")
+    a2 = fake.add_spool("PETG", brand="brand a ", color_hex=BLACK)  # the same brand, written otherwise
     with db.begin() as s:
-        ids = filament.sync_sorts(s, [a, b])
-        assert ids[a.id] == ids[b.id] and sort_count(s) == 1
-        sort = s.get(FilamentSort, ids[a.id])
-        assert sort.color_hex == BLACK  # the anchor: colour of the lowest-id spool
-        assert sort.label == "PETG Black" and sort.color_name == "Black"  # name of the lowest-id spool with one
+        ids = filament.sync_sorts(s, [a, b, a2])
+        assert ids[a.id] == ids[a2.id] != ids[b.id] and sort_count(s) == 2
+        assert s.get(FilamentSort, ids[a.id]).label == "Brand A PETG Black"
+        assert s.get(FilamentSort, ids[b.id]).label == "Brand B PETG Black"
+        assert s.get(FilamentSort, ids[b.id]).brand == "Brand B"
 
 
-def test_spec_examples_apart(db):
+def test_similar_colours_are_not_merged(db):
+    fake = FakeBambuddy()
+    a = fake.add_spool("PLA", brand="Brand A", color_hex="#AABBCC")
+    b = fake.add_spool("PLA", brand="Brand A", color_hex="#ABBCCD")  # under 1 apart
+    c = fake.add_spool("PLA", brand="Brand A", color_hex="#aabbcc")  # the same value, other case
+    with db.begin() as s:
+        ids = filament.sync_sorts(s, [a, b, c])
+        assert ids[a.id] == ids[c.id] != ids[b.id] and sort_count(s) == 2
+
+
+def test_material_and_subtype_split(db):
     fake = FakeBambuddy()
     spools = [
-        fake.add_spool("PLA", color_hex=BLACK),
-        fake.add_spool("PLA", color_hex=ANTHRACITE),
-        fake.add_spool("PLA", color_hex=RED),
-        fake.add_spool("PLA", color_hex=DARK_RED),
+        fake.add_spool("PLA", brand="Brand A"),
+        fake.add_spool("PLA", brand="Brand A", subtype="Matte"),
+        fake.add_spool("PETG", brand="Brand A"),
+        fake.add_spool("pla", brand="Brand A"),  # the same material in other case
+        fake.add_spool("PLA", brand="Brand A", subtype=" matte "),
     ]
     with db.begin() as s:
-        assert len(set(filament.sync_sorts(s, spools).values())) == 4
+        ids = filament.sync_sorts(s, spools)
+        assert ids[spools[0].id] == ids[spools[3].id]
+        assert ids[spools[1].id] == ids[spools[4].id]
+        assert len(set(ids.values())) == 3
 
 
-def test_no_chain_effect_and_no_dependence_on_order(db):
-    """A~B and B~C but A not~C: the anchor is fixed, so C is a sort of its own, in every order."""
+def test_transparent_spools_keep_to_their_colour_value(db):
     fake = FakeBambuddy()
-    a = fake.add_spool("PLA", color_hex="#000000")
-    b = fake.add_spool("PLA", color_hex="#101010")
-    c = fake.add_spool("PLA", color_hex="#202020")
-    assert color.similar(a.color_hex, b.color_hex) and color.similar(b.color_hex, c.color_hex)
-    assert not color.similar(a.color_hex, c.color_hex)
-    results = set()
-    for order in permutations([a, b, c]):
-        with db.begin() as s:
-            s.query(FilamentSort).delete()
-        with db.begin() as s:
-            ids = filament.sync_sorts(s, list(order))
-            results.add((ids[a.id] == ids[b.id], ids[b.id] == ids[c.id], ids[a.id] == ids[c.id]))
-    assert results == {(True, False, False)}  # A and B together, C apart, whatever the list order
-
-
-def test_a_second_call_gives_the_same_answer(db):
-    """X is within 7 of anchor A, but nearer to anchor B, which a later spool creates: the first call
-    already puts X to B, so a second call (and `resolve_sorts`) change nothing."""
-    fake = FakeBambuddy()
-    a = fake.add_spool("PLA", color_hex="#000000")
-    x = fake.add_spool("PLA", color_hex="#1D1D1D")  # 6.5 from A
-    y = fake.add_spool("PLA", color_hex="#262626")  # 9.3 from A, 2.8 from X
-    assert color.similar(a.color_hex, x.color_hex) and not color.similar(a.color_hex, y.color_hex)
-    assert color.delta_e(x.color_hex, y.color_hex) < color.delta_e(x.color_hex, a.color_hex)
-    spools = [a, x, y]
+    black = fake.add_spool("PETG", brand="Brand A", color_hex="#000000")
+    clear = fake.add_spool("PETG", brand="Brand A", color_hex="#00000000")
+    clear_again = fake.add_spool("PETG", brand="Brand A", color_hex="#00000000")
+    half = fake.add_spool("PETG", brand="Brand A", color_hex="#00000080")
     with db.begin() as s:
-        first = filament.sync_sorts(s, spools)
-    with db.begin() as s:
-        assert filament.sync_sorts(s, spools) == first
-        assert filament.resolve_sorts(s, spools) == first
-        assert sort_count(s) == 2
-    assert first[a.id] != first[x.id] and first[x.id] == first[y.id]
-
-
-def test_a_spool_goes_to_the_nearest_anchor(db):
-    fake = FakeBambuddy()
-    with db.begin() as s:
-        far = make_sort(s, color_hex="#000000", color_name="Far")
-        near = make_sort(s, color_hex="#101010", color_name="Near")
-        spool = fake.add_spool("PLA", color_hex="#0C0C0C")  # within 7 of both, nearer to #101010
-        assert color.delta_e("#0C0C0C", "#101010") < color.delta_e("#0C0C0C", "#000000") <= color.SIMILAR
-        assert filament.sync_sorts(s, [spool])[spool.id] == near.id
-        assert near.id != far.id and sort_count(s) == 2
-
-
-def test_anchor_does_not_move_when_the_spool_set_changes(db):
-    fake = FakeBambuddy()
-    first = fake.add_spool("PLA", color_hex="#000000")
-    second = fake.add_spool("PLA", color_hex="#101010")
-    with db.begin() as s:
-        ids = filament.sync_sorts(s, [first, second])
-        sort_id = ids[first.id]
-    with db.begin() as s:  # the first spool is gone (archived): the sort and its anchor stay
-        ids = filament.sync_sorts(s, [second])
-        assert ids[second.id] == sort_id
-        assert s.get(FilamentSort, sort_id).color_hex == "#000000" and sort_count(s) == 1
-
-
-def test_a_new_spool_joins_an_existing_sort_in_the_next_call(db):
-    fake = FakeBambuddy()
-    a = fake.add_spool("PLA", color_hex=BLACK, color_name="Black")
-    with db.begin() as s:
-        first = filament.sync_sorts(s, [a])[a.id]
-    b = fake.add_spool("PLA", brand="Other Brand", color_hex=NEAR_BLACK)
-    with db.begin() as s:
-        assert filament.sync_sorts(s, [a, b])[b.id] == first and sort_count(s) == 1
+        ids = filament.sync_sorts(s, [black, clear, clear_again, half])
+        assert ids[clear.id] == ids[clear_again.id]
+        assert len({ids[black.id], ids[clear.id], ids[half.id]}) == 3
+        assert s.get(FilamentSort, ids[clear.id]).label == "Brand A PETG transparent"
 
 
 def test_spools_without_a_colour(db):
     fake = FakeBambuddy()
-    none1 = fake.add_spool("PLA", color_hex=None, color_name="Natural")
-    none2 = fake.add_spool("PLA", color_hex=None)
-    blank = fake.add_spool("PLA", color_hex="")
-    black = fake.add_spool("PLA", color_hex=BLACK)
-    word = fake.add_spool("PLA", color_hex="Natural")
-    other_word = fake.add_spool("PLA", color_hex="Clear")
+    none1 = fake.add_spool("PLA", brand="Brand A", color_hex=None, color_name="Natural")
+    none2 = fake.add_spool("PLA", brand="Brand A", color_hex=None)
+    black = fake.add_spool("PLA", brand="Brand A", color_hex=BLACK)
     with db.begin() as s:
-        ids = filament.sync_sorts(s, [none1, none2, blank, black, word, other_word])
-        assert ids[none1.id] == ids[none2.id] == ids[blank.id]  # no colour at all: one sort
-        assert len({ids[none1.id], ids[black.id], ids[word.id], ids[other_word.id]}) == 4
-        assert s.get(FilamentSort, ids[none1.id]).label == "PLA Natural"
+        ids = filament.sync_sorts(s, [none1, none2, black])
+        assert ids[none1.id] == ids[none2.id] != ids[black.id]
+        assert s.get(FilamentSort, ids[none1.id]).label == "Brand A PLA Natural"
 
 
-def test_label_shows_the_colour_as_hash_rrggbb(db):
+def test_colour_name_is_not_in_the_key_and_follows_the_lowest_named_spool(db):
     fake = FakeBambuddy()
-    a = fake.add_spool("PETG", color_hex="000000FF")  # no hash, with an alpha part
+    a = fake.add_spool("PLA", brand="Brand A", color_name="Black")
+    b = fake.add_spool("PLA", brand="Brand A", color_name="Jet")
     with db.begin() as s:
-        ids = filament.sync_sorts(s, [a])
+        ids = filament.sync_sorts(s, [b, a])
+        assert ids[a.id] == ids[b.id] and sort_count(s) == 1
         sort = s.get(FilamentSort, ids[a.id])
-        assert sort.label == "PETG #000000" and sort.color_hex == "000000FF"  # the anchor stays as read
+        assert (sort.color_name, sort.label) == ("Black", "Brand A PLA Black")
 
 
-def test_transparent_spools_form_one_sort_apart_from_every_opaque_colour(db):  #
+def test_an_unnamed_spool_never_erases_a_known_name(db):
     fake = FakeBambuddy()
-    black = fake.add_spool("PETG", color_hex="000000")
-    clear_a = fake.add_spool("PETG", color_hex="00000000")
-    clear_b = fake.add_spool("PETG", color_hex="FFFFFF00", brand="Other Brand")  # its RGB does not matter
-    clear_other = fake.add_spool("PETG", subtype="HF", color_hex="00000000")
-    with db.begin() as s:
-        ids = filament.sync_sorts(s, [black, clear_a, clear_b, clear_other])
-        assert ids[clear_a.id] == ids[clear_b.id] != ids[black.id]
-        assert ids[clear_other.id] not in (ids[clear_a.id], ids[black.id])  # another subtype
-        assert s.get(FilamentSort, ids[clear_a.id]).label == "PETG transparent"
-        assert s.get(FilamentSort, ids[black.id]).label == "PETG #000000"
+    named = fake.add_spool("PLA", brand="Brand A", color_name="Black")
+    unnamed = fake.add_spool("PLA", brand="Brand A")
+    for spools in ([named, unnamed], [unnamed, named], [unnamed]):  # the named one may be gone
+        with db.begin() as s:
+            ids = filament.sync_sorts(s, spools)
+            sort = s.get(FilamentSort, ids[unnamed.id])
+            assert (sort.label, sort.color_name) == ("Brand A PLA Black", "Black")
 
 
-def test_transparent_second_call_and_resolve_agree(db):
+def test_a_second_call_and_resolve_agree(db):
     fake = FakeBambuddy()
-    spools = [fake.add_spool("PETG", color_hex=h) for h in ("00000000", "000000", "FFFFFF00", "1A1A1A")]
+    spools = [
+        fake.add_spool("PLA", brand="Brand A", color_hex=h) for h in ("#000000", "#1A1A1A", "#00000000")
+    ] + [fake.add_spool("PLA", brand="Brand B")]
     with db.begin() as s:
         first = filament.sync_sorts(s, spools)
     with db.begin() as s:
         assert filament.sync_sorts(s, spools) == first == filament.resolve_sorts(s, spools)
-        assert sort_count(s) == 2
+        assert sort_count(s) == 4
 
 
-def test_partly_transparent_spools_keep_to_their_alpha(db):
+def test_resolve_sorts_writes_nothing(db):
     fake = FakeBambuddy()
-    half_a = fake.add_spool("PETG", color_hex="#00000080")
-    half_b = fake.add_spool("PETG", color_hex="#1A1A1A80")
-    other = fake.add_spool("PETG", color_hex="#00000081")
-    solid = fake.add_spool("PETG", color_hex="#000000")
-    clear = fake.add_spool("PETG", color_hex="#00000000")
+    a = fake.add_spool("PLA", brand="Brand A")
+    b = fake.add_spool("PLA", brand="Brand B")
     with db.begin() as s:
-        ids = filament.sync_sorts(s, [half_a, half_b, other, solid, clear])
-        assert ids[half_a.id] == ids[half_b.id]
-        assert len({ids[half_a.id], ids[other.id], ids[solid.id], ids[clear.id]}) == 4
-
-
-def test_a_named_transparent_sort_shows_its_name(db):
-    fake = FakeBambuddy()
-    spool = fake.add_spool("PETG", color_hex="00000000", color_name="Clear")
-    with db.begin() as s:
-        ids = filament.sync_sorts(s, [spool])
-        assert s.get(FilamentSort, ids[spool.id]).label == "PETG Clear"
-
-
-def test_a_fully_opaque_alpha_changes_nothing(db):
-    fake = FakeBambuddy()
-    a = fake.add_spool("PLA", color_hex="#000000FF")
-    b = fake.add_spool("PLA", color_hex="#000000")
-    with db.begin() as s:
-        ids = filament.sync_sorts(s, [a, b])
-        assert ids[a.id] == ids[b.id]
-
-
-def test_resolve_sorts_reads_only(db):
-    fake = FakeBambuddy()
-    a = fake.add_spool("PLA", color_hex=BLACK)
-    b = fake.add_spool("PLA", color_hex=NEAR_BLACK, brand="Other Brand")
-    c = fake.add_spool("PETG", color_hex=BLACK)
-    with db.begin() as s:
-        assert filament.resolve_sorts(s, [a, b, c]) == {a.id: None, b.id: None, c.id: None}
+        assert filament.resolve_sorts(s, [a, b]) == {a.id: None, b.id: None}
         assert sort_count(s) == 0
         sort_id = filament.sync_sorts(s, [a])[a.id]
-        assert filament.resolve_sorts(s, [a, b, c]) == {a.id: sort_id, b.id: sort_id, c.id: None}
+        assert filament.resolve_sorts(s, [a, b]) == {a.id: sort_id, b.id: None}
+        assert sort_count(s) == 1
 
 
-def test_unnamed_spool_never_erases_a_known_name(db):
+def test_a_spool_never_lands_on_a_legacy_sort(db):
     fake = FakeBambuddy()
-    named = fake.add_spool("PLA", color_name="Black")
-    unnamed = fake.add_spool("PLA", brand="Other Brand")
-    for order in ([named, unnamed], [unnamed, named]):
-        with db.begin() as s:
-            ids = filament.sync_sorts(s, order)
-            sort = s.get(FilamentSort, ids[named.id])
-            assert (sort.label, sort.color_name) == ("PLA Black", "Black")
+    with db.begin() as s:
+        old = make_legacy_sort(s)
+        spool = fake.add_spool("PLA", brand=None, color_hex="#000000")
+        assert filament.resolve_sorts(s, [spool]) == {spool.id: None}
+        sort_id = filament.sync_sorts(s, [spool])[spool.id]
+        assert sort_id != old.id and not s.get(FilamentSort, sort_id).legacy
 
 
-def test_stock_adds_up_over_brands(db):
+# ---- stock -------------------------------------------------------------------------------------
+
+
+def test_stock_counts_each_brand_apart(db):
     fake = FakeBambuddy()
     spools = [
-        fake.add_spool("PETG", brand="Brand One", remaining_g=400.0),
-        fake.add_spool("PETG", brand="Brand Two", color_hex=NEAR_BLACK, remaining_g=250.0),
+        fake.add_spool("PETG", brand="Brand A", remaining_g=400.0),
+        fake.add_spool("PETG", brand="Brand A", remaining_g=100.0),
+        fake.add_spool("PETG", brand="Brand B", remaining_g=250.0),
     ]
     with db.begin() as s:
-        (entry,) = filament.stock_by_sort(s, spools).values()
-        assert (entry.stock_g, entry.spools, entry.label) == (650.0, 2, "PETG #000000")
+        stock = filament.stock_by_sort(s, spools)
+        assert sorted((e.label, e.stock_g, e.spools) for e in stock.values()) == [
+            ("Brand A PETG #000000", 500.0, 2),
+            ("Brand B PETG #000000", 250.0, 1),
+        ]
 
 
-def test_snapshot_rows_of_two_brands_belong_to_one_sort(db):
+# ---- the daily rows follow the spool -----------------------------------------------------------
+
+
+def test_daily_rows_follow_the_spool_to_its_sort_also_earlier_days(db):
+    """A spool whose brand is corrected in Bambuddy takes its whole history to its new sort."""
     fake = FakeBambuddy()
-    spools = [fake.add_spool("PETG", brand="Brand One"), fake.add_spool("PETG", brand="Brand Two")]
+    spool = fake.add_spool("PLA", brand="Brand A", remaining_g=800.0)
+    other = fake.add_spool("PLA", brand="Brand A", remaining_g=500.0)
     with db.begin() as s:
-        filament.record_snapshot(s, spools, NOW.date())
+        filament.record_snapshot(s, [spool, other], DAY - timedelta(days=2))
+        filament.record_snapshot(s, [spool, other], DAY - timedelta(days=1))
+        old_id = filament.resolve_sorts(s, [spool])[spool.id]
+    moved = dataclasses.replace(spool, brand="Brand B")  # the same spool, its brand corrected
     with db.begin() as s:
+        new_id = filament.sync_sorts(s, [moved, other])[spool.id]
+        assert new_id != old_id
+        rows = s.scalars(select(FilamentSnapshot).where(FilamentSnapshot.spool_id == spool.id)).all()
+        assert len(rows) == 2 and {r.spool_filament_id for r in rows} == {new_id}
+        rest = s.scalars(select(FilamentSnapshot).where(FilamentSnapshot.spool_id == other.id)).all()
+        assert {r.spool_filament_id for r in rest} == {old_id}  # the other spool stays
+        assert filament.consumption(s, new_id, DAY) == (0.0, 1)  # its history counts for the new sort
+
+
+def test_rows_of_a_spool_not_listed_stay(db):
+    with db.begin() as s:
+        sort = make_sort(s)
+        make_snapshot(s, DAY, 99, sort.id, 300.0)
+        fake = FakeBambuddy()
+        filament.sync_sorts(s, [fake.add_spool("PLA", brand="Brand B")])
+        assert s.scalar(select(FilamentSnapshot.spool_filament_id)) == sort.id
+
+
+def test_rows_of_a_legacy_sort_count_for_nothing(db):
+    with db.begin() as s:
+        old = make_legacy_sort(s)
+        sort = make_sort(s)
+        make_snapshot(s, DAY, 1, old.id, 700.0)
+        make_snapshot(s, DAY, 2, sort.id, 300.0)
         stock, day = filament.stock_from_snapshots(s)
-        (entry,) = stock.values()
-        assert (day, entry.spools) == (NOW.date(), 2)
+        assert day == DAY and list(stock) == [sort.id] and stock[sort.id].stock_g == 300.0
+        known, _ = filament.known_sorts(s, None)
+        assert old.id not in known and known[sort.id].stock_g == 300.0
 
 
-def _ordered_sort(db, fake, old):
+# ---- an "ordered" mark closes only with spools of its own spool sort (Spec 9.4) -----------------
+
+
+def _ordered(db, old):
     with db.begin() as s:
-        filament.sync_sorts(s, [old])
-        sort = s.query(FilamentSort).one()
-        make_filament_settings(s, sort.id, pack_grams=1000)
-        mark = reorder.mark_ordered(s, "filament", sort.id, 1)
+        sort_id = filament.sync_sorts(s, [old])[old.id]
+        make_filament_settings(s, sort_id, pack_grams=1000)
+        mark = reorder.mark_ordered(s, "filament", sort_id, 1)
         mark.marked_at = NOW - timedelta(days=1)
 
 
-def test_filament_mark_closes_with_a_spool_of_another_brand(db):
+def test_filament_mark_not_closed_by_another_brand_of_the_same_colour(db):
     fake = FakeBambuddy()
-    old = fake.add_spool("PETG", brand="Brand One", created_at=NOW - timedelta(days=9))
-    _ordered_sort(db, fake, old)
-    new = fake.add_spool("PETG", brand="Brand Two", color_hex=NEAR_BLACK, created_at=NOW - timedelta(hours=2))
+    old = fake.add_spool("PETG", brand="Brand A", created_at=NOW - timedelta(days=9))
+    _ordered(db, old)
+    other = fake.add_spool("PETG", brand="Brand B", created_at=NOW - timedelta(hours=2))
     with db.begin() as s:
-        assert reorder.close_arrived_marks(s, [old, new], NOW) == 1
+        assert reorder.close_arrived_marks(s, [old, other], NOW) == 0
+        assert s.query(ReorderMark).one().received_at is None
+    same = fake.add_spool("PETG", brand="Brand A", created_at=NOW - timedelta(hours=1))
+    with db.begin() as s:
+        filament.sync_sorts(s, [old, other, same])
+        assert reorder.close_arrived_marks(s, [old, other, same], NOW) == 1
         assert s.query(ReorderMark).one().received_at == NOW
 
 
-def test_filament_mark_not_closed_by_another_colour(db):
+def test_filament_mark_not_closed_by_a_similar_colour(db):
     fake = FakeBambuddy()
-    old = fake.add_spool("PETG", created_at=NOW - timedelta(days=9))
-    _ordered_sort(db, fake, old)
-    other = fake.add_spool("PETG", color_hex=RED, created_at=NOW - timedelta(hours=2))
+    old = fake.add_spool("PETG", brand="Brand A", created_at=NOW - timedelta(days=9))
+    _ordered(db, old)
+    near = fake.add_spool("PETG", brand="Brand A", color_hex=NEAR_BLACK, created_at=NOW - timedelta(hours=2))
     with db.begin() as s:
-        assert reorder.close_arrived_marks(s, [old, other], NOW) == 0
+        assert reorder.close_arrived_marks(s, [old, near], NOW) == 0

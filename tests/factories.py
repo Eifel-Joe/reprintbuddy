@@ -12,6 +12,7 @@ from reprintbuddy.domain import filament
 from reprintbuddy.models import (
     Article,
     ArticleFilament,
+    ArticleFilamentSort,
     Dispatch,
     FilamentSettings,
     FilamentSnapshot,
@@ -113,18 +114,45 @@ def make_sort(
     color_hex: str | None = "#000000",
     subtype: str | None = None,
     color_name: str | None = "Black",
+    brand: str | None = "Example Brand",  # the default brand of a fake spool: same key
 ) -> FilamentSort:
-    """A filament sort with key and label from `domain/filament.py` (one place for the rules)."""
+    """A spool sort with key and label from `domain/filament.py` (one place for the rules)."""
     sort = FilamentSort(
-        sort_key=filament.sort_key(material, subtype, color_hex),
+        sort_key=filament.sort_key(brand, material, subtype, color_hex),
+        brand=brand,
+        material=material,
+        subtype=subtype,
+        color_hex=color_hex,
+        color_name=color_name,
+        label=filament.sort_label(brand, material, subtype, color_name, color_hex),
+    )
+    s.add(sort)
+    s.flush()
+    return sort
+
+
+def make_legacy_sort(
+    s: Session,
+    *,
+    material: str = "PLA",
+    color_hex: str | None = "#000000",
+    subtype: str | None = None,
+    color_name: str | None = "Black",
+) -> FilamentSort:
+    """A brandless sort of 0006 as migration 0007 leaves it: `legacy`, key `legacy:<id>`."""
+    sort = FilamentSort(
+        sort_key=f"legacy:{uuid.uuid4().hex}",
+        legacy=True,
         brand=None,
         material=material,
         subtype=subtype,
         color_hex=color_hex,
         color_name=color_name,
-        label=filament.sort_label(material, subtype, color_name, color_hex),
+        label=filament.sort_label(None, material, subtype, color_name, color_hex),
     )
     s.add(sort)
+    s.flush()
+    sort.sort_key = f"legacy:{sort.id}"
     s.flush()
     return sort
 
@@ -148,11 +176,21 @@ def make_filament_settings(s: Session, sort_id: int, **fields) -> FilamentSettin
     return settings
 
 
+def tick_sorts(s: Session, article_id: int, slot: int, *sorts: FilamentSort, reordered: FilamentSort | None = None) -> None:
+    """Tick `sorts` for one slot of an article; the first is reordered unless `reordered` names one."""
+    chosen = reordered if reordered is not None else (sorts[0] if sorts else None)
+    for sort in sorts:
+        s.add(ArticleFilamentSort(article_id=article_id, slot=slot, sort_id=sort.id, reordered=sort is chosen))
+    s.flush()
+
+
 def assign_sort(s: Session, sort: FilamentSort, *, name: str = "Assigned article", archived: bool = False,
-                **fields) -> Article:
-    """An article with one slot assigned to `sort` (the filament page lists only such sorts, p46)."""
+                grams: float = 10.0, **fields) -> Article:
+    """An article with one slot (material and colour of `sort`) where `sort` is ticked and reordered."""
     article = make_article(s, name=name, **fields)
-    s.add(ArticleFilament(article_id=article.id, slot=1, grams=10.0, spool_filament_id=sort.id))
+    s.add(ArticleFilament(article_id=article.id, slot=1, grams=grams, material=sort.material, color_hex=sort.color_hex))
+    s.flush()
+    tick_sorts(s, article.id, 1, sort)
     if archived:
         article.archived_at = utcnow()
     s.flush()

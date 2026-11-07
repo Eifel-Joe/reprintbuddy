@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import filament, reorder
+from reprintbuddy.domain import reorder
 from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
 from reprintbuddy.models import utcnow
 from reprintbuddy.web import kpis
@@ -34,12 +34,13 @@ async def _page(
     lang = current_language(request)
     now = utcnow()
     with write_transaction(request) as tx:
-        # Closing arrived marks is the page's one write; a part receipt booked while Bambuddy
-        # was down still ends "on its way" (controller ruling R7).
-        sorts, day = filament.known_sorts(tx, spools)
-        reorder.close_arrived_marks(tx, spools, now)
+        # Entering new spool sorts and closing arrived marks are the page's writes; a part receipt
+        # booked while Bambuddy was down still ends "on its way" (controller ruling R7). The key
+        # figure of the overview counts with the same function (p64).
+        state = reorder.current(tx, spools, now)
+    sorts, day = state.sorts, state.day
     rows = []
-    for sug in reorder.suggestions(db, sorts=sorts, today=now.date()):
+    for sug in state.suggestions:
         entry = sorts.get(sug.item_id) if sorts is not None and sug.item_type == "filament" else None
         swatch = entry.color_hex if entry is not None else None
         total = sug.packs * sug.pack_size
@@ -47,7 +48,7 @@ async def _page(
             "item_type": sug.item_type, "item_id": sug.item_id, "label": sug.label,
             "swatch": swatch if swatch and COLOR.fullmatch(swatch) else None,
             "stock": _number(sug.stock), "demand": _number(sug.demand),
-            "per_day": f"{sug.per_day:.1f}",
+            "per_day": f"{sug.per_day:.1f}" if sug.has_history else None,  # p59: no "0.0 g/day" without history
             "packs_value": typed[2] if typed and typed[:2] == (sug.item_type, str(sug.item_id)) else sug.packs, "lead_days": sug.lead_days,
             "safety": _number(sug.safety), "packs": sug.packs, "size": _number(sug.pack_size),
             "total": _number(total),

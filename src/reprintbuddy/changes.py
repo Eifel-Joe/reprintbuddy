@@ -30,6 +30,7 @@ from sqlalchemy.orm import ORMExecuteState, Session, sessionmaker
 from reprintbuddy.models import (
     Article,
     ArticleFilament,
+    ArticleFilamentSort,
     ArticlePart,
     Dispatch,
     FilamentSettings,
@@ -62,6 +63,7 @@ IGNORED: frozenset[type] = frozenset({User, LoginSession, FormToken})
 _KIND: dict[type, str] = {
     Article: "article",
     ArticleFilament: "article",
+    ArticleFilamentSort: "article",
     ArticlePart: "article",
     Part: "part",
     ProductSet: "set",
@@ -140,6 +142,9 @@ def topics_of(obj: object, change: Change) -> set[str]:
         return topics
     if cls in (ArticleFilament, ArticlePart):
         return {"article", f"article:{obj.article_id}", f"article-settings:{obj.article_id}"}
+    if cls is ArticleFilamentSort:
+        # The filament page lists the ticked spool sorts (Spec 9.3).
+        return {"article", f"article:{obj.article_id}", f"article-settings:{obj.article_id}", "filament"}
     if cls is FilamentSettings:
         # The settings form of a sort watches only its own settings; the heartbeat writes
         # day rows of other tables, which must not tell an open form that it changed.

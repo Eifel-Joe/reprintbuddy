@@ -20,13 +20,14 @@ from sqlalchemy.orm import Session
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
 from reprintbuddy.domain import catalog, filament, pauses, workqueue
+from reprintbuddy.domain import color as color_mod
 from reprintbuddy.domain.catalog import ArticleInput, TargetOption
 from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.domain import stock as stock_mod
 from reprintbuddy.models import (
-    Article, ArticleFilament, ArticlePart, Dispatch, FilamentSort, Part, WorkQueueEntry,
+    Article, ArticleFilament, ArticleFilamentSort, ArticlePart, Dispatch, FilamentSort, Part, WorkQueueEntry,
 )
 from reprintbuddy.web import kpis, listing
 from reprintbuddy.web import qr as qr_view
@@ -44,6 +45,7 @@ from reprintbuddy.web.forms import (
     saved_redirect,
 )
 from reprintbuddy.web.flash import flash
+from reprintbuddy.web.formatting import format_date
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
 from reprintbuddy.web.filament_view import BAMBUDDY_ERRORS, COLOR, spools_or_none
 from reprintbuddy.web.journal_view import journal_rows
@@ -567,13 +569,20 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
     filaments = db.scalars(
         select(ArticleFilament).where(ArticleFilament.article_id == article_id).order_by(ArticleFilament.slot)
     ).all()
-    sort_labels = dict(
-        db.execute(
-            select(FilamentSort.id, FilamentSort.label).where(
-                FilamentSort.id.in_([f.spool_filament_id for f in filaments if f.spool_filament_id is not None])
-            )
-        ).all()
-    )
+    ticked: dict[int, list[ArticleFilamentSort]] = {}
+    for row in db.scalars(select(ArticleFilamentSort).where(ArticleFilamentSort.article_id == article_id)):
+        ticked.setdefault(row.slot, []).append(row)
+    sort_labels = dict(db.execute(select(FilamentSort.id, FilamentSort.label)).all())
+
+    def uses(slot: int) -> str | None:
+        """The reordered spool sort of a slot, with how many more are ticked; None: nothing ticked."""
+        rows = ticked.get(slot, [])
+        reordered = next((r.sort_id for r in rows if r.reordered), None)
+        if reordered is None:
+            return None
+        label = sort_labels.get(reordered, str(reordered))
+        more = len(rows) - 1
+        return translate(lang, "filament.and_more", label=label, n=more) if more else label
     parts = db.execute(
         select(Part.name, ArticlePart.qty_per_unit, Part.unit)
         .join(ArticlePart, ArticlePart.part_id == Part.id)
@@ -617,7 +626,7 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         target_label=_target_label(lang, article),
         filaments=[
             _requirement_row(FilamentRequirement(f.slot, f.grams, f.material, f.color_hex))
-            | {"sort": sort_labels.get(f.spool_filament_id)}
+            | {"sort": uses(f.slot)}
             for f in filaments
         ],
         parts=parts,
@@ -718,53 +727,75 @@ async def article_update(request: Request, article_id: int, db: Session = Depend
     return saved_redirect(request, f"/articles/{article_id}", "articles.saved", name=data.name)
 
 
-# ---- filament sort of each slot (Spec 5.2) -----------------------------------------------------
+# ---- the filament group of each slot (Spec 5.2, 9.1) -------------------------------------------
 
-_SLOT_FIELD = re.compile(r"slot_([0-9]{1,9})", re.ASCII)
+_Typed = Mapping[int, tuple[set[str], str]]
 
 
-def _filament_page(request: Request, spools, article_id: int, typed: Mapping[int, str] | None = None,
+def _choice(sort: FilamentSort, stock: filament.SortStock | None, known: bool) -> dict[str, object]:
+    """One spool sort to tick: brand, subtype, colour and stock (Spec 9.1)."""
+    name = (sort.color_name or "").strip()
+    value = color_mod.display_hex(sort.color_hex)
+    return {
+        "id": str(sort.id),
+        "brand": sort.brand or "",
+        "subtype": sort.subtype or "",
+        "color": name or value,
+        "value": value if name else "",  # shown when two choices of a slot read alike
+        "swatch": sort.color_hex if sort.color_hex and COLOR.fullmatch(sort.color_hex) else None,
+        "stock": f"{stock.stock_g:.0f}" if known and stock is not None else None,
+    }
+
+
+def _tell_apart(choices: list[dict[str, object]]) -> None:
+    """Brand, subtype and colour name alike: the row and its radio name the colour value too."""
+    seen = Counter((c["brand"], c["subtype"], c["color"]) for c in choices)
+    for c in choices:
+        c["show_value"] = bool(c["value"]) and seen[(c["brand"], c["subtype"], c["color"])] > 1
+        words = [c["brand"], c["subtype"], c["color"], c["value"] if c["show_value"] else ""]
+        c["name"] = " ".join(str(w) for w in words if w)
+
+
+def _filament_page(request: Request, spools, article_id: int, typed: _Typed | None = None,
                    error: str | None = None, status: int = 200):
-    """The mapping form. Reads (and enters new sorts, Entscheidung 4) in one write transaction;
-    `typed` holds the values of a rejected submission, which stay as they were."""
+    """The form to tick the spool sorts of each slot. Reads (and enters new spool sorts, Entscheidung 4)
+    in one write transaction; `typed` holds what a rejected submission ticked, which stays as it was."""
     lang = current_language(request)
     with write_transaction(request) as tx:
         article = tx.get(Article, article_id)
         if article is None:
             raise HTTPException(status_code=404)
         sorts, day = filament.known_sorts(tx, spools)
-        rows = filament.slot_rows(tx, article_id, sorts or {})
-        labels = dict(tx.execute(select(FilamentSort.id, FilamentSort.label)).all())
+        groups = filament.slot_groups(tx, article_id)
+        by_id = {s.id: s for s in tx.scalars(select(FilamentSort))}
         name, archived = article.name, article.archived_at is not None
-    slots = []
-    for r in rows:
-        if sorts is None:  # unknown stock: only "none" and the saved sort, so saving loses nothing
-            ids = [r.mapped] if r.mapped is not None else []
-        else:
-            ids = sorted(sorts, key=lambda i: sorts[i].label.casefold())
-            if r.mapped is not None and r.mapped not in sorts:
-                ids.append(r.mapped)
-        if typed is not None and r.slot in typed:
-            chosen = typed[r.slot]
-        else:
-            fallback = r.mapped if r.mapped is not None else r.suggested
-            chosen = str(fallback) if fallback is not None else ""
-        slots.append({
-            "slot": r.slot,
-            "grams": f"{r.grams:.1f}",
-            "material": r.material or "",
-            "color": r.color_hex or "",
-            "swatch": r.color_hex if r.color_hex and COLOR.fullmatch(r.color_hex) else None,
-            "options": [(str(i), labels.get(i, str(i)), str(i) == chosen) for i in ids],
-            "none_selected": chosen == "",
-            "is_suggestion": r.mapped is None and r.suggested is not None and chosen == str(r.suggested),
-        })
+        slots = []
+        for g in groups:
+            if typed is not None and g.slot in typed:
+                ticked, reordered = typed[g.slot]
+            else:
+                ticked = {str(i) for i in g.ticked}
+                reordered = str(g.reordered) if g.reordered is not None else ""
+            choices = [
+                _choice(by_id[i], (sorts or {}).get(i), sorts is not None)
+                | {"ticked": str(i) in ticked, "reordered": str(i) == reordered}
+                for i in g.choices
+            ]
+            _tell_apart(choices)
+            slots.append({
+                "slot": g.slot,
+                "grams": f"{g.grams:.1f}",
+                "material": g.material or "",
+                "color": color_mod.display_hex(g.color_hex) if g.color_hex else "",
+                "swatch": g.color_hex if g.color_hex and COLOR.fullmatch(g.color_hex) else None,
+                "choices": choices,
+            })
     if archived and error is None:
         error = translate(lang, "articles.edit_archived")
     return render(
         request, "article_filaments.html", status_code=status, active_nav="articles",
         article_id=article_id, article_name=name, slots=slots, sorts_unknown=sorts is None,
-        stock_day=day, read_only=archived, error=error,
+        stale_day=format_date(day, lang) if day else None, read_only=archived, error=error,
     )
 
 
@@ -777,28 +808,36 @@ async def article_filaments(request: Request, article_id: int, db: Session = Dep
 
 @router.post("/articles/{article_id:int}/filaments", dependencies=[Depends(verify_csrf)])
 async def article_filaments_save(request: Request, article_id: int, db: Session = Depends(get_db)):
+    """One `slot` field per slot of the form, `tick_<slot>` per ticked spool sort, `reorder_<slot>`
+    for the reordered one. A slot named without ticks is cleared; slots not named stay."""
     _get_article(db, article_id)
     form = await request.form()
-    typed: dict[int, str] = {}
-    for key, value in form.multi_items():
-        m = _SLOT_FIELD.fullmatch(key)
-        if m and isinstance(value, str):
-            typed[int(m.group(1))] = value
+    typed: dict[int, tuple[set[str], str]] = {}
     lang = current_language(request)
     try:
-        mapping: dict[int, int | None] = {}
-        for slot, raw in typed.items():
-            if raw == "":
-                mapping[slot] = None
-            elif (sort_id := bounded_int(raw)) is None:
-                raise ValidationError("filament.invalid_sort")
-            else:
-                mapping[slot] = sort_id
+        groups: dict[int, tuple[set[int], int | None]] = {}
+        for raw_slot in form.getlist("slot"):
+            slot = bounded_int(str(raw_slot))
+            if slot is None:
+                raise ValidationError("filament.unknown_slot")
+            ticks = [str(v) for v in form.getlist(f"tick_{slot}")]
+            reorder_raw = str(form.get(f"reorder_{slot}", ""))
+            typed[slot] = (set(ticks), reorder_raw)
+            ticked = set()
+            for raw in ticks:
+                if (sort_id := bounded_int(raw)) is None:
+                    raise ValidationError("filament.invalid_sort")
+                ticked.add(sort_id)
+            reordered = bounded_int(reorder_raw) if reorder_raw else None
+            if reorder_raw and reordered is None:
+                raise ValidationError("filament.reordered_not_ticked")
+            groups[slot] = (ticked, reordered)
         with write_transaction(request) as tx:
-            filament.set_mapping(tx, article_id, mapping)
+            filament.set_groups(tx, article_id, groups)
     except DomainError as exc:
         spools = await spools_or_none(request)  # only to show the form again, outside the write transaction
-        return _filament_page(request, spools, article_id, typed, error_text(lang, exc), error_status(exc))
+        known = {k: v for k, v in typed.items()}
+        return _filament_page(request, spools, article_id, known, error_text(lang, exc), error_status(exc))
     return saved_redirect(request, f"/articles/{article_id}", "filament.mapping_saved")
 
 
