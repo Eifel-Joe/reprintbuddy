@@ -238,6 +238,7 @@ async def save_automation(request: Request, db: Session = Depends(get_db)):
         except ValueError:  # also not a number at all
             return _page(request, db, f"settings.invalid_{name}", "automation", **flags, **numbers)
 
+    old_poll_minutes = int(st.get_setting(db, "poll_minutes"))
     # One transaction: all five or none.
     with write_transaction(request) as session:
         st.set_setting(session, "automation", flags["automation"], commit=False)
@@ -245,5 +246,9 @@ async def save_automation(request: Request, db: Session = Depends(get_db)):
         st.set_setting(session, "queue_cap", checked["queue_cap"], commit=False)
         st.set_setting(session, "insert_next", flags["insert_next"], commit=False)
         st.set_setting(session, "poll_minutes", checked["poll_minutes"], commit=False)
+    if checked["poll_minutes"] != old_poll_minutes:
+        # The loop waits for the next poll with the old interval; a regular tick now reads
+        # the new one (a shorter interval would otherwise wait for the old one to end).
+        request.app.state.ticker.request_poll()
     flash(request, "settings.saved")
     return RedirectResponse("/settings#automation", status_code=303)

@@ -123,3 +123,37 @@ def test_automation_german(ready_client):
         "Abfrage-Abstand",
     ):
         assert text in page, text
+
+
+def count_poll_requests(client) -> list[int]:
+    calls: list[int] = []
+    client.app.state.ticker.request_poll = lambda: calls.append(1)
+    return calls
+
+
+def test_changed_poll_interval_asks_for_a_poll(ready_client):
+    """Final review 3: a shorter interval holds at once, not after the old one ran out."""
+    calls = count_poll_requests(ready_client)
+
+    save(ready_client, queue_cap="10", poll_minutes="5")
+
+    assert stored(ready_client)["poll_minutes"] == 5
+    assert calls == [1]
+
+
+def test_same_poll_interval_asks_for_no_poll(ready_client):
+    calls = count_poll_requests(ready_client)
+
+    save(ready_client, queue_cap="3", poll_minutes="15")
+
+    assert stored(ready_client)["queue_cap"] == 3
+    assert calls == []
+
+
+def test_refused_poll_interval_asks_for_no_poll(ready_client):
+    calls = count_poll_requests(ready_client)
+
+    save(ready_client, queue_cap="10", poll_minutes="0")
+
+    assert stored(ready_client)["poll_minutes"] == 15
+    assert calls == []
