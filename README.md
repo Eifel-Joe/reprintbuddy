@@ -44,6 +44,10 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 - Bambuddy 1.3 or newer, with its own spool management or with Spoolman (**Spoolman is
   optional**). Reprintbuddy reads the filament stock through Bambuddy and never talks to
   Spoolman itself.
+- **Print files stored directly in Bambuddy's file manager**, uploaded and sliced
+  (`.gcode.3mf`). Linked external folders are not enough: Bambuddy keeps no checksum for
+  their files and does not re-read plates and filament when it rescans them, so a changed
+  version would go unnoticed.
 - A **dedicated Bambuddy user** `reprintbuddy` in its **own Bambuddy group** with the rights
   listed under *First run*, and an **API key** of that user. The dedicated user makes
   Reprintbuddy's own jobs recognisable in Bambuddy. The setup guides you through it.
