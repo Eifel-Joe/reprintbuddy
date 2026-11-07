@@ -22,27 +22,30 @@ def card_forms(page):
 
 
 def test_the_tab_table_has_the_agreed_shape():
-    assert SETTINGS_TABS[:4] == [
+    assert SETTINGS_TABS == [
         ("general", "settings", "settings.tab.general"),
         ("bambuddy", "link", "settings.tab.bambuddy"),
         ("account", "user", "settings.tab.account"),
         ("maintenance", "download", "settings.tab.maintenance"),
+        ("automation", "list-ordered", "settings.tab.automation"),
     ]
     assert SECTION_TAB == {
         "language": "general",
         "server": "general",
         "bambuddy": "bambuddy",
         "password": "account",
+        "automation": "automation",
     }
 
 
-def test_four_tabs_general_active_with_its_cards(ready_client):
+def test_five_tabs_general_active_with_its_cards(ready_client):
     page = ready_client.get("/settings").text
     assert tab_links(page) == [
         (" active", "/settings?tab=general"),
         ("", "/settings?tab=bambuddy"),
         ("", "/settings?tab=account"),
         ("", "/settings?tab=maintenance"),
+        ("", "/settings?tab=automation"),
     ]
     assert 'aria-current="page"' in page
     assert card_forms(page) == ["settings-language", "settings-server"]

@@ -11,21 +11,24 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
-from reprintbuddy.domain import rules
+from reprintbuddy.domain import rules, workqueue
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
+from reprintbuddy.domain.workqueue import OPEN_STATES
 from reprintbuddy.domain.status import ArticleStatus, article_status
 from reprintbuddy.domain.status import SetStatus, set_status
-from reprintbuddy.domain.stock import MAX_QTY, Actor, count_part
+from reprintbuddy.domain.stock import MAX_QTY, Actor, count_part, write_journal
 from reprintbuddy.models import (
     Article,
     ArticleFilament,
     ArticlePart,
+    Dispatch,
     Order,
     OrderLine,
     Part,
     ProductSet,
     SetPosition,
     SetPositionOption,
+    WorkQueueEntry,
     utcnow,
 )
 
@@ -323,13 +326,24 @@ class ArticleRow:
     paused: bool
     coverage: int
     status: ArticleStatus
+    queued_units: int
+    in_progress_units: int
+    in_progress_prints: int  # open prints in Bambuddy: the note "N in Bambuddy" (Spec 10.1)
 
 
-def article_row(article: Article) -> ArticleRow:
-    """The numbers and the state of one article, as the overview shows them."""
+def article_row(
+    article: Article, *, queued_units: int = 0, in_progress_units: int = 0, in_progress_prints: int = 0
+) -> ArticleRow:
+    """The numbers and the state of one article, as the overview shows them.
+
+    The caller passes what the queue holds (`workqueue.coverage_all` / `coverage_of`), so the
+    status follows the full coverage of Spec 7.1 (Spec 10.1). Without them the coverage
+    leaves out the queue and the open prints.
+    """
     available = rules.available(article.stock, article.reserved)
-    # queued and in-progress units come with the queue (Spec 7.1)
-    coverage = rules.coverage(available, 0, 0, article.provisional, article.awaiting_assembly)
+    coverage = rules.coverage(
+        available, queued_units, in_progress_units, article.provisional, article.awaiting_assembly
+    )
     return ArticleRow(
         id=article.id,
         name=article.name,
@@ -345,6 +359,9 @@ def article_row(article: Article) -> ArticleRow:
         paused=article.paused,
         coverage=coverage,
         status=article_status(available=available, min_stock=article.min_stock, coverage=coverage),
+        queued_units=queued_units,
+        in_progress_units=in_progress_units,
+        in_progress_prints=in_progress_prints,
     )
 
 
@@ -355,7 +372,20 @@ def _archive_filter(column, archived: bool):
 def list_articles(session: Session, *, archived: bool = False) -> list[ArticleRow]:
     """Active articles; with `archived=True` only the archived ones (Spec 5.5)."""
     articles = session.scalars(select(Article).where(_archive_filter(Article.archived_at, archived))).all()
-    rows = [article_row(a) for a in articles]
+    # one query per table; an archived article has no entry and no open print (plan B4 decision 20)
+    coverages = {} if archived else workqueue.coverage_all(session)
+    prints = {} if archived else workqueue.in_progress_prints(session)
+    rows = []
+    for a in articles:
+        c = coverages.get(a.id)
+        rows.append(
+            article_row(
+                a,
+                queued_units=c.queued_units if c else 0,
+                in_progress_units=c.in_progress_units if c else 0,
+                in_progress_prints=prints.get(a.id, 0),
+            )
+        )
     return sorted(rows, key=lambda r: (r.name.casefold(), r.id))
 
 
@@ -624,6 +654,16 @@ def archive_article(session: Session, article_id: int) -> None:
         raise ConflictError("articles.archive_provisional")
     if article.awaiting_assembly > 0:
         raise ConflictError("articles.archive_awaiting_assembly")
+    if session.scalar(
+        select(WorkQueueEntry.id).where(WorkQueueEntry.article_id == article_id).limit(1)
+    ):
+        raise ConflictError("articles.archive_in_queue")
+    if session.scalar(
+        select(Dispatch.id)
+        .where(Dispatch.article_id == article_id, Dispatch.status.in_(OPEN_STATES))
+        .limit(1)
+    ):
+        raise ConflictError("articles.archive_in_progress")
     article.archived_at = utcnow()
     session.flush()
 
@@ -700,6 +740,122 @@ def restore_article_with_plate(
         )
     article.archived_at = None
     session.flush()
+    return article
+
+
+def _take_over_filaments(
+    session: Session,
+    article_id: int,
+    requirements: Sequence[FilamentRequirement],
+    *,
+    keep_mapping: bool,
+) -> None:
+    """Replace the filament rows. With `keep_mapping` a slot keeps its `spool_filament_id`
+    when material and colour stay the same (plan B4 decision 10, used by B6)."""
+    old = {
+        row.slot: (row.material, row.color_hex, row.spool_filament_id)
+        for row in session.scalars(
+            select(ArticleFilament).where(ArticleFilament.article_id == article_id)
+        )
+    }
+    _delete_rows(session, select(ArticleFilament).where(ArticleFilament.article_id == article_id))
+    for requirement in requirements:
+        spool = None
+        previous = old.get(requirement.slot)
+        if keep_mapping and previous and previous[:2] == (requirement.material, requirement.color_hex):
+            spool = previous[2]
+        session.add(
+            ArticleFilament(
+                article_id=article_id,
+                slot=requirement.slot,
+                grams=requirement.grams,
+                material=requirement.material,
+                color_hex=requirement.color_hex,
+                spool_filament_id=spool,
+            )
+        )
+
+
+def _active_article(session: Session, article_id: int) -> Article:
+    article = _article_or_404(session, article_id)
+    if article.archived_at is not None:
+        raise ConflictError("articles.edit_archived")
+    return article
+
+
+def _lift_file_pause(article: Article, reasons: tuple[str, ...]) -> None:
+    if article.paused and article.pause_reason in reasons:
+        article.paused = False
+        article.pause_reason = None
+        article.consecutive_failures = 0
+
+
+def confirm_article_file(
+    session: Session,
+    article_id: int,
+    *,
+    file: LibraryFile,
+    requirements: Sequence[FilamentRequirement],
+    thumbnail: bytes | None,
+    actor: Actor,
+) -> Article:
+    """Spec 5.1: accept the changed file as it is now; lifts a `file_changed` pause.
+
+    A `file_missing` pause stays (the file is not there); other pauses stay too.
+    """
+    article = _active_article(session, article_id)
+    if file.id != article.library_file_id:
+        raise ConflictError("articles.confirm_other_file")
+    details = {
+        "old_name": article.file_name,
+        "old_fingerprint": article.file_fingerprint,
+        "new_name": file.filename,
+        "new_fingerprint": file.fingerprint,
+    }
+    article.file_name = file.filename
+    article.file_fingerprint = file.fingerprint
+    article.thumbnail = thumbnail
+    _take_over_filaments(session, article_id, requirements, keep_mapping=True)
+    _lift_file_pause(article, ("file_changed",))
+    session.flush()
+    write_journal(
+        session, kind="article_file_confirmed", actor=actor, article_id=article.id, details=details
+    )
+    return article
+
+
+def relink_article(
+    session: Session,
+    article_id: int,
+    *,
+    file: LibraryFile,
+    plate: Plate,
+    requirements: Sequence[FilamentRequirement],
+    thumbnail: bytes | None,
+    actor: Actor,
+) -> Article:
+    """Spec 5.1: choose another file and plate for an active article; lifts a file pause."""
+    article = _active_article(session, article_id)
+    holder = _plate_holder(session, file.id, plate.index, besides=article.id)
+    if holder is not None:
+        raise ConflictError("articles.plate_taken", name=holder.name)
+    details = {
+        "old_file_id": article.library_file_id,
+        "old_plate": article.plate_id,
+        "new_file_id": file.id,
+        "new_plate": plate.index,
+    }
+    article.library_file_id = file.id
+    article.plate_id = plate.index
+    article.file_name = file.filename
+    article.file_fingerprint = file.fingerprint
+    article.thumbnail = thumbnail
+    _take_over_filaments(session, article_id, requirements, keep_mapping=False)
+    _lift_file_pause(article, ("file_changed", "file_missing"))
+    session.flush()
+    write_journal(
+        session, kind="article_relinked", actor=actor, article_id=article.id, details=details
+    )
     return article
 
 

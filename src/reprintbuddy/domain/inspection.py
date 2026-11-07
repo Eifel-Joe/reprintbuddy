@@ -1,7 +1,10 @@
-"""Inspection (Spec 8.2) and assembly (Spec 8.3).
+"""Inspection of finished prints (Spec 8.1) and assembly (Spec 8.3).
 
-Functions never commit: the caller opens the transaction. All counter changes go
-through `reprintbuddy.domain.stock`, the only writer.
+A finished print books its units as provisional and opens an inspection in the same
+transaction (plan B4 decision 18); B5 builds the count of good pieces on it. Assembly
+turns units waiting for assembly into stock. Functions never commit: the caller opens
+the transaction. All counter changes go through `reprintbuddy.domain.stock`, the only
+writer.
 """
 
 from __future__ import annotations
@@ -12,8 +15,24 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import stock
-from reprintbuddy.domain.stock import Actor, PartShortage
-from reprintbuddy.models import Article, ArticlePart, Part
+from reprintbuddy.domain.stock import Actor, PartShortage, add_provisional
+from reprintbuddy.models import Article, ArticlePart, Dispatch, Inspection, Part
+
+# ---- inspection of a finished print (Spec 8.1) ---------------------------------------
+
+
+def open_inspection(session: Session, dispatch: Dispatch) -> Inspection:
+    """Units of the finished `dispatch` become provisional, waiting for the inspection."""
+    inspection = Inspection(
+        dispatch_id=dispatch.id, article_id=dispatch.article_id, units=dispatch.units
+    )
+    session.add(inspection)
+    session.flush()
+    add_provisional(
+        session, dispatch.article_id, dispatch.units, "auto", details={"dispatch_id": dispatch.id}
+    )
+    return inspection
+
 
 # ---- assembly (Spec 8.3) -------------------------------------------------------------
 

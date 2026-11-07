@@ -110,6 +110,8 @@ http_client_factory = shared_tls_client_factory()
 
 
 def make_client(db_path, **create_kwargs) -> TestClient:
+    # No background tick loop unless a test asks for it (`with client:` would start it).
+    create_kwargs.setdefault("run_engine", False)
     create_kwargs.setdefault("http_client_factory", http_client_factory)
     app = create_app(db_path, **create_kwargs)
     app.state.login_failure_delay = 0  # tests do not wait; some tests set these themselves
@@ -289,3 +291,50 @@ def bb_client(ready_client, fake_bambuddy):
     """A ready client whose Bambuddy is the in-memory fake."""
     ready_client.app.state.bambuddy_factory = lambda: fake_bambuddy
     return ready_client
+
+
+class EngineEnv:
+    """An engine on a fresh database with the fake Bambuddy (plan B4 Task 10).
+
+    `updating` is the flag the engine's `update_running` reads; `article_id` is Template A.
+    """
+
+    def __init__(self, sm, fake: FakeBambuddy) -> None:
+        from reprintbuddy.domain.engine import Engine
+
+        self.sm = sm
+        self.fake = fake
+        self.updating = False
+        self.engine = Engine(sm, lambda: fake, update_running=lambda: self.updating)
+        self.article_id = 0
+
+
+@pytest.fixture
+def engine_env(db, fake_bambuddy):
+    """Automation on; Template A (file 1, plate 1, any A1, minimum stock 1, buffer 0)."""
+    from factories import make_article
+
+    env = EngineEnv(db, fake_bambuddy)
+    with db() as s:
+        st.set_setting(s, "automation", True)
+    with db.begin() as s:
+        env.article_id = make_article(
+            s,
+            name="Template A",
+            library_file_id=1,
+            plate_id=1,
+            file_name="Template A.gcode.3mf",
+            file_fingerprint="v1",
+            target_model="A1",
+            auto_enabled=True,
+            min_stock=1,
+            buffer=0,
+        ).id
+    return env
+
+
+def run_tick(engine, poll: bool = False):
+    """One tick from synchronous code (web tests): `asyncio.run(engine.tick(poll=poll))`."""
+    import asyncio
+
+    return asyncio.run(engine.tick(poll=poll))

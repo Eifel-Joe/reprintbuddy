@@ -3,6 +3,8 @@ from reprintbuddy.domain.rules import (
     available,
     coverage,
     order_ready,
+    prints_for_units,
+    prints_needed,
     set_available,
     target_quantity,
 )
@@ -56,3 +58,31 @@ def test_set_same_article_in_two_fixed_positions_adds_up():  # Spec 5.4 "gleichz
 def test_coverage_sum():  # Spec 7.1
     assert coverage(3, 2, 1, 1, 1) == 8
     assert coverage(-2, 0, 0, 0, 0) == -2
+
+
+def test_prints_needed_spec_example():  # Spec 7.1
+    assert prints_needed(min_stock=4, buffer=2, coverage=3, units_per_print=1) == 3
+
+
+def test_prints_needed_at_or_above_min():  # Spec 7.1
+    assert prints_needed(min_stock=4, buffer=2, coverage=4, units_per_print=1) == 0
+    assert prints_needed(min_stock=4, buffer=2, coverage=5, units_per_print=1) == 0
+
+
+def test_prints_needed_rounds_up():  # Spec 7.1
+    assert prints_needed(min_stock=4, buffer=1, coverage=0, units_per_print=2) == 3
+
+
+def test_prints_needed_never_for_zero_zero():  # Spec 5.2
+    assert prints_needed(min_stock=0, buffer=0, coverage=-3, units_per_print=1) == 0
+
+
+def test_prints_needed_min_zero_with_buffer():  # Entscheidung 19
+    assert prints_needed(min_stock=0, buffer=2, coverage=-1, units_per_print=1) == 3
+
+
+def test_prints_for_units():  # Spec 7.5
+    assert prints_for_units(0, 1) == 0
+    assert prints_for_units(1, 1) == 1
+    assert prints_for_units(3, 2) == 2
+    assert prints_for_units(2, 2) == 1

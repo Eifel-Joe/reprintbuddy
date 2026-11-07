@@ -1,0 +1,183 @@
+"""Settings, section "Automation" (Spec 7.3, 7.6, 7.7, 10.3; plan B4 Task 11)."""
+
+import re
+
+import pytest
+
+from conftest import csrf_of, sm_of
+from reprintbuddy import settings as st
+from reprintbuddy.web.i18n import translate
+
+KEYS = ("automation", "queue_running", "queue_cap", "insert_next", "poll_minutes")
+
+
+def en(key, **params):
+    return translate("en", key, **params)
+
+
+def field(page: str, name: str) -> str:
+    match = re.search(rf'<input[^>]*name="{name}"[^>]*>', page)
+    assert match, f"no field {name}"
+    return match.group(0)
+
+
+def checked(page: str, name: str) -> bool:
+    return " checked" in field(page, name)
+
+
+def value(page: str, name: str) -> str:
+    return re.search(r'value="([^"]*)"', field(page, name)).group(1)
+
+
+def stored(client) -> dict[str, object]:
+    with sm_of(client)() as s:
+        return {key: st.get_setting(s, key) for key in KEYS}
+
+
+def save(client, **fields):
+    data = {"csrf_token": csrf_of(client, "/settings")}
+    data.update(fields)
+    return client.post("/settings/automation", data=data)
+
+
+def test_defaults_shown(ready_client):
+    page = ready_client.get("/settings?tab=automation").text
+    assert 'id="automation"' in page
+    assert not checked(page, "automation")
+    assert not checked(page, "queue_stopped")
+    assert value(page, "queue_cap") == "10"
+    assert not checked(page, "insert_next")
+    assert value(page, "poll_minutes") == "15"
+
+
+def test_automation_card_is_a_live_region(ready_client):
+    page = ready_client.get("/settings?tab=automation").text
+    assert "<!--live:automation-->" in page and "<!--/live:automation-->" in page
+    assert 'data-live-region="automation" data-live-topics="settings"' in page
+    region = page[page.index("<!--live:automation-->") : page.index("<!--/live:automation-->")]
+    assert 'action="/settings/automation"' in region and 'id="automation"' in region
+
+
+def test_save_all(ready_client):
+    response = save(
+        ready_client, automation="on", queue_stopped="on", queue_cap="3", insert_next="on", poll_minutes="30"
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/settings?tab=automation"
+    assert stored(ready_client) == {
+        "automation": True,
+        "queue_running": False,
+        "queue_cap": 3,
+        "insert_next": True,
+        "poll_minutes": 30,
+    }
+    page = ready_client.get("/settings?tab=automation").text
+    assert checked(page, "automation") and checked(page, "queue_stopped") and checked(page, "insert_next")
+    assert value(page, "queue_cap") == "3" and value(page, "poll_minutes") == "30"
+
+
+def test_unticked_boxes_switch_off(ready_client):
+    save(ready_client, automation="on", queue_stopped="on", queue_cap="3", insert_next="on", poll_minutes="30")
+    assert save(ready_client, queue_cap="3", poll_minutes="30").status_code == 303
+    assert stored(ready_client) == {
+        "automation": False,
+        "queue_running": True,
+        "queue_cap": 3,
+        "insert_next": False,
+        "poll_minutes": 30,
+    }
+
+
+@pytest.mark.parametrize(
+    "name, bad",
+    [("queue_cap", "0"), ("queue_cap", "1000"), ("queue_cap", "abc"), ("poll_minutes", "0"), ("poll_minutes", "9" * 20)],
+)
+def test_invalid_values_save_nothing(ready_client, name, bad):
+    before = stored(ready_client)
+    fields = {"automation": "on", "queue_stopped": "on", "queue_cap": "3", "insert_next": "on", "poll_minutes": "30"}
+    fields[name] = bad
+    response = save(ready_client, **fields)
+    assert response.status_code == 200
+    assert en(f"settings.invalid_{name}") in response.text
+    section = response.text[response.text.index('id="automation"') :]
+    assert en(f"settings.invalid_{name}") in section[: section.index("</section>")]
+    assert value(response.text, name) == bad  # what was typed stays
+    assert stored(ready_client) == before
+
+
+def test_automation_requires_csrf(ready_client):
+    before = stored(ready_client)
+    assert ready_client.post("/settings/automation", data={"automation": "on"}).status_code == 403
+    assert stored(ready_client) == before
+
+
+def test_automation_german(ready_client):
+    with sm_of(ready_client)() as s:
+        st.set_setting(s, "language", "de")
+    page = ready_client.get("/settings?tab=automation").text
+    for text in (
+        "Automatik (Hauptschalter)",
+        "Warteschlange anhalten",
+        "Obergrenze",
+        "Als nächsten Druck einfügen",
+        "Abfrage-Abstand",
+    ):
+        assert text in page, text
+
+
+def count_poll_requests(client) -> list[int]:
+    calls: list[int] = []
+    client.app.state.ticker.request_poll = lambda: calls.append(1)
+    return calls
+
+
+def test_changed_poll_interval_asks_for_a_poll(ready_client):
+    """Final review 3: a shorter interval holds at once, not after the old one ran out."""
+    calls = count_poll_requests(ready_client)
+
+    save(ready_client, queue_cap="10", poll_minutes="5")
+
+    assert stored(ready_client)["poll_minutes"] == 5
+    assert calls == [1]
+
+
+def test_same_poll_interval_asks_for_no_poll(ready_client):
+    calls = count_poll_requests(ready_client)
+
+    save(ready_client, queue_cap="3", poll_minutes="15")
+
+    assert stored(ready_client)["queue_cap"] == 3
+    assert calls == []
+
+
+def test_refused_poll_interval_asks_for_no_poll(ready_client):
+    calls = count_poll_requests(ready_client)
+
+    save(ready_client, queue_cap="10", poll_minutes="0")
+
+    assert stored(ready_client)["poll_minutes"] == 15
+    assert calls == []
+
+
+def test_automation_card_only_on_its_own_tab(ready_client):
+    for tab in ("general", "bambuddy", "account", "maintenance"):
+        page = ready_client.get(f"/settings?tab={tab}").text
+        assert 'id="automation-form"' not in page, tab
+    assert 'id="automation-form"' in ready_client.get("/settings?tab=automation").text
+
+
+def test_automation_has_its_own_tab_link(ready_client):
+    page = ready_client.get("/settings").text
+    assert re.search(r'<a class="tab" href="/settings\?tab=automation">', page)
+    assert en("settings.tab.automation") == "Automation"
+    assert translate("de", "settings.tab.automation") == "Automatik"
+
+
+def test_invalid_value_reopens_the_automation_tab(ready_client):
+    """The error page shows the automation tab (not the default one), with the typed value."""
+    response = save(ready_client, queue_cap="abc", poll_minutes="30", automation="on")
+    assert response.status_code == 200
+    assert re.search(r'<a class="tab active" href="/settings\?tab=automation" aria-current="page">', response.text)
+    assert 'id="automation-form"' in response.text
+    assert en("settings.invalid_queue_cap") in response.text
+    assert value(response.text, "queue_cap") == "abc"

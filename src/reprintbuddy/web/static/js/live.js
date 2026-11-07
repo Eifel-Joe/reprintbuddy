@@ -4,8 +4,12 @@
 
    Terms: a form is "changed" when one of its fields differs from the value the page came with,
    or when a page script marked it with data-changed (a row it removed changes no field);
-   a region is "busy" while a form in it is changed or holds the focused field. A busy region is
-   not swapped but remembered as stale and fetched once it is no longer busy. */
+   a region is "busy" while a form in it is changed or holds the focused field, or while it carries
+   `data-live-busy` (set by another script of the page, the queue's drag script). A busy region is
+   not swapped but remembered as stale and fetched once it is no longer busy.
+
+   Two events of the document for such scripts: "live-idle" says a region is no longer busy (the
+   stale ones are fetched), "live-refresh" with `detail.regions` (names) asks for regions anew. */
 (function () {
   "use strict";
 
@@ -144,6 +148,9 @@
   }
 
   function busy(region) {
+    if (region.hasAttribute("data-live-busy")) {
+      return true;
+    }
     var forms = region.querySelectorAll("form");
     for (var i = 0; i < forms.length; i++) {
       if (formBusy(forms[i])) {
@@ -424,6 +431,11 @@
 
   document.addEventListener("focusout", fetchStaleSoon);
   document.addEventListener("input", fetchStaleSoon);
+  document.addEventListener("live-idle", fetchStaleSoon);
+  document.addEventListener("live-refresh", function (event) {
+    var names = event.detail && Array.isArray(event.detail.regions) ? event.detail.regions : [];
+    want(names);
+  });
   document.addEventListener("click", function (event) {
     var target = event.target;
     if (target && target.closest && target.closest("[data-live-reload]")) {

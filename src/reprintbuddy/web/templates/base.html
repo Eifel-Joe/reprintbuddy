@@ -23,7 +23,7 @@
     ('bookings', 'arrow-left-right', '/bookings', t('nav.bookings')),
     ('inspection', 'clipboard-check', '/', t('nav.inspection')),
     ('assembly', 'wrench', '/assembly', t('nav.assembly')),
-    ('queue', 'list-ordered', '/', t('nav.queue')),
+    ('queue', 'list-ordered', '/queue', t('nav.queue')),
     ('filament', 'disc-3', '/', t('nav.filament')),
     ('parts', 'puzzle', '/parts', t('nav.parts')),
     ('reorder', 'shopping-bag', '/', t('nav.reorder')),
@@ -104,6 +104,8 @@
 <script src="/static/js/live.js?v={{ app_version }}" defer></script>
 <script src="/static/js/sidebar.js?v={{ app_version }}" defer></script>
 <script src="/static/js/info.js?v={{ app_version }}" defer></script>
+{# Scripts of one page only (the queue's drag script). #}
+{% block scripts %}{% endblock %}
 {% endblock %}
 </body>
 </html>

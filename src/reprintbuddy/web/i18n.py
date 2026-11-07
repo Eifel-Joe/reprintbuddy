@@ -1,39 +1,9 @@
-"""Translations: flat JSON files, English is the fallback."""
+"""Translations for the web interface: the neutral `reprintbuddy.i18n`, re-exported.
 
-from __future__ import annotations
+The functions live outside the web package so the domain can translate without importing
+it. Patch `reprintbuddy.i18n` (not this module) to change what `translate` reads.
+"""
 
-import json
-from functools import lru_cache
-from pathlib import Path
+from reprintbuddy.i18n import FALLBACK, LOCALES_DIR, _read, load_locales, translate, translate_count
 
-LOCALES_DIR = Path(__file__).resolve().parent.parent / "locales"
-FALLBACK = "en"
-
-
-@lru_cache(maxsize=1)
-def _read() -> dict[str, dict[str, str]]:
-    return {
-        path.stem: json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(LOCALES_DIR.glob("*.json"))
-    }
-
-
-def load_locales() -> dict[str, dict[str, str]]:
-    return _read()
-
-
-def translate(lang: str, key: str, **params: object) -> str:
-    """Text for `key` in `lang`; a key missing there falls back to English.
-
-    A key missing in English raises `KeyError`: that is a programming error.
-    """
-    locales = load_locales()
-    text = locales.get(lang, {}).get(key)
-    if text is None:
-        text = locales[FALLBACK][key]
-    return text.format(**params) if params else text
-
-
-def translate_count(lang: str, key: str, n: int, **params: object) -> str:
-    """Text for a count: `<key>.one` for exactly one, otherwise `<key>.other`; `{n}` is the count."""
-    return translate(lang, f"{key}.{'one' if n == 1 else 'other'}", n=n, **params)
+__all__ = ["FALLBACK", "LOCALES_DIR", "_read", "load_locales", "translate", "translate_count"]

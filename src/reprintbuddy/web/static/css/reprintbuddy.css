@@ -652,11 +652,112 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 .setting-text label { margin: 0; color: var(--text); font-size: 13.5px; font-weight: 550; }
 .setting-text span { color: var(--muted); font-size: 12px; }
 .setting-control { flex: 0 1 auto; min-width: 0; }
+.card-head ~ form > .setting-row:first-child { border-top: 0; }
+.setting-control input[type="number"] { width: 6.5rem; margin-top: 0; }
 
 @media (max-width: 899px) {
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-grid { grid-template-columns: minmax(0, 1fr); }
   .setting-row { flex-wrap: wrap; }
+}
+
+/* ---- queue (Warteschlange, plan B4; Design 5) ---------------------- */
+
+/* Badges that are not a state of status.py: blue for Reprintbuddy's own prints in Bambuddy's
+   queue, yellow for a held entry (with tone-warn). */
+.badge.tone-info, .badge-own { background: var(--info-soft); color: var(--info); }
+.badge-held { background: var(--warn-soft); color: var(--warn); }
+
+/* Warnings of the engine (_warnings.html): red when Bambuddy does not answer or refuses,
+   yellow otherwise; the line with the last successful query under them. */
+.warnings { margin: 0 0 1rem; }
+.warning-card {
+  display: flex; align-items: flex-start; gap: 10px; margin: 0 0 0.6rem; padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+}
+.warning-card p { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.warning-card .icon { flex: 0 0 18px; width: 18px; height: 18px; margin-top: 1px; }
+.warning-card.tone-warn { border-color: rgba(245, 158, 11, 0.45); background: var(--warn-soft); }
+.warning-card.tone-warn .icon { color: var(--warn); }
+.warning-card.tone-bad { border-color: rgba(239, 68, 68, 0.5); background: var(--danger-soft); }
+.warning-card.tone-bad .icon { color: var(--danger); }
+.last-poll { margin: 0; color: var(--muted); font-size: 12.5px; }
+
+/* A part of the queue page: title with symbol, a grey hint or a button to the right. */
+.queue-section { margin: 0 0 1.5rem; }
+.section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; margin: 0 0 0.6rem; }
+.section-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 650; }
+.section-head h2 .icon { width: 17px; height: 17px; color: var(--accent); }
+.section-hint { color: var(--muted); font-size: 12.5px; }
+.queue-section > .section-hint { display: block; margin: 0.5rem 0 0; }
+.stale-note { margin: 0 0 0.6rem; color: var(--warn); font-size: 0.9rem; }
+
+/* Reprintbuddy's queue: one card per entry. Only the grip takes the finger for dragging
+   (touch-action: none); everywhere else the page scrolls as usual. */
+.queue-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.queue-row {
+  display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 6px 6px 2px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+}
+.queue-row.is-paused .queue-body, .queue-row.is-paused .thumb-sm, .queue-row.is-paused .thumb-placeholder { opacity: 0.7; }
+.drag-handle {
+  flex: 0 0 auto; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.drag-handle .icon { width: 18px; height: 18px; }
+.queue-pos { flex: 0 0 1.5rem; color: var(--muted); font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; }
+.queue-body { display: flex; flex: 1 1 auto; flex-direction: column; gap: 3px; min-width: 0; }
+/* At least 44 px to tap, like every other target; the text stays at the top of that box. */
+.queue-name { display: inline-flex; align-items: center; align-self: flex-start; max-width: 100%; min-height: 2.75rem; color: var(--text); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.queue-name:hover { color: var(--accent); }
+.queue-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--muted); font-size: 12px; }
+.queue-body .badges { margin-top: 2px; }
+/* While dragging: the entry follows the pointer above the list, a dashed gap shows where it lands. */
+.queue-row.is-dragging {
+  position: fixed; z-index: 50; margin: 0; border-color: var(--accent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.queue-row.is-dragging .drag-handle { cursor: grabbing; }
+.queue-placeholder { list-style: none; border: 1px dashed var(--accent); border-radius: 10px; background: rgba(0, 174, 66, 0.06); }
+body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+
+/* The menu of a row: a <details> that opens a small panel of forms (works without JavaScript). */
+.row-menu { position: relative; flex: 0 0 auto; }
+.row-menu > summary { list-style: none; }
+.row-menu > summary::-webkit-details-marker { display: none; }
+.row-menu[open] > summary { background: var(--line); color: var(--text); }
+.row-menu-panel {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; gap: 2px;
+  min-width: 15rem; padding: 6px; background: var(--menu); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+.row-menu-panel form { margin: 0; }
+.menu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 2.75rem; padding: 0 10px;
+  background: none; border: 0; border-radius: 8px; color: var(--text); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer;
+}
+.menu-item .icon { width: 16px; height: 16px; color: var(--muted); }
+.menu-item:hover, .menu-item:focus-visible { background: var(--line); }
+.menu-item.danger, .menu-item.danger .icon { color: var(--danger); }
+.menu-prints { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 2px 0; }
+.menu-prints label { margin: 0; color: var(--text-2); font-size: 13px; }
+.menu-prints input[type="number"] { width: 5rem; min-height: 2.75rem; margin: 0; }
+.menu-prints .btn { flex: 0 0 auto; }
+
+/* Print manually: the three fields side by side where there is room. */
+.manual-card { margin-bottom: 1.5rem; }
+.manual-form { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 2fr); gap: 0 1rem; align-items: end; }
+.manual-form .btn { grid-column: 1 / -1; justify-self: start; }
+/* 44 px to tap: the general field padding alone gives 43 px. */
+.manual-form select { min-height: 2.75rem; }
+.manual-form input[type="number"] { min-height: 2.75rem; }
+/* The article link of a print in progress: 44 px to tap, like .queue-name. */
+.progress-name { display: inline-flex; align-items: center; min-height: 2.75rem; overflow-wrap: anywhere; }
+
+@media (max-width: 599px) {
+  .queue-pos { display: none; }
+  .queue-row { gap: 6px; }
+  .manual-form { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ---- settings page in tabs ----------------------------------------------- */

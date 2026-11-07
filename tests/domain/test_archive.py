@@ -3,13 +3,13 @@ from datetime import date
 import pytest
 from sqlalchemy import select
 
-from factories import make_article, make_part
+from factories import make_article, make_dispatch, make_entry, make_part
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate
 from reprintbuddy.domain import catalog, orders
 from reprintbuddy.domain.catalog import ArticleInput, PositionInput, SetInput
 from reprintbuddy.domain.errors import ConflictError, ValidationError
 from reprintbuddy.domain.orders import ArticleItem, SetItem
-from reprintbuddy.models import Article, ArticleFilament, ArticlePart, JournalEntry, Part, ProductSet
+from reprintbuddy.models import Article, Dispatch, ArticleFilament, ArticlePart, JournalEntry, Part, ProductSet
 
 
 def new_order(s, items, reference="Order 1001"):
@@ -361,3 +361,28 @@ def test_update_keeps_links_to_parts_that_are_not_offered(db):
         with db.begin() as s:
             catalog.update_article(s, ids[0], ArticleInput(name="Template A", parts={other: 1}))  # new reference
     assert info.value.key == "parts.archived"
+
+
+def test_archive_blocked_by_queue(db):
+    with db.begin() as s:
+        a = make_article(s).id
+        make_entry(s, a, 1)
+    with pytest.raises(ConflictError) as info:
+        with db.begin() as s:
+            archive_article(s, a)
+    assert info.value.key == "articles.archive_in_queue"
+
+
+def test_archive_blocked_by_open_dispatch(db):
+    with db.begin() as s:
+        a = make_article(s).id
+        d = make_dispatch(s, a, status="queued").id
+    with pytest.raises(ConflictError) as info:
+        with db.begin() as s:
+            archive_article(s, a)
+    assert info.value.key == "articles.archive_in_progress"
+    with db.begin() as s:
+        s.get(Dispatch, d).status = "completed"
+    with db.begin() as s:
+        archive_article(s, a)
+        assert s.get(Article, a).archived_at is not None

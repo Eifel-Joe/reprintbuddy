@@ -21,6 +21,7 @@ from reprintbuddy.web.bambuddy_check import permission_context, run_check, valid
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.routes.ops import ops_view
 from reprintbuddy.web.deps import flash, get_db, logged_in_user, render, start_session, take_verdict
+from reprintbuddy.web.formtoken import write_transaction
 
 router = APIRouter()
 
@@ -33,6 +34,7 @@ SETTINGS_TABS: list[tuple[str, str, str]] = [
     ("bambuddy", "link", "settings.tab.bambuddy"),
     ("account", "user", "settings.tab.account"),
     ("maintenance", "download", "settings.tab.maintenance"),
+    ("automation", "list-ordered", "settings.tab.automation"),
 ]
 DEFAULT_TAB = "general"
 # The tab that shows the card of a section: a page re-rendered with an error opens it.
@@ -41,6 +43,7 @@ SECTION_TAB = {
     "server": "general",
     "bambuddy": "bambuddy",
     "password": "account",
+    "automation": "automation",
 }
 
 
@@ -64,6 +67,11 @@ def _page(
         "bambuddy_owner": st.get_setting(db, "bambuddy_username") or "",
         "host": st.get_setting(db, "host"),
         "port": st.get_setting(db, "port"),
+        "automation": st.get_setting(db, "automation"),
+        "queue_stopped": not st.get_setting(db, "queue_running"),
+        "queue_cap": st.get_setting(db, "queue_cap"),
+        "insert_next": st.get_setting(db, "insert_next"),
+        "poll_minutes": st.get_setting(db, "poll_minutes"),
     }
     values.update(typed)
     current_tab = SECTION_TAB.get(section or "") or _tab_from_query(request)
@@ -241,3 +249,34 @@ async def save_server(request: Request, db: Session = Depends(get_db)):
     if port < 1024:
         return _saved(request, "settings.privileged_port", warning=True, tab=SECTION_TAB["server"])
     return _saved(request, "settings.restart_needed", tab=SECTION_TAB["server"])
+
+
+@router.post("/settings/automation", dependencies=[Depends(verify_csrf)])
+async def save_automation(request: Request, db: Session = Depends(get_db)):
+    """Main switch, stop the queue, limit, insert as next, poll interval (Spec 7.3, 7.6, 7.7).
+
+    An unticked box is not sent at all: missing means off. A wrong number saves nothing.
+    """
+    form = await request.form()
+    flags = {name: form.get(name) is not None for name in ("automation", "queue_stopped", "insert_next")}
+    numbers = {name: str(form.get(name, "")).strip() for name in ("queue_cap", "poll_minutes")}
+    checked: dict[str, int] = {}
+    for name, text in numbers.items():
+        try:
+            checked[name] = int(st.validate(name, int(text)))
+        except ValueError:  # also not a number at all
+            return _page(request, db, f"settings.invalid_{name}", "automation", **flags, **numbers)
+
+    old_poll_minutes = int(st.get_setting(db, "poll_minutes"))
+    # One transaction: all five or none.
+    with write_transaction(request) as session:
+        st.set_setting(session, "automation", flags["automation"], commit=False)
+        st.set_setting(session, "queue_running", not flags["queue_stopped"], commit=False)
+        st.set_setting(session, "queue_cap", checked["queue_cap"], commit=False)
+        st.set_setting(session, "insert_next", flags["insert_next"], commit=False)
+        st.set_setting(session, "poll_minutes", checked["poll_minutes"], commit=False)
+    if checked["poll_minutes"] != old_poll_minutes:
+        # The loop waits for the next poll with the old interval; a regular tick now reads
+        # the new one (a shorter interval would otherwise wait for the old one to end).
+        request.app.state.ticker.request_poll()
+    return _saved(request, tab=SECTION_TAB["automation"])

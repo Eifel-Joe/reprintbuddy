@@ -175,6 +175,8 @@ PAGES_WITH_REGIONS = [
     "/articles", "/articles/{article}", "/articles/{article}/edit",
     "/parts", "/sets", "/sets/new",
     "/orders", "/orders?view=closed", "/orders/new",
+    "/settings?tab=automation",
+    "/", "/queue",
 ]
 _MARK = re.compile(r"<!--(/?)live:([^>]*?)-->")
 

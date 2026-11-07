@@ -75,11 +75,16 @@ def close_request_session(request: Request) -> None:
         db.close()
 
 
-def get_bambuddy(request: Request) -> BambuddyClient | None:
+def bambuddy_client(app) -> BambuddyClient | None:
     """The client for Bambuddy, or None when no connection is available (B2 sets the factory;
-    tests set a fake)."""
-    factory = getattr(request.app.state, "bambuddy_factory", None)
+    tests set a fake). For the routes and for the tick engine, which has no request."""
+    factory = getattr(app.state, "bambuddy_factory", None)
     return factory() if factory is not None else None
+
+
+def get_bambuddy(request: Request) -> BambuddyClient | None:
+    """`bambuddy_client` of the request's app."""
+    return bambuddy_client(request.app)
 
 
 async def get_db(request: Request) -> Session:

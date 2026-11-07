@@ -437,6 +437,7 @@ def test_all_settings_posts_require_csrf(ready_client):
         and route.path.startswith("/settings")
     )
     assert paths == [
+        "/settings/automation",
         "/settings/bambuddy",
         "/settings/language",
         "/settings/password",

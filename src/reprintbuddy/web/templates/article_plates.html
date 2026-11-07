@@ -16,7 +16,7 @@
     <form method="post" action="{{ file_base }}/{{ file.id }}/plate/{{ plate.index }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="form_token" value="{{ form_token() }}">
-      <button class="btn" type="submit">{{ t('articles.restore_with_plate') }}</button>
+      <button class="btn" type="submit">{{ t('articles.restore_with_plate' if relink_archived else 'articles.use_plate') }}</button>
     </form>
     {% else %}
     <p><a class="btn" href="{{ file_base }}/{{ file.id }}/plate/{{ plate.index }}">{{ t('articles.use_plate') }}</a></p>
