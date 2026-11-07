@@ -82,6 +82,9 @@ WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 # restart failed, also signing in (everybody was signed out) and the restart button.
 RESTORE_EXEMPT_PATHS = frozenset({"/logout"})
 RESTART_PENDING_EXEMPT_PATHS = frozenset({"/logout", "/login", "/settings/restart"})
+# Not counted as writes a restore waits for: they are open without a sign-in (a slow or
+# braked login attempt must not hold a restore off) and change no data of the database.
+UNCOUNTED_PREFIXES = ("/login", "/logout", "/setup")
 
 
 @dataclass
@@ -196,7 +199,7 @@ async def update_guard(request: Request, call_next) -> Response:
                 title_key="error.generic.title",
                 message_key="ops.update.in_progress",
             )
-    if request.method not in WRITE_METHODS:
+    if request.method not in WRITE_METHODS or request.url.path.startswith(UNCOUNTED_PREFIXES):
         return await call_next(request)
     state = request.app.state
     state.writes_in_flight += 1

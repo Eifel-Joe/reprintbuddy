@@ -19,6 +19,7 @@ from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops.tls import validate_tls_pair
 from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
 from reprintbuddy.web.csrf import verify_csrf
+from reprintbuddy.web.routes.auth import password_confirmed
 from reprintbuddy.web.routes.ops import ops_view
 from reprintbuddy.web.deps import flash, get_db, logged_in_user, render, start_session, take_verdict
 from reprintbuddy.web.formtoken import write_transaction
@@ -170,7 +171,9 @@ async def change_password(request: Request, db: Session = Depends(get_db)):
         return _page(request, db, error, "password")
 
     limiter = request.app.state.hash_limiter
-    if user is None or await limiter.run(accounts.authenticate, db, user.username, current) is None:
+    # The login's way, brake and pause included: guessing the current password here must
+    # cost what a login costs (a stolen session would otherwise guess it unbraked).
+    if user is None or not await password_confirmed(request, db, current):
         return fail("settings.password_wrong")
     if new != repeat:
         return fail("setup.mismatch")

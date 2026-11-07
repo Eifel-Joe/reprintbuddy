@@ -291,12 +291,17 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
     # A write that passed the guard just before this line may still be under way; it would
     # land in the restored database with what it read from the old one. This request is one.
     deadline = time.monotonic() + app.state.restore_write_wait
-    while app.state.writes_in_flight > 1:
-        if time.monotonic() > deadline:
-            state.phase = "idle"
-            _remove(candidate)
-            return _back("restore_busy", "ops-restore")
-        await asyncio.sleep(0.02)
+    try:
+        while app.state.writes_in_flight > 1:
+            if time.monotonic() > deadline:
+                state.phase = "idle"
+                _remove(candidate)
+                return _back("restore_busy", "ops-restore")
+            await asyncio.sleep(0.02)
+    except BaseException:  # cancelled while waiting (shutdown, …): nothing is replaced yet
+        state.phase = "idle"
+        _remove(candidate)
+        raise
     try:
         async with app.state.ticker.hold():
             await run_in_threadpool(
@@ -321,10 +326,13 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
     # Address, port and HTTPS come with the backup: say where the service answers next.
     new_url = None
     running_server = app.state.ops.effective
-    if running_server is not None:
-        saved = effective_from_settings(db)
-        if address_changed(saved, running_server):
-            new_url = base_url(_display_host(request, saved), saved.port, saved.tls)
+    try:
+        if running_server is not None:
+            saved = effective_from_settings(db)
+            if address_changed(saved, running_server):
+                new_url = base_url(_display_host(request, saved), saved.port, saved.tls)
+    except Exception as error:  # noqa: BLE001 - only a hint; the restart must be asked for anyway
+        log.warning("address after restore unreadable: %s", type(error).__name__)
     result = await run_in_threadpool(request_restart, app.state.ops.runner)
     if not result.ok:
         log.warning("restart after restore failed: %s", (result.stderr or "").strip()[:300])

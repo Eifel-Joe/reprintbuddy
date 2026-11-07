@@ -688,3 +688,132 @@ def test_writes_are_counted_while_they_run(ops_env, monkeypatch):
     post(ops_env, "/settings/language", language="de")
     assert seen and seen[0] == 1
     assert ops_env.client.app.state.writes_in_flight == 0
+
+
+# --- review of the sign-in check and the write counter ------------------------------------------
+
+
+def test_changing_the_password_is_braked_like_the_login(ops_env):
+    """The sister path: guessing the current password there must cost what a login costs."""
+    brake = CountingBrake(ops_env.client.app.state.login_brake)
+    ops_env.client.app.state.login_brake = brake
+    response = post(
+        ops_env,
+        "/settings/password",
+        current_password="wrong-password-1",
+        new_password="a-new-password-1",
+        new_password_repeat="a-new-password-1",
+    )
+    assert "The current password is wrong." in response.text
+    assert brake.failures == 1
+    with ops_env.client.app.state.sessionmaker() as session:
+        assert auth.authenticate(session, ADMIN, PASSWORD) is not None
+
+
+def test_sign_in_check_runs_through_the_hash_limiter(ops_env):
+    limiter = ops_env.client.app.state.hash_limiter
+    calls = []
+    real = limiter.run
+
+    async def counting(func, *args, **kwargs):
+        calls.append(func.__name__)
+        return await real(func, *args, **kwargs)
+
+    limiter.run = counting
+    download(ops_env)
+    assert calls[0] == "authenticate"
+
+
+def test_restore_waits_for_the_brake_too(ops_env, monkeypatch):
+    import asyncio
+
+    upload(ops_env, made_backup(ops_env))
+    waited = []
+
+    async def sleep(seconds):
+        waited.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    brake = ops_env.client.app.state.login_brake
+    brake.delay = 3.0
+    for _ in range(brake.threshold):
+        brake.record_failure()
+    confirm(ops_env)
+    assert 3.0 in waited
+
+
+def test_sign_in_and_setup_are_not_counted_as_writes(ops_env, monkeypatch):
+    seen = []
+    real = auth.authenticate
+
+    def spy(*args, **kwargs):
+        seen.append(ops_env.client.app.state.writes_in_flight)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(auth, "authenticate", spy)
+    token = csrf_of(ops_env.client, "/login")
+    ops_env.client.post("/login", data={"csrf_token": token, "username": ADMIN, "password": "wrong-one-1"})
+    assert seen == [0]
+
+
+def test_write_counter_goes_down_after_an_error(ops_env, monkeypatch):
+    from reprintbuddy.web.routes import settings as settings_routes
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(settings_routes.st, "set_setting", broken)
+    with pytest.raises(RuntimeError):
+        post(ops_env, "/settings/language", language="de")
+    assert ops_env.client.app.state.writes_in_flight == 0
+
+
+def test_restore_goes_on_when_the_other_write_ends(ops_env, monkeypatch):
+    from reprintbuddy.web.routes import backup as backup_routes
+
+    upload(ops_env, made_backup(ops_env))
+    app = ops_env.client.app
+    app.state.writes_in_flight += 1
+    real_sleep = backup_routes.asyncio.sleep
+
+    async def other_write_ends(seconds):
+        if app.state.writes_in_flight > 1:
+            app.state.writes_in_flight -= 1
+        await real_sleep(0)
+
+    monkeypatch.setattr(backup_routes.asyncio, "sleep", other_write_ends)
+    response = confirm(ops_env)
+    assert response.status_code == 200
+    assert RESTART_CMD in ops_env.runner.calls
+
+
+def test_an_interrupted_wait_leaves_no_restore_state(ops_env, monkeypatch):
+    from reprintbuddy.web.routes import backup as backup_routes
+
+    upload(ops_env, made_backup(ops_env))
+    app = ops_env.client.app
+    app.state.writes_in_flight += 1
+
+    async def interrupted(seconds):
+        raise RuntimeError("cancelled")
+
+    monkeypatch.setattr(backup_routes.asyncio, "sleep", interrupted)
+    with pytest.raises(RuntimeError):
+        confirm(ops_env)
+    app.state.writes_in_flight -= 1
+    assert app.state.restore.phase == "idle"
+    assert backups(ops_env) == []
+
+
+def test_restart_is_asked_even_if_the_new_address_cannot_be_read(ops_env, monkeypatch):
+    from reprintbuddy.web.routes import backup as backup_routes
+
+    upload(ops_env, made_backup(ops_env))
+
+    def broken(*args, **kwargs):
+        raise ValueError("odd port")
+
+    monkeypatch.setattr(backup_routes, "effective_from_settings", broken)
+    response = confirm(ops_env)
+    assert response.status_code == 200
+    assert RESTART_CMD in ops_env.runner.calls
