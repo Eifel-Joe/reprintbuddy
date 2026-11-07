@@ -6,6 +6,7 @@ import pytest
 from conftest import PASSWORD, auth_me, csrf_of
 
 from reprintbuddy.web.routes.settings import SECTION_TAB, SETTINGS_TABS
+from reprintbuddy.web.i18n import translate
 
 
 def post(client, path, **data):
@@ -24,10 +25,10 @@ def card_forms(page):
 def test_the_tab_table_has_the_agreed_shape():
     assert SETTINGS_TABS == [
         ("general", "settings", "settings.tab.general"),
+        ("automation", "list-ordered", "settings.tab.automation"),
         ("bambuddy", "link", "settings.tab.bambuddy"),
         ("account", "user", "settings.tab.account"),
         ("maintenance", "download", "settings.tab.maintenance"),
-        ("automation", "list-ordered", "settings.tab.automation"),
     ]
     assert SECTION_TAB == {
         "language": "general",
@@ -42,10 +43,10 @@ def test_five_tabs_general_active_with_its_cards(ready_client):
     page = ready_client.get("/settings").text
     assert tab_links(page) == [
         (" active", "/settings?tab=general"),
+        ("", "/settings?tab=automation"),
         ("", "/settings?tab=bambuddy"),
         ("", "/settings?tab=account"),
         ("", "/settings?tab=maintenance"),
-        ("", "/settings?tab=automation"),
     ]
     assert 'aria-current="page"' in page
     assert card_forms(page) == ["settings-language", "settings-server"]
@@ -53,6 +54,15 @@ def test_five_tabs_general_active_with_its_cards(ready_client):
     assert 'action="/settings/password"' not in page
     assert 'action="/settings/bambuddy"' not in page
     assert 'id="ops-update"' not in page
+
+
+def test_subtitle_names_the_automation_in_both_languages():  # p43
+    assert translate("en", "settings.subtitle") == (
+        "Set up Reprintbuddy: language, server, automation, Bambuddy, account and updates"
+    )
+    assert translate("de", "settings.subtitle") == (
+        "Reprintbuddy einrichten: Sprache, Server, Automatik, Bambuddy, Konto und Update"
+    )
 
 
 def test_each_tab_shows_only_its_cards(ready_client):
@@ -82,7 +92,8 @@ def test_a_wrong_password_reopens_the_account_tab_with_the_error(ready_client):
         new_password_repeat="brand-new-pass1",
     )
     assert response.status_code == 200
-    assert tab_links(response.text)[2] == (" active", "/settings?tab=account")
+    assert (" active", "/settings?tab=account") in tab_links(response.text)
+    assert [a for a, _ in tab_links(response.text)].count(" active") == 1
     assert "current password is wrong" in response.text
     assert card_forms(response.text) == ["settings-password"]
 
@@ -97,7 +108,8 @@ def test_a_failed_server_save_reopens_general(ready_client):
 def test_a_failed_bambuddy_save_reopens_its_tab(ready_client):
     response = post(ready_client, "/settings/bambuddy", bambuddy_address="")
     assert response.status_code == 200
-    assert tab_links(response.text)[1] == (" active", "/settings?tab=bambuddy")
+    assert (" active", "/settings?tab=bambuddy") in tab_links(response.text)
+    assert [a for a, _ in tab_links(response.text)].count(" active") == 1
     assert "Please fill in" in response.text
 
 

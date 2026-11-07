@@ -720,7 +720,7 @@
   "orders.new_subtitle": "Bestellung erfassen; der Bestand wird reserviert",
   "orders.cancel_subtitle": "Storno bestätigen; die Reservierung wird frei",
   "orders.view": "Ansehen",
-  "settings.subtitle": "Reprintbuddy einrichten: Sprache, Server, Bambuddy, Konto und Update",
+  "settings.subtitle": "Reprintbuddy einrichten: Sprache, Server, Automatik, Bambuddy, Konto und Update",
   "settings.tab.general": "Allgemein",
   "settings.tab.bambuddy": "Bambuddy",
   "settings.tab.account": "Konto",

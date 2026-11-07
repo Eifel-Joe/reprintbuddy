@@ -720,7 +720,7 @@
   "orders.new_subtitle": "Record an order; its stock is reserved",
   "orders.cancel_subtitle": "Confirm the cancellation; the reservation is released",
   "orders.view": "View",
-  "settings.subtitle": "Set up Reprintbuddy: language, server, Bambuddy, account and updates",
+  "settings.subtitle": "Set up Reprintbuddy: language, server, automation, Bambuddy, account and updates",
   "settings.tab.general": "General",
   "settings.tab.bambuddy": "Bambuddy",
   "settings.tab.account": "Account",

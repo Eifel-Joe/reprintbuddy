@@ -31,10 +31,10 @@ MAX_UPLOAD_BYTES = 64 * 1024
 # and rendering its cards when `current_tab` is its key.
 SETTINGS_TABS: list[tuple[str, str, str]] = [
     ("general", "settings", "settings.tab.general"),
+    ("automation", "list-ordered", "settings.tab.automation"),
     ("bambuddy", "link", "settings.tab.bambuddy"),
     ("account", "user", "settings.tab.account"),
     ("maintenance", "download", "settings.tab.maintenance"),
-    ("automation", "list-ordered", "settings.tab.automation"),
 ]
 DEFAULT_TAB = "general"
 # The tab that shows the card of a section: a page re-rendered with an error opens it.
