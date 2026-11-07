@@ -88,8 +88,8 @@ def part_rows(form) -> list[dict[str, str]]:
 def parse_parts(form, parts: list[Part]) -> dict[int, int]:
     """The parts in use (part id -> quantity per unit); none while the box is not ticked.
 
-    A row without a part is ignored. Only active parts are accepted, each once, with a quantity
-    of at least 1. Raises ValidationError or NotFoundError naming the part."""
+    A row without a part is ignored. Each part may be chosen once, with a quantity of at least 1;
+    whether it exists and is active is for the catalog to say. Raises ValidationError or NotFoundError."""
     if not parse_bool(form.get("has_parts")):
         return {}
     names = {str(part.id): part.name for part in parts}
@@ -100,10 +100,12 @@ def parse_parts(form, parts: list[Part]) -> dict[int, int]:
     for row in rows:
         if not row["part"]:
             continue
-        name = names.get(row["part"])
-        if name is None:
+        part_id = bounded_int(row["part"])
+        if part_id is None:
             raise NotFoundError("parts.not_found")
-        part_id = int(row["part"])
+        # A part the form does not offer (gone, or archived after the page was opened) goes on to
+        # the catalog, which knows which of the two it is and says so.
+        name = names.get(row["part"], row["part"])
         if part_id in chosen:
             raise ValidationError("articles.part_twice", name=name)
         try:

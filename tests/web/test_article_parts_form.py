@@ -6,6 +6,7 @@ JavaScript, adding and removing send the form and show it again, nothing is save
 """
 
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -15,7 +16,7 @@ from factories import make_article, make_part
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog
-from reprintbuddy.models import Article, ArticlePart
+from reprintbuddy.models import Article, ArticlePart, Part
 from reprintbuddy.web import i18n
 from reprintbuddy.web.i18n import translate
 
@@ -355,3 +356,31 @@ def test_add_stops_at_the_row_limit(bb_client):
     response = bb_client.post(FORM, data=create_fields(
         bb_client, has_parts="on", parts_part=[""] * 200, parts_qty=[""] * 200, parts_add="1"))
     assert response.status_code == 200 and len(rows_of(response.text)) == 200
+
+
+# ---- archived parts -------------------------------------------------------------------------
+
+
+def test_a_part_archived_meanwhile_gets_the_archived_message(bb_client):
+    insert, hex_key = two_parts(bb_client)
+    data = create_fields(bb_client, has_parts="on", parts_part=[str(hex_key)], parts_qty=["1"])
+    with sm_of(bb_client).begin() as s:
+        catalog.archive_part(s, hex_key)  # archived in another tab after the form was opened
+    response = bb_client.post(FORM, data=data)
+    assert response.status_code == 200
+    assert en("parts.archived", name="Hex key 2") in response.text
+    assert article_count(bb_client) == 0
+
+
+def test_a_link_to_an_archived_part_survives_editing(ready_client):
+    """The form does not show it, but saving must not drop it (stock still deducts it)."""
+    a, insert, hex_key = article_with_parts(ready_client)
+    with sm_of(ready_client).begin() as s:
+        s.add(ArticlePart(article_id=a, part_id=hex_key, qty_per_unit=3))
+        s.flush()
+        s.get(Part, hex_key).archived_at = datetime.now(UTC)
+    page = ready_client.get(f"/articles/{a}/edit").text
+    assert rows_of(page) == [(str(insert), "2", [str(insert)])]  # only the active part is in the list
+    for fields in ({"has_parts": "on", "parts_part": [str(insert)], "parts_qty": ["5"]}, {}):
+        assert ready_client.post(f"/articles/{a}/edit", data=edit_fields(ready_client, a, **fields)).status_code == 303
+    assert links(ready_client) == {(a, hex_key): 3}  # unticked: the active link is gone, the archived stays
