@@ -12,9 +12,9 @@ from sqlalchemy.orm import Session
 from reprintbuddy.domain import inspection, stock
 from reprintbuddy.domain.errors import DomainError
 from reprintbuddy.domain.stock import MAX_QTY
+from reprintbuddy.models import Article, Inspection
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
-from reprintbuddy.models import Article, Inspection
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.forms import duplicate_redirect, error_status, error_text, parse_int, parse_text
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction

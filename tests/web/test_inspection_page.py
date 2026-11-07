@@ -9,7 +9,7 @@ from sqlalchemy import select
 from conftest import csrf_of, sm_of
 from factories import make_article, make_dispatch, make_entry, make_part
 from reprintbuddy import settings as st
-from reprintbuddy.domain import inspection, tracking
+from reprintbuddy.domain import inspection, rules, tracking
 from reprintbuddy.models import Article, ArticlePart, Inspection, JournalEntry
 from reprintbuddy.web.i18n import translate
 
@@ -102,7 +102,7 @@ def test_list_shows_cards(ready_client):  # Spec 8.2
     page = ready_client.get(PAGE).text
     assert page.count('class="card section inspect-card"') == 2
     assert "Template A" in page and "Template B" in page
-    assert page.count('value="1"') >= 2  # the number field starts at the units
+    assert len(re.findall(r'name="good"[^>]*value="1"', page)) == 2  # the number field starts at the units
     assert page.count(en("inspections.goes_to_assembly")) == 1
     assert en("inspections.confirm") in page
     assert en("inspections.subtitle") in page
@@ -128,6 +128,7 @@ def test_confirm_good(ready_client):  # Spec 12 step 4
     assert response.status_code == 303 and response.headers["location"] == PAGE
     assert count(ready_client, Article, a, "stock") == 1
     assert count(ready_client, Article, a, "provisional") == 0
+    assert rules.available(count(ready_client, Article, a, "stock"), count(ready_client, Article, a, "reserved")) == 1
     assert count(ready_client, Inspection, i, "good_units") == 1
     assert len(ticks) == 1
     page = ready_client.get(PAGE).text
