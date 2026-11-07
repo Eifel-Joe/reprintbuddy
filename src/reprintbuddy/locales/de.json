@@ -493,6 +493,7 @@
   "warning.waiting_for_review": "{count} Druck(e) warten in Bambuddy auf Freigabe. Dem Schlüssel von Reprintbuddy das Recht „Print Without Review“ (queue:start_unreviewed) geben oder die Drucke in Bambuddy starten.",
   "warning.bambuddy_rejected": "Bambuddy hat einen Druck von {name} abgelehnt ({message}). Er liegt wieder in der Warteschlange; die nächste reguläre Abfrage versucht es erneut.",
   "warning.unclear_prints": "{count} Übergabe(n) unklar – bis sie geklärt sind, wird nichts Neues übergeben.",
+  "warning.resolve_rejected": "Bambuddy lehnt die Suche nach einer unklaren Übergabe ab ({message}). Bis sie gefunden ist, wird nichts Neues übergeben.",
   "warning.duplicates": "Ein Druck steht mehrfach in Bambuddy (Einträge {ids}). Der Artikel ist pausiert; die überzähligen Einträge in Bambuddy löschen.",
   "warning.tick_error": "Die Automatik ist mit einem Fehler stehen geblieben ({message}). Sie versucht es beim nächsten Durchlauf erneut.",
   "warning.hook_error": "Eine Erweiterung ist bei der letzten Abfrage fehlgeschlagen: {names}.",

@@ -456,8 +456,9 @@ async def test_resolve_rejected_keeps_unclear(db, fake_bambuddy):
 
     report = await dispatch.resolve_pending(fake_bambuddy, db)
 
+    # Final review 8: the refusal's text is kept for the warning.
     assert report == dispatch.ResolveReport(
-        reachable=True, resolved=0, unresolved=2, duplicates=[], lost=[]
+        reachable=True, resolved=0, unresolved=2, duplicates=[], lost=[], error="422: bad"
     )
     assert fake_bambuddy.calls == ["find_items_by_batch"]
     with db.begin() as s:

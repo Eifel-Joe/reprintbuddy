@@ -403,6 +403,7 @@ class ResolveReport:
     unresolved: int  # sent prints left `unclear` because the search failed
     duplicates: list[list[int]]  # Bambuddy ids per print found more than once
     lost: list[int]  # dispatch ids of sent prints Bambuddy does not have
+    error: str | None = None  # Bambuddy refused the search (shown as a warning)
 
 
 async def resolve_pending(client: BambuddyClient, sm: sessionmaker) -> ResolveReport:
@@ -443,6 +444,8 @@ async def resolve_pending(client: BambuddyClient, sm: sessionmaker) -> ResolveRe
                 items = await client.find_items_by_batch(batch_id)
             except (BambuddyUnavailable, BambuddyRejected) as exc:
                 report.reachable = not isinstance(exc, BambuddyUnavailable)
+                if isinstance(exc, BambuddyRejected):
+                    report.error = str(exc)[:MAX_MESSAGE]
                 rest = [d for _, d, _ in sent[index:]]
                 with sm.begin() as session:
                     for d in rest:

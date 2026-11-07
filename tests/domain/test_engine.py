@@ -367,6 +367,28 @@ async def test_unclear_blocks_new_dispatch(engine_env):
     )
 
 
+async def test_refused_search_becomes_a_warning(engine_env):
+    """Final review 8: Bambuddy refusing the search for an unclear print is shown."""
+    env = engine_env
+    env.fake.fail_next("enqueue", BambuddyUnavailable("timeout"), after_effect=True)
+    await env.engine.tick(poll=False)
+    env.fake.fail_next("find_items_by_batch", BambuddyRejected("Forbidden", status=403))
+
+    await env.engine.tick(poll=False)
+
+    assert env.engine.status.resolve_error == "403: Forbidden"
+    assert env.engine.status.unresolved == 1
+    assert EngineWarning("warning.resolve_rejected", {"message": "403: Forbidden"}) in warnings(
+        env.sm, env.engine.status
+    )
+
+    await env.engine.tick(poll=False)
+
+    assert env.engine.status.resolve_error is None
+    assert statuses(env.sm) == ["queued"]
+    assert "warning.resolve_rejected" not in keys(env.sm, env.engine.status)
+
+
 async def test_rejected_waits_for_regular_tick(engine_env):
     env = engine_env
     env.fake.fail_next(
@@ -730,6 +752,7 @@ async def test_collect_warnings_order(engine_env):
         waiting_review=[7, 8],
         rejected="400: No",
         rejected_name="Template B",
+        resolve_error="403: Nope",
         duplicates=[[1, 2]],
         error="boom",
         hook_errors={"b": "x", "a": "y"},
@@ -747,6 +770,7 @@ async def test_collect_warnings_order(engine_env):
         EngineWarning("warning.waiting_for_review", {"count": 2}),
         EngineWarning("warning.bambuddy_rejected", {"name": "Template B", "message": "400: No"}),
         EngineWarning("warning.unclear_prints", {"count": 1}),
+        EngineWarning("warning.resolve_rejected", {"message": "403: Nope"}),
         EngineWarning("warning.duplicates", {"ids": [[1, 2]]}),
         EngineWarning("warning.tick_error", {"message": "boom"}),
         EngineWarning("warning.hook_error", {"names": ["a", "b"]}),
@@ -773,12 +797,12 @@ async def test_warning_texts_exist_and_format(engine_env):
     status = EngineStatus(
         configured=True, reachable=False, poll_error="403: Forbidden", unexpected=["paused"],
         waiting_review=[7], rejected="400: No", rejected_name="Template B",
-        duplicates=[[1, 2], [5, 6]], error="boom",
+        resolve_error="403: Nope", duplicates=[[1, 2], [5, 6]], error="boom",
         hook_errors={"a": "x"}, skipped_for_update=True, cap_reached=True,
         waiting_for_printer=[env.article_id],
     )
     found = warnings(env.sm, status)
-    assert len(found) == 14
+    assert len(found) == 15
     for lang in ("en", "de"):
         for warning in found:
             text = warning_text(lang, warning)

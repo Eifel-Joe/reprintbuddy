@@ -64,6 +64,7 @@ class EngineStatus:
     rejected_name: str | None = None  # the article of the refused print (final review 7)
     poll_error: str | None = None
     unresolved: int = 0
+    resolve_error: str | None = None  # Bambuddy refused the search for an unclear print
     duplicates: list[list[int]] = field(default_factory=list)
     cap_reached: bool = False
     skipped_for_update: bool = False
@@ -195,6 +196,7 @@ class Engine:
         report = await dispatch.resolve_pending(client, self.sm)
         status.reachable = reachable and report.reachable
         status.unresolved = report.unresolved
+        status.resolve_error = report.error
         # Duplicates are reported once, when they are settled: keep each group while its
         # article stays paused (`_prune_duplicates`); the journal keeps the ids for good.
         for ids in report.duplicates:
@@ -443,6 +445,8 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
     )
     if unclear:
         add("unclear_prints", count=unclear)
+    if status.resolve_error:
+        add("resolve_rejected", message=status.resolve_error)
     if status.duplicates:
         add("duplicates", ids=[list(ids) for ids in status.duplicates])
     if status.error:
