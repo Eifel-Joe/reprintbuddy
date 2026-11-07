@@ -12,7 +12,7 @@
     <p class="status">{{ t('ops.restore.encrypted' if manifest.encrypted else 'ops.restore.plain') }}</p>
     {% if older %}<p class="hint">{{ t('ops.restore.older') }}</p>{% endif %}
   </div>
-  <p class="notice" role="note">{{ t('ops.restore.warning') }}</p>
+  <div class="warning-card tone-warn" role="note">{{ ui.icon('triangle-alert') }}<p>{{ t('ops.restore.warning') }}</p></div>
   <form id="restore-form" method="post" action="/settings/restore">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if manifest.encrypted %}
