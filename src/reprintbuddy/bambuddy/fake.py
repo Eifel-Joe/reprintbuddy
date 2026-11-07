@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable
+import asyncio
+import dataclasses
+from datetime import UTC, datetime
+
+from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable, BatchRefLost
 from reprintbuddy.bambuddy.types import (
     EnqueueRequest,
     FilamentRequirement,
@@ -15,11 +19,24 @@ from reprintbuddy.bambuddy.types import (
     SpoolMode,
 )
 
+# The two methods with an effect: `fail_next(..., after_effect=True)` lets the effect happen
+# first ("the answer got lost"). Every other method has no effect, so it fails at once.
+_EFFECT_METHODS = frozenset({"ensure_batch", "enqueue"})
+_FAILABLE_METHODS = _EFFECT_METHODS | {
+    "list_folders", "list_files", "get_file", "list_plates", "plate_thumbnail",
+    "filament_requirements", "list_printers", "spool_mode", "list_spools",
+    "get_queue_item", "list_queue", "find_items_by_batch",
+}
+
 
 class FakeBambuddy:
     def __init__(self) -> None:
         self.unavailable = False
         self.spoolman_enabled = False
+        self.spoolman_reachable = True  # False + spoolman_enabled: list_spools raises
+        self.delay: float = 0.0  # queue calls wait first, so other tasks can interleave
+        self.username = "reprintbuddy"
+        self.enqueued: list[EnqueueRequest] = []
         self.calls: list[str] = []
         self._folders: list[LibraryFolder] = []
         self._files: dict[int, LibraryFile] = {}
@@ -28,6 +45,14 @@ class FakeBambuddy:
         self._printers: list[Printer] = []
         self._next_folder = 1
         self._next_file = 1
+        self._items: dict[int, QueueItem] = {}
+        self._batches: dict[str, int] = {}
+        self._next_batch = 1
+        self._next_item = 1
+        self._failures: dict[str, tuple[Exception, bool]] = {}
+        self._spools: dict[int, Spool] = {}
+        self._spool_lists: dict[int, SpoolMode] = {}  # which of Bambuddy's two lists holds it
+        self._next_spool = 1
 
     # ---- fill ------------------------------------------------------------
     def add_folder(self, name: str, parent_id: int | None = None) -> LibraryFolder:
@@ -70,6 +95,10 @@ class FakeBambuddy:
         self.calls.append(name)
         if self.unavailable:
             raise BambuddyUnavailable("fake Bambuddy is switched off")
+        if name not in _EFFECT_METHODS:  # the two writing methods handle their failure themselves
+            failure = self._failures.pop(name, None)
+            if failure:
+                raise failure[0]
 
     async def ping(self) -> bool:
         self.calls.append("ping")
@@ -113,27 +142,219 @@ class FakeBambuddy:
         self._enter("spool_mode")
         return "spoolman" if self.spoolman_enabled else "builtin"
 
-    # ---- left to B2 --------------------------------------------------------
-    async def ensure_batch(self, name: str, external_ref: str, library_file_id: int) -> int:
-        self.calls.append("ensure_batch")
-        raise NotImplementedError
 
-    async def enqueue(self, req: EnqueueRequest) -> QueueItem:
-        self.calls.append("enqueue")
-        raise NotImplementedError
+    # ---- spools: two lists, as Bambuddy keeps them (Decision 12) -----------
+    def add_spool(
+        self,
+        material: str,
+        *,
+        in_mode: SpoolMode = "builtin",
+        brand: str | None = "Example Brand",
+        subtype: str | None = None,
+        color_name: str | None = None,
+        color_hex: str | None = "#000000",
+        label_g: int = 1000,
+        remaining_g: float = 1000.0,
+        archived: bool = False,
+        created_at: datetime | None = None,
+    ) -> Spool:
+        """Put a spool into the list of `in_mode`; `list_spools` shows only the running mode's."""
+        spool = Spool(
+            self._next_spool, material, subtype, brand, color_name, color_hex,
+            label_g, remaining_g, archived, created_at,
+        )
+        self._next_spool += 1
+        self._spools[spool.id] = spool
+        self._spool_lists[spool.id] = in_mode
+        return spool
 
-    async def get_queue_item(self, item_id: int) -> QueueItem | None:
-        self.calls.append("get_queue_item")
-        raise NotImplementedError
+    def set_remaining(self, spool_id: int, grams: float) -> None:
+        self._spools[spool_id] = dataclasses.replace(self._spools[spool_id], remaining_g=grams)
 
-    async def list_queue(self) -> list[QueueItem]:
-        self.calls.append("list_queue")
-        raise NotImplementedError
-
-    async def find_items_by_batch(self, batch_id: int) -> list[QueueItem]:
-        self.calls.append("find_items_by_batch")
-        raise NotImplementedError
+    def archive_spool(self, spool_id: int) -> None:
+        self._spools[spool_id] = dataclasses.replace(self._spools[spool_id], archived=True)
 
     async def list_spools(self) -> list[Spool]:
-        self.calls.append("list_spools")
-        raise NotImplementedError
+        self._enter("list_spools")
+        # The mode is read directly: the real client's inner `spool_mode` call is not one of
+        # the caller's calls, and the recorded `calls` stay what a caller made.
+        mode: SpoolMode = "spoolman" if self.spoolman_enabled else "builtin"
+        if mode == "spoolman" and not self.spoolman_reachable:
+            raise BambuddyUnavailable("Spoolman server is not reachable")
+        return [
+            spool
+            for spool_id, spool in sorted(self._spools.items())
+            if self._spool_lists[spool_id] == mode and not spool.archived
+        ]
+
+    # ---- print queue -------------------------------------------------------
+    def fail_next(self, method: str, exc: Exception, *, after_effect: bool = False) -> None:
+        """The next call of `method` raises `exc`; with `after_effect` the effect happens first.
+
+        `after_effect` ("the answer got lost") only matters for the two writing methods; a
+        read has no effect, so it raises at once either way.
+        """
+        if method not in _FAILABLE_METHODS:
+            raise ValueError(f"cannot inject a failure into {method!r}")
+        self._failures[method] = (exc, after_effect)
+
+    def _pending(self) -> list[QueueItem]:
+        return [i for i in self._items.values() if i.status == "pending"]
+
+    def _highest(self) -> int:
+        return max((i.position or 0 for i in self._pending()), default=0)
+
+    def _put(self, item: QueueItem) -> None:
+        self._items[item.id] = item
+
+    def _new_item(self, **fields: object) -> QueueItem:
+        values: dict[str, object] = {
+            "status": "pending", "batch_id": None, "position": None, "printer_id": None,
+            "target_model": None, "label": "", "created_by": None, "library_file_id": None,
+            "plate_id": None, "printer_name": None, "manual_start": False,
+            "waiting_reason": None, "started_at": None, "completed_at": None,
+            "error_message": None,
+        }
+        values.update(fields)
+        item = QueueItem(id=self._next_item, **values)  # type: ignore[arg-type]
+        self._next_item += 1
+        self._put(item)
+        return item
+
+    def add_foreign_item(
+        self, label: str = "Other print", *, status: str = "pending", created_by: str = "admin"
+    ) -> QueueItem:
+        """An entry somebody else made in Bambuddy: no batch, at the end of the queue."""
+        position = self._highest() + 1 if status == "pending" else None
+        return self._new_item(label=label, status=status, created_by=created_by, position=position)
+
+    def set_status(self, item_id: int, status: str, *, printer_id: int | None = None) -> None:
+        item = self._items[item_id]
+        now = datetime.now(UTC).replace(tzinfo=None)
+        changes: dict[str, object] = {"status": status}
+        if printer_id is not None:
+            changes["printer_id"] = printer_id
+            printer = next((p for p in self._printers if p.id == printer_id), None)
+            changes["printer_name"] = printer.name if printer else None
+        if status == "printing":
+            changes["started_at"] = now
+        elif status in ("completed", "failed", "skipped", "cancelled"):
+            changes["completed_at"] = now
+        self._put(dataclasses.replace(item, **changes))
+
+    def set_manual_start(self, item_id: int, value: bool) -> None:
+        self._put(dataclasses.replace(self._items[item_id], manual_start=value))
+
+    def delete_item(self, item_id: int) -> None:
+        """What deleting an entry in Bambuddy does: it is gone, the positions keep their gaps."""
+        self._items.pop(item_id, None)
+
+    def update_file(
+        self, file_id: int, *, filename: str | None = None, fingerprint: str | None = None
+    ) -> None:
+        changes: dict[str, object] = {}
+        if filename is not None:
+            changes["filename"] = filename
+        if fingerprint is not None:
+            changes["fingerprint"] = fingerprint
+        self._files[file_id] = dataclasses.replace(self._files[file_id], **changes)
+
+    async def _write_call(self, name: str) -> tuple[Exception, bool] | None:
+        """Start of a writing call; returns the queued failure that must fire after the effect."""
+        await asyncio.sleep(self.delay)
+        self._enter(name)
+        failure = self._failures.pop(name, None)
+        if failure and not failure[1]:
+            raise failure[0]
+        return failure
+
+    async def ensure_batch(self, name: str, external_ref: str, library_file_id: int) -> int:
+        failure = await self._write_call("ensure_batch")
+        if library_file_id not in self._files:
+            raise BambuddyRejected("Library file not found", status=404)
+        if external_ref in self._batches:
+            batch_id = self._batches[external_ref]
+            if not any(i.batch_id == batch_id for i in self._items.values()):
+                # Bambuddy answers 409, and its batch list leaves out empty batches
+                raise BatchRefLost(
+                    f"batch reference {external_ref} exists but is empty", status=409
+                )
+        else:
+            batch_id = self._next_batch
+            self._next_batch += 1
+            self._batches[external_ref] = batch_id
+        if failure:
+            raise failure[0]
+        return batch_id
+
+    async def enqueue(self, req: EnqueueRequest) -> QueueItem:
+        # like the HTTP client: refuse before any (simulated) network call
+        if req.target_model == "":
+            raise ValueError("target_model is empty")
+        if (req.target_model is None) == (req.printer_id is None):
+            raise ValueError("exactly one of target_model and printer_id is needed")
+        if req.insert_position is not None and req.insert_position < 1:
+            raise ValueError("insert_position starts at 1")
+        failure = await self._write_call("enqueue")
+        file = self._files.get(req.library_file_id)
+        if file is None:
+            raise BambuddyRejected("Library file not found", status=404)
+        if req.batch_id not in self._batches.values():
+            raise BambuddyRejected("Batch not found", status=404)
+        printer = None
+        if req.printer_id is not None:
+            printer = next((p for p in self._printers if p.id == req.printer_id), None)
+            if printer is None:
+                raise BambuddyRejected("Printer not found", status=404)
+        elif not any(p.model == req.target_model and p.active for p in self._printers):
+            raise BambuddyRejected(
+                f"No active printers for model: {req.target_model}", status=400
+            )
+        highest = self._highest()
+        if req.insert_at_top:
+            position = 1
+        elif req.insert_position is not None:
+            position = min(req.insert_position, highest + 1)
+        else:
+            position = highest + 1
+        for other in self._pending():
+            if other.position is not None and other.position >= position:
+                self._put(dataclasses.replace(other, position=other.position + 1))
+        item = self._new_item(
+            batch_id=req.batch_id,
+            position=position,
+            printer_id=req.printer_id,
+            target_model=req.target_model,
+            label=f"{file.filename} / plate {req.plate_id}",
+            created_by=self.username,
+            library_file_id=req.library_file_id,
+            plate_id=req.plate_id,
+            printer_name=printer.name if printer else None,
+        )
+        self.enqueued.append(req)
+        if failure:
+            raise failure[0]
+        return item
+
+    async def _queue_read(self, name: str, read):
+        await asyncio.sleep(self.delay)
+        self._enter(name)
+        return read()
+
+    async def get_queue_item(self, item_id: int) -> QueueItem | None:
+        return await self._queue_read("get_queue_item", lambda: self._items.get(item_id))
+
+    async def list_queue(self) -> list[QueueItem]:
+        def open_items() -> list[QueueItem]:
+            items = [i for i in self._items.values() if i.status in ("pending", "printing")]
+            return sorted(items, key=lambda i: (i.position is None, i.position or 0, i.id))
+
+        return await self._queue_read("list_queue", open_items)
+
+    async def find_items_by_batch(self, batch_id: int) -> list[QueueItem]:
+        return await self._queue_read(
+            "find_items_by_batch",
+            lambda: sorted(
+                (i for i in self._items.values() if i.batch_id == batch_id), key=lambda i: i.id
+            ),
+        )
