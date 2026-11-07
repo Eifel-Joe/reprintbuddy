@@ -103,7 +103,7 @@
 </section>
 
 <section class="card section wide article-qr" id="qr">
-  <h2>{{ ui.icon('qr-code') }}{{ t('qr.title') }}</h2>
+  <div class="section-head"><h2>{{ ui.icon('qr-code') }}{{ t('qr.title') }}</h2></div>
   <div class="qr-body">
     <img class="qr-image" src="/articles/{{ article.id }}/qr.svg" width="168" height="168" alt="{{ t('qr.alt', name=article.name) }}">
     <div class="qr-text">

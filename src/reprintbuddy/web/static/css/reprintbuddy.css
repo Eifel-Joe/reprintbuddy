@@ -1013,4 +1013,4 @@ form > .btn + .btn.secondary { margin-left: 0.5rem; }
 .qr-text { flex: 1 1 16rem; min-width: 0; }
 .qr-text p { margin: 0 0 0.6rem; }
 .qr-address { overflow-wrap: anywhere; }
-
+.setting-row.stack .setting-control input:not([type="checkbox"]):not([type="file"]) { width: 100%; max-width: none; }

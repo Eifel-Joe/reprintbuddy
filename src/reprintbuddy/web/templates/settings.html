@@ -32,9 +32,13 @@
   {% if error and error_section == 'qr' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
   <form id="settings-qr" method="post" action="/settings/qr">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    {% call ui.setting_row(t('settings.qr_address'), t('settings.qr_address_hint'), "qr_base_url", t('info.qr_address')) %}
-      <input id="qr_base_url" name="qr_base_url" type="text" inputmode="url" value="{{ qr_base_url }}" autocomplete="off" spellcheck="false" placeholder="https://">
-    {% endcall %}
+    {# A web address is long: the field sits under its label across the whole card, like the PEM fields. #}
+    <div class="setting-row stack">
+      <div class="setting-text"><div class="label-row"><label for="qr_base_url">{{ t('settings.qr_address') }}</label>{{ ui.info(t('info.qr_address'), t('settings.qr_address')) }}</div><span>{{ t('settings.qr_address_hint') }}</span></div>
+      <div class="setting-control">
+        <input id="qr_base_url" name="qr_base_url" type="text" inputmode="url" value="{{ qr_base_url }}" autocomplete="off" spellcheck="false" placeholder="https://">
+      </div>
+    </div>
   </form>
 </section>
 
