@@ -227,7 +227,8 @@ async def api_resolve(inspection_id: int, request: Request):
                 found = tx.execute(
                     select(Inspection.units, Inspection.resolved_at).where(Inspection.id == inspection_id)
                 ).first()
-                if found is not None and found.resolved_at is None and good is not None                         and good + scrap != found.units:
+                still_open = found is not None and found.resolved_at is None
+                if still_open and good is not None and good + scrap != found.units:
                     raise ValidationError("inspections.counts_mismatch", units=found.units)
                 result = inspection.resolve_scrap(tx, inspection_id, scrap, "user")
     except DomainError as exc:
