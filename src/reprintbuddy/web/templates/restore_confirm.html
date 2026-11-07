@@ -1,0 +1,32 @@
+{# Second step of a restore (Spec 11.6): what the uploaded backup is, and the confirmation. #}
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% block title %}{{ t('ops.restore.confirm_title') }}{% endblock %}
+{% block content %}
+{% call ui.page_head("archive-restore", t('ops.restore.confirm_title')) %}{% endcall %}
+<section class="card section" id="restore-confirm">
+  {% if error %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
+  <div class="facts">
+    <p>{{ t('ops.restore.created', time=manifest.created_at|local_dt) }}</p>
+    <p>{{ t('ops.restore.version', version=manifest.app_version) }}</p>
+    <p class="status">{{ t('ops.restore.encrypted' if manifest.encrypted else 'ops.restore.plain') }}</p>
+    {% if older %}<p class="hint">{{ t('ops.restore.older') }}</p>{% endif %}
+  </div>
+  <p class="notice" role="note">{{ t('ops.restore.warning') }}</p>
+  <form id="restore-form" method="post" action="/settings/restore">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if manifest.encrypted %}
+    {% call ui.setting_row(t('ops.restore.password'), "", "backup_password") %}
+      <input id="backup_password" name="backup_password" type="password" autocomplete="off" required autofocus>
+    {% endcall %}
+    {% endif %}
+  </form>
+  <div class="actions">
+    <button class="btn" type="submit" form="restore-form">{{ t('ops.restore.confirm_button') }}</button>
+    <form method="post" action="/settings/restore/cancel">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn secondary" type="submit">{{ t('ops.restore.cancel') }}</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

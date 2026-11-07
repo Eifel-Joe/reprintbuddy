@@ -27,6 +27,7 @@ from reprintbuddy.changes import install_change_feed
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.domain import filament, status
 from reprintbuddy.domain.engine import Engine
+from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.running import update_running
 from reprintbuddy.web import deps
@@ -40,6 +41,7 @@ from reprintbuddy.web.rights import RightsMonitor
 from reprintbuddy.web.throttle import FailureBrake, HashLimiter
 from reprintbuddy.web.routes import articles as articles_routes
 from reprintbuddy.web.routes import auth as auth_routes
+from reprintbuddy.web.routes import backup as backup_routes
 from reprintbuddy.web.routes import bookings as bookings_routes
 from reprintbuddy.web.routes import inspection as inspection_routes
 from reprintbuddy.web.routes import journal as journal_routes
@@ -82,7 +84,15 @@ SESSION_COOKIE = "reprintbuddy_session"
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 # Signing in and out, the first-run setup and the operations of the server itself change
 # no stock and no queue.
-TICK_EXEMPT_PREFIXES = ("/login", "/logout", "/setup", "/settings/restart", "/settings/update")
+TICK_EXEMPT_PREFIXES = (
+    "/login",
+    "/logout",
+    "/setup",
+    "/settings/restart",
+    "/settings/update",
+    "/settings/backup",
+    "/settings/restore",
+)
 
 
 async def tick_after_write(request: Request, call_next) -> Response:
@@ -185,6 +195,8 @@ def create_app(
 ) -> FastAPI:
     engine = make_engine(db_path)
     upgrade(engine)
+    # Uploads and half-written files of a restore or backup the last process did not finish.
+    fullbackup.clear_work_dir(fullbackup.work_dir_for(db_path))
     sessionmaker = make_sessionmaker(engine)
     # Every committed change of this sessionmaker goes to the open pages (Spec 10.5.2).
     live = LiveBroker()
@@ -211,13 +223,16 @@ def create_app(
     app.state.session_secret = secret  # also signs the one-time form tokens
     app.state.rights = RightsMonitor()  # what the stored key may do, checked once per start
     app.state.live = live
+    app.state.restore = backup_routes.RestoreState()  # Spec 11.6: pauses writes and the engine
     app.state.version = __version__  # the live channel tells pages of another version to reload
     # The tick engine (plan B4): the app's own sessionmaker, so the change feed reports its
     # writes like any other; its runtime status goes to the pages as topic "bambuddy".
     app.state.ticker = Engine(
         sessionmaker,
         lambda: deps.bambuddy_client(app),
-        update_running=lambda: update_running(db_path.parent, app.state.ops.runner, datetime.now(UTC)),
+        # A restore counts like an update: the engine must not touch the database it replaces.
+        update_running=lambda: app.state.restore.active
+        or update_running(db_path.parent, app.state.ops.runner, datetime.now(UTC)),
         publish=live.publish,
     )
     app.state.ticker.add_poll_hook("filament", filament.poll_hook)  # the daily record and receipt check (B6)
@@ -299,6 +314,7 @@ def create_app(
     app.include_router(queue_routes.router)
     app.include_router(inspection_routes.router)
     app.include_router(ops_routes.router)
+    app.include_router(backup_routes.router)
     app.include_router(live_routes.router)
     app.include_router(ui_routes.router)
     return app

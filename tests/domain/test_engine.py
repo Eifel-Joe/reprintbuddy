@@ -1196,3 +1196,23 @@ async def test_early_timeout_after_update_skip_still_polls(engine_env, monkeypat
         await asyncio.sleep(0.15)
 
     assert calls == [True, True]
+
+
+def test_hold_lets_a_waiting_tick_give_up(engine_env):
+    """A restore holds the engine (Spec 11.6): a tick that waited for it does nothing."""
+    env = engine_env
+
+    async def scenario():
+        async with env.engine.hold():
+            assert env.engine.held()
+            task = asyncio.create_task(env.engine.tick(poll=False))
+            await asyncio.sleep(0)  # the tick starts and waits for the lock
+            env.updating = True  # the restore says "do not touch the database"
+        assert not env.engine.held()
+        return await task
+
+    result = asyncio.run(scenario())
+    assert result.skipped == "update"
+    assert result.created == 0
+    with env.sm() as s:
+        assert s.scalars(select(Dispatch)).all() == []

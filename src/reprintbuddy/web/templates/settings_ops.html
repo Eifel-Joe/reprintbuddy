@@ -1,4 +1,5 @@
-{# Maintenance tab of the settings page: update and export. (The restart card is on the General tab.) #}
+{# Maintenance tab of the settings page: update, full backup, restore and export (Spec 11.6).
+   (The restart card is on the General tab.) #}
 <section class="card" id="ops-update">
   {% call ui.card_head("refresh-cw", t('ops.update.title')) %}
   {% if ops.git_install and not ops.busy %}
@@ -8,7 +9,7 @@
   </form>
   {% endif %}
   {% endcall %}
-  {% if ops.message and ops.message != 'ops.msg.restart_failed' %}<p class="alert" role="alert">{{ t(ops.message) }}</p>{% endif %}
+  {% if ops.message and ops.message_card == 'update' %}<p class="alert" role="alert">{{ t(ops.message) }}</p>{% endif %}
   {% if not ops.git_install %}
   <p class="muted">{{ t('ops.update.unavailable') }}</p>
   {% else %}
@@ -48,6 +49,34 @@
   {% endif %}
   <p class="hint">{{ t('ops.update.backup_note') }}</p>
   {% endif %}
+</section>
+
+<section class="card" id="ops-backup">
+  {% call ui.card_head("archive", t('ops.backup.title')) %}<button class="btn" type="submit" form="ops-backup-form">{{ t('ops.backup.button') }}</button>{% endcall %}
+  {% if ops.message and ops.message_card == 'backup' %}<p class="alert" role="alert">{{ t(ops.message) }}</p>{% endif %}
+  <p class="muted">{{ t('ops.backup.text') }}</p>
+  <form id="ops-backup-form" method="post" action="/settings/backup">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% call ui.setting_row(t('ops.backup.password'), t('ops.backup.password_hint'), "backup_password") %}
+      <input id="backup_password" name="backup_password" type="password" autocomplete="new-password" minlength="{{ min_password_length }}" maxlength="1024">
+    {% endcall %}
+    {% call ui.setting_row(t('ops.backup.password_repeat'), "", "backup_password_repeat") %}
+      <input id="backup_password_repeat" name="backup_password_repeat" type="password" autocomplete="new-password" minlength="{{ min_password_length }}" maxlength="1024">
+    {% endcall %}
+  </form>
+  <p class="notice" role="note">{{ t('ops.backup.warning') }}</p>
+</section>
+
+<section class="card" id="ops-restore">
+  {% call ui.card_head("archive-restore", t('ops.restore.title')) %}<button class="btn" type="submit" form="ops-restore-form">{{ t('ops.restore.upload_button') }}</button>{% endcall %}
+  {% if ops.message and ops.message_card == 'restore' %}<p class="alert" role="alert">{{ t(ops.message) }}</p>{% endif %}
+  <p class="muted">{{ t('ops.restore.text') }}</p>
+  <form id="ops-restore-form" method="post" action="/settings/restore/upload" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% call ui.setting_row(t('ops.restore.file'), t('ops.restore.file_hint'), "backup_file") %}
+      <input id="backup_file" name="backup_file" type="file" accept=".zip,application/zip" required>
+    {% endcall %}
+  </form>
 </section>
 
 <section class="card" id="ops-export">

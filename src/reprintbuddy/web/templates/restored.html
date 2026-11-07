@@ -1,0 +1,21 @@
+{# After a restore (Spec 11.6): the service restarts with the restored database. Everybody
+   is signed out and signs in with the account of the backup. #}
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% block title %}{{ t('ops.restore.done_title') }}{% endblock %}
+{% block content %}
+{% call ui.page_head("archive-restore", t('ops.restore.done_title')) %}{% endcall %}
+<section class="card section">
+  {% if restarted %}
+  <p>{{ t('ops.restore.done') }}</p>
+  <meta http-equiv="refresh" content="60;url=/login">
+  <div id="restart-wait" data-health-url="/healthz" data-return-url="/login">
+    <p role="status">{{ t('ops.restart.in_progress') }}</p>
+  </div>
+  <script src="/static/js/ops.js?v={{ app_version }}" defer></script>
+  {% else %}
+  <p class="alert" role="alert">{{ t('ops.restore.restart_failed') }}</p>
+  <p><a class="btn" href="/login">{{ t('ops.restore.sign_in') }}</a></p>
+  {% endif %}
+</section>
+{% endblock %}
