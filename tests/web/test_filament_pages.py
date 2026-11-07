@@ -192,3 +192,165 @@ def test_filament_list_spool_without_color_name(bb_client, fake_bambuddy):
     assert "Matte" in lines[0] and lines[0].count("Matte") == 1
     assert 'class="swatch"' in lines[0]
     assert "None" not in page.text
+
+
+# ---- the look of v0.3.3 (page head, key figures, table card, symbol buttons, info buttons) -----
+
+from html import unescape  # noqa: E402
+
+from reprintbuddy.web import regions  # noqa: E402
+from reprintbuddy.web.i18n import translate  # noqa: E402
+
+
+def en(key, **params):
+    return translate("en", key, **params)
+
+
+def de(key, **params):
+    return translate("de", key, **params)
+
+
+def head_of(page):
+    return re.search(r'<header class="page-head">.*?</header>', page, re.S).group(0)
+
+
+def region(client, path, name):
+    response = client.get(path, headers={regions.HEADER: name})
+    assert response.status_code == 200
+    return response.text
+
+
+def kpi_cards(html):
+    """(value, label) of every key figure card in `html`."""
+    return re.findall(r'<span class="kpi-value">(.*?)</span><span class="kpi-label">(.*?)</span>', html)
+
+
+def spool_pair(fake):
+    fake.add_spool("PLA", color_hex="#000000", color_name="Black", remaining_g=800.0)
+    fake.add_spool("PLA", color_hex="#000000", color_name="Black", remaining_g=300.0)
+
+
+def test_list_head_has_symbol_title_and_sub(bb_client, fake_bambuddy):
+    spool_pair(fake_bambuddy)
+    head = head_of(bb_client.get("/filament").text)
+    assert "#disc-3" in head and "<h1>Filament</h1>" in head
+    assert f'<p class="page-sub">{en("filament.sub")}</p>' in head
+
+
+def test_list_key_figures_match_the_rows(bb_client, fake_bambuddy):
+    spool_pair(fake_bambuddy)
+    fake_bambuddy.add_spool("PETG", color_hex="#FFFFFF", color_name="White", remaining_g=250.0)
+    page = bb_client.get("/filament").text
+    summary = regions.extract(page, ["summary"])["summary"]
+    cards = {label: value for value, label in kpi_cards(summary)}
+    assert cards[en("kpi.filament_sorts")] == "2"
+    assert cards[en("kpi.filament_stock")] == "1350"  # 1100 + 250, as the rows show them
+    assert cards[en("kpi.filament_spools")] == "3"
+    assert cards[en("kpi.filament_unconfigured")] == "2"  # no settings yet: no suggestions for them
+    assert len([r for r in rows_of(page) if 'class="swatch"' in r]) == 2
+
+
+def test_list_key_figures_drop_the_unconfigured_card_once_set(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    with sm_of(bb_client).begin() as s:
+        make_filament_settings(s, make_sort(s).id)
+    summary = region(bb_client, "/filament", "summary")
+    assert [label for _, label in kpi_cards(summary)] == [
+        en("kpi.filament_sorts"), en("kpi.filament_stock"), en("kpi.filament_spools"),
+    ]
+
+
+def test_list_key_figures_without_known_stock_show_no_zero(bb_client, fake_bambuddy):  # Anti-Ziel 4
+    with sm_of(bb_client).begin() as s:
+        make_sort(s)
+    fake_bambuddy.unavailable = True
+    summary = region(bb_client, "/filament", "summary")
+    labels = [label for _, label in kpi_cards(summary)]
+    assert en("kpi.filament_sorts") in labels
+    assert en("kpi.filament_stock") not in labels and en("kpi.filament_spools") not in labels
+
+
+def test_list_summary_region_follows_the_list_topics(bb_client):
+    page = bb_client.get("/filament").text
+    assert 'data-live-region="summary" data-live-topics="filament article queue"' in page
+
+
+def test_list_is_a_table_card_with_symbol_buttons(bb_client, fake_bambuddy):
+    spool_pair(fake_bambuddy)
+    fake_bambuddy.add_spool("PETG", color_hex="#FFFFFF", color_name="White")
+    with sm_of(bb_client).begin() as s:
+        configured = make_sort(s, material="PETG", color_hex="#FFFFFF", color_name="White")
+        make_filament_settings(s, configured.id)
+        cid = configured.id
+    page = bb_client.get("/filament").text
+    assert '<div class="card table-wrap table-card">' in page
+    assert "<section" not in page and "section wide" not in page
+    assert '<th class="actions-col"><span class="sr-only">Actions</span></th>' in page
+    black = [r for r in rows_of(page) if "Example Brand PLA Black" in r][0]
+    assert re.search(r'<td class="actions-col"><div class="row-actions"><a class="icon-btn" href="/filament/\d+" '
+                     r'title="Configure" aria-label="Configure">.*?#settings', black, re.S)
+    assert "Not configured" in black
+    done = [r for r in rows_of(page) if f'href="/filament/{cid}"' in r][0]
+    assert 'aria-label="Edit settings"' in done and "#pencil" in done and "Configured" in done
+
+
+def test_list_empty_state_is_not_a_table(bb_client):
+    page = bb_client.get("/filament").text
+    assert en("filament.no_sorts") in page and "<table" not in page
+
+
+def test_unmapped_hint_is_a_card(bb_client, fake_bambuddy):
+    with sm_of(bb_client).begin() as s:
+        art = make_article(s, name="Template A")
+        s.add(ArticleFilament(article_id=art.id, slot=2, grams=10.0, material="PLA", color_hex="#000000"))
+    hint = region(bb_client, "/filament", "hint")
+    assert '<div class="card hint-card">' in hint and "Template A" in hint and "<section" not in hint
+
+
+def test_settings_head_card_head_and_buttons(ready_client):
+    sid = sort_id_of(ready_client)
+    page = ready_client.get(f"/filament/{sid}").text
+    head = head_of(page)
+    assert "#disc-3" in head and "<h1>Example Brand PLA Black</h1>" in head
+    assert f'<p class="page-sub">{en("filament.settings_sub")}</p>' in head
+    form = regions.extract(page, ["form"])["form"]
+    assert re.search(rf'<div class="card-head"><h2>.*?#settings.*?{en("filament.settings_card")}</h2>', form, re.S)
+    assert "section wide" not in page
+    assert re.search(r'<form [^>]*data-live-watch="filament-settings:\d+">\s*<p class="live-stale"', form)
+    assert re.search(r'<button class="btn" type="submit">Save</button>', form)
+    assert re.search(r'<a class="btn secondary" href="/filament">Cancel</a>', form)
+
+
+@pytest.mark.parametrize("lang,tr", [("en", en), ("de", de)])
+def test_settings_fields_have_info_buttons(ready_client, lang, tr):
+    sid = sort_id_of(ready_client)
+    with sm_of(ready_client).begin() as s:
+        st.set_setting(s, "language", lang, commit=False)
+    page = ready_client.get(f"/filament/{sid}").text
+    pops = [unescape(p) for p in re.findall(r'<div class="info-pop" role="note">(.*?)</div>', page, re.S)]
+    assert pops == [tr(key) for key in
+                    ("info.filament_lead_time", "info.filament_pack_grams", "info.filament_safety",
+                     "info.filament_min_order_packs")]
+    for name in ("lead_time_days", "pack_grams", "safety_value", "min_order_packs"):
+        tag = re.search(rf'<input[^>]*\bname="{name}"[^>]*>', page).group(0)
+        field_id = re.search(r'\bid="([^"]+)"', tag).group(1)
+        assert f'<label for="{field_id}">' in page
+    for label in re.findall(r"<label\b.*?</label>", page, re.S):
+        assert 'class="info"' not in label
+    for target in re.findall(r'<label for="([^"]+)"', page):
+        assert re.search(rf'<(?:input|select)[^>]*\bid="{re.escape(target)}"', page), target
+
+
+def test_settings_form_field_names_are_unchanged(ready_client):
+    sid = sort_id_of(ready_client)
+    page = ready_client.get(f"/filament/{sid}").text
+    for name in ("csrf_token", "lead_time_days", "pack_grams", "safety_value", "safety_unit",
+                 "min_order_packs", "supplier", "order_url"):
+        assert f'name="{name}"' in page, name
+
+
+def test_settings_error_page_keeps_the_card(ready_client):
+    sid = sort_id_of(ready_client)
+    r = post(ready_client, sid, pack_grams="0")
+    assert r.status_code == 200 and 'role="alert"' in r.text and 'class="card-head"' in r.text
+    assert 'value="Example Supplier"' in r.text

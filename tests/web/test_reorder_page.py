@@ -220,3 +220,88 @@ def test_under_way_row_has_no_stray_slot_select_class(bb_client):
     part_id = add_part(bb_client)
     mark_form(bb_client, "part", part_id, "1")
     assert "slot-select" not in bb_client.get("/reorder").text
+
+
+# ---- the look of v0.3.3 (key figures, tiles without a card, table card, symbol button) -----------
+
+from html import unescape  # noqa: E402
+
+from reprintbuddy.web import regions  # noqa: E402
+from reprintbuddy.web.i18n import translate  # noqa: E402
+
+
+def kpi_cards(html):
+    return re.findall(r'<span class="kpi-value">(.*?)</span><span class="kpi-label">(.*?)</span>', html)
+
+
+def summary_of(client):
+    return dict((label, value) for value, label in kpi_cards(client.get("/reorder", headers={regions.HEADER: "summary"}).text))
+
+
+def test_head_keeps_its_sub(bb_client):
+    head = re.search(r'<header class="page-head">.*?</header>', bb_client.get("/reorder").text, re.S).group(0)
+    assert "#shopping-bag" in head and f'<p class="page-sub">{translate("en", "reorder.sub")}</p>' in head
+
+
+def test_key_figures_match_the_tiles(bb_client, fake_bambuddy):
+    add_part(bb_client)
+    add_filament(bb_client, fake_bambuddy)
+    html = bb_client.get("/reorder").text
+    cards = summary_of(bb_client)
+    assert cards == {"Suggestions": "2", "Filament": "1", "Parts": "1"}  # nothing on its way: no such card
+    assert html.count('<div class="tile">') == 2
+
+
+def test_key_figures_count_what_is_on_its_way(bb_client):
+    pid = add_part(bb_client)
+    add_part(bb_client)
+    mark_form(bb_client, "part", pid, "1")
+    cards = summary_of(bb_client)
+    assert cards["On its way"] == "1" and "Suggestions" in cards
+
+
+def test_summary_region_topics_cover_both_sources(bb_client):
+    page = bb_client.get("/reorder").text
+    assert 'data-live-region="summary" data-live-topics="filament reorder part article queue journal"' in page
+
+
+def test_suggestions_are_tiles_without_a_surrounding_card(bb_client, fake_bambuddy):
+    add_part(bb_client)
+    add_filament(bb_client, fake_bambuddy)
+    html = bb_client.get("/reorder").text
+    assert re.search(r'<div class="collection layout-tiles">\s*<div class="tiles">', html)
+    assert "<section" not in html and "section wide" not in html
+
+
+def test_received_is_a_symbol_button_and_the_row_stays_one_row(bb_client):
+    first = add_part(bb_client)
+    add_part(bb_client, name="Hex key 2")
+    mark_form(bb_client, "part", first, "1")
+    html = bb_client.get("/reorder").text
+    under_way = regions.extract(html, ["under-way"])["under-way"]
+    assert '<div class="card table-wrap table-card">' in under_way
+    assert re.search(r'<th class="actions-col"><span class="sr-only">Actions</span></th>', under_way)
+    body = under_way.split("<tbody>")[1]
+    assert body.count("<tr>") == 1  # one row per mark, no second row for a button
+    assert re.search(r'<form class="icon-form" method="post" action="/reorder/marks/\d+/received">', body)
+    assert 'class="icon-btn" title="arrived" aria-label="arrived"' in body and "#check" in body
+    assert 'class="btn"' not in under_way
+    assert "<h2>" in under_way and "On its way" in under_way
+
+
+def test_pack_field_has_an_info_button_and_keeps_its_name(bb_client, fake_bambuddy):
+    add_part(bb_client)
+    add_filament(bb_client, fake_bambuddy)
+    html = bb_client.get("/reorder").text
+    tiles = re.findall(r'<div class="tile">(.*?)</form>\s*</div>', html, re.S)
+    assert len(tiles) == 2
+    ids = []
+    for tile in tiles:
+        field_id = re.search(r'<label for="([^"]+)">', tile).group(1)
+        ids.append(field_id)
+        tag = re.search(r'<input[^>]*\bname="packs"[^>]*>', tile).group(0)
+        assert f'id="{field_id}"' in tag and 'value="' in tag
+        assert unescape(re.search(r'<div class="info-pop" role="note">(.*?)</div>', tile, re.S).group(1)) \
+            == translate("en", "info.reorder_packs")
+        assert 'class="info"' not in re.search(r"<label\b.*?</label>", tile, re.S).group(0)
+    assert len(set(ids)) == 2  # one id per tile

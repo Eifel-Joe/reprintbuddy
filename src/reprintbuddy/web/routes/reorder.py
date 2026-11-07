@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy.domain import filament, reorder
 from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
 from reprintbuddy.models import utcnow
+from reprintbuddy.web import kpis
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.filament_view import COLOR, spools_or_none
@@ -62,8 +63,15 @@ async def _page(
         }
         for m in reorder.open_marks(db)
     ]
+    # The key figures count the tiles and the marks the page shows.
+    cards = kpis.reorder_cards(
+        lambda key: translate(lang, key),
+        sum(1 for r in rows if r["item_type"] == "filament"),
+        sum(1 for r in rows if r["item_type"] != "filament"),
+        len(under_way),
+    )
     return render(
-        request, "reorder.html", status_code=status, active_nav="reorder", rows=rows,
+        request, "reorder.html", status_code=status, active_nav="reorder", rows=rows, cards=cards,
         under_way=under_way, filament_unknown=sorts is None, error=error,
         stale_day=format_date(day, lang) if day else None,
     )

@@ -4,63 +4,62 @@
 {% block content %}
 {% call ui.page_head("shopping-bag", t('reorder.title'), t('reorder.sub')) %}{% endcall %}
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% call ui.region("summary", "filament reorder part article queue journal") %}{{ ui.kpi_row(cards) }}{% endcall %}
+{#- The suggestions are tiles at every width (controller ruling R8), so there is no card around them. -#}
 {% call ui.region("suggestions", "filament reorder part article queue journal") %}
 {% if stale_day %}<p class="alert" role="status">{{ t('filament.stale', day=stale_day) }}</p>{% endif %}
 {% if filament_unknown %}<p class="alert" role="status">{{ t('reorder.filament_unknown') }}</p>{% endif %}
-<section class="card section wide">
-  {% if rows %}
-  <div class="collection layout-tiles"><div class="tiles">
-    {% for r in rows %}
-    <div class="tile">
-      <div class="tile-head">{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}<div>{{ r.label }}</div></div>
-      <div class="tile-stats">
-        <span>{{ t('reorder.col.stock') }} <strong>{{ r.stock }} {{ r.unit }}</strong></span>
-        <span>{{ t('reorder.col.demand') }} <strong>{{ r.demand }} {{ r.unit }}</strong></span>
-        <span>{{ t('reorder.col.usage') }} <strong>{{ t('reorder.per_day_days', per_day=r.per_day, unit=r.unit, days=r.lead_days) }}</strong></span>
-        <span>{{ t('reorder.col.safety') }} <strong>{{ r.safety }} {{ r.unit }}</strong></span>
-      </div>
-      <p class="reorder-detail">{{ t('reorder.detail', suggestion=r.suggestion) }}{% if r.supplier %} · {{ r.supplier }}{% endif %}{% if r.order_url %} · <a href="{{ r.order_url }}" target="_blank" rel="noopener noreferrer">{{ t('reorder.open_link') }}</a>{% endif %}</p>
-      <form class="tile-foot" method="post" action="/reorder/mark">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="form_token" value="{{ form_token() }}">
-        <input type="hidden" name="item_type" value="{{ r.item_type }}">
-        <input type="hidden" name="item_id" value="{{ r.item_id }}">
-        <label>{{ t('reorder.pack_label') }} <input type="number" name="packs" value="{{ r.packs_value }}" min="1" max="1000" inputmode="numeric" style="width: 6rem" required></label>
-        <button class="btn" type="submit">{{ t('reorder.mark') }}</button>
-      </form>
+{% if rows %}
+{% call ui.collection('tiles') %}
+<div class="tiles">
+  {% for r in rows %}
+  <div class="tile">
+    <div class="tile-head">{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}<div>{{ r.label }}</div></div>
+    <div class="tile-stats">
+      <span>{{ t('reorder.col.stock') }} <strong>{{ r.stock }} {{ r.unit }}</strong></span>
+      <span>{{ t('reorder.col.demand') }} <strong>{{ r.demand }} {{ r.unit }}</strong></span>
+      <span>{{ t('reorder.col.usage') }} <strong>{{ t('reorder.per_day_days', per_day=r.per_day, unit=r.unit, days=r.lead_days) }}</strong></span>
+      <span>{{ t('reorder.col.safety') }} <strong>{{ r.safety }} {{ r.unit }}</strong></span>
     </div>
-    {% endfor %}
-  </div></div>
-  {% else %}<p class="muted">{{ t('reorder.none') }}</p>{% endif %}
-</section>
+    <p class="reorder-detail">{{ t('reorder.detail', suggestion=r.suggestion) }}{% if r.supplier %} · {{ r.supplier }}{% endif %}{% if r.order_url %} · <a href="{{ r.order_url }}" target="_blank" rel="noopener noreferrer">{{ t('reorder.open_link') }}</a>{% endif %}</p>
+    <form class="tile-foot reorder-mark" method="post" action="/reorder/mark">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="form_token" value="{{ form_token() }}">
+      <input type="hidden" name="item_type" value="{{ r.item_type }}">
+      <input type="hidden" name="item_id" value="{{ r.item_id }}">
+      {% call ui.field("packs-" ~ r.item_type ~ "-" ~ r.item_id, t('reorder.pack_label'), t('info.reorder_packs')) %}
+        <input type="number" id="packs-{{ r.item_type }}-{{ r.item_id }}" name="packs" value="{{ r.packs_value }}" min="1" max="1000" inputmode="numeric" required>
+      {% endcall %}
+      <button class="btn" type="submit">{{ t('reorder.mark') }}</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endcall %}
+{% else %}<div class="card"><p class="muted">{{ t('reorder.none') }}</p></div>{% endif %}
 {% endcall %}
 {% call ui.region("under-way", "reorder part journal filament") %}
 {% if under_way %}
-<h2>{{ t('reorder.under_way') }}</h2>
-<section class="card section wide">
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>{{ t('reorder.col.item') }}</th><th>{{ t('reorder.col.ordered') }}</th></tr></thead>
-      <tbody>
-      {% for m in under_way %}
-        <tr>
-          <td>{{ m.label }}: {{ m.packs }} × {{ m.size }} {{ m.unit }}</td>
-          <td>{{ m.day }}</td>
-        </tr>
-        <tr>
-          <td colspan="2">
-            <form method="post" action="/reorder/marks/{{ m.id }}/received">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <input type="hidden" name="form_token" value="{{ form_token() }}">
-              <button class="btn" type="submit">{{ t('reorder.received') }}</button>
-            </form>
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
+<div class="section-head under-way-head"><h2>{{ ui.icon('clock') }}{{ t('reorder.under_way') }}</h2></div>
+<div class="card table-wrap table-card">
+  <table>
+    <thead><tr>
+      <th>{{ t('reorder.col.item') }}</th><th>{{ t('reorder.col.ordered') }}</th>
+      <th class="actions-col"><span class="sr-only">{{ t('list.col.actions') }}</span></th>
+    </tr></thead>
+    <tbody>
+    {% for m in under_way %}
+      <tr>
+        <td class="name">{{ m.label }}: {{ m.packs }} × {{ m.size }} {{ m.unit }}</td>
+        <td class="nowrap">{{ m.day }}</td>
+        <td class="actions-col">{% call ui.row_actions() -%}
+          {{ ui.icon_post('check', t('reorder.received'), '/reorder/marks/' ~ m.id ~ '/received') }}
+        {%- endcall %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endif %}
 {% endcall %}
 {% endblock %}

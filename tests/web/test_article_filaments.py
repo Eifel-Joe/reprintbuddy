@@ -199,3 +199,79 @@ def test_successful_save_does_not_ask_bambuddy(bb_client, fake_bambuddy):
     r = bb_client.post(f"/articles/{a}/filaments", data={"csrf_token": token, "slot_1": sort_id}, follow_redirects=False)
     assert r.status_code == 303 and slot_one(bb_client, a) == int(sort_id)
     assert "list_spools" not in fake_bambuddy.calls
+
+
+# ---- the look of v0.3.3 (page head, card head, table card, info button) --------------------------
+
+from html import unescape  # noqa: E402
+
+from reprintbuddy.web import regions  # noqa: E402
+from reprintbuddy.web.i18n import translate  # noqa: E402
+
+
+def head_of(page):
+    return re.search(r'<header class="page-head">.*?</header>', page, re.S).group(0)
+
+
+def test_head_has_package_symbol_article_name_and_sub(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    a = make(bb_client)
+    head = head_of(bb_client.get(f"/articles/{a}/filaments").text)
+    assert "#package" in head and "<h1>Template A</h1>" in head
+    assert f'<p class="page-sub">{translate("en", "filament.map_sub")}</p>' in head
+
+
+def test_title_sits_in_a_card_head_and_no_loose_heading_is_left(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    a = make(bb_client)
+    page = bb_client.get(f"/articles/{a}/filaments").text
+    assert re.search(r'<div class="card-head"><h2>.*?Filament assignment</h2>', page, re.S)
+    assert len(re.findall(r"<h2\b", page)) == 1  # the one inside the card head
+    assert "section wide" not in page and "<section" not in page
+
+
+def test_table_is_a_table_card_inside_the_form(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    a = make(bb_client)
+    page = bb_client.get(f"/articles/{a}/filaments").text
+    form = re.search(rf'<form method="post" action="/articles/{a}/filaments".*?</form>', page, re.S).group(0)
+    assert '<div class="card table-wrap table-card">' in form
+    assert 'class="live-stale"' in form and 'name="csrf_token"' in form
+    assert 'name="slot_1"' in form
+    assert re.search(r'<a class="btn secondary" href="/articles/\d+">Cancel</a>', form)
+
+
+def test_mapping_has_its_info_button(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    a = make(bb_client)
+    page = bb_client.get(f"/articles/{a}/filaments").text
+    pops = [unescape(p) for p in re.findall(r'<div class="info-pop" role="note">(.*?)</div>', page, re.S)]
+    assert pops == [translate("en", "info.filament_mapping")]
+    assert 'aria-label="Explanation of Filament assignment"' in page
+    for label in re.findall(r"<label\b.*?</label>", page, re.S):
+        assert 'class="info"' not in label
+
+
+def test_look_in_german(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    a = make(bb_client)
+    with sm_of(bb_client).begin() as s:
+        st.set_setting(s, "language", "de", commit=False)
+    page = bb_client.get(f"/articles/{a}/filaments").text
+    assert translate("de", "filament.map_sub") in head_of(page)
+    assert unescape(translate("de", "info.filament_mapping")) in unescape(page)
+
+
+def test_read_only_page_keeps_the_look_without_a_save_button(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    a = make(bb_client, archived=True)
+    page = bb_client.get(f"/articles/{a}/filaments").text
+    assert '<div class="card table-wrap table-card">' in page and "disabled" in page
+    assert 'type="submit">Save' not in page
+
+
+def test_form_region_holds_whole_cards_only(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
+    a = make(bb_client)
+    piece = bb_client.get(f"/articles/{a}/filaments", headers={regions.HEADER: "form"}).text
+    assert piece.count("<table") == 1 and "card-head" in piece

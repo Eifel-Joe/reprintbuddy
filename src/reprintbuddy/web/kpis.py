@@ -52,3 +52,41 @@ def state_cards(
         key = "status.paused" if state == "paused" else f"status.{kind}.{state}"
         cards.append(Kpi(icon=_ICONS.get(state, "circle-alert"), tone=status.tone(state), value=n, label=t(key)))
     return cards
+
+
+def filament_cards(
+    t: Callable[[str], str], sorts: int, stock_g: int | None, spools: int | None, unconfigured: int
+) -> list[Kpi]:
+    """Cards of the filament page: the sorts, the total stock in grams, the spools.
+
+    Stock and spools are `None` while the stock is not known (Bambuddy cannot be reached and
+    nothing is recorded): they are left out then, never shown as 0. `unconfigured` counts the
+    sorts without settings, which get no order suggestions (Spec 9.3); its card shows only
+    above zero.
+    """
+    cards = [Kpi(icon="disc-3", tone="accent", value=sorts, label=t("kpi.filament_sorts"))]
+    if stock_g is not None:
+        cards.append(Kpi(icon="boxes", tone="info", value=stock_g, label=t("kpi.filament_stock")))
+    if spools is not None:
+        cards.append(Kpi(icon="package", tone="neutral", value=spools, label=t("kpi.filament_spools")))
+    if unconfigured > 0:
+        cards.append(Kpi(
+            icon="triangle-alert", tone="warn", value=unconfigured, label=t("kpi.filament_unconfigured"),
+        ))
+    return cards
+
+
+def reorder_cards(t: Callable[[str], str], filament: int, parts: int, under_way: int) -> list[Kpi]:
+    """Cards of the reorder page: the open suggestions (yellow, Spec 10.1), split by kind, and what
+    is on its way. Like the state cards, a card besides the total shows only above zero."""
+    total = filament + parts
+    cards = [Kpi(
+        icon="shopping-bag", tone="warn" if total else "accent", value=total, label=t("kpi.reorder_suggestions"),
+    )]
+    if filament > 0:
+        cards.append(Kpi(icon="disc-3", tone="warn", value=filament, label=t("nav.filament")))
+    if parts > 0:
+        cards.append(Kpi(icon="puzzle", tone="warn", value=parts, label=t("kpi.parts")))
+    if under_way > 0:
+        cards.append(Kpi(icon="clock", tone="info", value=under_way, label=t("reorder.under_way")))
+    return cards
