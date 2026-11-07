@@ -961,3 +961,83 @@ async def test_request_poll_runs_regular_tick(engine_env, monkeypatch):
         await wait_until(lambda: len(calls) == 3, timeout=0.1)
 
     assert calls == [True, False, True]
+
+
+# ---- p41: right after an update, ask Bambuddy again soon -------------------------------
+
+
+def record_update_ticks(engine, monkeypatch, *, updates, via_status=False):
+    """The first `updates` ticks are skipped for an update, the rest run.
+
+    `via_status`: the tick itself runs but stops its hand-over for the update (the
+    result is not `"update"`, only `status.skipped_for_update` tells).
+    """
+    calls = []
+
+    async def tick(*, poll):
+        calls.append(poll)
+        skipped = len(calls) <= updates
+        engine.status.skipped_for_update = skipped
+        if skipped and not via_status:
+            return TickResult("update", 0, 0)
+        return TickResult(None, 0, 0)
+
+    monkeypatch.setattr(engine, "tick", tick)
+    return calls
+
+
+async def test_tick_skipped_for_update_is_retried_soon(engine_env, monkeypatch):
+    """p41: a tick skipped for an update is followed by a regular tick after a few
+    seconds, not only after `poll_minutes`, until the update is over."""
+    import reprintbuddy.domain.engine as engine_module
+
+    monkeypatch.setattr(engine_module, "UPDATE_RETRY_SECONDS", 0.02)
+    engine = engine_env.engine
+    calls = record_update_ticks(engine, monkeypatch, updates=2)
+
+    async with running(engine, lambda: 60):
+        await wait_until(lambda: len(calls) >= 3)
+        await asyncio.sleep(0.1)  # once the update is over, the interval holds again
+
+    assert calls == [True, True, True]
+    assert engine.status.skipped_for_update is False
+
+
+async def test_hand_over_stopped_for_update_is_retried_soon(engine_env, monkeypatch):
+    """Sister path: the hand-over stopped for an update in the middle of a tick."""
+    import reprintbuddy.domain.engine as engine_module
+
+    monkeypatch.setattr(engine_module, "UPDATE_RETRY_SECONDS", 0.02)
+    engine = engine_env.engine
+    calls = record_update_ticks(engine, monkeypatch, updates=1, via_status=True)
+
+    async with running(engine, lambda: 60):
+        await wait_until(lambda: len(calls) >= 2)
+        await asyncio.sleep(0.1)
+
+    assert calls == [True, True]
+
+
+async def test_skipped_short_tick_brings_the_poll_forward(engine_env, monkeypatch):
+    """A booking's short tick skipped for an update also leads to a regular tick soon."""
+    import reprintbuddy.domain.engine as engine_module
+
+    monkeypatch.setattr(engine_module, "UPDATE_RETRY_SECONDS", 0.02)
+    engine = engine_env.engine
+    calls = []
+
+    async def tick(*, poll):
+        calls.append(poll)
+        skipped = len(calls) == 2  # the first poll ran; the booking's tick hits the update
+        engine.status.skipped_for_update = skipped
+        return TickResult("update" if skipped else None, 0, 0)
+
+    monkeypatch.setattr(engine, "tick", tick)
+
+    async with running(engine, lambda: 60):
+        await wait_until(lambda: calls == [True])
+        engine.request_tick()
+        await wait_until(lambda: len(calls) >= 3)
+        await asyncio.sleep(0.1)
+
+    assert calls == [True, False, True]

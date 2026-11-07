@@ -48,6 +48,8 @@ Publish = Callable[[frozenset[str]], None]
 TOPIC = "bambuddy"
 # Poll interval until `poll_seconds()` could be read once (it reads the settings).
 DEFAULT_POLL_SECONDS = 60.0
+# After a tick held back by an update, the next regular tick comes this soon (p41).
+UPDATE_RETRY_SECONDS = 5.0
 
 
 @dataclass
@@ -402,6 +404,18 @@ class Engine:
             except Exception as exc:
                 log.exception("engine: tick failed")
                 problem = repr(exc)
+            # p41 - root cause: the first tick of a freshly started process can still fall
+            # into the update unit, which is running until the service is up again. The
+            # tick is skipped, and the next regular one came only after `poll_minutes`
+            # (default 15): "an update is running" and "never polled" stood that long.
+            # Fix: while ticks are held back by an update - skipped at the start or
+            # stopped in the hand-over, both set `skipped_for_update` - the next regular
+            # tick comes after `UPDATE_RETRY_SECONDS`; a tick that runs clears the flag
+            # and the interval holds again. Rejected: waiting on the update unit itself
+            # (the engine knows only `update_running()`), a fixed second tick (an update
+            # may take longer). Tests: test_engine.py "p41".
+            if self.status.skipped_for_update:
+                next_poll_at = min(next_poll_at, loop.time() + UPDATE_RETRY_SECONDS)
             self.status.error = problem
             self._announce()
 
