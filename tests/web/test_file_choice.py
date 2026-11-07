@@ -341,6 +341,11 @@ def test_plate_step_has_head_and_back_button(mixed):
     assert 'class="toolbar-actions"><a class="btn secondary"' in html and 'class="btn-link" href' not in html
 
 
+def test_plate_step_back_button_has_its_symbol(mixed):
+    html = mixed.get("/articles/new/file/1").text
+    assert re.search(r'<a class="btn secondary" href="[^"]*">.*?#chevrons-left"', html, re.S)
+
+
 def test_not_sliced_note_is_a_card_with_head_and_button(mixed):
     response = mixed.get("/articles/new/file/4")
     assert response.status_code == 409
