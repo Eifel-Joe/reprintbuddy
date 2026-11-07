@@ -409,14 +409,14 @@ class Engine:
                 timed_out = not await self._wait_for_wake(wait)
             self._wake.clear()
             # Root cause: asyncio lets a timeout fire up to `loop._clock_resolution` before
-            # its deadline (0.015625 s on Windows); `loop.time() >= next_poll_at` was then
-            # false and the due poll ran as a short tick, one round late (seen with p41's
-            # retry, present since B4).
+            # its deadline (0.015625 s with Python <= 3.12 on Windows); then
+            # `loop.time() >= next_poll_at` was false and the due poll ran as a short tick,
+            # one round late (seen with p41's retry, present since B4).
             # Fix: a wait that ended by timeout ended because the poll is due - the wait
             # was computed up to `next_poll_at` - so it counts as the poll.
             # NOT-TO-DO: comparing with `next_poll_at - loop._clock_resolution` relies on
             # a private attribute and on how far early the loop may fire.
-            # See test_engine.py::test_early_timeout_still_runs_the_due_poll.
+            # See the two `test_early_timeout_*` tests in test_engine.py.
             poll = self._poll_requested or timed_out or loop.time() >= next_poll_at
             problem: str | None = None
             if poll:
