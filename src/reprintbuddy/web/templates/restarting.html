@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('ops.restart.title') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("refresh-cw", t('ops.restart.title')) %}{% endcall %}
+{% call ui.page_head("refresh-cw", t('ops.restart.title'), t('ops.restart.subtitle')) %}{% endcall %}
 <section class="card section">
   {% if new_url %}
   <p>{{ t('ops.restart.new_address', url=new_url) }}</p>

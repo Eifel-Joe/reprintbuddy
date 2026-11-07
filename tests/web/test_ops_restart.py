@@ -56,6 +56,18 @@ def test_restart_page_waits_on_same_address(ops_env):
     assert "/static/js/ops.js" in response.text
 
 
+def test_restart_page_has_a_subtitle(ops_env):  # v0.3.8 p72: like the other pages
+    response = post_restart(ops_env)
+    assert '<p class="page-sub">Reprintbuddy restarts so that changes to the address or the port take effect.</p>' in response.text
+
+
+def test_restart_page_subtitle_german(ops_env):
+    with ops_env.client.app.state.sessionmaker() as session:
+        st.set_setting(session, "language", "de")
+    response = post_restart(ops_env)
+    assert '<p class="page-sub">Reprintbuddy startet neu, damit Änderungen an Adresse oder Port wirksam werden.</p>' in response.text
+
+
 def test_restart_page_new_address(ops_env):
     set_port(ops_env, 9090)
     response = post_restart(ops_env)

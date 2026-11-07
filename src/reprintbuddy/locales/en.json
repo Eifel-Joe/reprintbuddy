@@ -414,6 +414,7 @@
   "ops.restart.title": "Restart",
   "ops.restart.button": "Restart Reprintbuddy",
   "ops.restart.in_progress": "Restarting … this page reloads when Reprintbuddy is back.",
+  "ops.restart.subtitle": "Reprintbuddy restarts so that changes to the address or the port take effect.",
   "ops.restart.new_address": "After the restart Reprintbuddy is reachable at {url}.",
   "ops.server.running": "Running at {url}",
   "ops.server.pending": "Saved changes take effect after a restart.",

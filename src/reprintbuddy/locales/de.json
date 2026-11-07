@@ -414,6 +414,7 @@
   "ops.restart.title": "Neustart",
   "ops.restart.button": "Reprintbuddy neu starten",
   "ops.restart.in_progress": "Neustart läuft … die Seite lädt neu, sobald Reprintbuddy wieder da ist.",
+  "ops.restart.subtitle": "Reprintbuddy startet neu, damit Änderungen an Adresse oder Port wirksam werden.",
   "ops.restart.new_address": "Nach dem Neustart ist Reprintbuddy unter {url} erreichbar.",
   "ops.server.running": "Läuft unter {url}",
   "ops.server.pending": "Gespeicherte Änderungen werden nach einem Neustart wirksam.",
