@@ -52,7 +52,7 @@ router = APIRouter()
 OPS_MESSAGES: dict[str, str] = {
     "restart_failed": "restart",
     **{code: "update" for code in ("check_failed", "busy", "no_update", "start_failed", "not_git")},
-    **{code: "backup" for code in ("backup_mismatch", "backup_length", "backup_failed")},
+    **{code: "backup" for code in ("backup_mismatch", "backup_length", "backup_failed", "backup_login")},
     **{
         f"restore_{code}": "restore"
         for code in (

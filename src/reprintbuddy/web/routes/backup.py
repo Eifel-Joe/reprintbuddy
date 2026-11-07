@@ -28,6 +28,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
+from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
@@ -39,7 +40,8 @@ from reprintbuddy.ops import running
 from reprintbuddy.ops.service import request_restart
 from reprintbuddy.ops.status import read_status
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import render
+from reprintbuddy.web.deps import get_db, render
+from reprintbuddy.web.routes.auth import password_confirmed
 
 log = logging.getLogger("reprintbuddy.ops")
 router = APIRouter()
@@ -87,13 +89,16 @@ def _remove(*paths: Path) -> None:
 
 
 @router.post("/settings/backup", dependencies=[Depends(verify_csrf)])
-async def download_backup(request: Request) -> Response:
+async def download_backup(request: Request, db: Session = Depends(get_db)) -> Response:
     form = await request.form()
     password = str(form.get("backup_password") or "")
     if password != str(form.get("backup_password_repeat") or ""):
         return _back("backup_mismatch", "ops-backup")
     if password and not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
         return _back("backup_length", "ops-backup")
+    login = str(form.get("login_password") or "")[: 4 * MAX_PASSWORD_LENGTH]
+    if not await password_confirmed(request, db, login):
+        return _back("backup_login", "ops-backup")
     work = fb.ensure_work_dir(_work_dir(request))
     fb.clear_work_dir(work, older_than=fb.STALE_AFTER)
     try:
@@ -197,7 +202,9 @@ async def restore_upload(request: Request) -> Response:
     return RedirectResponse("/settings/restore", status_code=303)
 
 
-def _confirm_page(request: Request, manifest: fb.Manifest, error: str | None = None) -> Response:
+def _confirm_page(
+    request: Request, manifest: fb.Manifest, error: str | None = None, field: str | None = None
+) -> Response:
     return render(
         request,
         "restore_confirm.html",
@@ -205,6 +212,7 @@ def _confirm_page(request: Request, manifest: fb.Manifest, error: str | None = N
         upload_token=_staged_token(request),
         older=manifest.schema_revision != known_revisions()[-1],
         error=error,
+        error_field=field,
         active_nav="settings",
     )
 
@@ -229,7 +237,7 @@ async def restore_cancel(request: Request) -> Response:
 
 
 @router.post("/settings/restore", dependencies=[Depends(verify_csrf)])
-async def restore_confirm(request: Request) -> Response:
+async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Response:
     app = request.app
     form = await request.form()
     path = _staged(request)
@@ -239,6 +247,14 @@ async def restore_confirm(request: Request) -> Response:
     if path is None or expected is None or not secrets.compare_digest(shown.encode(), expected.encode()):
         return _back("restore_expired", "ops-restore")
     password = str(form.get("backup_password") or "")[: 4 * MAX_PASSWORD_LENGTH]
+    login = str(form.get("login_password") or "")[: 4 * MAX_PASSWORD_LENGTH]
+    if not await password_confirmed(request, db, login):
+        try:
+            manifest_shown = await run_in_threadpool(fb.read_manifest, path)
+        except (fb.BackupError, OSError):
+            _discard(request)
+            return _back("restore_expired", "ops-restore")
+        return _confirm_page(request, manifest_shown, "ops.restore.login_wrong", "login")  # the upload stays
     work = fb.ensure_work_dir(_work_dir(request))
     candidate = work / f"candidate-{secrets.token_hex(8)}.db"
 
@@ -250,7 +266,7 @@ async def restore_confirm(request: Request) -> Response:
     except (fb.PasswordNeeded, fb.WrongPassword) as error:
         _remove(candidate)
         assert manifest is not None
-        return _confirm_page(request, manifest, f"ops.restore.{error.code}")  # the upload stays
+        return _confirm_page(request, manifest, f"ops.restore.{error.code}", "backup")  # the upload stays
     except fb.BackupError as error:
         _remove(candidate)
         _discard(request)

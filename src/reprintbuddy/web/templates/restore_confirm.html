@@ -5,7 +5,6 @@
 {% block content %}
 {% call ui.page_head("archive-restore", t('ops.restore.confirm_title')) %}{% endcall %}
 <section class="card section" id="restore-confirm">
-  {% if error %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
   <div class="facts">
     <p>{{ t('ops.restore.created', time=manifest.created_at|local_dt) }}</p>
     <p>{{ t('ops.restore.version', version=manifest.app_version) }}</p>
@@ -17,10 +16,16 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="upload_token" value="{{ upload_token }}">
     {% if manifest.encrypted %}
+    {% if error and error_field == 'backup' %}<p class="alert" role="alert" id="backup-password-error">{{ t(error) }}</p>{% endif %}
     {% call ui.setting_row(t('ops.restore.password'), "", "backup_password") %}
-      <input id="backup_password" name="backup_password" type="password" autocomplete="off" required autofocus>
+      <input id="backup_password" name="backup_password" type="password" autocomplete="off" required{% if error_field != 'login' %} autofocus{% endif %}{% if error_field == 'backup' %} aria-invalid="true" aria-describedby="backup-password-error"{% endif %}>
     {% endcall %}
+    {% elif error and error_field == 'backup' %}<p class="alert" role="alert">{{ t(error) }}</p>
     {% endif %}
+    {% if error and error_field == 'login' %}<p class="alert" role="alert" id="login-password-error">{{ t(error) }}</p>{% endif %}
+    {% call ui.setting_row(t('ops.login_password'), t('ops.login_password_hint'), "login_password") %}
+      <input id="login_password" name="login_password" type="password" autocomplete="current-password" required{% if error_field == 'login' or not manifest.encrypted %} autofocus{% endif %}{% if error_field == 'login' %} aria-invalid="true" aria-describedby="login-password-error"{% endif %}>
+    {% endcall %}
   </form>
   <div class="actions">
     <button class="btn" type="submit" form="restore-form">{{ t('ops.restore.confirm_button') }}</button>

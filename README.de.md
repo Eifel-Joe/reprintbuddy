@@ -243,10 +243,12 @@ Container sonst gesichert wird. Unter *Einstellungen → Update und Sicherung*:
   HTTPS-Schlüssel und das Sitzungsgeheimnis. Mit Passwort (8 bis 1024 Zeichen) wird sie
   verschlüsselt (Argon2id und AES-256-GCM); das Passwort wird nirgends gespeichert, ohne es lässt
   sich die Sicherung nicht wiederherstellen. **Ohne Passwort kommt jeder, der die Datei hat, an die
-  Schlüssel und kann sich anmelden.**
+  Schlüssel und kann sich anmelden.** Vor dem Herunterladen fragt Reprintbuddy das Anmelde-Passwort
+  erneut ab; ein offener Browser allein reicht also nicht.
 - **Wiederherstellen** nimmt so eine Datei (höchstens 128 MB). Reprintbuddy prüft, dass sie eine
   Sicherung von Reprintbuddy in dieser oder einer älteren Version ist (eine ältere Datenbank wird
-  beim Start migriert, eine neuere abgelehnt), fragt bei Verschlüsselung nach dem Passwort, sichert
+  beim Start migriert, eine neuere abgelehnt), fragt nach dem Anmelde-Passwort und bei Verschlüsselung
+  nach dem Passwort der Sicherung, sichert
   die laufende Datenbank wie vor einem Update, ersetzt sie und startet neu. Danach gelten
   Benutzername und Passwort aus der Sicherung, und alle melden sich neu an.
 - **Export** lädt alle Daten als JSON-Datei herunter, **ohne** API-Schlüssel, Passwörter, den

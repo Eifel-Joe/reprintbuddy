@@ -231,10 +231,11 @@ Under *Settings → Update and backup*:
   **including** the Bambuddy key, the password hash, the private HTTPS key and the session
   secret. Give it a password (8 to 1024 characters) and it is encrypted (Argon2id and
   AES-256-GCM); the password is stored nowhere, so without it the backup cannot be restored.
-  **Without a password, anyone who has the file gets the keys and can sign in.**
+  **Without a password, anyone who has the file gets the keys and can sign in.** The download asks
+  for your sign-in password again, so an open browser alone is not enough.
 - **Restore** takes such a file (at most 128 MB). Reprintbuddy checks that it is a Reprintbuddy
   backup of this or an older version (an older database is migrated at the start, a newer one is
-  refused), asks for the password if it is encrypted, backs up the running database as before an
+  refused), asks for your sign-in password and, if the file is encrypted, its password, backs up the running database as before an
   update, replaces it and restarts. Afterwards the user name and password of the backup apply
   and everybody signs in again.
 - **Export** downloads all data as a JSON file, **without** API keys, passwords, the private

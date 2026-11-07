@@ -32,12 +32,13 @@ def post(env, path, **data):
     return env.client.post(path, data={"csrf_token": token, **data})
 
 
-def download(env, password="", repeat=None):
+def download(env, password="", repeat=None, login=PASSWORD):
     return post(
         env,
         "/settings/backup",
         backup_password=password,
         backup_password_repeat=password if repeat is None else repeat,
+        login_password=login,
     )
 
 
@@ -50,7 +51,7 @@ def upload(env, content: bytes, name="backup.zip"):
     )
 
 
-def confirm(env, password=""):
+def confirm(env, password="", login=PASSWORD):
     """Press the button of the confirmation page (with the token of the upload it shows)."""
     import re
 
@@ -59,7 +60,12 @@ def confirm(env, password=""):
     token = csrf_of(env.client, "/settings")
     return env.client.post(
         "/settings/restore",
-        data={"csrf_token": token, "backup_password": password, "upload_token": found.group(1) if found else ""},
+        data={
+            "csrf_token": token,
+            "backup_password": password,
+            "upload_token": found.group(1) if found else "",
+            "login_password": login,
+        },
     )
 
 
@@ -188,7 +194,7 @@ def test_restore_plain_backup(ops_env):
     assert 'name="backup_password"' not in page
     assert "Everybody is signed out" in page
 
-    response = confirm(ops_env)
+    response = confirm(ops_env, login="a-newer-password-1")  # the password of the running database
     assert response.status_code == 200
     assert "Sign in with the user name and password of the backup" in response.text
     assert RESTART_CMD in ops_env.runner.calls
@@ -448,7 +454,7 @@ def confirm_with(env, upload_token, password=""):
     token = csrf_of(env.client, "/settings")
     return env.client.post(
         "/settings/restore",
-        data={"csrf_token": token, "backup_password": password, "upload_token": upload_token},
+        data={"csrf_token": token, "backup_password": password, "upload_token": upload_token, "login_password": PASSWORD},
     )
 
 
@@ -550,3 +556,72 @@ def test_after_the_replace_sign_in_and_restart_are_possible(ops_env, monkeypatch
     assert signed_in.status_code == 303
     token = csrf_of(ops_env.client, "/settings")
     assert ops_env.client.post("/settings/restart", data={"csrf_token": token}).status_code == 200
+
+
+# --- the sign-in password is asked again (decided 07.11.2026, Spec 11.6) -------------------------
+
+
+class CountingBrake:
+    def __init__(self, brake):
+        self.brake = brake
+        self.failures = 0
+
+    def record_failure(self):
+        self.failures += 1
+        self.brake.record_failure()
+
+    def current_delay(self):
+        return self.brake.current_delay()
+
+
+def test_pages_ask_for_the_sign_in_password(ops_env):
+    page = ops_env.client.get(MAINTENANCE).text
+    assert 'name="login_password"' in page and 'autocomplete="current-password"' in page
+    upload(ops_env, made_backup(ops_env))
+    assert 'name="login_password"' in ops_env.client.get("/settings/restore").text
+
+
+@pytest.mark.parametrize("login", ["", "wrong-password-1"])
+def test_download_needs_the_sign_in_password(ops_env, login):
+    brake = CountingBrake(ops_env.client.app.state.login_brake)
+    ops_env.client.app.state.login_brake = brake
+    response = download(ops_env, BACKUP_PASSWORD, login=login)
+    assert response.status_code == 303
+    assert response.headers["location"] == f"{MAINTENANCE}&ops=backup_login#ops-backup"
+    assert "The sign-in password is wrong. Nothing was downloaded." in ops_env.client.get(response.headers["location"]).text
+    assert brake.failures == 1
+    assert work_files(ops_env) == []
+
+
+@pytest.mark.parametrize("login", ["", "wrong-password-1"])
+def test_restore_needs_the_sign_in_password(ops_env, login):
+    content = made_backup(ops_env)
+    set_queue_cap(ops_env, 9)
+    upload(ops_env, content)
+    brake = CountingBrake(ops_env.client.app.state.login_brake)
+    ops_env.client.app.state.login_brake = brake
+    response = confirm(ops_env, login=login)
+    assert response.status_code == 200
+    assert "The sign-in password is wrong. Nothing was changed." in response.text
+    assert brake.failures == 1
+    assert queue_cap(ops_env) == 9 and backups(ops_env) == [] and ops_env.runner.calls == []
+    assert confirm(ops_env).status_code == 200  # the upload is still there
+    assert queue_cap(ops_env) == 10
+
+
+def test_sign_in_password_waits_for_the_brake(ops_env, monkeypatch):
+    """Many wrong passwords anywhere slow down this check too: it is the login's way."""
+    import asyncio
+
+    waited = []
+
+    async def sleep(seconds):
+        waited.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    brake = ops_env.client.app.state.login_brake
+    brake.delay = 2.0
+    for _ in range(brake.threshold):
+        brake.record_failure()
+    download(ops_env, login=PASSWORD)
+    assert 2.0 in waited
