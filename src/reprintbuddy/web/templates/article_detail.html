@@ -102,6 +102,22 @@
   {% endif %}
 </section>
 
+<section class="card section wide article-qr" id="qr">
+  <h2>{{ ui.icon('qr-code') }}{{ t('qr.title') }}</h2>
+  <div class="qr-body">
+    <img class="qr-image" src="/articles/{{ article.id }}/qr.svg" width="168" height="168" alt="{{ t('qr.alt', name=article.name) }}">
+    <div class="qr-text">
+      <p class="muted">{{ t('qr.hint') }}</p>
+      <p><span class="muted">{{ t('qr.address') }}:</span> <code class="qr-address">{{ qr_address }}</code></p>
+      {% if qr_local %}<p class="alert" role="alert">{{ t('qr.local_warning') }} <a href="/settings?tab=general">{{ t('qr.local_warning_link') }}</a></p>{% endif %}
+      <div class="actions">
+        <a class="btn secondary" href="/articles/{{ article.id }}/qr.png?download=1">{{ ui.icon('download') }}{{ t('qr.download_png') }}</a>
+        <a class="btn secondary" href="/articles/{{ article.id }}/qr.svg?download=1">{{ ui.icon('download') }}{{ t('qr.download_svg') }}</a>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="card section wide">
   <h2>{{ t('articles.settings') }}</h2>
   <dl class="props">

@@ -27,6 +27,17 @@
   </form>
 </section>
 
+<section class="card" id="qr-address">
+  {% call ui.card_head("qr-code", t('settings.qr_title')) %}<button class="btn" type="submit" form="settings-qr">{{ t('settings.save') }}</button>{% endcall %}
+  {% if error and error_section == 'qr' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
+  <form id="settings-qr" method="post" action="/settings/qr">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% call ui.setting_row(t('settings.qr_address'), t('settings.qr_address_hint'), "qr_base_url", t('info.qr_address')) %}
+      <input id="qr_base_url" name="qr_base_url" type="text" inputmode="url" value="{{ qr_base_url }}" autocomplete="off" spellcheck="false" placeholder="https://">
+    {% endcall %}
+  </form>
+</section>
+
 <section class="card" id="ops-restart">
   {% call ui.card_head("refresh-cw", t('ops.restart.title')) %}
   <form method="post" action="/settings/restart">

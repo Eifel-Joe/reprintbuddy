@@ -29,6 +29,7 @@ from reprintbuddy.models import (
     Article, ArticleFilament, ArticlePart, Dispatch, FilamentSort, Part, WorkQueueEntry,
 )
 from reprintbuddy.web import kpis, listing
+from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, local_next, release_connection, render
 from reprintbuddy.web.forms import (
@@ -598,6 +599,8 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         in_progress_units=coverage.in_progress_units,
         in_progress_prints=len(open_prints),
     )
+    base = qr_view.base_address(request, db)
+    qr_address = qr_view.article_address(base, article_id)
     return render(
         request,
         "article_detail.html",
@@ -608,6 +611,8 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         queue_entries=queue_entries,
         open_prints=open_prints,
         dispatch_tones=DISPATCH_TONES,
+        qr_address=qr_address,
+        qr_local=qr_view.is_local_address(base),
         has_target=bool(article.target_model or article.printer_id),
         target_label=_target_label(lang, article),
         filaments=[

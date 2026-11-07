@@ -1005,3 +1005,12 @@ form > .btn + .btn.secondary { margin-left: 0.5rem; }
 .reorder-mark { align-items: flex-end; }
 .reorder-mark .field { margin-bottom: 0; }
 .reorder-mark input[type="number"] { width: 6rem; }
+
+/* QR code card on the article page (Spec 8.4). The picture has a white ground of its own, so it
+   stays scannable on the dark theme; it is shown a little larger than a phone needs to scan it. */
+.qr-body { display: flex; gap: 1.25rem; align-items: flex-start; flex-wrap: wrap; }
+.qr-image { display: block; width: 168px; height: 168px; border-radius: 8px; background: #fff; }
+.qr-text { flex: 1 1 16rem; min-width: 0; }
+.qr-text p { margin: 0 0 0.6rem; }
+.qr-address { overflow-wrap: anywhere; }
+

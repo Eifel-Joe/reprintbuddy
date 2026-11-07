@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
-from reprintbuddy import settings as st
 from reprintbuddy.domain import inspection
 from reprintbuddy.models import Article
 from reprintbuddy.web import listing, qr
@@ -23,13 +22,6 @@ router = APIRouter()
 # the pictures change with the setting.
 _NO_STORE = {"Cache-Control": "no-store"}
 _PICTURES = {"svg": ("image/svg+xml", qr.svg), "png": ("image/png", qr.png)}
-
-
-def qr_base(request: Request, db: Session) -> str:
-    """The start of the address in the codes: the address entered in the settings, else the one
-    this very request came in on (no trailing slash)."""
-    entered = st.get_setting(db, "qr_base_url")
-    return str(entered) if entered else str(request.base_url).rstrip("/")
 
 
 def target_of(db: Session, article: Article) -> str:
@@ -67,5 +59,5 @@ async def picture(request: Request, article_id: int, kind: str, download: str | 
     if download:
         # The name holds the id only: no article name, nothing that needs quoting.
         headers["Content-Disposition"] = f'attachment; filename="qr-article-{article_id}.{kind}"'
-    body = draw(qr.article_address(qr_base(request, db), article_id))
+    body = draw(qr.article_address(qr.base_address(request, db), article_id))
     return Response(body, media_type=content_type, headers=headers)
