@@ -44,17 +44,15 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024  # fixed, no setting (Spec 5.1a)
 _FORBIDDEN_CHARS = frozenset('<>:"/\\|?*')
 MAX_NAME_BYTES = 255
 
-# A 3MF holds a few dozen members. The bounds are read from the zip's end record before
-# `zipfile` parses the directory, which it does in full when it opens the file: millions of
-# claimed entries in a 200 MB file would cost gigabytes before anything could count them.
+# A 3MF holds a few dozen members. `zipfile` parses the whole central directory when it opens a
+# file: it reads the directory's size from the end record and loops over that many bytes,
+# whatever count the record claims. So the bound is on those bytes, read before `zipfile` opens
+# the file and read the way `zipfile` reads them (see `_directory_bounds`). 1 MiB holds about
+# 20,000 short entries; a real 3MF needs a few kilobytes.
 MAX_ENTRIES = 10_000
-MAX_DIRECTORY_BYTES = 16 * 1024 * 1024
+MAX_DIRECTORY_BYTES = 1024 * 1024
 
 _LOCAL_HEADER = b"PK\x03\x04"
-_END = b"PK\x05\x06"
-_END_SIZE = 22
-_ZIP64_LOCATOR = 0x07064B50
-_ZIP64_END = 0x06064B50
 
 
 class PrintFileError(ValueError):
@@ -90,29 +88,24 @@ def upload_name(raw: str | None) -> str:
     return name
 
 
-def _directory_bounds(file: BinaryIO, size: int) -> tuple[int, int]:
-    """(entries, directory bytes) from the end record, zip64 included; `not_zip` if unreadable."""
-    tail_length = min(size, _END_SIZE + 0xFFFF)
-    file.seek(size - tail_length)
-    tail = file.read(tail_length)
-    at = tail.rfind(_END)
-    if at < 0 or len(tail) - at < _END_SIZE:
+def _directory_bounds(file: BinaryIO) -> tuple[int, int]:
+    """(claimed entries, directory bytes) exactly as `zipfile` will see them; `not_zip` if unreadable.
+
+    Root (security review v0.3.9): a reader of its own read the end record differently from
+    `zipfile`, which always takes a zip64 locator right before the end record, even when the
+    classic record looks honest, and which loops over the directory's bytes, not its count. A
+    file could pass the check and still make `zipfile` parse millions of entries. Fix:
+    `zipfile`'s own end-record reader (`_EndRecData`, in the standard library since Python 2,
+    zip64 included), so both sides use the same numbers. Rejected: walking the directory by
+    hand (a second parser to keep equal to `zipfile`). Tests: tests/domain/test_printfile.py.
+    """
+    try:
+        record = zipfile._EndRecData(file)
+    except (OSError, zipfile.BadZipFile, struct.error, ValueError, OverflowError):
+        raise PrintFileError("not_zip") from None
+    if not record:
         raise PrintFileError("not_zip")
-    _sig, _disk, _cd_disk, on_disk, entries, directory, offset, _comment = struct.unpack_from("<IHHHHIIH", tail, at)
-    if 0xFFFF in (on_disk, entries) or 0xFFFFFFFF in (directory, offset):
-        locator_at = size - tail_length + at - 20
-        if locator_at < 0:
-            raise PrintFileError("not_zip")
-        file.seek(locator_at)
-        signature, _disk, record_at, _disks = struct.unpack("<IIQI", file.read(20))
-        if signature != _ZIP64_LOCATOR or record_at > size - 56:
-            raise PrintFileError("not_zip")
-        file.seek(record_at)
-        record = struct.unpack("<IQHHIIQQQQ", file.read(56))
-        if record[0] != _ZIP64_END:
-            raise PrintFileError("not_zip")
-        entries, directory = record[7], record[8]
-    return entries, directory
+    return record[zipfile._ECD_ENTRIES_TOTAL], record[zipfile._ECD_SIZE]
 
 
 def check_sliced_3mf(file: BinaryIO, *, limit: int = MAX_UPLOAD_BYTES) -> None:
@@ -128,7 +121,7 @@ def check_sliced_3mf(file: BinaryIO, *, limit: int = MAX_UPLOAD_BYTES) -> None:
         file.seek(0)
         if file.read(4) != _LOCAL_HEADER:
             raise PrintFileError("not_zip")
-        entries, directory = _directory_bounds(file, size)
+        entries, directory = _directory_bounds(file)
         if entries > MAX_ENTRIES or directory > MAX_DIRECTORY_BYTES:
             raise PrintFileError("not_zip")
         file.seek(0)

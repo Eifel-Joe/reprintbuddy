@@ -166,3 +166,57 @@ def test_a_zip64_end_record_is_read(monkeypatch):
     monkeypatch.setattr(zipfile, "ZipFile", lambda *a, **k: opened.append(a))
     assert code_of(check_sliced_3mf, io.BytesIO(forged)) == "not_zip"
     assert opened == []
+
+
+# ---- after the security review: the directory is bounded as `zipfile` reads it ---------------------
+
+
+def test_the_end_record_reader_of_zipfile_is_there():
+    """The check reads the end record with `zipfile`'s own reader, so both see the same numbers.
+    A Python without it must fail here loudly, not let a check pass silently."""
+    assert callable(zipfile._EndRecData)
+    assert (zipfile._ECD_ENTRIES_TOTAL, zipfile._ECD_SIZE) == (4, 5)
+
+
+def _many_entries(count: int, name_length: int = 200) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for n in range(count):
+            archive.writestr(f"{n:08d}".ljust(name_length, "x"), b"")
+        archive.writestr("Metadata/plate_1.gcode", b"g")
+    return buffer.getvalue()
+
+
+def test_a_directory_over_1_mib_is_refused_whatever_the_count_claims(monkeypatch):
+    """Review finding: `zipfile` reads `directory` bytes and ignores the claimed count."""
+    honest = _many_entries(5000)
+    true_size = struct.unpack_from("<I", honest, honest.rindex(b"PK\x05\x06") + 12)[0]
+    assert true_size > 1024 * 1024
+    forged = _with_end_record(honest, 1, true_size)  # claims one entry, keeps the true size
+    opened = []
+    monkeypatch.setattr(zipfile, "ZipFile", lambda *a, **k: opened.append(a))
+    assert code_of(check_sliced_3mf, io.BytesIO(forged)) == "not_zip"
+    assert opened == []
+
+
+def test_a_zip64_record_before_an_honest_end_record_is_read_as_zipfile_reads_it(monkeypatch):
+    """Review finding: `zipfile` takes a zip64 locator right before the end record even when the
+    classic record looks honest; the check must see the same directory size."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("Metadata/plate_1.gcode", b"g")
+    data = buffer.getvalue()
+    end = data.rindex(b"PK\x05\x06")
+    _, _, _, _, entries, cd_size, cd_offset, _ = struct.unpack_from("<IHHHHIIH", data, end)
+    claimed = 5 * 1024 * 1024
+    zip64_record = struct.pack("<IQHHIIQQQQ", 0x06064B50, 44, 45, 45, 0, 0, entries, entries, claimed, cd_offset)
+    locator = struct.pack("<IIQI", 0x07064B50, 0, end, 1)
+    forged = data[:end] + zip64_record + locator + data[end:]  # the classic record stays honest
+    opened = []
+    monkeypatch.setattr(zipfile, "ZipFile", lambda *a, **k: opened.append(a))
+    assert code_of(check_sliced_3mf, io.BytesIO(forged)) == "not_zip"
+    assert opened == []
+
+
+def test_a_real_3mf_with_many_members_still_passes():
+    check_sliced_3mf(io.BytesIO(_many_entries(300, name_length=60)))
