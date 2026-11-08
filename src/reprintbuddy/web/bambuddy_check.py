@@ -21,6 +21,8 @@ from reprintbuddy.web.deps import release_connection
 
 def validate_address(address: str) -> tuple[str | None, str | None]:
     """(normalised address, None) or (None, message key)."""
+    if any(char.isspace() or not char.isprintable() for char in address.strip()):
+        return None, "bambuddy.url_blank"  # a line break from the text area (p113), or a blank inside
     try:
         return str(st.validate("bambuddy_url", address)), None
     except ValueError:

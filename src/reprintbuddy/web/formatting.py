@@ -40,6 +40,46 @@ def local_date(context, day: date | None) -> str:
     return format_date(day, context.get("lang", "en")) if day is not None else ""
 
 
+def format_decimal(value: float, digits: int, lang: str) -> str:
+    """A number for display with `digits` decimals: a comma in German, a point otherwise (p58).
+
+    This is the one place that decides the separator. Display values are never written with
+    `f"{x:.1f}"` (always a point); `tests/web/test_decimal_display.py` keeps the routes honest.
+    """
+    text = f"{value:.{digits}f}"
+    return text.replace(".", ",") if lang == "de" else text
+
+
+@pass_context
+def decimal(context, value: float | None, digits: int = 1) -> str:
+    """Jinja filter `num`: `{{ grams|num }}` or `{{ x|num(2) }}`, in the language of the request."""
+    return format_decimal(value, digits, context.get("lang", "en")) if value is not None else ""
+
+
+# The default unit of a part is stored as "pcs" (no migration) and shown in the language of the interface.
+DEFAULT_UNIT = "pcs"
+_DEFAULT_UNIT_SHOWN = {"de": "Stk."}
+
+
+def unit_label(value: str, lang: str) -> str:
+    """A unit for display: the default "pcs" reads "Stk." in German; any other unit is shown as typed."""
+    if value == DEFAULT_UNIT:
+        return _DEFAULT_UNIT_SHOWN.get(lang, DEFAULT_UNIT)
+    return value
+
+
+def canonical_unit(typed: str) -> str:
+    """A unit from a form: what the form showed for the default ("Stk." or "pcs", any case) is stored as "pcs"."""
+    text = typed.strip()
+    return DEFAULT_UNIT if text.lower() in {DEFAULT_UNIT, "stk."} else text
+
+
+@pass_context
+def unit(context, value: str | None) -> str:
+    """Jinja filter `unit`: `{{ part.unit|unit }}`, in the language of the request."""
+    return unit_label(value, context.get("lang", "en")) if value else ""
+
+
 def fill_percent(available: int, target: int) -> int | None:
     """How full a stock is against its target, 0 to 100; `None` without a target."""
     if target <= 0:

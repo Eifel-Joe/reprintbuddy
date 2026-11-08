@@ -26,7 +26,7 @@ def _section(html, cls):
 
 
 def _images(html):
-    return re.findall(r'<img class="([^"]+)" src="([^"]+)" alt="" loading="lazy"(?: onerror="[^"]*")?>', html)
+    return re.findall(r'<img class="([^"]+)" src="([^"]+)" alt="" loading="lazy"(?: data-remove-on-error)?>', html)
 
 
 # ---- locale ------------------------------------------------------------------------
@@ -117,7 +117,8 @@ def test_preview_covers_its_placeholder_and_gives_way_when_it_fails(mixed, layou
     mixed.cookies.set("rb_layout_files", layout)
     html = mixed.get("/articles/new?folder=1").text
     imgs = re.findall(r"<img [^>]*/file/\d+/thumbnail[^>]*>", _section(html, "table-card" if layout == "list" else "tiles"))
-    assert imgs and all('onerror="this.remove()"' in tag for tag in imgs)
+    # thumbs.js removes it (p78: no inline onerror handler any more)
+    assert imgs and all("data-remove-on-error" in tag and "onerror" not in tag for tag in imgs)
     css = Path(__file__).resolve().parents[2] / "src/reprintbuddy/web/static/css/reprintbuddy.css"
     rule = re.search(r"\.thumb-box > img \{([^}]*)\}", css.read_text(encoding="utf-8")).group(1)
     assert "background: var(--bg)" in rule and "background: none" not in rule

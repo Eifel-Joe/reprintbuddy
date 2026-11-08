@@ -25,12 +25,12 @@
     </label>
     <div class="row">
       <label>{{ t('parts.field.unit') }}
-        <input name="unit" value="{{ values.unit }}" maxlength="20" required>
+        <input name="unit" value="{{ values.unit|unit }}" maxlength="20" required>
       </label>
       {% if part %}
       <div>
         <p class="label-like">{{ t('parts.stock') }}</p>
-        <p><strong>{{ part.stock }}</strong> {{ part.unit }}</p>
+        <p><strong>{{ part.stock }}</strong> {{ part.unit|unit }}</p>
         <span class="hint">{{ t('parts.stock_via_bookings') }}</span>
       </div>
       {% else %}

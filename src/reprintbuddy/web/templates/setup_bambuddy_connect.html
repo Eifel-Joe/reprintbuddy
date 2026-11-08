@@ -10,7 +10,7 @@
 <form method="post" action="/setup/bambuddy/connect" autocomplete="off">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <label>{{ t('bambuddy.url') }}
-    <input name="bambuddy_address" value="{{ bambuddy_address }}" placeholder="{{ t('bambuddy.url_placeholder') }}" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>
+    <textarea class="address" name="bambuddy_address" rows="2" placeholder="{{ t('bambuddy.url_placeholder') }}" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>{{ bambuddy_address }}</textarea>
   </label>
   <label>{{ t('bambuddy.api_key') }}
     <input name="bambuddy_token" type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>

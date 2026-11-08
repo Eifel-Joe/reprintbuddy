@@ -55,15 +55,15 @@
       <tr>
         <td class="name"><a href="/parts/{{ part.id }}/edit">{{ part.name }}</a></td>
         <td>{{ badge(item) }}</td>
-        <td class="num">{{ part.stock }} {{ part.unit }}</td>
+        <td class="num">{{ part.stock }} {{ part.unit|unit }}</td>
         <td class="num target">{{ part.min_stock }}{{ min_bar(item) }}</td>
         <td class="num">{{ part.pack_size }}</td>
         <td>{% if part.supplier %}{{ supplier(part) }}{% endif %}</td>
         <td class="actions-col">{% call ui.row_actions() %}
-          {%- if not archived %}{{ ui.icon_button('pencil', t('parts.edit'), '/parts/' ~ part.id ~ '/edit') }}{% endif %}
-          {{- ui.icon_button('history', t('journal.title'), '/journal?part=' ~ part.id) }}
-          {%- if archived %}{{ ui.icon_post('archive-restore', t('catalog.restore'), '/parts/' ~ part.id ~ '/restore') }}
-          {%- else %}{{ ui.icon_post('archive', t('catalog.archive'), '/parts/' ~ part.id ~ '/archive') }}{% endif %}
+          {%- if not archived %}{{ ui.icon_button('pencil', t('parts.edit'), '/parts/' ~ part.id ~ '/edit', part.name) }}{% endif %}
+          {{- ui.icon_button('history', t('journal.title'), '/journal?part=' ~ part.id, part.name) }}
+          {%- if archived %}{{ ui.icon_post('archive-restore', t('catalog.restore'), '/parts/' ~ part.id ~ '/restore', subject=part.name) }}
+          {%- else %}{{ ui.icon_post('archive', t('catalog.archive'), '/parts/' ~ part.id ~ '/archive', subject=part.name) }}{% endif %}
         {% endcall %}</td>
       </tr>
     {% endfor %}
@@ -77,7 +77,7 @@
   <div class="tile">
     <div class="tile-head"><span class="thumb-placeholder">{{ ui.icon('puzzle') }}</span><div><a class="tile-link" href="/parts/{{ part.id }}/edit">{{ part.name }}</a></div>{{ badge(item) }}</div>
     <div class="tile-stats">
-      <span>{{ t('parts.stock') }} <strong>{{ part.stock }}</strong> {{ part.unit }}</span>
+      <span>{{ t('parts.stock') }} <strong>{{ part.stock }}</strong> {{ part.unit|unit }}</span>
       <span>{{ t('parts.field.min_stock') }} <strong>{{ part.min_stock }}</strong></span>
       <span>{{ t('parts.col.pack') }} <strong>{{ part.pack_size }}</strong></span>
     </div>

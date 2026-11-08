@@ -428,7 +428,7 @@ def _requirement_row(r: FilamentRequirement) -> dict[str, object]:
     return {
         "slot": r.slot,
         "material": r.material or "",
-        "grams": f"{r.grams:.1f}",
+        "grams": r.grams,  # shown through the `num` filter (decimal separator by language)
         "color": r.color_hex or "",
         "swatch": r.color_hex if r.color_hex and COLOR.fullmatch(r.color_hex) else None,
     }
@@ -789,7 +789,7 @@ def _filament_page(request: Request, spools, article_id: int, typed: _Typed | No
             _tell_apart(choices)
             slots.append({
                 "slot": g.slot,
-                "grams": f"{g.grams:.1f}",
+                "grams": g.grams,
                 "material": g.material or "",
                 "color": color_mod.display_hex(g.color_hex) if g.color_hex else "",
                 "swatch": g.color_hex if g.color_hex and COLOR.fullmatch(g.color_hex) else None,

@@ -17,7 +17,7 @@
   {% for r in slots %}
   <div class="card table-wrap table-card slot-group" role="group" aria-labelledby="slot-{{ r.slot }}-caption">
     <input type="hidden" name="slot" value="{{ r.slot }}">
-    <p class="slot-caption" id="slot-{{ r.slot }}-caption">{{ t('filament.slot_caption', slot=r.slot, material=r.material, grams=r.grams) }}
+    <p class="slot-caption" id="slot-{{ r.slot }}-caption">{{ t('filament.slot_caption', slot=r.slot, material=r.material, grams=r.grams|num) }}
       {%- if r.swatch %} <span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}{% if r.color %} {{ r.color }}{% endif %}</p>
     <table>
       <thead><tr>

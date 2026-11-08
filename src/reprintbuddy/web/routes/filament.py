@@ -54,7 +54,7 @@ async def filament_list(request: Request):
             "swatch": sort.color_hex if sort.color_hex and COLOR.fullmatch(sort.color_hex) else None,
             "stock": f"{entry.stock_g:.0f}" if entry is not None else None,
             "spools": entry.spools if entry is not None else None,
-            "per_day": f"{per_day:.1f}" if days else None,
+            "per_day": per_day if days else None,  # `num` filter
             "demand": f"{demand.get(sort.id, 0.0):.0f}" if is_reordered else None,
             "reordered": is_reordered,
             "configured": sort.id in configured,

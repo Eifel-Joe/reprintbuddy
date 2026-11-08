@@ -193,10 +193,12 @@ def test_restore_plain_backup(ops_env):
     assert "Not encrypted" in page
     assert 'name="backup_password"' not in page
     assert "Everybody is signed out" in page
+    assert '<p class="page-sub">What the uploaded backup contains, before it replaces the current data.</p>' in page  # p72
 
     response = confirm(ops_env, login="a-newer-password-1")  # the password of the running database
     assert response.status_code == 200
     assert "Sign in with the user name and password of the backup" in response.text
+    assert '<p class="page-sub">The data of the backup is in place; Reprintbuddy restarts with it.</p>' in response.text  # p72
     assert RESTART_CMD in ops_env.runner.calls
     assert queue_cap(ops_env) == 10  # the value of the backup (the default)
     assert [name for name in backups(ops_env) if "before-restore" in name]

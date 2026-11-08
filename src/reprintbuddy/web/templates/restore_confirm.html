@@ -3,7 +3,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('ops.restore.confirm_title') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("archive-restore", t('ops.restore.confirm_title')) %}{% endcall %}
+{% call ui.page_head("archive-restore", t('ops.restore.confirm_title'), t('ops.restore.confirm_subtitle')) %}{% endcall %}
 <section class="card section" id="restore-confirm">
   <div class="facts">
     <p>{{ t('ops.restore.created', time=manifest.created_at|local_dt) }}</p>

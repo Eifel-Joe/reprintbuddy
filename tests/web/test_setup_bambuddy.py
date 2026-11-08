@@ -136,13 +136,13 @@ def test_no_username_field_and_no_checkbox(admin_client):
     page = admin_client.get(CONNECT).text
     assert 'type="checkbox"' not in page
     assert "bambuddy_username" not in page
-    names = re.findall(r'<input[^>]*\bname="([^"]+)"', page)
+    names = re.findall(r'<(?:input|textarea)[^>]*\bname="([^"]+)"', page)  # the address is a text area (p113)
     assert sorted(names) == ["bambuddy_address", "bambuddy_token", "csrf_token"]
 
 
 def test_autocomplete_attributes(admin_client):
     page = admin_client.get(CONNECT).text
-    address = re.search(r'<input[^>]*name="bambuddy_address"[^>]*>', page).group(0)
+    address = re.search(r'<textarea[^>]*name="bambuddy_address"[^>]*>', page).group(0)
     token = re.search(r'<input[^>]*name="bambuddy_token"[^>]*>', page).group(0)
     assert 'autocomplete="off"' in address
     assert 'type="password"' in token and 'autocomplete="new-password"' in token
@@ -297,7 +297,7 @@ def test_key_not_echoed_on_error(admin_client, respx_mock):
     token = csrf_of(admin_client, CONNECT)
     response = admin_client.post(CONNECT, data=_form(token))
     assert KEY not in response.text
-    assert f'value="{URL}"' in response.text  # the address stays in the form
+    assert re.search(rf'<textarea[^>]*name="bambuddy_address"[^>]*>{re.escape(URL)}</textarea>', response.text)  # the address stays in the form
 
 
 def test_invalid_url_is_reported(admin_client):

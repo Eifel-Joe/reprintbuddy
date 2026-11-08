@@ -160,14 +160,15 @@ def test_settings_no_username_field_and_no_checkbox(ready_client):
     page = ready_client.get("/settings?tab=bambuddy").text
     section = page[page.index('action="/settings/bambuddy"') : page.index("</form>", page.index('action="/settings/bambuddy"'))]
     assert "bambuddy_username" not in section and 'type="checkbox"' not in section
-    assert sorted(re.findall(r'<input[^>]*\bname="([^"]+)"', section)) == ["bambuddy_address", "bambuddy_token", "csrf_token"]
+    # The address is a text area since v0.3.8 (p113); the key and the token are fields.
+    assert sorted(re.findall(r'<(?:input|textarea)[^>]*\bname="([^"]+)"', section)) == ["bambuddy_address", "bambuddy_token", "csrf_token"]
 
 
 def test_settings_autocomplete_attributes(ready_client):
     import re
 
     page = ready_client.get("/settings?tab=bambuddy").text
-    address = re.search(r'<input[^>]*name="bambuddy_address"[^>]*>', page).group(0)
+    address = re.search(r'<textarea[^>]*name="bambuddy_address"[^>]*>', page).group(0)
     token = re.search(r'<input[^>]*name="bambuddy_token"[^>]*>', page).group(0)
     assert 'autocomplete="off"' in address
     assert 'type="password"' in token and 'autocomplete="new-password"' in token

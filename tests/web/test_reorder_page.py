@@ -286,7 +286,7 @@ def test_received_is_a_symbol_button_and_the_row_stays_one_row(bb_client):
     body = under_way.split("<tbody>")[1]
     assert body.count("<tr>") == 1  # one row per mark, no second row for a button
     assert re.search(r'<form class="icon-form" method="post" action="/reorder/marks/\d+/received">', body)
-    assert 'class="icon-btn" title="arrived" aria-label="arrived"' in body and "#check" in body
+    assert 'class="icon-btn" title="arrived" aria-label="Arrived: Insert M4"' in body and "#check" in body
     assert 'class="btn"' not in under_way
     assert "<h2>" in under_way and "On its way" in under_way
 

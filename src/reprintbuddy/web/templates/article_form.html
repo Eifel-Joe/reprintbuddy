@@ -22,7 +22,7 @@
           <td>{{ r.slot }}</td>
           <td>{{ r.material }}</td>
           <td>{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}{{ r.color }}</td>
-          <td class="num">{{ r.grams }}</td>
+          <td class="num">{{ r.grams|num }}</td>
         </tr>
       {% endfor %}
       </tbody>

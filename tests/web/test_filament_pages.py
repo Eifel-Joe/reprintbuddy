@@ -204,7 +204,8 @@ def test_filament_list_spool_without_color_name(bb_client, fake_bambuddy):
     assert page.status_code == 200
     lines = [r for r in rows_of(page.text) if "PLA Matte #000000" in r]
     assert len(lines) == 1
-    assert "Matte" in lines[0] and lines[0].count("Matte") == 1
+    visible = re.sub(r'(?:aria-label|title)="[^"]*"', "", lines[0])  # the spoken name of the row button repeats the label (p68)
+    assert "Matte" in visible and visible.count("Matte") == 1
     assert 'class="swatch"' in lines[0]
     assert "None" not in page.text
 
@@ -307,10 +308,10 @@ def test_list_is_a_table_card_with_symbol_buttons(bb_client, fake_bambuddy):
     assert '<th class="actions-col"><span class="sr-only">Actions</span></th>' in page
     black = [r for r in rows_of(page) if "PLA Black" in r][0]
     assert re.search(r'<td class="actions-col"><div class="row-actions"><a class="icon-btn" href="/filament/\d+" '
-                     r'title="Configure" aria-label="Configure">.*?#settings', black, re.S)
+                     r'title="Configure" aria-label="Configure: [^"]+">.*?#settings', black, re.S)
     assert '<span class="badge tone-warn">not configured</span>' in black
     done = [r for r in rows_of(page) if f'href="/filament/{cid}"' in r][0]
-    assert 'aria-label="Edit settings"' in done and "#pencil" in done
+    assert 'aria-label="Edit settings: ' in done and "#pencil" in done
     assert '<span class="badge tone-ok">configured</span>' in done
 
 

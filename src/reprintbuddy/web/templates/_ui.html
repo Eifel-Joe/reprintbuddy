@@ -102,16 +102,18 @@
 <div class="kpis">{% for card in cards %}{{ kpi(card) }}{% endfor %}</div>
 {%- endmacro %}
 
-{# Symbol button as a link (edit, view, journal): 44 px target, name in title and aria-label. #}
-{% macro icon_button(icon_name, label, href) -%}
-<a class="icon-btn" href="{{ href }}" title="{{ label }}" aria-label="{{ label }}">{{ icon(icon_name) }}</a>
+{# Symbol button as a link (edit, view, journal): 44 px target. The tooltip (title) is the action;
+   the accessible name (aria-label) adds the object when `subject` is given ("Archive: Template A"),
+   because a table shows the same symbol in every row (p68). #}
+{% macro icon_button(icon_name, label, href, subject="") -%}
+<a class="icon-btn" href="{{ href }}" title="{{ label }}" aria-label="{% if subject %}{{ label[:1]|upper }}{{ label[1:] }}: {{ subject }}{% else %}{{ label }}{% endif %}">{{ icon(icon_name) }}</a>
 {%- endmacro %}
 
 {# Symbol button that posts (archive, restore, cancel): a small form with both tokens.
    `fields` is optional: a list of (name, value) pairs that become extra hidden inputs
-   (escaped), e.g. fields=[("next", "/orders")]. #}
-{% macro icon_post(icon_name, label, action, fields=[]) -%}
-<form class="icon-form" method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="form_token" value="{{ form_token() }}">{% for field_name, field_value in fields %}<input type="hidden" name="{{ field_name }}" value="{{ field_value }}">{% endfor %}<button type="submit" class="icon-btn" title="{{ label }}" aria-label="{{ label }}">{{ icon(icon_name) }}</button></form>
+   (escaped), e.g. fields=[("next", "/orders")]. `subject` names the object in the accessible name, as in icon_button. #}
+{% macro icon_post(icon_name, label, action, fields=[], subject="") -%}
+<form class="icon-form" method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="form_token" value="{{ form_token() }}">{% for field_name, field_value in fields %}<input type="hidden" name="{{ field_name }}" value="{{ field_value }}">{% endfor %}<button type="submit" class="icon-btn" title="{{ label }}" aria-label="{% if subject %}{{ label[:1]|upper }}{{ label[1:] }}: {{ subject }}{% else %}{{ label }}{% endif %}">{{ icon(icon_name) }}</button></form>
 {%- endmacro %}
 
 {# On/off switch that posts (the automation of an article in the list): a small form with both tokens

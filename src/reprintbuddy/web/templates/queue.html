@@ -48,7 +48,7 @@
     {% set reason = pause_reasons.get(e.article_id) %}
     <tr class="queue-row{% if e.held %} is-held{% endif %}{% if e.article_paused %} is-paused{% endif %}" data-entry-id="{{ e.id }}" data-move-url="/queue/{{ e.id }}/move">
       <td class="queue-cell-pos" data-label="{{ t('queue.col.position') }}">
-        <button type="button" class="drag-handle icon-btn" aria-label="{{ t('queue.drag') }}" title="{{ t('queue.drag') }}">{{ ui.icon('grip-vertical') }}</button>
+        <button type="button" class="drag-handle icon-btn" aria-label="{{ t('queue.drag') }}: {{ e.article_name }}" title="{{ t('queue.drag') }}">{{ ui.icon('grip-vertical') }}</button>
         <span class="queue-pos">{{ loop.index }}</span>
       </td>
       <td class="queue-cell-img">{{ thumb(e.article_id) }}</td>
@@ -64,7 +64,7 @@
       </td>
       <td class="actions-col queue-cell-menu">
         <details class="row-menu">
-          <summary class="icon-btn" title="{{ t('queue.menu') }}" aria-label="{{ t('queue.menu') }}">{{ ui.icon('ellipsis-vertical') }}</summary>
+          <summary class="icon-btn" title="{{ t('queue.menu') }}" aria-label="{{ t('queue.menu') }}: {{ e.article_name }}">{{ ui.icon('ellipsis-vertical') }}</summary>
           <div class="row-menu-panel">
             {% call menu_form("/queue/" ~ e.id ~ "/move", token=False) %}<input type="hidden" name="to" value="top"><button type="submit" class="menu-item">{{ ui.icon('arrow-up-to-line') }}{{ t('queue.to_top') }}</button>{% endcall %}
             {% call menu_form("/queue/" ~ e.id ~ "/move", token=False) %}<input type="hidden" name="to" value="bottom"><button type="submit" class="menu-item">{{ ui.icon('arrow-down-to-line') }}{{ t('queue.to_bottom') }}</button>{% endcall %}

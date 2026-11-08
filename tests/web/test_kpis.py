@@ -109,7 +109,8 @@ def test_kpi_label_breaks_between_words_not_anywhere(ready_client):
     body = rule.group(1)
     assert "overflow-wrap: anywhere" not in body  # `anywhere` breaks "Zurückgehaltene" after any letter
     assert "overflow-wrap: break-word" in body  # a word is broken only where it cannot fit at all
-    assert "hyphens: auto" in body  # and then with a hyphen, which needs <html lang>
+    assert "hyphens: manual" in body  # English words are never hyphenated (p112) ...
+    assert re.search(r'\nhtml\[lang="de"\] \.kpi-label \{[^}]*hyphens: auto', css)  # ... German ones are, which needs <html lang>
 
 
 def test_kpi_is_slimmer_on_a_phone(ready_client):

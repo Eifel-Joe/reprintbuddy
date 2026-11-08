@@ -6,7 +6,7 @@
     no request is made; with one, the picture (opaque background) lies over the placeholder and is loaded lazily
     afterwards; if it fails (404) it removes itself and the placeholder underneath shows. -#}
 {% macro preview(file, size) -%}
-{% if file.has_thumbnail %}<span class="thumb-box {{ size }}"><span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('package') }}</span><img class="thumb-{{ size }}" src="/articles/new/file/{{ file.id }}/thumbnail" alt="" loading="lazy" onerror="this.remove()"></span>{% else %}<span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('package') }}</span>{% endif %}
+{% if file.has_thumbnail %}<span class="thumb-box {{ size }}"><span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('package') }}</span><img class="thumb-{{ size }}" src="/articles/new/file/{{ file.id }}/thumbnail" alt="" loading="lazy" data-remove-on-error></span>{% else %}<span class="thumb-placeholder thumb-{{ size }}">{{ ui.icon('package') }}</span>{% endif %}
 {%- endmacro %}
 {#- A folder has no picture, only the folder symbol. -#}
 {% macro folder_mark(size) -%}

@@ -31,8 +31,9 @@
   {{ ui.info(t('info.inspection_scrap'), t('inspections.field.scrap')) }}
 </div>
 <div class="card line-list inspect-list">
-  <div class="line-head inspect-cols" aria-hidden="true">
-    <span></span><span>{{ t('inspections.col.print') }}</span><span class="num">{{ t('inspections.col.target') }}</span><span>{{ t('inspections.field.scrap') }}</span><span></span>
+  {# The first cell stays empty here: inspection.js puts the "select all" box into it (without the script there is none). Not aria-hidden as a whole: the box must be reachable. #}
+  <div class="line-head inspect-cols">
+    <span class="inspect-head-select" data-label="{{ t('inspections.select_all') }}"></span><span aria-hidden="true">{{ t('inspections.col.print') }}</span><span class="num" aria-hidden="true">{{ t('inspections.col.target') }}</span><span aria-hidden="true">{{ t('inspections.field.scrap') }}</span><span aria-hidden="true"></span>
   </div>
   {% for row in rows %}
   {% set v = values if error_inspection == row.id else {} %}
@@ -42,7 +43,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="form_token" value="{{ form_token() }}">
       {% if article_filter %}<input type="hidden" name="article" value="{{ article_filter.id }}">{% endif %}
-      <label class="check inspect-select"><input type="checkbox" name="ids" value="{{ row.id }}" form="inspect-selected" aria-label="{{ t('inspections.select_print', name=row.article_name) }}"></label>
+      <label class="inspect-select"><input type="checkbox" name="ids" value="{{ row.id }}" form="inspect-selected" aria-label="{{ t('inspections.select_print', name=row.article_name) }}"></label>
       <div class="line-main">
         {% if row.has_thumbnail %}<img class="thumb-sm" src="/articles/{{ row.article_id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb-placeholder">{{ ui.icon('package') }}</span>{% endif %}
         <div class="line-title">
@@ -61,3 +62,4 @@
 {% endif %}
 {% endcall %}
 {% endblock %}
+{% block scripts %}<script src="/static/js/inspection.js?v={{ app_version }}" defer></script>{% endblock %}

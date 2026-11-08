@@ -118,6 +118,10 @@ def _optional_url(value: Any) -> str | None:
     if not isinstance(value, str):
         raise ValueError("expected an address")
     text = value.strip().rstrip("/")
+    # No blank, line break or control character inside: `urlsplit` drops line breaks and tabs when it
+    # reads, so the checks below would pass while the stored text still carries them (v0.3.8 p113).
+    if any(char.isspace() or not char.isprintable() for char in text):
+        raise ValueError("address must not contain blanks or line breaks")
     for scheme in ("http://", "https://"):
         if text.startswith(scheme) and len(text) > len(scheme):
             try:

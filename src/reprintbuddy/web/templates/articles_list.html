@@ -59,10 +59,10 @@
         <td class="num target">{{ row.target }}{{ target_bar(row) }}</td>
         {% if not archived %}<td class="auto-col">{{ ui.switch_post('/articles/' ~ row.id ~ '/auto', row.auto_enabled, t('articles.auto_switch', name=row.name), here) }}</td>{% endif %}
         <td class="actions-col">{% call ui.row_actions() %}
-          {%- if not archived %}{{ ui.icon_button('pencil', t('articles.edit'), '/articles/' ~ row.id ~ '/edit') }}{% endif %}
-          {{- ui.icon_button('history', t('journal.title'), '/journal?article=' ~ row.id) }}
-          {%- if archived %}{{ ui.icon_post('archive-restore', t('catalog.restore'), '/articles/' ~ row.id ~ '/restore', [('next', '/articles')]) }}
-          {%- else %}{{ ui.icon_post('archive', t('catalog.archive'), '/articles/' ~ row.id ~ '/archive', [('next', '/articles')]) }}{% endif %}
+          {%- if not archived %}{{ ui.icon_button('pencil', t('articles.edit'), '/articles/' ~ row.id ~ '/edit', row.name) }}{% endif %}
+          {{- ui.icon_button('history', t('journal.title'), '/journal?article=' ~ row.id, row.name) }}
+          {%- if archived %}{{ ui.icon_post('archive-restore', t('catalog.restore'), '/articles/' ~ row.id ~ '/restore', [('next', '/articles')], row.name) }}
+          {%- else %}{{ ui.icon_post('archive', t('catalog.archive'), '/articles/' ~ row.id ~ '/archive', [('next', '/articles')], row.name) }}{% endif %}
         {% endcall %}</td>
       </tr>
     {% endfor %}
