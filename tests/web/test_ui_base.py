@@ -69,10 +69,10 @@ def test_sprite_is_served_and_licensed(ready_client):
 
 
 def test_translate_count():
-    assert i18n.translate_count("en", "summary.articles", 1) == "1 article"
-    assert i18n.translate_count("en", "summary.articles", 4) == "4 articles"
-    assert i18n.translate_count("de", "summary.articles", 1) == "1 Artikel"
-    assert i18n.translate_count("de", "summary.parts", 2) == "2 Zukaufteile"
+    assert i18n.translate_count("en", "queue.prints", 1) == "1 print"
+    assert i18n.translate_count("en", "queue.prints", 4) == "4 prints"
+    assert i18n.translate_count("de", "queue.prints", 1) == "1 Druck"
+    assert i18n.translate_count("de", "queue.prints", 2) == "2 Drucke"
 
 
 def test_every_status_has_a_text():
