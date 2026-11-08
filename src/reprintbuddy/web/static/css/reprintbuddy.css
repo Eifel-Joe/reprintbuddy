@@ -237,6 +237,8 @@ a.btn { text-decoration: none; }
   border-radius: 8px;
   color: var(--text);
 }
+/* A link inside an error (upload: "use the existing file", article: "choose another file"), as in `.result a`. */
+.alert a { color: var(--accent); }
 
 /* The error of one field of a form, under the field (p52). */
 .field-error { margin: 0.3rem 0 1rem; color: var(--danger); font-size: 0.85rem; }
@@ -711,6 +713,9 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 .setting-text span { color: var(--muted); font-size: 12px; }
 .setting-control { flex: 0 1 auto; min-width: 0; }
 .card-head ~ form > .setting-row:first-child { border-top: 0; }
+/* The upload form (Spec 5.1a) is one card: no line above its only field, the error above it. */
+.upload-form > .setting-row { border-top: 0; }
+.upload-form > .alert { margin: 0 0 0.75rem; }
 .setting-control input[type="number"] { width: 6.5rem; margin-top: 0; }
 
 @media (max-width: 899px) {

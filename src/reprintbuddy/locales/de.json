@@ -941,7 +941,7 @@
   "labels.roll.continuous": "{width} mm Endlosband",
   "upload.button": "Druckdatei hochladen",
   "upload.title": "Druckdatei hochladen",
-  "upload.subtitle": "In den Ordner {path} in Bambuddys Dateimanager",
+  "upload.subtitle": "Ziel in Bambuddys Dateimanager: {path}",
   "upload.file": "Druckdatei",
   "upload.file_hint": "Eine geslicte 3MF-Datei (.gcode.3mf), höchstens {mb} MB. Danach wählst du die Platte und legst den Artikel an.",
   "upload.submit": "Hochladen",

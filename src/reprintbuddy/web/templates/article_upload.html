@@ -15,18 +15,16 @@
 <div class="section"><div class="card upload-hint">
   <p class="alert" role="alert">{{ t('upload.no_right') }}</p>
   <ul class="perms">
-    <li class="perm bad"><span class="mark" aria-hidden="true">✗</span> Upload Library <code>library:upload</code> <small class="editor">{{ t('upload.no_right_group_where') }}</small></li>
-    <li class="perm bad"><span class="mark" aria-hidden="true">✗</span> Manage Library <small class="editor">{{ t('upload.no_right_key_where') }}</small></li>
+    <li class="perm bad"><span class="mark" aria-hidden="true">✗</span> Upload Library (<code>library:upload</code>)<small class="editor">{{ t('upload.no_right_group_where') }}</small></li>
+    <li class="perm bad"><span class="mark" aria-hidden="true">✗</span> Manage Library<small class="editor">{{ t('upload.no_right_key_where') }}</small></li>
   </ul>
   <p class="muted">{{ t('upload.no_right_rest') }}</p>
-  <p><a href="/settings?tab=bambuddy">{{ t('upload.to_settings') }}</a></p>
+  <p class="actions"><a class="btn secondary" href="/settings?tab=bambuddy">{{ ui.icon('settings') }}{{ t('upload.to_settings') }}</a></p>
 </div></div>
 {% else %}
-{% if error %}
-<div class="section"><div class="card"><p class="alert" role="alert">{{ t(error, **error_params) }}{% if error_params.existing_id %} <a href="/articles/new/file/{{ error_params.existing_id }}">{{ t('upload.use_existing') }}</a>{% endif %}</p></div></div>
-{% endif %}
 <div class="section">
   <form class="card upload-form" method="post" action="{{ action }}" enctype="multipart/form-data">
+    {% if error %}<p class="alert" role="alert">{{ t(error, **error_params) }}{% if error_params.existing_id %} <a href="/articles/new/file/{{ error_params.existing_id }}">{{ t('upload.use_existing') }}</a>{% endif %}</p>{% endif %}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="setting-row stack">
       <div class="setting-text"><label for="print_file">{{ t('upload.file') }}</label><span>{{ t('upload.file_hint', mb=max_mb) }}</span></div>

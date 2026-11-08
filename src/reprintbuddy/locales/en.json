@@ -941,7 +941,7 @@
   "labels.roll.continuous": "{width} mm continuous tape",
   "upload.button": "Upload print file",
   "upload.title": "Upload print file",
-  "upload.subtitle": "Into the folder {path} in Bambuddy's file manager",
+  "upload.subtitle": "Target in Bambuddy's file manager: {path}",
   "upload.file": "Print file",
   "upload.file_hint": "A sliced 3MF file (.gcode.3mf), at most {mb} MB. Afterwards you choose the plate and create the article.",
   "upload.submit": "Upload",
