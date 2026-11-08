@@ -143,10 +143,19 @@ require_debian() {
         . "${release}"
         printf '%s' "${VERSION_ID:-}"
     )"
+    if [ "${id_}" != "debian" ]; then
+        die 1 "${NEEDS_DEBIAN_MESSAGE}"
+    fi
+    # Debian testing and unstable (sid) have no VERSION_ID: no number to compare, but not too old for
+    # that. They pass here; whether their python3 is new enough decides require_python, after the
+    # packages are installed (v0.3.11 p130).
+    if [ -z "${version}" ]; then
+        return 0
+    fi
     case "${version}" in
-        '' | *[!0-9]*) version=0 ;;
+        *[!0-9]*) version=0 ;;
     esac
-    if [ "${id_}" != "debian" ] || [ "${version}" -lt 13 ]; then
+    if [ "${version}" -lt 13 ]; then
         die 1 "${NEEDS_DEBIAN_MESSAGE}"
     fi
 }

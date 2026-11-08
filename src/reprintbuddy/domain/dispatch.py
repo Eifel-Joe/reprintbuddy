@@ -4,9 +4,11 @@ Plan B4 decisions 1-5: one print at a time, each as a single entry in Bambuddy's
 (Spec 7.6, since v0.3.5; before, each print had its own batch).
 
 1. `reserve_next` takes one print off the top eligible entry in a short write
-   transaction and creates the `dispatches` row in state `sending`.
+   transaction and creates the `dispatches` row in state `sending`, with the article's
+   file and plate as they are now (v0.3.11 p53).
 2. `hand_over` calls Bambuddy outside any transaction: optionally `list_queue`, then -
-   after `enqueue_sent_at` has been committed - `enqueue`.
+   after `enqueue_sent_at` has been committed - `enqueue` with exactly that file and plate
+   (the `Reservation` is read back from the row, one source).
 
 The order in step 2 is the safety of the whole automation: once `enqueue_sent_at` is
 set, nothing here puts the print back into the work queue except a 4xx answer
@@ -105,6 +107,8 @@ def _reserve(
         units=article.units_per_print,
         queue_entry_id=entry.id,
         queue_position=entry.position,
+        library_file_id=article.library_file_id,
+        plate_id=article.plate_id,
     )
     session.add(row)
     if entry.prints > 1:
@@ -117,11 +121,13 @@ def _reserve(
     # The chosen printer wins over the model, as on the article page (catalog.target_value).
     printer_id = article.printer_id
     target_model = None if printer_id is not None else article.target_model
+    # File and plate from the row, not from the article a second time: what is sent to Bambuddy is
+    # what the search after an unclear answer looks for (p53; the article may change in between).
     return Reservation(
         dispatch_id=row.id,
         article_id=article.id,
-        library_file_id=article.library_file_id,
-        plate_id=article.plate_id,
+        library_file_id=row.library_file_id,
+        plate_id=row.plate_id,
         target_model=target_model,
         printer_id=printer_id,
     )
@@ -435,31 +441,42 @@ def _known_item_ids(session: Session) -> set[int]:
     )
 
 
+def _sent_file(row: Dispatch, article: Article | None) -> tuple[int, int] | None:
+    """File and plate the print was handed over with.
+
+    Stored at the reservation since revision 0010 (v0.3.11 p53), so a file chosen for the article
+    while the print is unclear does not hide its entry. A print from before has none: the article's
+    file and plate at the time of the search stand in, as in the versions before (a file changed
+    meanwhile then makes the print `missing` and pauses the article - safe, only unneeded).
+    """
+    if row.library_file_id is not None and row.plate_id is not None:
+        return row.library_file_id, row.plate_id
+    if article is None:
+        return None
+    return article.library_file_id, article.plate_id
+
+
 def _candidates(
-    items: Sequence[QueueItem], *, username: str, article: Article | None, sent_at: datetime,
-    known: Collection[int],
+    items: Sequence[QueueItem], *, username: str, sent_file: tuple[int, int] | None,
+    sent_at: datetime, known: Collection[int],
 ) -> list[QueueItem]:
     """The entries that may be this print's (Spec 7.6), smallest id first.
 
-    Own user, same file and plate as the article, made after the send (less the clock
-    tolerance) and held by no print yet. An entry without `created_at` cannot be placed in
-    time, so it is none.
-
-    File and plate are the article's at the time of the search: a print does not store
-    them (no migration in v0.3.5). Choosing another file while a print is unclear makes
-    the real entry no candidate; the print becomes `missing` and the article pauses -
-    safe (nothing is sent twice), only an unneeded pause.
+    Own user, the file and plate the print was sent with (`_sent_file`), made after the send
+    (less the clock tolerance) and held by no print yet. An entry without `created_at` cannot
+    be placed in time, so it is none.
     """
-    if article is None:
+    if sent_file is None:
         return []
+    file_id, plate_id = sent_file
     not_before = sent_at - CLOCK_TOLERANCE
     return sorted(
         (
             item
             for item in items
             if item.created_by == username
-            and item.library_file_id == article.library_file_id
-            and item.plate_id == article.plate_id
+            and item.library_file_id == file_id
+            and item.plate_id == plate_id
             and item.created_at is not None
             and item.created_at >= not_before
             and item.id not in known
@@ -542,7 +559,8 @@ async def resolve_pending(client: BambuddyClient, sm: sessionmaker) -> ResolveRe
             # Read per print: an entry adopted a moment ago for an older print is known now.
             known = _known_item_ids(session)
             found = _candidates(
-                items, username=username, article=article, sent_at=sent_at, known=known
+                items, username=username, sent_file=_sent_file(row, article), sent_at=sent_at,
+                known=known,
             )
             if len(found) == 1:
                 adopt(session, dispatch_id, found[0])

@@ -153,6 +153,46 @@ def test_a_newer_debian_is_accepted(bash, tmp_path):
     assert run(bash, tmp_path, "--repo", REPO).returncode == 0
 
 
+def rolling_release(dest: Path, codename: str) -> None:
+    """The os-release of Debian testing or unstable: no VERSION_ID, only a codename."""
+    (dest / "etc").mkdir(parents=True, exist_ok=True)
+    (dest / "etc" / "os-release").write_text(
+        f'PRETTY_NAME="Debian GNU/Linux {codename}/sid"\nNAME="Debian GNU/Linux"\n'
+        f"VERSION_CODENAME={codename}\nID=debian\n",
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize("codename", ["forky", "sid"])
+def test_debian_testing_or_unstable_is_accepted_with_a_new_enough_python(bash, tmp_path, codename):
+    """v0.3.11 p130: no VERSION_ID is no reason to refuse; the Python check decides."""
+    rolling_release(tmp_path, codename)
+    result = run(bash, tmp_path, "--repo", REPO, python="3.13")
+    assert result.returncode == 0, result.stderr
+
+
+def test_debian_testing_with_a_too_old_python_is_refused_by_the_python_check(bash, tmp_path):
+    rolling_release(tmp_path, "sid")
+    result = run(bash, tmp_path, "--repo", REPO, python="3.11")
+    assert result.returncode == 1
+    message = result.stderr + result.stdout
+    # The Python check's own words (not the Debian check's, which names Python 3.11 too):
+    assert "python3 here is Python 3.11" in message
+
+
+def test_a_debian_version_that_is_no_number_is_refused(bash, tmp_path):
+    os_release(tmp_path, version="trixie")
+    assert run(bash, tmp_path, "--repo", REPO).returncode == 1
+
+
+def test_a_release_without_version_that_is_not_debian_is_refused(bash, tmp_path):
+    (tmp_path / "etc").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "etc" / "os-release").write_text("ID=arch\n", encoding="utf-8")
+    result = run(bash, tmp_path, "--repo", REPO)
+    assert result.returncode == 1
+    assert "needs Debian 13 or newer" in result.stderr + result.stdout
+
+
 def test_python_older_than_3_12_stops_the_script_with_the_version_named(bash, tmp_path):
     """Whatever the system says it is: the Python that would build the venv decides."""
     os_release(tmp_path)

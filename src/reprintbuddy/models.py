@@ -321,6 +321,12 @@ class Dispatch(Base):
     enqueue_sent_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     queue_entry_id: Mapped[int | None] = mapped_column(default=None)  # no FK: the entry may be gone
     queue_position: Mapped[int]
+    # The file and plate this print is handed over with, taken from the article at the reservation
+    # (Spec 7.6, v0.3.11 p53): the search after an unclear answer looks for these, so changing the
+    # article's file meanwhile does not hide the entry. Empty for prints from before revision 0010;
+    # the search then uses the article's file, as before.
+    library_file_id: Mapped[int | None] = mapped_column(default=None)
+    plate_id: Mapped[int | None] = mapped_column(default=None)
     last_status: Mapped[str | None] = mapped_column(String, default=None)  # Bambuddy's raw state
     message: Mapped[str | None] = mapped_column(String, default=None)  # why it was put back
     created_at: Mapped[datetime] = mapped_column(

@@ -236,7 +236,7 @@ def test_state_and_step_keys_exist():
     # state nobody runs any more is "interrupted" (v0.3.10 p129: no text for "idle").
     wanted = {f"ops.update.state.{state}" for state in get_args(UpdateState) if state != "idle"}
     wanted |= {f"ops.update.step.{step}" for step in UPDATE_STEPS}
-    wanted |= {"ops.update.in_progress", "ops.update.state.interrupted"}
+    wanted |= {"ops.update.in_progress", "ops.update.state.interrupted", "ops.update.state.not_started"}
     for lang in ("en", "de"):
         assert wanted <= set(locales[lang]), (lang, sorted(wanted - set(locales[lang])))
 
@@ -384,6 +384,52 @@ def test_stale_running_state_is_shown_as_interrupted_not_as_running(ops_env):
     page = ops_env.client.get("/settings?tab=maintenance").text
     assert "Update was interrupted" in page
     assert "Update is running" not in page
+
+
+# --- a start cut off by a shutdown (v0.3.11 p123) -----------------------------------------
+# The helper's first act is to overwrite "queued" with "running": a "queued" whose grace is over and
+# whose unit is not running was never picked up by the helper, so nothing was changed.
+
+
+def queued_long_ago(env, *, age=timedelta(minutes=2), to_tag="v0.2.0"):
+    write_status(
+        data_dir(env),
+        UpdateStatus(state="queued", step="start", from_tag="v0.1.0", to_tag=to_tag, started_at=now() - age),
+    )
+
+
+@pytest.mark.parametrize("unit", ["inactive", "failed"])
+@pytest.mark.parametrize("age", [timedelta(minutes=2), timedelta(minutes=45)])
+def test_a_start_that_never_began_says_so_not_interrupted(ops_env, unit, age):
+    git_env(ops_env)
+    check(ops_env)
+    queued_long_ago(ops_env, age=age)
+    unit_state(ops_env, unit)
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    assert "The update did not start. Please start it again." in page
+    assert "Update was interrupted" not in page
+    assert "Starting" not in page  # no step for a run that never began
+    assert "Update to v0.2.0" in page  # the button to start it again
+    assert "update-status" not in page  # nothing to follow
+
+
+def test_a_queued_state_whose_target_runs_shows_the_update_as_finished(ops_env):
+    """The helper ran but could not record it (status file not writable): the target version runs."""
+    git_env(ops_env, describe="v0.2.0\n")
+    queued_long_ago(ops_env)
+    unit_state(ops_env, "inactive")
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    assert "Update finished" in page
+    assert "did not start" not in page and "Update was interrupted" not in page
+
+
+def test_a_fresh_start_is_still_shown_as_starting(ops_env):
+    git_env(ops_env)
+    queued_long_ago(ops_env, age=timedelta(seconds=2))
+    unit_state(ops_env, "inactive")
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    assert "Update is starting" in page
+    assert "did not start" not in page
 
 
 def test_idle_page_asks_systemd_nothing(ops_env):
