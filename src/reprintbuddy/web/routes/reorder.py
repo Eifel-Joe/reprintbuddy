@@ -12,7 +12,7 @@ from reprintbuddy.web import kpis
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.filament_view import COLOR, spools_or_none
-from reprintbuddy.web.formatting import format_date, to_local
+from reprintbuddy.web.formatting import format_date, to_local, unit_label
 from reprintbuddy.web.forms import (
     bounded_int, duplicate_redirect, error_status, error_text, saved_redirect,
 )
@@ -52,9 +52,9 @@ async def _page(
             "packs_value": typed[2] if typed and typed[:2] == (sug.item_type, str(sug.item_id)) else sug.packs, "lead_days": sug.lead_days,
             "safety": _number(sug.safety), "packs": sug.packs, "size": _number(sug.pack_size),
             "total": _number(total),
-            "suggestion": translate(lang, "reorder.suggest_part", packs=sug.packs, size=_number(sug.pack_size), total=_number(total), unit=sug.unit)
+            "suggestion": translate(lang, "reorder.suggest_part", packs=sug.packs, size=_number(sug.pack_size), total=_number(total), unit=unit_label(sug.unit, lang))
             if sug.item_type == "part"
-            else translate(lang, "reorder.suggest_filament", packs=sug.packs, size=_number(sug.pack_size), unit=sug.unit), "unit": sug.unit, "supplier": sug.supplier,
+            else translate(lang, "reorder.suggest_filament", packs=sug.packs, size=_number(sug.pack_size), unit=unit_label(sug.unit, lang)), "unit": sug.unit, "supplier": sug.supplier,
             "order_url": sug.order_url,
         })
     under_way = [

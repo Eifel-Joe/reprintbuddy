@@ -55,7 +55,7 @@
       <tr>
         <td class="name"><a href="/parts/{{ part.id }}/edit">{{ part.name }}</a></td>
         <td>{{ badge(item) }}</td>
-        <td class="num">{{ part.stock }} {{ part.unit }}</td>
+        <td class="num">{{ part.stock }} {{ part.unit|unit }}</td>
         <td class="num target">{{ part.min_stock }}{{ min_bar(item) }}</td>
         <td class="num">{{ part.pack_size }}</td>
         <td>{% if part.supplier %}{{ supplier(part) }}{% endif %}</td>
@@ -77,7 +77,7 @@
   <div class="tile">
     <div class="tile-head"><span class="thumb-placeholder">{{ ui.icon('puzzle') }}</span><div><a class="tile-link" href="/parts/{{ part.id }}/edit">{{ part.name }}</a></div>{{ badge(item) }}</div>
     <div class="tile-stats">
-      <span>{{ t('parts.stock') }} <strong>{{ part.stock }}</strong> {{ part.unit }}</span>
+      <span>{{ t('parts.stock') }} <strong>{{ part.stock }}</strong> {{ part.unit|unit }}</span>
       <span>{{ t('parts.field.min_stock') }} <strong>{{ part.min_stock }}</strong></span>
       <span>{{ t('parts.col.pack') }} <strong>{{ part.pack_size }}</strong></span>
     </div>

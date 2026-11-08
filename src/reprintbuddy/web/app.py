@@ -34,7 +34,7 @@ from reprintbuddy.ops.running import update_running
 from reprintbuddy.ops.versions import VersionInfo, check_versions, is_git_install
 from reprintbuddy.web import deps
 from reprintbuddy.web.flash import pop_flashes
-from reprintbuddy.web.formatting import decimal, fill_percent, local_date, local_dt
+from reprintbuddy.web.formatting import decimal, fill_percent, local_date, local_dt, unit
 from reprintbuddy.web.formtoken import issue_form_token
 from reprintbuddy.web.i18n import load_locales
 from reprintbuddy.web.live import LIVE_CHANNEL_TOPIC, LiveBroker
@@ -315,6 +315,7 @@ def create_app(
     templates.env.filters["local_dt"] = local_dt
     templates.env.filters["local_date"] = local_date
     templates.env.filters["num"] = decimal
+    templates.env.filters["unit"] = unit
     templates.env.globals["form_token"] = lambda: issue_form_token(secret)
     app.state.templates = templates
 

@@ -17,7 +17,7 @@ from reprintbuddy.models import Part
 from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
-from reprintbuddy.web.formatting import fill_percent
+from reprintbuddy.web.formatting import canonical_unit, fill_percent
 from reprintbuddy.web.i18n import translate
 from reprintbuddy.web.forms import (
     duplicate_redirect,
@@ -64,7 +64,7 @@ def _typed(form) -> dict[str, str]:
 def _parse(form) -> PartInput:
     return PartInput(
         name=parse_text(form.get("name"), field="parts.field.name", max_len=200, required=True),
-        unit=parse_text(form.get("unit"), field="parts.field.unit", max_len=20, required=True),
+        unit=canonical_unit(parse_text(form.get("unit"), field="parts.field.unit", max_len=20, required=True)),
         min_stock=parse_int(form.get("min_stock"), field="parts.field.min_stock", min=0, max=MAX_QTY),
         pack_size=parse_int(form.get("pack_size"), field="parts.field.pack_size", min=1, max=MAX_QTY),
         min_order_packs=parse_int(form.get("min_order_packs"), field="parts.field.min_order_packs", min=1, max=1000),

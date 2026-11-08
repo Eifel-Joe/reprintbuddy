@@ -56,6 +56,30 @@ def decimal(context, value: float | None, digits: int = 1) -> str:
     return format_decimal(value, digits, context.get("lang", "en")) if value is not None else ""
 
 
+# The default unit of a part is stored as "pcs" (no migration) and shown in the language of the interface.
+DEFAULT_UNIT = "pcs"
+_DEFAULT_UNIT_SHOWN = {"de": "Stk."}
+
+
+def unit_label(value: str, lang: str) -> str:
+    """A unit for display: the default "pcs" reads "Stk." in German; any other unit is shown as typed."""
+    if value == DEFAULT_UNIT:
+        return _DEFAULT_UNIT_SHOWN.get(lang, DEFAULT_UNIT)
+    return value
+
+
+def canonical_unit(typed: str) -> str:
+    """A unit from a form: what the form showed for the default ("Stk." or "pcs", any case) is stored as "pcs"."""
+    text = typed.strip()
+    return DEFAULT_UNIT if text.lower() in {DEFAULT_UNIT, "stk."} else text
+
+
+@pass_context
+def unit(context, value: str | None) -> str:
+    """Jinja filter `unit`: `{{ part.unit|unit }}`, in the language of the request."""
+    return unit_label(value, context.get("lang", "en")) if value else ""
+
+
 def fill_percent(available: int, target: int) -> int | None:
     """How full a stock is against its target, 0 to 100; `None` without a target."""
     if target <= 0:
