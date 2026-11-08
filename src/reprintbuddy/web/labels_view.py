@@ -97,6 +97,19 @@ def draw(lang: str, data: fields.LabelData, chosen: Iterable[str], address: str,
     return render.render_label(data, chosen, address, roll, caption_for(lang))
 
 
+def notes(rendered: render.Rendered) -> list[str]:
+    """What the preview says about the label, as the words the page script shows a note for: "cut" (a
+    line did not fit), "missing" (a character the font lacks), "rtl" (right-to-left letters), "fine" (the
+    code is too fine for phones)."""
+    found = {
+        "cut": bool(rendered.truncated),
+        "missing": bool(rendered.missing),
+        "rtl": rendered.rtl,
+        "fine": rendered.fine_code,
+    }
+    return [name for name, present in found.items() if present]
+
+
 def png(image) -> bytes:
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)

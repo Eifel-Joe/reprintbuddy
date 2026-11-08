@@ -40,7 +40,11 @@ def _picture_response(rendered) -> Response:
     return Response(
         labels_view.png(rendered.image),
         media_type="image/png",
-        headers={"Cache-Control": _NO_STORE, "X-Label-Cut": ",".join(str(i) for i in rendered.truncated)},
+        headers={
+            "Cache-Control": _NO_STORE,
+            "X-Label-Cut": ",".join(str(i) for i in rendered.truncated),
+            "X-Label-Notes": ",".join(labels_view.notes(rendered)),
+        },
     )
 
 

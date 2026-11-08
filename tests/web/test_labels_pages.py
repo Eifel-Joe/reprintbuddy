@@ -548,3 +548,66 @@ def test_an_own_address_stored_earlier_is_still_not_printed_to(ready_client, art
     assert net.sent == [] and net.asked == []
     page = ready_client.get(f"/articles/{article}").text
     assert en("labels.failed", reason=en("labels.err.address")) in page
+
+
+# ============================== notes under the preview (p118) ==============================
+
+LONG_BASE = "https://" + "a" * 60 + ".example.org:8443"  # an address that makes the code too fine
+
+
+def notes_of(response):
+    return [token for token in response.headers["x-label-notes"].split(",") if token]
+
+
+def test_an_ordinary_preview_has_no_note(configured, article):
+    assert notes_of(configured.get(f"/articles/{article}/label.png")) == []
+    assert notes_of(configured.get("/settings/labels/preview.png")) == []
+
+
+def test_a_character_the_font_lacks_is_a_note_on_the_article_preview(configured, ready_client):
+    with sm_of(ready_client).begin() as s:
+        odd = make_article(s, name="Plate 中", sku="TA-200").id
+    assert notes_of(configured.get(f"/articles/{odd}/label.png")) == ["missing"]
+
+
+def test_right_to_left_text_is_a_note_on_the_article_preview(configured, ready_client):
+    with sm_of(ready_client).begin() as s:
+        odd = make_article(s, name="שלום", sku="TA-201").id
+    assert notes_of(configured.get(f"/articles/{odd}/label.png")) == ["rtl"]
+
+
+def test_a_very_long_qr_address_is_a_note_on_both_previews(configured, article):
+    with sm_of(configured).begin() as s:
+        st.set_setting(s, "qr_base_url", LONG_BASE, commit=False)
+    assert notes_of(configured.get("/settings/labels/preview.png")) == ["fine"]
+    assert notes_of(configured.get(f"/articles/{article}/label.png")) == ["fine"]
+
+
+def test_a_cut_line_is_in_the_notes_too(ready_client):
+    every = ready_client.get("/settings/labels/preview.png?fields=" + ",".join(fields.FIELDS))
+    assert notes_of(every) == (["cut"] if every.headers["x-label-cut"] else [])
+
+
+def test_the_notes_are_on_the_settings_tab_and_the_article_card_hidden_until_the_script_shows_them(configured, article):
+    for page in (configured.get(SAME_PAGE).text, configured.get(f"/articles/{article}").text):
+        for token, key in (("cut", "labels.cut_warning"), ("missing", "labels.note_missing"),
+                           ("rtl", "labels.note_rtl"), ("fine", "labels.note_fine")):
+            match = re.search(rf'<p[^>]*data-note="{token}"[^>]*>', page)
+            assert match and " hidden" in match.group(0), token
+            assert en(key) in page
+        assert f'src="/static/js/labels.js?v=' in page
+
+
+def test_the_article_preview_tells_the_script_where_to_ask_for_the_notes(configured, article):
+    page = configured.get(f"/articles/{article}").text
+    assert f'data-label-url="/articles/{article}/label.png"' in page
+
+
+def test_the_script_reads_the_notes_header(configured):
+    script = configured.get("/static/js/labels.js")
+    assert script.status_code == 200 and "X-Label-Notes" in script.text
+
+
+def test_the_notes_are_in_german_too():
+    for key in ("labels.note_missing", "labels.note_rtl", "labels.note_fine"):
+        assert de(key) != key and de(key) != en(key)
