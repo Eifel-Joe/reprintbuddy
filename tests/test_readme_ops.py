@@ -89,6 +89,15 @@ def test_readme_names_the_paths_and_commands(name):
 
 
 @pytest.mark.parametrize("name", READMES)
+def test_readme_explains_the_emergency_restore_on_the_command_line(name):
+    """p100: when the service does not start, `reprintbuddy restore-backup` is the way back."""
+    text = read(name)
+    assert "reprintbuddy restore-backup /tmp/" in text
+    assert "systemctl stop reprintbuddy" in text and "systemctl start reprintbuddy" in text
+    assert "reprintbuddy restore-backup <" in text  # in the list of commands
+
+
+@pytest.mark.parametrize("name", READMES)
 def test_install_points_at_the_published_repository(name):
     """Published: README and installer name the real repository, no placeholder."""
     assert "<owner>" not in read(name)

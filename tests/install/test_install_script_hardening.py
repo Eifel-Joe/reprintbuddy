@@ -120,9 +120,14 @@ def test_wrapper_runs_non_interactive_commands_in_a_new_session(bash, tmp_path, 
     assert out.endswith(" ".join(command))
 
 
-def test_wrapper_keeps_the_terminal_for_the_password_prompt(bash, tmp_path):
-    """getpass needs the controlling terminal; a new session would show the password."""
-    out = wrapper(bash, tmp_path, "set-password", "--username", "admin")
+@pytest.mark.parametrize(
+    "command", [["set-password", "--username", "admin"], ["restore-backup", "/tmp/backup.zip"]]
+)
+def test_wrapper_keeps_the_terminal_for_the_password_prompt(bash, tmp_path, command):
+    """getpass needs the controlling terminal; a new session would show the password.
+
+    Both commands that ask for a password (the account's, the backup's) keep it; p100 added the second."""
+    out = wrapper(bash, tmp_path, *command)
     assert out.startswith("runuser -u reprintbuddy -- env HOME=/var/lib/reprintbuddy ")
     assert "setsid" not in out
 

@@ -249,7 +249,22 @@ Under *Settings → Update and backup*:
 - **Export** downloads all data as a JSON file, **without** API keys, passwords, the private
   HTTPS key and the session secret.
 
-To restore a database backup by hand:
+If Reprintbuddy does not start any more, for example after a restore that went wrong, the same
+restore works on the command line, with the same checks as in the interface:
+
+```bash
+systemctl stop reprintbuddy
+reprintbuddy restore-backup /tmp/reprintbuddy-backup.zip
+systemctl start reprintbuddy
+```
+
+The command asks for the password of the backup if it is encrypted (on the terminal only, never as
+an argument), refuses while Reprintbuddy is running, saves the database that was there first
+(`backups/`, or as `damaged-...` if it could not be read) and says what it restored. The command runs
+as the service user, which must be able to read the file: use the full path and a folder such as
+`/tmp`, not `/root`. Everybody signs in again afterwards.
+
+To restore a database copy from `backups/` by hand:
 
 ```bash
 systemctl stop reprintbuddy
@@ -283,6 +298,7 @@ reprintbuddy set-password --username <name>
 reprintbuddy set-port <port>
 reprintbuddy set-host <address>
 reprintbuddy disable-https
+reprintbuddy restore-backup <file>
 reprintbuddy --version
 ```
 
