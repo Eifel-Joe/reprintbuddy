@@ -25,7 +25,7 @@ from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.routes.auth import password_confirmed
-from reprintbuddy.web.routes.ops import ops_view, update_busy, warm_installed
+from reprintbuddy.web.routes.ops import ops_ready, ops_view
 from reprintbuddy.web.deps import flash, get_db, logged_in_user, render, start_session, take_verdict
 from reprintbuddy.web.formtoken import write_transaction
 
@@ -67,10 +67,14 @@ def _page(
     error: str | None = None,
     section: str | None = None,
     check=None,
-    busy: bool | None = None,
+    *,
+    busy: bool,
     **typed: object,
 ):
-    """Render the page from the stored values; `typed` keeps what was just entered."""
+    """Render the page from the stored values; `typed` keeps what was just entered.
+
+    `busy` is the answer of `ops_ready`, which the (async) caller awaits: the page itself must not
+    ask the system, so it has no default (v0.3.9 p122)."""
     values: dict[str, object] = {
         "language": st.get_setting(db, "language"),
         "bambuddy_address": st.get_setting(db, "bambuddy_url") or "",
@@ -124,9 +128,9 @@ def _saved(
 
 @router.get("/settings")
 async def settings_page(request: Request, db: Session = Depends(get_db)):
-    # The update card asks whether an update runs (systemd, in a worker thread: v0.3.8 p96).
-    await warm_installed(request)
-    return _page(request, db, busy=await update_busy(request))
+    # The update card asks the installed version and whether an update runs (git and systemd, in
+    # worker threads: v0.3.8 p96, v0.3.9 p122).
+    return _page(request, db, busy=await ops_ready(request))
 
 
 @router.post("/settings/language", dependencies=[Depends(verify_csrf)])
@@ -135,7 +139,7 @@ async def save_language(request: Request, db: Session = Depends(get_db)):
     try:
         st.set_setting(db, "language", str(form.get("language", "")))
     except ValueError:
-        return _page(request, db, "settings.invalid_value", "language", busy=await update_busy(request))
+        return _page(request, db, "settings.invalid_value", "language", busy=await ops_ready(request))
     return _saved(request, tab=SECTION_TAB["language"])
 
 
@@ -148,7 +152,7 @@ async def save_qr(request: Request, db: Session = Depends(get_db)):
     try:
         st.set_setting(db, "qr_base_url", typed or None)
     except ValueError:
-        return _page(request, db, "settings.invalid_qr_base_url", "qr", busy=await update_busy(request), qr_base_url=typed)
+        return _page(request, db, "settings.invalid_qr_base_url", "qr", busy=await ops_ready(request), qr_base_url=typed)
     return _saved(request, tab=SECTION_TAB["qr"])
 
 
@@ -160,7 +164,7 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     typed = {"bambuddy_address": address_input}
 
     async def fail(error: str, check=None):
-        return _page(request, db, error, "bambuddy", check, busy=await update_busy(request), **typed)
+        return _page(request, db, error, "bambuddy", check, busy=await ops_ready(request), **typed)
 
     if not address_input:
         return await fail("bambuddy.fields_required")
@@ -213,7 +217,7 @@ async def change_password(request: Request, db: Session = Depends(get_db)):
     user = logged_in_user(request, db)
 
     async def fail(error: str):
-        return _page(request, db, error, "password", busy=await update_busy(request))
+        return _page(request, db, error, "password", busy=await ops_ready(request))
 
     limiter = request.app.state.hash_limiter
     # The login's way, brake and pause included: guessing the current password here must
@@ -253,7 +257,7 @@ async def save_server(request: Request, db: Session = Depends(get_db)):
     typed = {"host": host, "port": port_text}
 
     async def fail(error: str):
-        return _page(request, db, error, "server", busy=await update_busy(request), **typed)
+        return _page(request, db, error, "server", busy=await ops_ready(request), **typed)
 
     try:
         port = st.validate("port", int(port_text))
@@ -313,7 +317,7 @@ async def save_automation(request: Request, db: Session = Depends(get_db)):
         try:
             checked[name] = int(st.validate(name, int(text)))
         except ValueError:  # also not a number at all
-            return _page(request, db, f"settings.invalid_{name}", "automation", busy=await update_busy(request), **flags, **numbers)
+            return _page(request, db, f"settings.invalid_{name}", "automation", busy=await ops_ready(request), **flags, **numbers)
 
     old_poll_minutes = int(st.get_setting(db, "poll_minutes"))
     # One transaction: all five or none.

@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 from argon2.low_level import Type, hash_secret_raw
 from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 SALT_BYTES = 16
@@ -95,6 +96,30 @@ def seal(key: bytes, nonce: bytes, data: bytes, aad: bytes) -> bytes:
     if len(nonce) != NONCE_BYTES:
         raise ValueError("wrong nonce length")
     return AESGCM(key).encrypt(nonce, data, aad)
+
+
+class Sealer:
+    """`seal` in blocks: the same bytes (ciphertext, then the tag), without the whole data in memory.
+
+    `update(block)` returns the ciphertext of that block, `finish()` the tag. Used once, in that order."""
+
+    def __init__(self, key: bytes, nonce: bytes, aad: bytes) -> None:
+        if len(nonce) != NONCE_BYTES:
+            raise ValueError("wrong nonce length")
+        self._encryptor = Cipher(algorithms.AES(key), modes.GCM(nonce)).encryptor()
+        self._encryptor.authenticate_additional_data(aad)
+        self._finished = False
+
+    def update(self, data: bytes) -> bytes:
+        if self._finished:
+            raise ValueError("already finished")
+        return self._encryptor.update(data)
+
+    def finish(self) -> bytes:
+        if self._finished:
+            raise ValueError("already finished")
+        self._finished = True
+        return self._encryptor.finalize() + self._encryptor.tag
 
 
 def open_sealed(key: bytes, nonce: bytes, sealed: bytes, aad: bytes) -> bytes:

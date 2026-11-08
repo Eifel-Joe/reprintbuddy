@@ -44,6 +44,31 @@ _NOISE_LINES = ("[SQL:", "[parameters:", "(Background on this error")
 _HEADLINE = re.compile(r"^(fatal|error)\b", re.IGNORECASE)
 
 
+_WRONG_PYTHON = re.compile(r"requires a different Python: (?P<found>[0-9][0-9.]*) not in '>=\s*(?P<needed>[0-9][0-9.]*)'")
+# (pip names the version spec of the package; only the plain ">=3.x" form is turned into words)
+
+
+def _too_old_python(result: CommandResult) -> str | None:
+    """pip's refusal because the environment's Python is older than the new version needs, in plain words.
+
+    Root: from v0.3.9 on a release needs Python 3.12, and pip's own line ("requires a different Python:
+    3.11.2 not in '>=3.12'") says it only to those who know what it means. The update is rolled back as for
+    any other install failure; only the text differs.
+
+    Limit, stated plainly: the update runs the code of the INSTALLED version. An installation made on Debian 12
+    (v0.3.8, Python 3.11) therefore updates with its old updater and shows pip's raw line; this text appears
+    only from v0.3.9 on, for a later release that raises the floor again (its environment is then on 3.12 or
+    newer already). The rollback itself is the one every install failure gets."""
+    found = _WRONG_PYTHON.search("\n".join((result.stderr or "", result.stdout or "")))
+    if found is None:
+        return None
+    return (
+        f"the new version needs Python {found['needed']} or newer, this installation runs Python {found['found']}; "
+        "upgrade the system to a Debian release that has it, then run the install command again (it keeps "
+        "your data), or set Reprintbuddy up again there and restore a backup"
+    )
+
+
 def _reason(result: CommandResult, fallback: str) -> str:
     """The line that says what went wrong, short enough for a page.
 
@@ -185,7 +210,7 @@ def run_update(
         shutil.rmtree(install_dir / "build", ignore_errors=True)  # old build leftovers would bring back deleted modules
         done = runner((py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", d), timeout=900.0)
         if not done.ok:
-            return "install", _reason(done, "pip install failed")
+            return "install", _too_old_python(done) or _reason(done, "pip install failed")
 
         current = "verify"
         put("running", "verify")

@@ -110,10 +110,13 @@ class LiveListener:
     `TRIGGER_TYPES`, and with `"connected"` after every successful connect: messages from the
     time without a connection are lost, so the caller should look once.
 
-    `state` is `"connecting"`, `"connected"`, `"waiting"` (a pause after a failure) or
+    `state` is `"idle"` (not started: `run` has not begun, as when Reprintbuddy runs without its
+    background tasks), `"connecting"`, `"connected"`, `"waiting"` (a pause after a failure) or
     `"no_right"` (Bambuddy refuses the channel; polling goes on without it). `on_state(state)`
-    is called after each change of it (not for the starting state, not for a repeat), so a page
-    that shows the state can follow it; it must be short and may not raise (an error is logged).
+    is called after each change of it (not for a repeat), so a page that shows the state can
+    follow it; it must be short and may not raise (an error is logged). The start of `run`
+    ("idle" -> "connecting") is a change like any other (v0.3.9 p98: a state that no one will
+    ever change used to read "connecting" for good).
     """
 
     def __init__(
@@ -132,7 +135,7 @@ class LiveListener:
         self._sleep = sleep
         self._now = now
         self._on_state = on_state
-        self._state = "connecting"
+        self._state = "idle"
         self._token: str | None = None
         self._token_at = 0.0
         self._failures = 0  # failed attempts since the last stable connection

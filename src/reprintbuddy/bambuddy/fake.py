@@ -35,6 +35,29 @@ def _utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+# Bambuddy's `is_gcode_compatible` (backend/app/utils/printer_models.py): a file sliced for one model
+# may go to another only when both are of the same family; a missing declaration passes. The map
+# turns the internal codes a file can carry into the short names.
+_MODEL_CODES = {
+    "BL-P001": "X1C", "BL-P002": "X1", "C13": "X1E", "C11": "P1P", "C12": "P1S", "P1P": "P1P",
+    "P1S": "P1S", "N7": "P2S", "P2S": "P2S", "N6": "X2D", "N9": "A2L", "A11": "A1",
+    "A12": "A1 Mini", "N1": "A1 Mini", "N2S": "A1", "A04": "A1 Mini", "O1D": "H2D",
+    "O1E": "H2D Pro", "O2D": "H2D Pro", "O1C": "H2C", "O1C2": "H2C", "O1S": "H2S",
+}
+_MODEL_FAMILIES = (frozenset({"X1", "X1C", "X1E", "P1P", "P1S"}),)
+
+
+def _gcode_compatible(sliced_for: str | None, target: str) -> bool:
+    if not sliced_for or not target:
+        return True
+
+    def short(model: str) -> str:
+        return _MODEL_CODES.get(model.strip(), model).strip().upper().replace(" ", "").replace("-", "")
+
+    a, b = short(sliced_for), short(target)
+    return a == b or any(a in family and b in family for family in _MODEL_FAMILIES)
+
+
 class FakeBambuddy:
     def __init__(self) -> None:
         self.unavailable = False
@@ -121,7 +144,8 @@ class FakeBambuddy:
 
     async def list_files(self, folder_id: int | None) -> list[LibraryFile]:
         self._enter("list_files")
-        return [f for f in self._files.values() if f.folder_id == folder_id]
+        # Bambuddy lists a folder ordered by file name (`order_by(LibraryFile.filename)`).
+        return sorted((f for f in self._files.values() if f.folder_id == folder_id), key=lambda f: f.filename)
 
     async def get_file(self, file_id: int) -> LibraryFile | None:
         self._enter("get_file")
@@ -317,17 +341,43 @@ class FakeBambuddy:
         if req.insert_position is not None and req.insert_position < 1:
             raise ValueError("insert_position starts at 1")
         failure = await self._write_call("enqueue")
-        file = self._files.get(req.library_file_id)
-        if file is None:
-            raise BambuddyRejected("Library file not found", status=404)
+        # Bambuddy's order (`add_to_queue`): the printer, then the model with an active printer,
+        # then the library file, then what the file says about itself.
         printer = None
+        target_model = req.target_model
         if req.printer_id is not None:
             printer = next((p for p in self._printers if p.id == req.printer_id), None)
             if printer is None:
                 raise BambuddyRejected("Printer not found", status=400)
-        elif not any(p.model == req.target_model and p.active for p in self._printers):
+        else:
+            # Matched without regard to case; stored the way the printer spells it. Left out: Bambuddy's
+            # `normalize_model_name` also turns internal codes and long names ("C13", "Bambu Lab X1 Carbon")
+            # into the short name first; Reprintbuddy only ever sends the short names of its own printers.
+            match = next(
+                (
+                    p for p in self._printers
+                    if p.active and p.model.lower() == (req.target_model or "").lower()
+                ),
+                None,
+            )
+            if match is None:
+                raise BambuddyRejected(
+                    f"No active printers for model: {req.target_model}", status=400
+                )
+            target_model = match.model
+        file = self._files.get(req.library_file_id)
+        if file is None:
+            raise BambuddyRejected("Library file not found", status=404)
+        if target_model is not None and not _gcode_compatible(file.printer_model, target_model):
             raise BambuddyRejected(
-                f"No active printers for model: {req.target_model}", status=400
+                f"File was sliced for {file.printer_model} and cannot be dispatched to "
+                f"{target_model} printers",
+                status=400,
+            )
+        if not file.sliced and file.filename.lower().endswith(".3mf"):  # Bambuddy: `ensure_sliced` looks at .3mf only
+            raise BambuddyRejected(
+                f"{file.filename} isn't sliced yet. Slice it first, then print the sliced file.",
+                status=400,
             )
         highest = self._highest()
         if req.insert_position is not None:  # wins over insert_at_top, as in Bambuddy
@@ -342,7 +392,7 @@ class FakeBambuddy:
         item = self._new_item(
             position=position,
             printer_id=req.printer_id,
-            target_model=req.target_model,
+            target_model=target_model,
             label=f"{file.filename} / plate {req.plate_id}",
             created_by=self.username,
             library_file_id=req.library_file_id,

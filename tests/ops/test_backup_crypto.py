@@ -95,3 +95,30 @@ def test_fresh_salt_and_nonce_are_random():
     assert len(bc.new_salt()) == 16 and len(bc.new_nonce()) == 12
     assert bc.new_salt() != bc.new_salt()
     assert bc.new_nonce() != bc.new_nonce()
+
+
+# --- sealing in blocks (v0.3.9 p102) ---------------------------------------------------------
+
+
+@pytest.mark.parametrize("sizes", [[0], [1], [5, 0, 11, 1000], [100_000]])
+def test_sealing_in_blocks_gives_what_sealing_at_once_gives(sizes):
+    key, nonce, aad = b"k" * bc.KEY_BYTES, b"n" * bc.NONCE_BYTES, b"manifest bytes"
+    blocks = [bytes([i + 1]) * size for i, size in enumerate(sizes)]
+    sealer = bc.Sealer(key, nonce, aad)
+    pieces = [sealer.update(block) for block in blocks]
+    pieces.append(sealer.finish())
+    assert b"".join(pieces) == bc.seal(key, nonce, b"".join(blocks), aad)
+
+
+def test_a_sealer_cannot_be_used_after_finish():
+    sealer = bc.Sealer(b"k" * bc.KEY_BYTES, b"n" * bc.NONCE_BYTES, b"")
+    sealer.finish()
+    with pytest.raises(ValueError):
+        sealer.update(b"x")
+    with pytest.raises(ValueError):
+        sealer.finish()
+
+
+def test_a_sealer_checks_the_nonce_length():
+    with pytest.raises(ValueError):
+        bc.Sealer(b"k" * bc.KEY_BYTES, b"short", b"")

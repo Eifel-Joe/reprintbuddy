@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Reprintbuddy installer for Debian 12 and 13 (native install, no Docker, systemd).
+# Reprintbuddy installer for Debian 13 or newer (native install, no Docker, systemd).
 #
 #   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/main/install/install.sh)"
 #
-# Run as root inside the container. Safe to run again: the installed version and the
+# Run as root on the system that is to run Reprintbuddy. Safe to run again: the installed version and the
 # database stay as they are; packages, user, permissions, units and the service are
 # repaired. Versions change only through the update on the settings page.
 #
@@ -124,10 +124,14 @@ require_root() {
     fi
 }
 
+# Reprintbuddy needs Python 3.12 or newer. Debian 12 only has 3.11 in its own sources (main; there is
+# no python3.12 in bookworm-backports either), so Debian 13 or newer is the floor (v0.3.9 p101).
+NEEDS_DEBIAN_MESSAGE="Reprintbuddy needs Debian 13 or newer: it needs Python 3.12 or newer, and Debian 12 comes with Python 3.11. On Debian 12, upgrade the system to Debian 13 (the Debian release upgrade), then run this installer again; it keeps your data."
+
 require_debian() {
     local release="${DESTDIR}/etc/os-release" id_ version
     if [ ! -r "${release}" ]; then
-        die 1 "Reprintbuddy needs Debian 12 or 13."
+        die 1 "${NEEDS_DEBIAN_MESSAGE}"
     fi
     id_="$(
         # shellcheck disable=SC1090
@@ -139,8 +143,29 @@ require_debian() {
         . "${release}"
         printf '%s' "${VERSION_ID:-}"
     )"
-    if [ "${id_}" != "debian" ] || { [ "${version}" != "12" ] && [ "${version}" != "13" ]; }; then
-        die 1 "Reprintbuddy needs Debian 12 or 13."
+    case "${version}" in
+        '' | *[!0-9]*) version=0 ;;
+    esac
+    if [ "${id_}" != "debian" ] || [ "${version}" -lt 13 ]; then
+        die 1 "${NEEDS_DEBIAN_MESSAGE}"
+    fi
+}
+
+# The python3 that will build the virtual environment must be 3.12 or newer, whatever the system
+# claims to be. Checked before anything is created. Without python3 (a dry run on a bare system)
+# there is nothing to ask.
+require_python() {
+    if ! command -v python3 >/dev/null 2>&1; then
+        if [ "${DRY_RUN}" -eq 1 ]; then
+            return 0
+        fi
+        die 1 "python3 was not found after installing the packages."
+    fi
+    if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)'; then
+        local found
+        found="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"
+        die 1 "Reprintbuddy needs Python 3.12 or newer, but python3 here is Python ${found:-of an unknown version}." \
+            "Use Debian 13 or newer. On Debian 12, upgrade the system to Debian 13, then run this installer again."
     fi
 }
 
@@ -245,8 +270,43 @@ fetch_code() {
     checkout_newest_release
 }
 
+# Does the installed environment still fit? It was built with one Python and holds its packages under that
+# Python's lib/python3.x; its `bin/python` is a link to the system's python3. After a release upgrade of
+# Debian the system's python3 is another one (3.11 -> 3.13): the link is alive, but the packages are not found,
+# and the service does not start. The environment is of no use when it was built with another Python than the
+# system's now, with a Python older than 3.12, or when python or pip is missing in it. Only the environment is
+# rebuilt, never the data (v0.3.9 p101). Its Python version is read from pyvenv.cfg: the environment's own
+# python is not run (as root) just to ask.
+python_version_of_system() {
+    python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true
+}
+
+venv_usable() {
+    local venv_python="${DESTDIR}${VENV_DIR}/bin/python" venv_pip="${DESTDIR}${VENV_DIR}/bin/pip"
+    local cfg="${DESTDIR}${VENV_DIR}/pyvenv.cfg" version major minor system
+    [ -x "${venv_python}" ] && [ -x "${venv_pip}" ] && [ -r "${cfg}" ] || return 1
+    version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*//p' "${cfg}" | head -n 1)"
+    major="${version%%.*}"
+    minor="${version#*.}"
+    minor="${minor%%.*}"
+    case "${major}${minor}" in
+        '' | *[!0-9]*) return 1 ;;
+    esac
+    { [ "${major}" -gt 3 ] || { [ "${major}" -eq 3 ] && [ "${minor}" -ge 12 ]; }; } || return 1
+    system="$(python_version_of_system)"
+    [ -z "${system}" ] || [ "${system}" = "${major}.${minor}" ]
+}
+
 install_python() {
-    if [ ! -d "${DESTDIR}${VENV_DIR}" ]; then
+    local rebuild=0
+    if [ -d "${DESTDIR}${VENV_DIR}" ] && ! venv_usable; then
+        say "The Python environment does not fit the system's Python any more (for example after a system"
+        say "upgrade): rebuilding it. The installed version, the database and the settings are kept."
+        rebuild=1
+        run systemctl stop "${SERVICE}" || true
+        run rm -rf "${VENV_DIR}" "${INSTALL_DIR}/.venv.rollback"
+    fi
+    if [ "${rebuild}" -eq 1 ] || [ ! -d "${DESTDIR}${VENV_DIR}" ]; then
         as_service_user python3 -m venv "${VENV_DIR}"
     fi
     run rm -rf "${INSTALL_DIR}/build" # old build leftovers would bring back deleted modules
@@ -418,6 +478,7 @@ main() {
     refuse_during_update
     choose_language
     install_packages
+    require_python
     create_user
     prepare_dirs
     fetch_code

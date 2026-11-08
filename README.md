@@ -51,7 +51,14 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 - A **dedicated Bambuddy user** `reprintbuddy` in its **own Bambuddy group** with the rights
   listed under *First run*, and an **API key** of that user. The dedicated user makes
   Reprintbuddy's own jobs recognisable in Bambuddy. The setup guides you through it.
-- A **Proxmox LXC container** (unprivileged is fine) or another machine with **Debian 12 or 13**.
+- A computer, a VM or a container (for example a Proxmox LXC, unprivileged is fine) with **Debian 13** or
+  newer. Reprintbuddy needs Python 3.12 or newer; Debian 12 only has Python 3.11, so the installer
+  refuses to run there. **On a Debian 12 system:** upgrade the system to Debian 13 (the Debian release
+  upgrade), then run the installation command again. It notices that the Python environment no longer
+  fits the system's Python, builds it anew and keeps the installed version, the database and all settings. An installation made on
+  Debian 12 cannot update to this version before that: the update fails with pip's message "requires a
+  different Python", is rolled back, and the running version stays. Take a backup first (*Backup and
+  export*).
   One CPU core, 1 GB RAM and 8 GB disk are enough. No Docker needed.
 - Outgoing network access from that machine to the Debian package sources (`apt`),
   `github.com` and `raw.githubusercontent.com` (installation and updates),
@@ -64,7 +71,7 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.8/install/install.sh)"
 ```
 
-Run it as root inside the container. Fresh Debian containers often come without curl; the first part installs it.
+Run it as root on that system. Fresh Debian systems often come without curl; the first part installs it.
 The tag in the address (`v0.3.8`) is the version that gets installed; installer and code are guaranteed to belong
 together. To skip the language question, add the language:
 
@@ -207,7 +214,7 @@ systemd units or the sudoers rule, its release notes say so; then run the instal
 
 *Settings → Restart* restarts Reprintbuddy. Address, port and HTTPS take effect only after a
 restart; the settings page says when a saved change is still waiting. After a change of
-address or port the restart page names the new address. In the container:
+address or port the restart page names the new address. On the system:
 `systemctl restart reprintbuddy`.
 
 ## HTTPS
@@ -217,10 +224,10 @@ HTTP is fine inside your home network or over a VPN. For HTTPS, upload a certifi
 saves them, then restart. To go back to HTTP, tick *Remove certificate and private key*.
 
 Alternatively run Reprintbuddy behind a reverse proxy you already have: Reprintbuddy stays on
-HTTP and the proxy does TLS. If the proxy runs in the same container, set the listen address
+HTTP and the proxy does TLS. If the proxy runs on the same system, set the listen address
 to `127.0.0.1`.
 
-Locked out by a certificate that stopped working (expired, wrong name)? In the container:
+Locked out by a certificate that stopped working (expired, wrong name)? On the system:
 
 ```bash
 reprintbuddy disable-https && systemctl restart reprintbuddy
@@ -230,7 +237,7 @@ A wrong port: `reprintbuddy set-port 8080 && systemctl restart reprintbuddy`.
 
 ## Backup and export
 
-Reprintbuddy brings its own complete backup, whatever else backs up the machine or container.
+Reprintbuddy brings its own complete backup, whatever else backs up the system.
 Under *Settings → Update and backup*:
 
 - **Full backup** downloads the whole database as one `.zip` file: all data and settings,
@@ -293,7 +300,7 @@ Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
 ## Command line
 
-In the container the command `reprintbuddy` runs as the service user `reprintbuddy` (also when
+On the system the command `reprintbuddy` runs as the service user `reprintbuddy` (also when
 you are root), so database files keep their owner:
 
 ```bash

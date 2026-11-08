@@ -26,13 +26,30 @@ def set_state(client, state: str) -> None:
 
 
 @pytest.mark.parametrize("lang", ["en", "de"])
-@pytest.mark.parametrize("state", ["connecting", "connected", "waiting", "no_right"])
+@pytest.mark.parametrize("state", ["idle", "connecting", "connected", "waiting", "no_right"])
 def test_each_state_has_its_own_text(ready_client, state, lang):
     with sm_of(ready_client).begin() as s:
         st.set_setting(s, "language", lang)
     set_state(ready_client, state)
     page = channel_region(ready_client.get(TAB).text)
     assert translate(lang, f"settings.channel.{state}", minutes=15, poll=15) in page
+
+
+def test_without_background_tasks_the_page_says_so_and_not_connecting(ready_client):
+    """v0.3.9 p98: the tests run the app without its background tasks; nothing will ever connect."""
+    assert ready_client.app.state.live_listener.state == "idle"
+    page = channel_region(ready_client.get(TAB).text)
+    assert translate("en", "settings.channel.idle") in page
+    assert translate("en", "settings.channel.connecting") not in page
+    assert translate("en", "settings.channel.badge.idle") in page
+    assert "settings.channel" not in page  # no raw key
+
+
+def test_idle_does_not_promise_the_regular_query(ready_client):
+    """No background tasks means no regular query either: the hint would be untrue."""
+    set_state(ready_client, "idle")
+    page = channel_region(ready_client.get(TAB).text)
+    assert translate("en", "settings.channel.fallback", poll=15) not in page
 
 
 def test_connected_shows_no_fallback_hint(ready_client):

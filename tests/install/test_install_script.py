@@ -31,12 +31,36 @@ def os_release(dest: Path, id_: str = "debian", version: str = "13") -> None:
     (dest / "etc" / "os-release").write_text(f'ID={id_}\nVERSION_ID="{version}"\n', encoding="utf-8")
 
 
-def run(bash, dest, *args, dry=True, env_extra=None, destdir=True):
+def fake_python(folder: Path, version: str) -> Path:
+    """A `python3` that only knows the two questions the script asks: is it 3.12 or newer (the exit
+    status), and which version is it (the printed text)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    major, minor = (int(part) for part in version.split("."))
+    script = folder / "python3"
+    script.write_text(
+        "#!/bin/sh" + "\n"
+        + 'case "$2" in' + "\n"
+        + f'  *print*) echo "{version}" ;;' + "\n"
+        + f"  *) [ {major * 100 + minor} -ge 312 ] ;;" + "\n"
+        + "esac" + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    script.chmod(0o755)
+    return folder
+
+
+def run(bash, dest, *args, dry=True, env_extra=None, destdir=True, python="3.13"):
+    """The script in a dry run; `python3` on the path is a fake of that version (the machine's own
+    one would decide the outcome otherwise)."""
     env = dict(os.environ)
     env.pop("REPRINTBUDDY_REPO", None)
     env.pop("REPRINTBUDDY_DESTDIR", None)
     if destdir:
         env["REPRINTBUDDY_DESTDIR"] = dest.as_posix()
+    if python:
+        folder = fake_python(dest.parent / f"{dest.name}-bin", python)
+        env["PATH"] = f"{folder.as_posix()}{os.pathsep}{env['PATH']}"
     env.update(env_extra or {})
     command = [bash, INSTALL_SH.as_posix(), *(["--dry-run"] if dry else []), *args]
     return subprocess.run(
@@ -115,16 +139,40 @@ def test_dry_run_changes_nothing(bash, tmp_path):
     assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*")) == before
 
 
-def test_dry_run_debian12(bash, tmp_path):
+def test_debian12_is_refused_and_says_why(bash, tmp_path):
+    """v0.3.9 p101: Python 3.12 is required; Debian 12 only has 3.11 (main), no backports."""
     os_release(tmp_path, version="12")
+    result = run(bash, tmp_path, "--repo", REPO)
+    assert result.returncode == 1
+    message = result.stderr + result.stdout
+    assert "Debian 13" in message and "Python 3.12" in message and "Debian 12" in message
+
+
+def test_a_newer_debian_is_accepted(bash, tmp_path):
+    os_release(tmp_path, version="14")
     assert run(bash, tmp_path, "--repo", REPO).returncode == 0
+
+
+def test_python_older_than_3_12_stops_the_script_with_the_version_named(bash, tmp_path):
+    """Whatever the system says it is: the Python that would build the venv decides."""
+    os_release(tmp_path)
+    result = run(bash, tmp_path, "--repo", REPO, python="3.11")
+    assert result.returncode == 1
+    message = result.stderr + result.stdout
+    assert "Python 3.12 or newer" in message and "Python 3.11" in message
+
+
+def test_the_python_check_comes_before_anything_is_created(bash, tmp_path):
+    os_release(tmp_path)
+    out = lines(run(bash, tmp_path, "--repo", REPO, python="3.11"))
+    assert "useradd" not in out and "git clone" not in out and "-m venv" not in out
 
 
 def test_refuses_non_debian(bash, tmp_path):
     os_release(tmp_path, id_="ubuntu", version="24.04")
     result = run(bash, tmp_path, "--repo", REPO)
     assert result.returncode == 1
-    assert "Reprintbuddy needs Debian 12 or 13." in result.stderr + result.stdout
+    assert "Reprintbuddy needs Debian 13 or newer" in result.stderr + result.stdout
 
 
 def test_refuses_old_debian(bash, tmp_path):
@@ -135,7 +183,7 @@ def test_refuses_old_debian(bash, tmp_path):
 def test_refuses_missing_os_release(bash, tmp_path):
     result = run(bash, tmp_path, "--repo", REPO)
     assert result.returncode == 1
-    assert "needs Debian 12 or 13" in result.stderr + result.stdout
+    assert "needs Debian 13 or newer" in result.stderr + result.stdout
 
 
 def test_default_language_en(bash, tmp_path):
@@ -193,19 +241,87 @@ def test_help(bash, tmp_path):
     assert "--language" in lines(result) and "--dry-run" in lines(result)
 
 
+def fake_venv(dest: Path, version: str, *, python: bool = True, pip: bool = True) -> None:
+    """The installed environment: `pyvenv.cfg` of that version (the Python it was built with), `bin/python` and
+    `bin/pip` as asked. The script reads the version from the file and never runs the environment's python as root."""
+    venv = dest / "opt/reprintbuddy/.venv"
+    venv.mkdir(parents=True, exist_ok=True)
+    (venv / "pyvenv.cfg").write_text(f"home = /usr/bin\nversion = {version}.2\n", encoding="utf-8")
+    (venv / "bin").mkdir(exist_ok=True)
+    for name, wanted in (("python", python), ("pip", pip)):
+        if wanted:
+            (venv / "bin" / name).write_text("#!/bin/sh\n", encoding="utf-8")
+            (venv / "bin" / name).chmod(0o755)
+
+
+def installed(dest: Path, venv: str = "3.13", **venv_options) -> None:
+    """A finished installation: code, environment, a database with content."""
+    os_release(dest)
+    for folder in ("opt/reprintbuddy/.git", "var/lib/reprintbuddy"):
+        (dest / folder).mkdir(parents=True, exist_ok=True)
+    fake_venv(dest, venv, **venv_options)
+    (dest / "var/lib/reprintbuddy/reprintbuddy.db").write_bytes(b"x")
+
+
 def test_rerun_keeps_database(bash, tmp_path):
-    os_release(tmp_path)
-    for folder in ("opt/reprintbuddy/.git", "opt/reprintbuddy/.venv", "var/lib/reprintbuddy"):
-        (tmp_path / folder).mkdir(parents=True)
-    (tmp_path / "var/lib/reprintbuddy/reprintbuddy.db").write_bytes(b"x")
+    installed(tmp_path)
     result = run(bash, tmp_path, "--repo", REPO)
     assert result.returncode == 0, result.stderr
     out = lines(result)
     assert "Existing installation found, keeping version." in out
     assert "Existing database kept." in out
     assert "systemctl restart reprintbuddy.service" in out
-    for forbidden in ("git clone", "checkout", "init --db", "-m venv"):
+    for forbidden in ("git clone", "checkout", "init --db", "-m venv", "rm -rf /opt/reprintbuddy/.venv"):
         assert forbidden not in out, forbidden
+
+
+REBUILT = {
+    # (system python, python the environment was built with, options): why the environment is of no use
+    "built-with-3.11": ("3.13", "3.11", {}),  # a Debian release upgrade: its packages sit under lib/python3.11
+    "built-with-an-older-python-than-the-system": ("3.14", "3.13", {}),  # the next release upgrade
+    "no-python-in-it": ("3.13", "3.13", {"python": False}),
+    "no-pip-in-it": ("3.13", "3.13", {"pip": False}),  # `python3 -m venv` died at ensurepip once
+}
+
+
+@pytest.mark.parametrize(("system", "venv", "options"), REBUILT.values(), ids=REBUILT.keys())
+def test_rerun_rebuilds_an_environment_that_does_not_fit_the_system_python(bash, tmp_path, system, venv, options):
+    """v0.3.9 p101: after a release upgrade of Debian the packages of the environment sit under the old
+    lib/python3.x and its python is another one (the service does not start). The installer builds it
+    again and keeps everything else."""
+    installed(tmp_path, venv, **options)
+    result = run(bash, tmp_path, "--repo", REPO, python=system)
+    assert result.returncode == 0, result.stderr
+    out = lines(result)
+    steps = [
+        "systemctl stop reprintbuddy.service",
+        "rm -rf /opt/reprintbuddy/.venv /opt/reprintbuddy/.venv.rollback",
+        "python3 -m venv /opt/reprintbuddy/.venv",
+        "-m pip install --no-cache-dir --upgrade /opt/reprintbuddy",
+        "systemctl restart reprintbuddy.service",
+    ]
+    position = 0
+    for step in steps:
+        found = out.find(step, position)
+        assert found >= 0, f"{step!r} missing or out of order in: " + out
+        position = found + len(step)
+    assert "does not fit the system" in out and "rebuilding" in out
+    # what is kept: the version, the database, the data folder
+    assert "Existing installation found, keeping version." in out
+    assert "Existing database kept." in out
+    for forbidden in ("git clone", "checkout", "init --db"):
+        assert forbidden not in out, forbidden
+    for line in out.splitlines():
+        if line.startswith("+ rm "):
+            assert "/var/lib/reprintbuddy" not in line and "reprintbuddy.db" not in line, line
+            assert line.startswith("+ rm -rf /opt/reprintbuddy/"), line
+
+
+@pytest.mark.parametrize("version", ["3.12", "3.13", "3.14"])
+def test_an_environment_built_with_the_system_python_is_not_rebuilt(bash, tmp_path, version):
+    installed(tmp_path, version)
+    out = lines(run(bash, tmp_path, "--repo", REPO, python=version))
+    assert "-m venv" not in out and "rm -rf" not in out.replace("rm -rf /opt/reprintbuddy/build", "")
 
 
 def test_refuses_foreign_install_dir(bash, tmp_path):

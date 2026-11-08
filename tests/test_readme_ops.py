@@ -149,8 +149,8 @@ def test_readme_first_run_has_four_steps_and_the_permission_list(name):
 @pytest.mark.parametrize(
     "name,sentence",
     [
-        ("README.md", "Fresh Debian containers often come without curl; the first part installs it."),
-        ("README.de.md", "Frische Debian-Container bringen oft kein curl mit; der erste Teil installiert es."),
+        ("README.md", "Fresh Debian systems often come without curl; the first part installs it."),
+        ("README.de.md", "Frische Debian-Systeme bringen oft kein curl mit; der erste Teil installiert es."),
     ],
 )
 def test_readme_says_why_the_install_command_installs_curl(name, sentence):

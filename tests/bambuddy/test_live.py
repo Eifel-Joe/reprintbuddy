@@ -27,15 +27,17 @@ from reprintbuddy.bambuddy.client import (
     BambuddyUnexpected,
     HttpBambuddyClient,
 )
+from reprintbuddy.web.app import shared_tls_client_factory
 from fixtures import API, KEY, client
 
-# One TLS context for every client of this module: building it per call costs most of a
-# second, and the listener asks for a token at almost every attempt.
-_TLS = httpx.create_ssl_context()
+# The clients of this module are made the way the app makes its own: one shared TLS context, built
+# once (building it per call costs most of a second, and the listener asks for a token at almost
+# every attempt). Not an own `ssl` set-up of the test (v0.3.9 p79).
+_CLIENTS = shared_tls_client_factory()
 
 
 def quick_client() -> HttpBambuddyClient:
-    return client(lambda: httpx.AsyncClient(verify=_TLS))
+    return client(_CLIENTS)
 
 
 TOKEN_URL = f"{API}/auth/ws-token"
@@ -430,7 +432,7 @@ async def test_state_connected_while_open(respx_mock):
     tokens(respx_mock, "t1")
     connect = FakeConnect([])
     subject = listener(connect, Events(), Sleeps(1))
-    assert subject.state == "connecting"
+    assert subject.state == "idle"  # not started: nothing is connecting (v0.3.9 p98)
     task = asyncio.create_task(subject.run())
     try:
         for _ in range(1000):
@@ -559,9 +561,11 @@ async def test_secret_never_logged(respx_mock, caplog, case):
 
 
 def quiet_server_log() -> logging.Logger:
-    """A logger for the test server: its own lines show the request with the token."""
-    server_log = logging.getLogger("tests.live.server")
-    server_log.propagate = False
+    """A logger for the test server: its own lines show the request with the token.
+
+    A logger of its own that is not registered in `logging`'s tree: nothing global is changed (no
+    `propagate` set, no handler added to a shared logger on every call; v0.3.9 p79)."""
+    server_log = logging.Logger("tests.live.server")
     server_log.addHandler(logging.NullHandler())
     return server_log
 
@@ -606,7 +610,7 @@ async def test_real_library_logs_no_secret(respx_mock, caplog):
                 done.set()
 
         subject = live.LiveListener(
-            HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), on_event
+            HttpBambuddyClient(base, KEY, _CLIENTS), on_event
         )
         task = asyncio.create_task(subject.run())
         try:
@@ -644,7 +648,7 @@ async def test_real_library_round_trip(respx_mock):
             if len(seen) == 2:
                 both.set()
 
-        subject = live.LiveListener(HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), on_event)
+        subject = live.LiveListener(HttpBambuddyClient(base, KEY, _CLIENTS), on_event)
         task = asyncio.create_task(subject.run())
         try:
             await asyncio.wait_for(both.wait(), timeout=5)
@@ -673,7 +677,7 @@ async def test_real_library_handshake_refusal_is_no_right(respx_mock):
         events = Events()
         sleeps = Sleeps(1)
         subject = live.LiveListener(
-            HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), events, sleep=sleeps, now=Clock()
+            HttpBambuddyClient(base, KEY, _CLIENTS), events, sleep=sleeps, now=Clock()
         )
         await run_until_stopped(subject)
     assert subject.state == "no_right"
@@ -696,10 +700,10 @@ async def test_on_state_reports_each_change_once(respx_mock):
     states: list[str] = []
     subject = listener_with_states(FakeConnect(OSError("down"), OSError("down")), Sleeps(2), states)
     await run_until_stopped(subject)
-    # Starting state "connecting" is not a change; a repeated state is not reported again. A second
+    # The start ("idle" -> "connecting") is reported once; a repeated state is not reported again. A second
     # attempt out of a pause stays "waiting": it used to say "connecting" and "waiting" again for every
     # attempt, two changes (and two reloads of open settings pages) for nothing (v0.3.8 p94).
-    assert states == ["waiting"]
+    assert states == ["connecting", "waiting"]
 
 
 async def test_on_state_reports_connected_and_no_right(respx_mock):
@@ -713,14 +717,14 @@ async def test_on_state_reports_connected_and_no_right(respx_mock):
             await asyncio.sleep(0)
             if connect.connections and connect.connections[0].waiting.is_set():
                 break
-        assert states == ["connected"]
+        assert states == ["connecting", "connected"]
     finally:
         await stop(task)
 
     respx_mock.post(TOKEN_URL).respond(403, json={"detail": "Missing permission"})
     denied: list[str] = []
     await run_until_stopped(listener_with_states(FakeConnect(), Sleeps(1), denied))
-    assert denied == ["no_right"]
+    assert denied == ["connecting", "no_right"]
 
 
 async def test_a_failing_on_state_does_not_stop_the_listener(respx_mock):
@@ -900,7 +904,7 @@ async def test_many_failed_attempts_report_no_change_after_the_first(respx_mock)
     states: list[str] = []
     subject = listener_with_states(FakeConnect(*[OSError("down")] * 4), Sleeps(4), states)
     await run_until_stopped(subject)
-    assert states == ["waiting"]
+    assert states == ["connecting", "waiting"]
 
 
 async def test_a_refusal_after_waiting_is_one_change_and_stays(respx_mock):
@@ -909,7 +913,7 @@ async def test_a_refusal_after_waiting_is_one_change_and_stays(respx_mock):
     connect = FakeConnect(OSError("down"), refused(403), refused(403), refused(403), refused(403))
     subject = listener_with_states(connect, Sleeps(3), states)
     await run_until_stopped(subject)
-    assert states == ["waiting", "no_right"]  # not "connecting" in between
+    assert states == ["connecting", "waiting", "no_right"]  # no second "connecting" in between
 
 
 async def test_connected_then_lost_then_again_reports_each_real_change_once(respx_mock):
@@ -918,7 +922,7 @@ async def test_connected_then_lost_then_again_reports_each_real_change_once(resp
     connect = FakeConnect([closed(1006)], OSError("down"), [closed(1006)])
     subject = listener_with_states(connect, Sleeps(3), states)
     await run_until_stopped(subject)
-    assert states == ["connected", "waiting", "connected", "waiting"]
+    assert states == ["connecting", "connected", "waiting", "connected", "waiting"]
 
 
 async def test_after_a_wake_the_attempt_is_shown_as_connecting(respx_mock):
@@ -930,10 +934,10 @@ async def test_after_a_wake_the_attempt_is_shown_as_connecting(respx_mock):
     task = asyncio.create_task(subject.run())
     try:
         await until(lambda: len(sleeps.delays) == 1)
-        assert states == ["waiting"]
+        assert states == ["connecting", "waiting"]
         subject.wake()
         await until(lambda: len(sleeps.delays) == 2)
-        assert states == ["waiting", "connecting", "waiting"]
+        assert states == ["connecting", "waiting", "connecting", "waiting"]
     finally:
         await stop(task)
 
@@ -959,7 +963,7 @@ async def _serve_and_note_the_close_code(respx_mock, scenario):
         base = f"http://127.0.0.1:{port}"
         respx_mock.post(f"{base}/api/v1/auth/ws-token").respond(json={"token": "t1"})
         subject = live.LiveListener(
-            HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), Events()
+            HttpBambuddyClient(base, KEY, _CLIENTS), Events()
         )
         task = asyncio.create_task(subject.run())
         try:
@@ -1008,7 +1012,7 @@ async def test_a_silent_bambuddy_does_not_hold_the_shutdown_longer_than_the_clos
         base = f"http://127.0.0.1:{port}"
         respx_mock.post(f"{base}/api/v1/auth/ws-token").respond(json={"token": "t1"})
         subject = live.LiveListener(
-            HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), Events()
+            HttpBambuddyClient(base, KEY, _CLIENTS), Events()
         )
         task = asyncio.create_task(subject.run())
         try:

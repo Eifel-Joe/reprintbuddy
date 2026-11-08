@@ -148,6 +148,15 @@ async def update_busy(request: Request) -> bool:
     return await update_running_async(_data_dir(request), request.app.state.ops.runner, _utc_now())
 
 
+async def ops_ready(request: Request) -> bool:
+    """Everything the settings page needs from the system, asked in worker threads: the installed
+    version and whether an update runs. Every handler that renders the settings page awaits this and
+    hands the answer to `_page` (v0.3.9 p122: the error pages of the saves and the label pages did
+    not, and ran `git describe` / `systemctl` in the event loop when they were the first page)."""
+    await warm_installed(request)
+    return await update_busy(request)
+
+
 def ops_view(request: Request, session: Session, busy: bool | None = None) -> OpsView:
     """The state of the update card. `busy` is the answer of `update_busy`, asked by the handler that
     can await it (every page of the settings does). Without it the question is asked here, in the
