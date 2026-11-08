@@ -22,7 +22,7 @@ import pytest
 
 import reprintbuddy
 from reprintbuddy.bambuddy import connection, live
-from reprintbuddy.domain import engine, status as domain_status
+from reprintbuddy.domain import engine, printfile, status as domain_status
 from reprintbuddy.domain.pauses import PAUSE_REASONS
 from reprintbuddy.domain.stock import KINDS, Actor
 from reprintbuddy.domain.workqueue import Origin
@@ -167,6 +167,7 @@ DERIVED = {
     "settings.invalid_": lambda text: _automation_fields(),
     "status.": lambda text: {f"{kind}.{state}" for kind, states in domain_status.STATES.items() for state in states},
     "stock.limit.": lambda text: _article_counters(),
+    "upload.error.": lambda text: _found(r'PrintFileError\(\s*"(\w+)"', inspect.getsource(printfile)),
     "warning.": lambda text: _found(r'\badd\(\s*"(\w+)"', inspect.getsource(engine.collect_warnings)),
 }
 
