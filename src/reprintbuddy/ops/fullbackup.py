@@ -239,62 +239,106 @@ def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
 
 
+def _file_blocks(path: Path):
+    with path.open("rb") as handle:
+        while block := handle.read(_CHUNK):
+            yield block
+
+
+def _sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    for block in _file_blocks(path):
+        digest.update(block)
+    return digest.hexdigest()
+
+
+def _write_member(archive: zipfile.ZipFile, info: zipfile.ZipInfo, blocks: Iterable[bytes]) -> None:
+    """Write a member block by block; `info.file_size` is what is known beforehand (0: not known)."""
+    with archive.open(info, "w", force_zip64=False) as sink:
+        for block in blocks:
+            sink.write(block)
+
+
+def _packed_and_sealed(source: Path, sealer: bc.Sealer) -> Iterable[bytes]:
+    """The database packed with zlib (level 6) and sealed, block by block."""
+    packer = zlib.compressobj(6)
+    for block in _file_blocks(source):
+        packed = packer.compress(block)
+        if packed:
+            yield sealer.update(packed)
+    yield sealer.update(packer.flush())
+    yield sealer.finish()
+
+
 def create_backup(
     db_path: Path, *, work_dir: Path, password: str | None, now: datetime
 ) -> CreatedBackup:
-    """Write a full backup into `work_dir` and return where it is and how to name it."""
+    """Write a full backup into `work_dir` and return where it is and how to name it.
+
+    The database is read, packed and sealed block by block and written straight into the file: the
+    memory needed is a few blocks, not a multiple of the database (v0.3.9 p102). The file is the same
+    as before: the same manifest, the same members, the same bytes for the same salt and nonce."""
     if not db_path.is_file():
         raise FileNotFoundError(str(db_path))  # sqlite3.connect would create an empty one
     ensure_work_dir(work_dir)
     token = secrets.token_hex(8)
     snapshot = work_dir / f"snapshot-{token}.db"
+    path = work_dir / f"backup-{token}.zip"
     try:
         _snapshot(db_path, snapshot)
         revision = _revision(snapshot)
-        data = snapshot.read_bytes()
+        size = snapshot.stat().st_size
+        if size > MAX_DATABASE_BYTES:
+            raise TooLarge("the database is larger than a restore accepts")
+
+        manifest: dict[str, Any] = {
+            "format": FORMAT,
+            "format_version": FORMAT_VERSION,
+            "app_version": __version__,
+            "schema_revision": revision,
+            "created_at": now.isoformat(),
+            "encrypted": bool(password),
+        }
+        sealer: bc.Sealer | None = None
+        if password:
+            salt, nonce = bc.new_salt(), bc.new_nonce()
+            key, check = bc.derive_key(password, salt, KDF)
+            manifest["encryption"] = {
+                "cipher": CIPHER,
+                "kdf": KDF_NAME,
+                "time_cost": KDF.time_cost,
+                "memory_cost": KDF.memory_cost,
+                "parallelism": KDF.parallelism,
+                "salt": _b64(salt),
+                "nonce": _b64(nonce),
+                "check": _b64(check),
+            }
+            raw = _dump(manifest)
+            sealer = bc.Sealer(key, nonce, raw)  # the exact manifest bytes are the associated data
+            member, method, known_size = SEALED, zipfile.ZIP_STORED, 0
+        else:
+            manifest["database"] = {"size": size, "sha256": _sha256_of(snapshot)}
+            raw = _dump(manifest)
+            member, method, known_size = PLAIN, zipfile.ZIP_DEFLATED, size
+
+        stamp = now.timetuple()[:6]
+        manifest_info = zipfile.ZipInfo(MANIFEST, stamp)
+        manifest_info.compress_type = zipfile.ZIP_DEFLATED
+        manifest_info.file_size = len(raw)
+        member_info = zipfile.ZipInfo(member, stamp)
+        member_info.compress_type = method
+        member_info.file_size = known_size
+        blocks = _file_blocks(snapshot) if sealer is None else _packed_and_sealed(snapshot, sealer)
+        try:
+            with private_file(path) as handle, zipfile.ZipFile(handle, "w") as archive:
+                _write_member(archive, manifest_info, [raw])
+                _write_member(archive, member_info, blocks)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                path.unlink()
+            raise
     finally:
         remove_database_files(snapshot)
-    if len(data) > MAX_DATABASE_BYTES:
-        raise TooLarge("the database is larger than a restore accepts")
-
-    manifest: dict[str, Any] = {
-        "format": FORMAT,
-        "format_version": FORMAT_VERSION,
-        "app_version": __version__,
-        "schema_revision": revision,
-        "created_at": now.isoformat(),
-        "encrypted": bool(password),
-    }
-    if password:
-        salt, nonce = bc.new_salt(), bc.new_nonce()
-        key, check = bc.derive_key(password, salt, KDF)
-        manifest["encryption"] = {
-            "cipher": CIPHER,
-            "kdf": KDF_NAME,
-            "time_cost": KDF.time_cost,
-            "memory_cost": KDF.memory_cost,
-            "parallelism": KDF.parallelism,
-            "salt": _b64(salt),
-            "nonce": _b64(nonce),
-            "check": _b64(check),
-        }
-        raw = _dump(manifest)
-        member, payload, method = SEALED, bc.seal(key, nonce, zlib.compress(data, 6), raw), zipfile.ZIP_STORED
-    else:
-        manifest["database"] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
-        raw = _dump(manifest)
-        member, payload, method = PLAIN, data, zipfile.ZIP_DEFLATED
-
-    stamp = now.timetuple()[:6]
-    path = work_dir / f"backup-{token}.zip"
-    try:
-        with private_file(path) as handle, zipfile.ZipFile(handle, "w") as archive:
-            archive.writestr(zipfile.ZipInfo(MANIFEST, stamp), raw, compress_type=zipfile.ZIP_DEFLATED)
-            archive.writestr(zipfile.ZipInfo(member, stamp), payload, compress_type=method)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            path.unlink()
-        raise
     suffix = "-encrypted" if password else ""
     return CreatedBackup(path, f"reprintbuddy-backup-{now:%Y%m%d-%H%M%S}{suffix}.zip")
 
