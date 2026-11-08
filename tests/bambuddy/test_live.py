@@ -432,7 +432,7 @@ async def test_state_connected_while_open(respx_mock):
     tokens(respx_mock, "t1")
     connect = FakeConnect([])
     subject = listener(connect, Events(), Sleeps(1))
-    assert subject.state == "connecting"
+    assert subject.state == "idle"  # not started: nothing is connecting (v0.3.9 p98)
     task = asyncio.create_task(subject.run())
     try:
         for _ in range(1000):
@@ -700,10 +700,10 @@ async def test_on_state_reports_each_change_once(respx_mock):
     states: list[str] = []
     subject = listener_with_states(FakeConnect(OSError("down"), OSError("down")), Sleeps(2), states)
     await run_until_stopped(subject)
-    # Starting state "connecting" is not a change; a repeated state is not reported again. A second
+    # The start ("idle" -> "connecting") is reported once; a repeated state is not reported again. A second
     # attempt out of a pause stays "waiting": it used to say "connecting" and "waiting" again for every
     # attempt, two changes (and two reloads of open settings pages) for nothing (v0.3.8 p94).
-    assert states == ["waiting"]
+    assert states == ["connecting", "waiting"]
 
 
 async def test_on_state_reports_connected_and_no_right(respx_mock):
@@ -717,14 +717,14 @@ async def test_on_state_reports_connected_and_no_right(respx_mock):
             await asyncio.sleep(0)
             if connect.connections and connect.connections[0].waiting.is_set():
                 break
-        assert states == ["connected"]
+        assert states == ["connecting", "connected"]
     finally:
         await stop(task)
 
     respx_mock.post(TOKEN_URL).respond(403, json={"detail": "Missing permission"})
     denied: list[str] = []
     await run_until_stopped(listener_with_states(FakeConnect(), Sleeps(1), denied))
-    assert denied == ["no_right"]
+    assert denied == ["connecting", "no_right"]
 
 
 async def test_a_failing_on_state_does_not_stop_the_listener(respx_mock):
@@ -904,7 +904,7 @@ async def test_many_failed_attempts_report_no_change_after_the_first(respx_mock)
     states: list[str] = []
     subject = listener_with_states(FakeConnect(*[OSError("down")] * 4), Sleeps(4), states)
     await run_until_stopped(subject)
-    assert states == ["waiting"]
+    assert states == ["connecting", "waiting"]
 
 
 async def test_a_refusal_after_waiting_is_one_change_and_stays(respx_mock):
@@ -913,7 +913,7 @@ async def test_a_refusal_after_waiting_is_one_change_and_stays(respx_mock):
     connect = FakeConnect(OSError("down"), refused(403), refused(403), refused(403), refused(403))
     subject = listener_with_states(connect, Sleeps(3), states)
     await run_until_stopped(subject)
-    assert states == ["waiting", "no_right"]  # not "connecting" in between
+    assert states == ["connecting", "waiting", "no_right"]  # no second "connecting" in between
 
 
 async def test_connected_then_lost_then_again_reports_each_real_change_once(respx_mock):
@@ -922,7 +922,7 @@ async def test_connected_then_lost_then_again_reports_each_real_change_once(resp
     connect = FakeConnect([closed(1006)], OSError("down"), [closed(1006)])
     subject = listener_with_states(connect, Sleeps(3), states)
     await run_until_stopped(subject)
-    assert states == ["connected", "waiting", "connected", "waiting"]
+    assert states == ["connecting", "connected", "waiting", "connected", "waiting"]
 
 
 async def test_after_a_wake_the_attempt_is_shown_as_connecting(respx_mock):
@@ -934,10 +934,10 @@ async def test_after_a_wake_the_attempt_is_shown_as_connecting(respx_mock):
     task = asyncio.create_task(subject.run())
     try:
         await until(lambda: len(sleeps.delays) == 1)
-        assert states == ["waiting"]
+        assert states == ["connecting", "waiting"]
         subject.wake()
         await until(lambda: len(sleeps.delays) == 2)
-        assert states == ["waiting", "connecting", "waiting"]
+        assert states == ["connecting", "waiting", "connecting", "waiting"]
     finally:
         await stop(task)
 

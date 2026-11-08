@@ -124,15 +124,16 @@
 
 <div class="settings-col">
 {# The live channel to Bambuddy (v0.3.6 p86): follows the listener live (topic live-channel). Only with a
-   stored address. Not connected: the regular query takes over, and the page says so. #}
+   stored address. Not connected: the regular query takes over, and the page says so. "idle": the app runs without its
+   background tasks (v0.3.9 p98), so there is no regular query either and the page does not promise one. #}
 {% call ui.region("channel", "live-channel settings") %}
 {% if live_channel %}
 {% set channel_key = 'settings.channel.' ~ live_channel %}
 {% set channel_badge_key = 'settings.channel.badge.' ~ live_channel %}
 <section class="card section" id="live-channel">
-  {% call ui.card_head("link", t('settings.channel.title')) %}<span class="badge tone-{{ {'connected': 'ok', 'connecting': 'neutral', 'waiting': 'warn', 'no_right': 'warn'}.get(live_channel, 'neutral') }}">{{ t(channel_badge_key) }}</span>{% endcall %}
+  {% call ui.card_head("link", t('settings.channel.title')) %}<span class="badge tone-{{ {'connected': 'ok', 'idle': 'neutral', 'connecting': 'neutral', 'waiting': 'warn', 'no_right': 'warn'}.get(live_channel, 'neutral') }}">{{ t(channel_badge_key) }}</span>{% endcall %}
   <p class="status">{{ t(channel_key, minutes=channel_retry_minutes) }}</p>
-  {% if live_channel != 'connected' %}<p class="muted">{{ t('settings.channel.fallback', poll=poll_minutes) }}</p>{% endif %}
+  {% if live_channel not in ('connected', 'idle') %}<p class="muted">{{ t('settings.channel.fallback', poll=poll_minutes) }}</p>{% endif %}
 </section>
 {% endif %}
 {% endcall %}
