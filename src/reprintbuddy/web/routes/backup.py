@@ -23,6 +23,7 @@ import re
 import time
 import secrets
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -292,10 +293,15 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
     candidate = work / f"candidate-{secrets.token_hex(8)}.db"
 
     manifest: fb.Manifest | None = None
+    # Set when the request is cancelled: a cancellation does not stop the worker threads, they would
+    # finish the decrypted copy after the line below removed it (v0.3.11 p140). They watch this flag.
+    abandoned = threading.Event()
     try:
         manifest = await run_in_threadpool(fb.read_manifest, path)
-        await app.state.hash_limiter.run(fb.extract_database, path, manifest, password, candidate)
-        await run_in_threadpool(fb.verify_database, candidate, manifest, work_dir=work)
+        await app.state.hash_limiter.run(
+            fb.extract_database, path, manifest, password, candidate, abandoned=abandoned
+        )
+        await run_in_threadpool(fb.verify_database, candidate, manifest, work_dir=work, abandoned=abandoned)
     except (fb.PasswordNeeded, fb.WrongPassword) as error:
         _remove(candidate)
         assert manifest is not None
@@ -306,9 +312,16 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         return _back(f"restore_{error.code}", "ops-restore")
     except Exception as error:  # noqa: BLE001 - a full disk in a migration, say: nothing was changed
         _remove(candidate)
-        _discard(request)
         log.warning("restore check failed: %s", type(error).__name__)
+        if manifest is not None and fb.is_environmental(error):
+            # The machine failed, not the file (p141): the upload stays, the page asks to try again.
+            return _confirm_page(request, manifest, "ops.restore.retry", "retry")
+        _discard(request)
         return _back("restore_failed", "ops-restore")
+    except BaseException:  # cancelled (a closed browser, a shutdown): the flag first, then the file
+        abandoned.set()
+        _remove(candidate)
+        raise
 
     # The state is set first and the update asked about afterwards (in a worker thread, v0.3.8 p96):
     # from the check of `active` to setting it there is no `await`, so a second restore or an update
@@ -355,8 +368,10 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
     except Exception as error:  # noqa: BLE001 - it fails before or in the one-step copy: nothing changed
         state.phase = "idle"
         _remove(candidate)
-        _discard(request)
         log.warning("restore failed: %s", type(error).__name__)
+        if fb.is_environmental(error):
+            return _confirm_page(request, manifest, "ops.restore.retry", "retry")  # p141: the upload stays
+        _discard(request)
         return _back("restore_failed", "ops-restore")
     # The old process holds state of the old database in memory (engine, rights): writes
     # and the engine stay paused until it is gone. Signing in and the restart button work,

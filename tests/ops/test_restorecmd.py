@@ -457,6 +457,21 @@ def test_ctrl_c_while_checking_leaves_no_decrypted_copy(tmp_path, source, target
     nothing_left_behind(target)
 
 
+def test_ctrl_c_while_decrypting_leaves_no_decrypted_copy(tmp_path, source, target, monkeypatch):
+    """The sister of the cancelled check of the page (v0.3.11 p140): the interrupt comes in the middle of
+    writing the decrypted file, not after it, and the file exists at that moment."""
+
+    def interrupted_after_a_block(archive, sealing, key, aad, handle, *rest):
+        handle.write(b"a block of the decrypted database")
+        handle.flush()
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(fb, "_open_into", interrupted_after_a_block)
+    code, said, _ = run(backup_of(source, tmp_path, SECRET_BACKUP_PASSWORD), target, passwords=[SECRET_BACKUP_PASSWORD])
+    assert code == restorecmd.EXIT_NOT_DONE and "interrupted" in said.text()
+    nothing_left_behind(target)
+
+
 def test_a_relative_path_gets_a_hint_about_the_full_path(tmp_path, target):
     code, said, _ = run(Path("backup.zip"), target)
     assert code == restorecmd.EXIT_NOT_DONE and "full path" in said.text()

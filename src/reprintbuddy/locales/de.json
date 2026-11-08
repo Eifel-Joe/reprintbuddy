@@ -463,6 +463,7 @@
   "ops.restore.cancel": "Abbrechen",
   "ops.restore.password_needed": "Diese Sicherung ist verschlüsselt. Bitte ihr Passwort eingeben.",
   "ops.restore.wrong_password": "Das Passwort ist falsch. Nichts wurde geändert.",
+  "ops.restore.retry": "Die Prüfung konnte nicht abgeschlossen werden, und die Datei ist nicht schuld (zum Beispiel ist die Platte voll). Nichts wurde geändert. Die hochgeladene Datei liegt noch bereit: das Problem beheben und erneut versuchen.",
   "ops.restore.confirm_subtitle": "Was die hochgeladene Sicherung enthält, bevor sie die aktuellen Daten ersetzt.",
   "ops.restore.done_subtitle": "Die Daten der Sicherung sind eingespielt; Reprintbuddy startet damit neu.",
   "ops.restore.done_title": "Sicherung wiederhergestellt",

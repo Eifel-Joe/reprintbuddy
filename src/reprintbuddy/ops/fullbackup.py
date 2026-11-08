@@ -35,6 +35,7 @@ import re
 import secrets
 import shutil
 import sqlite3
+import threading
 import zipfile
 import zlib
 from collections.abc import Callable, Iterable
@@ -111,6 +112,44 @@ class Damaged(BackupError):
 
 class Incompatible(BackupError):
     code = "incompatible"
+
+
+class Abandoned(Exception):
+    """Nobody waits for the result any more (the request was cancelled): stop and leave nothing behind.
+
+    Not a `BackupError`: it says nothing about the file. Raised in the worker thread when the flag
+    (`abandoned`) of the caller is set; see `extract_database`."""
+
+
+def _check_abandoned(abandoned: threading.Event | None) -> None:
+    if abandoned is not None and abandoned.is_set():
+        raise Abandoned
+
+
+# SQLite's primary result codes of a failing machine, not of a bad file: the disk is full, reading or
+# writing failed, the file cannot be opened. Everything else SQLite reports (corrupt, not a database,
+# constraint, ...) is a verdict on the file.
+_MACHINE_CODES = frozenset({sqlite3.SQLITE_FULL, sqlite3.SQLITE_IOERR, sqlite3.SQLITE_CANTOPEN})
+
+
+def is_environmental(error: BaseException) -> bool:
+    """Does the error come from the machine (full disk, failing I/O) and not from the file?
+
+    Only these count: an `OSError`, and an error of SQLite with the code FULL, IOERR or CANTOPEN (the
+    code, never the words of the message; SQLAlchemy keeps the driver's error as `orig`). A verdict on
+    the file (`BackupError`) never does. Whoever asks keeps the upload for another try; for anything
+    else the upload is thrown away (v0.3.11 p141)."""
+    if isinstance(error, BackupError):
+        return False
+    if isinstance(error, OSError):
+        return True
+    orig = getattr(error, "orig", None)  # SQLAlchemy's DBAPIError
+    if isinstance(orig, BaseException) and not isinstance(error, sqlite3.Error):
+        return is_environmental(orig)
+    if isinstance(error, sqlite3.Error):
+        code = getattr(error, "sqlite_errorcode", None)
+        return code is not None and (code & 0xFF) in _MACHINE_CODES
+    return False
 
 
 @dataclass(frozen=True)
@@ -557,7 +596,14 @@ class _Inflater:
             raise Damaged("compressed data incomplete")
 
 
-def _open_into(archive: zipfile.ZipFile, sealing: Sealing, key: bytes, aad: bytes, handle: IO[bytes]) -> None:
+def _open_into(
+    archive: zipfile.ZipFile,
+    sealing: Sealing,
+    key: bytes,
+    aad: bytes,
+    handle: IO[bytes],
+    abandoned: threading.Event | None = None,
+) -> None:
     """Read the sealed member in blocks, decrypt and unpack straight into `handle`.
 
     What reaches `handle` before the last line is NOT yet known to be genuine (AES-GCM checks its tag
@@ -565,7 +611,11 @@ def _open_into(archive: zipfile.ZipFile, sealing: Sealing, key: bytes, aad: byte
     opener = bc.Opener(key, sealing.nonce, aad)
     inflater = _Inflater(handle)
     # Stored, not compressed (see `_METHODS`): never larger than the uploaded file.
-    _copy_member(archive, SEALED, lambda block: inflater.feed(opener.update(block)), MAX_DATABASE_BYTES + bc.TAG_BYTES)
+    def feed(block: bytes) -> None:
+        _check_abandoned(abandoned)
+        inflater.feed(opener.update(block))
+
+    _copy_member(archive, SEALED, feed, MAX_DATABASE_BYTES + bc.TAG_BYTES)
     try:
         opener.finish()
     except bc.DecryptError as error:
@@ -573,8 +623,21 @@ def _open_into(archive: zipfile.ZipFile, sealing: Sealing, key: bytes, aad: byte
     inflater.finish()
 
 
-def extract_database(path: Path, manifest: Manifest, password: str | None, target: Path) -> None:
-    """Write the database of the backup to `target`, or raise and leave no file behind."""
+def extract_database(
+    path: Path,
+    manifest: Manifest,
+    password: str | None,
+    target: Path,
+    *,
+    abandoned: threading.Event | None = None,
+) -> None:
+    """Write the database of the backup to `target`, or raise and leave no file behind.
+
+    `abandoned` (v0.3.11 p140): a flag the caller sets when nobody waits for the result any more. A
+    cancelled request does not stop its worker thread, so the thread looks at the flag before every
+    block and at the end, and raises `Abandoned` after removing the decrypted file. The caller sets
+    the flag first and removes the file afterwards: whichever of the two meets the file last deletes it."""
+    _check_abandoned(abandoned)
     with zipfile.ZipFile(path) as archive:
         if manifest.encrypted:
             sealing = manifest.sealing
@@ -584,9 +647,11 @@ def extract_database(path: Path, manifest: Manifest, password: str | None, targe
             key, check = bc.derive_key(password, sealing.salt, sealing.params)
             if not bc.check_matches(check, sealing.check):
                 raise WrongPassword("wrong password")
+            _check_abandoned(abandoned)  # the key derivation takes seconds
             try:
                 with private_file(target) as handle:
-                    _open_into(archive, sealing, key, manifest.raw, handle)
+                    _open_into(archive, sealing, key, manifest.raw, handle, abandoned)
+                _check_abandoned(abandoned)
             except BaseException:
                 remove_database_files(target)
                 raise
@@ -599,6 +664,7 @@ def extract_database(path: Path, manifest: Manifest, password: str | None, targe
             with private_file(target) as handle:
 
                 def sink(chunk: bytes) -> None:
+                    _check_abandoned(abandoned)
                     digest.update(chunk)
                     handle.write(chunk)
 
@@ -606,6 +672,7 @@ def extract_database(path: Path, manifest: Manifest, password: str | None, targe
                     written = _copy_member(archive, PLAIN, sink, manifest.size)
                 except TooLarge as error:
                     raise Damaged("longer than the manifest says") from error
+            _check_abandoned(abandoned)
             if written != manifest.size or digest.hexdigest() != manifest.sha256:
                 raise Damaged("checksum does not match")
         except BaseException:
@@ -764,7 +831,9 @@ def _check_settings(path: Path) -> None:
             raise Incompatible("the HTTPS certificate and key do not work") from error
 
 
-def verify_database(candidate: Path, manifest: Manifest, *, work_dir: Path) -> None:
+def verify_database(
+    candidate: Path, manifest: Manifest, *, work_dir: Path, abandoned: threading.Event | None = None
+) -> None:
     """Check the database of a backup and rebuild it in place from this version's migrations.
 
     The file decides nothing but the rows: its schema is compared with a new database of the
@@ -773,7 +842,24 @@ def verify_database(candidate: Path, manifest: Manifest, *, work_dir: Path) -> N
     running database. A trial migration of the result to this version must succeed, and the
     settings must be ones the service can start with. The candidate keeps the revision of the
     backup; the start of the service migrates it (Spec 11.6).
+
+    An error of the machine (full disk, failing I/O: `is_environmental`) is passed on as it is and is
+    never turned into a verdict on the file (v0.3.11 p141).
+
+    `abandoned` as in `extract_database` (p140): the flag is looked at between the steps; when it is set
+    the candidate, the rebuilt copy and the trial copy are removed and `Abandoned` is raised.
     """
+    try:
+        _verify_database(candidate, manifest, work_dir, abandoned)
+    except Abandoned:
+        remove_database_files(candidate)  # also the copy the last step put in its place
+        raise
+
+
+def _verify_database(
+    candidate: Path, manifest: Manifest, work_dir: Path, abandoned: threading.Event | None
+) -> None:
+    _check_abandoned(abandoned)
     with open(candidate, "rb") as handle:
         if handle.read(len(_SQLITE_HEADER)) != _SQLITE_HEADER:
             raise Damaged("not an SQLite database")
@@ -797,11 +883,15 @@ def verify_database(candidate: Path, manifest: Manifest, *, work_dir: Path) -> N
             try:
                 found = con.execute("SELECT version_num FROM alembic_version").fetchall()
             except sqlite3.OperationalError as error:
+                if is_environmental(error):
+                    raise
                 raise NotABackup("no Reprintbuddy database") from error
             con.execute("PRAGMA journal_mode=DELETE")
         finally:
             con.close()
     except sqlite3.DatabaseError as error:
+        if is_environmental(error):
+            raise
         raise Damaged("not a readable database") from error
     if found != [(manifest.schema_revision,)]:
         raise NotABackup("database revision differs from the manifest")
@@ -811,16 +901,22 @@ def verify_database(candidate: Path, manifest: Manifest, *, work_dir: Path) -> N
     trial = work_dir / f"trial-{token}.db"
     try:
         _create(rebuilt, manifest.schema_revision)
+        _check_abandoned(abandoned)
         try:
             differs = _structure(candidate) != _structure(rebuilt)
         except sqlite3.Error as error:
+            if is_environmental(error):
+                raise
             raise Incompatible("the structure cannot be read") from error
         if differs:
             raise Incompatible("the structure differs from a Reprintbuddy database")
         try:
             _copy_rows(candidate, rebuilt)
         except sqlite3.DatabaseError as error:
+            if is_environmental(error):
+                raise
             raise Damaged("the rows do not fit") from error
+        _check_abandoned(abandoned)
 
         shutil.copyfile(rebuilt, trial)
         _chmod_private(trial)
@@ -828,16 +924,22 @@ def verify_database(candidate: Path, manifest: Manifest, *, work_dir: Path) -> N
         try:
             upgrade(engine)
         except Exception as error:  # noqa: BLE001 - any failure means: this one cannot run here
+            if is_environmental(error):
+                raise  # a full disk says nothing about the database
             raise Incompatible("the migration fails") from error
         finally:
             engine.dispose()
         try:
             _check_settings(trial)
         except sqlite3.Error as error:
+            if is_environmental(error):
+                raise
             raise Incompatible("the settings cannot be read") from error
+        _check_abandoned(abandoned)
 
         remove_database_files(candidate)
         os.replace(rebuilt, candidate)
+        _check_abandoned(abandoned)
     finally:
         remove_database_files(trial)
         remove_database_files(rebuilt)
