@@ -218,21 +218,19 @@ def test_the_live_case_keeps_the_number_beside_its_word():
     assert all(font.getlength(row.text) <= text_width(label) for row in label.lines)
 
 
-def test_five_details_with_words_in_front_stay_one_row_each_and_the_letters_get_smaller():
-    """At the size where "Einheiten je Druck: 1" no longer fits one row, the old code broke it in two."""
-    chosen = ("sku", "min_stock", "buffer", "target_qty", "units_per_print")
-    label = render.render_label(data(), chosen, ADDRESS, DK_11209, caption_de)
-    assert [row.text for row in label.lines] == [
-        "TA-100", "Mindestbestand: 4", "Puffer: 2", "Zielmenge: 6", "Einheiten je Druck: 1",
-    ]
-    assert label.truncated == []
+def test_a_detail_with_a_long_word_in_front_stays_one_row_and_the_letters_get_smaller():
+    """The old code took the largest size (46) and broke "Einheiten je Druck: 1" after "Einheiten je"."""
+    label = render.render_label(data(), ("sku", "min_stock", "units_per_print"), ADDRESS, DK_11209, caption_de)
+    assert [row.text for row in label.lines] == ["TA-100", "Mindestbestand: 4", "Einheiten je Druck: 1"]
+    assert label.truncated == [] and label.font_size < 46
     font = render._font(label.font_size, False)
     assert all(font.getlength(row.text) <= text_width(label) for row in label.lines)
 
 
 def test_the_text_is_laid_out_the_same_on_every_machine():
     """Not by raqm where a system has it (it would turn right-to-left text the right way round and
-    change every width): the note about right-to-left text and the fitting rely on the basic layout."""
+    change every width): the note about right-to-left text and the fitting rely on the basic layout.
+    (Red only on a machine whose Pillow has raqm; where it has not, the basic layout is the default.)"""
     assert render._font(40, False).layout_engine == ImageFont.Layout.BASIC
     assert render._font(40, True).layout_engine == ImageFont.Layout.BASIC
 
