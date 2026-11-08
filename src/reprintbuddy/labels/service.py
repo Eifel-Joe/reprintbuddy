@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Collection
 from dataclasses import dataclass
 
 from PIL import Image
@@ -63,14 +64,16 @@ def print_labels(
     clock=time.monotonic,
     deadline: float = SERIES_SECONDS,
     lock_wait: float = LOCK_WAIT,
+    refuse: Collection[str] = (),
 ) -> Outcome:
     """Print `copies` labels of `image` on the printer at `host` (see the module text).
 
-    `allow_local` and `clock` exist for the tests; the web layer never sets them."""
+    `refuse` holds the server's own addresses (never the printer); `allow_local` and `clock` exist for
+    the tests, the web layer never sets them."""
     if isinstance(copies, bool) or not isinstance(copies, int) or not 1 <= copies <= MAX_COPIES:
         raise ValueError(f"copies must be a whole number from 1 to {MAX_COPIES}")
     try:  # looked up before the lock is taken: a slow name server must not make others wait
-        address = resolve(host, allow_local=allow_local)
+        address = resolve(host, allow_local=allow_local, refuse=refuse)
     except LabelError as error:
         return Outcome(0, copies, error=error)
     if not _LOCK.acquire(timeout=lock_wait):

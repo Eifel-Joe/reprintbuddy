@@ -19,6 +19,7 @@ from starlette.concurrency import run_in_threadpool
 
 from reprintbuddy import settings as st
 from reprintbuddy.labels import fields, service
+from reprintbuddy.labels.addresses import is_own
 from reprintbuddy.labels.rolls import ROLLS
 from reprintbuddy.models import Article
 from reprintbuddy.web import labels_view
@@ -52,11 +53,14 @@ def _form_values(form) -> tuple[str, str, list[str]]:
     )
 
 
-def _checked(host: str, roll: str, chosen: list[str]) -> tuple[object, str, list[str]] | str:
-    """The three values as the settings would store them, or the translation key of the problem."""
+def _checked(host: str, roll: str, chosen: list[str], own: frozenset[str]) -> tuple[object, str, list[str]] | str:
+    """The three values as the settings would store them, or the translation key of the problem.
+    `own` are this server's addresses: the printer is another device."""
     try:
         checked_host = st.validate("label_printer_host", host or None)
     except ValueError:
+        return "settings.invalid_label_host"
+    if isinstance(checked_host, str) and is_own(checked_host, own):
         return "settings.invalid_label_host"
     try:
         checked_roll = str(st.validate("label_roll", roll))
@@ -77,7 +81,7 @@ async def save_labels(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     host, roll, chosen = _form_values(form)
     typed = {"label_host": host, "label_roll": roll, "label_selected": list(fields.clean(chosen))}
-    result = _checked(host, roll, chosen)
+    result = _checked(host, roll, chosen, labels_view.own_addresses(request))
     if isinstance(result, str):
         return _page(request, db, result, "labels", **typed)
     checked_host, checked_roll, checked_fields = result
@@ -108,7 +112,7 @@ async def trial_print(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     host, roll_key, chosen = _form_values(form)
     typed = {"label_host": host, "label_roll": roll_key, "label_selected": list(fields.clean(chosen))}
-    result = _checked(host, roll_key, chosen)
+    result = _checked(host, roll_key, chosen, labels_view.own_addresses(request))
     if isinstance(result, str):
         return _page(request, db, result, "labels", **typed)
     checked_host, checked_roll, checked_fields = result
@@ -196,7 +200,9 @@ async def print_article_label(request: Request, article_id: int, db: Session = D
 async def _print(request: Request, db: Session, lang: str, host: str, roll, image, copies: int) -> None:
     """Print in a worker thread and flash what happened."""
     release_connection(db)  # nothing may hold the database while the printer takes its time
-    outcome = await run_in_threadpool(service.print_labels, host, roll, image, copies)
+    outcome = await run_in_threadpool(
+        service.print_labels, host, roll, image, copies, refuse=labels_view.own_addresses(request)
+    )
     key, params, warning = labels_view.outcome_message(lang, outcome, roll)
     flash(request, key, warning=warning, **params)
 

@@ -511,3 +511,40 @@ def test_the_hint_stands_at_the_setting_and_at_the_printing_in_both_languages(co
         general = configured.get("/settings?tab=general").text
         assert tr("settings.qr_keep_address") in general
         assert tr("labels.keep_address") in configured.get(SAME_PAGE).text
+
+
+# ---- the printer is another device: not this server either (Spec 8.5) ----
+
+
+@pytest.fixture
+def own_address(monkeypatch):
+    monkeypatch.setattr(netaddr, "machine_address", lambda: "203.0.113.64")
+    return "203.0.113.64"
+
+
+def test_the_servers_own_address_is_refused_in_the_settings(ready_client, own_address):
+    response = post_settings(ready_client, label_printer_host=own_address)
+    assert response.status_code == 200 and en("settings.invalid_label_host") in response.text
+    assert stored(ready_client, "label_printer_host") is None
+
+
+def test_the_servers_own_address_is_refused_by_the_trial_print(ready_client, own_address, net):
+    done, _ = trial(ready_client, label_printer_host=own_address)
+    assert done.status_code == 200 and en("settings.invalid_label_host") in done.text
+    assert net.sent == [] and net.asked == []
+
+
+def test_link_local_is_refused_in_the_settings(ready_client):
+    for host in ("169.254.169.254", "fe80::1"):
+        assert post_settings(ready_client, label_printer_host=host).status_code == 200
+    assert stored(ready_client, "label_printer_host") is None
+
+
+def test_an_own_address_stored_earlier_is_still_not_printed_to(ready_client, article, own_address, net):
+    """The settings may hold it from before the server moved: the print checks again."""
+    with sm_of(ready_client).begin() as s:
+        st.set_setting(s, "label_printer_host", own_address, commit=False)
+    print_form(ready_client, article)
+    assert net.sent == [] and net.asked == []
+    page = ready_client.get(f"/articles/{article}").text
+    assert en("labels.failed", reason=en("labels.err.address")) in page

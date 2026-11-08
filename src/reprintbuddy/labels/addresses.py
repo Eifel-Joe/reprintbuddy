@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+from collections.abc import Collection
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as LookupTimeout
 
@@ -16,24 +17,53 @@ RESOLVE_TIMEOUT = 3.0  # seconds a name may take to resolve (the system resolver
 _LOOKUPS = ThreadPoolExecutor(max_workers=2, thread_name_prefix="label-lookup")
 
 
-def is_local_or_wildcard(address: str) -> bool:
-    """Loopback, the wildcard or a multicast address: never the address of a printer."""
+_THIS_NETWORK = ipaddress.ip_network("0.0.0.0/8")
+
+
+def _parsed(address: str):
+    """The address as an object; an IPv4 address in IPv6 form is the plain IPv4 address (so
+    ::ffff:127.0.0.1 is loopback on every Python version); None when it is not an address."""
     try:
         parsed = ipaddress.ip_address(address.split("%", 1)[0])
     except ValueError:
+        return None
+    mapped = getattr(parsed, "ipv4_mapped", None)
+    return mapped if mapped is not None else parsed
+
+
+def is_local_or_wildcard(address: str) -> bool:
+    """An address that is never a label printer in the network: this machine (loopback), the wildcard,
+    "this network" (0.x), link-local (169.254.x.x, fe80::), multicast, broadcast and the reserved blocks."""
+    parsed = _parsed(address)
+    if parsed is None:
         return False
-    mapped = getattr(parsed, "ipv4_mapped", None)  # ::ffff:127.0.0.1 is loopback on every Python version
-    if mapped is not None:
-        parsed = mapped
-    return parsed.is_loopback or parsed.is_unspecified or parsed.is_multicast
+    return (
+        parsed.is_loopback
+        or parsed.is_unspecified
+        or parsed.is_link_local
+        or parsed.is_multicast
+        or parsed.is_reserved
+        or (parsed.version == 4 and parsed in _THIS_NETWORK)
+    )
+
+
+def is_own(address: str, own: Collection[str]) -> bool:
+    """Is `address` one of the server's own addresses (`own`, as text)?"""
+    parsed = _parsed(address)
+    return parsed is not None and any(parsed == _parsed(item) for item in own)
 
 
 def resolve(
-    host: str, port: int = RAW_PORT, *, allow_local: bool = False, resolve_timeout: float = RESOLVE_TIMEOUT
+    host: str,
+    port: int = RAW_PORT,
+    *,
+    allow_local: bool = False,
+    resolve_timeout: float = RESOLVE_TIMEOUT,
+    refuse: Collection[str] = (),
 ) -> str:
     """The address to talk to: an IP address as it is, a name looked up once (so the check and the
-    sending cannot see two different answers). Refused: loopback, the wildcard, multicast; a name
-    that gives nothing at all is unreachable."""
+    sending cannot see two different answers). Refused: what `is_local_or_wildcard` names and the
+    addresses in `refuse` (the server's own); a name that gives nothing at all is unreachable."""
     text = host.strip()
     try:
         candidates = [str(ipaddress.ip_address(text))]
@@ -46,7 +76,7 @@ def resolve(
             raise PrinterUnreachable() from None
         candidates = [info[4][0] for info in found]
     for candidate in candidates:
-        if allow_local or not is_local_or_wildcard(candidate):
+        if allow_local or not (is_local_or_wildcard(candidate) or is_own(candidate, refuse)):
             return candidate
     if candidates:
         raise PrinterAddressRefused()

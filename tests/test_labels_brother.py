@@ -276,3 +276,48 @@ def test_an_ipv4_address_in_ipv6_form_is_as_local_as_the_plain_one():
     for text in ("::ffff:127.0.0.1", "::ffff:0.0.0.0", "::ffff:224.0.0.1"):
         assert addresses.is_local_or_wildcard(text), text
     assert not addresses.is_local_or_wildcard("::ffff:198.51.100.9")
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["169.254.169.254", "169.254.1.1", "fe80::1", "febf::1", "0.1.2.3", "240.0.0.1", "255.255.255.255",
+     "::ffff:169.254.1.1", "::ffff:255.255.255.255"],
+)
+def test_link_local_reserved_and_this_network_are_never_a_printer(text):
+    from reprintbuddy.labels import addresses
+
+    assert addresses.is_local_or_wildcard(text), text
+
+
+@pytest.mark.parametrize("text", ["198.51.100.9", "203.0.113.7", "100.64.1.1", "2001:db8::7", "::ffff:198.51.100.9"])
+def test_ordinary_addresses_are_fine(text):
+    from reprintbuddy.labels import addresses
+
+    assert not addresses.is_local_or_wildcard(text), text
+
+
+def test_the_servers_own_addresses_are_refused_by_address_and_by_name(monkeypatch):
+    from reprintbuddy.labels import addresses
+
+    own = frozenset({"203.0.113.64"})
+    with pytest.raises(PrinterAddressRefused):
+        addresses.resolve("203.0.113.64", refuse=own)
+    with pytest.raises(PrinterAddressRefused):
+        addresses.resolve("::ffff:203.0.113.64", refuse=own)
+    monkeypatch.setattr(
+        socket, "getaddrinfo", lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("203.0.113.64", 9100))]
+    )
+    with pytest.raises(PrinterAddressRefused):
+        addresses.resolve("printer.example", refuse=own)
+    assert addresses.resolve("203.0.113.9", refuse=own) == "203.0.113.9"
+
+
+def test_a_name_with_one_own_and_one_other_address_resolves_to_the_other(monkeypatch):
+    from reprintbuddy.labels import addresses
+
+    monkeypatch.setattr(
+        socket, "getaddrinfo",
+        lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("203.0.113.64", 9100)),
+                         (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.51.100.9", 9100))],
+    )
+    assert addresses.resolve("printer.example", refuse=frozenset({"203.0.113.64"})) == "198.51.100.9"

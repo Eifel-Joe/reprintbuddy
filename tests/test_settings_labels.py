@@ -45,7 +45,8 @@ def test_a_printer_address_is_an_address_or_a_name(typed, stored):
         "127.0.0.1", "127.1.2.3", "0.0.0.0", "::1", "::", "localhost", "LOCALHOST", "shelf.localhost", "224.0.0.1",
         "http://198.51.100.20", "198.51.100.20:9100", "198.51.100.20/x", "user@198.51.100.20", "a b", "a_b",
         "-bad", "bad-", "a..b", "x" * 254, "[2001:db8::7]", "198.51.100.20%eth0", "üñï ", 5, True, ["a"],
-        "a\x00b", "fe80::1%eth0",
+        "a\x00b", "fe80::1%eth0", "169.254.169.254", "169.254.1.1", "fe80::1", "0.1.2.3", "240.0.0.1",
+        "255.255.255.255", "::ffff:169.254.1.1",
     ],
 )
 def test_this_machine_urls_ports_and_junk_are_refused(typed):

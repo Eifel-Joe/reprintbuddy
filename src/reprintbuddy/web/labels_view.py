@@ -21,7 +21,7 @@ from reprintbuddy.labels.errors import LabelError
 from reprintbuddy.labels.rolls import DEFAULT_ROLL, ROLLS, Roll, roll_by_key
 from reprintbuddy.labels.service import MAX_COPIES, Outcome
 from reprintbuddy.models import Article
-from reprintbuddy.web import qr
+from reprintbuddy.web import netaddr, qr
 from reprintbuddy.web.formatting import LOCAL_ZONE, format_date
 from reprintbuddy.web.i18n import translate
 
@@ -72,6 +72,18 @@ class LabelSettings:
         self.host: str | None = st.get_setting(db, "label_printer_host") or None  # type: ignore[assignment]
         self.roll: Roll = roll_by_key(st.get_setting(db, "label_roll")) or ROLLS[DEFAULT_ROLL]
         self.fields: tuple[str, ...] = fields.clean(st.get_setting(db, "label_fields"))
+
+
+def own_addresses(request: Request) -> frozenset[str]:
+    """The addresses this server has in the network (the ones the QR codes use): the printer is another
+    device, so none of them is accepted as the printer's address."""
+    effective = getattr(getattr(request.app.state, "ops", None), "effective", None)
+    found = (
+        netaddr.usable(effective.host) if effective is not None else None,
+        netaddr.connection_address(request.scope.get("server")),
+        netaddr.machine_address(),
+    )
+    return frozenset(item for item in found if item)
 
 
 def label_address(request: Request, db: Session, article_id: int) -> str:
