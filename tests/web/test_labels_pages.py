@@ -662,7 +662,7 @@ def test_the_script_reads_the_notes_header(configured):
 def test_the_rows_note_has_the_name_of_every_detail_so_the_script_can_say_which_are_missing(configured, article):
     for page in (configured.get(SAME_PAGE).text, configured.get(f"/articles/{article}").text):
         for key in fields.FIELDS:
-            assert re.search(rf'<span hidden data-field-name="{key}">{re.escape(en("labels.field." + key))}</span>', page), key
+            assert re.search(rf'<span hidden data-detail="{key}">{re.escape(en("labels.field." + key))}</span>', page), key
         assert "data-dropped" in page
     assert "X-Label-Dropped" in configured.get("/static/js/labels.js").text
 

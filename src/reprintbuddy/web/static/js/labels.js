@@ -37,7 +37,7 @@
     var list = notes.querySelector("[data-dropped]");
     if (list) {  /* the note "rows" names the details that were left off (header X-Label-Dropped) */
       list.textContent = (dropped || "").split(",").map(function (key) {
-        var name = notes.querySelector('[data-field-name="' + key + '"]');
+        var name = notes.querySelector('[data-detail="' + key + '"]');
         return name ? name.textContent : "";
       }).filter(Boolean).join(", ");
     }
