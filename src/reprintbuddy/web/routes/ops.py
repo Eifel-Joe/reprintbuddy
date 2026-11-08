@@ -101,6 +101,7 @@ class OpsView:
     update: UpdateStatus = UpdateStatus()
     busy: bool = False
     interrupted: bool = False  # the state says "running" but the helper is gone
+    not_started: bool = False  # a "queued" start the helper never picked up (p123)
     state_key: str | None = None  # translation key for the update state
     step_key: str | None = None  # translation key for the running step
 
@@ -187,7 +188,20 @@ def ops_view(request: Request, session: Session, busy: bool | None = None) -> Op
         busy if busy is not None else update_running(_data_dir(request), request.app.state.ops.runner, _utc_now())
     )
     view.interrupted = view.update.state in BUSY_STATES and not view.busy
-    if view.interrupted:
+    if view.interrupted and view.update.state == "queued":
+        # v0.3.11 p123: a start cut off by a shutdown. The helper's first act is to overwrite
+        # "queued" with "running" (`updater.run_update`), before it changes anything; a "queued"
+        # whose grace is over and whose unit does not run was never picked up, so "interrupted"
+        # would name a run that never began. If the target version runs anyway, the helper did its
+        # work but could not record it (status file not writable): that is a finished update.
+        # Only the card says so; the file stays, a late helper still overwrites it.
+        view.interrupted = False
+        if view.installed and view.installed == view.update.to_tag:
+            view.state_key = "ops.update.state.succeeded"
+        else:
+            view.not_started = True
+            view.state_key = "ops.update.state.not_started"
+    elif view.interrupted:
         view.state_key = "ops.update.state.interrupted"
     elif view.update.state != "idle":
         view.state_key = f"ops.update.state.{view.update.state}"
@@ -379,8 +393,9 @@ async def _start_update(request: Request):
         ),
     )
     # Cancelled here (a shutdown): sudo is killed, the gate is freed and "queued" stays; it is believed
-    # for the grace only, then systemd's word counts (the unit never started), and the card shows
-    # "interrupted" until the status is old. Not rewritten to "failed": `--no-block` may have gone through.
+    # for the grace only, then systemd's word counts, and the card says the update did not start (or,
+    # when the target version runs, that it finished: `ops_view`, p123). Not rewritten to "failed":
+    # `--no-block` may have gone through, and the helper then overwrites "queued" itself.
     try:
         result = await in_thread(start_update_unit, ops.runner)  # sudo may take seconds
     except Exception as error:  # noqa: BLE001 - the state must not stay "queued" for a unit that never started
