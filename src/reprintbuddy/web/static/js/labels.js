@@ -3,6 +3,8 @@
    cannot show right, and this script shows the notes for that: a line cut off, a character the font
    does not have, right-to-left letters, a code too fine for phones, the last details left off because the height is full (header X-Label-Notes,
    the details left off in X-Label-Dropped).
+   When the answer does not come (network, server) the old picture and notes stay and a note says the preview could not be updated;
+   it goes when the preview loads again.
    The picture is asked for once, here, and its notes are read from that same answer: the page has no
    <img src> of its own (that would have the server draw the label twice). In the settings, when a
    detail is ticked or unticked the sample label is drawn again with those details.
@@ -20,6 +22,7 @@
   var timer = null;
   var current = null;
   var latest = 0;
+  var failed = notes ? notes.querySelector("[data-failed]") : null;  /* "the preview could not be updated" */
 
   function ticked() {
     var boxes = document.querySelectorAll('input[name="label_field"]:checked');
@@ -43,6 +46,12 @@
     }
   }
 
+  function showFailed(shown) {
+    if (failed) {
+      failed.hidden = !shown;
+    }
+  }
+
   function update() {
     var url = fixedUrl || "/settings/labels/preview.png?fields=" + encodeURIComponent(ticked());
     var mine = ++latest;
@@ -63,8 +72,13 @@
         image.src = current;
         image.removeAttribute("hidden");  /* the box shows when it has its picture */
         showNotes(header, dropped);
+        showFailed(false);
       });
     }).catch(function () {
+      if (mine !== latest) {  /* an old answer that failed: a newer one is on its way or has come */
+        return;
+      }
+      showFailed(true);  /* the old picture and notes stay: say so (p138) */
       if (!current) {  /* no picture yet: let the browser try for itself (then without notes) */
         image.src = url;
         image.removeAttribute("hidden");
