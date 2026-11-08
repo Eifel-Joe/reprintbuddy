@@ -18,7 +18,7 @@ from reprintbuddy.ops import backupcrypto as bc
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops import restorecmd
 from reprintbuddy.ops.runner import CommandResult
-from reprintbuddy.ops.service import SERVICE, SYSTEMCTL
+from reprintbuddy.ops.service import SERVICE, SYSTEMCTL, UPDATE_SERVICE
 
 NOW = datetime(2026, 11, 8, 9, 30, 0, tzinfo=UTC)
 FAST = bc.KdfParams(time_cost=1, memory_cost=8 * 1024, parallelism=1)
@@ -419,3 +419,103 @@ def test_a_refusal_goes_to_the_error_stream(tmp_path, target, monkeypatch, capsy
     output = capsys.readouterr()
     assert "file not found" in output.err
     assert "file not found" not in output.out
+
+
+# --- found by the security review of p100 -----------------------------------------------------------------
+
+
+def test_a_running_update_unit_also_stands_in_the_way(tmp_path, source, target):
+    """An update that rolls back stops the service and puts its own copy of the database back."""
+    runner = FakeRunner()
+    runner.on((SYSTEMCTL, "is-active", UPDATE_SERVICE), CommandResult(0, "activating\n"))
+    code, said, asked = run(backup_of(source, tmp_path), target, runner=runner, probe=None)
+    assert code == restorecmd.EXIT_NOT_DONE and cap_of(target) == 3
+    assert UPDATE_SERVICE in said.text()
+
+
+def test_a_service_started_while_the_password_was_typed_is_noticed(tmp_path, source, target):
+    answers = iter([None, "something answers on port 8080"])
+    code, said, asked = run(
+        backup_of(source, tmp_path, SECRET_BACKUP_PASSWORD),
+        target,
+        passwords=[SECRET_BACKUP_PASSWORD],
+        probe=lambda: next(answers),
+    )
+    assert code == restorecmd.EXIT_NOT_DONE and asked == [1]
+    assert "started meanwhile" in said.text() and cap_of(target) == 3
+    nothing_left_behind(target)
+
+
+def test_ctrl_c_while_checking_leaves_no_decrypted_copy(tmp_path, source, target, monkeypatch):
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(fb, "verify_database", interrupted)
+    code, said, _ = run(backup_of(source, tmp_path), target)
+    assert code == restorecmd.EXIT_NOT_DONE and "interrupted" in said.text()
+    assert "Nothing was changed" in said.text() and cap_of(target) == 3
+    nothing_left_behind(target)
+
+
+def test_a_relative_path_gets_a_hint_about_the_full_path(tmp_path, target):
+    code, said, _ = run(Path("backup.zip"), target)
+    assert code == restorecmd.EXIT_NOT_DONE and "full path" in said.text()
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "getuid"), reason="file modes are a POSIX matter")
+def test_what_the_command_creates_is_private_whatever_the_umask(tmp_path, source, monkeypatch):
+    import os
+
+    previous = os.umask(0o022)
+    try:
+        broken = tmp_path / "data" / "reprintbuddy.db"
+        broken.parent.mkdir()
+        broken.write_bytes(b"this is not a database" * 400)
+        code, said, _ = run(backup_of(source, tmp_path), broken)
+        assert code == 0, said.text()
+        assert (broken.stat().st_mode & 0o777) == 0o600
+        assert ((broken.parent / "backups").stat().st_mode & 0o777) == 0o700
+        assert os.umask(0o022) == 0o022  # the shell's umask is back after the command
+    finally:
+        os.umask(previous)
+
+
+def test_a_move_that_fails_half_way_puts_the_old_files_back(tmp_path, monkeypatch):
+    db_path = tmp_path / "data" / "reprintbuddy.db"
+    db_path.parent.mkdir()
+    db_path.write_bytes(b"old main file")
+    Path(f"{db_path}-wal").write_bytes(b"old wal")
+    real = Path.replace
+
+    def failing(self, target):
+        if str(self).endswith("-wal") and "damaged" in str(target):
+            raise PermissionError("no")
+        return real(self, target)
+
+    monkeypatch.setattr(Path, "replace", failing)
+    with pytest.raises(PermissionError):
+        restorecmd._install_unreadable(tmp_path / "unused.db", db_path, NOW)
+    assert db_path.read_bytes() == b"old main file"  # the main file is back where it was
+    assert Path(f"{db_path}-wal").read_bytes() == b"old wal"
+
+
+def test_when_even_the_way_back_fails_the_message_says_where_the_file_is(tmp_path, source, monkeypatch):
+    broken = tmp_path / "data" / "reprintbuddy.db"
+    broken.parent.mkdir()
+    broken.write_bytes(b"this is not a database" * 400)
+    real = Path.replace
+
+    def failing(self, target):
+        if "damaged" in str(self) and str(target) == str(broken):  # moving back
+            raise PermissionError("no")
+        return real(self, target)
+
+    def copy_fails(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "replace", failing)
+    monkeypatch.setattr(restorecmd, "_copy", copy_fails)
+    code, said, _ = run(backup_of(source, tmp_path), broken)
+    assert code == restorecmd.EXIT_REFUSED
+    text = said.text()
+    assert "could not be put back" in text and "damaged-" in text and "Nothing was changed" not in text

@@ -254,15 +254,18 @@ restore works on the command line, with the same checks as in the interface:
 
 ```bash
 systemctl stop reprintbuddy
-reprintbuddy restore-backup /tmp/reprintbuddy-backup.zip
+install -m 0600 -o reprintbuddy /root/backup.zip /var/lib/reprintbuddy/restore.zip
+reprintbuddy restore-backup /var/lib/reprintbuddy/restore.zip
+rm /var/lib/reprintbuddy/restore.zip
 systemctl start reprintbuddy
 ```
 
 The command asks for the password of the backup if it is encrypted (on the terminal only, never as
-an argument), refuses while Reprintbuddy is running, saves the database that was there first
-(`backups/`, or as `damaged-...` if it could not be read) and says what it restored. The command runs
-as the service user, which must be able to read the file: use the full path and a folder such as
-`/tmp`, not `/root`. Everybody signs in again afterwards.
+an argument), refuses while Reprintbuddy or its update is running, saves the database that was there
+first (`backups/`, or as `damaged-...` if it could not be read) and says what it restored. It runs as
+the service user from the folder `/`, so give the full path, and the file must be readable for that user:
+copy it to the data folder as shown (with the mode 0600, because it holds your keys unless it is
+encrypted) and delete it afterwards. Everybody signs in again afterwards.
 
 To restore a database copy from `backups/` by hand:
 

@@ -121,7 +121,7 @@ def test_wrapper_runs_non_interactive_commands_in_a_new_session(bash, tmp_path, 
 
 
 @pytest.mark.parametrize(
-    "command", [["set-password", "--username", "admin"], ["restore-backup", "/tmp/backup.zip"]]
+    "command", [["set-password", "--username", "admin"], ["restore-backup", "/var/lib/reprintbuddy/restore.zip"]]
 )
 def test_wrapper_keeps_the_terminal_for_the_password_prompt(bash, tmp_path, command):
     """getpass needs the controlling terminal; a new session would show the password.

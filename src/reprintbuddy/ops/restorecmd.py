@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import secrets
 import socket
 import sqlite3
@@ -34,7 +35,7 @@ from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops.backup import _copy, backup_dir_for, connect_existing
 from reprintbuddy.ops.runner import CommandRunner
 from reprintbuddy.ops.server import connect_host
-from reprintbuddy.ops.service import SERVICE, SYSTEMCTL
+from reprintbuddy.ops.service import SERVICE, SYSTEMCTL, UPDATE_SERVICE
 
 EXIT_OK = 0
 EXIT_REFUSED = 1  # the file was looked at and cannot be restored (nothing was changed)
@@ -84,13 +85,16 @@ def service_running(
 ) -> str | None:
     """Why the service seems to run (a sentence), or None when nothing says so.
 
-    Two questions, both without rights: `systemctl is-active` (when systemd is there) and a
-    connection to the saved address. A refused connection is a "no"; anything else that goes
-    wrong (no route, a timeout) says nothing and is left out.
+    Three questions, all without rights: `systemctl is-active` for the service and for the update
+    unit (an update that rolls back stops the service and restores its own copy of the database, so
+    a restore in between would be overwritten), and a connection to the saved address. A refused
+    connection is a "no"; anything else that goes wrong (no route, a timeout) says nothing and is
+    left out.
     """
-    state = runner((SYSTEMCTL, "is-active", SERVICE), timeout=10.0)
-    if state.stdout.strip() in _ALIVE:
-        return f"systemd reports {SERVICE} as {state.stdout.strip()}"
+    for unit in (SERVICE, UPDATE_SERVICE):
+        state = runner((SYSTEMCTL, "is-active", unit), timeout=10.0)
+        if state.stdout.strip() in _ALIVE:
+            return f"systemd reports {unit} as {state.stdout.strip()}"
     host, port = listening_address(db_path)
     for target in dict.fromkeys((connect_host(host), "::1" if ":" in host else "127.0.0.1")):
         try:
@@ -124,34 +128,61 @@ def _readable(db_path: Path) -> bool:
         return False
 
 
+class RestoreNotUndone(Exception):
+    """Putting the new database in failed AND the old file could not be moved back: it lies at `where`."""
+
+    def __init__(self, where: Path) -> None:
+        super().__init__(str(where))
+        self.where = where
+
+
+def _private_folder(folder: Path) -> None:
+    if os.name == "posix":
+        folder.chmod(0o700)
+
+
+def _private_file(path: Path) -> None:
+    if os.name == "posix" and path.exists():
+        path.chmod(0o600)
+
+
 def _install_unreadable(candidate: Path, db_path: Path, now: datetime) -> Path | None:
     """The database in place is missing or cannot be read: set it aside, put the candidate there.
 
     Returns where the old file went, None when there was none. The old file is moved, not copied
     (a broken file may not be copyable by SQLite) and its name matches no pattern of the pruning.
-    If putting the new one in fails, the old file is moved back: a refusal changes nothing.
+    If putting the new one in fails, the old file is moved back: a refusal changes nothing. If even
+    that fails, `RestoreNotUndone` says where the old file is.
     """
+    suffixes = ("-wal", "-shm", "-journal")
     aside: Path | None = None
-    leftovers = [Path(f"{db_path}{suffix}") for suffix in ("-wal", "-shm", "-journal")]
-    if db_path.exists():
-        folder = backup_dir_for(db_path)
-        folder.mkdir(parents=True, exist_ok=True)
-        aside = folder / f"damaged-{now:%Y%m%dT%H%M%SZ}.db"
-        db_path.replace(aside)
-        for leftover in leftovers:  # they belong to the file that was moved away
-            if leftover.exists():
-                leftover.replace(Path(f"{aside}{leftover.name[len(db_path.name):]}"))
+    moved: list[tuple[Path, Path]] = []  # (where it was, where it is now), the main file first
+    installing = False
     try:
+        if db_path.exists():
+            folder = backup_dir_for(db_path)
+            folder.mkdir(parents=True, exist_ok=True)
+            _private_folder(folder)
+            aside = folder / f"damaged-{now:%Y%m%dT%H%M%SZ}.db"
+            db_path.replace(aside)
+            moved.append((db_path, aside))
+            for suffix in suffixes:  # they belong to the file that was moved away
+                leftover = Path(f"{db_path}{suffix}")
+                if leftover.exists():
+                    leftover.replace(Path(f"{aside}{suffix}"))
+                    moved.append((leftover, Path(f"{aside}{suffix}")))
+        installing = True
         fb._prepare(candidate, fb._page_size(candidate))
         _copy(candidate, db_path)
+        _private_file(db_path)
     except BaseException:
-        fb.remove_database_files(db_path)
-        if aside is not None:
-            aside.replace(db_path)
-            for suffix in ("-wal", "-shm", "-journal"):
-                kept = Path(f"{aside}{suffix}")
-                if kept.exists():
-                    kept.replace(Path(f"{db_path}{suffix}"))
+        if installing:  # the files at the place are the new ones; before, they may still be the old ones
+            fb.remove_database_files(db_path)
+        try:
+            for origin, where in reversed(moved):
+                where.replace(origin)
+        except OSError as error:
+            raise RestoreNotUndone(aside or db_path) from error
         raise
     fb.remove_database_files(candidate)
     return aside
@@ -173,7 +204,26 @@ def restore_backup(
     `say` gets the progress, `complain` (by default `say`) the reason of a refusal.
     """
     complain = complain or say
+    # Everything this command creates (the new database, its journal, folders) is private to the
+    # service user, whatever the umask of the shell it runs from.
+    previous_umask = os.umask(0o077) if os.name == "posix" else None
+    state = {"touched": False}  # set when the database in place is about to be replaced
+    try:
+        return _restore(archive, db_path, runner, ask_password, say, complain, now, probe, state)
+    except KeyboardInterrupt:
+        complain("reprintbuddy: interrupted.")
+        complain(
+            "The database was being replaced: check it before you start Reprintbuddy."
+            if state["touched"]
+            else "Nothing was changed."
+        )
+        return EXIT_NOT_DONE
+    finally:
+        if previous_umask is not None:
+            os.umask(previous_umask)
 
+
+def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, state) -> int:
     def refuse(code: int, text: str) -> int:
         complain(f"reprintbuddy: {text}")
         complain("Nothing was changed.")
@@ -183,12 +233,16 @@ def restore_backup(
         with open(archive, "rb"):
             pass
     except FileNotFoundError:
-        return refuse(EXIT_NOT_DONE, f"file not found: {archive}")
+        return refuse(
+            EXIT_NOT_DONE,
+            f"file not found: {archive}. The command runs from the folder /, so give the full path.",
+        )
     except OSError as error:
         return refuse(
             EXIT_NOT_DONE,
-            f"cannot read {archive} ({type(error).__name__}). The command runs as the service user, "
-            "which must be able to read the file: put it where that user can, for example in /tmp.",
+            f"cannot read {archive} ({type(error).__name__}). The command runs as the service user "
+            "from the folder /, so give the full path; that user must be able to read the file "
+            "(for example /var/lib/reprintbuddy, see the README).",
         )
 
     why = probe() if probe is not None else service_running(db_path, runner)
@@ -238,15 +292,35 @@ def restore_backup(
     except Exception as error:  # noqa: BLE001 - a full disk in a trial migration, say: nothing was changed
         fb.remove_database_files(candidate)
         return refuse(EXIT_REFUSED, f"the check failed ({type(error).__name__}).")
+    except KeyboardInterrupt:  # Ctrl-C while checking: the decrypted copy must not stay
+        fb.remove_database_files(candidate)
+        raise
 
     try:
+        # The password was typed and the database checked meanwhile: ask again whether anybody
+        # started the service, right before the one step that replaces the database.
+        why = probe() if probe is not None else service_running(db_path, runner)
+        if why:
+            return refuse(
+                EXIT_NOT_DONE,
+                f"Reprintbuddy was started meanwhile ({why}). Stop it first: systemctl stop reprintbuddy.",
+            )
+        state["touched"] = True
         if _readable(db_path):
             before = fb.replace_database(candidate, db_path, now=now)
         else:
             before = _install_unreadable(candidate, db_path, now)
+    except RestoreNotUndone as error:
+        complain(
+            "reprintbuddy: the restore failed and the old database could not be put back. "
+            f"It is at {error.where}; move it back to {db_path} by hand."
+        )
+        return EXIT_REFUSED
     except Exception as error:  # noqa: BLE001 - before or in the one-step copy
-        fb.remove_database_files(candidate)
+        state["touched"] = False
         return refuse(EXIT_REFUSED, f"the restore failed ({type(error).__name__}).")
+    finally:
+        fb.remove_database_files(candidate)  # whatever happened, the decrypted copy does not stay
 
     say(f"Restored the backup {_say_when(manifest)}.")
     if before is not None:

@@ -70,6 +70,7 @@ FOREIGN = [
     "/%255cevil.example",
     "/%2509/evil.example",
     "/%25252f%25252fevil.example",
+    "/%2525252f/evil",  # encoded four times: still changing after the last round of decoding
     # too long
     "/" + "a" * 3000,
     # raw control characters in the query or the fragment

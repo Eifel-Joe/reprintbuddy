@@ -269,15 +269,18 @@ dieselbe Wiederherstellung auf der Kommandozeile, mit denselben Prüfungen wie i
 
 ```bash
 systemctl stop reprintbuddy
-reprintbuddy restore-backup /tmp/reprintbuddy-sicherung.zip
+install -m 0600 -o reprintbuddy /root/sicherung.zip /var/lib/reprintbuddy/restore.zip
+reprintbuddy restore-backup /var/lib/reprintbuddy/restore.zip
+rm /var/lib/reprintbuddy/restore.zip
 systemctl start reprintbuddy
 ```
 
 Der Befehl fragt das Passwort der Sicherung ab, wenn sie verschlüsselt ist (nur am Terminal, nie als
-Argument), verweigert sich, solange Reprintbuddy läuft, sichert zuerst die vorhandene Datenbank
-(`backups/`, bei unlesbarer Datenbank als `damaged-...`) und sagt, was er wiederhergestellt hat. Er läuft
-als Dienstbenutzer, der die Datei lesen können muss: den vollen Pfad und einen Ordner wie `/tmp`
-verwenden, nicht `/root`. Danach melden sich alle neu an.
+Argument), verweigert sich, solange Reprintbuddy oder sein Update läuft, sichert zuerst die vorhandene
+Datenbank (`backups/`, bei unlesbarer Datenbank als `damaged-...`) und sagt, was er wiederhergestellt
+hat. Er läuft als Dienstbenutzer aus dem Ordner `/`: den vollen Pfad angeben, und die Datei muss für
+diesen Benutzer lesbar sein. Wie oben in den Datenordner kopieren (mit Modus 0600, denn ohne
+Verschlüsselung enthält sie deine Schlüssel) und danach löschen. Danach melden sich alle neu an.
 
 Eine Datenbankkopie aus `backups/` von Hand zurückspielen:
 

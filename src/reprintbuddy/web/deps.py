@@ -281,6 +281,8 @@ def safe_next(value: str | None) -> str:
         if decoded == path:
             break
         path = decoded
+    else:
+        return "/"  # still changing after the last round: encoded more often than anything decodes
     return value
 
 
