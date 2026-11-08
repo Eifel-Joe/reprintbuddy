@@ -4,4 +4,7 @@
   <p class="alert" role="alert" data-note="missing" hidden>{{ t('labels.note_missing') }}</p>
   <p class="alert" role="alert" data-note="rtl" hidden>{{ t('labels.note_rtl') }}</p>
   <p class="alert" role="alert" data-note="fine" hidden>{{ t('labels.note_fine') }}</p>
+  <p class="alert" role="alert" data-note="rows" hidden>{{ t('labels.note_rows') }} <strong data-dropped></strong></p>
+  {# the names of the details, for the note "rows" (the script puts the ones left off after the sentence) #}
+  <span hidden data-field-name="name">{{ t('labels.field.name') }}</span><span hidden data-field-name="sku">{{ t('labels.field.sku') }}</span><span hidden data-field-name="min_stock">{{ t('labels.field.min_stock') }}</span><span hidden data-field-name="buffer">{{ t('labels.field.buffer') }}</span><span hidden data-field-name="target_qty">{{ t('labels.field.target_qty') }}</span><span hidden data-field-name="units_per_print">{{ t('labels.field.units_per_print') }}</span><span hidden data-field-name="print_target">{{ t('labels.field.print_target') }}</span><span hidden data-field-name="label_text">{{ t('labels.field.label_text') }}</span><span hidden data-field-name="date">{{ t('labels.field.date') }}</span>
 </div>

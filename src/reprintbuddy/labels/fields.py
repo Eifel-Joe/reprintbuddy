@@ -47,6 +47,7 @@ class Line:
     text: str
     bold: bool = False
     fixed: bool = False  # a word and its value ("Buffer: 2"): never broken into rows, the letters get smaller instead
+    key: str = ""  # the detail this row belongs to (one of FIELDS), so a note can name it
 
 
 def clean(chosen: object) -> tuple[str, ...]:
@@ -67,7 +68,7 @@ def lines(data: LabelData, chosen: Iterable[str], caption: Callable[[str], str])
         text = str(value).strip()
         if key in _CAPTIONED:
             text = f"{caption(key)}: {text}"
-        result.append(Line(text, bold=key == "name", fixed=key in _CAPTIONED))
+        result.append(Line(text, bold=key == "name", fixed=key in _CAPTIONED, key=key))
     return result
 
 

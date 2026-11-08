@@ -124,8 +124,8 @@ def test_fewer_lines_get_bigger_letters():
 
 
 def test_every_line_fits_when_the_size_is_chosen_to_fit():
-    label = make(fields.FIELDS)
-    assert label.truncated == []
+    label = make(fields.FIELDS[:8])
+    assert label.truncated == [] and label.dropped == ()
     assert label.font_size >= render.MIN_FONT_SIZE
 
 
@@ -145,10 +145,63 @@ def test_a_long_name_takes_a_second_row_and_stays_large_instead_of_shrinking():
 
 
 def test_nine_details_with_long_values_are_cut_to_one_row_each_when_two_rows_do_not_fit():
-    label = make(fields.FIELDS, name="N" * 120, sku="S" * 80, label_text="L" * 80, print_target="P" * 80)
-    assert len(label.lines) == 9
+    label = make(fields.FIELDS[:8], name="N" * 120, sku="S" * 80, label_text="L" * 80, print_target="P" * 80)
+    assert len(label.lines) == 8
     assert label.font_size == render.MIN_FONT_SIZE
     assert set(label.truncated) == {0, 1, 6, 7}
+
+
+# ---- too many lines (p126): what does not fit in the height is left off, never run over the margin ----
+
+TEXT_HEIGHT = DK_11209.dots_high - 2 * render._PAD_Y
+
+
+def ink_rows(label):
+    """The first and the last row of the picture right of the code that has a black dot."""
+    pixels = label.image.load()
+    rows = [y for y in range(label.image.height)
+            if any(pixels[x, y] == 0 for x in range(label.code_width + 1, label.image.width))]
+    return rows[0], rows[-1]
+
+
+def test_all_nine_details_do_not_fit_in_the_height_so_the_last_one_is_left_off_and_named():
+    label = make(fields.FIELDS)
+    assert label.dropped == ("date",)  # named by its key, so the preview can say which one is missing
+    assert [row.text for row in label.lines][-1] == "Shelf B3"
+    assert len(label.lines) == 8
+    assert label.truncated == []
+
+
+def test_the_rows_of_all_nine_stay_inside_the_margin():
+    label = make(fields.FIELDS)
+    assert len(label.lines) * render._pitch(label.font_size) <= TEXT_HEIGHT
+    first, last = ink_rows(label)
+    assert first >= render._PAD_Y and last < DK_11209.dots_high - render._PAD_Y
+
+
+def test_a_label_that_fits_drops_nothing():
+    for count in range(0, 9):
+        assert make(fields.FIELDS[:count]).dropped == ()
+    assert make().dropped == ()
+
+
+def test_a_detail_without_a_value_gives_no_row_so_nothing_is_left_off():
+    # all nine ticked, but the date and the label text are empty: seven rows fit
+    label = make(fields.FIELDS, date="", label_text="")
+    assert label.dropped == () and len(label.lines) == 7
+
+
+def test_the_rows_never_run_over_the_margin_however_long_the_values_are():
+    long = dict(name="N " * 80, sku="S" * 80, label_text="L " * 80, print_target="P " * 80)
+    for values in ({}, long):
+        for chosen in (fields.FIELDS, fields.FIELDS[:8], fields.FIELDS[1:], fields.FIELDS[2:7]):
+            label = make(chosen, **values)
+            assert len(label.lines) * render._pitch(label.font_size) <= TEXT_HEIGHT, (chosen, values)
+
+
+def test_the_details_left_off_are_the_last_ones_whole_not_half_a_detail():
+    label = make(fields.FIELDS, name="N" * 120)  # the long name is cut to one row, still nine rows of 29
+    assert label.dropped == ("date",) and label.truncated == [0]
 
 
 def test_a_single_word_wider_than_a_row_is_broken_not_lost():

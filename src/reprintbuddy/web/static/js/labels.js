@@ -1,7 +1,8 @@
 /* Preview of the label (settings tab "Labels" and the card "Label" on an article's page). The picture is
    made by the server (with the real font and the real fitting rules); its answer says what the label
    cannot show right, and this script shows the notes for that: a line cut off, a character the font
-   does not have, right-to-left letters, a code too fine for phones (header X-Label-Notes).
+   does not have, right-to-left letters, a code too fine for phones, the last details left off because the height is full (header X-Label-Notes,
+   the details left off in X-Label-Dropped).
    In the settings, when a detail is ticked or unticked the sample label is drawn again with those
    details. On the article's page the picture is there already; only its notes are asked for.
    Without this file everything still works: the settings show the preview of the saved choice, the
@@ -23,7 +24,7 @@
     return Array.prototype.map.call(boxes, function (box) { return box.value; }).join(",");
   }
 
-  function showNotes(header) {
+  function showNotes(header, dropped) {
     if (!notes) {
       return;
     }
@@ -31,6 +32,13 @@
     Array.prototype.forEach.call(notes.querySelectorAll("[data-note]"), function (note) {
       note.hidden = named.indexOf(note.getAttribute("data-note")) === -1;
     });
+    var list = notes.querySelector("[data-dropped]");
+    if (list) {  /* the note "rows" names the details that were left off (header X-Label-Dropped) */
+      list.textContent = (dropped || "").split(",").map(function (key) {
+        var name = notes.querySelector('[data-field-name="' + key + '"]');
+        return name ? name.textContent : "";
+      }).filter(Boolean).join(", ");
+    }
   }
 
   function update() {
@@ -40,8 +48,9 @@
         throw new Error("preview");
       }
       var header = response.headers.get("X-Label-Notes");
+      var dropped = response.headers.get("X-Label-Dropped");
       if (fixedUrl) {
-        showNotes(header);
+        showNotes(header, dropped);
         return null;
       }
       return response.blob().then(function (blob) {
@@ -50,7 +59,7 @@
         }
         current = URL.createObjectURL(blob);
         image.src = current;
-        showNotes(header);
+        showNotes(header, dropped);
       });
     }).catch(function () { /* keep the picture and the notes that are there */ });
   }
