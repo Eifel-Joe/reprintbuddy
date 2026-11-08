@@ -388,6 +388,7 @@
   "keyright.name": "Name",
   "keyright.status": "damit Reprintbuddy den Zustand von Bambuddy lesen kann",
   "keyright.queue": "damit Reprintbuddy seine Aufträge einreihen kann",
+  "keyright.library": "nur zum Hochladen von Druckdateien; wirkt nur, soweit die Gruppe es erlaubt",
   "bambuddy.progress": "Schritt {n} von 4",
   "bambuddy.back": "Zurück",
   "bambuddy.next": "Weiter",

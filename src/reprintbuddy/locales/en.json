@@ -388,6 +388,7 @@
   "keyright.name": "Name",
   "keyright.status": "so that Reprintbuddy can read the state of Bambuddy",
   "keyright.queue": "so that Reprintbuddy can queue its jobs",
+  "keyright.library": "only for uploading print files; works only as far as the group allows",
   "bambuddy.progress": "Step {n} of 4",
   "bambuddy.back": "Back",
   "bambuddy.next": "Next",

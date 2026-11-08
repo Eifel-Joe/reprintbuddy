@@ -375,6 +375,7 @@ EDITOR = {
     "printers:read": "Read Printers",
     "inventory:read": "Read Inventory",
     "filaments:read": "Read Filaments",
+    "library:upload": "Upload Library",  # optional, for uploading print files (Spec 5.1a)
 }
 KEY_CREATION = {
     "api_keys:read": "Read Api Keys",
@@ -436,7 +437,6 @@ def test_permission_labels_as_in_bambuddy(admin_client, respx_mock):
 
 KEY_OFF = (
     "Control Printer",
-    "Manage Library",
     "Manage Inventory",
     "Manage Maintenance",
     "Manage Archives",
@@ -453,12 +453,14 @@ def test_key_guide_is_a_table_of_the_settings_with_bambuddys_labels(admin_client
     rows = re.findall(r"<tr[^>]*>(.*?)</tr>", table, re.S)
     on_rows = [r for r in rows if 'class="on"' in r]
     off_rows = [r for r in rows if 'class="off"' in r]
-    assert len(on_rows) == 2 and "Read Status" in on_rows[0] and "Manage Queue" in on_rows[1]
+    # "Manage Library" is on since v0.3.9 (Spec 11.3 b): it works only as far as the group allows (upload).
+    assert len(on_rows) == 3 and "Read Status" in on_rows[0] and "Manage Queue" in on_rows[1]
+    assert "Manage Library" in on_rows[2]
     assert len(off_rows) == len(KEY_OFF)
     for label in KEY_OFF:
         assert any(label in r for r in off_rows), label
     assert "Reprintbuddy" in table
-    assert len(rows) == 1 + 2 + len(KEY_OFF)  # name, two on, the rest off: nothing else
+    assert len(rows) == 1 + 3 + len(KEY_OFF)  # name, three on, the rest off: nothing else
 
 
 def test_key_guide_has_no_printer_or_expiry_row(admin_client):
