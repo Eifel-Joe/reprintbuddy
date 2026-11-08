@@ -951,6 +951,7 @@
   "upload.subtitle": "Ziel in Bambuddys Dateimanager: {path}",
   "upload.file": "Druckdatei",
   "upload.file_hint": "Eine geslicte 3MF-Datei (.gcode.3mf), höchstens {mb} MB. Danach wählst du die Platte und legst den Artikel an.",
+  "upload.file_hint_relink": "Eine geslicte 3MF-Datei (.gcode.3mf), höchstens {mb} MB. Danach wählst du die Platte für diesen Artikel.",
   "upload.submit": "Hochladen",
   "upload.back": "Zurück zum Ordner",
   "upload.external": "Dieser Ordner ist von außen in Bambuddy eingebunden (externer Ordner). Reprintbuddy arbeitet nur mit Dateien, die in Bambuddys eigenem Dateimanager liegen, deshalb lässt sich hier nichts hochladen. Wähle einen anderen Ordner.",

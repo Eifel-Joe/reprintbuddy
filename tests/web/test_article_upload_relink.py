@@ -80,6 +80,7 @@ def test_page_keeps_folder_and_article_and_names_the_article(up, art):
     assert f'action="{url(art)}"' in plain(up.get(url(art)))
     assert en("upload.title_relink", name="Template A") in html_mod.unescape(html)
     assert 'name="print_file" type="file"' in html
+    assert en("upload.file_hint_relink", mb=200) in html  # not "create the article"
     assert f'href="/articles/{art}/relink?folder=1"' in html  # back: the choice of this article, same folder
     assert 'href="/articles/new' not in html
 
@@ -238,3 +239,48 @@ def test_a_declared_length_over_the_limit_is_refused_before_the_body_is_read(up,
 
 def test_body_limit_is_that_of_the_upload_path(up):
     assert up.app.state.body_limits[PAGE] == upload_routes.BODY_LIMIT  # `?article=` is a query, not another path
+
+
+# ---- after the review of the upload path ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("article", ["", "-1", "%201", "1x", "999"])
+def test_post_with_an_odd_article_sends_nothing(up, fake_bambuddy, article):
+    response = up.post(
+        f"{PAGE}?folder=1&article={article}",
+        data={"csrf_token": token(up)},
+        files={"print_file": ("New part.gcode.3mf", SLICED, "application/octet-stream")},
+    )
+    assert response.status_code == 404 and en("articles.not_found") in alert(response.text)
+    assert fake_bambuddy.uploaded == [] and fake_bambuddy.calls == []
+
+
+def test_no_database_connection_is_held_while_bambuddy_answers(up, art, monkeypatch):
+    """The article is read before Bambuddy is asked; the connection is given back first (like the relink pages)."""
+    seen: dict[str, object] = {}
+    real_target, real_folder = upload_routes._target, upload_routes._folder
+
+    def target(db, raw):
+        seen["db"] = db
+        return real_target(db, raw)
+
+    async def folder(client, folder_id):
+        seen.setdefault("held", []).append(seen["db"].in_transaction())
+        return await real_folder(client, folder_id)
+
+    monkeypatch.setattr(upload_routes, "_target", target)
+    monkeypatch.setattr(upload_routes, "_folder", folder)
+    assert up.get(url(art)).status_code == 200
+    assert post(up, art).status_code == 303
+    assert seen["held"] == [False, False]
+
+
+def test_too_large_with_a_garbled_article_does_not_lead_to_a_new_article(up, monkeypatch):
+    monkeypatch.setattr(upload_routes, "BODY_LIMIT", 100)
+    response = up.post(
+        f"{PAGE}?folder=1&article=abc",
+        data={"csrf_token": token(up)},
+        files={"print_file": ("New part.gcode.3mf", SLICED, "application/octet-stream")},
+    )
+    assert response.status_code == 413
+    assert 'href="/articles/new' not in response.text

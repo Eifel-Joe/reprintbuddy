@@ -110,3 +110,43 @@ def test_changed_slot_loses_its_group_and_the_page_says_to_tick_again(bb_client,
     assert en("articles.relinked", name="Template A") in page
     assert en("articles.relinked_regroup", slots="1") in page
     assert en("articles.relinked_regroup", slots="1") not in bb_client.get(f"/articles/{a}").text  # shown once
+
+
+# ---- the note only on a change that happened -------------------------------------------------------
+
+
+def _changed_slot(client, fake_bambuddy):
+    a, _ = _with_group(client)
+    fake_bambuddy.set_requirements(2, 1, [FilamentRequirement(1, 10.0, "PETG", "#FF0000")])
+    return a
+
+
+def test_a_repeated_form_makes_no_second_note(bb_client, fake_bambuddy):
+    a = _changed_slot(bb_client, fake_bambuddy)
+    page = f"/articles/{a}/relink/file/2"
+    path = f"{page}/plate/1"
+    data = {"csrf_token": csrf_of(bb_client, page), "form_token": form_token_of(bb_client, page, path)}
+    assert bb_client.post(path, data=data).status_code == 303
+    bb_client.get(f"/articles/{a}")  # the first page shows (and empties) the messages
+    assert bb_client.post(path, data=data).status_code == 303  # the same form again
+    assert en("articles.relinked_regroup", slots="1") not in bb_client.get(f"/articles/{a}").text
+
+
+def test_a_refused_change_makes_no_note(bb_client, fake_bambuddy):
+    a = _changed_slot(bb_client, fake_bambuddy)
+    make(bb_client, name="Holder", library_file_id=2, plate_id=1)  # the plate is taken
+    page = f"/articles/{a}/relink/file/2"  # no form for plate 1 there: the token of plate 2 serves
+    path = f"{page}/plate/1"
+    data = {"csrf_token": csrf_of(bb_client, page), "form_token": form_token_of(bb_client, page, f"{page}/plate/2")}
+    response = bb_client.post(path, data=data)
+    assert response.status_code != 303
+    assert en("articles.relinked_regroup", slots="1") not in bb_client.get(f"/articles/{a}").text
+    assert ticked(bb_client, a) != []  # nothing changed
+
+
+def test_restoring_with_another_file_names_the_slots_too(bb_client, fake_bambuddy):
+    a = _changed_slot(bb_client, fake_bambuddy)
+    with sm_of(bb_client).begin() as s:
+        s.get(Article, a).archived_at = utcnow()
+    assert choose(bb_client, a).status_code == 303
+    assert en("articles.relinked_regroup", slots="1") in bb_client.get(f"/articles/{a}").text

@@ -30,7 +30,7 @@
     {% if error %}<p class="alert" role="alert">{{ t(error, **error_params) }}{% if error_params.existing_id %} <a href="{{ file_base }}/{{ error_params.existing_id }}">{{ t('upload.use_existing_relink' if relink else 'upload.use_existing') }}</a>{% endif %}</p>{% endif %}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="setting-row stack">
-      <div class="setting-text"><label for="print_file">{{ t('upload.file') }}</label><span>{{ t('upload.file_hint', mb=max_mb) }}</span></div>
+      <div class="setting-text"><label for="print_file">{{ t('upload.file') }}</label><span>{{ t('upload.file_hint_relink' if relink else 'upload.file_hint', mb=max_mb) }}</span></div>
       <div class="setting-control"><input id="print_file" name="print_file" type="file" accept=".3mf" required></div>
     </div>
     <p class="actions"><button type="submit" class="btn">{{ ui.icon('upload') }}{{ t('upload.submit') }}</button></p>
