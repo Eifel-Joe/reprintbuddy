@@ -122,8 +122,10 @@ def test_sliced_rule(file_type, filename, expected):
 def test_new_fields_come_last_with_defaults():
     old = LibraryFile(1, "a.gcode.3mf", None, "v", "A1")
     assert old.has_thumbnail is False and old.sliced is True
+    assert (old.created_by, old.size, old.created_at) == (None, None, None)
     names = [f for f in LibraryFile.__dataclass_fields__]
-    assert names[-2:] == ["has_thumbnail", "sliced"]
+    # v0.3.9 p20 added creator, size and time after them, again with defaults.
+    assert names[-5:] == ["has_thumbnail", "sliced", "created_by", "size", "created_at"]
 
 
 async def test_fake_file_thumbnail():

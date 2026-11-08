@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import AbstractAsyncContextManager
-from typing import Callable, Protocol, runtime_checkable
+from typing import BinaryIO, Callable, Protocol, runtime_checkable
 from urllib.parse import quote
 
 import httpx
@@ -21,9 +21,14 @@ from reprintbuddy.bambuddy.types import (
     QueueItem,
     Spool,
     SpoolMode,
+    UploadedFile,
 )
 
 log = logging.getLogger(__name__)
+
+# An upload of up to 200 MB (Spec 5.1a) needs longer than a read; Bambuddy also parses the
+# file before it answers (`library.py:2553-2613`).
+UPLOAD_TIMEOUT_SECONDS = 300.0
 
 
 class BambuddyUnavailable(Exception):
@@ -100,6 +105,8 @@ class BambuddyClient(Protocol):
 
     async def enqueue(self, req: EnqueueRequest) -> QueueItem: ...
 
+    async def upload_file(self, folder_id: int | None, filename: str, content: BinaryIO) -> UploadedFile: ...
+
     async def get_queue_item(self, item_id: int) -> QueueItem | None: ...
 
     async def list_queue(self) -> list[QueueItem]: ...
@@ -146,7 +153,16 @@ class HttpBambuddyClient:
         return f"HttpBambuddyClient({self._base_url})"
 
     # ---- transport -----------------------------------------------------------------
-    async def _send(self, method: str, path: str, *, params: dict | None = None, body: dict | None = None):
+    async def _send(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict | None = None,
+        body: dict | None = None,
+        files: dict | None = None,
+        timeout: float = TIMEOUT_SECONDS,
+    ):
         """One call; network errors and status codes become the error classes.
 
         Returns the response for 2xx and 404 (the caller decides about 404).
@@ -158,8 +174,9 @@ class HttpBambuddyClient:
                     f"{self._api}{path}",
                     params=params,
                     json=body,
+                    files=files,
                     headers={"X-API-Key": self._api_key},
-                    timeout=TIMEOUT_SECONDS,
+                    timeout=timeout,
                     follow_redirects=False,
                 )
         except (httpx.HTTPError, httpx.InvalidURL) as exc:
@@ -211,6 +228,14 @@ class HttpBambuddyClient:
     async def _post(self, path: str, body: dict | None = None) -> object:
         """A POST; without `body` the request has no body at all."""
         response = await self._send("POST", path, body=body)
+        if response.status_code == 404:
+            raise BambuddyRejected(_detail(response), status=404)
+        return self._json(response, "POST", path)
+
+    async def _post_file(self, path: str, *, folder_id: int | None, files: dict) -> object:
+        """A multipart POST of one file; the query holds the target folder and nothing else."""
+        params = None if folder_id is None else {"folder_id": folder_id}
+        response = await self._send("POST", path, params=params, files=files, timeout=UPLOAD_TIMEOUT_SECONDS)
         if response.status_code == 404:
             raise BambuddyRejected(_detail(response), status=404)
         return self._json(response, "POST", path)
@@ -325,6 +350,21 @@ class HttpBambuddyClient:
         if req.insert_position is not None:
             body["insert_position"] = req.insert_position
         return _parse.parse_queue_item(await self._post("/queue/", body))
+
+    # ---- the second write call: one new print file (Spec 3.1, 5.1a; the watch guards it) ----
+    async def upload_file(self, folder_id: int | None, filename: str, content: BinaryIO) -> UploadedFile:
+        """One print file into the library folder `folder_id` (`None`: the top level), sent once.
+
+        `POST /library/files`, multipart field `file`, the folder as query `folder_id`
+        (Bambuddy `library.py:2509-2518`). Bambuddy accepts any name and kind and never
+        refuses a same name; the caller checks all of that before (Spec 5.1a), because
+        Reprintbuddy cannot delete a file again. `content` is sent from its start. A timeout
+        is `BambuddyUnavailable` with an unknown outcome: the caller looks for the file
+        instead of sending it again.
+        """
+        content.seek(0)
+        files = {"file": (filename, content, "application/octet-stream")}
+        return _parse.parse_upload(await self._post_file("/library/files", folder_id=folder_id, files=files))
 
     # ---- the live channel (Spec 7.6; not in the Protocol, B4's interface stays as it is) ----
     async def ws_token(self) -> str:

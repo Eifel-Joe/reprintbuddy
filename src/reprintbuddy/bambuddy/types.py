@@ -35,6 +35,16 @@ class LibraryFile:
 
 
 @dataclass(frozen=True)
+class UploadedFile:
+    """Bambuddy's answer to an upload (`FileUploadResponse`, `schemas/library.py:328-337`)."""
+
+    id: int
+    filename: str
+    sliced: bool  # Bambuddy's own verdict from the zip (`file_type == "gcode.3mf"`)
+    duplicate_of: int | None  # a file with the same content that was already there
+
+
+@dataclass(frozen=True)
 class Plate:
     index: int  # starts at 1
     name: str | None
