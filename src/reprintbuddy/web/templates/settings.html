@@ -39,6 +39,7 @@
       <div class="setting-control">
         <input id="qr_base_url" name="qr_base_url" type="text" inputmode="url" value="{{ qr_base_url }}" autocomplete="off" spellcheck="false" placeholder="{{ t('settings.qr_placeholder') }}">
         <p class="muted">{{ t('settings.qr_automatic', address=qr_automatic) }}</p>
+        <p class="muted">{{ t('settings.qr_keep_address') }}</p>
       </div>
     </div>
   </form>
@@ -177,8 +178,11 @@
 {% endcall %}
 </div>
 <div class="settings-col"></div>
+{% elif current_tab == 'labels' %}
+{% include "settings_labels.html" %}
 {% elif current_tab == 'maintenance' %}
 {% include "settings_ops.html" %}
 {% endif %}
 </div>
 {% endblock %}
+{% block scripts %}{% if current_tab == 'labels' %}<script src="/static/js/labels.js?v={{ app_version }}" defer></script>{% endif %}{% endblock %}

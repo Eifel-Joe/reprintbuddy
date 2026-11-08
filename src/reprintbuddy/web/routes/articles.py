@@ -29,7 +29,7 @@ from reprintbuddy.domain import stock as stock_mod
 from reprintbuddy.models import (
     Article, ArticleFilament, ArticleFilamentSort, ArticlePart, Dispatch, FilamentSort, Part, WorkQueueEntry,
 )
-from reprintbuddy.web import kpis, listing
+from reprintbuddy.web import kpis, labels_view, listing
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, local_next, release_connection, render
@@ -625,6 +625,7 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         dispatch_tones=DISPATCH_TONES,
         qr_address=qr_address,
         qr_local=qr_view.is_local_address(base),
+        **labels_view.article_card_context(request, db, article, lang),
         has_target=bool(article.target_model or article.printer_id),
         target_label=_target_label(lang, article),
         filaments=[

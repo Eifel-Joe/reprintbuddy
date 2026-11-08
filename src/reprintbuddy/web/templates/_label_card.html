@@ -1,0 +1,22 @@
+{# The card "Label" on the article's page (Spec 8.5): what would be printed, how many, print. #}
+<section class="card section wide article-label" id="label">
+  <div class="section-head"><h2>{{ ui.icon('printer') }}{{ t('labels.title') }}</h2></div>
+  <div class="label-body">
+    <img class="label-preview" src="/articles/{{ article.id }}/label.png" width="696" height="271" alt="{{ t('labels.preview_alt') }}">
+    {% if label_cut %}<p class="alert" role="alert">{{ t('labels.cut_warning') }}</p>{% endif %}
+    {% if label_configured %}
+    <form class="label-print" method="post" action="/articles/{{ article.id }}/label">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="form_token" value="{{ form_token() }}">
+      <label class="field" for="label-copies">{{ t('labels.copies') }}
+        <input id="label-copies" class="label-copies" name="copies" type="number" value="1" min="1" max="{{ label_max_copies }}" step="1" inputmode="numeric" required>
+      </label>
+      <button class="btn" type="submit">{{ ui.icon('printer') }}{{ t('labels.print') }}</button>
+    </form>
+    {% else %}
+    <p class="muted">{{ t('labels.not_configured') }} <a href="/settings?tab=labels">{{ t('labels.to_settings') }}</a></p>
+    {% endif %}
+    <p class="muted">{{ t('labels.hint') }}</p>
+    <p class="muted">{{ t('labels.keep_address') }}</p>
+  </div>
+</section>
