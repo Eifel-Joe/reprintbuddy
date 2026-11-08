@@ -182,25 +182,38 @@ def restore_blocks(request: Request) -> bool:
     return request.url.path not in allowed
 
 
+def _restore_pause(request: Request) -> Response | None:
+    """The 503 page of a write that a running restore pauses, else None."""
+    if not restore_blocks(request):
+        return None
+    state = request.app.state.restore
+    return render(
+        request,
+        "error.html",
+        status_code=503,
+        layout="base.html",
+        title_key="error.generic.title",
+        message_key="ops.restore.restart_pending" if state.phase == "restart_pending" else "ops.restore.in_progress",
+    )
+
+
 async def update_guard(request: Request, call_next) -> Response:
     """Pause every write while an update or a restore runs (see `UPDATE_EXEMPT_PATHS`).
 
     The writes it lets through are counted while they run: a restore waits for the ones
     that passed just before it began.
+
+    The question whether an update runs is asked in a worker thread (v0.3.8 p96), and a restore may
+    begin while this request waits for the answer. So the restore is looked at again after the
+    answer, and the request is counted in the same step, with no `await` between: a write is either
+    refused or counted before a restore that began meanwhile looks at the count.
     """
-    if request.method in WRITE_METHODS and restore_blocks(request):
-        state = request.app.state.restore
-        return render(
-            request,
-            "error.html",
-            status_code=503,
-            layout="base.html",
-            title_key="error.generic.title",
-            message_key="ops.restore.restart_pending"
-            if state.phase == "restart_pending"
-            else "ops.restore.in_progress",
-        )
-    if request.method in WRITE_METHODS and request.url.path not in UPDATE_EXEMPT_PATHS:
+    is_write = request.method in WRITE_METHODS
+    if is_write:
+        paused = _restore_pause(request)
+        if paused is not None:
+            return paused
+    if is_write and request.url.path not in UPDATE_EXEMPT_PATHS:
         if await update_busy(request):
             return render(
                 request,
@@ -210,7 +223,10 @@ async def update_guard(request: Request, call_next) -> Response:
                 title_key="error.generic.title",
                 message_key="ops.update.in_progress",
             )
-    if request.method not in WRITE_METHODS or request.url.path.startswith(UNCOUNTED_PREFIXES):
+        paused = _restore_pause(request)  # a restore that began while the question was out
+        if paused is not None:
+            return paused
+    if not is_write or request.url.path.startswith(UNCOUNTED_PREFIXES):
         return await call_next(request)
     state = request.app.state
     state.writes_in_flight += 1

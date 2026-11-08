@@ -1344,3 +1344,15 @@ async def test_p96_an_update_found_by_the_threaded_question_still_stops_the_send
     assert env.fake.enqueued == []
     assert statuses(env.sm) == ["returned"]
     assert env.engine.status.skipped_for_update is True
+
+
+async def test_p96_an_update_that_starts_while_the_threaded_question_is_out_still_stops_the_send(engine_env):
+    """Review: between the answer of the worker thread and the mark of the print an update can begin."""
+    env = engine_env
+    env.engine.update_running = lambda: False  # what the thread read: no update yet
+    env.engine.update_started = lambda: True  # what the state file says right before the mark
+    result = await env.engine.tick(poll=False)
+    assert result == TickResult(None, 1, 0)
+    assert env.fake.enqueued == [] and "enqueue" not in env.fake.calls
+    assert statuses(env.sm) == ["returned"]
+    assert env.engine.status.skipped_for_update is True

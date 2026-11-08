@@ -694,6 +694,28 @@ def test_writes_are_counted_while_they_run(ops_env, monkeypatch):
     assert ops_env.client.app.state.writes_in_flight == 0
 
 
+def test_a_restore_that_begins_while_the_guard_waits_for_the_update_answer_still_pauses_the_write(
+    ops_env, monkeypatch
+):
+    """v0.3.8 p96 review: the question whether an update runs is a thread hop now; a write that
+    passed the first look at the restore must not slip into a restore that began during it."""
+    from reprintbuddy.web.routes import ops as routes
+
+    app = ops_env.client.app
+
+    async def answer_after_a_restore_began(_request):
+        app.state.restore.phase = "running"  # the restore sets its state while the question is out
+        return False
+
+    monkeypatch.setattr(routes, "update_busy", answer_after_a_restore_began)
+    response = post(ops_env, "/settings/language", language="de")
+    assert response.status_code == 503
+    assert app.state.writes_in_flight == 0  # it was refused, not counted
+    app.state.restore.phase = "idle"
+    with app.state.sessionmaker() as session:
+        assert st.get_setting(session, "language") != "de"
+
+
 # --- review of the sign-in check and the write counter ------------------------------------------
 
 

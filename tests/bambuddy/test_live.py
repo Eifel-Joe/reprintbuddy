@@ -570,7 +570,7 @@ async def test_connect_gets_the_quiet_library_logger(respx_mock):
     tokens(respx_mock, "t1")
     connect = FakeConnect([closed(1006)])
     await run_until_stopped(listener(connect, Events(), Sleeps(1)))
-    assert connect.options == [{"logger": live.LIBRARY_LOG}]
+    assert connect.options == [{"logger": live.LIBRARY_LOG, "close_timeout": live.CLOSE_WAIT}]
     assert not live.LIBRARY_LOG.isEnabledFor(logging.INFO)
 
 
@@ -990,3 +990,36 @@ async def test_a_reconnect_closes_the_old_connection_as_finished_too(respx_mock)
         subject.wake(reconnect=True)
 
     assert await _serve_and_note_the_close_code(respx_mock, reconnect) == 1000
+
+
+async def test_a_silent_bambuddy_does_not_hold_the_shutdown_longer_than_the_close_time(respx_mock, monkeypatch):
+    """Review: the library waits for the answer to its close for 10 s by default; here it is CLOSE_WAIT."""
+    monkeypatch.setattr(live, "CLOSE_WAIT", 0.3)
+    connected = asyncio.Event()
+    finished = asyncio.Event()
+
+    async def handler(connection):
+        connection.transport.pause_reading()  # takes in nothing more: the close is never answered
+        connected.set()
+        await finished.wait()
+
+    async with serve(handler, "127.0.0.1", 0, logger=quiet_server_log(), close_timeout=0.1) as server:
+        port = server.sockets[0].getsockname()[1]
+        base = f"http://127.0.0.1:{port}"
+        respx_mock.post(f"{base}/api/v1/auth/ws-token").respond(json={"token": "t1"})
+        subject = live.LiveListener(
+            HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), Events()
+        )
+        task = asyncio.create_task(subject.run())
+        try:
+            await asyncio.wait_for(connected.wait(), timeout=5)
+            await asyncio.wait_for(until_connected(subject), timeout=5)
+            began = asyncio.get_running_loop().time()
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.wait_for(task, timeout=5)
+            assert asyncio.get_running_loop().time() - began < 3  # not the library's 10 s
+            assert task.done()
+        finally:
+            finished.set()
+            await stop(task)

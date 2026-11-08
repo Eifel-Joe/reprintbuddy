@@ -112,12 +112,15 @@ class Engine:
         client_provider: Callable[[], BambuddyClient | None],
         *,
         update_running: Callable[[], bool] = lambda: False,
+        update_started: Callable[[], bool] = lambda: False,
         now: Callable[[], datetime] = utcnow,
         publish: Publish | None = None,
     ) -> None:
         self.sm = sm
         self.client_provider = client_provider
         self.update_running = update_running
+        # Cheap and synchronous: "an update (or a restore) has just begun". See `_may_send`.
+        self.update_started = update_started
         self.now = now
         self.publish = publish
         self.status = EngineStatus()
@@ -171,7 +174,17 @@ class Engine:
         return bool(await in_thread(self.update_running))
 
     async def _may_send(self) -> bool:
-        return not await self._update_is_running()
+        """May the reserved print be sent? Asked right before it is marked as sent.
+
+        The slow question runs in a worker thread, and an update can start while it is out: the
+        update's backup of the database would then be older than the mark, and after a rollback the
+        print would be sent twice (docstring of `dispatch.hand_over`). So the answer is checked again
+        by a question that needs no thread and no `await`: nothing can happen between it and the mark.
+        Tests: test_engine.py "p96".
+        """
+        if await self._update_is_running():
+            return False
+        return not self.update_started()
 
     async def tick(self, *, poll: bool) -> TickResult:
         try:

@@ -95,3 +95,18 @@ def test_update_running_pauses_ticker(ops_env):
     ops_env.runner.on(SHOW_STATE, CommandResult(0, "active\n"))
     result = run_tick(ops_env.client.app.state.ticker)
     assert result.skipped == "update"
+
+
+def test_the_engine_is_told_cheaply_when_a_restore_or_an_update_has_just_begun(ready_client):
+    """v0.3.8 p96 review: the synchronous look right before a print is marked as sent."""
+    from datetime import UTC, datetime
+
+    from reprintbuddy.ops.status import UpdateStatus, write_status
+
+    app = ready_client.app
+    assert app.state.ticker.update_started() is False
+    app.state.restore.phase = "running"
+    assert app.state.ticker.update_started() is True
+    app.state.restore.phase = "idle"
+    write_status(app.state.db_path.parent, UpdateStatus(state="queued", step="start", started_at=datetime.now(UTC)))
+    assert app.state.ticker.update_started() is True

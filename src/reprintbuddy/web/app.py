@@ -31,7 +31,7 @@ from reprintbuddy.domain.engine import Engine
 from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.autocheck import AutoCheck
 from reprintbuddy.ops.context import OpsContext
-from reprintbuddy.ops.running import update_running
+from reprintbuddy.ops.running import update_just_started, update_running
 from reprintbuddy.ops.versions import VersionInfo, check_versions, is_git_install
 from reprintbuddy.web import deps
 from reprintbuddy.web.flash import pop_flashes
@@ -309,6 +309,7 @@ def create_app(
         # A restore counts like an update: the engine must not touch the database it replaces.
         update_running=lambda: app.state.restore.active
         or update_running(db_path.parent, app.state.ops.runner, datetime.now(UTC)),
+        update_started=lambda: app.state.restore.active or update_just_started(db_path.parent, datetime.now(UTC)),
         publish=live.publish,
     )
     app.state.ticker.add_poll_hook("filament", filament.poll_hook)  # the daily record and receipt check (B6)

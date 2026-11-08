@@ -62,7 +62,7 @@ TOKEN_MAX_AGE = 55 * 60  # seconds; Bambuddy's token lives 60 minutes, 5 minutes
 RETRY_DELAYS = (5, 15, 60, 300)  # seconds between attempts; then always the last one
 NO_RIGHT_DELAY = 900  # seconds of pause when the key's group lacks `websocket:connect`
 STABLE_AFTER = 60  # seconds a connection must hold before the pauses start over
-CLOSE_WAIT = 2.0  # seconds the closing handshake may take when the listener is stopped
+CLOSE_WAIT = 2.0  # seconds the closing handshake may take, own close and the library's alike
 
 NORMAL_CLOSE = 1000  # "normal closure": the code of a finished connection
 
@@ -239,7 +239,9 @@ class LiveListener:
         address = _without_query(url)
         opened: float | None = None
         try:
-            async with self._connect(url, logger=LIBRARY_LOG) as connection:
+            # `close_timeout`: the library waits that long for the other side's answer when it closes,
+            # also in the `async with` after our own close ran out of time; its default is 10 s.
+            async with self._connect(url, logger=LIBRARY_LOG, close_timeout=CLOSE_WAIT) as connection:
                 opened = self._now()
                 self.state = "connected"
                 self._paused_in = None
