@@ -3,10 +3,11 @@
    cannot show right, and this script shows the notes for that: a line cut off, a character the font
    does not have, right-to-left letters, a code too fine for phones, the last details left off because the height is full (header X-Label-Notes,
    the details left off in X-Label-Dropped).
-   In the settings, when a detail is ticked or unticked the sample label is drawn again with those
-   details. On the article's page the picture is there already; only its notes are asked for.
-   Without this file everything still works: the settings show the preview of the saved choice, the
-   trial print uses what is ticked, the article's page shows its picture without notes. */
+   The picture is asked for once, here, and its notes are read from that same answer: the page has no
+   <img src> of its own (that would have the server draw the label twice). In the settings, when a
+   detail is ticked or unticked the sample label is drawn again with those details.
+   Without this file everything still works: a <noscript> picture shows the saved choice (settings) or
+   the label (article's page), the trial print uses what is ticked; only the notes are missing. */
 (function () {
   "use strict";
 
@@ -18,6 +19,7 @@
   var fixedUrl = image.getAttribute("data-label-url");  /* the article's page: no ticks to follow */
   var timer = null;
   var current = null;
+  var latest = 0;
 
   function ticked() {
     var boxes = document.querySelectorAll('input[name="label_field"]:checked');
@@ -43,17 +45,17 @@
 
   function update() {
     var url = fixedUrl || "/settings/labels/preview.png?fields=" + encodeURIComponent(ticked());
+    var mine = ++latest;
     fetch(url, { credentials: "same-origin" }).then(function (response) {
       if (!response.ok) {
         throw new Error("preview");
       }
       var header = response.headers.get("X-Label-Notes");
       var dropped = response.headers.get("X-Label-Dropped");
-      if (fixedUrl) {
-        showNotes(header, dropped);
-        return null;
-      }
       return response.blob().then(function (blob) {
+        if (mine !== latest) {  /* a newer tick has asked again: this answer is old */
+          return;
+        }
         if (current) {
           URL.revokeObjectURL(current);
         }
@@ -61,10 +63,14 @@
         image.src = current;
         showNotes(header, dropped);
       });
-    }).catch(function () { /* keep the picture and the notes that are there */ });
+    }).catch(function () {
+      if (!current) {  /* no picture yet: let the browser try for itself (then without notes) */
+        image.src = url;
+      }
+    });
   }
 
-  update();  /* the page draws nothing itself: ask for the picture (settings) and for the notes */
+  update();  /* the page draws nothing itself: ask for the picture and read its notes */
 
   document.addEventListener("change", function (event) {
     if (!fixedUrl && event.target && event.target.name === "label_field") {

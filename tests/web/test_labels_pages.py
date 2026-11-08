@@ -626,6 +626,34 @@ def test_the_article_preview_tells_the_script_where_to_ask_for_the_notes(configu
     assert f'data-label-url="/articles/{article}/label.png"' in page
 
 
+def _preview_img(page):
+    match = re.search(r'<img[^>]*id="label-preview"[^>]*>', re.sub(r"<noscript>.*?</noscript>", "", page, flags=re.S))
+    assert match, "no preview image outside <noscript>"
+    return match.group(0)
+
+
+def _noscript_img(page):
+    match = re.search(r"<noscript>\s*(<img[^>]*>)\s*</noscript>", page, flags=re.S)
+    assert match, "no <noscript><img>"
+    return match.group(1)
+
+
+def test_the_article_preview_is_asked_for_once_by_the_script_not_also_by_the_browser(configured, article):
+    """p127: an <img src> would have the picture drawn once for the browser and once more for the script
+    that only wants the header X-Label-Notes. The script asks once and gives the picture to the page."""
+    page = configured.get(f"/articles/{article}").text
+    assert " src=" not in _preview_img(page)
+    assert f'data-label-url="/articles/{article}/label.png"' in _preview_img(page)
+    assert f'src="/articles/{article}/label.png"' in _noscript_img(page)  # without a script the picture is there as before
+    assert 'alt="' in _noscript_img(page) and 'width="696"' in _noscript_img(page)
+
+
+def test_the_settings_preview_is_asked_for_once_by_the_script_not_also_by_the_browser(configured):
+    page = configured.get(SAME_PAGE).text
+    assert " src=" not in _preview_img(page)
+    assert "/settings/labels/preview.png?fields=name,sku,label_text" in _noscript_img(page)
+
+
 def test_the_script_reads_the_notes_header(configured):
     script = configured.get("/static/js/labels.js")
     assert script.status_code == 200 and "X-Label-Notes" in script.text
