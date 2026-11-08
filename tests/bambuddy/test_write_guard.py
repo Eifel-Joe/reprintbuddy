@@ -16,8 +16,11 @@ Around it:
 - the live channel (`bambuddy/live.py`) is the only importer of `websockets`, imports nothing
   else that could open a connection, asks the client only for `ws_token` and `ws_url`, and
   sends nothing over the socket (`check_live`);
-- the web modules that hold an `httpx.AsyncClient` from `http_client_factory` only pass it on
-  and never send with it themselves (`check_holder`).
+- every other module that imports httpx or holds an `httpx.AsyncClient` from `http_client_factory`
+  (`connection.py`, `factory.py`, `web/app.py`, `web/rights.py`, `web/bambuddy_check.py`, ...) only
+  builds or passes the client on and never sends with it itself (`check_holder`). Before v0.3.9
+  only the modules with the text `client_factory` were looked at; the helper files of the
+  connection, which import httpx but do not carry that text, were not.
 
 Each check is run on the real files and on small sources with one bypass each, so the watch
 is shown to catch what it is meant to catch.
@@ -54,6 +57,9 @@ HTTPX_IMPORTERS = {
     "web/rights.py",
 }
 
+# The one module that sends (checked with `check_source`, not with `check_holder`).
+CLIENT_MODULE = "bambuddy/client.py"
+
 # Modules that import websockets: the live channel only.
 WEBSOCKETS_IMPORTERS = {"bambuddy/live.py"}
 
@@ -80,6 +86,15 @@ LIVE_CLIENT_CALLS = {"ws_token", "ws_url"}
 # Web modules that hold an `httpx.AsyncClient` without importing httpx are found by this text.
 HOLDER_MARK = "client_factory"
 HOLDERS_AT_LEAST = {"web/bambuddy_check.py", "web/rights.py"}
+
+# Modules that import httpx or hold a client (`_holders()`), apart from the client itself, are all
+# looked at with `check_holder`. These must be among them: the scope is not silently empty, and the
+# helper files of the connection (v0.3.9 p75) are in.
+CHECKED_AT_LEAST = HOLDERS_AT_LEAST | {
+    "bambuddy/connection.py",
+    "bambuddy/factory.py",
+    "web/app.py",
+}
 
 # Second layer: text that has no business in the client.
 FORBIDDEN = (
@@ -288,11 +303,15 @@ def check_holder(text: str) -> list[str]:
 
 
 def _holders() -> set[str]:
-    return {
+    """Every module that takes part in sending through the client, other than the client itself:
+    those that import httpx (the allow-list is checked on its own) and the web modules that
+    hold a client made by `http_client_factory`."""
+    held = {
         path.relative_to(SRC).as_posix()
         for path in (SRC / "web").rglob("*.py")
         if HOLDER_MARK in path.read_text(encoding="utf-8")
     }
+    return (held | _importers("httpx") | HTTPX_IMPORTERS) - {CLIENT_MODULE}
 
 
 # ---- the real client -------------------------------------------------------------------
@@ -319,7 +338,7 @@ def test_batch_route_is_nowhere_in_the_code():
 
 def test_only_known_modules_import_httpx():
     found = _importers("httpx")
-    assert "bambuddy/client.py" in found  # the detection works at all
+    assert CLIENT_MODULE in found  # the detection works at all
     assert found <= HTTPX_IMPORTERS, f"new httpx importers: {sorted(found - HTTPX_IMPORTERS)}"
 
 
@@ -346,7 +365,8 @@ def test_live_channel_asks_the_client_for_token_and_address():
 
 def test_client_holders_only_pass_the_client_on():
     holders = _holders()
-    assert HOLDERS_AT_LEAST <= holders, holders  # the scope is not silently empty
+    assert CHECKED_AT_LEAST <= holders, holders  # the scope is not silently empty
+    assert CLIENT_MODULE not in holders
     problems = {path: check_holder((SRC / path).read_text(encoding="utf-8")) for path in holders}
     assert problems == {path: [] for path in holders}
 
@@ -509,3 +529,13 @@ def test_holder_bypass_is_caught(line, reason):
     bad = HOLDER_BASE.replace(anchor, f"        {line}\n{anchor}")
     problems = check_holder(bad)
     assert any(reason in problem for problem in problems), problems
+
+
+@pytest.mark.parametrize("module", ["bambuddy/connection.py", "bambuddy/factory.py", "web/app.py"])
+def test_a_write_added_to_a_helper_of_the_connection_is_caught(module):
+    """v0.3.9 p75: the helper files that import httpx are looked at as the real files are."""
+    assert module in _holders()
+    real = (SRC / module).read_text(encoding="utf-8")
+    assert check_holder(real) == []
+    bad = real + "\n\nasync def sneaky(client):\n    return await client.post('/queue/1/start')\n"
+    assert any("call of post" in problem for problem in check_holder(bad))
