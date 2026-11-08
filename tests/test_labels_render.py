@@ -199,6 +199,24 @@ def test_the_rows_never_run_over_the_margin_however_long_the_values_are():
             assert len(label.lines) * render._pitch(label.font_size) <= TEXT_HEIGHT, (chosen, values)
 
 
+def test_the_ink_stays_inside_the_margin_whatever_the_values_are():
+    long = dict(name="N " * 80, sku="S" * 80, label_text="L " * 80, print_target="P " * 80)
+    for values in ({}, long):
+        for chosen in (fields.FIELDS, fields.FIELDS[:8], fields.FIELDS[1:], fields.FIELDS[2:7]):
+            first, last = ink_rows(make(chosen, **values))
+            assert first >= render._PAD_Y and last < DK_11209.dots_high - render._PAD_Y, (chosen, values)
+
+
+def test_a_line_break_inside_a_value_is_a_blank_not_a_new_row():
+    """A value typed with line breaks (a hand-made request: the form fields are one line) would be drawn
+    by the font as several rows, over the rows below it and over the margin."""
+    label = make(fields.FIELDS, label_text="Row1\nRow2\nRow3", name="A\nB\nC")
+    assert [row.text for row in label.lines][0] == "A B C"
+    assert "Row1 Row2 Row3" in [row.text for row in label.lines]
+    first, last = ink_rows(label)
+    assert first >= render._PAD_Y and last < DK_11209.dots_high - render._PAD_Y
+
+
 def test_the_details_left_off_are_the_last_ones_whole_not_half_a_detail():
     label = make(fields.FIELDS, name="N" * 120)  # the long name is cut to one row, still nine rows of 29
     assert label.dropped == ("date",) and label.truncated == [0]

@@ -65,7 +65,7 @@ def lines(data: LabelData, chosen: Iterable[str], caption: Callable[[str], str])
         value = getattr(data, key)
         if value is None or (isinstance(value, str) and not value.strip()):
             continue
-        text = str(value).strip()
+        text = " ".join(str(value).split())  # a line break or tab in a value is a blank: the font would draw rows of its own
         if key in _CAPTIONED:
             text = f"{caption(key)}: {text}"
         result.append(Line(text, bold=key == "name", fixed=key in _CAPTIONED, key=key))
