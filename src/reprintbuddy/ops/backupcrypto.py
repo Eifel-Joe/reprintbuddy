@@ -123,7 +123,7 @@ class Sealer:
 
 
 class Opener:
-    """`open_sealed` in blocks: the counterpart of `Sealer`, without the whole data in memory (v0.3.10 p125).
+    """The counterpart of `Sealer`: `seal` read back in blocks, without the whole data in memory (v0.3.10 p125).
 
     `update(block)` takes the next bytes of the sealed payload (ciphertext, then the 16-byte tag) and returns
     the plaintext that is certain to be ciphertext; the last 16 bytes seen so far are held back, because the
@@ -162,12 +162,3 @@ class Opener:
             self._decryptor.finalize_with_tag(self._held)
         except InvalidTag as error:
             raise DecryptError("the data does not open with this key") from error
-
-
-def open_sealed(key: bytes, nonce: bytes, sealed: bytes, aad: bytes) -> bytes:
-    if len(nonce) != NONCE_BYTES or len(sealed) < TAG_BYTES:
-        raise DecryptError("not a sealed payload")
-    try:
-        return AESGCM(key).decrypt(nonce, sealed, aad)
-    except InvalidTag as error:
-        raise DecryptError("the data does not open with this key") from error

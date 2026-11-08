@@ -5,7 +5,8 @@ checks the declared length first (`upload_length_ok`), so the person sees a page
 HTTPS certificate and key) had no such check: its CSRF check ran as a dependency before the route and read
 the form, so a certificate over 1 MiB got the middleware's text/plain 413.
 
-Covered here: the three routes that take a file - HTTPS certificate and key, backup restore, print file.
+Covered here: the HTTPS certificate and key and the backup restore; the print file route is covered in
+test_article_upload.py (a declared length over its limit).
 What no page can fix: a browser that is still sending a large body may stop at the early answer and show
 its own error; the server answers without reading and closes the connection.
 """

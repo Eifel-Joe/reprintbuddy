@@ -399,8 +399,7 @@ class _FullDisk:
 
 @pytest.mark.parametrize("password", [None, "sicher-genug-1"])
 def test_a_full_disk_while_extracting_is_an_oserror_not_a_damaged_backup(live, work, monkeypatch, password):
-    """A write error is the machine's, not the file's: the page must not tell the person the backup is broken
-    (and must not throw their upload away)."""
+    """A write error is the machine's, not the file's: the page must not tell the person the backup is broken."""
     path = fb.create_backup(live, work_dir=work, password=password, now=NOW).path
     manifest = fb.read_manifest(path)
     real = fb.private_file

@@ -1,6 +1,8 @@
 """Password encryption of the full backup: Argon2id for the key, AES-256-GCM for the data."""
 
 import pytest
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from reprintbuddy.ops import backupcrypto as bc
 
@@ -9,6 +11,17 @@ FAST = bc.KdfParams(time_cost=1, memory_cost=8 * 1024, parallelism=1)
 SALT = bytes(range(16))
 NONCE = bytes(range(12))
 AAD = b'{"format": "test"}'
+
+
+def open_sealed(key, nonce, sealed, aad):
+    """The reference for `bc.Opener`: everything at once with the library's AEAD, as `seal` makes it.
+    (The service itself only reads in blocks, `extract_database`; the whole-data function was removed.)"""
+    if len(nonce) != bc.NONCE_BYTES or len(sealed) < bc.TAG_BYTES:
+        raise bc.DecryptError("not a sealed payload")
+    try:
+        return AESGCM(key).decrypt(nonce, sealed, aad)
+    except InvalidTag as error:
+        raise bc.DecryptError("the data does not open with this key") from error
 
 
 def test_defaults_follow_rfc_9106_low_memory_profile():
@@ -42,7 +55,7 @@ def test_seal_and_open_roundtrip():
     sealed = bc.seal(key, NONCE, b"database bytes", AAD)
     assert b"database bytes" not in sealed
     assert len(sealed) == len(b"database bytes") + 16  # the GCM tag
-    assert bc.open_sealed(key, NONCE, sealed, AAD) == b"database bytes"
+    assert open_sealed(key, NONCE, sealed, AAD) == b"database bytes"
 
 
 @pytest.mark.parametrize(
@@ -61,7 +74,7 @@ def test_any_change_is_detected(change):
     key, _ = bc.derive_key("geheim-123", SALT, FAST)
     sealed = bc.seal(key, NONCE, b"database bytes", AAD)
     with pytest.raises(bc.DecryptError):
-        bc.open_sealed(*change(key, NONCE, sealed, AAD))
+        open_sealed(*change(key, NONCE, sealed, AAD))
 
 
 @pytest.mark.parametrize(
@@ -139,7 +152,7 @@ def test_opener_gives_what_open_sealed_gives_whatever_the_block_size(size):
     key, _ = bc.derive_key("geheim-123", SALT, FAST)
     data = bytes(range(256)) * 20
     sealed = bc.seal(key, NONCE, data, AAD)
-    assert _opened(key, NONCE, sealed, AAD, size) == data == bc.open_sealed(key, NONCE, sealed, AAD)
+    assert _opened(key, NONCE, sealed, AAD, size) == data == open_sealed(key, NONCE, sealed, AAD)
 
 
 def test_opener_opens_an_empty_payload():
