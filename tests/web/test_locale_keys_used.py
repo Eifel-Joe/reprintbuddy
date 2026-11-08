@@ -74,7 +74,10 @@ JOURNAL_KINDS_WRITTEN_ELSEWHERE = {
 
 # key -> why nothing reads it. A finding to settle by hand (use the text or remove it); the entry goes
 # with the key.
-KNOWN_DEAD: dict[str, str] = {}
+KNOWN_DEAD: dict[str, str] = {
+    "ops.update.state.idle": "nothing shows it (ops_view builds no key for 'idle'); kept because test_ops_update demands a text for every state",
+    "stock.limit.part": "nothing raises it (purchased parts are clamped to 0, PartShortage); kept because test_domain_error_keys demands a text for every field",
+}
 
 _sources_cache: list[str] = []
 
