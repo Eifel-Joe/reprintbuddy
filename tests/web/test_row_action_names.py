@@ -86,4 +86,26 @@ def test_reorder_received_button(bb_client):
         "item_id": str(pid), "packs": "1",
     })
     labels = [label for _, label in actions_of(bb_client.get("/reorder").text)]
-    assert labels == ["arrived: Insert M4"], labels
+    assert labels == ["Arrived: Insert M4"], labels
+
+
+def test_queue_rows_name_their_article(bb_client):
+    from factories import make_entry
+
+    with sm_of(bb_client).begin() as s:
+        first = make_article(s, name="Template A")
+        second = make_article(s, name="Template B")
+        make_entry(s, first.id)
+        make_entry(s, second.id)
+    html = bb_client.get("/queue").text
+    assert 'aria-label="Drag to move: Template A"' in html and 'aria-label="Drag to move: Template B"' in html
+    assert 'aria-label="More actions: Template A"' in html and 'aria-label="More actions: Template B"' in html
+
+
+def test_a_name_with_quotes_and_markup_stays_inside_the_attribute(ready_client):
+    with sm_of(ready_client).begin() as s:
+        make_article(s, name='A "x" <b>y</b> & z')
+    html = ready_client.get("/articles").text
+    assert "<b>y</b>" not in html
+    assert 'aria-label="Archive: A &#34;x&#34; &lt;b&gt;y&lt;/b&gt; &amp; z"' in html
+

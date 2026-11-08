@@ -71,3 +71,41 @@ def test_no_decimal_format_spec_in_routes():
         if pattern.search(line)
     ]
     assert found == []
+
+
+# ---- every place that shows a decimal: filament list, reorder tile, new-article form ---------------
+
+def _use_with_history(client, fake):
+    """A black PLA sort that used about 71.4 g a day (700 g down to 200 g in 7 days)."""
+    from datetime import timedelta
+
+    from factories import assign_sort, make_filament_settings, make_snapshot, make_sort
+    from reprintbuddy.models import utcnow
+
+    fake.add_spool("PLA", color_hex="#000000", color_name="Black", remaining_g=100.0)
+    today = utcnow().date()
+    with sm_of(client).begin() as s:
+        sort = make_sort(s)
+        make_filament_settings(s, sort.id, pack_grams=1000, min_order_packs=1, safety_value=2000, safety_unit="grams")
+        assign_sort(s, sort)
+        make_snapshot(s, today - timedelta(days=10), 1, sort.id, 700.0)
+        make_snapshot(s, today - timedelta(days=3), 1, sort.id, 200.0)
+
+
+@pytest.mark.parametrize(("lang", "number"), [("en", "71.4"), ("de", "71,4")])
+def test_use_per_day_on_the_filament_list_and_the_reorder_tile(bb_client, fake_bambuddy, lang, number):
+    _use_with_history(bb_client, fake_bambuddy)
+    _language(bb_client, lang)
+    assert f"{number} g" in bb_client.get("/filament").text
+    reorder = bb_client.get("/reorder").text
+    assert number in reorder
+    other = "71,4" if lang == "en" else "71.4"
+    assert other not in reorder and other not in bb_client.get("/filament").text
+    assert not re.search(r"\d\.\d{4,}", reorder)  # never a raw float such as 71.42857142857143
+
+
+@pytest.mark.parametrize(("lang", "number"), [("en", "42.5"), ("de", "42,5")])
+def test_new_article_form_shows_the_grams_of_the_file(bb_client, lang, number):
+    _language(bb_client, lang)
+    page = bb_client.get("/articles/new/file/1/plate/1").text
+    assert f'<td class="num">{number}</td>' in page

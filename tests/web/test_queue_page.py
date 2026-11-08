@@ -199,7 +199,7 @@ def test_entry_rows_have_handle_and_menu(bb_client):
     assert '<tbody class="queue-list"' in entries
     assert re.search(rf'<tr class="queue-row[^"]*" data-entry-id="{e}" data-move-url="/queue/{e}/move"', entries)
     handle = re.search(r'<button type="button" class="drag-handle[^"]*"[^>]*>', entries).group(0)
-    assert f'aria-label="{en("queue.drag")}"' in handle
+    assert f'aria-label="{en("queue.drag")}: Template A"' in handle  # p68: the row's article is named
     assert "#grip-vertical" in entries
     assert '<details class="row-menu">' in entries
     menu = entries[entries.index('<details class="row-menu">') :]

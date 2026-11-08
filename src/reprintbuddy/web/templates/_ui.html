@@ -106,14 +106,14 @@
    the accessible name (aria-label) adds the object when `subject` is given ("Archive: Template A"),
    because a table shows the same symbol in every row (p68). #}
 {% macro icon_button(icon_name, label, href, subject="") -%}
-<a class="icon-btn" href="{{ href }}" title="{{ label }}" aria-label="{{ label }}{% if subject %}: {{ subject }}{% endif %}">{{ icon(icon_name) }}</a>
+<a class="icon-btn" href="{{ href }}" title="{{ label }}" aria-label="{% if subject %}{{ label[:1]|upper }}{{ label[1:] }}: {{ subject }}{% else %}{{ label }}{% endif %}">{{ icon(icon_name) }}</a>
 {%- endmacro %}
 
 {# Symbol button that posts (archive, restore, cancel): a small form with both tokens.
    `fields` is optional: a list of (name, value) pairs that become extra hidden inputs
    (escaped), e.g. fields=[("next", "/orders")]. `subject` names the object in the accessible name, as in icon_button. #}
 {% macro icon_post(icon_name, label, action, fields=[], subject="") -%}
-<form class="icon-form" method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="form_token" value="{{ form_token() }}">{% for field_name, field_value in fields %}<input type="hidden" name="{{ field_name }}" value="{{ field_value }}">{% endfor %}<button type="submit" class="icon-btn" title="{{ label }}" aria-label="{{ label }}{% if subject %}: {{ subject }}{% endif %}">{{ icon(icon_name) }}</button></form>
+<form class="icon-form" method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="form_token" value="{{ form_token() }}">{% for field_name, field_value in fields %}<input type="hidden" name="{{ field_name }}" value="{{ field_value }}">{% endfor %}<button type="submit" class="icon-btn" title="{{ label }}" aria-label="{% if subject %}{{ label[:1]|upper }}{{ label[1:] }}: {{ subject }}{% else %}{{ label }}{% endif %}">{{ icon(icon_name) }}</button></form>
 {%- endmacro %}
 
 {# On/off switch that posts (the automation of an article in the list): a small form with both tokens

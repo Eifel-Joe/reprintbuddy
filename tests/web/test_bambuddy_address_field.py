@@ -37,7 +37,7 @@ def test_setup_page_has_the_same_text_area(client):
     "http://bambuddy.test\n:8000", "http://bambuddy.test:80\r\n00", "http://bambuddy .test:8000", "http://bambuddy.test:8000\t/x",
 ])
 def test_address_with_break_or_blank_is_invalid(address):
-    assert validate_address(address) == (None, "bambuddy.invalid_url")
+    assert validate_address(address) == (None, "bambuddy.url_blank")
 
 
 def test_a_long_address_and_outer_whitespace_are_fine():
@@ -53,7 +53,7 @@ def test_post_with_a_line_break_is_refused_and_nothing_changes(ready_client):
         data={"csrf_token": token, "bambuddy_address": "http://other.test\n:8000", "bambuddy_token": "bb_key12345"},
     )
     assert response.status_code == 200
-    assert "must start with http:// or https://" in response.text
+    assert "must not contain blanks or line breaks" in response.text  # says why, not the general address rule
     with sm_of(ready_client).begin() as s:
         assert st.get_setting(s, "bambuddy_url") == before
 
