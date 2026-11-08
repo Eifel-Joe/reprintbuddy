@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import hashlib
+import io
+import zipfile
 from collections.abc import Callable
+from typing import BinaryIO
 from datetime import UTC, datetime
 
 from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable
@@ -18,12 +22,13 @@ from reprintbuddy.bambuddy.types import (
     QueueItem,
     Spool,
     SpoolMode,
+    UploadedFile,
 )
 
-# The one method with an effect (Spec 3.1): `fail_next(..., after_effect=True)` lets the
+# The methods with an effect (Spec 3.1, 5.1a): `fail_next(..., after_effect=True)` lets the
 # effect happen first ("the answer got lost"). Every other method has no effect, so it fails
 # at once.
-_EFFECT_METHODS = frozenset({"enqueue"})
+_EFFECT_METHODS = frozenset({"enqueue", "upload_file"})
 _FAILABLE_METHODS = _EFFECT_METHODS | {
     "list_folders", "list_files", "get_file", "list_plates", "plate_thumbnail", "file_thumbnail",
     "filament_requirements", "list_printers", "spool_mode", "list_spools",
@@ -60,12 +65,22 @@ class FakeBambuddy:
         self._spools: dict[int, Spool] = {}
         self._spool_lists: dict[int, SpoolMode] = {}  # which of Bambuddy's two lists holds it
         self._next_spool = 1
+        # Uploading (Spec 5.1a): the key may ("Manage Library" + `library:upload`), what came in,
+        # each uploaded file's content hash (Bambuddy's `duplicate_of`), read-only mounts.
+        self.can_upload = True
+        self.uploaded: list[tuple[int | None, str, bytes]] = []
+        self._hashes: dict[int, str] = {}
+        self._readonly: set[int] = set()
 
     # ---- fill ------------------------------------------------------------
-    def add_folder(self, name: str, parent_id: int | None = None) -> LibraryFolder:
-        folder = LibraryFolder(self._next_folder, name, parent_id)
+    def add_folder(
+        self, name: str, parent_id: int | None = None, *, external: bool = False, readonly: bool = False
+    ) -> LibraryFolder:
+        folder = LibraryFolder(self._next_folder, name, parent_id, is_external=external)
         self._next_folder += 1
         self._folders.append(folder)
+        if readonly:
+            self._readonly.add(folder.id)
         return folder
 
     def add_file(
@@ -353,6 +368,39 @@ class FakeBambuddy:
         if failure:
             raise failure[0]
         return item
+
+    async def upload_file(self, folder_id: int | None, filename: str, content: BinaryIO) -> UploadedFile:
+        """Like Bambuddy (`library.py:2509-2677`): any name, a same name again, kind by content."""
+        failure = await self._write_call("upload_file")
+        if not self.can_upload:
+            raise BambuddyRejected("API key does not have 'can_manage_library' permission", status=403)
+        if folder_id is not None:
+            folder = next((f for f in self._folders if f.id == folder_id), None)
+            if folder is None:
+                raise BambuddyRejected("Folder not found", status=404)
+            if folder.id in self._readonly:
+                raise BambuddyRejected("Cannot upload to a read-only external folder", status=403)
+        content.seek(0)
+        data = content.read()
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                sliced = any(name.endswith(".gcode") for name in archive.namelist())
+        except zipfile.BadZipFile:
+            sliced = False
+        digest = hashlib.sha256(data).hexdigest()
+        duplicate_of = next((fid for fid, h in self._hashes.items() if h == digest and fid in self._files), None)
+        file = LibraryFile(
+            self._next_file, filename, folder_id, digest, "A1" if sliced else None, sliced, sliced,
+            created_by=self.username, size=len(data), created_at=self.now(),
+        )
+        self._next_file += 1
+        self._files[file.id] = file
+        self._plates[file.id] = 1 if sliced else 0
+        self._hashes[file.id] = digest
+        self.uploaded.append((folder_id, filename, data))
+        if failure:
+            raise failure[0]
+        return UploadedFile(id=file.id, filename=filename, sliced=sliced, duplicate_of=duplicate_of)
 
     async def _queue_read(self, name: str, read):
         await asyncio.sleep(self.delay)
