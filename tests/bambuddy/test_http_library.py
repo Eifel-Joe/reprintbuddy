@@ -1,5 +1,7 @@
 """Reading the library through `HttpBambuddyClient` (B2 Task 3, Decisions 1, 6, 7, 8)."""
 
+from datetime import datetime
+
 import pytest
 from fixtures import API, client, load
 
@@ -125,6 +127,36 @@ def test_file_optional_fields_may_be_missing():
 def test_external_file_without_hash_has_no_fingerprint():
     file = parse_file({**load("file.json"), "file_hash": None, "is_external": True})
     assert file.fingerprint is None
+
+
+# ---- for the upload (v0.3.9 p20): external folders, creator, size and time ------------
+
+
+def test_folders_carry_is_external():
+    tree = [_folder(1, "Ours", None, [{**_folder(2, "Mounted", 1), "is_external": True}])]
+    folders = parse_folders(tree)
+    assert [(f.id, f.is_external) for f in folders] == [(1, False), (2, True)]
+
+
+def test_folder_without_is_external_is_internal():
+    assert parse_folders([{"id": 1, "name": "Old", "parent_id": None}])[0].is_external is False
+
+
+def test_file_carries_creator_size_and_time():
+    file = parse_files(load("files_folder.json"))[0]
+    assert file.created_by == "admin"
+    assert file.size == 1843921
+    assert file.created_at == datetime(2026, 10, 20, 12, 0, 5)
+
+
+def test_file_creator_size_and_time_may_be_missing():
+    file = parse_file({"id": 3, "filename": "a.gcode.3mf"})
+    assert (file.created_by, file.size, file.created_at) == (None, None, None)
+
+
+def test_file_time_with_zone_becomes_naive_utc():
+    file = parse_file({"id": 3, "filename": "a.gcode.3mf", "created_at": "2026-10-20T14:00:05+02:00"})
+    assert file.created_at == datetime(2026, 10, 20, 12, 0, 5)
 
 
 # ---- plates -----------------------------------------------------------------------
@@ -255,6 +287,11 @@ def _file(**changes) -> dict:
         (parse_files, {"id": 5}),
         (parse_file, [_file()]),
         (parse_file, _file(file_hash=7)),
+        (parse_folders, [{"id": 1, "name": "x", "is_external": "yes"}]),
+        (parse_files, [_file(created_by_username=7)]),
+        (parse_files, [_file(file_size="12")]),
+        (parse_files, [_file(file_size=True)]),
+        (parse_files, [_file(created_at="yesterday")]),
         (parse_plates, {"plates": "none"}),  # not a list
         (parse_plates, {"plates": {"index": 1}}),
         (parse_plates, {}),

@@ -168,6 +168,7 @@ def parse_folders(data: object) -> list[LibraryFolder]:
                     id=folder_id,
                     name=_req(d, "name", str),
                     parent_id=enclosing if parent is None else parent,
+                    is_external=bool(_opt(d, "is_external", bool)),
                 )
             )
             children = d.get("children")
@@ -209,6 +210,9 @@ def parse_file(data: object) -> LibraryFile:
         printer_model=_opt(d, "sliced_for_model", str) or None,
         has_thumbnail=_has_text(d.get("thumbnail_path")),
         sliced=_is_sliced(_opt(d, "file_type", str), _req(d, "filename", str)),
+        created_by=_opt(d, "created_by_username", str) or None,
+        size=_opt(d, "file_size", int),
+        created_at=_utc(d.get("created_at")),
     )
 
 

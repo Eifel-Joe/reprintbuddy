@@ -12,6 +12,9 @@ class LibraryFolder:
     id: int
     name: str
     parent_id: int | None
+    # A folder Bambuddy reads from a mounted path (`is_external`): its files have no fingerprint
+    # after a rescan, so Reprintbuddy neither takes nor uploads files there (Spec 5.1a, README).
+    is_external: bool = False
 
 
 @dataclass(frozen=True)
@@ -24,6 +27,11 @@ class LibraryFile:
     # Both flags come last and have defaults, so every earlier construction stays valid.
     has_thumbnail: bool = False  # the file list carries a `thumbnail_path`
     sliced: bool = True  # a sliced file (`.gcode.3mf`), the only kind that can become an article
+    # Who made the file and when, and its size: to find an upload again after an unclear
+    # answer (Spec 5.1a). From the list and the single file alike; `None` when missing.
+    created_by: str | None = None
+    size: int | None = None
+    created_at: datetime | None = None
 
 
 @dataclass(frozen=True)
