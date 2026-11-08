@@ -42,6 +42,7 @@ from reprintbuddy.ops.server import address_changed, base_url, effective_from_se
 from reprintbuddy.ops.runner import in_thread
 from reprintbuddy.ops.service import request_restart
 from reprintbuddy.ops.status import read_status
+from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render
 from reprintbuddy.web.routes.auth import password_confirmed
@@ -53,8 +54,6 @@ router = APIRouter()
 MAX_PASSWORD_LENGTH = 1024
 SESSION_KEY = "restore_upload"
 UPLOAD_MAX_AGE = fb.STALE_AFTER
-# Room for the CSRF field and the multipart boundaries around the file itself.
-MULTIPART_OVERHEAD = 64 * 1024
 _TOKEN = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
 
@@ -190,8 +189,9 @@ def _protected(request: Request) -> list[Path]:
 async def restore_upload(request: Request) -> Response:
     # The size is checked before anything reads the body: the CSRF check would parse the
     # whole form, and Starlette keeps file parts of any size in a temporary file.
-    length = request.headers.get("content-length", "")
-    if not length.isdigit() or int(length) > fb.MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD:
+    # `upload_length_ok`: no `Transfer-Encoding` (h11 would frame by it, not by the length) and a
+    # plain length within the limit; the middleware counts what is read (v0.3.9 T0).
+    if not upload_length_ok(request, fb.MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD):
         return _back("restore_too_large", "ops-restore")
     # Parsed once, with limits; `verify_csrf` reads the same form (Starlette keeps it).
     form = await request.form(max_files=1, max_fields=4)

@@ -34,6 +34,7 @@ from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.running import update_just_started, update_running
 from reprintbuddy.ops.versions import VersionInfo, check_versions, is_git_install
 from reprintbuddy.web import deps
+from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, BodyLimitMiddleware
 from reprintbuddy.web.flash import pop_flashes
 from reprintbuddy.web.formatting import decimal, fill_percent, local_date, local_dt, unit
 from reprintbuddy.web.formtoken import issue_form_token
@@ -374,6 +375,12 @@ def create_app(
         same_site="lax",
         https_only=https,
     )
+    # Every body is bounded before anything reads it (v0.3.9 T0, `web/bodylimit.py`); the uploads
+    # have limits of their own and refuse a longer declaration with a page of their own.
+    app.state.body_limits = {
+        "/settings/restore/upload": fullbackup.MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD,
+    }
+    app.add_middleware(BodyLimitMiddleware, limits=app.state.body_limits)
     app.middleware("http")(deps.security_headers)  # outermost: covers every response
 
     app.add_exception_handler(StarletteHTTPException, deps.http_error_handler)
