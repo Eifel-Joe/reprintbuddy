@@ -23,6 +23,7 @@ from reprintbuddy.bambuddy.types import (
     QueueItem,
     Spool,
     SpoolMode,
+    UploadedFile,
 )
 
 _Types = type | tuple[type, ...]
@@ -168,6 +169,7 @@ def parse_folders(data: object) -> list[LibraryFolder]:
                     id=folder_id,
                     name=_req(d, "name", str),
                     parent_id=enclosing if parent is None else parent,
+                    is_external=bool(_opt(d, "is_external", bool)),
                 )
             )
             children = d.get("children")
@@ -209,12 +211,32 @@ def parse_file(data: object) -> LibraryFile:
         printer_model=_opt(d, "sliced_for_model", str) or None,
         has_thumbnail=_has_text(d.get("thumbnail_path")),
         sliced=_is_sliced(_opt(d, "file_type", str), _req(d, "filename", str)),
+        created_by=_opt(d, "created_by_username", str) or None,
+        size=_opt(d, "file_size", int),
+        created_at=_utc(d.get("created_at")),
     )
 
 
 def parse_files(data: object) -> list[LibraryFile]:
     # List entries never carry a fingerprint (Decision 7), whatever the entry holds.
     return [replace(parse_file(entry), fingerprint=None) for entry in _list(data, "file list")]
+
+
+def parse_upload(data: object) -> UploadedFile:
+    """The answer to an upload (`FileUploadResponse`, Bambuddy `schemas/library.py:328-337`).
+
+    `sliced` is Bambuddy's verdict from the zip's content, made just now (`library.py:250-283`,
+    `classify_file_type` with the file): only `gcode.3mf` counts. The name rule of
+    `_is_sliced` is for entries older than Bambuddy #1600 and does not apply to a new file.
+    The answer names no folder and no plates.
+    """
+    d = _object(data, "upload answer")
+    return UploadedFile(
+        id=_req(d, "id", int),
+        filename=_req(d, "filename", str),
+        sliced=_req(d, "file_type", str) == "gcode.3mf",
+        duplicate_of=_opt(d, "duplicate_of", int),
+    )
 
 
 def parse_plates(data: object) -> list[Plate]:

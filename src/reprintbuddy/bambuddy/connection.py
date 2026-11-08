@@ -36,6 +36,14 @@ REQUIRED_PERMISSIONS: tuple[str, ...] = (
     "filaments:read",  # to tell which spool management Bambuddy runs (Spec 9.1)
 )
 
+# Rights that are not required: without them only one feature is missing, the check still
+# saves and no notice appears after an update (Spec 5.1a, 11.3 a–c). Uploading print files
+# needs `library:upload` in the group and "Manage Library" at the key (Bambuddy
+# `core/auth.py`: LIBRARY_UPLOAD -> can_manage_library); `/auth/me` lists the right only when
+# both allow it.
+UPLOAD_PERMISSION = "library:upload"
+OPTIONAL_PERMISSIONS: tuple[str, ...] = (UPLOAD_PERMISSION,)
+
 # Assumption until the first live test shows the names Bambuddy really reports (Spec 14):
 # for the two "read all" rights, the older name without the suffix counts as well.
 # `…:read_own` never does.
@@ -56,6 +64,7 @@ EDITOR_LABELS: dict[str, str] = {
     "printers:read": "Read Printers",
     "inventory:read": "Read Inventory",
     "filaments:read": "Read Filaments",
+    UPLOAD_PERMISSION: "Upload Library",  # optional (Spec 5.1a)
 }
 
 # Needed only while the key is created (the user must open the API keys page and create a key).
@@ -77,16 +86,19 @@ KEY_RIGHT_FOR: dict[str, str] = {
     "filaments:read": "status",
     "queue:create": "queue",
     "queue:start_unreviewed": "queue",
+    UPLOAD_PERMISSION: "library",  # "Manage Library"
 }
 
 # The settings page 3 of the setup asks for: (id, Bambuddy's English label, on or off).
+# "Manage Library" is on since v0.3.9 (Spec 11.3 b): at the key it works only as far as the
+# group allows, and the group gets only `library:upload` (no update, delete or slicing).
 KEY_SETTINGS_ON: tuple[tuple[str, str], ...] = (
     ("status", "Read Status"),
     ("queue", "Manage Queue"),
+    ("library", "Manage Library"),
 )
 KEY_SETTINGS_OFF: tuple[tuple[str, str], ...] = (
     ("control", "Control Printer"),
-    ("library", "Manage Library"),
     ("inventory", "Manage Inventory"),
     ("maintenance", "Manage Maintenance"),
     ("archives", "Manage Archives"),
@@ -107,6 +119,11 @@ class ConnectionCheck:
     owner_is_admin: bool = False
     granted: frozenset[str] = field(default_factory=frozenset)
     missing: tuple[str, ...] = ()
+
+    @property
+    def can_upload(self) -> bool:
+        """The key may upload print files (optional right, Spec 5.1a)."""
+        return UPLOAD_PERMISSION in self.granted
 
 
 def _missing(granted: frozenset[str]) -> tuple[str, ...]:

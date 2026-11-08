@@ -884,3 +884,37 @@ def test_a_restore_is_refused_while_a_click_on_update_has_its_sudo_on_the_way(op
         app.state.update_starting = False
     assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_busy#ops-restore"
     assert app.state.restore.phase == "idle" and backups(ops_env) == []
+
+
+def test_restore_refusal_before_reading_closes_the_connection(ops_env, monkeypatch):
+    """Sister path of the print-file upload (v0.3.9 review): no reading of a refused body."""
+    from reprintbuddy.web.routes import backup as backup_routes
+
+    monkeypatch.setattr(backup_routes.fb, "MAX_UPLOAD_BYTES", 10)
+    token = csrf_of(ops_env.client, "/settings")
+    response = ops_env.client.post(
+        "/settings/restore/upload",
+        data={"csrf_token": token},
+        files={"backup_file": ("b.zip", b"x" * (70 * 1024), "application/zip")},
+    )
+    assert response.status_code == 303 and response.headers.get("connection") == "close"
+
+
+def test_restore_closes_the_temporary_file_when_the_token_is_wrong(ops_env, monkeypatch):
+    from starlette.datastructures import UploadFile
+
+    closed = []
+    original = UploadFile.close
+
+    async def recording(self):
+        closed.append(self.filename)
+        await original(self)
+
+    monkeypatch.setattr(UploadFile, "close", recording)
+    response = ops_env.client.post(
+        "/settings/restore/upload",
+        data={"csrf_token": "forged"},
+        files={"backup_file": ("b.zip", b"PK", "application/zip")},
+    )
+    assert response.status_code == 403
+    assert "b.zip" in closed

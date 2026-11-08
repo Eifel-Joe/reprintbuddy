@@ -22,6 +22,7 @@ from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate,
 from reprintbuddy.domain import catalog, filament, pauses, workqueue
 from reprintbuddy.domain import color as color_mod
 from reprintbuddy.domain.catalog import MAX_LABEL_TEXT, ArticleInput, TargetOption
+from reprintbuddy.domain.printfile import is_external_folder
 from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.domain.stock import MAX_QTY
@@ -320,6 +321,11 @@ async def _browse(request: Request, folder: str | None, base: str, file_base: st
     crumbs.reverse()
     subfolders = sorted((f for f in folders if f.parent_id == folder_id), key=lambda f: f.name.casefold())
     layout = listing.layout_of(request, "files")
+    # Uploading into the open folder (Spec 5.1a): not when choosing another file for an article,
+    # not in a folder linked from outside Bambuddy (its files have no fingerprint after a rescan).
+    upload_href = None
+    if not relink and not is_external_folder(folders, folder_id) and (folder_id is None or crumbs):
+        upload_href = "/articles/new/upload" + ("" if folder_id is None else f"?folder={folder_id}")
     return render(
         request,
         "article_browse.html",
@@ -337,6 +343,7 @@ async def _browse(request: Request, folder: str | None, base: str, file_base: st
         file_base=file_base,
         layout=layout,
         layout_links=listing.layout_links(request, layout),
+        upload_href=upload_href,
     )
 
 

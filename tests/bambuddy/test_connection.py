@@ -205,3 +205,49 @@ def test_key_creation_labels_are_a_fixed_table():
         "api_keys:create": "Create Api Keys",
         "settings:read": "Read Settings",
     }
+
+
+# ---- the right to upload print files: optional (Spec 5.1a, 11.3 a–c, v0.3.9 p20) ------------
+
+
+def test_upload_right_is_optional_with_bambuddys_label():
+    from reprintbuddy.bambuddy.connection import (
+        EDITOR_LABELS,
+        KEY_RIGHT_FOR,
+        OPTIONAL_PERMISSIONS,
+        UPLOAD_PERMISSION,
+    )
+
+    assert UPLOAD_PERMISSION == "library:upload"
+    assert OPTIONAL_PERMISSIONS == ("library:upload",)
+    assert UPLOAD_PERMISSION not in REQUIRED_PERMISSIONS
+    assert EDITOR_LABELS[UPLOAD_PERMISSION] == "Upload Library"  # groups.py `_permission_label`
+    assert KEY_RIGHT_FOR[UPLOAD_PERMISSION] == "library"  # auth.py: LIBRARY_UPLOAD -> can_manage_library
+
+
+def test_manage_library_is_now_switched_on_at_the_key():
+    from reprintbuddy.bambuddy.connection import KEY_SETTINGS_OFF, KEY_SETTINGS_ON
+
+    assert KEY_SETTINGS_ON == (("status", "Read Status"), ("queue", "Manage Queue"), ("library", "Manage Library"))
+    assert "library" not in {key for key, _ in KEY_SETTINGS_OFF}
+
+
+async def test_check_is_ok_without_the_upload_right_and_says_so(respx_mock):
+    respx_mock.get(ME).respond(200, json=auth_me())
+    result = await run()
+    assert (result.ok, result.missing) == (True, ())
+    assert result.can_upload is False
+
+
+async def test_check_with_the_upload_right(respx_mock):
+    respx_mock.get(ME).respond(200, json=auth_me(permissions=[*REQUIRED, "library:upload"]))
+    result = await run()
+    assert result.ok is True
+    assert result.can_upload is True
+
+
+async def test_upload_right_alone_does_not_make_a_missing_required_right_ok(respx_mock):
+    without = [p for p in REQUIRED if p != "queue:create"]
+    respx_mock.get(ME).respond(200, json=auth_me(permissions=[*without, "library:upload"]))
+    result = await run()
+    assert (result.ok, result.missing, result.can_upload) == (False, ("queue:create",), True)

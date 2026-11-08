@@ -24,6 +24,7 @@ def test_protocol_matches_master_plan():
         "plate_thumbnail", "filament_requirements", "enqueue",
         "get_queue_item", "list_queue", "list_all_items", "list_spools",
         "list_printers", "spool_mode", "file_thumbnail",
+        "upload_file",  # v0.3.9 p20, Spec 5.1a
     }
     for name in names:
         assert inspect.iscoroutinefunction(getattr(BambuddyClient, name)), name
@@ -34,6 +35,7 @@ def test_protocol_matches_master_plan():
     assert params("list_files") == ["folder_id"]
     assert params("plate_thumbnail") == ["file_id", "plate_index"]
     assert params("filament_requirements") == ["file_id", "plate_id"]
+    assert params("upload_file") == ["folder_id", "filename", "content"]
 
 
 async def test_folders_and_files():

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
 from reprintbuddy.web.csrf import verify_csrf
+from reprintbuddy.web.flash import flash as flash_message  # a list: "Saved" does not replace it
 from reprintbuddy.web.bambuddy_check import (
     permission_context,
     result_context,
@@ -163,6 +164,8 @@ async def bambuddy_connect_submit(request: Request, db: Session = Depends(get_db
     request.app.state.live_listener.wake(reconnect=True)  # p97: the channel tries with the new key at once
     take_verdict(request, check)  # this start has checked the new key
     page = take_remembered_page(request)  # the page opened before the setup (a scanned QR code)
+    # The optional right (Spec 11.3 c, 5.1a): saved either way, the person learns whether uploading works.
+    flash_message(request, "bambuddy.upload_right_ok" if check.can_upload else "bambuddy.upload_right_missing")
     if check.owner_is_admin:
         # Saved, but the person is told; the warning is read on the settings, the page is dropped.
         flash(request, "bambuddy.admin_warning", warning=True)

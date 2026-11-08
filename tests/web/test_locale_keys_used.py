@@ -58,6 +58,7 @@ FAMILIES = {
     "settings.invalid_": 'f"settings.invalid_{name}"',  # one error per automation field
     "status.": 'f"status.{kind}.{state}"',  # badges per kind and state
     "stock.limit.": 'f"stock.limit.{field}"',
+    "upload.error.": 'f"upload.error.{error.code}"',  # why a print file is not sent (Spec 5.1a)
     "warning.": 'f"warning.{key}"',  # warnings of the engine
 }
 

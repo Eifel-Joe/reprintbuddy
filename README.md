@@ -47,7 +47,8 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 - **Print files stored directly in Bambuddy's file manager**, uploaded and sliced
   (`.gcode.3mf`). Linked external folders are not enough: Bambuddy keeps no checksum for
   their files and does not re-read plates and filament when it rescans them, so a changed
-  version would go unnoticed.
+  version would go unnoticed. New print files can also be uploaded from Reprintbuddy
+  (optional, see *Uploading print files*), though not into an external folder.
 - A **dedicated Bambuddy user** `reprintbuddy` in its **own Bambuddy group** with the rights
   listed under *First run*, and an **API key** of that user. The dedicated user makes
   Reprintbuddy's own jobs recognisable in Bambuddy. The setup guides you through it.
@@ -148,6 +149,12 @@ DNS names, are accepted only after setup.
    - Read Filaments (`filaments:read`): to tell whether Bambuddy keeps the spools itself or in
      Spoolman
 
+   Recommended, not required – only to upload print files from Reprintbuddy:
+
+   - Upload Library (`library:upload`)
+
+   Without it everything else works; only uploading is not possible.
+
    Only to create the key in the next step, the group also needs these three rights; Reprintbuddy
    does not check them, and they may be removed again afterwards: Read Api Keys
    (`api_keys:read`), Create Api Keys (`api_keys:create`) and Read Settings (`settings:read`;
@@ -158,10 +165,11 @@ DNS names, are accepted only after setup.
    to the group at any time; a new key is not needed for that.
 3. **API key:** sign out of Bambuddy and sign in as `reprintbuddy` (a key always belongs to
    the user who is signed in). Open *Settings → API keys → Create key* and set it exactly like this:
-   name "Reprintbuddy"; *Read Status* **on**; *Manage Queue* **on**; all others **off**
-   (*Control Printer*, *Manage Library*, *Manage Inventory*, *Manage Maintenance*,
-   *Manage Archives*, *Manage Projects*, *Allow Cloud Access*, *Update Electricity Price*,
-   *Send Notifications*). Copy the key at once (Bambuddy shows it only one time) and sign out again.
+   name "Reprintbuddy"; *Read Status* **on**; *Manage Queue* **on**; *Manage Library* **on**
+   (only for uploading print files; at the key it works only as far as the group allows, and
+   the group gets nothing but *Upload Library*); all others **off** (*Control Printer*,
+   *Manage Inventory*, *Manage Maintenance*, *Manage Archives*, *Manage Projects*,
+   *Allow Cloud Access*, *Update Electricity Price*, *Send Notifications*). Copy the key at once (Bambuddy shows it only one time) and sign out again.
    The rights of a key cannot be changed afterwards in Bambuddy (its pages only create and
    delete keys): if a right at the key is missing, for example *Read Status*, create a new
    key and enter it under *Settings → Bambuddy*.
@@ -174,6 +182,21 @@ DNS names, are accepted only after setup.
    needed. A missing right at the key itself needs a new key.
 
    The two fields are marked so that password managers do not fill in your own credentials.
+
+## Uploading print files
+
+Under *Articles → New article from print file*, the button *Upload print file* puts a sliced
+3MF file (`.gcode.3mf`, at most 200 MB) into the folder that is open, in Bambuddy's file
+manager; then you choose the plate and create the article as usual. Reprintbuddy checks the
+file before it sends anything, because it cannot delete a file in Bambuddy again: only a
+sliced 3MF, Bambuddy's rules for the name, and no file of the same name in that folder
+(nothing is overwritten or renamed). External folders get no button.
+
+Uploading needs *Upload Library* (`library:upload`) in the group `Reprintbuddy` and
+*Manage Library* at the API key. Both are optional. An installation set up before this
+version adds the right to the group and, because Bambuddy cannot change the rights of a key,
+creates a new key with *Read Status*, *Manage Queue* and *Manage Library*, enters it under
+*Settings → Bambuddy* and deletes the old one.
 
 ## Settings
 

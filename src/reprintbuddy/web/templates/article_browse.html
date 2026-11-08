@@ -14,8 +14,8 @@
 {%- endmacro %}
 {% call ui.page_head("circle-alert" if problem else "package", t('articles.browse_title'), t('articles.relink_subtitle' if relink else 'articles.new_subtitle')) %}{% endcall %}
 {#- Back to the article list: a secondary button like the other lists have in their toolbar. -#}
-{% macro to_articles() -%}
-<div class="toolbar-actions"><a class="btn secondary" href="/articles">{{ ui.icon('package') }}{{ t('articles.title') }}</a></div>
+{% macro to_articles(upload_href=None) -%}
+<div class="toolbar-actions"><a class="btn secondary" href="/articles">{{ ui.icon('package') }}{{ t('articles.title') }}</a>{% if upload_href %}<a class="btn secondary" href="{{ upload_href }}">{{ ui.icon('upload') }}{{ t('upload.button') }}</a>{% endif %}</div>
 {%- endmacro %}
 {% if problem %}
 <div class="section"><div class="card"><p class="alert" role="alert">{{ t(problem) }}</p></div></div>
@@ -27,7 +27,7 @@
     {% for folder in crumbs %} / <a href="{{ base }}?folder={{ folder.id }}">{{ folder.name }}</a>{% endfor %}
   </p>
   {{ ui.layout_toggle(layout_links) }}
-  {{ to_articles() }}
+  {{ to_articles(upload_href) }}
 </div>
 {% if subfolders or files %}
 {% call ui.collection(layout) %}

@@ -1,13 +1,20 @@
-"""Reprintbuddy writes to Bambuddy in exactly one way: a single queue entry (Spec 3.1, 7.6).
+"""Reprintbuddy writes to Bambuddy in exactly two ways: a single queue entry (Spec 3.1, 7.6) and
+one new print file uploaded on the user's click (Spec 3.1, 5.1a; v0.3.9 p20).
 
 The only other POST is the live channel's token (`/auth/ws-token`, Spec 7.6, B2 Task 9): it
-changes nothing in the queue, the printers or the library.
+changes nothing in the queue, the printers or the library. The upload goes through its own
+helper `_post_file`, to one literal path, with the target folder as its only parameter: no
+other file, folder or library call can be written.
 
 A watch over the HTTP client, on its syntax tree with a text check as a second layer:
 
-- every `_post(...)` names a literal path from `WRITE_PATHS`;
+- every `_post(...)` names a literal path from `WRITE_PATHS` and sends no file;
+- every `_post_file(...)` names a literal path from `UPLOAD_PATHS` and passes only `folder_id`
+  and `files`; `_post_file` takes exactly those and builds its query from `folder_id` alone;
 - the only HTTP call of the module is the one `.request(...)` inside `_send`;
-- `_send` is called with anything but `"GET"` only from `_post`, and there only with `"POST"`;
+- `_send` is called with anything but `"GET"` only from `_post` and `_post_file`, there only
+  with `"POST"` and with their own `path` parameter; `files=` only from `_post_file`, which
+  sends no `body=`;
 - no helper is taken without calling it (`f = self._post`, `getattr(http, "post")`);
 - no module under `src/reprintbuddy/` imports httpx beyond today's allow-list.
 
@@ -47,6 +54,10 @@ SRC = Path(reprintbuddy.__file__).resolve().parent
 # queue entry) and the live channel's token, which writes nothing (Spec 3.1, 7.6). Batches
 # (`/queue/batches`) are gone since v0.3.5: every print is its own entry.
 WRITE_PATHS = {"/queue/", "/auth/ws-token"}
+
+# The only path a file may be POSTed to: one new print file into the library (Spec 5.1a).
+UPLOAD_PATHS = {"/library/files"}
+POSTERS = {"_post", "_post_file"}
 
 # Modules that import httpx today. A new importer would be a way around the watch.
 HTTPX_IMPORTERS = {
@@ -115,7 +126,7 @@ FORBIDDEN = (
 
 # Method names of httpx that send or prepare a request.
 HTTP_METHODS = {"post", "put", "patch", "delete", "request", "send", "stream", "build_request"}
-GUARDED = HTTP_METHODS | {"_post", "_send"}
+GUARDED = HTTP_METHODS | {"_post", "_post_file", "_send"}
 
 
 def _name(node: ast.AST) -> str | None:
@@ -184,7 +195,7 @@ def check_source(text: str) -> list[str]:
     scan = _Scan()
     scan.visit(ast.parse(text))
 
-    for helper in ("_send", "_post"):
+    for helper in ("_send", "_post", "_post_file"):
         if scan.defs[helper] != 1:
             problems.append(f"{helper} is defined {scan.defs[helper]} times")
     for ref in scan.refs:
@@ -202,23 +213,148 @@ def check_source(text: str) -> list[str]:
 
     for call, where in scan.calls:
         name = _name(call.func)
+        keywords = {kw.arg for kw in call.keywords}
         if name == "_send":
             method = _text(_arg(call, 0, "method"))
-            allowed = "POST" if where == "_post" else "GET"
+            allowed = "POST" if where in POSTERS else "GET"
             if method != allowed:
                 problems.append(f"_send with {method!r} in {where} (line {call.lineno})")
+            if "files" in keywords and where != "_post_file":
+                problems.append(f"_send with files in {where} (line {call.lineno})")
+            if where == "_post_file" and "body" in keywords:
+                problems.append(f"_send with body in _post_file (line {call.lineno})")
+            if where in POSTERS:
+                path = _arg(call, 1, "path")
+                if not (isinstance(path, ast.Name) and path.id == "path"):
+                    problems.append(f"_send in {where} with a path other than its parameter (line {call.lineno})")
+            if where == "_post_file":
+                problems += _query_from_folder_only(_arg(call, 99, "params"), call.lineno)
         elif name == "_post":
             path = _text(_arg(call, 0, "path"))
             if path not in WRITE_PATHS:
                 problems.append(f"_post to {path!r} (line {call.lineno})")
+            if "files" in keywords:
+                problems.append(f"_post with files (line {call.lineno})")
+        elif name == "_post_file":
+            path = _text(_arg(call, 0, "path"))
+            if path not in UPLOAD_PATHS:
+                problems.append(f"_post_file to {path!r} (line {call.lineno})")
+            if len(call.args) > 1 or None in keywords or not keywords <= {"path", "folder_id", "files"}:
+                problems.append(f"_post_file with other arguments (line {call.lineno})")
+    problems += _post_file_signature(text)
+    problems += _posters_keep_their_inputs(text)
+    problems += _request_arguments(scan)
+    problems += _upload_files(scan)
     return problems
 
 
-def post_paths(text: str) -> set[str | None]:
+# What `.request(...)` inside `_send` may receive: nothing beyond the known parts.
+REQUEST_KEYWORDS = {"params", "json", "files", "headers", "timeout", "follow_redirects"}
+
+
+def _request_arguments(scan: _Scan) -> list[str]:
+    problems = []
+    for call, where in scan.calls:
+        if _name(call.func) == "request" and where == "_send":
+            keywords = {kw.arg for kw in call.keywords}
+            if len(call.args) != 2 or None in keywords or not keywords <= REQUEST_KEYWORDS:
+                problems.append(f"request with other arguments (line {call.lineno})")
+    return problems
+
+
+def _upload_files(scan: _Scan) -> list[str]:
+    """`_post_file(..., files={"file": ...})`: one part, named `file`, written where it is sent."""
+    problems = []
+    for call, _ in scan.calls:
+        if _name(call.func) != "_post_file":
+            continue
+        files = _arg(call, 99, "files")
+        if not (
+            isinstance(files, ast.Dict)
+            and len(files.keys) == 1
+            and _text(files.keys[0]) == "file"
+        ):
+            problems.append(f"_post_file with files other than one part 'file' (line {call.lineno})")
+    return problems
+
+
+def _posters_keep_their_inputs(text: str) -> list[str]:
+    """In `_post` and `_post_file` the path is never changed, and in `_post_file` the query is
+    made once, from `folder_id`, and only handed to `_send` (security review v0.3.9)."""
+    problems: list[str] = []
+    tree = ast.parse(text)
+    for node in ast.walk(tree):
+        if not (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in POSTERS):
+            continue
+        parents = {id(child): parent for parent in ast.walk(node) for child in ast.iter_child_nodes(parent)}
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Name) and inner.id == "path" and not isinstance(inner.ctx, ast.Load):
+                problems.append(f"path is changed in {node.name} (line {inner.lineno})")
+            if isinstance(inner, ast.NamedExpr) and inner.target.id == "path":
+                problems.append(f"path is changed in {node.name} (line {inner.lineno})")
+        if node.name != "_post_file":
+            continue
+        uses = [n for n in ast.walk(node) if isinstance(n, ast.Name) and n.id == "params"]
+        stores = [n for n in uses if isinstance(n.ctx, ast.Store)]
+        loads = [n for n in uses if isinstance(n.ctx, ast.Load)]
+        good_store = len(stores) == 1 and isinstance(parents.get(id(stores[0])), ast.Assign) and len(
+            parents[id(stores[0])].targets
+        ) == 1
+        good_loads = all(
+            isinstance(parents.get(id(n)), ast.keyword)
+            and parents[id(n)].arg == "params"
+            and isinstance(parents.get(id(parents[id(n)])), ast.Call)
+            and _name(parents[id(parents[id(n)])].func) == "_send"
+            for n in loads
+        )
+        if not (good_store and good_loads) or len(uses) != len(stores) + len(loads):
+            problems.append(f"params is used other than made once and handed to _send (line {node.lineno})")
+    return problems
+
+
+def _query_from_folder_only(params: ast.AST | None, line: int) -> list[str]:
+    """The query of an upload is built from `folder_id` alone (texts and names)."""
+    if params is None:
+        return []
+    names = {n.id for n in ast.walk(params) if isinstance(n, ast.Name)}
+    texts = {n.value for n in ast.walk(params) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+    calls = [n for n in ast.walk(params) if isinstance(n, ast.Call)]
+    if names - {"folder_id", "params"} or texts - {"folder_id"} or calls:
+        return [f"_post_file query built from more than folder_id (line {line})"]
+    if names == {"params"}:
+        return []  # a local `params`: checked where it is assigned (`_post_file_signature`)
+    return []
+
+
+def _post_file_signature(text: str) -> list[str]:
+    """`_post_file(self, path, *, folder_id, files)`, its query made of `folder_id` alone."""
+    problems: list[str] = []
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_post_file":
+            a = node.args
+            shape = (
+                [x.arg for x in a.posonlyargs],
+                [x.arg for x in a.args],
+                [x.arg for x in a.kwonlyargs],
+                a.vararg,
+                a.kwarg,
+            )
+            if shape != ([], ["self", "path"], ["folder_id", "files"], None, None):
+                problems.append(f"_post_file has another signature (line {node.lineno})")
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == "params" for t in inner.targets
+                ):
+                    found = _query_from_folder_only(inner.value, inner.lineno)
+                    problems += [p for p in found if "params" not in p]
+    return problems
+
+
+def post_paths(text: str, helper: str = "_post") -> set[str | None]:
     return {
         _text(_arg(node, 0, "path"))
         for node in ast.walk(ast.parse(text))
-        if isinstance(node, ast.Call) and _name(node.func) == "_post"
+        if isinstance(node, ast.Call) and _name(node.func) == helper
     }
 
 
@@ -338,6 +474,11 @@ def test_every_post_path_is_used():
     assert post_paths(SOURCE) == WRITE_PATHS
 
 
+def test_the_upload_path_is_used():
+    """The watch watches something: the upload goes through `_post_file`."""
+    assert post_paths(SOURCE, "_post_file") == UPLOAD_PATHS
+
+
 def test_batch_route_is_nowhere_in_the_code():
     """Spec 7.6 (v0.3.5): no batch is created or searched any more, by any module."""
     hits = sorted(
@@ -397,11 +538,18 @@ class Client:
     async def _post(self, path, body):
         return await self._send("POST", path, body=body)
 
+    async def _post_file(self, path, *, folder_id, files):
+        params = None if folder_id is None else {"folder_id": folder_id}
+        return await self._send("POST", path, params=params, files=files)
+
     async def enqueue(self):
         return await self._post("/queue/", {})
 
     async def ws_token(self):
         return await self._post("/auth/ws-token")
+
+    async def upload_file(self, folder_id, name, content):
+        return await self._post_file("/library/files", folder_id=folder_id, files={"file": (name, content)})
 '''
 
 
@@ -414,6 +562,7 @@ def _with(line: str) -> str:
 def test_base_passes():
     assert check_source(BASE) == []
     assert post_paths(BASE) == WRITE_PATHS
+    assert post_paths(BASE, "_post_file") == UPLOAD_PATHS
 
 
 BYPASSES = {
@@ -433,12 +582,72 @@ BYPASSES = {
     "getattr-post": ('await getattr(http, "post")(url)', "the name 'post' appears as a text"),
     "pause": ('await self._get("/queue/1/pause")', "contains '/pause'"),
     "resume": ('await self._get("/printers/1/resume")', "contains '/resume'"),
+    # the upload (v0.3.9 p20)
+    "upload-elsewhere": ('await self._post_file("/library/folders/", folder_id=1, files={})', "_post_file to '/library/folders/'"),
+    "upload-concatenated": ('await self._post_file("/library/files/" + suffix, folder_id=1, files={})', "_post_file to None"),
+    "upload-variable-path": ("await self._post_file(suffix, folder_id=1, files={})", "_post_file to None"),
+    "upload-more-arguments": ('await self._post_file("/library/files", folder_id=1, files={}, params={"x": 1})', "_post_file with other arguments"),
+    "upload-spread-arguments": ('await self._post_file("/library/files", **suffix)', "_post_file with other arguments"),
+    "upload-aliased": ("up = self._post_file", "_post_file is used without being called"),
+    "upload-getattr": ('await getattr(self, "_post_file")("/library/files")', "the name '_post_file' appears as a text"),
+    "post-with-files": ('await self._post("/queue/", {}, files={})', "_post with files"),
+    "send-files-outside": ('await self._send("GET", "/x", files={})', "_send with files in bad"),
 }
 
 
 @pytest.mark.parametrize(("line", "reason"), BYPASSES.values(), ids=BYPASSES.keys())
 def test_bypass_is_caught(line, reason):
     problems = check_source(_with(line))
+    assert any(reason in problem for problem in problems), problems
+
+
+def _base_with(old: str, new: str) -> str:
+    assert old in BASE
+    return BASE.replace(old, new, 1)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "reason"),
+    [
+        ('self._send("POST", path, params=params, files=files)', 'self._send("POST", "/library/folders/", params=params, files=files)', "_send in _post_file with a path other than its parameter"),
+        ('self._send("POST", path, body=body)', 'self._send("POST", "/printers/1/x", body=body)', "_send in _post with a path other than its parameter"),
+        ('self._send("POST", path, params=params, files=files)', 'self._send("POST", path, params=params, files=files, body={})', "_send with body in _post_file"),
+        ('self._send("POST", path, params=params, files=files)', 'self._send("POST", path, params={"x": 1}, files=files)', "query built from more than folder_id"),
+        ('{"folder_id": folder_id}', '{"folder_id": folder_id, "preserve_structure": 1}', "query built from more than folder_id"),
+        ("params = None if folder_id is None", "params = extra if folder_id is None", "query built from more than folder_id"),
+        ("async def _post_file(self, path, *, folder_id, files):", "async def _post_file(self, path, *, folder_id, files, **more):", "another signature"),
+        ("async def _post_file(self, path, *, folder_id, files):", "async def _post_file(self, path, folder_id, files):", "another signature"),
+        # security review v0.3.9: the path and the query must not be changed after the check
+        ('        params = None if folder_id is None else {"folder_id": folder_id}\n',
+         '        params = None if folder_id is None else {"folder_id": folder_id}\n        path = "/library/files/1/move"\n',
+         "path is changed in _post_file"),
+        ('        return await self._send("POST", path, body=body)',
+         '        path = "/printers/1/stop"\n        return await self._send("POST", path, body=body)',
+         "path is changed in _post"),
+        ('        params = None if folder_id is None else {"folder_id": folder_id}\n',
+         '        params = None if folder_id is None else {"folder_id": folder_id}\n        params["overwrite"] = 1\n',
+         "params is used other than"),
+        ('        params = None if folder_id is None else {"folder_id": folder_id}\n',
+         '        params = None if folder_id is None else {"folder_id": folder_id}\n        params |= {"x": 1}\n',
+         "params is used other than"),
+        ('        params = None if folder_id is None else {"folder_id": folder_id}\n',
+         '        params: dict = {"folder_id": folder_id, "x": "1"}\n',
+         "params is used other than"),
+        ('        params = None if folder_id is None else {"folder_id": folder_id}\n',
+         '        params = None if folder_id is None else {"folder_id": folder_id}\n        params = params or {}\n',
+         "params is used other than"),
+        ('        params = None if folder_id is None else {"folder_id": folder_id}\n',
+         '        params = None if folder_id is None else {"folder_id": folder_id}\n        params.update(x=1)\n',
+         "params is used other than"),
+        ("return await http.request(method, path, params=params, json=body)",
+         "return await http.request(method, path, params=params, json=body, data={'x': 1})",
+         "request with other arguments"),
+        ('files={"file": (name, content)})', 'files={"file": (name, content), "folder_id": "9"})', "files other than"),
+        ('files={"file": (name, content)})', "files=extra)", "files other than"),
+    ],
+)
+def test_upload_helper_bypass_is_caught(old, new, reason):
+    problems = check_source(_base_with(old, new))
     assert any(reason in problem for problem in problems), problems
 
 

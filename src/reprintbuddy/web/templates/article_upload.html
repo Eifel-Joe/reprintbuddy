@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% block title %}{{ t('upload.title') }}{% endblock %}
+{% block content %}
+{#- Uploading a print file into the folder that was open (Spec 5.1a). `state`: form, no_right (the key
+    may not upload: a hint instead of the form), external (a folder linked from outside Bambuddy),
+    unclear (no form: look in Bambuddy first), too_large (refused before reading: folder unknown) or
+    problem (Bambuddy missing or unreachable, folder gone). `error` is a message above the form. -#}
+{% call ui.page_head("circle-alert" if state in ("problem", "unclear", "too_large") else "upload", t('upload.title'), t('upload.subtitle', path=folder_path) if folder_path is not none else "") %}{% endcall %}
+{% if state in ("problem", "unclear", "too_large") %}
+<div class="section"><div class="card"><p class="alert" role="alert">{{ t(error) }}</p></div></div>
+{% elif state == "external" %}
+<div class="section"><div class="card"><p class="alert" role="alert">{{ t('upload.external') }}</p></div></div>
+{% elif state == "no_right" %}
+<div class="section"><div class="card upload-hint">
+  <p class="alert" role="alert">{{ t('upload.no_right') }}</p>
+  <ul class="perms">
+    <li class="perm bad"><span class="mark" aria-hidden="true">✗</span> Upload Library (<code>library:upload</code>)<small class="editor">{{ t('upload.no_right_group_where') }}</small></li>
+    <li class="perm bad"><span class="mark" aria-hidden="true">✗</span> Manage Library<small class="editor">{{ t('upload.no_right_key_where') }}</small></li>
+  </ul>
+  <p class="muted">{{ t('upload.no_right_rest') }}</p>
+  <p class="actions"><a class="btn secondary" href="/settings?tab=bambuddy">{{ ui.icon('settings') }}{{ t('upload.to_settings') }}</a></p>
+</div></div>
+{% else %}
+<div class="section">
+  <form class="card upload-form" method="post" action="{{ action }}" enctype="multipart/form-data">
+    {% if error %}<p class="alert" role="alert">{{ t(error, **error_params) }}{% if error_params.existing_id %} <a href="/articles/new/file/{{ error_params.existing_id }}">{{ t('upload.use_existing') }}</a>{% endif %}</p>{% endif %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="setting-row stack">
+      <div class="setting-text"><label for="print_file">{{ t('upload.file') }}</label><span>{{ t('upload.file_hint', mb=max_mb) }}</span></div>
+      <div class="setting-control"><input id="print_file" name="print_file" type="file" accept=".3mf" required></div>
+    </div>
+    <p class="actions"><button type="submit" class="btn">{{ ui.icon('upload') }}{{ t('upload.submit') }}</button></p>
+  </form>
+</div>
+{% endif %}
+<div class="toolbar"><div class="toolbar-actions"><a class="btn secondary" href="{{ back if state != 'problem' else '/articles/new' }}">{{ ui.icon('folder') }}{{ t('upload.back') }}</a></div></div>
+{% endblock %}
