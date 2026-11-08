@@ -33,6 +33,11 @@ class RightsMonitor:
         self._first_deadline: float | None = None  # until when the first page may wait
         self._generation = 0  # counts the verdicts taken from outside: a check that began earlier is stale
 
+    @property
+    def task(self) -> "asyncio.Task[None] | None":
+        """The check running in the background, if any: the shutdown stops it (v0.3.8 p67)."""
+        return self._task if self._task is not None and not self._task.done() else None
+
     def record(self, check: ConnectionCheck) -> None:
         """Take over the result of a check made anywhere (this monitor, settings, setup).
 
@@ -73,7 +78,9 @@ class RightsMonitor:
                 return  # setup not finished: nothing to check yet
             self.attempts += 1
             # The generation is taken together with the credentials, before the task even starts.
-            self._task = asyncio.create_task(self._run(credentials, client_factory, self._generation))
+            self._task = asyncio.create_task(
+                self._run(credentials, client_factory, self._generation), name="rights-check"
+            )
             if self.attempts == 1:
                 self._first_deadline = loop.time() + FIRST_WAIT_SECONDS
         if self.attempts != 1 or self._first_deadline is None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import AsyncIterator, Awaitable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -62,6 +63,7 @@ from reprintbuddy.web.routes import sets as sets_routes
 from reprintbuddy.web.routes import setup as setup_routes
 from reprintbuddy.web.routes import ui as ui_routes
 
+log = logging.getLogger("reprintbuddy.app")
 WEB_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = WEB_DIR / "templates"
 
@@ -181,6 +183,37 @@ def _install_auto_check(app: FastAPI) -> None:
     )
 
 
+SHUTDOWN_TASK_WAIT = 5.0  # seconds the background tasks get to stop; the process must not hang on one
+
+
+async def stop_background(tasks: list[asyncio.Task[None]], *, wait: float | None = None) -> None:
+    """Cancel every background task and wait for all of them together, at most `wait` seconds.
+
+    One after the other (v0.3.7) a task that ended with an error left the next one unwaited, and a
+    task that ignored the cancel held the shutdown for ever. Now: all are cancelled first, then one
+    wait for the whole set; an error of a task is logged (its type only, never its text: it may name
+    an address) and one that is still running after the time is named. Nothing is left pending without
+    being looked at ("Task was destroyed but it is pending", "exception was never retrieved") - v0.3.8 p67.
+    Tests: test_background_shutdown.py.
+    """
+    tasks = [task for task in tasks if task is not None]
+    if not tasks:
+        return
+    for task in tasks:
+        task.cancel()
+    _done, pending = await asyncio.wait(tasks, timeout=SHUTDOWN_TASK_WAIT if wait is None else wait)
+    for task in tasks:
+        if task in pending or task.cancelled():
+            continue
+        error = task.exception()  # looked at, so asyncio does not complain about it later
+        if error is not None:
+            log.warning("background task %s ended with %s", task.get_name(), type(error).__name__)
+    for task in pending:
+        log.warning(
+            "background task %s did not stop within %s s", task.get_name(), SHUTDOWN_TASK_WAIT if wait is None else wait
+        )
+
+
 @contextlib.asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Run the tick engine and Bambuddy's live listener in the background (`run_engine`)."""
@@ -199,11 +232,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        for task in tasks:
-            task.cancel()
-        for task in tasks:
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+        background = list(tasks)
+        check = app.state.rights.task  # a check of the key's rights started by a page
+        if check is not None:
+            background.append(check)
+        await stop_background(background)
 
 
 def shared_tls_client_factory() -> Callable[[], httpx.AsyncClient]:
