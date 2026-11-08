@@ -93,7 +93,8 @@ def _page(request: Request, *, state: str, status: int = 200, folder_id: int | N
     path built in the template was Markup, formatted into a text and escaped a second time).
     """
     root = translate(current_language(request), "articles.folder_root")
-    path = " / ".join([root, *(folder.name for folder in crumbs or [])])
+    # Unknown before Bambuddy was asked (a refusal before the body is read): no subtitle then.
+    path = None if crumbs is None else " / ".join([root, *(folder.name for folder in crumbs)])
     return render(
         request,
         "article_upload.html",
@@ -154,15 +155,25 @@ async def upload_page(request: Request, folder: str | None = None, db: Session =
     return _page(request, state="form", folder_id=folder_id, crumbs=crumbs)
 
 
+# Bambuddy's texts for a folder Reprintbuddy may not put files into (`services/library_folder_access.py`
+# `get_writable_folder`, `api/routes/library.py` `_resolve_upload_destination`).
+_NOT_WRITABLE = ("only add to your own folders", "read-only external folder")
+
+
 def _refusal_key(error: BambuddyRejected) -> str:
-    """Which message a refusal of Bambuddy gets; a 403 says which right is missing (Spec 5.1a)."""
+    """Which message a refusal of Bambuddy gets; a 403 says which right is missing (Spec 5.1a).
+
+    Bambuddy's texts (`core/auth.py`): the key lacks `can_manage_library`, or the owner lacks
+    `library:upload`. Any other 403 (e.g. a deactivated owner) is shown as it came."""
     detail = error.detail or ""
     if error.status == 403:
         if "can_manage_library" in detail:
             return "upload.no_right_key"
         if "library:upload" in detail:
             return "upload.no_right_group"
-        return "upload.folder_not_writable"
+        if any(text in detail for text in _NOT_WRITABLE):
+            return "upload.folder_not_writable"
+        return "upload.rejected"
     if error.status == 404:
         return "upload.folder_gone"
     return "upload.rejected"
@@ -201,7 +212,7 @@ async def upload(request: Request, db: Session = Depends(get_db)):
     # Before anything reads the body: no `Transfer-Encoding`, a length within the limit
     # (`web/bodylimit.py`; the middleware counts what is read).
     if not upload_length_ok(request, BODY_LIMIT):
-        refused = _page(request, state="form", status=413, folder_id=folder_id, error="upload.error.too_large")
+        refused = _page(request, state="too_large", status=413, folder_id=folder_id, error="upload.error.too_large")
         # Nothing reads the body: close the connection, or the server reads and drops all of it
         # before the browser sees this page (security review v0.3.9).
         refused.headers["Connection"] = "close"
@@ -264,7 +275,8 @@ async def _upload(request: Request, db: Session, folder_raw: str | None, folder_
             result = await client.upload_file(folder_id, name, upload_file.file)
         except BambuddyRejected as error:
             key = _refusal_key(error)
-            return again(key, 409 if key != "upload.rejected" else 400, detail=(error.detail or "")[:MAX_DETAIL])
+            detail = (error.detail or "").strip()[:MAX_DETAIL] or f"HTTP {error.status}"  # a proxy may send none
+            return again(key, 409 if key != "upload.rejected" else 400, detail=detail)
         except BambuddyUnavailable:
             found = await _find_own(client, folder_id, name, size, sent_at, username if isinstance(username, str) else None)
             if found is None:

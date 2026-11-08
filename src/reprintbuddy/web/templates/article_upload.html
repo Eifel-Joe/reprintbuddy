@@ -3,10 +3,11 @@
 {% block title %}{{ t('upload.title') }}{% endblock %}
 {% block content %}
 {#- Uploading a print file into the folder that was open (Spec 5.1a). `state`: form, no_right (the key
-    may not upload: a hint instead of the form), external (a folder linked from outside Bambuddy) or
+    may not upload: a hint instead of the form), external (a folder linked from outside Bambuddy),
+    unclear (no form: look in Bambuddy first), too_large (refused before reading: folder unknown) or
     problem (Bambuddy missing or unreachable, folder gone). `error` is a message above the form. -#}
-{% call ui.page_head("circle-alert" if state in ("problem", "unclear") else "upload", t('upload.title'), t('upload.subtitle', path=folder_path)) %}{% endcall %}
-{% if state in ("problem", "unclear") %}
+{% call ui.page_head("circle-alert" if state in ("problem", "unclear", "too_large") else "upload", t('upload.title'), t('upload.subtitle', path=folder_path) if folder_path is not none else "") %}{% endcall %}
+{% if state in ("problem", "unclear", "too_large") %}
 <div class="section"><div class="card"><p class="alert" role="alert">{{ t(error) }}</p></div></div>
 {% elif state == "external" %}
 <div class="section"><div class="card"><p class="alert" role="alert">{{ t('upload.external') }}</p></div></div>

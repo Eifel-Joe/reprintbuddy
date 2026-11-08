@@ -11,7 +11,10 @@ import zipfile
 from datetime import timedelta
 
 import pytest
-from conftest import REQUIRED, csrf_of, mock_auth_me
+from conftest import REQUIRED, csrf_of, form_token_of, mock_auth_me, sm_of
+from sqlalchemy import select
+
+from reprintbuddy.models import Article
 
 from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable
 from reprintbuddy.web.i18n import translate
@@ -153,9 +156,20 @@ def test_upload_goes_on_to_the_plate_and_the_article_is_created_as_usual(up, fak
     assert (folder, name, data) == (1, "New part.gcode.3mf", SLICED)
     file_id = next(f.id for f in fake_bambuddy._files.values() if f.filename == "New part.gcode.3mf")
     assert response.headers["location"] == f"/articles/new/file/{file_id}"
-    # one plate: on to the usual form, where "Create" makes the article (Spec 5.1, 5.1a)
-    plate = up.get(response.headers["location"])
-    assert plate.status_code in (200, 303)
+    # On as after choosing an existing file: the plate, the usual form, "Create" (Spec 5.1, 5.1a)
+    assert up.get(response.headers["location"]).status_code == 200
+    form = f"/articles/new/file/{file_id}/plate/1"
+    page = up.get(form)
+    assert page.status_code == 200 and 'name="name"' in page.text
+    created = up.post(form, data={
+        "csrf_token": csrf_of(up, form), "form_token": form_token_of(up, form, form),
+        "name": "New part", "sku": "", "units_per_print": "1", "min_stock": "0", "buffer": "0",
+        "target": "model:A1",
+    })
+    assert created.status_code == 303
+    with sm_of(up)() as session:
+        article = session.scalars(select(Article).where(Article.name == "New part")).one()
+        assert (article.library_file_id, article.plate_id) == (file_id, 1)
 
 
 def test_upload_to_the_top_level(up, fake_bambuddy):
@@ -214,6 +228,10 @@ def test_a_declared_length_over_the_limit_is_refused_before_the_body_is_read(up,
     assert response.status_code == 413
     assert en("upload.error.too_large") in alert(response.text)
     assert fake_bambuddy.calls == []  # not even the folders were read
+    # final review: no form and no folder path it cannot know; the way back keeps the folder
+    assert 'type="file"' not in response.text
+    assert "page-sub" not in response.text
+    assert 'href="/articles/new?folder=1"' in response.text
 
 
 def test_without_a_token_nothing_happens(up, fake_bambuddy):
@@ -316,6 +334,8 @@ def test_a_note_about_the_same_content_is_left_out_when_it_cannot_be_read(up, fa
     fake_bambuddy.fail_next("get_file", BambuddyUnavailable("down"))
     response = post(up, name="Second.gcode.3mf")
     assert response.status_code == 303
+    page = up.get(response.headers["location"]).text
+    assert en("upload.duplicate", name="First.gcode.3mf") not in page
 
 
 def test_bambuddy_does_not_take_it_for_sliced(up, fake_bambuddy, monkeypatch):
@@ -341,6 +361,22 @@ def test_each_refusal_of_bambuddy_names_its_reason(up, fake_bambuddy, detail, ke
     response = post(up)
     assert response.status_code == 409
     assert en(key) in alert(response.text)
+
+
+@pytest.mark.parametrize(
+    ("detail", "shown"),
+    [("API key owner is deactivated", "API key owner is deactivated"), ("", "HTTP 403")],
+)
+def test_another_403_is_shown_as_it_came(up, fake_bambuddy, detail, shown):
+    """Final review: only the folder texts mean "not writable"; anything else is named as it is."""
+    fake_bambuddy.fail_next("upload_file", BambuddyRejected(detail, status=403))
+    response = post(up)
+    assert en("upload.rejected", detail=shown) in alert(response.text)
+
+
+def test_an_empty_refusal_names_its_status(up, fake_bambuddy):
+    fake_bambuddy.fail_next("upload_file", BambuddyRejected("", status=413))
+    assert en("upload.rejected", detail="HTTP 413") in alert(post(up).text)
 
 
 def test_another_refusal_shows_bambuddys_text(up, fake_bambuddy):
