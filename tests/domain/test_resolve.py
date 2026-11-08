@@ -144,7 +144,6 @@ async def test_lost_response_found_not_resent(db, fake_bambuddy):
         row = s.get(Dispatch, d)
         assert row.status == "queued"
         assert row.bambuddy_item_id == found.id
-        assert row.bambuddy_batch_id is None  # unused since v0.3.5
         assert row.last_status == "pending"
         assert row.dispatched_at is not None and row.finished_at is None
         (line,) = journal(s, "print_dispatched")
@@ -410,7 +409,6 @@ def test_adopt_writes_dispatched_once(db, fake_bambuddy):
         item = own_entry(fake_bambuddy, status="printing")
         dispatch.adopt(s, row.id, item)
         assert row.status == "printing" and row.bambuddy_item_id == item.id
-        assert row.bambuddy_batch_id is None
         assert len(journal(s, "print_dispatched")) == 2
 
 

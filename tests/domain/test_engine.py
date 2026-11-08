@@ -5,6 +5,7 @@ unreachable or rejecting Bambuddy gets nothing new; during an update nothing hap
 """
 
 import asyncio
+import threading
 import contextlib
 import time
 
@@ -1248,12 +1249,28 @@ async def test_early_timeout_after_update_skip_still_polls(engine_env, monkeypat
 def test_hold_lets_a_waiting_tick_give_up(engine_env):
     """A restore holds the engine (Spec 11.6): a tick that waited for it does nothing."""
     env = engine_env
+    first_check_done = threading.Event()
+    real_check = env.engine.update_running
+
+    def noting_check():
+        answer = real_check()
+        first_check_done.set()
+        return answer
+
+    env.engine.update_running = noting_check
 
     async def scenario():
         async with env.engine.hold():
             assert env.engine.held()
             task = asyncio.create_task(env.engine.tick(poll=False))
-            await asyncio.sleep(0)  # the tick starts and waits for the lock
+            # The tick asks (in a worker thread, p96) whether an update runs, then waits for the lock.
+            assert await asyncio.to_thread(first_check_done.wait, 5)
+            for _ in range(5000):  # until somebody waits at the lock: no guess at how long that takes
+                if env.engine._lock._waiters:
+                    break
+                await asyncio.sleep(0.001)
+            else:
+                raise AssertionError("the tick never came to wait for the lock")
             env.updating = True  # the restore says "do not touch the database"
         assert not env.engine.held()
         return await task
@@ -1263,3 +1280,84 @@ def test_hold_lets_a_waiting_tick_give_up(engine_env):
     assert result.created == 0
     with env.sm() as s:
         assert s.scalars(select(Dispatch)).all() == []
+
+
+# ---- p96 (v0.3.8): the question whether an update runs does not hold the event loop --------------------------
+
+
+async def _loop_stays_free(task, release: threading.Event, *, steps: int = 20):
+    """While `task` waits for the blocked question, the loop still turns (a page would be answered)."""
+    for _ in range(steps):
+        await asyncio.sleep(0.01)
+    assert not task.done()
+    release.set()
+
+
+async def test_p96_a_blocked_update_question_does_not_hold_the_event_loop(engine_env):
+    env = engine_env
+    release = threading.Event()
+    asked_from: list[str] = []
+
+    def blocked_question():
+        try:
+            asyncio.get_running_loop()
+            asked_from.append("event loop")
+        except RuntimeError:
+            asked_from.append("worker thread")
+        release.wait(5)  # systemd taking its time
+        return False
+
+    env.engine.update_running = blocked_question
+    task = asyncio.create_task(env.engine.tick(poll=False))
+    await _loop_stays_free(task, release)
+
+    result = await asyncio.wait_for(task, 10)
+    assert result == TickResult(None, 1, 1)  # the decision is the one it always was
+    assert set(asked_from) == {"worker thread"}
+
+
+async def test_p96_the_question_before_the_send_is_also_asked_off_the_loop(engine_env):
+    env = engine_env
+    release = threading.Event()
+    calls = []
+
+    def question():
+        calls.append(1)
+        if len(calls) == 3:  # the third is the one right before the send (`may_send`)
+            release.wait(5)
+        return False
+
+    env.engine.update_running = question
+    task = asyncio.create_task(env.engine.tick(poll=False))
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+        if len(calls) == 3:
+            break
+    await _loop_stays_free(task, release)
+    result = await asyncio.wait_for(task, 10)
+    assert result == TickResult(None, 1, 1)
+    assert len(env.fake.enqueued) == 1
+
+
+async def test_p96_an_update_found_by_the_threaded_question_still_stops_the_send(engine_env):
+    env = engine_env
+    answers = iter([False, False, True])  # tick start, hand-over loop, right before the send
+
+    env.engine.update_running = lambda: next(answers, True)
+    result = await env.engine.tick(poll=False)
+    assert result == TickResult(None, 1, 0)
+    assert env.fake.enqueued == []
+    assert statuses(env.sm) == ["returned"]
+    assert env.engine.status.skipped_for_update is True
+
+
+async def test_p96_an_update_that_starts_while_the_threaded_question_is_out_still_stops_the_send(engine_env):
+    """Review: between the answer of the worker thread and the mark of the print an update can begin."""
+    env = engine_env
+    env.engine.update_running = lambda: False  # what the thread read: no update yet
+    env.engine.update_started = lambda: True  # what the state file says right before the mark
+    result = await env.engine.tick(poll=False)
+    assert result == TickResult(None, 1, 0)
+    assert env.fake.enqueued == [] and "enqueue" not in env.fake.calls
+    assert statuses(env.sm) == ["returned"]
+    assert env.engine.status.skipped_for_update is True

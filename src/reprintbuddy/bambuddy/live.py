@@ -24,6 +24,7 @@ errors only by their type.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import json
 import logging
@@ -61,6 +62,9 @@ TOKEN_MAX_AGE = 55 * 60  # seconds; Bambuddy's token lives 60 minutes, 5 minutes
 RETRY_DELAYS = (5, 15, 60, 300)  # seconds between attempts; then always the last one
 NO_RIGHT_DELAY = 900  # seconds of pause when the key's group lacks `websocket:connect`
 STABLE_AFTER = 60  # seconds a connection must hold before the pauses start over
+CLOSE_WAIT = 2.0  # seconds the closing handshake may take, own close and the library's alike
+
+NORMAL_CLOSE = 1000  # "normal closure": the code of a finished connection
 
 UNAUTHORIZED_CLOSE = 4401  # Bambuddy's close code for a refused token
 REFUSED_HANDSHAKE = frozenset({401, 403})  # the same refusal as uvicorn answers it
@@ -205,7 +209,12 @@ class LiveListener:
 
     async def _cycle(self) -> float:
         """One attempt (two after a refusal); the pause to take afterwards."""
-        self.state = "connecting"
+        # "connecting" is shown for the first attempt and for one a person asked for (`wake`). An
+        # attempt out of a pause keeps the state of the pause: it used to say "connecting" and then
+        # "waiting" again for every attempt, two changes (and two reloads of every open settings
+        # page) for nothing (v0.3.8 p94). Test: test_live.py "one change per state".
+        if self._paused_in is None:
+            self.state = "connecting"
         try:
             outcome, reason = await self._connect_once()
             if outcome == _REFUSED:
@@ -230,16 +239,26 @@ class LiveListener:
         address = _without_query(url)
         opened: float | None = None
         try:
-            async with self._connect(url, logger=LIBRARY_LOG) as connection:
+            # `close_timeout`: the library waits that long for the other side's answer when it closes,
+            # also in the `async with` after our own close ran out of time; its default is 10 s.
+            async with self._connect(url, logger=LIBRARY_LOG, close_timeout=CLOSE_WAIT) as connection:
                 opened = self._now()
                 self.state = "connected"
                 self._paused_in = None
                 log.info("Bambuddy live channel connected: %s", address)
-                await self._emit("connected")
-                while True:
-                    kind = _kind(await connection.recv())
-                    if kind in TRIGGER_TYPES:
-                        await self._emit(kind)
+                try:
+                    await self._emit("connected")
+                    while True:
+                        kind = _kind(await connection.recv())
+                        if kind in TRIGGER_TYPES:
+                            await self._emit(kind)
+                except asyncio.CancelledError:
+                    # Stopped (shutdown) or restarted (`wake(reconnect=True)`): close as a finished
+                    # connection. Left to the `async with`, the library closes a connection that
+                    # is left by an exception with 1011 "internal error", which is what Bambuddy
+                    # saw at every shutdown (v0.3.8 p80). Test: test_live.py "closing the channel".
+                    await self._close_finished(connection)
+                    raise
         except ConnectionClosed as exc:
             code = exc.rcvd.code if exc.rcvd is not None else None
             log.debug("Bambuddy live channel closed (%s): %s", code, address)
@@ -252,6 +271,11 @@ class LiveListener:
         finally:
             if opened is not None and self._now() - opened >= STABLE_AFTER:
                 self._failures = 0
+
+    async def _close_finished(self, connection: Any) -> None:
+        """Close with the code for a finished connection; never longer than `CLOSE_WAIT`, never an error."""
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(connection.close(NORMAL_CLOSE), CLOSE_WAIT)
 
     async def _current_token(self) -> str:
         """The cached token while it is young enough, else a fresh one."""

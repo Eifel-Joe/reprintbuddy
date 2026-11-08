@@ -264,7 +264,25 @@ Container sonst gesichert wird. Unter *Einstellungen → Update und Sicherung*:
 - **Export** lädt alle Daten als JSON-Datei herunter, **ohne** API-Schlüssel, Passwörter, den
   privaten HTTPS-Schlüssel und das Sitzungsgeheimnis.
 
-Eine Datenbanksicherung von Hand zurückspielen:
+Startet Reprintbuddy nicht mehr, zum Beispiel nach einem misslungenen Wiederherstellen, geht
+dieselbe Wiederherstellung auf der Kommandozeile, mit denselben Prüfungen wie in der Oberfläche:
+
+```bash
+systemctl stop reprintbuddy
+install -m 0600 -o reprintbuddy /root/sicherung.zip /var/lib/reprintbuddy/restore.zip
+reprintbuddy restore-backup /var/lib/reprintbuddy/restore.zip
+rm /var/lib/reprintbuddy/restore.zip
+systemctl start reprintbuddy
+```
+
+Der Befehl fragt das Passwort der Sicherung ab, wenn sie verschlüsselt ist (nur am Terminal, nie als
+Argument), verweigert sich, solange Reprintbuddy oder sein Update läuft, sichert zuerst die vorhandene
+Datenbank (`backups/`, bei unlesbarer Datenbank als `damaged-...`) und sagt, was er wiederhergestellt
+hat. Er läuft als Dienstbenutzer aus dem Ordner `/`: den vollen Pfad angeben, und die Datei muss für
+diesen Benutzer lesbar sein. Wie oben in den Datenordner kopieren (mit Modus 0600, denn ohne
+Verschlüsselung enthält sie deine Schlüssel) und danach löschen. Danach melden sich alle neu an.
+
+Eine Datenbankkopie aus `backups/` von Hand zurückspielen:
 
 ```bash
 systemctl stop reprintbuddy
@@ -298,6 +316,7 @@ reprintbuddy set-password --username <name>
 reprintbuddy set-port <port>
 reprintbuddy set-host <adresse>
 reprintbuddy disable-https
+reprintbuddy restore-backup <datei>
 reprintbuddy --version
 ```
 

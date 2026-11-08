@@ -13,7 +13,6 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
@@ -26,7 +25,8 @@ from reprintbuddy.ops.server import (
     connect_host,
     effective_from_settings,
 )
-from reprintbuddy.ops.running import update_running
+from reprintbuddy.ops.running import update_running, update_running_async
+from reprintbuddy.ops.runner import CommandResult, in_thread
 from reprintbuddy.ops.service import request_restart, start_update_unit
 from reprintbuddy.ops.status import (
     BUSY_STATES,
@@ -129,7 +129,29 @@ def _installed(request: Request) -> str | None:
     return app.state.installed_tag
 
 
-def ops_view(request: Request, session: Session) -> OpsView:
+async def warm_installed(request: Request) -> None:
+    """Ask for the installed tag (`git describe`, once per process) in a worker thread, so the page that
+    needs it does not run git in the event loop (v0.3.8 p96, same family)."""
+    app = request.app
+    if is_git_install(app.state.ops.install_dir) and not hasattr(app.state, "installed_tag"):
+        await in_thread(_installed, request)
+
+
+async def update_busy(request: Request) -> bool:
+    """Does an update really run? Asked in a worker thread (v0.3.8 p96): systemd may take seconds.
+
+    A click on "Update" whose sudo is still on its way counts as running: "queued" is only believed
+    for `QUEUE_GRACE` seconds, and sudo may take as long (review of v0.3.8).
+    """
+    if request.app.state.update_starting:
+        return True
+    return await update_running_async(_data_dir(request), request.app.state.ops.runner, _utc_now())
+
+
+def ops_view(request: Request, session: Session, busy: bool | None = None) -> OpsView:
+    """The state of the update card. `busy` is the answer of `update_busy`, asked by the handler that
+    can await it (every page of the settings does). Without it the question is asked here, in the
+    calling thread: for a caller that cannot await, and in tests."""
     app = request.app
     ops = app.state.ops
     effective = ops.effective
@@ -152,7 +174,9 @@ def ops_view(request: Request, session: Session) -> OpsView:
     if not request.app.state.restore.active:
         # Uploads nobody confirmed and downloads that were cut off hold every secret.
         fullbackup.clear_work_dir(fullbackup.work_dir_for(app.state.db_path), older_than=fullbackup.STALE_AFTER)
-    view.busy = update_running(_data_dir(request), request.app.state.ops.runner, _utc_now())
+    view.busy = (
+        busy if busy is not None else update_running(_data_dir(request), request.app.state.ops.runner, _utc_now())
+    )
     view.interrupted = view.update.state in BUSY_STATES and not view.busy
     if view.interrupted:
         view.state_key = "ops.update.state.interrupted"
@@ -172,26 +196,39 @@ def restore_blocks(request: Request) -> bool:
     return request.url.path not in allowed
 
 
+def _restore_pause(request: Request) -> Response | None:
+    """The 503 page of a write that a running restore pauses, else None."""
+    if not restore_blocks(request):
+        return None
+    state = request.app.state.restore
+    return render(
+        request,
+        "error.html",
+        status_code=503,
+        layout="base.html",
+        title_key="error.generic.title",
+        message_key="ops.restore.restart_pending" if state.phase == "restart_pending" else "ops.restore.in_progress",
+    )
+
+
 async def update_guard(request: Request, call_next) -> Response:
     """Pause every write while an update or a restore runs (see `UPDATE_EXEMPT_PATHS`).
 
     The writes it lets through are counted while they run: a restore waits for the ones
     that passed just before it began.
+
+    The question whether an update runs is asked in a worker thread (v0.3.8 p96), and a restore may
+    begin while this request waits for the answer. So the restore is looked at again after the
+    answer, and the request is counted in the same step, with no `await` between: a write is either
+    refused or counted before a restore that began meanwhile looks at the count.
     """
-    if request.method in WRITE_METHODS and restore_blocks(request):
-        state = request.app.state.restore
-        return render(
-            request,
-            "error.html",
-            status_code=503,
-            layout="base.html",
-            title_key="error.generic.title",
-            message_key="ops.restore.restart_pending"
-            if state.phase == "restart_pending"
-            else "ops.restore.in_progress",
-        )
-    if request.method in WRITE_METHODS and request.url.path not in UPDATE_EXEMPT_PATHS:
-        if update_running(_data_dir(request), request.app.state.ops.runner, _utc_now()):
+    is_write = request.method in WRITE_METHODS
+    if is_write:
+        paused = _restore_pause(request)
+        if paused is not None:
+            return paused
+    if is_write and request.url.path not in UPDATE_EXEMPT_PATHS:
+        if await update_busy(request):
             return render(
                 request,
                 "error.html",
@@ -200,7 +237,10 @@ async def update_guard(request: Request, call_next) -> Response:
                 title_key="error.generic.title",
                 message_key="ops.update.in_progress",
             )
-    if request.method not in WRITE_METHODS or request.url.path.startswith(UNCOUNTED_PREFIXES):
+        paused = _restore_pause(request)  # a restore that began while the question was out
+        if paused is not None:
+            return paused
+    if not is_write or request.url.path.startswith(UNCOUNTED_PREFIXES):
         return await call_next(request)
     state = request.app.state
     state.writes_in_flight += 1
@@ -229,7 +269,7 @@ def export(db: Session = Depends(get_db)):
 @router.post("/settings/restart", dependencies=[Depends(verify_csrf)])
 async def restart(request: Request, db: Session = Depends(get_db)):
     ops = request.app.state.ops
-    result = await run_in_threadpool(request_restart, ops.runner)  # sudo may take seconds
+    result = await in_thread(request_restart, ops.runner)  # sudo may take seconds; a shutdown stops it
     if not result.ok:
         # The reason (sudo output) goes to the log only, never onto the page.
         log.warning("restart failed: %s", (result.stderr or "").strip()[:300])
@@ -255,9 +295,8 @@ async def update_check(request: Request):
     if not is_git_install(ops.install_dir):
         return _back("not_git")
     try:
-        info = await run_in_threadpool(
-            check_versions, ops.install_dir, ops.runner, now=_utc_now()
-        )
+        # In a thread that can be stopped: a shutdown kills the git command instead of waiting for it.
+        info = await in_thread(check_versions, ops.install_dir, ops.runner, now=_utc_now())
     except UpdateCheckError as error:
         log.warning("update check failed: %s", str(error)[:300])  # not shown on the page
         return _back("check_failed")
@@ -281,19 +320,45 @@ async def update_auto(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/settings/update", dependencies=[Depends(verify_csrf)])
 async def update_start(request: Request):
-    # No await between the busy check and writing "queued": two clicks cannot both pass.
+    """Start the update helper. Nothing here blocks the event loop (v0.3.8 p96): the questions to
+    systemd and the start of the unit through sudo (up to 15 s) run in worker threads.
+
+    What keeps two clicks, or a click and a restore, from both getting through: `update_starting` is
+    set with no `await` between looking at it and setting it; the restore state is looked at again
+    right before "queued" is written, with no `await` between those two either. A restore sets its own
+    state before it asks about updates, so one of the two sees the other.
+    """
     app = request.app
     ops = app.state.ops
     if not is_git_install(ops.install_dir):
         return _back("not_git")
+    # A restore that is replacing the database (or waits for its restart) counts as busy, and so does
+    # another click that is still on its way.
+    if app.state.restore.active or app.state.update_starting:
+        return _back("busy")
+    app.state.update_starting = True
+    try:
+        return await _start_update(request)
+    finally:
+        app.state.update_starting = False
+
+
+async def _start_update(request: Request):
+    app = request.app
+    ops = app.state.ops
     data_dir = _data_dir(request)
     now = _utc_now()
-    # A restore that is replacing the database (or waits for its restart) counts as busy.
-    if app.state.restore.active or update_running(data_dir, ops.runner, now):
+    # The state file alone says "idle" for most clicks; only a recorded update needs systemd's word.
+    if is_busy(read_status(data_dir), now) and await update_running_async(data_dir, ops.runner, now):
         return _back("busy")
     info: VersionInfo | None = getattr(app.state, "version_info", None)
     if info is None or not info.update_available:
         return _back("no_update")
+    # From the last look at the restore to "queued" there is no `await`. `started_at` is taken here,
+    # not before the questions above: the grace in which "queued" counts as running starts now.
+    if app.state.restore.active:
+        return _back("busy")
+    now = _utc_now()
     write_status(
         data_dir,
         UpdateStatus(
@@ -304,7 +369,13 @@ async def update_start(request: Request):
             started_at=now,
         ),
     )
-    result = start_update_unit(ops.runner)
+    # Cancelled here (a shutdown): sudo is killed, the gate is freed and "queued" stays; it is believed
+    # for the grace only, then systemd's word counts (the unit never started), and the card shows
+    # "interrupted" until the status is old. Not rewritten to "failed": `--no-block` may have gone through.
+    try:
+        result = await in_thread(start_update_unit, ops.runner)  # sudo may take seconds
+    except Exception as error:  # noqa: BLE001 - the state must not stay "queued" for a unit that never started
+        result = CommandResult(1, "", type(error).__name__)
     if not result.ok:
         lines = (result.stderr or "").strip().splitlines()
         reason = lines[0][:300] if lines else f"exit code {result.returncode}"

@@ -40,6 +40,7 @@ from reprintbuddy.bambuddy.types import QueueItem
 from reprintbuddy.domain import dispatch, tracking, workqueue
 from reprintbuddy.models import Article, Dispatch, WorkQueueEntry, utcnow
 from reprintbuddy.i18n import translate
+from reprintbuddy.ops.runner import in_thread  # stdlib only; runs a blocking call in a thread that can be stopped
 
 log = logging.getLogger(__name__)
 
@@ -111,12 +112,15 @@ class Engine:
         client_provider: Callable[[], BambuddyClient | None],
         *,
         update_running: Callable[[], bool] = lambda: False,
+        update_started: Callable[[], bool] = lambda: False,
         now: Callable[[], datetime] = utcnow,
         publish: Publish | None = None,
     ) -> None:
         self.sm = sm
         self.client_provider = client_provider
         self.update_running = update_running
+        # Cheap and synchronous: "an update (or a restore) has just begun". See `_may_send`.
+        self.update_started = update_started
         self.now = now
         self.publish = publish
         self.status = EngineStatus()
@@ -163,6 +167,25 @@ class Engine:
 
     # ---- the tick ------------------------------------------------------------------------
 
+    async def _update_is_running(self) -> bool:
+        """`update_running()` in a worker thread: while an update runs it asks systemd, which may
+        take seconds, and the event loop (pages, live channel) must not wait for that (v0.3.8 p96).
+        Tests: test_engine.py "p96"."""
+        return bool(await in_thread(self.update_running))
+
+    async def _may_send(self) -> bool:
+        """May the reserved print be sent? Asked right before it is marked as sent.
+
+        The slow question runs in a worker thread, and an update can start while it is out: the
+        update's backup of the database would then be older than the mark, and after a rollback the
+        print would be sent twice (docstring of `dispatch.hand_over`). So the answer is checked again
+        by a question that needs no thread and no `await`: nothing can happen between it and the mark.
+        Tests: test_engine.py "p96".
+        """
+        if await self._update_is_running():
+            return False
+        return not self.update_started()
+
     async def tick(self, *, poll: bool) -> TickResult:
         try:
             return await self._tick(poll)
@@ -170,13 +193,13 @@ class Engine:
             self._announce()
 
     async def _tick(self, poll: bool) -> TickResult:
-        if self.update_running():
+        if await self._update_is_running():
             self.status.skipped_for_update = True
             return TickResult("update", 0, 0)
         waited = self._lock.locked()
         async with self._lock:
             # An update may have started while this tick waited for the other one.
-            if waited and self.update_running():
+            if waited and await self._update_is_running():
                 self.status.skipped_for_update = True
                 return TickResult("update", 0, 0)
             self.status.skipped_for_update = False
@@ -305,7 +328,7 @@ class Engine:
         while True:
             # An update started in the middle of a tick may already have backed up the
             # database; a print sent now could come back with a restore (final review 1).
-            if self.update_running():
+            if await self._update_is_running():
                 status.skipped_for_update = True
                 return dispatched
             # Settings are read again for every print: a stop or a lower cap set in the
@@ -323,7 +346,7 @@ class Engine:
                 self.sm,
                 res,
                 insert_next=insert_next,
-                may_send=lambda: not self.update_running(),
+                may_send=self._may_send,
             )
             if result == "queued":
                 dispatched += 1

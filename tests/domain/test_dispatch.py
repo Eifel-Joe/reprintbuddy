@@ -1,5 +1,6 @@
 """Handing prints over to Bambuddy one by one (Spec 7.3, 7.7, plan B4 decisions 1-5)."""
 
+import asyncio
 import pytest
 from sqlalchemy import func, select
 
@@ -97,9 +98,8 @@ def test_reserve_takes_top_eligible(db):
         assert row.queue_entry_id == ec_id
         assert row.origin == "rule"
         assert row.article_id == c
-        # `external_ref` is unused since v0.3.5 (Spec 7.6), but the column is NOT NULL UNIQUE.
-        assert len(row.external_ref) == 32
         assert not hasattr(res, "batch_name") and not hasattr(res, "external_ref")
+        assert not hasattr(row, "external_ref") and not hasattr(row, "bambuddy_batch_id")  # gone with 0008 (p56)
         assert (res.library_file_id, res.plate_id, res.target_model, res.printer_id) == (
             1,
             1,
@@ -171,7 +171,7 @@ async def test_hand_over_queued(db, fake_bambuddy):
         row = s.get(Dispatch, res.dispatch_id)
         assert fake_bambuddy.enqueued[-1] == EnqueueRequest(1, 1, "A1", None, False, None)
         assert row.status == "queued"
-        assert row.bambuddy_batch_id is None and row.bambuddy_item_id is not None
+        assert row.bambuddy_item_id is not None
         assert row.last_status == "pending"
         assert row.enqueue_sent_at is not None and row.dispatched_at is not None
         assert row.finished_at is None
@@ -208,9 +208,7 @@ async def test_entry_handed_print_by_print(db, fake_bambuddy):
         rows = list(s.scalars(select(Dispatch).order_by(Dispatch.id)))
         assert [r.status for r in rows] == ["queued"] * 3
         assert [r.units for r in rows] == [4] * 3
-        assert len({r.external_ref for r in rows}) == 3
         assert len({r.bambuddy_item_id for r in rows}) == 3
-        assert {r.bambuddy_batch_id for r in rows} == {None}
         assert dispatch.reserve_next(s, cap=10) is None
     assert len(fake_bambuddy.enqueued) == 3
 
@@ -288,7 +286,7 @@ async def test_unavailable_on_enqueue_marks_unclear(db, fake_bambuddy, exc, afte
         row = s.get(Dispatch, res.dispatch_id)
         assert row.status == "unclear"
         assert row.enqueue_sent_at is not None
-        assert row.bambuddy_item_id is None and row.bambuddy_batch_id is None
+        assert row.bambuddy_item_id is None
         assert s.get(WorkQueueEntry, e).prints == 1  # not put back
         assert s.get(Article, a).stock == 5
         lines = journal(s, "print_dispatch_unclear")
@@ -514,3 +512,21 @@ async def test_update_before_send_puts_print_back(db, fake_bambuddy):
         assert row.enqueue_sent_at is None
         assert s.get(WorkQueueEntry, e).prints == 2
         assert dispatch.open_count(s) == 0
+
+
+@pytest.mark.parametrize(("answer", "outcome"), [(False, "held_for_update"), (True, "queued")])
+async def test_may_send_may_be_async_and_decides_the_same(db, fake_bambuddy, answer, outcome):
+    """v0.3.8 p96: the engine asks whether an update runs in a worker thread, so the answer is awaited."""
+    with db.begin() as s:
+        a = article(s).id
+        entry(s, a, 1)
+
+    async def may_send():
+        await asyncio.sleep(0)
+        return answer
+
+    with db.begin() as s:
+        res = dispatch.reserve_next(s, cap=10)
+    result = await dispatch.hand_over(fake_bambuddy, db, res, insert_next=False, may_send=may_send)
+    assert result == outcome
+    assert bool(fake_bambuddy.enqueued) == answer

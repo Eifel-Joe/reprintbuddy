@@ -1,4 +1,6 @@
+import json
 import re
+import string
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,53 @@ TEMPLATES = Path(i18n.__file__).parent / "templates"
 def test_same_keys():
     locales = i18n.load_locales()
     assert set(locales["en"]) == set(locales["de"])
+
+
+# p57: the old check of this kind (test_file_choice) looked only at the last two keys of each file, so a
+# new text in the middle slipped through and every new key broke it. These tests read the raw files, so
+# a key written twice (which `json.loads` silently collapses) is seen too, and look at every key.
+LOCALE_DIR = Path(core_i18n.__file__).parent / "locales"
+LANGUAGES = ("de", "en")
+
+
+def _no_duplicates(pairs):
+    keys = [key for key, _ in pairs]
+    repeated = sorted({key for key in keys if keys.count(key) > 1})
+    assert not repeated, f"keys written twice: {repeated}"
+    return dict(pairs)
+
+
+def _raw(lang):
+    text = (LOCALE_DIR / f"{lang}.json").read_text(encoding="utf-8")
+    return json.loads(text, object_pairs_hook=_no_duplicates)
+
+
+def _placeholders(text):
+    return sorted(name for _, name, _, _ in string.Formatter().parse(text) if name)
+
+
+@pytest.mark.parametrize("lang", LANGUAGES)
+def test_locale_file_has_no_key_twice(lang):
+    _raw(lang)
+
+
+def test_locale_files_have_the_same_keys():
+    de, en = _raw("de"), _raw("en")
+    assert not set(en) - set(de), f"only in en.json: {sorted(set(en) - set(de))}"
+    assert not set(de) - set(en), f"only in de.json: {sorted(set(de) - set(en))}"
+
+
+@pytest.mark.parametrize("lang", LANGUAGES)
+def test_every_text_is_a_filled_string(lang):
+    bad = [key for key, value in _raw(lang).items() if not isinstance(value, str) or not value.strip()]
+    assert not bad, f"empty or not text in {lang}.json: {bad}"
+
+
+def test_every_text_has_the_same_placeholders_in_both_languages():
+    de, en = _raw("de"), _raw("en")
+    differing = {key: (_placeholders(en[key]), _placeholders(de[key])) for key in en if key in de}
+    differing = {key: pair for key, pair in differing.items() if pair[0] != pair[1]}
+    assert not differing, f"placeholders differ (en, de): {differing}"
 
 
 def test_translate_de():

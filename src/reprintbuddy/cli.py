@@ -1,4 +1,4 @@
-"""Command line: serve, migrate, init, set-password, set-port, set-host, disable-https, update, url.
+"""Command line: serve, migrate, init, set-password, set-port, set-host, disable-https, restore-backup, update, url.
 
 Every command takes `--db PATH`; the database path is the only thing that
 does not live in the database itself (Spec 11.5a).
@@ -22,6 +22,7 @@ import uvicorn
 from reprintbuddy import __version__, auth
 from reprintbuddy import settings as st
 from reprintbuddy.netcheck import can_bind
+from reprintbuddy.ops import restorecmd
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.runner import subprocess_runner
 from reprintbuddy.ops.server import base_url, connect_host, effective_from_settings
@@ -148,6 +149,20 @@ def _set_host(args: argparse.Namespace) -> int:
     return 0
 
 
+def _restore_backup(args: argparse.Namespace) -> int:
+    """Restore a full backup from a file while the service is stopped (the emergency way, Spec 11.6)."""
+    return restorecmd.restore_backup(
+        args.file,
+        args.db,
+        runner=subprocess_runner,
+        # On the terminal only: not an argument, so not in the shell history or the process list.
+        ask_password=lambda: getpass.getpass("Password of the backup: "),
+        say=print,
+        complain=lambda text: print(text, file=sys.stderr),
+        now=datetime.now(UTC),
+    )
+
+
 def _update(args: argparse.Namespace) -> int:
     """Update to the newest release (or `--target`); started by the update unit."""
     if not args.db.is_file():
@@ -223,6 +238,10 @@ def _parser() -> argparse.ArgumentParser:
     url.add_argument("--host", help="use this host instead of the saved listen address")
     url.add_argument("--next", action="store_true", help="add the page to open next (/setup until there is an account)")
     command("disable-https", _disable_https, "remove the HTTPS certificate (emergency exit)")
+    restore = command(
+        "restore-backup", _restore_backup, "restore a full backup while the service is stopped (emergency exit)"
+    )
+    restore.add_argument("file", type=Path, help="the backup file (.zip) from Settings, Update and backup")
     return parser
 
 

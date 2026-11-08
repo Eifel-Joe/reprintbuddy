@@ -4,7 +4,7 @@ import sys
 import pytest
 from sqlalchemy import inspect, text
 
-from reprintbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upgrade
+from reprintbuddy.db import DEFAULT_DB_PATH, known_revisions, make_engine, make_sessionmaker, upgrade
 
 
 def test_default_path_is_fixed():
@@ -24,7 +24,7 @@ def test_upgrade_twice_is_noop(tmp_path):
     upgrade(engine)
     with engine.connect() as conn:
         rows = conn.execute(text("select version_num from alembic_version")).all()
-    assert [r[0] for r in rows] == ["0009"]
+    assert [r[0] for r in rows] == [known_revisions()[-1]]  # whatever the newest revision is
 
 
 def test_foreign_keys_on(tmp_path):

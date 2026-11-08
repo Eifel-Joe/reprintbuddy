@@ -101,17 +101,24 @@ def test_ops_messages_have_texts():
         assert f"ops.msg.{code}" in locales["de"], code
 
 
-def test_restart_command_runs_in_the_thread_pool(ops_env, monkeypatch):
-    """`sudo` can take seconds: it must not block the event loop of the one worker."""
-    from reprintbuddy.web.routes import ops as routes
+def test_restart_command_runs_in_a_worker_thread(ops_env):
+    """`sudo` can take seconds: it must not block the event loop of the one worker (and a shutdown
+    stops it: test_ops_update.py "v0.3.8")."""
+    import asyncio
 
-    seen = []
-    real = routes.run_in_threadpool
+    where = []
+    real = ops_env.runner
 
-    async def spy(function, *args, **kwargs):
-        seen.append(function)
-        return await real(function, *args, **kwargs)
+    def runner(args, **kwargs):
+        if "restart" in args:
+            try:
+                asyncio.get_running_loop()
+                where.append("event loop")
+            except RuntimeError:
+                where.append("worker thread")
+        return real(args, **kwargs)
 
-    monkeypatch.setattr(routes, "run_in_threadpool", spy)
+    ops = ops_env.client.app.state.ops
+    ops_env.client.app.state.ops = type(ops)(install_dir=ops.install_dir, runner=runner, effective=ops.effective)
     assert post_restart(ops_env).status_code == 200
-    assert routes.request_restart in seen
+    assert where == ["worker thread"]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import AsyncIterator, Awaitable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,7 +31,7 @@ from reprintbuddy.domain.engine import Engine
 from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.autocheck import AutoCheck
 from reprintbuddy.ops.context import OpsContext
-from reprintbuddy.ops.running import update_running
+from reprintbuddy.ops.running import update_just_started, update_running
 from reprintbuddy.ops.versions import VersionInfo, check_versions, is_git_install
 from reprintbuddy.web import deps
 from reprintbuddy.web.flash import pop_flashes
@@ -63,6 +64,7 @@ from reprintbuddy.web.routes import sets as sets_routes
 from reprintbuddy.web.routes import setup as setup_routes
 from reprintbuddy.web.routes import ui as ui_routes
 
+log = logging.getLogger("reprintbuddy.app")
 WEB_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = WEB_DIR / "templates"
 
@@ -175,11 +177,43 @@ def _install_auto_check(app: FastAPI) -> None:
     app.state.auto_check = AutoCheck(
         enabled=enabled,
         is_install=lambda: is_git_install(app.state.ops.install_dir),
-        busy=lambda: update_running(app.state.db_path.parent, app.state.ops.runner, datetime.now(UTC)),
+        busy=lambda: app.state.update_starting
+        or update_running(app.state.db_path.parent, app.state.ops.runner, datetime.now(UTC)),
         check=check,
         store=store,
         wait=wait,
     )
+
+
+SHUTDOWN_TASK_WAIT = 5.0  # seconds the background tasks get to stop; the process must not hang on one
+
+
+async def stop_background(tasks: list[asyncio.Task[None]], *, wait: float | None = None) -> None:
+    """Cancel every background task and wait for all of them together, at most `wait` seconds.
+
+    One after the other (v0.3.7) a task that ended with an error left the next one unwaited, and a
+    task that ignored the cancel held the shutdown for ever. Now: all are cancelled first, then one
+    wait for the whole set; an error of a task is logged (its type only, never its text: it may name
+    an address) and one that is still running after the time is named. Nothing is left pending without
+    being looked at ("Task was destroyed but it is pending", "exception was never retrieved") - v0.3.8 p67.
+    Tests: test_background_shutdown.py.
+    """
+    tasks = [task for task in tasks if task is not None]
+    if not tasks:
+        return
+    for task in tasks:
+        task.cancel()
+    _done, pending = await asyncio.wait(tasks, timeout=SHUTDOWN_TASK_WAIT if wait is None else wait)
+    for task in tasks:
+        if task in pending or task.cancelled():
+            continue
+        error = task.exception()  # looked at, so asyncio does not complain about it later
+        if error is not None:
+            log.warning("background task %s ended with %s", task.get_name(), type(error).__name__)
+    for task in pending:
+        log.warning(
+            "background task %s did not stop within %s s", task.get_name(), SHUTDOWN_TASK_WAIT if wait is None else wait
+        )
 
 
 @contextlib.asynccontextmanager
@@ -200,11 +234,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        for task in tasks:
-            task.cancel()
-        for task in tasks:
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+        background = list(tasks)
+        check = app.state.rights.task  # a check of the key's rights started by a page
+        if check is not None:
+            background.append(check)
+        await stop_background(background)
 
 
 def shared_tls_client_factory() -> Callable[[], httpx.AsyncClient]:
@@ -266,6 +300,7 @@ def create_app(
     app.state.rights = RightsMonitor()  # what the stored key may do, checked once per start
     app.state.live = live
     app.state.restore = backup_routes.RestoreState()  # Spec 11.6: pauses writes and the engine
+    app.state.update_starting = False  # a click on "Update" is on its way (see `update_start`)
     app.state.writes_in_flight = 0  # counted by the update guard; a restore waits for them
     app.state.restore_write_wait = 30.0  # seconds a restore waits for those writes
     app.state.version = __version__  # the live channel tells pages of another version to reload
@@ -275,8 +310,13 @@ def create_app(
         sessionmaker,
         lambda: deps.bambuddy_client(app),
         # A restore counts like an update: the engine must not touch the database it replaces.
+        # A restore, and a click on "Update" whose sudo is still on its way, count like a running update.
         update_running=lambda: app.state.restore.active
+        or app.state.update_starting
         or update_running(db_path.parent, app.state.ops.runner, datetime.now(UTC)),
+        update_started=lambda: app.state.restore.active
+        or app.state.update_starting
+        or update_just_started(db_path.parent, datetime.now(UTC)),
         publish=live.publish,
     )
     app.state.ticker.add_poll_hook("filament", filament.poll_hook)  # the daily record and receipt check (B6)

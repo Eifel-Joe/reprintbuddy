@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import ipaddress
-from urllib.parse import quote, urlsplit
+import unicodedata
+from urllib.parse import quote, unquote, urlsplit
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -236,11 +237,54 @@ def flash(request: Request, key: str, *, warning: bool = False) -> None:
         request.session.pop(FLASH_WARNING_KEY, None)
 
 
+MAX_NEXT_LENGTH = 2048
+_DECODE_ROUNDS = 3  # an address encoded once, twice, three times: a proxy or a client may decode more than once
+
+
+def _hidden_character(text: str) -> bool:
+    """Control, format (zero-width, direction marks, BOM), line/paragraph separator or lone
+    surrogate characters. A browser drops tab, CR and LF from an address before it reads it, and
+    the others cannot be seen: neither belongs in an address we send a person to."""
+    return any(unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp", "Cs") for c in text)
+
+
 def safe_next(value: str | None) -> str:
-    """Only local paths are valid redirect targets after login."""
-    if value and value.startswith("/") and not value.startswith("//") and "\\" not in value:
-        return value
-    return "/"
+    """Only local paths are valid redirect targets after login or an action; anything else is "/".
+
+    Local means: one `/` at the start, no second `/` or backslash after it, and nothing in the
+    address a browser could read differently (p69, v0.3.8). Root of the hardening: `/<TAB>/evil` is
+    `//evil` to a browser, and `/%2f/evil` or `/%5cevil` may be decoded on the way (by a proxy or
+    by the browser) into the same thing. So:
+
+    - no control, format or separator character anywhere, no backslash anywhere, at most
+      `MAX_NEXT_LENGTH` characters;
+    - the PATH (up to `?` or `#`) is also looked at decoded, once to `_DECODE_ROUNDS` times: still
+      no such character, no backslash, and no `//` anywhere in it (that also catches `/.//evil`
+      and `/a/..//evil`);
+    - the QUERY and the fragment are only checked raw: a filter may carry any encoded value
+      (`?q=%2F%2Fx`), it is data there, not a place to go to.
+
+    Rejected: a check of the decoded text only for the start (`startswith("//")`) would let `/a//b`
+    through, which is harmless but never written by this program; no local address of ours has `//`.
+    Tests: test_safe_next.py (the known patterns, the positive cases, the places that call it).
+    """
+    if not isinstance(value, str) or not value or len(value) > MAX_NEXT_LENGTH:
+        return "/"
+    if not value.startswith("/") or value.startswith(("//", "/\\")) or "\\" in value:
+        return "/"
+    if _hidden_character(value):
+        return "/"
+    path = value.split("?", 1)[0].split("#", 1)[0]
+    for _ in range(_DECODE_ROUNDS + 1):
+        if "//" in path or "\\" in path or _hidden_character(path):
+            return "/"
+        decoded = unquote(path)
+        if decoded == path:
+            break
+        path = decoded
+    else:
+        return "/"  # still changing after the last round: encoded more often than anything decodes
+    return value
 
 
 def _plain_local_path(value: object) -> str | None:

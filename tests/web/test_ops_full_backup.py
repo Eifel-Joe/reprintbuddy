@@ -487,10 +487,33 @@ def test_confirm_checks_for_an_update_itself(ops_env, monkeypatch):
     shown = staged_token(ops_env)
     mark_update_running(ops_env)
     monkeypatch.setattr(routes, "restore_blocks", lambda _request: False)
-    monkeypatch.setattr(routes, "update_running", lambda *_args: False)  # past the guard
+
+    async def not_running(_request):
+        return False
+
+    monkeypatch.setattr(routes, "update_busy", not_running)  # past the guard
     response = confirm_with(ops_env, shown)
     assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_busy#ops-restore"
     assert backups(ops_env) == []
+    assert ops_env.client.app.state.restore.phase == "idle"  # set before the question, given back after
+
+
+def test_a_failing_update_question_gives_the_restore_state_back(ops_env, monkeypatch):
+    """p96: the state is set before the question is asked; whatever goes wrong, it must not stay set."""
+    from reprintbuddy.ops import running
+
+    upload(ops_env, made_backup(ops_env))
+    shown = staged_token(ops_env)
+
+    async def breaks(*_args):
+        raise RuntimeError("systemd is not answering")
+
+    monkeypatch.setattr(running, "update_running_async", breaks)
+    with pytest.raises(RuntimeError):
+        confirm_with(ops_env, shown)
+    assert ops_env.client.app.state.restore.phase == "idle"  # writes and the engine are not locked out
+    assert backups(ops_env) == []
+    assert work_files(ops_env) == [] or all(not name.startswith("candidate-") for name in work_files(ops_env))
 
 
 def test_confirm_checks_for_another_restore_itself(ops_env, monkeypatch):
@@ -692,6 +715,28 @@ def test_writes_are_counted_while_they_run(ops_env, monkeypatch):
     assert ops_env.client.app.state.writes_in_flight == 0
 
 
+def test_a_restore_that_begins_while_the_guard_waits_for_the_update_answer_still_pauses_the_write(
+    ops_env, monkeypatch
+):
+    """v0.3.8 p96 review: the question whether an update runs is a thread hop now; a write that
+    passed the first look at the restore must not slip into a restore that began during it."""
+    from reprintbuddy.web.routes import ops as routes
+
+    app = ops_env.client.app
+
+    async def answer_after_a_restore_began(_request):
+        app.state.restore.phase = "running"  # the restore sets its state while the question is out
+        return False
+
+    monkeypatch.setattr(routes, "update_busy", answer_after_a_restore_began)
+    response = post(ops_env, "/settings/language", language="de")
+    assert response.status_code == 503
+    assert app.state.writes_in_flight == 0  # it was refused, not counted
+    app.state.restore.phase = "idle"
+    with app.state.sessionmaker() as session:
+        assert st.get_setting(session, "language") != "de"
+
+
 # --- review of the sign-in check and the write counter ------------------------------------------
 
 
@@ -819,3 +864,23 @@ def test_restart_is_asked_even_if_the_new_address_cannot_be_read(ops_env, monkey
     response = confirm(ops_env)
     assert response.status_code == 200
     assert RESTART_CMD in ops_env.runner.calls
+
+
+def test_a_restore_is_refused_while_a_click_on_update_has_its_sudo_on_the_way(ops_env, monkeypatch):
+    """The write guard already pauses it; this is the restore's own look (the gate may be set after the guard)."""
+    from reprintbuddy.web.routes import ops as routes
+
+    async def not_running(_request):
+        return False
+
+    monkeypatch.setattr(routes, "update_busy", not_running)  # past the guard
+    upload(ops_env, made_backup(ops_env))
+    shown = staged_token(ops_env)
+    app = ops_env.client.app
+    app.state.update_starting = True
+    try:
+        response = confirm_with(ops_env, shown)
+    finally:
+        app.state.update_starting = False
+    assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_busy#ops-restore"
+    assert app.state.restore.phase == "idle" and backups(ops_env) == []

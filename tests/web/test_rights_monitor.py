@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 import httpx
+import pytest
 from conftest import REQUIRED, auth_me, http_client_factory, mock_auth_me
 
 from reprintbuddy.bambuddy.connection import EDITOR_LABELS, KEY_RIGHT_FOR, REQUIRED_PERMISSIONS, ConnectionCheck
@@ -14,6 +15,20 @@ URL = "http://bambuddy.test:8000"
 ME = f"{URL}/api/v1/auth/me"
 
 
+# p81: no test of this module may depend on how fast the machine is. Two kinds of clock were in play:
+# the three seconds the first page really waits for the check (`FIRST_WAIT_SECONDS`), and guards of one
+# second around calls that must not wait. Under load a check or a client could take longer than either,
+# and the test failed without the code being wrong. Now the first wait is so long that the check always
+# ends first (the tests that are about the cut-off set a tiny one themselves), and the guards only catch
+# a hang. What a test checks is the state afterwards (`status`, `attempts`), never how long it took.
+HANG_GUARD = 30.0
+
+
+@pytest.fixture(autouse=True)
+def first_wait_never_runs_out(monkeypatch):
+    monkeypatch.setattr("reprintbuddy.web.rights.FIRST_WAIT_SECONDS", 120.0)
+
+
 def credentials():
     return URL, "bb_testkey"
 
@@ -22,7 +37,7 @@ async def settle(monitor: RightsMonitor) -> None:
     """Let the background check of a later attempt finish."""
     task = monitor._task
     if task is not None:
-        await asyncio.wait({task}, timeout=5)
+        await asyncio.wait({task}, timeout=HANG_GUARD)
 
 
 async def test_missing_right_sets_notice(respx_mock):
@@ -80,7 +95,7 @@ async def test_later_attempts_do_not_wait(respx_mock):
     clients = iter([httpx.AsyncClient(), httpx.AsyncClient()])
     monitor = RightsMonitor()
     await monitor.ensure(credentials, lambda: next(clients))  # the first attempt waits, and fails
-    await asyncio.wait_for(monitor.ensure(credentials, lambda: next(clients)), timeout=1)  # does not wait
+    await asyncio.wait_for(monitor.ensure(credentials, lambda: next(clients)), timeout=HANG_GUARD)  # does not wait
     assert not release.is_set()
     assert monitor.status == "unknown"
     release.set()
@@ -134,10 +149,10 @@ async def test_first_attempt_waits_at_most_the_first_wait(respx_mock, monkeypatc
     # Only one check runs, so the factory hands out this one client once.
     client = httpx.AsyncClient()
     monitor = RightsMonitor()
-    await asyncio.wait_for(monitor.ensure(credentials, lambda: client), timeout=1)
+    await asyncio.wait_for(monitor.ensure(credentials, lambda: client), timeout=HANG_GUARD)
     assert monitor.status == "unknown"  # too slow: the page is shown without a notice
     # a second page does not wait for the same slow check, and does not start another one
-    await asyncio.wait_for(monitor.ensure(credentials, lambda: client), timeout=1)
+    await asyncio.wait_for(monitor.ensure(credentials, lambda: client), timeout=HANG_GUARD)
     assert monitor.attempts == 1
     release.set()
     await settle(monitor)

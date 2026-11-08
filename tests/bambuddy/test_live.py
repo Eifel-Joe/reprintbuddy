@@ -108,6 +108,7 @@ class FakeConnection:
     def __init__(self, script) -> None:
         self.script = list(script)
         self.closed = False
+        self.close_codes: list[int] = []
         self.waiting = asyncio.Event()
 
     async def __aenter__(self):
@@ -115,6 +116,10 @@ class FakeConnection:
 
     async def __aexit__(self, *exc) -> None:
         self.closed = True
+
+    async def close(self, code: int = 1000, reason: str = "") -> None:
+        self.closed = True
+        self.close_codes.append(code)
 
     async def recv(self):
         while self.script:
@@ -565,7 +570,7 @@ async def test_connect_gets_the_quiet_library_logger(respx_mock):
     tokens(respx_mock, "t1")
     connect = FakeConnect([closed(1006)])
     await run_until_stopped(listener(connect, Events(), Sleeps(1)))
-    assert connect.options == [{"logger": live.LIBRARY_LOG}]
+    assert connect.options == [{"logger": live.LIBRARY_LOG, "close_timeout": live.CLOSE_WAIT}]
     assert not live.LIBRARY_LOG.isEnabledFor(logging.INFO)
 
 
@@ -691,8 +696,10 @@ async def test_on_state_reports_each_change_once(respx_mock):
     states: list[str] = []
     subject = listener_with_states(FakeConnect(OSError("down"), OSError("down")), Sleeps(2), states)
     await run_until_stopped(subject)
-    # Starting state "connecting" is not a change; a repeated state is not reported again.
-    assert states == ["waiting", "connecting", "waiting"]
+    # Starting state "connecting" is not a change; a repeated state is not reported again. A second
+    # attempt out of a pause stays "waiting": it used to say "connecting" and "waiting" again for every
+    # attempt, two changes (and two reloads of open settings pages) for nothing (v0.3.8 p94).
+    assert states == ["waiting"]
 
 
 async def test_on_state_reports_connected_and_no_right(respx_mock):
@@ -883,3 +890,136 @@ async def test_a_shutdown_while_the_pause_is_ended_ends_run(respx_mock):
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=2)
+
+
+# ---- one change per state, not two per attempt (v0.3.8 p94) -------------------------------------------
+
+
+async def test_many_failed_attempts_report_no_change_after_the_first(respx_mock):
+    tokens(respx_mock, "t1", "t2", "t3", "t4")
+    states: list[str] = []
+    subject = listener_with_states(FakeConnect(*[OSError("down")] * 4), Sleeps(4), states)
+    await run_until_stopped(subject)
+    assert states == ["waiting"]
+
+
+async def test_a_refusal_after_waiting_is_one_change_and_stays(respx_mock):
+    tokens(respx_mock, "t1", "t2", "t3", "t4")
+    states: list[str] = []
+    connect = FakeConnect(OSError("down"), refused(403), refused(403), refused(403), refused(403))
+    subject = listener_with_states(connect, Sleeps(3), states)
+    await run_until_stopped(subject)
+    assert states == ["waiting", "no_right"]  # not "connecting" in between
+
+
+async def test_connected_then_lost_then_again_reports_each_real_change_once(respx_mock):
+    tokens(respx_mock, "t1", "t2", "t3")
+    states: list[str] = []
+    connect = FakeConnect([closed(1006)], OSError("down"), [closed(1006)])
+    subject = listener_with_states(connect, Sleeps(3), states)
+    await run_until_stopped(subject)
+    assert states == ["connected", "waiting", "connected", "waiting"]
+
+
+async def test_after_a_wake_the_attempt_is_shown_as_connecting(respx_mock):
+    """A person asked for the attempt (new key, new rights): the page says "connecting" for it."""
+    tokens(respx_mock, "t1", "t2", "t3")
+    states: list[str] = []
+    sleeps = HoldingSleep()
+    subject = listener_with_states(FakeConnect(OSError("down"), OSError("down")), sleeps, states)
+    task = asyncio.create_task(subject.run())
+    try:
+        await until(lambda: len(sleeps.delays) == 1)
+        assert states == ["waiting"]
+        subject.wake()
+        await until(lambda: len(sleeps.delays) == 2)
+        assert states == ["waiting", "connecting", "waiting"]
+    finally:
+        await stop(task)
+
+
+# ---- closing the channel properly (v0.3.8 p80) ------------------------------------------------------------
+
+
+async def _serve_and_note_the_close_code(respx_mock, scenario):
+    """Run the real library against a local server; `scenario(subject, task)` ends the connection.
+
+    Returns the close code the server received (what Bambuddy would see).
+    """
+    codes: list[int | None] = []
+    closed_seen = asyncio.Event()
+
+    async def handler(connection):
+        await connection.wait_closed()
+        codes.append(connection.close_code)
+        closed_seen.set()
+
+    async with serve(handler, "127.0.0.1", 0, logger=quiet_server_log()) as server:
+        port = server.sockets[0].getsockname()[1]
+        base = f"http://127.0.0.1:{port}"
+        respx_mock.post(f"{base}/api/v1/auth/ws-token").respond(json={"token": "t1"})
+        subject = live.LiveListener(
+            HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), Events()
+        )
+        task = asyncio.create_task(subject.run())
+        try:
+            await asyncio.wait_for(until_connected(subject), timeout=5)
+            await scenario(subject, task)
+            await asyncio.wait_for(closed_seen.wait(), timeout=5)
+        finally:
+            await stop(task)
+    return codes[0]
+
+
+async def until_connected(subject) -> None:
+    while subject.state != "connected":
+        await asyncio.sleep(0.01)
+
+
+async def test_shutting_down_closes_the_connection_as_finished_not_as_an_error(respx_mock):
+    async def shutdown(subject, task):
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    assert await _serve_and_note_the_close_code(respx_mock, shutdown) == 1000
+
+
+async def test_a_reconnect_closes_the_old_connection_as_finished_too(respx_mock):
+    async def reconnect(subject, task):
+        subject.wake(reconnect=True)
+
+    assert await _serve_and_note_the_close_code(respx_mock, reconnect) == 1000
+
+
+async def test_a_silent_bambuddy_does_not_hold_the_shutdown_longer_than_the_close_time(respx_mock, monkeypatch):
+    """Review: the library waits for the answer to its close for 10 s by default; here it is CLOSE_WAIT."""
+    monkeypatch.setattr(live, "CLOSE_WAIT", 0.3)
+    connected = asyncio.Event()
+    finished = asyncio.Event()
+
+    async def handler(connection):
+        connection.transport.pause_reading()  # takes in nothing more: the close is never answered
+        connected.set()
+        await finished.wait()
+
+    async with serve(handler, "127.0.0.1", 0, logger=quiet_server_log(), close_timeout=0.1) as server:
+        port = server.sockets[0].getsockname()[1]
+        base = f"http://127.0.0.1:{port}"
+        respx_mock.post(f"{base}/api/v1/auth/ws-token").respond(json={"token": "t1"})
+        subject = live.LiveListener(
+            HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), Events()
+        )
+        task = asyncio.create_task(subject.run())
+        try:
+            await asyncio.wait_for(connected.wait(), timeout=5)
+            await asyncio.wait_for(until_connected(subject), timeout=5)
+            began = asyncio.get_running_loop().time()
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.wait_for(task, timeout=5)
+            assert asyncio.get_running_loop().time() - began < 3  # not the library's 10 s
+            assert task.done()
+        finally:
+            finished.set()
+            await stop(task)

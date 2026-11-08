@@ -31,7 +31,6 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
-from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
@@ -40,6 +39,7 @@ from reprintbuddy.db import known_revisions
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops import running
 from reprintbuddy.ops.server import address_changed, base_url, effective_from_settings
+from reprintbuddy.ops.runner import in_thread
 from reprintbuddy.ops.service import request_restart
 from reprintbuddy.ops.status import read_status
 from reprintbuddy.web.csrf import verify_csrf
@@ -92,6 +92,27 @@ def _remove(*paths: Path) -> None:
 # --- downloading -----------------------------------------------------------------------------
 
 
+class RemovedAfterSending(FileResponse):
+    """A file response that deletes its file when the answer is over, however it ends (p103).
+
+    The file of a full backup holds every secret. Root: it used to be deleted by the response's
+    background task (`BackgroundTask`), and Starlette runs that only after the file was sent to the
+    end: a send that fails (a connection that errors out), a cancelled request (shutdown) or an
+    exception in between skipped it, and the file lay in the work folder until the next cleanup
+    (a page after an hour, or the next start). `finally` does not depend on how the answer ended.
+    Not reproduced: a browser that merely cancels the download of a real Uvicorn server; Uvicorn
+    swallows the lost connection and the answer ends normally. Rejected: deleting the file before
+    sending, with the file kept open (works on Linux only, and the size would be unknown to
+    `FileResponse`). Tests: test_backup_download_cleanup.py.
+    """
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            _remove(Path(self.path))
+
+
 @router.post("/settings/backup", dependencies=[Depends(verify_csrf)])
 async def download_backup(request: Request, db: Session = Depends(get_db)) -> Response:
     form = await request.form()
@@ -117,12 +138,11 @@ async def download_backup(request: Request, db: Session = Depends(get_db)) -> Re
     except (OSError, sqlite3.Error, fb.BackupError) as error:
         log.warning("backup failed: %s", type(error).__name__)  # never the message: no paths, no values
         return _back("backup_failed", "ops-backup")
-    return FileResponse(
+    return RemovedAfterSending(
         created.path,
         media_type="application/zip",
         filename=created.filename,
         headers={"Cache-Control": "no-store"},
-        background=BackgroundTask(_remove, created.path),
     )
 
 
@@ -281,13 +301,25 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         log.warning("restore check failed: %s", type(error).__name__)
         return _back("restore_failed", "ops-restore")
 
-    # From the check to setting the state there is no `await`: an update cannot slip in.
+    # The state is set first and the update asked about afterwards (in a worker thread, v0.3.8 p96):
+    # from the check of `active` to setting it there is no `await`, so a second restore or an update
+    # starting meanwhile finds the restore running and is refused.
     state: RestoreState = app.state.restore
     data_dir = app.state.db_path.parent
-    if state.active or running.update_running(data_dir, app.state.ops.runner, _now()):
+    if state.active or app.state.update_starting:  # a click on "Update" whose sudo is still on its way
         _remove(candidate)
         return _back("restore_busy", "ops-restore")
     state.phase = "running"
+    try:
+        update_busy = await running.update_running_async(data_dir, app.state.ops.runner, _now())
+    except BaseException:  # cancelled (shutdown) or failing: nothing is replaced
+        state.phase = "idle"
+        _remove(candidate)
+        raise
+    if update_busy:
+        state.phase = "idle"
+        _remove(candidate)
+        return _back("restore_busy", "ops-restore")
     # A write that passed the guard just before this line may still be under way; it would
     # land in the restored database with what it read from the old one. This request is one.
     deadline = time.monotonic() + app.state.restore_write_wait
@@ -333,7 +365,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
                 new_url = base_url(_display_host(request, saved), saved.port, saved.tls)
     except Exception as error:  # noqa: BLE001 - only a hint; the restart must be asked for anyway
         log.warning("address after restore unreadable: %s", type(error).__name__)
-    result = await run_in_threadpool(request_restart, app.state.ops.runner)
+    result = await in_thread(request_restart, app.state.ops.runner)  # sudo may take seconds; a shutdown stops it
     if not result.ok:
         log.warning("restart after restore failed: %s", (result.stderr or "").strip()[:300])
     return render(request, "restored.html", restarted=result.ok, new_url=new_url, active_nav="settings")

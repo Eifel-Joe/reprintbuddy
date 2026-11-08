@@ -164,3 +164,74 @@ async def test_the_check_runs_in_a_thread_and_the_loop_stays_free():
     assert await asyncio.wait_for(task, 5) == CHECK_INTERVAL
     assert seen["thread"] is not main
     assert stored == [INFO]
+
+
+# --- v0.3.8: nothing blocks the event loop, and a shutdown does not wait for git ------------------------
+
+import time  # noqa: E402
+
+from reprintbuddy.ops.runner import cancel_flag  # noqa: E402
+
+
+async def test_the_question_whether_an_update_runs_does_not_block_the_event_loop():
+    """p96: it asks systemd (up to 5 s); that happens in a worker thread."""
+    s = Setup()
+    release = threading.Event()
+    where: list[str] = []
+
+    def slow_busy() -> bool:
+        try:
+            asyncio.get_running_loop()
+            where.append("on the event loop")
+        except RuntimeError:
+            where.append("in a worker thread")
+        release.wait(5)
+        return False
+
+    check = AutoCheck(
+        enabled=lambda: True, is_install=lambda: True, busy=slow_busy, check=s.check, store=s.stored.append, wait=s.wait
+    )
+    task = asyncio.create_task(check.run_once())
+    ticks = 0
+    for _ in range(20):  # the loop goes on while the question is unanswered
+        await asyncio.sleep(0.01)
+        ticks += 1
+    assert not task.done() and ticks == 20
+    release.set()
+    assert await asyncio.wait_for(task, 5) == CHECK_INTERVAL
+    assert where == ["in a worker thread"]
+
+
+async def test_stopping_the_loop_stops_a_running_check_at_once():
+    """p95: the check is told to stop (its git command is killed) and the loop returns without waiting."""
+    seen_stop = threading.Event()
+    started = threading.Event()
+
+    def blocking_check() -> VersionInfo:
+        flag = cancel_flag.get()
+        started.set()
+        deadline = time.monotonic() + 10
+        while not flag.is_set() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if flag.is_set():
+            seen_stop.set()
+        raise UpdateCheckError("cancelled")
+
+    s = Setup()
+    check = AutoCheck(
+        enabled=lambda: True,
+        is_install=lambda: True,
+        busy=lambda: False,
+        check=blocking_check,
+        store=s.stored.append,
+        wait=s.wait,
+    )
+    task = asyncio.create_task(check.run())
+    assert await asyncio.to_thread(started.wait, 5)
+    began = time.monotonic()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert time.monotonic() - began < 1
+    assert await asyncio.to_thread(seen_stop.wait, 5)  # the check itself was told to stop
+    assert s.stored == []

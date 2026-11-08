@@ -20,8 +20,8 @@ The session functions never commit: the caller opens the transaction.
 
 from __future__ import annotations
 
-import uuid
-from collections.abc import Callable, Collection, Sequence
+import inspect
+from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Literal
@@ -101,9 +101,6 @@ def _reserve(
     row = Dispatch(
         article_id=article.id,
         origin=entry.origin,
-        # Unused since v0.3.5 (Spec 7.6: no batches); the column is NOT NULL UNIQUE, so it
-        # still gets a fresh value. Dropping it would need a migration for nothing.
-        external_ref=uuid.uuid4().hex,
         status="sending",
         units=article.units_per_print,
         queue_entry_id=entry.id,
@@ -344,12 +341,12 @@ async def hand_over(
     res: Reservation,
     *,
     insert_next: bool,
-    may_send: Callable[[], bool] = lambda: True,
+    may_send: Callable[[], bool | Awaitable[bool]] = lambda: True,
 ) -> HandOverResult:
     """Hand the reserved print to Bambuddy. No Bambuddy call runs inside a transaction.
 
-    `may_send` is asked right before the mark: False (an update has started) puts the
-    never-sent print back and returns `held_for_update`. An update backs the database
+    `may_send` (plain or `async`) is asked right before the mark: False (an update has started) puts
+    the never-sent print back and returns `held_for_update`. An update backs the database
     up while the service runs and restores it on failure; a print sent after the
     backup would be in Bambuddy but back in the restored work queue - printed twice.
     """
@@ -367,7 +364,10 @@ async def hand_over(
         _put_back(sm, res, "not_sent")
         return "not_sent"
 
-    if not may_send():
+    allowed = may_send()
+    if inspect.isawaitable(allowed):
+        allowed = await allowed
+    if not allowed:
         _put_back(sm, res, "not_sent")
         return "held_for_update"
     with sm.begin() as session:

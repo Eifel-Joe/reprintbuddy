@@ -70,3 +70,29 @@ def test_a_state_older_than_the_limit_is_stale_without_asking(tmp_path, fake_run
     put(tmp_path, "running", 45)
     assert update_running(tmp_path, fake_runner, NOW) is False
     assert fake_runner.calls == []
+
+
+def test_just_started_is_a_cheap_look_at_the_state_file_only(tmp_path, fake_runner):
+    from reprintbuddy.ops.running import update_just_started
+
+    assert update_just_started(tmp_path, NOW) is False  # nothing written
+    put(tmp_path, "queued", 0)
+    assert update_just_started(tmp_path, NOW) is True
+    put(tmp_path, "running", 0)
+    assert update_just_started(tmp_path, NOW) is True
+    assert fake_runner.calls == []  # never asks systemd
+
+
+def test_an_update_older_than_the_grace_is_not_just_started(tmp_path):
+    from reprintbuddy.ops.running import update_just_started
+
+    put(tmp_path, "running", 5)  # five minutes: the slow question decides about that one
+    assert update_just_started(tmp_path, NOW) is False
+
+
+@pytest.mark.parametrize("state", ["succeeded", "failed", "rolled_back", "rollback_failed", "idle"])
+def test_a_finished_update_is_not_just_started(tmp_path, state):
+    from reprintbuddy.ops.running import update_just_started
+
+    put(tmp_path, state, 0)
+    assert update_just_started(tmp_path, NOW) is False

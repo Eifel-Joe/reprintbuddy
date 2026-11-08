@@ -5,7 +5,9 @@ check as the button "Check for updates": `versions.check_versions`). The loop kn
 the web layer or of the clock; the app hands in what it needs (see `web/app.py`).
 
 - The check runs git and may wait for the network (up to 20 s), so it runs in a thread and
-  never in the event loop; the tick engine and the pages go on meanwhile.
+  never in the event loop; the tick engine and the pages go on meanwhile. So does the question
+  whether an update runs (it asks systemd, up to 5 s: v0.3.8 p96). Stopping the loop (shutdown)
+  stops the git command at once instead of waiting for it (`runner.in_thread`, p95).
 - A check that fails shows nothing (no message, no WARNING): it is logged at INFO and tried
   again. An earlier good result stays: a network error must not hide a notice that holds.
 - An installation without git (a development run) is never asked; the loop ends.
@@ -13,10 +15,10 @@ the web layer or of the clock; the app hands in what it needs (see `web/app.py`)
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
+from reprintbuddy.ops.runner import in_thread
 from reprintbuddy.ops.versions import VersionInfo
 
 log = logging.getLogger(__name__)
@@ -65,10 +67,10 @@ class AutoCheck:
             return None
         if not self._enabled():
             return CHECK_INTERVAL  # the settings switch wakes the pause
-        if self._busy():
+        if await in_thread(self._busy):
             return UPDATE_RETRY
         try:
-            info = await asyncio.to_thread(self._check)
+            info = await in_thread(self._check)
         except Exception as exc:  # the remote, the network, git: any failure is silent
             log.info("automatic check for new versions failed: %s", str(exc)[:300])
             return RETRY_AFTER_FAILURE
