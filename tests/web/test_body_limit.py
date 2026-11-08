@@ -246,7 +246,11 @@ def test_the_upload_routes_have_their_own_limits(client):
     from reprintbuddy.ops import fullbackup as fb
 
     assert limits["/settings/restore/upload"] >= fb.MAX_UPLOAD_BYTES
-    assert all(limit > bodylimit.DEFAULT_LIMIT for limit in limits.values())
+    # The file uploads are above the default; the certificate form (two PEM files of 64 KiB, two pasted
+    # texts) is smaller than the default but has an entry so that its route may refuse with a page (p132).
+    others = {path: limit for path, limit in limits.items() if path != "/settings/server"}
+    assert all(limit > bodylimit.DEFAULT_LIMIT for limit in others.values())
+    assert 4 * 64 * 1024 <= limits["/settings/server"] < bodylimit.DEFAULT_LIMIT
 
 
 async def test_transfer_encoding_on_an_upload_path_is_left_to_its_route_which_reads_nothing():

@@ -381,6 +381,7 @@ def create_app(
     app.state.body_limits = {
         "/settings/restore/upload": fullbackup.MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD,
         upload_routes.PATH: upload_routes.BODY_LIMIT,
+        settings_routes.SERVER_PATH: settings_routes.SERVER_BODY_LIMIT,
     }
     app.state.upload_lock = upload_routes.make_lock()  # one upload at a time (Spec 5.1a)
     app.add_middleware(BodyLimitMiddleware, limits=app.state.body_limits)
