@@ -3,7 +3,7 @@
   <div class="section-head"><h2>{{ ui.icon('printer') }}{{ t('labels.title') }}</h2></div>
   <div class="label-body">
     {# p127: the script asks for the picture once (and reads the notes from that answer); an <img src> would have it drawn a second time #}
-    <img id="label-preview" class="label-preview" data-label-url="/articles/{{ article.id }}/label.png" width="696" height="271" alt="{{ t('labels.preview_alt') }}">
+    <img id="label-preview" class="label-preview" hidden data-label-url="/articles/{{ article.id }}/label.png" width="696" height="271" alt="{{ t('labels.preview_alt') }}">
     <noscript><img class="label-preview" src="/articles/{{ article.id }}/label.png" width="696" height="271" alt="{{ t('labels.preview_alt') }}"></noscript>
     {% include "_label_notes.html" %}
     {% if label_configured %}

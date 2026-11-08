@@ -648,6 +648,16 @@ def test_the_article_preview_is_asked_for_once_by_the_script_not_also_by_the_bro
     assert 'alt="' in _noscript_img(page) and 'width="696"' in _noscript_img(page)
 
 
+def test_the_scripted_picture_is_hidden_until_it_has_its_image_so_no_empty_box_shows(configured, article):
+    """Without a script the <noscript> picture is the only one; with one the box is shown when the
+    picture is there (an img without src would be an empty bordered box with its alt text)."""
+    for page in (configured.get(SAME_PAGE).text, configured.get(f"/articles/{article}").text):
+        assert " hidden" in _preview_img(page)
+    script = configured.get("/static/js/labels.js").text
+    assert script.count('removeAttribute("hidden")') >= 1
+    assert ".label-preview[hidden]" in configured.get("/static/css/reprintbuddy.css").text
+
+
 def test_the_settings_preview_is_asked_for_once_by_the_script_not_also_by_the_browser(configured):
     page = configured.get(SAME_PAGE).text
     assert " src=" not in _preview_img(page)

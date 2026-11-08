@@ -36,7 +36,7 @@
 <section class="card" id="label-preview-card">
   {% call ui.card_head("eye", t('labels.preview_title')) %}<button class="btn secondary" type="submit" form="settings-labels" formaction="/settings/labels/test">{{ ui.icon('printer') }}{{ t('labels.trial_print') }}</button>{% endcall %}
   {# p127: the script asks for the picture once, with the ticked details; an <img src> would have it drawn a second time #}
-  <img id="label-preview" class="label-preview" width="696" height="271" alt="{{ t('labels.preview_alt') }}">
+  <img id="label-preview" class="label-preview" hidden width="696" height="271" alt="{{ t('labels.preview_alt') }}">
   <noscript><img class="label-preview" src="/settings/labels/preview.png?fields={{ label_preview_fields }}" width="696" height="271" alt="{{ t('labels.preview_alt') }}"></noscript>
   {% include "_label_notes.html" %}
   <p class="muted">{{ t('labels.preview_hint') }}</p>

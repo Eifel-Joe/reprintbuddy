@@ -61,11 +61,13 @@
         }
         current = URL.createObjectURL(blob);
         image.src = current;
+        image.removeAttribute("hidden");  /* the box shows when it has its picture */
         showNotes(header, dropped);
       });
     }).catch(function () {
       if (!current) {  /* no picture yet: let the browser try for itself (then without notes) */
         image.src = url;
+        image.removeAttribute("hidden");
       }
     });
   }
