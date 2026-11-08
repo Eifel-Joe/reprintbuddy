@@ -680,3 +680,11 @@ def test_the_rows_note_has_the_name_of_every_detail_so_the_script_can_say_which_
 def test_the_notes_are_in_german_too():
     for key in ("labels.note_missing", "labels.note_rtl", "labels.note_fine", "labels.note_rows"):
         assert de(key) != key and de(key) != en(key)
+
+
+def test_the_size_hint_says_that_too_many_details_are_left_off_and_the_preview_names_them():
+    """p137: the hint under the details said the letters are as large as everything fits, and nothing about
+    the details left off at the end when there are too many."""
+    assert "left off" in en("labels.content_hint") and "preview" in en("labels.content_hint")
+    assert "weg" in de("labels.content_hint") and "Vorschau" in de("labels.content_hint")
+    assert de("labels.content_hint") != en("labels.content_hint")

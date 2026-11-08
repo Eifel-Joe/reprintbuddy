@@ -895,7 +895,7 @@
   "labels.raster_hint": "Set the printer's command mode to \"Raster\" once, at the printer (a new printer is set to \"P-touch Template\" and then prints nothing).",
   "labels.landscape_hint": "Labels are always printed in landscape.",
   "labels.content_title": "What is on the label",
-  "labels.content_hint": "The QR code of the article is always on the label. Tick what else should be printed next to it; the letters are as large as everything fits.",
+  "labels.content_hint": "The QR code of the article is always on the label. Tick what else should be printed next to it; the letters are as large as everything fits. With too many details the last ones are left off; the preview names them.",
   "labels.field.name": "Name",
   "labels.field.sku": "Article number",
   "labels.field.min_stock": "Minimum stock",
