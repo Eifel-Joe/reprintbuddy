@@ -182,7 +182,11 @@ def test_the_answer_for_an_oversized_certificate_does_not_wait_for_the_body(read
     status, data = _answer_without_sending_the_body(port, "/settings/server", cookie, 50 * 1024 * 1024)
     assert status == 413
     assert html.unescape(data.decode("utf-8", "replace")).count(en("settings.invalid_pem")) == 1
-    assert b"Request Entity Too Large" not in data
+    # The page, not the bare 413: only the body counts. The status line carries the reason phrase,
+    # which Python 3.12 calls "Request Entity Too Large" and 3.13 "Content Too Large".
+    body = data.split(b"\r\n\r\n", 1)[1]
+    assert b"Too Large" not in body
+    assert b"<html" in body
 
 
 def test_the_answer_for_an_oversized_backup_does_not_wait_for_the_body(ready_client, port):
