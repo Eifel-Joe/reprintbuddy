@@ -41,5 +41,9 @@ def test_the_script_shows_the_note_when_an_answer_fails_and_hides_it_when_the_pr
     ]
     # an old request that fails after a newer one has been answered says nothing
     assert result["settings_old_failure_is_ignored"][-1]["failed"] is False
+    # an error status of the server counts as a failure; the old note stays
+    assert result["settings_error_status"][-1] == {"failed": True, "rows": True, "src": "blob:x"}
+    # a late good answer of an old request neither hides the failure of the newer one nor draws over it
+    assert result["settings_old_success_after_new_failure"][-1] == {"failed": True, "rows": False, "src": "blob:x"}
     # the article's page asks once: when that fails the note is there too (the browser tries the picture itself)
     assert result["article_first_load_fails"] == [{"failed": True, "rows": False, "src": "/articles/1/label.png"}]

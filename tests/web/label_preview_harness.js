@@ -65,7 +65,9 @@ async function run(mode, plan) {
     if (step.tick) { p.listeners.change({ target: { name: "label_field" } }); }
     else {
       const d = pending[step.request];
-      if (step.ok !== undefined) d.resolve(answer(step.ok)); else d.reject(new Error("net"));
+      if (step.status) d.resolve({ ok: false, status: step.status, headers: { get: () => null }, blob: () => Promise.resolve({}) });
+      else if (step.ok !== undefined) d.resolve(answer(step.ok));
+      else d.reject(new Error("net"));
       await settle();
       snapshot();
     }
@@ -82,6 +84,12 @@ async function run(mode, plan) {
   ]);
   out.settings_old_failure_is_ignored = await run("settings", [
     { request: 0, ok: "" }, { tick: 1 }, { tick: 1 }, { request: 2, ok: "rows" }, { request: 1 },
+  ]);
+  // an error status of the server is a failure too, not only a network error
+  out.settings_error_status = await run("settings", [{ request: 0, ok: "rows" }, { tick: 1 }, { request: 1, status: 500 }]);
+  // a late good answer of an old request must not hide the failure of the newer one
+  out.settings_old_success_after_new_failure = await run("settings", [
+    { request: 0, ok: "" }, { tick: 1 }, { tick: 1 }, { request: 2 }, { request: 1, ok: "rows" },
   ]);
   out.article_first_load_fails = await run("article", [{ request: 0 }]);
   console.log(JSON.stringify(out));
