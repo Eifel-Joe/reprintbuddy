@@ -8,9 +8,9 @@ looks for those (Spec 7.6). Two candidates still pause; a print from before the 
 stored) is searched with the article's file as before.
 """
 
-from sqlalchemy import func, select
-
 from datetime import timedelta
+
+from sqlalchemy import func, select
 
 from factories import make_article, make_dispatch, make_entry
 from reprintbuddy import settings as st
