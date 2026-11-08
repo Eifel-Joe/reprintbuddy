@@ -31,7 +31,6 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
-from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
@@ -92,6 +91,27 @@ def _remove(*paths: Path) -> None:
 # --- downloading -----------------------------------------------------------------------------
 
 
+class RemovedAfterSending(FileResponse):
+    """A file response that deletes its file when the answer is over, however it ends (p103).
+
+    The file of a full backup holds every secret. Root: it used to be deleted by the response's
+    background task (`BackgroundTask`), and Starlette runs that only after the file was sent to the
+    end: a send that fails (a connection that errors out), a cancelled request (shutdown) or an
+    exception in between skipped it, and the file lay in the work folder until the next cleanup
+    (a page after an hour, or the next start). `finally` does not depend on how the answer ended.
+    Not reproduced: a browser that merely cancels the download of a real Uvicorn server; Uvicorn
+    swallows the lost connection and the answer ends normally. Rejected: deleting the file before
+    sending, with the file kept open (works on Linux only, and the size would be unknown to
+    `FileResponse`). Tests: test_backup_download_cleanup.py.
+    """
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            _remove(Path(self.path))
+
+
 @router.post("/settings/backup", dependencies=[Depends(verify_csrf)])
 async def download_backup(request: Request, db: Session = Depends(get_db)) -> Response:
     form = await request.form()
@@ -117,12 +137,11 @@ async def download_backup(request: Request, db: Session = Depends(get_db)) -> Re
     except (OSError, sqlite3.Error, fb.BackupError) as error:
         log.warning("backup failed: %s", type(error).__name__)  # never the message: no paths, no values
         return _back("backup_failed", "ops-backup")
-    return FileResponse(
+    return RemovedAfterSending(
         created.path,
         media_type="application/zip",
         filename=created.filename,
         headers={"Cache-Control": "no-store"},
-        background=BackgroundTask(_remove, created.path),
     )
 
 
