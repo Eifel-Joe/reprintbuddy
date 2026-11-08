@@ -10,8 +10,11 @@ from alembic.migration import MigrationContext
 from sqlalchemy import inspect, text
 
 from reprintbuddy import db as dbmod
-from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
+from reprintbuddy.db import known_revisions, make_engine, make_sessionmaker, upgrade
 from reprintbuddy.models import Base, Setting
+
+
+HEAD = known_revisions()[-1]  # the newest real revision: a test revision sits on top of it
 
 
 @pytest.fixture
@@ -30,14 +33,14 @@ def engine(tmp_path):
 
 
 def add_revision(scripts: Path, body: str) -> None:
-    (scripts / "versions" / "0900_test.py").write_text(
+    source = (
         textwrap.dedent(
             '''\
             from alembic import op
             import sqlalchemy as sa
 
             revision = "0900"
-            down_revision = "0007"
+            down_revision = "__HEAD__"
             branch_labels = None
             depends_on = None
 
@@ -46,9 +49,9 @@ def add_revision(scripts: Path, body: str) -> None:
             '''
         )
         + textwrap.indent(textwrap.dedent(body), "    ")
-        + "\n\n\ndef downgrade():\n    pass\n",
-        encoding="utf-8",
+        + "\n\n\ndef downgrade():\n    pass\n"
     )
+    (scripts / "versions" / "0900_test.py").write_text(source.replace("__HEAD__", HEAD), encoding="utf-8")
 
 
 def version(engine) -> str:
@@ -68,7 +71,7 @@ def test_failing_revision_leaves_nothing_behind(engine, scripts):
     with pytest.raises(RuntimeError, match="boom"):
         upgrade(engine, script_location=scripts)
     assert "junk" not in inspect(engine).get_table_names()
-    assert version(engine) == "0007"
+    assert version(engine) == HEAD
 
 
 def test_revision_that_breaks_foreign_keys_is_rolled_back(engine, scripts):
@@ -88,7 +91,7 @@ def test_revision_that_breaks_foreign_keys_is_rolled_back(engine, scripts):
         upgrade(engine, script_location=scripts)
     names = inspect(engine).get_table_names()
     assert "parent" not in names and "child" not in names
-    assert version(engine) == "0007"
+    assert version(engine) == HEAD
 
 
 def test_batch_alter_keeps_rows_that_other_tables_reference(engine, scripts):
@@ -143,16 +146,13 @@ def test_the_sessions_migration_adds_the_table_to_a_version_one_database(tmp_pat
     engine = make_engine(tmp_path / "old.db")
     only_first = tmp_path / "first_only"
     shutil.copytree(scripts, only_first)
-    for path in [*(only_first / "versions").glob("0002*"), *(only_first / "versions").glob("0003*"),
-                 *(only_first / "versions").glob("0004*"),
-                 *(only_first / "versions").glob("0005*"),
-                 *(only_first / "versions").glob("0006*"),
-                 *(only_first / "versions").glob("0007*")]:
-        path.unlink()
+    for path in (only_first / "versions").glob("0*.py"):
+        if not path.name.startswith("0001"):
+            path.unlink()  # every later revision: a database of the first version
     upgrade(engine, script_location=only_first)
     assert version(engine) == "0001"
     assert "sessions" not in inspect(engine).get_table_names()
     upgrade(engine)  # the real scripts
-    assert version(engine) == "0007"
+    assert version(engine) == HEAD
     columns = {c["name"] for c in inspect(engine).get_columns("sessions")}
     assert columns == {"id", "created_at", "last_seen_at"}

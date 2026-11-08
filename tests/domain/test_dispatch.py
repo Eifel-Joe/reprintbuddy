@@ -97,9 +97,8 @@ def test_reserve_takes_top_eligible(db):
         assert row.queue_entry_id == ec_id
         assert row.origin == "rule"
         assert row.article_id == c
-        # `external_ref` is unused since v0.3.5 (Spec 7.6), but the column is NOT NULL UNIQUE.
-        assert len(row.external_ref) == 32
         assert not hasattr(res, "batch_name") and not hasattr(res, "external_ref")
+        assert not hasattr(row, "external_ref") and not hasattr(row, "bambuddy_batch_id")  # gone with 0008 (p56)
         assert (res.library_file_id, res.plate_id, res.target_model, res.printer_id) == (
             1,
             1,
@@ -171,7 +170,7 @@ async def test_hand_over_queued(db, fake_bambuddy):
         row = s.get(Dispatch, res.dispatch_id)
         assert fake_bambuddy.enqueued[-1] == EnqueueRequest(1, 1, "A1", None, False, None)
         assert row.status == "queued"
-        assert row.bambuddy_batch_id is None and row.bambuddy_item_id is not None
+        assert row.bambuddy_item_id is not None
         assert row.last_status == "pending"
         assert row.enqueue_sent_at is not None and row.dispatched_at is not None
         assert row.finished_at is None
@@ -208,9 +207,7 @@ async def test_entry_handed_print_by_print(db, fake_bambuddy):
         rows = list(s.scalars(select(Dispatch).order_by(Dispatch.id)))
         assert [r.status for r in rows] == ["queued"] * 3
         assert [r.units for r in rows] == [4] * 3
-        assert len({r.external_ref for r in rows}) == 3
         assert len({r.bambuddy_item_id for r in rows}) == 3
-        assert {r.bambuddy_batch_id for r in rows} == {None}
         assert dispatch.reserve_next(s, cap=10) is None
     assert len(fake_bambuddy.enqueued) == 3
 
@@ -288,7 +285,7 @@ async def test_unavailable_on_enqueue_marks_unclear(db, fake_bambuddy, exc, afte
         row = s.get(Dispatch, res.dispatch_id)
         assert row.status == "unclear"
         assert row.enqueue_sent_at is not None
-        assert row.bambuddy_item_id is None and row.bambuddy_batch_id is None
+        assert row.bambuddy_item_id is None
         assert s.get(WorkQueueEntry, e).prints == 1  # not put back
         assert s.get(Article, a).stock == 5
         lines = journal(s, "print_dispatch_unclear")

@@ -20,7 +20,6 @@ The session functions never commit: the caller opens the transaction.
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -101,9 +100,6 @@ def _reserve(
     row = Dispatch(
         article_id=article.id,
         origin=entry.origin,
-        # Unused since v0.3.5 (Spec 7.6: no batches); the column is NOT NULL UNIQUE, so it
-        # still gets a fresh value. Dropping it would need a migration for nothing.
-        external_ref=uuid.uuid4().hex,
         status="sending",
         units=article.units_per_print,
         queue_entry_id=entry.id,

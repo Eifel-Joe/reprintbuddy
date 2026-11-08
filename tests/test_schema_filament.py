@@ -15,9 +15,11 @@ def test_tables_exist(db):
     assert TABLES <= set(inspect(db.kw["bind"]).get_table_names())
 
 
-def test_head_is_0007(db):
+def test_the_database_is_at_the_newest_revision(db):
+    from reprintbuddy.db import known_revisions
+
     with db() as s:
-        assert s.execute(text("select version_num from alembic_version")).scalar() == "0007"
+        assert s.execute(text("select version_num from alembic_version")).scalar() == known_revisions()[-1]
 
 
 def test_make_sort_key_and_label(db):

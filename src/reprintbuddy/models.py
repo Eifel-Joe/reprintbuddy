@@ -314,11 +314,6 @@ class Dispatch(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     article_id: Mapped[int] = mapped_column(ForeignKey("articles.id"))
     origin: Mapped[str] = mapped_column(String)
-    # Unused since v0.3.5 (Spec 7.6: single entries, no batches). Kept without a migration:
-    # `external_ref` is NOT NULL UNIQUE, so each new print still gets a fresh uuid; older
-    # rows keep their batch id. Nothing reads either column any more.
-    external_ref: Mapped[str] = mapped_column(String, unique=True)
-    bambuddy_batch_id: Mapped[int | None] = mapped_column(default=None)
     bambuddy_item_id: Mapped[int | None] = mapped_column(index=True, default=None)
     status: Mapped[str] = mapped_column(String, index=True)
     units: Mapped[int]  # pieces per print, as reserved

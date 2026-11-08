@@ -53,7 +53,7 @@ def fill(conn):
 def test_old_sorts_become_legacy_and_keep_what_points_at_them(old_db):
     with old_db.begin() as conn:
         fill(conn)
-    upgrade(old_db)
+    upgrade(old_db, revision="0007")  # this file is about 0007, whatever comes after it
     assert scalar(old_db, "select version_num from alembic_version") == "0007"
     assert rows(old_db, "select id, sort_key, legacy, label from filament_sorts order by id") == [
         (1, "legacy:1", 1, "PETG Black"),
@@ -69,7 +69,7 @@ def test_old_sorts_become_legacy_and_keep_what_points_at_them(old_db):
 def test_slot_mappings_are_dropped_the_slots_stay(old_db):
     with old_db.begin() as conn:
         fill(conn)
-    upgrade(old_db)
+    upgrade(old_db, revision="0007")  # this file is about 0007, whatever comes after it
     columns = {c["name"] for c in inspect(old_db).get_columns("article_filaments")}
     assert "spool_filament_id" not in columns
     assert rows(old_db, "select article_id, slot, grams, material, color_hex from article_filaments order by slot") == [
@@ -79,7 +79,7 @@ def test_slot_mappings_are_dropped_the_slots_stay(old_db):
 
 
 def test_a_new_sort_defaults_to_not_legacy(old_db):
-    upgrade(old_db)
+    upgrade(old_db, revision="0007")  # this file is about 0007, whatever comes after it
     with old_db.begin() as conn:
         conn.execute(text("INSERT INTO filament_sorts (sort_key, brand, material, label)"
                           " VALUES ('brand|pla||#000000', 'Brand', 'PLA', 'Brand PLA')"))
@@ -87,7 +87,7 @@ def test_a_new_sort_defaults_to_not_legacy(old_db):
 
 
 def test_one_reordered_sort_per_slot(old_db):
-    upgrade(old_db)
+    upgrade(old_db, revision="0007")  # this file is about 0007, whatever comes after it
     with old_db.begin() as conn:
         conn.execute(text("INSERT INTO articles (id, name, library_file_id, plate_id, file_name)"
                           " VALUES (1, 'Template A', 1, 1, 'a.gcode.3mf')"))
@@ -104,7 +104,7 @@ def test_one_reordered_sort_per_slot(old_db):
 
 
 def test_the_group_refers_to_existing_sorts_and_articles(old_db):
-    upgrade(old_db)
+    upgrade(old_db, revision="0007")  # this file is about 0007, whatever comes after it
     with pytest.raises(IntegrityError):
         with old_db.begin() as conn:
             conn.execute(text("INSERT INTO article_filament_sorts (article_id, slot, sort_id) VALUES (9, 1, 9)"))
@@ -118,6 +118,6 @@ def test_scripts_dir_has_0007_on_top_of_0006():
 
 def test_daily_rows_have_an_index_by_spool(old_db):
     """The daily rows follow their spool on every spool list (`filament._follow_spools`)."""
-    upgrade(old_db)
+    upgrade(old_db, revision="0007")  # this file is about 0007, whatever comes after it
     indexes = {i["name"]: i["column_names"] for i in inspect(old_db).get_indexes("filament_snapshots")}
     assert indexes.get("ix_filament_snapshots_spool") == ["spool_id"]

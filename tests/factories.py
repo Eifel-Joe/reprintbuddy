@@ -99,7 +99,6 @@ def make_dispatch(
     origin: str = "rule",
     **fields,
 ) -> Dispatch:
-    fields.setdefault("external_ref", uuid.uuid4().hex)
     fields.setdefault("queue_position", 0)
     dispatch = Dispatch(article_id=article_id, status=status, units=units, origin=origin, **fields)
     s.add(dispatch)

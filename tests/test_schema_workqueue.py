@@ -64,15 +64,6 @@ def _inspection(s, article_id, *, units, good_units=None):
     return i
 
 
-def test_external_ref_unique(db):
-    with db.begin() as s:
-        a = make_article(s).id
-        make_dispatch(s, a, external_ref="same")
-    with pytest.raises(IntegrityError):
-        with db.begin() as s:
-            make_dispatch(s, a, external_ref="same")
-
-
 def test_one_inspection_per_dispatch(db):
     with db.begin() as s:
         a = make_article(s).id
