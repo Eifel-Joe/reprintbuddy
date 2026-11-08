@@ -485,7 +485,11 @@ def test_confirm_checks_for_an_update_itself(ops_env, monkeypatch):
     shown = staged_token(ops_env)
     mark_update_running(ops_env)
     monkeypatch.setattr(routes, "restore_blocks", lambda _request: False)
-    monkeypatch.setattr(routes, "update_running", lambda *_args: False)  # past the guard
+
+    async def not_running(_request):
+        return False
+
+    monkeypatch.setattr(routes, "update_busy", not_running)  # past the guard
     response = confirm_with(ops_env, shown)
     assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_busy#ops-restore"
     assert backups(ops_env) == []

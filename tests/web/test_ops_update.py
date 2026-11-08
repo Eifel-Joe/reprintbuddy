@@ -410,3 +410,31 @@ def test_package_version_is_not_repeated_when_it_matches(ops_env, monkeypatch):
     page = ops_env.client.get("/settings?tab=maintenance").text
     assert "Installed version: v0.1.0" in page
     assert "package version" not in page
+
+
+# --- v0.3.8 p96: the question whether an update runs is never asked on the event loop -------------------------
+
+
+def test_the_write_guard_and_the_settings_page_ask_in_a_worker_thread(ops_env, monkeypatch):
+    import asyncio
+
+    from conftest import csrf_of
+
+    from reprintbuddy.ops import running
+
+    seen: list[str] = []
+
+    def record(*_args):
+        try:
+            asyncio.get_running_loop()
+            seen.append("event loop")
+        except RuntimeError:
+            seen.append("worker thread")
+        return False
+
+    monkeypatch.setattr(running, "update_running", record)
+    assert ops_env.client.get("/settings").status_code == 200  # the update card
+    token = csrf_of(ops_env.client, "/settings")
+    response = ops_env.client.post("/settings/language", data={"csrf_token": token, "language": "en"})  # the guard
+    assert response.status_code == 303
+    assert seen and set(seen) == {"worker thread"}, seen

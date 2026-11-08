@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from reprintbuddy.ops.runner import CommandRunner
+from reprintbuddy.ops.runner import CommandRunner, in_thread
 from reprintbuddy.ops.service import update_unit_state
 from reprintbuddy.ops.status import is_busy, read_status
 
@@ -34,3 +34,12 @@ def update_running(data_dir: Path, runner: CommandRunner, now: datetime) -> bool
         return True
     # Unknown (systemd silent or missing) counts as running: do not guess an update away.
     return update_unit_state(runner) not in DEAD_UNIT_STATES
+
+
+async def update_running_async(data_dir: Path, runner: CommandRunner, now: datetime) -> bool:
+    """`update_running` for code that runs in the event loop (v0.3.8 p96).
+
+    While an update runs it asks systemd, which may take seconds; that happens in a worker thread,
+    so the pages and the tick engine are not held. Stopping the awaiting task kills the question.
+    """
+    return await in_thread(update_running, data_dir, runner, now)

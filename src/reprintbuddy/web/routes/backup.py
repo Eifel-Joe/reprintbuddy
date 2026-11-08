@@ -300,13 +300,25 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         log.warning("restore check failed: %s", type(error).__name__)
         return _back("restore_failed", "ops-restore")
 
-    # From the check to setting the state there is no `await`: an update cannot slip in.
+    # The state is set first and the update asked about afterwards (in a worker thread, v0.3.8 p96):
+    # from the check of `active` to setting it there is no `await`, so a second restore or an update
+    # starting meanwhile finds the restore running and is refused.
     state: RestoreState = app.state.restore
     data_dir = app.state.db_path.parent
-    if state.active or running.update_running(data_dir, app.state.ops.runner, _now()):
+    if state.active:
         _remove(candidate)
         return _back("restore_busy", "ops-restore")
     state.phase = "running"
+    try:
+        update_busy = await running.update_running_async(data_dir, app.state.ops.runner, _now())
+    except BaseException:  # cancelled (shutdown) or failing: nothing is replaced
+        state.phase = "idle"
+        _remove(candidate)
+        raise
+    if update_busy:
+        state.phase = "idle"
+        _remove(candidate)
+        return _back("restore_busy", "ops-restore")
     # A write that passed the guard just before this line may still be under way; it would
     # land in the restored database with what it read from the old one. This request is one.
     deadline = time.monotonic() + app.state.restore_write_wait

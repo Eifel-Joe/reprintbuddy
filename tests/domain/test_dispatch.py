@@ -1,5 +1,6 @@
 """Handing prints over to Bambuddy one by one (Spec 7.3, 7.7, plan B4 decisions 1-5)."""
 
+import asyncio
 import pytest
 from sqlalchemy import func, select
 
@@ -511,3 +512,21 @@ async def test_update_before_send_puts_print_back(db, fake_bambuddy):
         assert row.enqueue_sent_at is None
         assert s.get(WorkQueueEntry, e).prints == 2
         assert dispatch.open_count(s) == 0
+
+
+@pytest.mark.parametrize(("answer", "outcome"), [(False, "held_for_update"), (True, "queued")])
+async def test_may_send_may_be_async_and_decides_the_same(db, fake_bambuddy, answer, outcome):
+    """v0.3.8 p96: the engine asks whether an update runs in a worker thread, so the answer is awaited."""
+    with db.begin() as s:
+        a = article(s).id
+        entry(s, a, 1)
+
+    async def may_send():
+        await asyncio.sleep(0)
+        return answer
+
+    with db.begin() as s:
+        res = dispatch.reserve_next(s, cap=10)
+    result = await dispatch.hand_over(fake_bambuddy, db, res, insert_next=False, may_send=may_send)
+    assert result == outcome
+    assert bool(fake_bambuddy.enqueued) == answer

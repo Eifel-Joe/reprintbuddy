@@ -119,7 +119,10 @@ def test_paused_while_an_update_runs(bb_client, polls, monkeypatch):
     from reprintbuddy.web.routes import ops
 
     data = {"csrf_token": csrf_of(bb_client, "/queue"), "form_token": form_token_of(bb_client, "/queue", ACTION)}
-    monkeypatch.setattr(ops, "update_running", lambda *a, **k: True)
+    async def running(_request):
+        return True
+
+    monkeypatch.setattr(ops, "update_busy", running)  # what the write guard asks (in a thread, p96)
     response = bb_client.post(ACTION, data=data)
     assert response.status_code == 503
     assert polls == []

@@ -26,7 +26,8 @@ from reprintbuddy.ops.server import (
     connect_host,
     effective_from_settings,
 )
-from reprintbuddy.ops.running import update_running
+from reprintbuddy.ops.running import update_running, update_running_async
+from reprintbuddy.ops.runner import in_thread
 from reprintbuddy.ops.service import request_restart, start_update_unit
 from reprintbuddy.ops.status import (
     BUSY_STATES,
@@ -129,7 +130,14 @@ def _installed(request: Request) -> str | None:
     return app.state.installed_tag
 
 
-def ops_view(request: Request, session: Session) -> OpsView:
+async def update_busy(request: Request) -> bool:
+    """Does an update really run? Asked in a worker thread (v0.3.8 p96): systemd may take seconds."""
+    return await update_running_async(_data_dir(request), request.app.state.ops.runner, _utc_now())
+
+
+def ops_view(request: Request, session: Session, busy: bool | None = None) -> OpsView:
+    """The state of the update card. `busy` is the answer of `update_busy` for a caller that can
+    await it; without it the question is asked here, in the calling thread (error pages only)."""
     app = request.app
     ops = app.state.ops
     effective = ops.effective
@@ -152,7 +160,9 @@ def ops_view(request: Request, session: Session) -> OpsView:
     if not request.app.state.restore.active:
         # Uploads nobody confirmed and downloads that were cut off hold every secret.
         fullbackup.clear_work_dir(fullbackup.work_dir_for(app.state.db_path), older_than=fullbackup.STALE_AFTER)
-    view.busy = update_running(_data_dir(request), request.app.state.ops.runner, _utc_now())
+    view.busy = (
+        busy if busy is not None else update_running(_data_dir(request), request.app.state.ops.runner, _utc_now())
+    )
     view.interrupted = view.update.state in BUSY_STATES and not view.busy
     if view.interrupted:
         view.state_key = "ops.update.state.interrupted"
@@ -191,7 +201,7 @@ async def update_guard(request: Request, call_next) -> Response:
             else "ops.restore.in_progress",
         )
     if request.method in WRITE_METHODS and request.url.path not in UPDATE_EXEMPT_PATHS:
-        if update_running(_data_dir(request), request.app.state.ops.runner, _utc_now()):
+        if await update_busy(request):
             return render(
                 request,
                 "error.html",
@@ -255,9 +265,8 @@ async def update_check(request: Request):
     if not is_git_install(ops.install_dir):
         return _back("not_git")
     try:
-        info = await run_in_threadpool(
-            check_versions, ops.install_dir, ops.runner, now=_utc_now()
-        )
+        # In a thread that can be stopped: a shutdown kills the git command instead of waiting for it.
+        info = await in_thread(check_versions, ops.install_dir, ops.runner, now=_utc_now())
     except UpdateCheckError as error:
         log.warning("update check failed: %s", str(error)[:300])  # not shown on the page
         return _back("check_failed")
