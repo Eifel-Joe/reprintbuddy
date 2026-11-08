@@ -331,4 +331,6 @@ Copyright (C) 2026 Eifel-Joe
 Bestandteile Dritter mit eigener Lizenz: die Symbole stammen von
 [Lucide](https://lucide.dev) (ISC, Lizenztext in `src/reprintbuddy/web/static/icons/`);
 die QR-Codes zeichnet [segno](https://github.com/heuer/segno) (BSD-3-Clause), das als
-Abhängigkeit von PyPI installiert wird und nicht Teil dieses Repositories ist.
+Abhängigkeit von PyPI installiert wird und nicht Teil dieses Repositories ist; die Etiketten
+zeichnet [Pillow](https://python-pillow.org) (MIT-CMU), ebenfalls von PyPI, in der Schrift DejaVu Sans
+(freie Lizenz, Lizenztext in `src/reprintbuddy/labels/fonts/`), die Teil dieses Repositories ist.
