@@ -998,7 +998,8 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .inspect-toolbar .btn:disabled { opacity: 0.45; cursor: not-allowed; } /* "Selected all good" while nothing is picked */
 /* The box of the table head (put there by inspection.js): the box alone on the PC, with its words on a phone. */
 .inspect-head-select { display: flex; align-items: center; justify-content: center; }
-.inspect-all { display: flex; align-items: center; justify-content: center; gap: 0.6rem; min-width: 2.75rem; min-height: 2.75rem; margin: 0; cursor: pointer; text-transform: none; letter-spacing: normal; font-size: 13px; }
+.inspect-all-box { display: flex; align-items: center; justify-content: center; width: 2.75rem; min-height: 2.75rem; }
+.inspect-all { display: flex; align-items: center; justify-content: center; gap: 0; min-width: 2.75rem; min-height: 2.75rem; margin: 0; cursor: pointer; text-transform: none; letter-spacing: normal; font-size: 13px; }
 .inspect-all-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .inspect-soll { font-size: 15px; font-weight: 600; }
 @media (max-width: 699px) {
@@ -1006,6 +1007,7 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
   .line-head:has(.inspect-all) { display: flex; padding: 0 14px; }
   .line-head:has(.inspect-all) > :not(.inspect-head-select) { display: none; }
   .inspect-head-select { justify-content: flex-start; }
+  .inspect-all { justify-content: flex-start; }
   .inspect-all-text { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; color: var(--text-2); }
   .inspect-cols.line { grid-template-columns: 2.75rem minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "sel main main" ". soll scrap" "btn btn btn"; }
   .inspect-line .inspect-select { grid-area: sel; }

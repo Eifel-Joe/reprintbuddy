@@ -95,3 +95,10 @@ def test_script_decides_head_box_and_button_from_the_count():
         pytest.skip("node is not installed")
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout) == [expected for _, expected in NODE_CASES]
+
+
+def test_script_holds_the_list_while_the_head_box_has_the_focus_and_lines_the_box_up():
+    source = (STATIC / "js" / "inspection.js").read_text(encoding="utf-8")
+    assert 'setAttribute("data-live-busy"' in source and 'new CustomEvent("live-idle")' in source
+    assert 'holder.className = "inspect-all-box"' in source
+    assert re.search(r"\.inspect-all-box \{[^}]*width: 2\.75rem", CSS)  # the same column width as the row boxes

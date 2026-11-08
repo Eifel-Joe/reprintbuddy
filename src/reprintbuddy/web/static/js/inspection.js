@@ -48,12 +48,15 @@
     var text = cell.getAttribute("data-label") || "";
     var label = document.createElement("label");
     label.className = "inspect-all";
+    var holder = document.createElement("span"); // as wide as the box column of the rows, so the boxes line up
+    holder.className = "inspect-all-box";
     var box = document.createElement("input");
     box.type = "checkbox";
+    holder.appendChild(box);
     var span = document.createElement("span");
     span.className = "inspect-all-text";
     span.textContent = text;
-    label.appendChild(box);
+    label.appendChild(holder);
     label.appendChild(span);
     cell.appendChild(label);
   }
@@ -80,6 +83,24 @@
       sync();
     } else if (target.matches(ROWS)) {
       sync();
+    }
+  });
+
+  // The head box is in no form, so live.js would swap the list away under a focused box: it holds the
+  // region while it has the focus (like the drag script does) and lets go afterwards.
+  document.addEventListener("focusin", function (event) {
+    var target = event.target;
+    var region = target && target.matches && target.matches(HEAD + " input") ? target.closest("[data-live-region]") : null;
+    if (region) {
+      region.setAttribute("data-live-busy", "");
+    }
+  });
+  document.addEventListener("focusout", function (event) {
+    var target = event.target;
+    var region = target && target.matches && target.matches(HEAD + " input") ? target.closest("[data-live-region]") : null;
+    if (region && region.hasAttribute("data-live-busy")) {
+      region.removeAttribute("data-live-busy");
+      document.dispatchEvent(new CustomEvent("live-idle"));
     }
   });
 
