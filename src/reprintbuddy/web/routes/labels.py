@@ -44,6 +44,7 @@ def _picture_response(rendered) -> Response:
         headers={
             "Cache-Control": _NO_STORE,
             "X-Label-Cut": ",".join(str(i) for i in rendered.truncated),
+            "X-Label-Dropped": ",".join(rendered.dropped),
             "X-Label-Notes": ",".join(labels_view.notes(rendered)),
         },
     )

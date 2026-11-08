@@ -3,9 +3,11 @@
 Always landscape, in the printable size of the roll (62 x 29 mm: 696 x 271 dots at 300 dpi). The
 letters are as large as they can be so that every detail fits in height and width, never smaller
 than `MIN_FONT_SIZE` (about 2 mm). A number with its word ("Buffer: 2") always stays in one row, the
-letters get smaller instead; a free text that is too long for one row takes a second one, broken at
-blanks. Only at the smallest size is a word broken between letters, and a detail that still does not
-fit is cut with an ellipsis and named in `truncated`, so the preview can say what did not fit. Pure drawing: no network, no database.
+letters get smaller instead; a text (also the print target with its word) that is too long for one
+row takes a second one, broken at blanks. Only at the smallest size is a word broken between letters, and a detail that still does not
+fit is cut with an ellipsis and named in `truncated`, so the preview can say what did not fit. When even one
+row per detail is too high for the roll (all nine details), the last details are left off, never drawn
+over the margin, and named in `dropped`. Pure drawing: no network, no database.
 """
 
 from __future__ import annotations
@@ -50,6 +52,7 @@ class Rendered:
     lines: list[fields.Line]  # the rows drawn, top to bottom (a long detail takes two; a cut one ends in an ellipsis)
     truncated: list[int]  # indexes of the details (in the order chosen) that did not fit and were cut
     font_size: int
+    dropped: tuple[str, ...]  # keys of the details left off because there is no room in the height (the last ones)
     code_width: int  # dots the code takes, with its quiet border
     module_dots: int  # dots of one square of the code
     missing: tuple[str, ...] = ()  # characters of the rows drawn that the font does not have (they show as an empty box)
@@ -173,9 +176,9 @@ def _arrange(
     lines: list[fields.Line], size: int, width: int, *, split_words: bool, allow_cut: bool
 ) -> tuple[list[tuple[fields.Line, int]], list[int]] | None:
     """The rows of all details at `size`, or None when they do not fit the width:
-    - a detail with a word in front ("Buffer: 2") is one row and never broken;
-    - a free text is one row, else broken at blanks into up to `_MAX_ROWS` rows (a word wider than a
-      row is broken between letters only with `split_words`);
+    - a number with its word in front ("Buffer: 2") is one row and never broken;
+    - a text (the print target with its word too) is one row, else broken at blanks into up to
+      `_MAX_ROWS` rows (a word wider than a row is broken between letters only with `split_words`);
     - what still does not fit is cut with an ellipsis (the index is returned) if `allow_cut`, else None."""
     rows: list[tuple[fields.Line, int]] = []
     cut: list[int] = []
@@ -203,20 +206,21 @@ def _arrange(
 
 def _choose(
     lines: list[fields.Line], width: int, height: int
-) -> tuple[int, list[tuple[fields.Line, int]], list[int]]:
+) -> tuple[int, list[tuple[fields.Line, int]], list[int], tuple[str, ...]]:
     """The largest size at which every detail fits whole, without a word broken between letters; at
     the smallest size, in this order: words broken between letters, then details cut with an
-    ellipsis, then one row per detail. Returns the size, the rows (with the index of their detail)
-    and the indexes of the cut details."""
+    ellipsis, then one row per detail, and if that is still too high the last details are left off.
+    Returns the size, the rows (with the index of their detail), the indexes of the cut details and
+    the keys of the details left off."""
     for size in range(MAX_FONT_SIZE, MIN_FONT_SIZE - 1, -1):
         arranged = _arrange(lines, size, width, split_words=False, allow_cut=False)
         if arranged is not None and len(arranged[0]) * _pitch(size) <= height:
-            return size, arranged[0], []
+            return size, arranged[0], [], ()
     size = MIN_FONT_SIZE
     for allow_cut in (False, True):
         arranged = _arrange(lines, size, width, split_words=True, allow_cut=allow_cut)
         if arranged is not None and len(arranged[0]) * _pitch(size) <= height:
-            return size, arranged[0], arranged[1]
+            return size, arranged[0], arranged[1], ()
     # Too many rows even at the smallest size: one row per detail, each cut to the width.
     rows: list[tuple[fields.Line, int]] = []
     cut: list[int] = []
@@ -225,7 +229,10 @@ def _choose(
         if text != line.text:
             cut.append(index)
         rows.append((fields.Line(text, line.bold), index))
-    return size, rows, cut
+    room = max(1, height // _pitch(size))  # rows that fit between the margins (one at least: never an empty text area)
+    dropped = tuple(line.key for line in lines[room:])
+    cut = [index for index in cut if index < room]
+    return size, rows[:room], cut, dropped
 
 
 def render_label(
@@ -241,12 +248,13 @@ def render_label(
     code_width, module = _draw_code(canvas, address, roll, centre=not lines, has_text=bool(lines))
     drawn: list[fields.Line] = []
     truncated: list[int] = []
+    dropped: tuple[str, ...] = ()
     size = MIN_FONT_SIZE
     if lines:
         left = code_width + _GAP
         width = roll.dots_wide - left - _PAD_X
         height = roll.dots_high - 2 * _PAD_Y
-        size, rows, truncated = _choose(lines, width, height)
+        size, rows, truncated, dropped = _choose(lines, width, height)
         drawn = [row for row, _ in rows]
         pitch = _pitch(size)
         top = (roll.dots_high - len(rows) * pitch) // 2
@@ -254,4 +262,4 @@ def render_label(
         for position, line in enumerate(drawn):
             draw.text((left, top + position * pitch), line.text, font=_font(size, line.bold), fill=0, anchor="la")
     picture = canvas.point(lambda value: 255 if value >= 128 else 0).convert("1")
-    return Rendered(picture, drawn, truncated, size, code_width, module, _missing(drawn), _runs_right_to_left(drawn))
+    return Rendered(picture, drawn, truncated, size, dropped, code_width, module, _missing(drawn), _runs_right_to_left(drawn))

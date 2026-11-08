@@ -124,8 +124,8 @@ def test_fewer_lines_get_bigger_letters():
 
 
 def test_every_line_fits_when_the_size_is_chosen_to_fit():
-    label = make(fields.FIELDS)
-    assert label.truncated == []
+    label = make(fields.FIELDS[:8])
+    assert label.truncated == [] and label.dropped == ()
     assert label.font_size >= render.MIN_FONT_SIZE
 
 
@@ -145,10 +145,81 @@ def test_a_long_name_takes_a_second_row_and_stays_large_instead_of_shrinking():
 
 
 def test_nine_details_with_long_values_are_cut_to_one_row_each_when_two_rows_do_not_fit():
-    label = make(fields.FIELDS, name="N" * 120, sku="S" * 80, label_text="L" * 80, print_target="P" * 80)
-    assert len(label.lines) == 9
+    label = make(fields.FIELDS[:8], name="N" * 120, sku="S" * 80, label_text="L" * 80, print_target="P" * 80)
+    assert len(label.lines) == 8
     assert label.font_size == render.MIN_FONT_SIZE
     assert set(label.truncated) == {0, 1, 6, 7}
+
+
+# ---- too many lines (p126): what does not fit in the height is left off, never run over the margin ----
+
+TEXT_HEIGHT = DK_11209.dots_high - 2 * render._PAD_Y
+
+
+def ink_rows(label):
+    """The first and the last row of the picture right of the code that has a black dot."""
+    pixels = label.image.load()
+    rows = [y for y in range(label.image.height)
+            if any(pixels[x, y] == 0 for x in range(label.code_width + 1, label.image.width))]
+    return rows[0], rows[-1]
+
+
+def test_all_nine_details_do_not_fit_in_the_height_so_the_last_one_is_left_off_and_named():
+    label = make(fields.FIELDS)
+    assert label.dropped == ("date",)  # named by its key, so the preview can say which one is missing
+    assert [row.text for row in label.lines][-1] == "Shelf B3"
+    assert len(label.lines) == 8
+    assert label.truncated == []
+
+
+def test_the_rows_of_all_nine_stay_inside_the_margin():
+    label = make(fields.FIELDS)
+    assert len(label.lines) * render._pitch(label.font_size) <= TEXT_HEIGHT
+    first, last = ink_rows(label)
+    assert first >= render._PAD_Y and last < DK_11209.dots_high - render._PAD_Y
+
+
+def test_a_label_that_fits_drops_nothing():
+    for count in range(0, 9):
+        assert make(fields.FIELDS[:count]).dropped == ()
+    assert make().dropped == ()
+
+
+def test_a_detail_without_a_value_gives_no_row_so_nothing_is_left_off():
+    # all nine ticked, but the date and the label text are empty: seven rows fit
+    label = make(fields.FIELDS, date="", label_text="")
+    assert label.dropped == () and len(label.lines) == 7
+
+
+def test_the_rows_never_run_over_the_margin_however_long_the_values_are():
+    long = dict(name="N " * 80, sku="S" * 80, label_text="L " * 80, print_target="P " * 80)
+    for values in ({}, long):
+        for chosen in (fields.FIELDS, fields.FIELDS[:8], fields.FIELDS[1:], fields.FIELDS[2:7]):
+            label = make(chosen, **values)
+            assert len(label.lines) * render._pitch(label.font_size) <= TEXT_HEIGHT, (chosen, values)
+
+
+def test_the_ink_stays_inside_the_margin_whatever_the_values_are():
+    long = dict(name="N " * 80, sku="S" * 80, label_text="L " * 80, print_target="P " * 80)
+    for values in ({}, long):
+        for chosen in (fields.FIELDS, fields.FIELDS[:8], fields.FIELDS[1:], fields.FIELDS[2:7]):
+            first, last = ink_rows(make(chosen, **values))
+            assert first >= render._PAD_Y and last < DK_11209.dots_high - render._PAD_Y, (chosen, values)
+
+
+def test_a_line_break_inside_a_value_is_a_blank_not_a_new_row():
+    """A value typed with line breaks (a hand-made request: the form fields are one line) would be drawn
+    by the font as several rows, over the rows below it and over the margin."""
+    label = make(fields.FIELDS, label_text="Row1\nRow2\nRow3", name="A\nB\nC")
+    assert [row.text for row in label.lines][0] == "A B C"
+    assert "Row1 Row2 Row3" in [row.text for row in label.lines]
+    first, last = ink_rows(label)
+    assert first >= render._PAD_Y and last < DK_11209.dots_high - render._PAD_Y
+
+
+def test_the_details_left_off_are_the_last_ones_whole_not_half_a_detail():
+    label = make(fields.FIELDS, name="N" * 120)  # the long name is cut to one row, still nine rows of 29
+    assert label.dropped == ("date",) and label.truncated == [0]
 
 
 def test_a_single_word_wider_than_a_row_is_broken_not_lost():
@@ -244,11 +315,44 @@ def test_a_number_detail_is_never_broken_whatever_the_size(chosen):
 
 def test_a_long_value_after_a_word_is_cut_in_its_value_not_in_its_word():
     label = render.render_label(
-        data(print_target="P" * 80), ("print_target",), ADDRESS, DK_11209, caption_de
+        data(min_stock=int("9" * 80)), ("min_stock",), ADDRESS, DK_11209, caption_de
     )
     assert len(label.lines) == 1 and label.truncated == [0]
     assert label.font_size == render.MIN_FONT_SIZE
-    assert label.lines[0].text.startswith("Druckziel: P") and label.lines[0].text.endswith("…")
+    assert label.lines[0].text.startswith("Mindestbestand: 9") and label.lines[0].text.endswith("…")
+
+
+# ---- the print target is not a number: it wraps at blanks like a free text (p128) ----
+
+LONG_TARGET = "Any A1 mini X1C special build desk"
+
+
+def test_only_the_four_numbers_are_fixed_to_one_row():
+    rows = {row.text.split(":")[0]: row for row in fields.lines(data(), fields.FIELDS, caption_de)}
+    for word in ("Mindestbestand", "Puffer", "Zielmenge", "Einheiten je Druck"):
+        assert rows[word].fixed is True, word
+    assert rows["Druckziel"].fixed is False  # a word and a text: it may take a second row
+
+
+def test_a_long_print_target_wraps_at_blanks_and_nothing_is_cut():
+    """Before, the whole target was one row: it was cut with an ellipsis at the smallest letters."""
+    label = render.render_label(
+        data(print_target=LONG_TARGET), ("sku", "print_target", "label_text"), ADDRESS, DK_11209, caption_de
+    )
+    assert label.truncated == [] and label.dropped == ()
+    assert [row.text for row in label.lines][0] == "TA-100" and [row.text for row in label.lines][-1] == "Shelf B3"
+    target_rows = [row.text for row in label.lines][1:-1]
+    assert len(target_rows) == 2
+    assert " ".join(target_rows) == f"Druckziel: {LONG_TARGET}"
+    font = render._font(label.font_size, False)
+    assert all(font.getlength(row) <= text_width(label) for row in target_rows)
+
+
+def test_a_print_target_that_is_one_long_word_is_cut_not_dropped_or_run_over():
+    label = render.render_label(data(print_target="P" * 80), ("print_target",), ADDRESS, DK_11209, caption_de)
+    assert label.truncated == [0] and label.lines[-1].text.endswith("…")
+    first, last = ink_rows(label)
+    assert first >= render._PAD_Y and last < DK_11209.dots_high - render._PAD_Y
 
 
 def test_a_long_single_word_gets_smaller_letters_instead_of_being_broken_between_letters():

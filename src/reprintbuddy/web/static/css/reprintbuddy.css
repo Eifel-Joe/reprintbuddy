@@ -1078,6 +1078,7 @@ form > .btn + .btn.secondary { margin-left: 0.5rem; }
 .label-print .field { margin: 0; }
 .label-copies { width: 6rem; }
 .label-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.6rem 1rem; }
+.label-preview[hidden] { display: none; }
 #label-preview-card .label-preview { margin-bottom: 0.75rem; }
 /* p118: the notes under a preview (a cut line, a missing character, right-to-left text, a fine code) */
 .label-notes { display: contents; }  /* the wrapper takes no room: only a shown note adds a gap */

@@ -591,10 +591,30 @@ def test_a_cut_line_is_in_the_notes_too(configured, ready_client):
     assert notes_of(response) == ["cut"]
 
 
+def test_all_nine_details_are_a_rows_note_on_both_previews_and_the_last_one_is_not_drawn(configured, ready_client):
+    with sm_of(ready_client).begin() as s:
+        st.set_setting(s, "label_fields", list(fields.FIELDS), commit=False)
+        full = make_article(s, name="Template A", sku="TA-300", min_stock=4, buffer=2, target_model="A1",
+                            label_text="Shelf B3").id
+    for response in (configured.get(f"/articles/{full}/label.png"), configured.get("/settings/labels/preview.png")):
+        assert notes_of(response) == ["rows"]
+        assert response.headers["x-label-dropped"] == "date"  # the keys, so the page can name them
+        top = Image.open(io.BytesIO(response.content)).convert("L").crop((260, 0, 696, 8))
+        assert top.getextrema()[0] == 255  # the margin above the text stays white
+
+
+def test_a_label_that_fits_has_no_rows_note(configured, ready_client):
+    with sm_of(ready_client).begin() as s:
+        st.set_setting(s, "label_fields", list(fields.FIELDS[:8]), commit=False)
+    assert notes_of(configured.get("/settings/labels/preview.png")) == []
+    assert configured.get("/settings/labels/preview.png").headers["x-label-dropped"] == ""
+
+
 def test_the_notes_are_on_the_settings_tab_and_the_article_card_hidden_until_the_script_shows_them(configured, article):
     for page in (configured.get(SAME_PAGE).text, configured.get(f"/articles/{article}").text):
         for token, key in (("cut", "labels.cut_warning"), ("missing", "labels.note_missing"),
-                           ("rtl", "labels.note_rtl"), ("fine", "labels.note_fine")):
+                           ("rtl", "labels.note_rtl"), ("fine", "labels.note_fine"),
+                           ("rows", "labels.note_rows")):
             match = re.search(rf'<p[^>]*data-note="{token}"[^>]*>', page)
             assert match and " hidden" in match.group(0), token
             assert en(key) in page
@@ -606,11 +626,57 @@ def test_the_article_preview_tells_the_script_where_to_ask_for_the_notes(configu
     assert f'data-label-url="/articles/{article}/label.png"' in page
 
 
+def _preview_img(page):
+    match = re.search(r'<img[^>]*id="label-preview"[^>]*>', re.sub(r"<noscript>.*?</noscript>", "", page, flags=re.S))
+    assert match, "no preview image outside <noscript>"
+    return match.group(0)
+
+
+def _noscript_img(page):
+    match = re.search(r"<noscript>\s*(<img[^>]*>)\s*</noscript>", page, flags=re.S)
+    assert match, "no <noscript><img>"
+    return match.group(1)
+
+
+def test_the_article_preview_is_asked_for_once_by_the_script_not_also_by_the_browser(configured, article):
+    """p127: an <img src> would have the picture drawn once for the browser and once more for the script
+    that only wants the header X-Label-Notes. The script asks once and gives the picture to the page."""
+    page = configured.get(f"/articles/{article}").text
+    assert " src=" not in _preview_img(page)
+    assert f'data-label-url="/articles/{article}/label.png"' in _preview_img(page)
+    assert f'src="/articles/{article}/label.png"' in _noscript_img(page)  # without a script the picture is there as before
+    assert 'alt="' in _noscript_img(page) and 'width="696"' in _noscript_img(page)
+
+
+def test_the_scripted_picture_is_hidden_until_it_has_its_image_so_no_empty_box_shows(configured, article):
+    """Without a script the <noscript> picture is the only one; with one the box is shown when the
+    picture is there (an img without src would be an empty bordered box with its alt text)."""
+    for page in (configured.get(SAME_PAGE).text, configured.get(f"/articles/{article}").text):
+        assert " hidden" in _preview_img(page)
+    script = configured.get("/static/js/labels.js").text
+    assert script.count('removeAttribute("hidden")') >= 1
+    assert ".label-preview[hidden]" in configured.get("/static/css/reprintbuddy.css").text
+
+
+def test_the_settings_preview_is_asked_for_once_by_the_script_not_also_by_the_browser(configured):
+    page = configured.get(SAME_PAGE).text
+    assert " src=" not in _preview_img(page)
+    assert "/settings/labels/preview.png?fields=name,sku,label_text" in _noscript_img(page)
+
+
 def test_the_script_reads_the_notes_header(configured):
     script = configured.get("/static/js/labels.js")
     assert script.status_code == 200 and "X-Label-Notes" in script.text
 
 
+def test_the_rows_note_has_the_name_of_every_detail_so_the_script_can_say_which_are_missing(configured, article):
+    for page in (configured.get(SAME_PAGE).text, configured.get(f"/articles/{article}").text):
+        for key in fields.FIELDS:
+            assert re.search(rf'<span hidden data-detail="{key}">{re.escape(en("labels.field." + key))}</span>', page), key
+        assert "data-dropped" in page
+    assert "X-Label-Dropped" in configured.get("/static/js/labels.js").text
+
+
 def test_the_notes_are_in_german_too():
-    for key in ("labels.note_missing", "labels.note_rtl", "labels.note_fine"):
+    for key in ("labels.note_missing", "labels.note_rtl", "labels.note_fine", "labels.note_rows"):
         assert de(key) != key and de(key) != en(key)
