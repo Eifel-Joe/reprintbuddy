@@ -54,7 +54,7 @@ def test_old_sorts_become_legacy_and_keep_what_points_at_them(old_db):
     with old_db.begin() as conn:
         fill(conn)
     upgrade(old_db)
-    assert scalar(old_db, "select version_num from alembic_version") == "0007"
+    assert scalar(old_db, "select version_num from alembic_version") == "0009"
     assert rows(old_db, "select id, sort_key, legacy, label from filament_sorts order by id") == [
         (1, "legacy:1", 1, "PETG Black"),
         (2, "legacy:2", 1, "PLA #FF0000"),

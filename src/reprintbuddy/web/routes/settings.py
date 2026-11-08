@@ -20,6 +20,8 @@ from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.live import NO_RIGHT_DELAY
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops.tls import validate_tls_pair
+from reprintbuddy.web import labels_view
+from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.routes.auth import password_confirmed
@@ -36,6 +38,7 @@ MAX_UPLOAD_BYTES = 64 * 1024
 SETTINGS_TABS: list[tuple[str, str, str]] = [
     ("general", "settings", "settings.tab.general"),
     ("automation", "list-ordered", "settings.tab.automation"),
+    ("labels", "printer", "settings.tab.labels"),
     ("bambuddy", "link", "settings.tab.bambuddy"),
     ("account", "user", "settings.tab.account"),
     ("maintenance", "download", "settings.tab.maintenance"),
@@ -49,6 +52,7 @@ SECTION_TAB = {
     "bambuddy": "bambuddy",
     "password": "account",
     "automation": "automation",
+    "labels": "labels",
 }
 
 
@@ -71,6 +75,10 @@ def _page(
         "bambuddy_address": st.get_setting(db, "bambuddy_url") or "",
         "bambuddy_owner": st.get_setting(db, "bambuddy_username") or "",
         "qr_base_url": st.get_setting(db, "qr_base_url") or "",
+        "qr_automatic": qr_view.automatic_base(request),
+        "label_host": st.get_setting(db, "label_printer_host") or "",
+        "label_roll": st.get_setting(db, "label_roll"),
+        "label_selected": list(labels_view.fields.clean(st.get_setting(db, "label_fields"))),
         "host": st.get_setting(db, "host"),
         "port": st.get_setting(db, "port"),
         "automation": st.get_setting(db, "automation"),
@@ -81,6 +89,7 @@ def _page(
     }
     values.update(typed)
     current_tab = SECTION_TAB.get(section or "") or _tab_from_query(request)
+    label_context = labels_view.settings_context(values, str(st.get_setting(db, "language"))) if current_tab == "labels" else {}
     return render(
         request,
         "settings.html",
@@ -100,6 +109,7 @@ def _page(
         channel_retry_minutes=NO_RIGHT_DELAY // 60,
         **permission_context(),
         check=check,
+        **label_context,
         **values,
     )
 

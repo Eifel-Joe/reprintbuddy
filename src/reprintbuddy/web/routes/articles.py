@@ -21,7 +21,7 @@ from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
 from reprintbuddy.domain import catalog, filament, pauses, workqueue
 from reprintbuddy.domain import color as color_mod
-from reprintbuddy.domain.catalog import ArticleInput, TargetOption
+from reprintbuddy.domain.catalog import MAX_LABEL_TEXT, ArticleInput, TargetOption
 from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.domain.stock import MAX_QTY
@@ -29,7 +29,7 @@ from reprintbuddy.domain import stock as stock_mod
 from reprintbuddy.models import (
     Article, ArticleFilament, ArticleFilamentSort, ArticlePart, Dispatch, FilamentSort, Part, WorkQueueEntry,
 )
-from reprintbuddy.web import kpis, listing
+from reprintbuddy.web import kpis, labels_view, listing
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, local_next, release_connection, render
@@ -154,6 +154,7 @@ def parse_article_form(form, parts: list[Part], *, default_target: str) -> Artic
     return ArticleInput(
         name=parse_text(form.get("name"), field="articles.field.name", max_len=200, required=True),
         sku=parse_text(form.get("sku"), field="catalog.field.sku", max_len=64),
+        label_text=parse_text(form.get("label_text"), field="articles.field.label_text", max_len=MAX_LABEL_TEXT),
         units_per_print=parse_int(form.get("units_per_print"), field="articles.field.units_per_print", min=1, max=1000),
         min_stock=parse_int(form.get("min_stock"), field="articles.field.min_stock", min=0, max=MAX_QTY),
         buffer=parse_int(form.get("buffer"), field="articles.field.buffer", min=0, max=MAX_QTY),
@@ -170,6 +171,7 @@ def typed_values(form) -> dict[str, object]:
     return {
         "name": str(form.get("name", "")),
         "sku": str(form.get("sku", "")),
+        "label_text": str(form.get("label_text", "")),
         "units_per_print": str(form.get("units_per_print", "")),
         "min_stock": str(form.get("min_stock", "")),
         "buffer": str(form.get("buffer", "")),
@@ -187,6 +189,7 @@ def values_of_input(data: ArticleInput, parts: list[Part]) -> dict[str, object]:
     return {
         "name": data.name,
         "sku": data.sku or "",
+        "label_text": data.label_text or "",
         "units_per_print": str(data.units_per_print),
         "min_stock": str(data.min_stock),
         "buffer": str(data.buffer),
@@ -622,6 +625,7 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         dispatch_tones=DISPATCH_TONES,
         qr_address=qr_address,
         qr_local=qr_view.is_local_address(base),
+        **labels_view.article_card_context(db),
         has_target=bool(article.target_model or article.printer_id),
         target_label=_target_label(lang, article),
         filaments=[
@@ -678,7 +682,8 @@ def _edit_page(request, db, article, printers, values, error=None, status=200, f
 def _article_values(db: Session, article: Article, parts: list[Part]) -> dict[str, object]:
     links = dict(db.execute(select(ArticlePart.part_id, ArticlePart.qty_per_unit).where(ArticlePart.article_id == article.id)).all())
     data = ArticleInput(
-        name=article.name, sku=article.sku, units_per_print=article.units_per_print,
+        name=article.name, sku=article.sku, label_text=article.label_text,
+        units_per_print=article.units_per_print,
         min_stock=article.min_stock, buffer=article.buffer, target_model=article.target_model,
         printer_id=article.printer_id, needs_assembly=article.needs_assembly,
         auto_enabled=article.auto_enabled, parts=links,

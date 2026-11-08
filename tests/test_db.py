@@ -24,7 +24,7 @@ def test_upgrade_twice_is_noop(tmp_path):
     upgrade(engine)
     with engine.connect() as conn:
         rows = conn.execute(text("select version_num from alembic_version")).all()
-    assert [r[0] for r in rows] == ["0007"]
+    assert [r[0] for r in rows] == ["0009"]
 
 
 def test_foreign_keys_on(tmp_path):

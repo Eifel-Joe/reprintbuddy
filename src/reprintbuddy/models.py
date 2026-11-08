@@ -92,6 +92,7 @@ class Article(Base):
     name: Mapped[str] = mapped_column(String)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     sku: Mapped[str | None] = mapped_column(String, unique=True, default=None)
+    label_text: Mapped[str | None] = mapped_column(String, default=None)  # free text for the label (Spec 5.2)
     library_file_id: Mapped[int]
     plate_id: Mapped[int]  # Plate.index, starting at 1
     file_name: Mapped[str] = mapped_column(String)

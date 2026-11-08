@@ -1036,3 +1036,15 @@ form > .btn + .btn.secondary { margin-left: 0.5rem; }
 @media (max-width: 480px) {
   .slot-group th, .slot-group td { padding-left: 0.35rem; padding-right: 0.35rem; }
 }
+
+/* v0.3.8: labels (Spec 8.5). The preview is the picture that is printed: dots, white paper, so it
+   keeps its white ground on the dark theme and stays sharp when it is shown smaller. */
+.label-preview { display: block; width: 100%; max-width: 696px; height: auto; background: #fff; border: 1px solid var(--line); border-radius: 8px; }
+.label-body { display: flex; flex-direction: column; gap: 0.75rem; align-items: flex-start; }
+.label-body p { margin: 0; }
+.label-print { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
+.label-print .field { margin: 0; }
+.label-copies { width: 6rem; }
+.label-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.6rem 1rem; }
+#label-preview-card .label-preview { margin-bottom: 0.75rem; }
+.setting-row.stack .setting-control select { width: 100%; }

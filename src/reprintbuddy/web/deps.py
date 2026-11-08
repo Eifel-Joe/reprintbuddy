@@ -26,6 +26,7 @@ SID_KEY = "sid"
 FLASH_KEY = "flash"
 FLASH_WARNING_KEY = "flash_warning"  # the message above is a warning, not good news
 RIGHTS_LATER_KEY = "rights_later"  # in the session: the missing rights "Later" was pressed for
+SETUP_NEXT_KEY = "setup_next"  # in the session: the page opened before the Bambuddy step was done (p114)
 RIGHTS_SUCCESS_KEY = "rights_success"  # in the session: "Check again" in the dialog found every right
 
 # Reachable by everyone, whatever the state of the installation.
@@ -242,6 +243,39 @@ def safe_next(value: str | None) -> str:
     return "/"
 
 
+def _plain_local_path(value: object) -> str | None:
+    """`value` when it is a local path (`safe_next`) that goes into an address as it is: nothing
+    foreign, no control character (a line break would split a header), not just the start page."""
+    if not isinstance(value, str) or safe_next(value) != value or value == "/":
+        return None
+    return value if value.isprintable() else None
+
+
+# The setup and the sign-in themselves are no pages to come back to.
+_NOT_REMEMBERED = ("/setup", "/login", "/logout")
+
+
+def remember_page(request: Request) -> None:
+    """The page asked for before the Bambuddy step is done, kept in the signed session so that the
+    setup can end there (p114: a scanned QR code must not lose its target).
+
+    Only what a person's browser opens: a GET that asks for HTML. A script, a form post or a
+    background fetch is not a page to go back to. The newest page replaces an older one."""
+    if request.method != "GET" or "text/html" not in request.headers.get("accept", ""):
+        return
+    if request.url.path.startswith(_NOT_REMEMBERED):
+        return
+    target = _plain_local_path(request.url.path + (f"?{request.url.query}" if request.url.query else ""))
+    if target is not None:
+        request.session[SETUP_NEXT_KEY] = target
+
+
+def take_remembered_page(request: Request) -> str:
+    """The page `remember_page` kept, once (it is removed), checked again as a local path; "/" if
+    there is none. The cookie is signed, but the value is checked where it is used all the same."""
+    return _plain_local_path(request.session.pop(SETUP_NEXT_KEY, None)) or "/"
+
+
 def local_next(form) -> str:
     """The local path in the form's `next` field: the list an action started from. "" when there is
     none or it is foreign (`safe_next` turns anything non-local into "/", which counts as none)."""
@@ -366,6 +400,7 @@ def _decide(request: Request) -> Response | None:
                 return error_response(request, 400, "host")
             if path == "/setup":
                 return None
+            remember_page(request)  # a scan before the first account must not lose its page either
             return RedirectResponse("/setup", status_code=303)
 
         # With an account, /setup answers 404 itself; /login is always open.
@@ -380,7 +415,10 @@ def _decide(request: Request) -> Response | None:
 
         in_bambuddy_setup = path == "/setup/bambuddy" or path.startswith("/setup/bambuddy/")
         if not st.bambuddy_configured(session) and not in_bambuddy_setup and path != "/logout":
+            remember_page(request)
             return RedirectResponse("/setup/bambuddy", status_code=303)
+        if st.bambuddy_configured(session) and SETUP_NEXT_KEY in request.session:
+            request.session.pop(SETUP_NEXT_KEY, None)  # a page kept for a setup that was finished elsewhere
         # Signed in and set up: a page of the interface. The first one after a start also
         # checks what the stored key may do (Spec 11.3, "Rights after an update").
         request.state.rights_due = st.bambuddy_configured(session) and not in_bambuddy_setup

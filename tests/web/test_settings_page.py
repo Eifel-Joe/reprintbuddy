@@ -443,6 +443,8 @@ def test_all_settings_posts_require_csrf(ready_client):
         "/settings/automation",
         "/settings/backup",
         "/settings/bambuddy",
+        "/settings/labels",
+        "/settings/labels/test",
         "/settings/language",
         "/settings/password",
         "/settings/qr",

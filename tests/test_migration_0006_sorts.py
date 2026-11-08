@@ -17,7 +17,8 @@ def old_db(tmp_path):
     """A database at revision 0005 (sorts with brands in the key) and the full scripts for the step to 0006."""
     scripts = tmp_path / "migrations"
     shutil.copytree(Path(dbmod.__file__).parent / "migrations", scripts, ignore=shutil.ignore_patterns("__pycache__"))
-    for later in [*(scripts / "versions").glob("0006*"), *(scripts / "versions").glob("0007*")]:
+    for later in [*(scripts / "versions").glob("0006*"), *(scripts / "versions").glob("0007*"),
+                  *(scripts / "versions").glob("0009*")]:
         later.unlink()
     engine = make_engine(tmp_path / "old.db")
     upgrade(engine, script_location=scripts)

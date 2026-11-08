@@ -1,0 +1,43 @@
+{# The "Labels" tab of the settings (Spec 8.5): printer, roll, the details on the label, a preview and the
+   trial print. One form for everything (`form="settings-labels"` on the fields of the other cards); the
+   trial print uses what is ticked on the screen without saving it. #}
+<div class="settings-col">
+<section class="card" id="label-printer">
+  {% call ui.card_head("printer", t('labels.settings_title')) %}<button class="btn" type="submit" form="settings-labels">{{ t('settings.save') }}</button>{% endcall %}
+  {% if error and error_section == 'labels' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
+  <form id="settings-labels" method="post" action="/settings/labels">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    {% call ui.setting_row(t('labels.printer_address'), t('labels.printer_address_hint'), "label_printer_host", stack=true) %}
+      <input id="label_printer_host" name="label_printer_host" type="text" value="{{ label_host }}" autocomplete="off" spellcheck="false" placeholder="{{ t('labels.printer_placeholder') }}" maxlength="253">
+    {% endcall %}
+    {% call ui.setting_row(t('labels.roll'), t('labels.roll_hint'), "label_roll", stack=true) %}
+      <select id="label_roll" name="label_roll">
+        {% for roll in label_rolls %}<option value="{{ roll.key }}"{% if roll.key == label_roll %} selected{% endif %}>{{ roll.name }} · {{ roll.width_mm }} × {{ roll.length_mm }} mm</option>{% endfor %}
+      </select>
+    {% endcall %}
+  </form>
+  <p class="muted">{{ t('labels.raster_hint') }}</p>
+  <p class="muted">{{ t('labels.landscape_hint') }}</p>
+</section>
+
+<section class="card" id="label-content">
+  {% call ui.card_head("qr-code", t('labels.content_title')) %}{% endcall %}
+  <p class="muted">{{ t('labels.content_hint') }}</p>
+  <div class="label-fields">
+    {% for key, name in label_all_fields %}
+    <label class="check"><input type="checkbox" name="label_field" value="{{ key }}" form="settings-labels"{% if key in label_selected %} checked{% endif %}><span>{{ name }}</span></label>
+    {% endfor %}
+  </div>
+</section>
+</div>
+
+<div class="settings-col">
+<section class="card" id="label-preview-card">
+  {% call ui.card_head("eye", t('labels.preview_title')) %}<button class="btn secondary" type="submit" form="settings-labels" formaction="/settings/labels/test">{{ ui.icon('printer') }}{{ t('labels.trial_print') }}</button>{% endcall %}
+  <img id="label-preview" class="label-preview" src="/settings/labels/preview.png?fields={{ label_preview_fields }}" width="696" height="271" alt="{{ t('labels.preview_alt') }}">
+  <p class="alert" role="alert" id="label-cut" hidden>{{ t('labels.cut_warning') }}</p>
+  <p class="muted">{{ t('labels.preview_hint') }}</p>
+  <p class="muted">{{ t('labels.keep_address') }}</p>
+</section>
+</div>

@@ -316,4 +316,6 @@ Copyright (C) 2026 Eifel-Joe
 Third-party components with their own licenses: the icons are from
 [Lucide](https://lucide.dev) (ISC, license text in `src/reprintbuddy/web/static/icons/`);
 the QR codes are drawn with [segno](https://github.com/heuer/segno) (BSD-3-Clause), which is
-installed from PyPI as a dependency and not part of this repository.
+installed from PyPI as a dependency and not part of this repository; the labels are drawn with
+[Pillow](https://python-pillow.org) (MIT-CMU), also installed from PyPI, in the font DejaVu Sans
+(free license, license text in `src/reprintbuddy/labels/fonts/`), which is part of this repository.

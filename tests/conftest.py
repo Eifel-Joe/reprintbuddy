@@ -135,6 +135,16 @@ def no_test_host_lookup(monkeypatch):
         pytest.fail(problem, pytrace=False)
 
 
+@pytest.fixture(autouse=True)
+def no_machine_address(monkeypatch):
+    """The tests never ask the real routing table: the machine counts as having no network
+    address, so a QR code carries the address of the call. Tests of the search itself and of the
+    codes' address say otherwise (tests/test_netaddr.py, tests/web/test_qr_address.py)."""
+    from reprintbuddy.web import netaddr
+
+    monkeypatch.setattr(netaddr, "machine_address", lambda: None)
+
+
 @pytest.fixture
 def db_path(tmp_path):
     return tmp_path / "t.db"

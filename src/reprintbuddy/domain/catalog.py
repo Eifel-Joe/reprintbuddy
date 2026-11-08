@@ -35,6 +35,7 @@ from reprintbuddy.models import (
 
 MAX_NAME = 200
 MAX_SKU = 64
+MAX_LABEL_TEXT = 60  # the text for the label (Spec 5.2): a label has little room
 
 
 # ---- validation helpers ----------------------------------------------------------------
@@ -150,6 +151,7 @@ def target_options(
 class ArticleInput:
     name: str
     sku: str | None = None
+    label_text: str | None = None
     units_per_print: int = 1
     min_stock: int = 0
     buffer: int = 0
@@ -191,6 +193,7 @@ def _check_article_input(
 ) -> ArticleInput:
     name = _required_name(data.name, "articles.field.name")
     sku = validate_sku(session, data.sku, article_id=article_id)
+    label_text = _text(data.label_text, "articles.field.label_text", MAX_LABEL_TEXT)
     target_model = _text(data.target_model, "articles.field.target", MAX_NAME)
     printer_id = data.printer_id
     if printer_id is not None:
@@ -214,6 +217,7 @@ def _check_article_input(
         data,
         name=name,
         sku=sku,
+        label_text=label_text,
         units_per_print=_int_in(data.units_per_print, "articles.field.units_per_print", 1, 1000),
         min_stock=_int_in(data.min_stock, "articles.field.min_stock", 0, MAX_QTY),
         buffer=_int_in(data.buffer, "articles.field.buffer", 0, MAX_QTY),
@@ -240,6 +244,7 @@ def _set_parts(session: Session, article_id: int, parts: dict[int, int]) -> None
 def _apply_input(article: Article, data: ArticleInput) -> None:
     article.name = data.name
     article.sku = data.sku
+    article.label_text = data.label_text
     article.units_per_print = data.units_per_print
     article.min_stock = data.min_stock
     article.buffer = data.buffer
