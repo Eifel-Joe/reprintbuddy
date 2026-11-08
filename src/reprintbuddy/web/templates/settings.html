@@ -107,7 +107,7 @@
   {% if bambuddy_owner %}<p class="status">{{ t('settings.bambuddy_owner', owner=bambuddy_owner) }}</p>{% endif %}
   {# What the check found: the one just made, or else the one of the start (a missing right). The guides are open. #}
   {% if error_section == 'bambuddy' %}{% with guide_link=True %}{% include "_bambuddy_result.html" %}{% endwith %}
-  {% elif rights_notice %}{% with check=rights_notice, guide_link=True %}{% include "_bambuddy_result.html" %}{% endwith %}{% endif %}
+  {% elif rights_notice %}{% with check=rights_notice, guide_link=True, show_optional=False %}{% include "_bambuddy_result.html" %}{% endwith %}{% endif %}
   <form id="settings-bambuddy" method="post" action="/settings/bambuddy" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {# Stacked (p107): an address with its port does not fit the narrow field of a row. #}

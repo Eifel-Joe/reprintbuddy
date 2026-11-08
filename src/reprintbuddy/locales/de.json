@@ -971,5 +971,10 @@
   "upload.error.not_3mf": "Hochladen lassen sich nur 3MF-Dateien (.3mf oder .gcode.3mf).",
   "upload.error.too_large": "Die Datei ist größer als 200 MB.",
   "upload.error.not_zip": "Das ist keine lesbare 3MF-Datei.",
-  "upload.error.not_sliced": "Die Datei ist nicht geslict: Sie enthält keinen G-Code. Erst slicen und dann die geslicte Datei (.gcode.3mf) hochladen."
+  "upload.error.not_sliced": "Die Datei ist nicht geslict: Sie enthält keinen G-Code. Erst slicen und dann die geslicte Datei (.gcode.3mf) hochladen.",
+  "bambuddy.user.optional": "Empfohlen, nicht nötig – nur zum Hochladen von Druckdateien aus Reprintbuddy:",
+  "permission.library:upload": "nur zum Hochladen von Druckdateien aus Reprintbuddy (optional)",
+  "bambuddy.result.optional": "Nicht nötig, nur zum Hochladen von Druckdateien:",
+  "bambuddy.upload_right_ok": "Mit diesem Schlüssel lassen sich Druckdateien aus Reprintbuddy hochladen.",
+  "bambuddy.upload_right_missing": "Druckdateien aus Reprintbuddy hochladen geht mit diesem Schlüssel nicht: Dafür braucht es „Upload Library“ in der Gruppe und „Manage Library“ am Schlüssel. Alles andere geht."
 }

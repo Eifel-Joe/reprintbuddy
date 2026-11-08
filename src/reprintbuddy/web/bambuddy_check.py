@@ -12,6 +12,7 @@ from reprintbuddy.bambuddy.connection import (
     KEY_RIGHT_FOR,
     KEY_SETTINGS_OFF,
     KEY_SETTINGS_ON,
+    OPTIONAL_PERMISSIONS,
     REQUIRED_PERMISSIONS,
     ConnectionCheck,
     check_connection,
@@ -52,6 +53,7 @@ def permission_context() -> dict[str, object]:
     """The fixed tables the templates need (labels, where a right can be set)."""
     return {
         "required_permissions": REQUIRED_PERMISSIONS,
+        "optional_permissions": OPTIONAL_PERMISSIONS,  # not required: only for uploading (Spec 5.1a)
         "key_creation_permissions": tuple(KEY_CREATION_LABELS),
         "editor_labels": {**EDITOR_LABELS, **KEY_CREATION_LABELS},
         "key_right_for": KEY_RIGHT_FOR,

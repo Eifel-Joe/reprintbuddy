@@ -24,7 +24,7 @@
     <h2 id="rights-title">{{ t('rights.title') }}</h2>
     {% for message in flashes %}{% include "_flash_message.html" %}{% endfor %}
     <p id="rights-intro">{{ t('rights.intro') }}</p>
-    {% with check=rights_notice, guide_link=True %}{% include "_bambuddy_result.html" %}{% endwith %}
+    {% with check=rights_notice, guide_link=True, show_optional=False %}{% include "_bambuddy_result.html" %}{% endwith %}
     <div class="actions">
       <form method="post" action="/bambuddy/rights/recheck">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

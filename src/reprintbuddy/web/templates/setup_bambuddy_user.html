@@ -10,6 +10,12 @@
   <li>{% include "_permission_label.html" %}</li>
   {% endfor %}
 </ul>
+<p>{{ t('bambuddy.user.optional') }}</p>
+<ul class="perms">
+  {% for code in optional_permissions %}
+  <li>{% include "_permission_label.html" %}</li>
+  {% endfor %}
+</ul>
 <p>{{ t('bambuddy.user.key_rights') }}</p>
 <ul class="perms">
   {% for code in key_creation_permissions %}

@@ -971,5 +971,10 @@
   "upload.error.not_3mf": "Only 3MF files (.3mf or .gcode.3mf) can be uploaded.",
   "upload.error.too_large": "The file is larger than 200 MB.",
   "upload.error.not_zip": "This is not a readable 3MF file.",
-  "upload.error.not_sliced": "The file is not sliced: it holds no G-code. Slice it first and upload the sliced file (.gcode.3mf)."
+  "upload.error.not_sliced": "The file is not sliced: it holds no G-code. Slice it first and upload the sliced file (.gcode.3mf).",
+  "bambuddy.user.optional": "Recommended, not required – only to upload print files from Reprintbuddy:",
+  "permission.library:upload": "only to upload print files from Reprintbuddy (optional)",
+  "bambuddy.result.optional": "Not required, only to upload print files:",
+  "bambuddy.upload_right_ok": "Print files can be uploaded from Reprintbuddy with this key.",
+  "bambuddy.upload_right_missing": "Uploading print files from Reprintbuddy is not possible with this key: it needs “Upload Library” in the group and “Manage Library” at the key. Everything else works."
 }
