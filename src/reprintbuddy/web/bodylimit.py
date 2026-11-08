@@ -47,6 +47,23 @@ def _header(scope: Scope, name: bytes) -> bytes | None:
     return None
 
 
+def route_path(scope: Scope) -> str:
+    """The path as the router sees it: without `root_path`, which is removed only at a "/" boundary.
+
+    Behind a proxy under a sub-path the server passes `path` with the prefix and `root_path` with the
+    prefix alone (ASGI 3.0); the limits below are written without it. Anything that does not clearly start
+    with the prefix stays as it is, so it finds no entry and gets the small default limit. The rule is the
+    one of Starlette's router (`_utils.get_route_path`), written out here because that function is private:
+    the limit must belong to the route that runs, not to a lookalike (v0.3.10 p133)."""
+    path = scope.get("path", "")
+    root = scope.get("root_path") or ""
+    if not root or not path.startswith(root):
+        return path
+    if path == root:
+        return ""
+    return path[len(root):] if path[len(root)] == "/" else path
+
+
 def declared_length(headers: Mapping[str, str]) -> int | None:
     """The length a request declares, or None when it is missing or not one plain number."""
     value = headers.get("content-length")
@@ -77,7 +94,7 @@ class BodyLimitMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        own = self.limits.get(scope.get("path", ""))
+        own = self.limits.get(route_path(scope))
         limit = self.default_limit if own is None else own
         if _header(scope, b"transfer-encoding") is not None:
             if own is None:
