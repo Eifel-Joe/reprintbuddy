@@ -492,6 +492,32 @@ def test_reason_of_a_pip_failure_skips_the_retry_warnings(update_env):
     assert e.update().message.startswith("install: ERROR: Could not find a version")
 
 
+def test_an_environment_with_an_older_python_than_the_new_version_needs_rolls_back_and_says_so(update_env):
+    """v0.3.9 p101: the new version needs Python 3.12; an installation whose environment was built on 3.11
+    (Debian 12) cannot take it. pip refuses; the old version goes on, and the page names the reason in plain words."""
+    e = update_env
+    pip_says = (
+        "Processing /opt/reprintbuddy\n"
+        "  Installing build dependencies: started\n"
+        "ERROR: Package 'reprintbuddy' requires a different Python: 3.11.2 not in '>=3.12'"
+    )
+    e.runner.on((e.py, "-m", "pip"), CommandResult(1, "", pip_says), CommandResult(0))
+    result = e.update()
+    assert result.state == "rolled_back", result.message
+    assert ("git", "-C", e.d, "checkout", "--quiet", "--detach", REF) in e.runner.calls  # back on the old code
+    assert STOP_CMD in e.runner.calls and START_CMD in e.runner.calls  # and the service was started again
+    assert result.message.startswith("install:")
+    for word in ("Python 3.12", "Python 3.11.2", "Debian 13"):
+        assert word in result.message, result.message
+    assert "ERROR" not in result.message  # pip's line is not shown raw
+
+
+def test_a_different_python_error_of_another_kind_keeps_pips_own_line(update_env):
+    e = update_env
+    e.runner.on((e.py, "-m", "pip"), CommandResult(1, "", "ERROR: Could not find a version that satisfies the requirement x"), CommandResult(0))
+    assert e.update().message.startswith("install: ERROR: Could not find a version")
+
+
 def test_reason_of_a_failed_migration_has_no_sql_and_no_parameters(update_env):
     e = update_env
     trace = (

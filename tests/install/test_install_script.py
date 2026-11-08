@@ -31,12 +31,36 @@ def os_release(dest: Path, id_: str = "debian", version: str = "13") -> None:
     (dest / "etc" / "os-release").write_text(f'ID={id_}\nVERSION_ID="{version}"\n', encoding="utf-8")
 
 
-def run(bash, dest, *args, dry=True, env_extra=None, destdir=True):
+def fake_python(folder: Path, version: str) -> Path:
+    """A `python3` that only knows the two questions the script asks: is it 3.12 or newer (the exit
+    status), and which version is it (the printed text)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    major, minor = (int(part) for part in version.split("."))
+    script = folder / "python3"
+    script.write_text(
+        "#!/bin/sh" + "\n"
+        + 'case "$2" in' + "\n"
+        + f'  *print*) echo "{version}" ;;' + "\n"
+        + f"  *) [ {major * 100 + minor} -ge 312 ] ;;" + "\n"
+        + "esac" + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    script.chmod(0o755)
+    return folder
+
+
+def run(bash, dest, *args, dry=True, env_extra=None, destdir=True, python="3.13"):
+    """The script in a dry run; `python3` on the path is a fake of that version (the machine's own
+    one would decide the outcome otherwise)."""
     env = dict(os.environ)
     env.pop("REPRINTBUDDY_REPO", None)
     env.pop("REPRINTBUDDY_DESTDIR", None)
     if destdir:
         env["REPRINTBUDDY_DESTDIR"] = dest.as_posix()
+    if python:
+        folder = fake_python(dest.parent / f"{dest.name}-bin", python)
+        env["PATH"] = f"{folder.as_posix()}{os.pathsep}{env['PATH']}"
     env.update(env_extra or {})
     command = [bash, INSTALL_SH.as_posix(), *(["--dry-run"] if dry else []), *args]
     return subprocess.run(
@@ -115,16 +139,40 @@ def test_dry_run_changes_nothing(bash, tmp_path):
     assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*")) == before
 
 
-def test_dry_run_debian12(bash, tmp_path):
+def test_debian12_is_refused_and_says_why(bash, tmp_path):
+    """v0.3.9 p101: Python 3.12 is required; Debian 12 only has 3.11 (main), no backports."""
     os_release(tmp_path, version="12")
+    result = run(bash, tmp_path, "--repo", REPO)
+    assert result.returncode == 1
+    message = result.stderr + result.stdout
+    assert "Debian 13" in message and "Python 3.12" in message and "Debian 12" in message
+
+
+def test_a_newer_debian_is_accepted(bash, tmp_path):
+    os_release(tmp_path, version="14")
     assert run(bash, tmp_path, "--repo", REPO).returncode == 0
+
+
+def test_python_older_than_3_12_stops_the_script_with_the_version_named(bash, tmp_path):
+    """Whatever the system says it is: the Python that would build the venv decides."""
+    os_release(tmp_path)
+    result = run(bash, tmp_path, "--repo", REPO, python="3.11")
+    assert result.returncode == 1
+    message = result.stderr + result.stdout
+    assert "Python 3.12 or newer" in message and "Python 3.11" in message
+
+
+def test_the_python_check_comes_before_anything_is_created(bash, tmp_path):
+    os_release(tmp_path)
+    out = lines(run(bash, tmp_path, "--repo", REPO, python="3.11"))
+    assert "useradd" not in out and "git clone" not in out and "-m venv" not in out
 
 
 def test_refuses_non_debian(bash, tmp_path):
     os_release(tmp_path, id_="ubuntu", version="24.04")
     result = run(bash, tmp_path, "--repo", REPO)
     assert result.returncode == 1
-    assert "Reprintbuddy needs Debian 12 or 13." in result.stderr + result.stdout
+    assert "Reprintbuddy needs Debian 13 or newer" in result.stderr + result.stdout
 
 
 def test_refuses_old_debian(bash, tmp_path):
@@ -135,7 +183,7 @@ def test_refuses_old_debian(bash, tmp_path):
 def test_refuses_missing_os_release(bash, tmp_path):
     result = run(bash, tmp_path, "--repo", REPO)
     assert result.returncode == 1
-    assert "needs Debian 12 or 13" in result.stderr + result.stdout
+    assert "needs Debian 13 or newer" in result.stderr + result.stdout
 
 
 def test_default_language_en(bash, tmp_path):

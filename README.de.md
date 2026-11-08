@@ -53,9 +53,11 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
   Rechten, die unter *Erster Aufruf* stehen, und ein **API-Schlüssel** dieses Benutzers. Der
   eigene Benutzer macht Reprintbuddys Aufträge in Bambuddy erkennbar. Die Einrichtung
   führt dich Schritt für Schritt durch.
-- Ein **Proxmox-LXC-Container** (unprivilegiert genügt) oder ein anderer Rechner mit
-  **Debian 12 oder 13**. Ein CPU-Kern, 1 GB RAM und 8 GB Platte reichen. Docker ist
-  nicht nötig.
+- Ein Rechner, eine VM oder ein Container (z. B. Proxmox-LXC, unprivilegiert genügt) mit
+  **Debian 13** oder neuer. Reprintbuddy braucht Python 3.12 oder neuer; Debian 12 hat nur
+  Python 3.11, deshalb bricht das Installationsskript dort ab, und eine auf Debian 12 gemachte
+  Installation kann nicht auf diese Version aktualisieren (die Update-Seite sagt es, die laufende
+  Version bleibt). Ein CPU-Kern, 1 GB RAM und 8 GB Platte reichen. Docker ist nicht nötig.
 - Ausgehender Netzzugang dieses Rechners zu den Debian-Paketquellen (`apt`),
   `github.com` und `raw.githubusercontent.com` (Installation und Updates),
   `pypi.org` und `files.pythonhosted.org` (Python-Pakete, bei der Installation und
@@ -67,7 +69,7 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.8/install/install.sh)"
 ```
 
-Als root im Container ausführen. Frische Debian-Container bringen oft kein curl mit; der erste Teil installiert es.
+Als root auf diesem System ausführen. Frische Debian-Systeme bringen oft kein curl mit; der erste Teil installiert es.
 Der Tag in der Adresse (`v0.3.8`) ist die Version, die installiert wird; Skript und Code gehören sicher zusammen.
 Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
 
@@ -219,7 +221,7 @@ Installationsskript erneut ausführen.
 
 *Einstellungen → Neustart* startet Reprintbuddy neu. Adresse, Port und HTTPS wirken erst nach
 einem Neustart; die Einstellungsseite sagt, wenn eine gespeicherte Änderung noch wartet. Nach
-einer Änderung von Adresse oder Port nennt die Neustart-Seite die neue Adresse. Im Container:
+einer Änderung von Adresse oder Port nennt die Neustart-Seite die neue Adresse. Auf dem System:
 `systemctl restart reprintbuddy`.
 
 ## HTTPS
@@ -230,10 +232,10 @@ zusammengehören, danach neu starten. Zurück zu HTTP geht über das Häkchen *Z
 privaten Schlüssel entfernen*.
 
 Alternativ läuft Reprintbuddy hinter einem vorhandenen Reverse-Proxy: Reprintbuddy bleibt bei
-HTTP, der Proxy macht TLS. Läuft der Proxy im selben Container, stelle die Lauschadresse auf
+HTTP, der Proxy macht TLS. Läuft der Proxy auf demselben System, stelle die Lauschadresse auf
 `127.0.0.1`.
 
-Ausgesperrt durch ein Zertifikat, das nicht mehr taugt (abgelaufen, falscher Name)? Im Container:
+Ausgesperrt durch ein Zertifikat, das nicht mehr taugt (abgelaufen, falscher Name)? Auf dem System:
 
 ```bash
 reprintbuddy disable-https && systemctl restart reprintbuddy
@@ -243,8 +245,8 @@ Bei falschem Port: `reprintbuddy set-port 8080 && systemctl restart reprintbuddy
 
 ## Sicherung und Export
 
-Reprintbuddy bringt eine eigene vollständige Sicherung mit, unabhängig davon, wie der Rechner oder
-Container sonst gesichert wird. Unter *Einstellungen → Update und Sicherung*:
+Reprintbuddy bringt eine eigene vollständige Sicherung mit, unabhängig davon, wie das System
+sonst gesichert wird. Unter *Einstellungen → Update und Sicherung*:
 
 - **Vollständige Sicherung** lädt die ganze Datenbank als eine `.zip`-Datei herunter: alle Daten
   und Einstellungen, **auch** den Bambuddy-Schlüssel, den Passwort-Hash, den privaten
@@ -308,7 +310,7 @@ Sicherheitslücken meldest du wie in [SECURITY.md](SECURITY.md) beschrieben.
 
 ## Kommandozeile
 
-Im Container läuft der Befehl `reprintbuddy` als Dienstbenutzer `reprintbuddy` (auch als root),
+Auf dem System läuft der Befehl `reprintbuddy` als Dienstbenutzer `reprintbuddy` (auch als root),
 damit die Datenbankdateien ihren Besitzer behalten:
 
 ```bash
