@@ -26,7 +26,7 @@ FONT_BOLD = FONT_DIR / "DejaVuSans-Bold.ttf"
 
 MAX_FONT_SIZE = 64
 MIN_FONT_SIZE = 24  # dots: about 2 mm at 300 dpi, still readable on a shelf
-_QUIET_MODULES = 2  # white border around the code, in modules
+_QUIET_MODULES = 3  # white border around the code, in modules (the paper's own margin adds to it)
 _GAP = 14  # dots between the code and the text
 _PAD_X = 6
 _PAD_Y = 8

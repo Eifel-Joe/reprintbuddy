@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from reprintbuddy.labels.rolls import DIE_CUT_TYPES, MEDIA_CONTINUOUS, Roll, roll_in_printer
+from reprintbuddy.labels.rolls import CONTINUOUS_TYPES, DIE_CUT_TYPES, Roll, roll_in_printer
 
 BLOCK_SIZE = 32
 
@@ -65,7 +65,7 @@ def problem(state: PrinterStatus, chosen: Roll) -> Problem | None:
         return Problem("cutter")
     if state.error2 & (_SYSTEM | _TRANSMISSION | _BUFFER_FULL):
         return Problem("error")
-    continuous = state.media_type == MEDIA_CONTINUOUS
+    continuous = state.media_type in CONTINUOUS_TYPES
     matches = (
         not continuous
         and state.media_type in DIE_CUT_TYPES

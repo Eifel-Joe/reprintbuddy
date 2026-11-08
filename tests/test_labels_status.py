@@ -264,3 +264,45 @@ def test_a_known_roll_that_is_not_the_chosen_one_is_named_by_its_key(monkeypatch
     monkeypatch.setitem(rolls.ROLLS, "DK-TEST", other)
     found = status.problem(status.parse(block(width=29, length=90)), DK_11209)
     assert found.key == "wrong_roll" and found.params["known"] == "DK-TEST"
+
+
+def test_an_empty_integer_is_no_valid_answer():
+    empty_version = bytes.fromhex("3009" "0200" "0406" + b"public".hex() + "a200")
+    assert snmp.parse_response(empty_version, OID, 1) is None
+
+
+def test_the_error_index_must_be_zero():
+    good = response(READY)
+    pdu_at = good.index(bytes([0xA2]))
+    # the error index is the third integer of the answer: 02 01 00 after error status
+    index = good.index(bytes.fromhex("020100"), good.index(bytes.fromhex("020100"), pdu_at + 6) + 3)
+    broken = good[:index] + bytes.fromhex("020101") + good[index + 3 :]
+    assert snmp.parse_response(broken, OID, 0x01020304) is None
+
+
+def test_an_answer_from_another_port_of_the_printer_is_ignored(monkeypatch):
+    """The printer answers from port 161; an answer from any other port is somebody else's."""
+    class Wrong(SnmpStub):
+        def run(self):
+            self.sock.settimeout(3)
+            try:
+                data, peer = self.sock.recvfrom(2048)
+            except OSError:
+                return
+            at = data.index(bytes([0xA0])) + 3
+            request_id = int.from_bytes(data[at + 1 : at + 5], "big")
+            other = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            other.sendto(response(self.value, request_id=request_id), peer)
+            other.close()
+
+    s = Wrong(READY)
+    try:
+        assert ask(s.port, timeout=0.4) is None
+    finally:
+        s.stop()
+
+
+@pytest.mark.parametrize("media", [0x4A, 0x0A])
+def test_both_codes_of_a_continuous_roll_are_named_as_continuous(media):
+    found = status.problem(status.parse(block(media=media, width=62, length=0)), DK_11209)
+    assert found.key == "wrong_roll" and found.params["continuous"] is True

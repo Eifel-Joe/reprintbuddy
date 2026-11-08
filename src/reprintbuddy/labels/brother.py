@@ -14,6 +14,7 @@ may never be this machine itself (a loopback or wildcard address) unless a test 
 from __future__ import annotations
 
 import socket
+import time
 
 from PIL import Image
 
@@ -89,10 +90,16 @@ def send_job(
             connection.sendall(data)
         except OSError:
             raise SendAborted() from None
-        try:
-            while connection.recv(4096):  # the printer sends nothing; it closes when it has the job
-                pass
-        except TimeoutError:
-            pass  # still busy printing: the job is with the printer, do not send it again
-        except OSError:
-            raise SendAborted() from None  # reset: the printer did not close in the normal way
+        deadline = time.monotonic() + wait_timeout  # one limit for the whole wait, not for each read
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return  # still busy printing: the job is with the printer, do not send it again
+            try:
+                connection.settimeout(remaining)
+                if not connection.recv(4096):  # the printer sends nothing; it closes when it has the job
+                    return
+            except TimeoutError:
+                return
+            except OSError:
+                raise SendAborted() from None  # reset: the printer did not close in the normal way

@@ -38,6 +38,8 @@
     }).catch(function () { /* keep the picture that is there */ });
   }
 
+  update();  /* the page draws nothing itself: ask for the picture and for the note about a cut line */
+
   document.addEventListener("change", function (event) {
     if (event.target && event.target.name === "label_field") {
       window.clearTimeout(timer);

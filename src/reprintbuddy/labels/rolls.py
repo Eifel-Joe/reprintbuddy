@@ -14,7 +14,9 @@ HEAD_DOTS = 720  # dots of the print head = 90 bytes per raster line
 
 MEDIA_DIE_CUT = 0x0B  # what the printer reports for a die-cut roll (some firmware says 0x4B)
 MEDIA_DIE_CUT_ALT = 0x4B
-MEDIA_CONTINUOUS = 0x4A
+MEDIA_CONTINUOUS = 0x4A  # (older documentation: 0x0A)
+MEDIA_CONTINUOUS_ALT = 0x0A
+CONTINUOUS_TYPES = (MEDIA_CONTINUOUS, MEDIA_CONTINUOUS_ALT)
 DIE_CUT_TYPES = (MEDIA_DIE_CUT, MEDIA_DIE_CUT_ALT)
 
 

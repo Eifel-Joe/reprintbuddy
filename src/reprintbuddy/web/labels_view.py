@@ -74,16 +74,14 @@ class LabelSettings:
         self.fields: tuple[str, ...] = fields.clean(st.get_setting(db, "label_fields"))
 
 
-def picture(
-    request: Request,
-    db: Session,
-    lang: str,
-    data: fields.LabelData,
-    chosen: Iterable[str],
-    roll: Roll,
-    article_id: int,
-) -> render.Rendered:
-    address = qr.article_address(qr.base_address(request, db), article_id)
+def label_address(request: Request, db: Session, article_id: int) -> str:
+    """The address the QR code on the label carries (read from the database: in the request's thread)."""
+    return qr.article_address(qr.base_address(request, db), article_id)
+
+
+def draw(lang: str, data: fields.LabelData, chosen: Iterable[str], address: str, roll: Roll) -> render.Rendered:
+    """The picture of a label. Drawing takes tens to hundreds of milliseconds with long texts: the
+    routes call this in a worker thread (it touches no database and no request)."""
     return render.render_label(data, chosen, address, roll, caption_for(lang))
 
 
@@ -129,33 +127,18 @@ def _error_text(lang: str, error: LabelError) -> str:
 
 
 def settings_context(request: Request, db: Session, values: dict[str, object]) -> dict[str, object]:
-    """What the "Labels" tab of the settings page needs beside the form values: the choices, and the
-    sample label for what is ticked now (the saved choice, or what was typed when the form is shown
-    again after an error), so the page can say what did not fit without any script."""
-    lang = translate_lang(request, db)
+    """What the "Labels" tab of the settings page needs beside the form values: the choices and the
+    details the preview starts with (the saved choice, or what was typed when the form is shown again).
+    The page draws nothing itself: the preview picture is a request of its own, and the note about a
+    cut line is shown by `labels.js` from that request's answer."""
     selected = fields.clean(values.get("label_selected") or ())
-    roll = roll_by_key(values.get("label_roll")) or ROLLS[DEFAULT_ROLL]
-    rendered = picture(request, db, lang, sample_data(lang), selected, roll, SAMPLE_ARTICLE_ID)
     return {
         "label_rolls": list(ROLLS.values()),
         "label_all_fields": fields.FIELDS,
-        "label_cut": rendered.truncated,
         "label_preview_fields": ",".join(selected),
     }
 
 
-def translate_lang(request: Request, db: Session) -> str:
-    return str(st.get_setting(db, "language"))
-
-
-def article_card_context(request: Request, db: Session, article: Article, lang: str) -> dict[str, object]:
-    """What the card "Label" on the article's page needs: whether a printer is set up, the greatest
-    number, and whether a line of the label had to be cut."""
-    saved = LabelSettings(db)
-    rendered = picture(request, db, lang, article_data(article, lang), saved.fields, saved.roll, article.id)
-    return {
-        "label_configured": saved.host is not None,
-        "label_cut": rendered.truncated,
-        "label_max_copies": MAX_COPIES,
-    }
-
+def article_card_context(db: Session) -> dict[str, object]:
+    """What the card "Label" on the article's page needs: whether a printer is set up and the greatest number."""
+    return {"label_configured": LabelSettings(db).host is not None, "label_max_copies": MAX_COPIES}

@@ -625,7 +625,7 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         dispatch_tones=DISPATCH_TONES,
         qr_address=qr_address,
         qr_local=qr_view.is_local_address(base),
-        **labels_view.article_card_context(request, db, article, lang),
+        **labels_view.article_card_context(db),
         has_target=bool(article.target_model or article.printer_id),
         target_label=_target_label(lang, article),
         filaments=[

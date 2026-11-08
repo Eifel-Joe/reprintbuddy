@@ -222,3 +222,57 @@ def test_a_name_that_does_not_resolve_is_not_reachable(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", fail)
     with pytest.raises(PrinterUnreachable):
         brother.send_job("printer.example", b"x")
+
+
+def test_a_device_that_keeps_sending_does_not_hold_the_wait_beyond_its_limit():
+    """The limit is for the whole wait, not for each read: a byte every 0.2 s must not stretch it."""
+    import time
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    stop = threading.Event()
+
+    def dribble():
+        conn, _ = server.accept()
+        conn.settimeout(2)
+        try:
+            while not stop.is_set():
+                conn.sendall(b"x")
+                time.sleep(0.2)
+        except OSError:
+            pass
+        conn.close()
+
+    threading.Thread(target=dribble, daemon=True).start()
+    started = time.monotonic()
+    try:
+        brother.send_job("127.0.0.1", b"job", port=server.getsockname()[1], wait_timeout=0.5, allow_local=True)
+    finally:
+        stop.set()
+        server.close()
+    assert time.monotonic() - started < 1.5
+
+
+def test_a_name_that_takes_too_long_to_resolve_is_not_reachable_within_the_limit(monkeypatch):
+    import time
+
+    from reprintbuddy.labels import addresses
+
+    def slow(*a, **k):
+        time.sleep(1.5)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.51.100.9", 9100))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", slow)
+    started = time.monotonic()
+    with pytest.raises(PrinterUnreachable):
+        addresses.resolve("printer.example", resolve_timeout=0.3)
+    assert time.monotonic() - started < 1.0
+
+
+def test_an_ipv4_address_in_ipv6_form_is_as_local_as_the_plain_one():
+    from reprintbuddy.labels import addresses
+
+    for text in ("::ffff:127.0.0.1", "::ffff:0.0.0.0", "::ffff:224.0.0.1"):
+        assert addresses.is_local_or_wildcard(text), text
+    assert not addresses.is_local_or_wildcard("::ffff:198.51.100.9")

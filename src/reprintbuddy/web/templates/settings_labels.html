@@ -7,6 +7,7 @@
   {% if error and error_section == 'labels' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
   <form id="settings-labels" method="post" action="/settings/labels">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
     {% call ui.setting_row(t('labels.printer_address'), t('labels.printer_address_hint'), "label_printer_host", stack=true) %}
       <input id="label_printer_host" name="label_printer_host" type="text" value="{{ label_host }}" autocomplete="off" spellcheck="false" placeholder="{{ t('labels.printer_placeholder') }}" maxlength="253">
     {% endcall %}
@@ -35,7 +36,7 @@
 <section class="card" id="label-preview-card">
   {% call ui.card_head("eye", t('labels.preview_title')) %}<button class="btn secondary" type="submit" form="settings-labels" formaction="/settings/labels/test">{{ ui.icon('printer') }}{{ t('labels.trial_print') }}</button>{% endcall %}
   <img id="label-preview" class="label-preview" src="/settings/labels/preview.png?fields={{ label_preview_fields }}" width="696" height="271" alt="{{ t('labels.preview_alt') }}">
-  <p class="alert" role="alert" id="label-cut"{% if not label_cut %} hidden{% endif %}>{{ t('labels.cut_warning') }}</p>
+  <p class="alert" role="alert" id="label-cut" hidden>{{ t('labels.cut_warning') }}</p>
   <p class="muted">{{ t('labels.preview_hint') }}</p>
   <p class="muted">{{ t('labels.keep_address') }}</p>
 </section>

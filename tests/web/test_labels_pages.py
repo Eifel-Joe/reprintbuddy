@@ -173,45 +173,110 @@ def test_the_preview_needs_a_signed_in_user(ready_client):
 # ---- the trial print ----
 
 
+def trial(client, **over):
+    """The trial print as the form sends it: with the one-time token of the settings form."""
+    data = {"csrf_token": csrf_of(client, SAME_PAGE), "form_token": form_token_of(client, SAME_PAGE, "/settings/labels"),
+            "label_printer_host": HOST, "label_roll": "DK-11209", "label_field": ["name"]}
+    data.update(over)
+    return client.post("/settings/labels/test", data=data), data
+
+
 def test_the_trial_print_sends_one_job_with_what_is_ticked_and_saves_nothing(configured, net):
-    data = {"csrf_token": csrf_of(configured, SAME_PAGE), "label_printer_host": HOST, "label_roll": "DK-11209",
-            "label_field": ["name"]}
-    done = configured.post("/settings/labels/test", data=data)
-    assert done.status_code == 303 and done.headers["location"] == SAME_PAGE
+    done, _ = trial(configured)
+    assert done.status_code == 200  # the page stays, with what was typed and the message
     assert len(net.sent) == 1 and len(net.sent[0][1]) == 25642
     assert net.sent[0][0] == HOST
     assert stored(configured, "label_fields") == ["name", "sku", "label_text"]  # not saved
-    assert en("labels.sent_one") in configured.get(SAME_PAGE).text
+    assert en("labels.sent_one") in done.text
+
+
+def test_what_was_typed_and_ticked_stays_on_the_page_after_a_trial_print(ready_client, net):
+    done, _ = trial(ready_client, label_printer_host="198.51.100.77", label_field=["buffer", "date"])
+    assert 'value="198.51.100.77"' in done.text
+    assert re.search(r'name="label_field"[^>]*value="buffer"[^>]*checked', done.text)
+    assert not re.search(r'name="label_field"[^>]*value="name"[^>]*checked', done.text)
+    assert stored(ready_client, "label_printer_host") is None
+
+
+def test_the_same_trial_print_twice_prints_once(configured, net):
+    done, data = trial(configured)
+    again = configured.post("/settings/labels/test", data=data)
+    assert len(net.sent) == 1
+    assert en("form.duplicate") in again.text
+
+
+def test_a_trial_print_without_a_valid_token_prints_nothing(configured, net):
+    done, _ = trial(configured, form_token="forged")
+    assert net.sent == []
+    assert en("form.expired") in done.text
 
 
 def test_the_trial_print_goes_to_the_typed_address_even_when_not_yet_saved(ready_client, net):
-    data = {"csrf_token": csrf_of(ready_client, SAME_PAGE), "label_printer_host": "198.51.100.77",
-            "label_roll": "DK-11209", "label_field": ["name"]}
-    ready_client.post("/settings/labels/test", data=data)
+    trial(ready_client, label_printer_host="198.51.100.77")
     assert net.sent[0][0] == "198.51.100.77"
     assert stored(ready_client, "label_printer_host") is None
 
 
 def test_the_trial_print_without_an_address_says_so(ready_client, net):
-    data = {"csrf_token": csrf_of(ready_client, SAME_PAGE), "label_printer_host": "", "label_roll": "DK-11209"}
-    ready_client.post("/settings/labels/test", data=data)
+    done, _ = trial(ready_client, label_printer_host="")
     assert net.sent == [] and net.asked == []
-    assert en("labels.not_configured") in ready_client.get(SAME_PAGE).text
+    assert en("labels.not_configured") in done.text
 
 
 def test_the_trial_print_with_a_wrong_address_says_so(ready_client, net):
-    data = {"csrf_token": csrf_of(ready_client, SAME_PAGE), "label_printer_host": "127.0.0.1", "label_roll": "DK-11209"}
-    response = ready_client.post("/settings/labels/test", data=data)
-    assert response.status_code == 200 and en("settings.invalid_label_host") in response.text
+    done, _ = trial(ready_client, label_printer_host="127.0.0.1")
+    assert done.status_code == 200 and en("settings.invalid_label_host") in done.text
     assert net.sent == []
 
 
 def test_the_trial_print_tells_why_it_did_not_print(configured, monkeypatch):
     net = Recorder(monkeypatch, answer=block(b9=0x10))
-    data = {"csrf_token": csrf_of(configured, SAME_PAGE), "label_printer_host": HOST, "label_roll": "DK-11209"}
-    configured.post("/settings/labels/test", data=data)
-    page = configured.get(SAME_PAGE).text
-    assert net.sent == [] and en("labels.problem.cover_open") in page
+    done, _ = trial(configured)
+    assert net.sent == [] and en("labels.problem.cover_open") in done.text
+
+
+def test_the_drawing_of_a_label_never_runs_on_the_event_loop(configured, article, monkeypatch):
+    """Drawing takes tens to hundreds of milliseconds: every route that draws does it in a worker."""
+    import asyncio
+
+    from reprintbuddy.labels import render
+
+    seen = []
+    real = render.render_label
+
+    def spy(*args, **kwargs):
+        try:
+            asyncio.get_running_loop()
+            seen.append("on the loop")
+        except RuntimeError:
+            seen.append("worker")
+        return real(*args, **kwargs)
+
+    Recorder(monkeypatch)
+    # the pages that carry the forms are fetched first: a settings page draws its small sample itself
+    article_form = {"csrf_token": csrf_of(configured, f"/articles/{article}"),
+                    "form_token": form_token_of(configured, f"/articles/{article}", f"/articles/{article}/label"),
+                    "copies": "1"}
+    trial_form = {"csrf_token": csrf_of(configured, SAME_PAGE),
+                  "form_token": form_token_of(configured, SAME_PAGE, "/settings/labels"),
+                  "label_printer_host": HOST, "label_roll": "DK-11209", "label_field": ["name"]}
+    monkeypatch.setattr(render, "render_label", spy)
+    configured.get(f"/articles/{article}/label.png")
+    configured.get("/settings/labels/preview.png")
+    configured.post(f"/articles/{article}/label", data=article_form)
+    configured.post("/settings/labels/test", data=trial_form)
+    assert len(seen) == 4 and set(seen) == {"worker"}, seen
+
+
+def test_the_article_page_itself_draws_no_label(configured, article, monkeypatch):
+    """Only the picture's own request draws it; the page is built without drawing."""
+    from reprintbuddy.labels import render
+
+    calls = []
+    real = render.render_label
+    monkeypatch.setattr(render, "render_label", lambda *a, **k: calls.append(1) or real(*a, **k))
+    assert configured.get(f"/articles/{article}").status_code == 200
+    assert calls == []
 
 
 # ============================== the article's page ==============================

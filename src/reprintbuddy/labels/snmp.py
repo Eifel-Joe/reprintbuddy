@@ -97,6 +97,13 @@ def _expect(reader: _Reader, tag: int) -> bytes:
     return body
 
 
+def _int(body: bytes) -> int:
+    """An INTEGER's value; an empty one is not an integer."""
+    if not body:
+        raise ValueError("empty integer")
+    return int.from_bytes(body, "big", signed=True)
+
+
 def parse_response(data: bytes, oid: str, request_id: int) -> bytes | None:
     """The octet string a printer answered for `oid` to our request `request_id`, or None for
     anything else."""
@@ -105,18 +112,19 @@ def parse_response(data: bytes, oid: str, request_id: int) -> bytes | None:
         message = _Reader(_expect(outer, _SEQUENCE))
         if not outer.done():
             return None
-        if int.from_bytes(_expect(message, _INTEGER), "big", signed=True) != 0:  # SNMP v1
+        if _int(_expect(message, _INTEGER)) != 0:  # SNMP v1
             return None
         if _expect(message, _OCTET_STRING) != COMMUNITY:
             return None
         pdu = _Reader(_expect(message, _GET_RESPONSE))
         if not message.done():
             return None
-        if int.from_bytes(_expect(pdu, _INTEGER), "big", signed=True) != request_id:
+        if _int(_expect(pdu, _INTEGER)) != request_id:
             return None
-        if int.from_bytes(_expect(pdu, _INTEGER), "big", signed=True) != 0:  # error status
+        if _int(_expect(pdu, _INTEGER)) != 0:  # error status
             return None
-        _expect(pdu, _INTEGER)  # error index
+        if _int(_expect(pdu, _INTEGER)) != 0:  # error index
+            return None
         bindings = _Reader(_expect(pdu, _SEQUENCE))
         if not pdu.done():
             return None
@@ -152,8 +160,8 @@ def query_status(host: str, *, port: int = PORT, timeout: float = TIMEOUT, allow
                     data, peer = sock.recvfrom(2048)
                 except (TimeoutError, OSError):
                     return None
-                if peer[0].split("%", 1)[0] != address.split("%", 1)[0]:
-                    continue  # not from the printer we asked
+                if peer[0].split("%", 1)[0] != address.split("%", 1)[0] or peer[1] != port:
+                    continue  # not from the printer we asked, nor from its SNMP port
                 value = parse_response(data, STATUS_OID, request_id)
                 if value is not None:
                     return value

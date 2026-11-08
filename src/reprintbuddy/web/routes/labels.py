@@ -94,15 +94,17 @@ async def settings_preview(request: Request, fields_: str | None = Query(None, a
     lang = current_language(request)
     saved = labels_view.LabelSettings(db)
     chosen = saved.fields if fields_ is None else fields.clean(fields_.split(","))
-    rendered = labels_view.picture(
-        request, db, lang, labels_view.sample_data(lang), chosen, saved.roll, labels_view.SAMPLE_ARTICLE_ID
+    address = labels_view.label_address(request, db, labels_view.SAMPLE_ARTICLE_ID)
+    rendered = await run_in_threadpool(
+        labels_view.draw, lang, labels_view.sample_data(lang), chosen, address, saved.roll
     )
     return _picture_response(rendered)
 
 
 @router.post("/settings/labels/test", dependencies=[Depends(verify_csrf)])
 async def trial_print(request: Request, db: Session = Depends(get_db)):
-    """One sample label with what is typed and ticked in the form, without saving it."""
+    """One sample label with what is typed and ticked in the form, without saving it. The page is
+    shown again with what was typed and the message (a redirect would lose the unsaved choice)."""
     form = await request.form()
     host, roll_key, chosen = _form_values(form)
     typed = {"label_host": host, "label_roll": roll_key, "label_selected": list(fields.clean(chosen))}
@@ -112,14 +114,24 @@ async def trial_print(request: Request, db: Session = Depends(get_db)):
     checked_host, checked_roll, checked_fields = result
     if checked_host is None:
         flash(request, "labels.not_configured", warning=True)
-        return RedirectResponse(SETTINGS_PAGE, status_code=303)
+        return _page(request, db, None, "labels", **typed)
+    try:  # the one-time token is used up first and committed: the printing below holds no lock
+        with form_transaction(request, str(form.get("form_token", ""))):
+            pass
+    except FormTokenUsed:
+        flash(request, "form.duplicate")
+        return _page(request, db, None, "labels", **typed)
+    except FormTokenInvalid:
+        flash(request, "form.expired", warning=True)
+        return _page(request, db, None, "labels", **typed)
     lang = current_language(request)
     roll = ROLLS[checked_roll]
-    rendered = labels_view.picture(
-        request, db, lang, labels_view.sample_data(lang), checked_fields, roll, labels_view.SAMPLE_ARTICLE_ID
+    address = labels_view.label_address(request, db, labels_view.SAMPLE_ARTICLE_ID)
+    rendered = await run_in_threadpool(
+        labels_view.draw, lang, labels_view.sample_data(lang), checked_fields, address, roll
     )
     await _print(request, db, lang, str(checked_host), roll, rendered.image, 1)
-    return RedirectResponse(SETTINGS_PAGE, status_code=303)
+    return _page(request, db, None, "labels", **typed)
 
 
 # ---- the article's page: preview and print --------------------------------------------------
@@ -138,9 +150,9 @@ async def article_preview(request: Request, article_id: int, db: Session = Depen
     article = _article_or_404(db, article_id)
     lang = current_language(request)
     saved = labels_view.LabelSettings(db)
-    rendered = labels_view.picture(
-        request, db, lang, labels_view.article_data(article, lang), saved.fields, saved.roll, article.id
-    )
+    address = labels_view.label_address(request, db, article.id)
+    data = labels_view.article_data(article, lang)
+    rendered = await run_in_threadpool(labels_view.draw, lang, data, saved.fields, address, saved.roll)
     return _picture_response(rendered)
 
 
@@ -174,9 +186,9 @@ async def print_article_label(request: Request, article_id: int, db: Session = D
         flash(request, "form.expired", warning=True)
         return RedirectResponse(back, status_code=303)
     lang = current_language(request)
-    rendered = labels_view.picture(
-        request, db, lang, labels_view.article_data(article, lang), saved.fields, saved.roll, article.id
-    )
+    address = labels_view.label_address(request, db, article.id)
+    data = labels_view.article_data(article, lang)
+    rendered = await run_in_threadpool(labels_view.draw, lang, data, saved.fields, address, saved.roll)
     await _print(request, db, lang, saved.host, saved.roll, rendered.image, copies)
     return RedirectResponse(back, status_code=303)
 

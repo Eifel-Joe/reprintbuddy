@@ -69,13 +69,13 @@ def print_labels(
     `allow_local` and `clock` exist for the tests; the web layer never sets them."""
     if isinstance(copies, bool) or not isinstance(copies, int) or not 1 <= copies <= MAX_COPIES:
         raise ValueError(f"copies must be a whole number from 1 to {MAX_COPIES}")
+    try:  # looked up before the lock is taken: a slow name server must not make others wait
+        address = resolve(host, allow_local=allow_local)
+    except LabelError as error:
+        return Outcome(0, copies, error=error)
     if not _LOCK.acquire(timeout=lock_wait):
         return Outcome(0, copies, error=PrinterBusy())
     try:
-        try:
-            address = resolve(host, allow_local=allow_local)
-        except LabelError as error:
-            return Outcome(0, copies, error=error)
         state = status.parse(snmp.query_status(address, allow_local=allow_local))
         if state is not None:
             problem = status.problem(state, roll)
