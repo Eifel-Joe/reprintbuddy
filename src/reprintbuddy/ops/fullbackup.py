@@ -508,25 +508,60 @@ def read_manifest(path: Path) -> Manifest:
     return _parse_manifest(raw, member)
 
 
-def _inflate_to(packed: bytes, handle: IO[bytes]) -> None:
-    """Decompress into the file chunk by chunk: the database is never twice in memory."""
-    inflater = zlib.decompressobj()
-    total = 0
-    data = packed
+class _Inflater:
+    """Decompress into a file block by block: the database is never twice in memory.
+
+    Every call asks for at most `_CHUNK` bytes of output (`max_length`) and counts them against
+    `MAX_DATABASE_BYTES` as they come, so a few kilobytes that pack into gigabytes stop at the limit
+    instead of growing (a ZIP bomb inside valid encryption)."""
+
+    def __init__(self, handle: IO[bytes]) -> None:
+        self._handle = handle
+        self._inflater = zlib.decompressobj()
+        self._total = 0
+
+    def feed(self, data: bytes) -> None:
+        inflater = self._inflater
+        try:
+            if inflater.eof:
+                if data:
+                    raise Damaged("data after the end of the compressed stream")
+                return
+            while True:
+                chunk = inflater.decompress(data, _CHUNK)
+                data = inflater.unconsumed_tail
+                self._total += len(chunk)
+                if self._total > MAX_DATABASE_BYTES:
+                    raise TooLarge("database too large")
+                self._handle.write(chunk)
+                if inflater.eof:
+                    if inflater.unused_data:
+                        raise Damaged("data after the end of the compressed stream")
+                    return
+                if not (data or chunk):
+                    return
+        except zlib.error as error:
+            raise Damaged("cannot decompress") from error
+
+    def finish(self) -> None:
+        if not self._inflater.eof:
+            raise Damaged("compressed data incomplete")
+
+
+def _open_into(archive: zipfile.ZipFile, sealing: Sealing, key: bytes, aad: bytes, handle: IO[bytes]) -> None:
+    """Read the sealed member in blocks, decrypt and unpack straight into `handle`.
+
+    What reaches `handle` before the last line is NOT yet known to be genuine (AES-GCM checks its tag
+    at the end): the caller deletes the file on any error, and nothing may use it before this returns."""
+    opener = bc.Opener(key, sealing.nonce, aad)
+    inflater = _Inflater(handle)
+    # Stored, not compressed (see `_METHODS`): never larger than the uploaded file.
+    _copy_member(archive, SEALED, lambda block: inflater.feed(opener.update(block)), MAX_DATABASE_BYTES + bc.TAG_BYTES)
     try:
-        while True:
-            chunk = inflater.decompress(data, _CHUNK)
-            data = inflater.unconsumed_tail
-            total += len(chunk)
-            if total > MAX_DATABASE_BYTES:
-                raise TooLarge("database too large")
-            handle.write(chunk)
-            if inflater.eof or not (data or chunk):
-                break
-    except zlib.error as error:
-        raise Damaged("cannot decompress") from error
-    if not inflater.eof or inflater.unused_data:
-        raise Damaged("compressed data incomplete")
+        opener.finish()
+    except bc.DecryptError as error:
+        raise Damaged("the data does not open") from error
+    inflater.finish()
 
 
 def extract_database(path: Path, manifest: Manifest, password: str | None, target: Path) -> None:
@@ -540,16 +575,9 @@ def extract_database(path: Path, manifest: Manifest, password: str | None, targe
             key, check = bc.derive_key(password, sealing.salt, sealing.params)
             if not bc.check_matches(check, sealing.check):
                 raise WrongPassword("wrong password")
-            # Stored, not compressed (see `_METHODS`): never larger than the uploaded file.
-            sealed = _read_limited(archive, SEALED, MAX_DATABASE_BYTES + bc.TAG_BYTES)
-            try:
-                packed = bc.open_sealed(key, sealing.nonce, sealed, manifest.raw)
-            except bc.DecryptError as error:
-                raise Damaged("the data does not open") from error
-            del sealed
             try:
                 with private_file(target) as handle:
-                    _inflate_to(packed, handle)
+                    _open_into(archive, sealing, key, manifest.raw, handle)
             except BaseException:
                 remove_database_files(target)
                 raise

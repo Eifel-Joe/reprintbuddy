@@ -122,3 +122,75 @@ def test_a_sealer_cannot_be_used_after_finish():
 def test_a_sealer_checks_the_nonce_length():
     with pytest.raises(ValueError):
         bc.Sealer(b"k" * bc.KEY_BYTES, b"short", b"")
+
+
+# --- Opener: open_sealed in blocks (v0.3.10 p125) ---------------------------------------------
+
+
+def _opened(key, nonce, sealed, aad, size):
+    opener = bc.Opener(key, nonce, aad)
+    parts = [opener.update(sealed[i : i + size]) for i in range(0, len(sealed), size)]
+    opener.finish()
+    return b"".join(parts)
+
+
+@pytest.mark.parametrize("size", [1, 7, 15, 16, 17, 33, 1000, 10_000])
+def test_opener_gives_what_open_sealed_gives_whatever_the_block_size(size):
+    key, _ = bc.derive_key("geheim-123", SALT, FAST)
+    data = bytes(range(256)) * 20
+    sealed = bc.seal(key, NONCE, data, AAD)
+    assert _opened(key, NONCE, sealed, AAD, size) == data == bc.open_sealed(key, NONCE, sealed, AAD)
+
+
+def test_opener_opens_an_empty_payload():
+    key, _ = bc.derive_key("geheim-123", SALT, FAST)
+    sealed = bc.seal(key, NONCE, b"", AAD)
+    assert _opened(key, NONCE, sealed, AAD, 4) == b""
+
+
+def test_opener_holds_back_the_tag():
+    """The last 16 bytes are the tag, not data: nothing of them may come out as plaintext."""
+    key, _ = bc.derive_key("geheim-123", SALT, FAST)
+    sealed = bc.seal(key, NONCE, b"x" * 100, AAD)
+    opener = bc.Opener(key, NONCE, AAD)
+    assert len(opener.update(sealed)) == 100
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda key, nonce, data, aad: (key, nonce, data[:-1] + bytes([data[-1] ^ 1]), aad),
+        lambda key, nonce, data, aad: (key, nonce, bytes([data[0] ^ 1]) + data[1:], aad),
+        lambda key, nonce, data, aad: (key, nonce, data, aad + b" "),
+        lambda key, nonce, data, aad: (key, bytes(12), data, aad),
+        lambda key, nonce, data, aad: (bytes(32), nonce, data, aad),
+        lambda key, nonce, data, aad: (key, nonce, data[:10], aad),
+        lambda key, nonce, data, aad: (key, nonce, data[:-1], aad),
+        lambda key, nonce, data, aad: (key, nonce, data + b"\0", aad),
+        lambda key, nonce, data, aad: (key, nonce, b"", aad),
+    ],
+)
+def test_opener_detects_any_change_at_the_end(change):
+    key, _ = bc.derive_key("geheim-123", SALT, FAST)
+    sealed = bc.seal(key, NONCE, b"database bytes", AAD)
+    key, nonce, data, aad = change(key, NONCE, sealed, AAD)
+    opener = bc.Opener(key, nonce, aad)
+    opener.update(data)
+    with pytest.raises(bc.DecryptError):
+        opener.finish()
+
+
+def test_opener_is_used_once():
+    key, _ = bc.derive_key("geheim-123", SALT, FAST)
+    opener = bc.Opener(key, NONCE, AAD)
+    opener.update(bc.seal(key, NONCE, b"abc", AAD))
+    opener.finish()
+    with pytest.raises(ValueError):
+        opener.update(b"more")
+    with pytest.raises(ValueError):
+        opener.finish()
+
+
+def test_opener_refuses_a_wrong_nonce_length():
+    with pytest.raises(ValueError):
+        bc.Opener(bytes(32), b"short", AAD)

@@ -208,3 +208,173 @@ def test_a_failure_in_the_middle_of_writing_leaves_nothing_behind(live, work, mo
         fb.create_backup(live, work_dir=work, password=password, now=NOW)
     assert len(calls) == 2
     assert list(work.iterdir()) == []
+
+
+# --- reading an encrypted backup in blocks (v0.3.10 p125) -----------------------------------------
+
+
+def _members(path: Path) -> dict[str, bytes]:
+    with zipfile.ZipFile(path) as archive:
+        return {info.filename: archive.read(info.filename) for info in archive.infolist()}
+
+
+def _rebuilt(path: Path, out: Path, *, manifest: bytes | None = None, sealed: bytes | None = None) -> Path:
+    """The same backup with another manifest or sealed member (the ZIP checksums are made fresh, so
+    only the encryption can tell)."""
+    content = _members(path)
+    with zipfile.ZipFile(out, "w") as archive:
+        archive.writestr(fb.MANIFEST, content[fb.MANIFEST] if manifest is None else manifest, compress_type=zipfile.ZIP_DEFLATED)
+        archive.writestr(fb.SEALED, content[fb.SEALED] if sealed is None else sealed, compress_type=zipfile.ZIP_STORED)
+    return out
+
+
+def _flip(data: bytes, index: int) -> bytes:
+    return data[:index] + bytes([data[index] ^ 1]) + data[index + 1 :]
+
+
+@pytest.fixture
+def sealed_small(live, work):
+    created = fb.create_backup(live, work_dir=work, password="sicher-genug-1", now=NOW)
+    return created.path
+
+
+def test_reading_needs_a_few_blocks_not_a_multiple_of_the_database(big_live, work):
+    created = fb.create_backup(big_live, work_dir=work, password="sicher-genug-1", now=NOW)
+    manifest = fb.read_manifest(created.path)
+    target = work / "candidate.db"
+    tracemalloc.start()
+    try:
+        fb.extract_database(created.path, manifest, "sicher-genug-1", target)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert target.stat().st_size > 24 * MiB
+    assert peak < 8 * MiB, f"peak {peak / MiB:.1f} MiB for a {target.stat().st_size / MiB:.0f} MiB database"
+    con = sqlite3.connect(target)
+    try:
+        assert con.execute("SELECT count(*) FROM padding").fetchone() == (384,)  # the content came out whole
+    finally:
+        con.close()
+
+
+def _tampered_variants(sealed: bytes):
+    middle = len(sealed) // 2
+    return {
+        "first byte": _flip(sealed, 0),
+        "middle": _flip(sealed, middle),
+        "last byte of the tag": _flip(sealed, len(sealed) - 1),
+        "first byte of the tag": _flip(sealed, len(sealed) - bc.TAG_BYTES),
+        "tag cut short": sealed[:-1],
+        "one byte appended": sealed + b"\0",
+        "tag removed": sealed[: -bc.TAG_BYTES],
+    }
+
+
+@pytest.mark.parametrize(
+    "variant",
+    ["first byte", "middle", "last byte of the tag", "first byte of the tag", "tag cut short", "one byte appended", "tag removed"],
+)
+def test_a_changed_byte_is_refused_and_leaves_no_partial_result(sealed_small, work, variant):
+    content = _members(sealed_small)
+    path = _rebuilt(sealed_small, work / "changed.zip", sealed=_tampered_variants(content[fb.SEALED])[variant])
+    target = work / "candidate.db"
+    with pytest.raises(fb.Damaged):
+        fb.extract_database(path, fb.read_manifest(path), "sicher-genug-1", target)
+    assert not target.exists()
+    assert sorted(p.name for p in work.iterdir()) == sorted(["changed.zip", sealed_small.name])  # no half result
+
+
+def test_only_the_tag_is_wrong_the_whole_database_was_written_and_is_still_removed(sealed_small, work, monkeypatch):
+    """The flipped tag byte leaves the packed data intact: it unpacks completely and the file exists in full
+    when the check fails. It must be gone afterwards - nothing counts before the tag is checked."""
+    content = _members(sealed_small)
+    path = _rebuilt(sealed_small, work / "changed.zip", sealed=_flip(content[fb.SEALED], len(content[fb.SEALED]) - 1))
+    target = work / "candidate.db"
+    seen = {}
+    real = bc.Opener.finish
+
+    def spy(self):
+        seen["size_before_the_check"] = target.stat().st_size if target.exists() else None
+        return real(self)
+
+    monkeypatch.setattr(bc.Opener, "finish", spy)
+    with pytest.raises(fb.Damaged):
+        fb.extract_database(path, fb.read_manifest(path), "sicher-genug-1", target)
+    assert seen["size_before_the_check"], "the test no longer shows what it claims: nothing was written before the check"
+    assert not target.exists()
+
+
+def test_a_changed_manifest_is_refused(sealed_small, work):
+    content = _members(sealed_small)
+    changed = content[fb.MANIFEST].replace(b"2026-11-07", b"2026-11-08")
+    assert changed != content[fb.MANIFEST]
+    path = _rebuilt(sealed_small, work / "changed.zip", manifest=changed)
+    target = work / "candidate.db"
+    with pytest.raises(fb.Damaged):
+        fb.extract_database(path, fb.read_manifest(path), "sicher-genug-1", target)
+    assert not target.exists()
+
+
+def _sealed_with(live, work, packed: bytes) -> Path:
+    """A backup whose sealed content is `packed` (valid encryption, any content), made by hand."""
+    base = fb.create_backup(live, work_dir=work, password="sicher-genug-1", now=NOW).path
+    manifest = fb.read_manifest(base)
+    sealing = manifest.sealing
+    key, _ = bc.derive_key("sicher-genug-1", sealing.salt, sealing.params)
+    sealed = bc.seal(key, sealing.nonce, packed, manifest.raw)
+    return _rebuilt(base, work / "made.zip", sealed=sealed)
+
+
+def test_a_zip_bomb_inside_valid_encryption_stops_at_the_limit(live, work, monkeypatch):
+    """Authentic, but 64 MiB of zeros packs into a few kilobytes: unpacking must stop at the limit, not grow."""
+    monkeypatch.setattr(fb, "MAX_DATABASE_BYTES", 2 * MiB)
+    packed = zlib.compress(b"\0" * (64 * MiB), 9)
+    assert len(packed) < 100 * 1024
+    path = _sealed_with(live, work, packed)
+    target = work / "candidate.db"
+    tracemalloc.start()
+    try:
+        with pytest.raises(fb.TooLarge):
+            fb.extract_database(path, fb.read_manifest(path), "sicher-genug-1", target)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 8 * MiB, f"peak {peak / MiB:.1f} MiB"
+    assert not target.exists()
+
+
+def test_a_bomb_with_a_wrong_tag_is_still_stopped_at_the_limit(live, work, monkeypatch):
+    monkeypatch.setattr(fb, "MAX_DATABASE_BYTES", 2 * MiB)
+    path = _sealed_with(live, work, zlib.compress(b"\0" * (64 * MiB), 9))
+    sealed = _members(path)[fb.SEALED]
+    path = _rebuilt(path, work / "changed.zip", sealed=_flip(sealed, len(sealed) - 1))
+    target = work / "candidate.db"
+    with pytest.raises(fb.BackupError):
+        fb.extract_database(path, fb.read_manifest(path), "sicher-genug-1", target)
+    assert not target.exists()
+
+
+@pytest.mark.parametrize(
+    "packed",
+    [b"not zlib at all", zlib.compress(b"abc" * 1000)[:-6], zlib.compress(b"abc" * 1000) + b"trailing"],
+    ids=["no zlib", "cut short", "trailing bytes"],
+)
+def test_valid_encryption_around_unusable_data_is_refused_and_removed(live, work, packed):
+    path = _sealed_with(live, work, packed)
+    target = work / "candidate.db"
+    with pytest.raises(fb.Damaged):
+        fb.extract_database(path, fb.read_manifest(path), "sicher-genug-1", target)
+    assert not target.exists()
+
+
+def test_the_wrong_password_still_costs_no_reading(sealed_small, work, monkeypatch):
+    manifest = fb.read_manifest(sealed_small)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("the sealed member must not be read before the password fits")
+
+    monkeypatch.setattr(fb, "_copy_member", forbidden)
+    target = work / "candidate.db"
+    with pytest.raises(fb.WrongPassword):
+        fb.extract_database(sealed_small, manifest, "falsches-passwort", target)
+    assert not target.exists()
