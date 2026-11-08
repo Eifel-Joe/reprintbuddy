@@ -1043,3 +1043,10 @@ form > .btn + .btn.secondary { margin-left: 0.5rem; }
 @media (max-width: 480px) {
   .slot-group th, .slot-group td { padding-left: 0.35rem; padding-right: 0.35rem; }
 }
+
+/* The Bambuddy address (p113): a text area that wraps at any character, so a long address on a phone
+   shows in full; it grows with its text where the browser can (field-sizing), else two rows. */
+textarea.address { resize: none; min-height: 5.5rem; overflow-wrap: anywhere; word-break: break-all; font: inherit; }
+@supports (field-sizing: content) {
+  textarea.address { field-sizing: content; min-height: 2.75rem; }
+}

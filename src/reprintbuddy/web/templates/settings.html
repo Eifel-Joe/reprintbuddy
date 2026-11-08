@@ -110,7 +110,8 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {# Stacked (p107): an address with its port does not fit the narrow field of a row. #}
     {% call ui.setting_row(t('bambuddy.url'), t('settings.bambuddy_address_hint'), "bambuddy_address", stack=true) %}
-      <input id="bambuddy_address" name="bambuddy_address" value="{{ bambuddy_address }}" placeholder="{{ t('bambuddy.url_placeholder') }}" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>
+      {# A text area, not a field: a long address wraps instead of being cut off on a phone (p113). A line break in it is refused by the server. #}
+      <textarea id="bambuddy_address" class="address" name="bambuddy_address" rows="2" placeholder="{{ t('bambuddy.url_placeholder') }}" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>{{ bambuddy_address }}</textarea>
     {% endcall %}
     {% call ui.setting_row(t('bambuddy.api_key'), ui.with_stored(t('settings.bambuddy_key_hint'), t('settings.secret_stored')) if api_key_mask else t('settings.bambuddy_key_hint'), "bambuddy_token") %}
       <input id="bambuddy_token" name="bambuddy_token" type="password" value="" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"{% if api_key_mask %} placeholder="{{ api_key_mask }}"{% endif %}>
