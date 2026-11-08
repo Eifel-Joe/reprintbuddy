@@ -70,29 +70,30 @@ def subprocess_runner(
         return CommandResult(127, "", str(error))
     stop = cancel_flag.get()
     deadline = time.monotonic() + timeout
-    try:
-        while True:
-            try:
-                stdout, stderr = process.communicate(timeout=POLL_SECONDS)
-                return CommandResult(process.returncode, stdout or "", stderr or "")
-            except subprocess.TimeoutExpired:
-                if stop is not None and stop.is_set():
-                    code, why = CANCELLED, "cancelled"
-                elif time.monotonic() >= deadline:
-                    code, why = 124, f"timed out after {timeout:g} s"
-                else:
-                    continue
-                process.kill()
-                # As `subprocess.run` does: on POSIX only wait (a child of the command may hold the
-                # pipes open and `communicate` would wait for that one too).
-                if os.name == "nt":
-                    process.communicate()
-                else:
-                    process.wait()
-                return CommandResult(code, "", why)
-    except BaseException:
-        process.kill()
-        raise
+    with process:  # closes the pipes and reaps the process whichever way this ends
+        try:
+            while True:
+                try:
+                    stdout, stderr = process.communicate(timeout=POLL_SECONDS)
+                    return CommandResult(process.returncode, stdout or "", stderr or "")
+                except subprocess.TimeoutExpired:
+                    if stop is not None and stop.is_set():
+                        code, why = CANCELLED, "cancelled"
+                    elif time.monotonic() >= deadline:
+                        code, why = 124, f"timed out after {timeout:g} s"
+                    else:
+                        continue
+                    process.kill()
+                    # As `subprocess.run` does: on POSIX only wait (a child of the command may hold the
+                    # pipes open and `communicate` would wait for that one too).
+                    if os.name == "nt":
+                        process.communicate()
+                    else:
+                        process.wait()
+                    return CommandResult(code, "", why)
+        except BaseException:
+            process.kill()
+            raise
 
 
 async def in_thread(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
