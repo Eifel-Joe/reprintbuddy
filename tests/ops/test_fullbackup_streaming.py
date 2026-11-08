@@ -6,6 +6,7 @@ the file. The file format stays: a backup made by an older version opens, and a 
 old way of writing made, byte for byte (same salt and nonce given).
 """
 
+import contextlib
 import hashlib
 import secrets
 import sqlite3
@@ -378,3 +379,52 @@ def test_the_wrong_password_still_costs_no_reading(sealed_small, work, monkeypat
     with pytest.raises(fb.WrongPassword):
         fb.extract_database(sealed_small, manifest, "falsches-passwort", target)
     assert not target.exists()
+
+
+# --- a full disk is not a damaged backup (v0.3.10 review of p125) ----------------------------------
+
+
+class _FullDisk:
+    """A file that takes a little and then reports a full disk."""
+
+    def __init__(self, real):
+        self._real = real
+
+    def write(self, data):
+        raise OSError(28, "No space left on device")
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+@pytest.mark.parametrize("password", [None, "sicher-genug-1"])
+def test_a_full_disk_while_extracting_is_an_oserror_not_a_damaged_backup(live, work, monkeypatch, password):
+    """A write error is the machine's, not the file's: the page must not tell the person the backup is broken
+    (and must not throw their upload away)."""
+    path = fb.create_backup(live, work_dir=work, password=password, now=NOW).path
+    manifest = fb.read_manifest(path)
+    real = fb.private_file
+
+    @contextlib.contextmanager
+    def full_disk(target):
+        with real(target) as handle:
+            yield _FullDisk(handle)
+
+    monkeypatch.setattr(fb, "private_file", full_disk)
+    target = work / "candidate.db"
+    with pytest.raises(OSError) as raised:
+        fb.extract_database(path, manifest, password, target)
+    assert not isinstance(raised.value, fb.BackupError)
+    assert not target.exists()
+
+
+def test_a_damaged_zip_member_is_still_damaged(sealed_small, work):
+    data = bytearray(sealed_small.read_bytes())
+    # the stored member is the second one; break its CRC by changing a data byte AND keeping the sizes
+    info = zipfile.ZipFile(sealed_small).getinfo(fb.SEALED)
+    data[info.header_offset + 30 + len(fb.SEALED) + 10] ^= 1
+    broken = work / "broken.zip"
+    broken.write_bytes(bytes(data))
+    with pytest.raises(fb.Damaged):
+        fb.extract_database(broken, fb.read_manifest(broken), "sicher-genug-1", work / "candidate.db")
+    assert not (work / "candidate.db").exists()

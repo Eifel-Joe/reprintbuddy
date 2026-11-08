@@ -371,18 +371,27 @@ _READ_ERRORS = (zipfile.BadZipFile, zlib.error, EOFError, OSError, NotImplemente
 
 
 def _copy_member(archive: zipfile.ZipFile, name: str, sink: Callable[[bytes], object], limit: int) -> int:
-    """Pass one member to `sink` in chunks; more than `limit` bytes raise TooLarge."""
+    """Pass one member to `sink` in chunks; more than `limit` bytes raise TooLarge.
+
+    Only reading the member can make it "damaged": an error of the `sink` (a full disk while it writes)
+    is the machine's and goes on as it is, so the page does not blame the backup (v0.3.10)."""
     total = 0
     try:
-        with archive.open(name) as member:
-            while chunk := member.read(_CHUNK):
-                total += len(chunk)
-                if total > limit:
-                    raise TooLarge("member larger than allowed")
-                sink(chunk)
+        member = archive.open(name)
     except _READ_ERRORS as error:
         raise Damaged("member cannot be read") from error
-    return total
+    with member:
+        while True:
+            try:
+                chunk = member.read(_CHUNK)
+            except _READ_ERRORS as error:
+                raise Damaged("member cannot be read") from error
+            if not chunk:
+                return total
+            total += len(chunk)
+            if total > limit:
+                raise TooLarge("member larger than allowed")
+            sink(chunk)
 
 
 def _read_limited(archive: zipfile.ZipFile, name: str, limit: int) -> bytearray:
