@@ -281,18 +281,53 @@ async def test_relink_active_article(db, fake_bambuddy):
         assert len(journal(s, "article_relinked")) == 1
 
 
-async def test_relink_drops_every_group_even_with_the_same_colour(db, fake_bambuddy):
-    """Another file: no filament group stays, whatever its slots say (keep_mapping=False)."""
+async def test_relink_keeps_the_group_of_a_slot_with_the_same_material_and_colour(db, fake_bambuddy):
+    """Spec 5.1 (v0.3.10): another file; a slot that is the same keeps its filament group."""
     a = article(db)
-    add_filament(db, a)
+    reordered, other = add_filament(db, a)
     file_b = await fake_bambuddy.get_file(2)
     with db.begin() as s:
+        assert catalog.slots_losing_group(s, a, [FilamentRequirement(1, 42.5, "PLA", "#000000")]) == []
         catalog.relink_article(
             s, a, file=file_b, plate=Plate(1, None),
             requirements=[FilamentRequirement(1, 42.5, "PLA", "#000000")], thumbnail=None, actor="user",
         )
     with db() as s:
-        assert group(s, a) == []
+        assert group(s, a) == [(1, reordered, True), (1, other, False)]
+
+
+async def test_relink_drops_the_group_of_a_changed_slot_only(db, fake_bambuddy):
+    a = article(db)
+    reordered, other = add_filament(db, a)
+    with db.begin() as s:  # a second slot with a group of its own
+        s.add(ArticleFilament(article_id=a, slot=2, grams=5.0, material="PETG", color_hex="#FF0000"))
+        s.flush()
+        red = make_sort(s, brand="Brand C", material="PETG", color_hex="#FF0000")
+        tick_sorts(s, a, 2, red, reordered=red)
+        red_id = red.id
+    file_b = await fake_bambuddy.get_file(2)
+    new = [FilamentRequirement(1, 42.5, "PLA", "#000000"), FilamentRequirement(2, 5.0, "PETG", "#00FF00")]
+    with db.begin() as s:
+        assert catalog.slots_losing_group(s, a, new) == [2]
+        catalog.relink_article(s, a, file=file_b, plate=Plate(1, None), requirements=new, thumbnail=None, actor="user")
+    with db() as s:
+        assert group(s, a) == [(1, reordered, True), (1, other, False)]
+        assert red_id not in {sort for _, sort, _ in group(s, a)}
+
+
+async def test_slots_losing_group_ignores_slots_nobody_ticked(db, fake_bambuddy):
+    """No note for a slot that never had a group while nothing ticked is lost; a lost group names the slots to tick."""
+    a = article(db)
+    add_filament(db, a)  # slot 1 ticked
+    with db.begin() as s:
+        s.add(ArticleFilament(article_id=a, slot=2, grams=5.0, material="PETG", color_hex="#FF0000"))
+    with db() as s:
+        new = [FilamentRequirement(1, 1.0, "PLA", "#000000"), FilamentRequirement(2, 5.0, "ABS", "#FF0000")]
+        assert catalog.slots_losing_group(s, a, new) == []  # slot 2 changed, but it had no group
+        # the new file has no slot 1: its group goes; the slot it has now needs ticking
+        assert catalog.slots_losing_group(s, a, [FilamentRequirement(2, 5.0, "ABS", "#FF0000")]) == [2]
+        # nothing ticked is lost (slot 2 had no group, slot 1 stays the same): no note
+        assert catalog.slots_losing_group(s, a, new[:1]) == []
 
 
 async def test_relink_archived_refused(db, fake_bambuddy):

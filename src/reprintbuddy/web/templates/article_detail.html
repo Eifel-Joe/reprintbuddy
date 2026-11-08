@@ -10,7 +10,7 @@
   {%- if row.paused %} · {{ ui.badge('article', 'paused') }}{% endif -%}
   {%- if article.archived_at %} · {{ ui.badge('article', 'archived') }}{% endif -%}
 {% endset %}
-{% call ui.page_head("package", article.name, sub) %}{% if not article.archived_at %}<a class="btn" href="/articles/{{ article.id }}/edit">{{ ui.icon('pencil') }}{{ t('articles.edit') }}</a>{% endif %}{% endcall %}
+{% call ui.page_head("package", article.name, sub) %}{% if not article.archived_at %}<a class="btn" href="/articles/{{ article.id }}/edit">{{ ui.icon('pencil') }}{{ t('articles.edit') }}</a><a class="btn secondary" href="/articles/{{ article.id }}/relink">{{ ui.icon('refresh-cw') }}{{ t('articles.change_file') }}</a>{% endif %}{% endcall %}
 <div class="toolbar">
   <div class="toolbar-actions">
     <a class="btn secondary" href="/journal?article={{ article.id }}">{{ ui.icon('history') }}{{ t('journal.title') }}</a>

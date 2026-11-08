@@ -114,6 +114,30 @@ def test_restore_with_other_plate(db):
         assert [(r.slot, r.grams, r.material) for r in rows] == [(1, 20.5, "PETG"), (2, 3.0, "PLA")]
 
 
+def test_restore_with_other_file_keeps_the_group_of_an_unchanged_slot(db):
+    """Spec 5.1 (v0.3.10): choosing a file again keeps the group of a slot that is the same."""
+    from factories import make_sort, tick_sorts
+    from reprintbuddy.models import ArticleFilamentSort
+
+    with db.begin() as s:
+        a = make_article(s, name="Template A", library_file_id=1, plate_id=1).id
+        s.add(ArticleFilament(article_id=a, slot=1, grams=10.0, material="PLA", color_hex="#000000"))
+        s.flush()
+        sort = make_sort(s, brand="Brand A", color_hex="#000000")
+        tick_sorts(s, a, 1, sort, reordered=sort)
+        sort_id = sort.id
+        archive_article(s, a)
+    file_b = LibraryFile(2, "Template B.gcode.3mf", None, "v7", "A1")
+    with db.begin() as s:
+        catalog.restore_article_with_plate(
+            s, a, file=file_b, plate=Plate(1, None),
+            requirements=[FilamentRequirement(1, 20.5, "PLA", "#000000")], thumbnail=None,
+        )
+    with db() as s:
+        rows = s.scalars(select(ArticleFilamentSort).where(ArticleFilamentSort.article_id == a)).all()
+        assert [(r.slot, r.sort_id, r.reordered) for r in rows] == [(1, sort_id, True)]
+
+
 def test_restore_with_plate_still_taken(db):
     with db.begin() as s:
         a = make_article(s, name="Template A", library_file_id=1, plate_id=1).id

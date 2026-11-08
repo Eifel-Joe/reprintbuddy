@@ -1,12 +1,15 @@
 {% extends "base.html" %}
 {% import "_ui.html" as ui with context %}
-{% block title %}{{ t('upload.title') }}{% endblock %}
+{% set page_title = t('upload.title_relink', name=article_name) if article_name is not none else t('upload.title') %}
+{% block title %}{{ page_title }}{% endblock %}
 {% block content %}
 {#- Uploading a print file into the folder that was open (Spec 5.1a). `state`: form, no_right (the key
     may not upload: a hint instead of the form), external (a folder linked from outside Bambuddy),
     unclear (no form: look in Bambuddy first), too_large (refused before reading: folder unknown) or
-    problem (Bambuddy missing or unreachable, folder gone). `error` is a message above the form. -#}
-{% call ui.page_head("circle-alert" if state in ("problem", "unclear", "too_large") else "upload", t('upload.title'), t('upload.subtitle', path=folder_path) if folder_path is not none else "") %}{% endcall %}
+    problem (Bambuddy missing or unreachable, folder gone). `error` is a message above the form.
+    With `relink` the upload changes the print file of an article (Spec 5.1): the head names it, the way back
+    and the link to the existing file lead into that article's file choice. -#}
+{% call ui.page_head("circle-alert" if state in ("problem", "unclear", "too_large") else "upload", page_title, t('upload.subtitle', path=folder_path) if folder_path is not none else "") %}{% endcall %}
 {% if state in ("problem", "unclear", "too_large") %}
 <div class="section"><div class="card"><p class="alert" role="alert">{{ t(error) }}</p></div></div>
 {% elif state == "external" %}
@@ -24,15 +27,15 @@
 {% else %}
 <div class="section">
   <form class="card upload-form" method="post" action="{{ action }}" enctype="multipart/form-data">
-    {% if error %}<p class="alert" role="alert">{{ t(error, **error_params) }}{% if error_params.existing_id %} <a href="/articles/new/file/{{ error_params.existing_id }}">{{ t('upload.use_existing') }}</a>{% endif %}</p>{% endif %}
+    {% if error %}<p class="alert" role="alert">{{ t(error, **error_params) }}{% if error_params.existing_id %} <a href="{{ file_base }}/{{ error_params.existing_id }}">{{ t('upload.use_existing_relink' if relink else 'upload.use_existing') }}</a>{% endif %}</p>{% endif %}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="setting-row stack">
-      <div class="setting-text"><label for="print_file">{{ t('upload.file') }}</label><span>{{ t('upload.file_hint', mb=max_mb) }}</span></div>
+      <div class="setting-text"><label for="print_file">{{ t('upload.file') }}</label><span>{{ t('upload.file_hint_relink' if relink else 'upload.file_hint', mb=max_mb) }}</span></div>
       <div class="setting-control"><input id="print_file" name="print_file" type="file" accept=".3mf" required></div>
     </div>
     <p class="actions"><button type="submit" class="btn">{{ ui.icon('upload') }}{{ t('upload.submit') }}</button></p>
   </form>
 </div>
 {% endif %}
-<div class="toolbar"><div class="toolbar-actions"><a class="btn secondary" href="{{ back if state != 'problem' else '/articles/new' }}">{{ ui.icon('folder') }}{{ t('upload.back') }}</a></div></div>
+<div class="toolbar"><div class="toolbar-actions"><a class="btn secondary" href="{{ back }}">{{ ui.icon('folder') }}{{ t('upload.back') }}</a></div></div>
 {% endblock %}

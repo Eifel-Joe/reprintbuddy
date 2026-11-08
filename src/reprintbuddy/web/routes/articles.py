@@ -51,6 +51,7 @@ from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_tra
 from reprintbuddy.web.filament_view import BAMBUDDY_ERRORS, COLOR, spools_or_none
 from reprintbuddy.web.journal_view import journal_rows
 from reprintbuddy.web.routes.queue import DISPATCH_TONES
+from reprintbuddy.web.routes.upload import upload_url
 from reprintbuddy.web.i18n import translate
 
 router = APIRouter()
@@ -300,7 +301,8 @@ async def articles_list(
 # ---- creation: browse folders and files, choose a plate ------------------------------------------
 
 
-async def _browse(request: Request, folder: str | None, base: str, file_base: str, *, relink: bool = False):
+async def _browse(request: Request, folder: str | None, base: str, file_base: str, *, relink: bool = False,
+                  article_id: int | None = None):
     if (redirect := listing.remember_layout(request, "files")) is not None:
         return redirect  # ?layout=... only sets the cookie
     client = get_bambuddy(request)
@@ -321,11 +323,12 @@ async def _browse(request: Request, folder: str | None, base: str, file_base: st
     crumbs.reverse()
     subfolders = sorted((f for f in folders if f.parent_id == folder_id), key=lambda f: f.name.casefold())
     layout = listing.layout_of(request, "files")
-    # Uploading into the open folder (Spec 5.1a): not when choosing another file for an article,
-    # not in a folder linked from outside Bambuddy (its files have no fingerprint after a rescan).
+    # Uploading into the open folder (Spec 5.1a), also when choosing another file for an article (it then
+    # goes on to that article's plates); not in a folder linked from outside Bambuddy (its files have no
+    # fingerprint after a rescan).
     upload_href = None
-    if not relink and not is_external_folder(folders, folder_id) and (folder_id is None or crumbs):
-        upload_href = "/articles/new/upload" + ("" if folder_id is None else f"?folder={folder_id}")
+    if not is_external_folder(folders, folder_id) and (folder_id is None or crumbs):
+        upload_href = upload_url(folder_id, article_id)
     return render(
         request,
         "article_browse.html",
@@ -896,7 +899,7 @@ async def relink_browse(request: Request, article_id: int, folder: str | None = 
     _get_article(db, article_id)
     release_connection(db)  # nothing is pending; no connection is held while Bambuddy answers
     base = f"/articles/{article_id}/relink"
-    return await _browse(request, folder, base, f"{base}/file", relink=True)
+    return await _browse(request, folder, base, f"{base}/file", relink=True, article_id=article_id)
 
 
 @router.get("/articles/{article_id:int}/relink/file/{file_id:int}")
@@ -932,7 +935,12 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
         return _problem(request, "articles.file_missing", relink=True)
     file, plate, requirements, thumbnail = read
 
+    again: list[int] = []  # slots the person has to tick again after the change (Spec 5.1)
+    changed = False
+
     def work(tx):
+        nonlocal changed
+        again.extend(catalog.slots_losing_group(tx, article_id, requirements))  # before the change
         if archived:
             catalog.restore_article_with_plate(
                 tx, article_id, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail
@@ -942,9 +950,10 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
                 tx, article_id, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail,
                 actor="user",
             )
+        changed = True
         return {"name": name}
 
-    return await run_form_action(
+    response = await run_form_action(
         request,
         work=work,
         success_url=f"/articles/{article_id}",
@@ -954,6 +963,10 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
             relink_archived=archived, error=text, status=status,
         ),
     )
+    if again and changed:
+        # Only on the real change (a repeated form is answered without work, a refusal shows the page).
+        flash(request, "articles.relinked_regroup", warning=True, slots=", ".join(map(str, again)))
+    return response
 
 
 # ---- pause of the automation and the print file (Spec 5.1, plan B4 decision 8) ----------------
