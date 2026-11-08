@@ -90,7 +90,7 @@ def test_page_in_german(up, art):
 
     with sm_of(up).begin() as s:
         st.set_setting(s, "language", "de", commit=False)
-    assert "Druckdatei ändern für Template A" in plain(up.get(url(art)))
+    assert "Druckdatei für Template A ändern" in plain(up.get(url(art)))
 
 
 def test_the_article_name_is_escaped_once(up):

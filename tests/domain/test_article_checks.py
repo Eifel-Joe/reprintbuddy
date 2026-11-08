@@ -316,7 +316,7 @@ async def test_relink_drops_the_group_of_a_changed_slot_only(db, fake_bambuddy):
 
 
 async def test_slots_losing_group_ignores_slots_nobody_ticked(db, fake_bambuddy):
-    """No hint for a slot that never had a group, nor for a slot the new file no longer has."""
+    """No note for a slot that never had a group while nothing ticked is lost; a lost group names the slots to tick."""
     a = article(db)
     add_filament(db, a)  # slot 1 ticked
     with db.begin() as s:
@@ -324,8 +324,10 @@ async def test_slots_losing_group_ignores_slots_nobody_ticked(db, fake_bambuddy)
     with db() as s:
         new = [FilamentRequirement(1, 1.0, "PLA", "#000000"), FilamentRequirement(2, 5.0, "ABS", "#FF0000")]
         assert catalog.slots_losing_group(s, a, new) == []  # slot 2 changed, but it had no group
-        # the new file has no slot 1: its group goes, but there is nothing to tick again
-        assert catalog.slots_losing_group(s, a, [FilamentRequirement(2, 5.0, "ABS", "#FF0000")]) == []
+        # the new file has no slot 1: its group goes; the slot it has now needs ticking
+        assert catalog.slots_losing_group(s, a, [FilamentRequirement(2, 5.0, "ABS", "#FF0000")]) == [2]
+        # nothing ticked is lost (slot 2 had no group, slot 1 stays the same): no note
+        assert catalog.slots_losing_group(s, a, new[:1]) == []
 
 
 async def test_relink_archived_refused(db, fake_bambuddy):

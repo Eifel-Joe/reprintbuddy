@@ -935,9 +935,11 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
         return _problem(request, "articles.file_missing", relink=True)
     file, plate, requirements, thumbnail = read
 
-    again: list[int] = []  # slots whose filament group the change takes away (Spec 5.1)
+    again: list[int] = []  # slots the person has to tick again after the change (Spec 5.1)
+    changed = False
 
     def work(tx):
+        nonlocal changed
         again.extend(catalog.slots_losing_group(tx, article_id, requirements))  # before the change
         if archived:
             catalog.restore_article_with_plate(
@@ -948,6 +950,7 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
                 tx, article_id, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail,
                 actor="user",
             )
+        changed = True
         return {"name": name}
 
     response = await run_form_action(
@@ -960,7 +963,7 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
             relink_archived=archived, error=text, status=status,
         ),
     )
-    if again and response.status_code == 303:
+    if again and changed:
         # Only on the real change (a repeated form is answered without work, a refusal shows the page).
         flash(request, "articles.relinked_regroup", warning=True, slots=", ".join(map(str, again)))
     return response

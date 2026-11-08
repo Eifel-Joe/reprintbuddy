@@ -268,7 +268,8 @@ async def upload(request: Request, db: Session = Depends(get_db)):
     # (`web/bodylimit.py`; the middleware counts what is read).
     if not upload_length_ok(request, BODY_LIMIT):
         # The article is not looked up here (nothing is read before the body is dealt with): only its id,
-        # for the way back; a garbled one leads to the article list, never to creating a new article.
+        # for the way back; a garbled one leads to the article list, never to creating a new article. An id
+        # that does not exist leads to the choice of that article, which answers 404 (not worth a lookup).
         article_id = bounded_int(article_raw)
         garbled = article_raw is not None and article_id is None
         refused = _page(request, state="too_large", status=413, folder_id=folder_id, error="upload.error.too_large",
