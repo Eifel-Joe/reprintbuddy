@@ -21,7 +21,7 @@
   --radius: 11px;
   --sidebar-w: 220px;
   --font: Inter, "Segoe UI", system-ui, sans-serif;
-  --on-accent: #fff; /* text and switch knob on a green fill */
+  --on-accent: #fff; /* text and switch knob on a green or red fill */
   --paper: #fff; /* paper white: the QR code stays white in any theme */
   --brand-green: #00c64d; /* the green of the name in the logo */
   --hover: #26272a; /* hovered menu entry */
@@ -38,8 +38,8 @@
   --warn-edge: rgba(245, 158, 11, 0.45); /* amber card border */
   --accent-wash: rgba(0, 174, 66, 0.06); /* drop target while dragging */
   --overlay: rgba(0, 0, 0, 0.6); /* dimmed page behind a dialog */
-  --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.45); /* menu panels and dropdowns */
-  --shadow-drag: 0 10px 28px rgba(0, 0, 0, 0.5); /* a row being dragged */
+  --shadow-lift: 0 8px 24px rgba(0, 0, 0, 0.45); /* a row being dragged, the info popover */
+  --shadow-menu: 0 10px 28px rgba(0, 0, 0, 0.5); /* the menu of a row */
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -793,7 +793,7 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 .queue-row.is-dragging {
   display: flex; align-items: center; position: fixed; z-index: 50; margin: 0;
   background: var(--surface); border: 1px solid var(--accent); border-radius: 10px;
-  box-shadow: var(--shadow-panel);
+  box-shadow: var(--shadow-lift);
 }
 .queue-row.is-dragging > td { flex: 0 0 auto; border-bottom: 0; box-sizing: border-box; }
 .queue-row.is-dragging .drag-handle { cursor: grabbing; }
@@ -808,7 +808,7 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .row-menu-panel {
   position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; flex-direction: column; gap: 2px;
   min-width: 15rem; padding: 6px; background: var(--menu); border: 1px solid var(--line); border-radius: 10px;
-  box-shadow: var(--shadow-drag);
+  box-shadow: var(--shadow-menu);
 }
 .row-menu-panel form { margin: 0; }
 .menu-item {
@@ -943,7 +943,7 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
   width: min(18rem, max(100%, 14rem)); max-width: calc(100vw - 2rem);
   margin-top: 0.55rem; padding: 0.7rem 0.85rem;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
-  box-shadow: var(--shadow-panel);
+  box-shadow: var(--shadow-lift);
   color: var(--text); font-size: 13px; font-weight: 400; line-height: 1.45; text-align: left;
   white-space: normal; overflow-wrap: anywhere;
 }
@@ -993,9 +993,20 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .assembly-awaiting { font-size: 15px; font-weight: 600; }
 /* The whole label is the hit area of the tick box: 44 px. */
 .inspect-select { display: flex; align-items: center; justify-content: center; width: 2.75rem; min-height: 2.75rem; margin: 0; cursor: pointer; }
+/* A tick box, not a switch: the print is only picked for "Selected all good" (p117). */
+.inspect-select input[type="checkbox"], .inspect-all input[type="checkbox"] { width: 1.25rem; height: 1.25rem; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.inspect-toolbar .btn:disabled { opacity: 0.45; cursor: not-allowed; } /* "Selected all good" while nothing is picked */
+/* The box of the table head (put there by inspection.js): the box alone on the PC, with its words on a phone. */
+.inspect-head-select { display: flex; align-items: center; justify-content: center; }
+.inspect-all { display: flex; align-items: center; justify-content: center; gap: 0.6rem; min-width: 2.75rem; min-height: 2.75rem; margin: 0; cursor: pointer; text-transform: none; letter-spacing: normal; font-size: 13px; }
+.inspect-all-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .inspect-soll { font-size: 15px; font-weight: 600; }
 @media (max-width: 699px) {
   .line-head { display: none; }
+  .line-head:has(.inspect-all) { display: flex; padding: 0 14px; }
+  .line-head:has(.inspect-all) > :not(.inspect-head-select) { display: none; }
+  .inspect-head-select { justify-content: flex-start; }
+  .inspect-all-text { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; color: var(--text-2); }
   .inspect-cols.line { grid-template-columns: 2.75rem minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "sel main main" ". soll scrap" "btn btn btn"; }
   .inspect-line .inspect-select { grid-area: sel; }
   .inspect-line .line-main { grid-area: main; }

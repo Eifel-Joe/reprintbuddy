@@ -75,7 +75,7 @@ def test_every_variable_is_used():
     css = _without_comments(CSS)
     defined = set(re.findall(r"(--[\w-]+)\s*:", css))
     assert defined, "no variables found"
-    unused = [name for name in sorted(defined) if not re.search(rf"var\(\s*{re.escape(name)}\b", css) and name not in _sources()]
+    unused = [name for name in sorted(defined) if not re.search(rf"var\(\s*{re.escape(name)}(?![\w-])", css) and name not in _sources()]
     assert unused == []
 
 
@@ -84,7 +84,8 @@ def test_every_class_in_a_rule_is_used_somewhere():
     dead = []
     for selector in _selectors():
         for name in re.findall(r"\.([A-Za-z_][\w-]*)", selector):
-            if re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", sources):
+            # inside a quoted string (class="a b", "a b", 'a'), not a bare Python name
+            if re.search(rf"""["'][^"'\n]*(?<![\w-]){re.escape(name)}(?![\w-])[^"'\n]*["']""", sources):
                 continue
             prefix = name.rsplit("-", 1)[0] + "-" if "-" in name else None  # `tone-` + a tone
             if prefix and re.search(rf"{re.escape(prefix)}(\{{\{{|\{{|['\"] *~|['\"] *\+)", sources):

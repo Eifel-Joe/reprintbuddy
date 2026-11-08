@@ -788,6 +788,7 @@
   "inspections.finished_at": "fertig gemeldet {at}",
   "inspections.goes_to_assembly": "Geht danach in die Montage",
   "inspections.confirm": "Bestätigen",
+  "inspections.select_all": "Alle auswählen",
   "inspections.select_print": "Druck von {name} auswählen",
   "inspections.all_good": "Alle gut",
   "inspections.selected_good": "Ausgewählte alle gut",

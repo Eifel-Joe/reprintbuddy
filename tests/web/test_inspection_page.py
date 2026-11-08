@@ -290,7 +290,7 @@ def test_mobile_markup(ready_client):
     assert 'inputmode="numeric"' in page
     assert "<table" not in page
     assert 'class="info"' in page and en("info.inspection_scrap") in html.unescape(page)
-    assert re.search(r'<label class="check[ "]', page)
+    assert re.search(r'<label class="inspect-select">', page)  # a tick box, not a switch (p117)
 
 
 # ---- the filter by article (Spec 8.2; the target of the later QR code) ------------------------

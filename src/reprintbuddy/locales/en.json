@@ -788,6 +788,7 @@
   "inspections.finished_at": "reported finished {at}",
   "inspections.goes_to_assembly": "Goes to assembly afterwards",
   "inspections.confirm": "Confirm",
+  "inspections.select_all": "Select all",
   "inspections.select_print": "Select the print of {name}",
   "inspections.all_good": "All good",
   "inspections.selected_good": "Selected: all good",

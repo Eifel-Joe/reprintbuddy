@@ -21,7 +21,8 @@
   function sweep() {
     var pictures = document.querySelectorAll(SELECTOR);
     for (var i = 0; i < pictures.length; i += 1) {
-      if (pictures[i].complete && pictures[i].naturalWidth === 0 && pictures[i].getAttribute("src")) {
+      // A picture that waits to be loaded later (loading="lazy") has not failed; its error event comes by itself.
+      if (pictures[i].getAttribute("loading") !== "lazy" && pictures[i].complete && pictures[i].naturalWidth === 0 && pictures[i].getAttribute("src")) {
         pictures[i].remove();
       }
     }
