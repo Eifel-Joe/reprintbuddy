@@ -2,7 +2,8 @@
 <section class="card section wide article-label" id="label">
   <div class="section-head"><h2>{{ ui.icon('printer') }}{{ t('labels.title') }}</h2></div>
   <div class="label-body">
-    <img class="label-preview" src="/articles/{{ article.id }}/label.png" width="696" height="271" alt="{{ t('labels.preview_alt') }}">
+    <img id="label-preview" class="label-preview" src="/articles/{{ article.id }}/label.png" data-label-url="/articles/{{ article.id }}/label.png" width="696" height="271" alt="{{ t('labels.preview_alt') }}">
+    {% include "_label_notes.html" %}
     {% if label_configured %}
     <form class="label-print" method="post" action="/articles/{{ article.id }}/label">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

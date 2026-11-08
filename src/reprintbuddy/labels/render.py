@@ -2,13 +2,15 @@
 
 Always landscape, in the printable size of the roll (62 x 29 mm: 696 x 271 dots at 300 dpi). The
 letters are as large as they can be so that every detail fits in height and width, never smaller
-than `MIN_FONT_SIZE` (about 2 mm). A detail that is too long for one row takes a second one; one
-that still does not fit is cut with an ellipsis and named in `truncated`, so the preview can say
-what did not fit. Pure drawing: no network, no database.
+than `MIN_FONT_SIZE` (about 2 mm). A number with its word ("Buffer: 2") always stays in one row, the
+letters get smaller instead; a free text that is too long for one row takes a second one, broken at
+blanks. Only at the smallest size is a word broken between letters, and a detail that still does not
+fit is cut with an ellipsis and named in `truncated`, so the preview can say what did not fit. Pure drawing: no network, no database.
 """
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import lru_cache
@@ -34,6 +36,12 @@ _ELLIPSIS = "…"
 _MAX_ROWS = 2  # a detail that is too long for one row may take a second one
 _ERROR_LEVEL = "m"
 _CODE_SHARE = 0.46  # the code never takes more than this part of the width
+# A code whose dots (modules) are smaller than this is flagged: 6 dots = 0.51 mm at 300 dpi, the usual
+# advice for a phone held at arm's length is 0.5 mm. The code is at most 271 dots high: an address of
+# up to 86 characters (code version 5) keeps 6 dots, the usual one of 30 characters has 7, one of 87 to
+# 106 characters (version 6) has 5, one of about 125 has 4 (0.34 mm).
+MIN_MODULE_DOTS = 6
+_NOTDEF_PROBE = "￿"  # a noncharacter no font has: drawn as the font's own "missing" box
 
 
 @dataclass(frozen=True)
@@ -43,14 +51,25 @@ class Rendered:
     truncated: list[int]  # indexes of the details (in the order chosen) that did not fit and were cut
     font_size: int
     code_width: int  # dots the code takes, with its quiet border
+    module_dots: int  # dots of one square of the code
+    missing: tuple[str, ...] = ()  # characters of the rows drawn that the font does not have (they show as an empty box)
+    rtl: bool = False  # the rows hold letters that run right to left, which are drawn left to right
+
+    @property
+    def fine_code(self) -> bool:
+        """The code is so fine that a phone may read it badly (a very long address)."""
+        return self.module_dots < MIN_MODULE_DOTS
 
 
 @lru_cache(maxsize=64)
 def _font(size: int, bold: bool) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(str(FONT_BOLD if bold else FONT_REGULAR), size)
+    # The basic layout on every machine: raqm (where a system has it) would draw right-to-left text the
+    # right way round and measure other widths, so the picture and the note about it would differ.
+    return ImageFont.truetype(str(FONT_BOLD if bold else FONT_REGULAR), size, layout_engine=ImageFont.Layout.BASIC)
 
 
-def _draw_code(canvas: Image.Image, address: str, roll: Roll, centre: bool, has_text: bool) -> int:
+def _draw_code(canvas: Image.Image, address: str, roll: Roll, centre: bool, has_text: bool) -> tuple[int, int]:
+    """Draws the code; returns its width with the quiet border and the dots of one square."""
     matrix = segno.make(address, error=_ERROR_LEVEL, micro=False).matrix
     across = len(matrix) + 2 * _QUIET_MODULES
     limit = min(roll.dots_high, int(roll.dots_wide * _CODE_SHARE)) if has_text else roll.dots_high
@@ -65,7 +84,7 @@ def _draw_code(canvas: Image.Image, address: str, roll: Roll, centre: bool, has_
             if cell:
                 x, y = left + origin + column * module, top + origin + row * module
                 draw.rectangle([x, y, x + module - 1, y + module - 1], fill=0)
-    return size
+    return size, module
 
 
 def _pitch(size: int) -> int:
@@ -73,8 +92,30 @@ def _pitch(size: int) -> int:
     return ascent + descent
 
 
+@lru_cache(maxsize=1024)
+def _has_glyph(char: str, bold: bool) -> bool:
+    font = _font(40, bold)
+    return bytes(font.getmask(char)) != bytes(font.getmask(_NOTDEF_PROBE))
+
+
+def _missing(rows: Iterable[fields.Line]) -> tuple[str, ...]:
+    """The characters of `rows` the font has no glyph for, once each, in the order they appear."""
+    found: dict[str, None] = {}
+    for row in rows:
+        for char in row.text:
+            if unicodedata.category(char)[0] in "CZ" or char in found:
+                continue
+            if not _has_glyph(char, row.bold):
+                found[char] = None
+    return tuple(found)
+
+
+def _runs_right_to_left(rows: Iterable[fields.Line]) -> bool:
+    return any(unicodedata.bidirectional(char) in ("R", "AL") for row in rows for char in row.text)
+
+
 def _break_word(word: str, bold: bool, size: int, width: int) -> list[str]:
-    """A word wider than a row, broken between letters."""
+    """A word wider than a row, broken between letters (the very last resort)."""
     font = _font(size, bold)
     pieces: list[str] = []
     current = ""
@@ -87,9 +128,9 @@ def _break_word(word: str, bold: bool, size: int, width: int) -> list[str]:
     return [*pieces, current] if current else pieces
 
 
-def _wrap(text: str, bold: bool, size: int, width: int) -> list[str]:
-    """The text in rows no wider than `width`, broken at blanks (a word wider than a row on its own
-    is broken between letters)."""
+def _wrap(text: str, bold: bool, size: int, width: int, *, split_words: bool) -> list[str] | None:
+    """The text in rows no wider than `width`, broken at blanks only. A word wider than a row on its
+    own: None, or with `split_words` broken between letters."""
     font = _font(size, bold)
     rows: list[str] = []
     current = ""
@@ -102,6 +143,8 @@ def _wrap(text: str, bold: bool, size: int, width: int) -> list[str]:
             rows.append(current)
         if font.getlength(word) <= width:
             current = word
+        elif not split_words:
+            return None
         else:
             *whole, current = _break_word(word, bold, size, width)
             rows.extend(whole)
@@ -111,7 +154,8 @@ def _wrap(text: str, bold: bool, size: int, width: int) -> list[str]:
 
 
 def _cut(text: str, bold: bool, size: int, width: int) -> str:
-    """`text` shortened with an ellipsis so that it fits `width` (unchanged when it does)."""
+    """`text` shortened with an ellipsis so that it fits `width` (unchanged when it does). The start
+    stays, so the word before a number is kept as long as it fits."""
     font = _font(size, bold)
     if font.getlength(text) <= width:
         return text
@@ -126,14 +170,27 @@ def _cut(text: str, bold: bool, size: int, width: int) -> str:
 
 
 def _arrange(
-    lines: list[fields.Line], size: int, width: int, *, allow_cut: bool
+    lines: list[fields.Line], size: int, width: int, *, split_words: bool, allow_cut: bool
 ) -> tuple[list[tuple[fields.Line, int]], list[int]] | None:
-    """The rows of all details at `size`: a detail may take up to `_MAX_ROWS` rows. Too long for
-    that: None, or with `allow_cut` its last row is cut with an ellipsis (and its index returned)."""
+    """The rows of all details at `size`, or None when they do not fit the width:
+    - a detail with a word in front ("Buffer: 2") is one row and never broken;
+    - a free text is one row, else broken at blanks into up to `_MAX_ROWS` rows (a word wider than a
+      row is broken between letters only with `split_words`);
+    - what still does not fit is cut with an ellipsis (the index is returned) if `allow_cut`, else None."""
     rows: list[tuple[fields.Line, int]] = []
     cut: list[int] = []
     for index, line in enumerate(lines):
-        parts = _wrap(line.text, line.bold, size, width)
+        if line.fixed:
+            text = _cut(line.text, line.bold, size, width)
+            if text != line.text:
+                if not allow_cut:
+                    return None
+                cut.append(index)
+            rows.append((fields.Line(text, line.bold), index))
+            continue
+        parts = _wrap(line.text, line.bold, size, width, split_words=split_words)
+        if parts is None:  # a word wider than a row, and breaking it is not allowed at this size
+            return None
         if len(parts) > _MAX_ROWS:
             if not allow_cut:
                 return None
@@ -147,17 +204,19 @@ def _arrange(
 def _choose(
     lines: list[fields.Line], width: int, height: int
 ) -> tuple[int, list[tuple[fields.Line, int]], list[int]]:
-    """The largest size at which every detail fits whole; else the smallest size with what can be
-    shown, cut where needed. Returns the size, the rows (with the index of their detail) and the
-    indexes of the cut details."""
+    """The largest size at which every detail fits whole, without a word broken between letters; at
+    the smallest size, in this order: words broken between letters, then details cut with an
+    ellipsis, then one row per detail. Returns the size, the rows (with the index of their detail)
+    and the indexes of the cut details."""
     for size in range(MAX_FONT_SIZE, MIN_FONT_SIZE - 1, -1):
-        arranged = _arrange(lines, size, width, allow_cut=False)
+        arranged = _arrange(lines, size, width, split_words=False, allow_cut=False)
         if arranged is not None and len(arranged[0]) * _pitch(size) <= height:
             return size, arranged[0], []
     size = MIN_FONT_SIZE
-    arranged = _arrange(lines, size, width, allow_cut=True)
-    if arranged is not None and len(arranged[0]) * _pitch(size) <= height:
-        return size, arranged[0], arranged[1]
+    for allow_cut in (False, True):
+        arranged = _arrange(lines, size, width, split_words=True, allow_cut=allow_cut)
+        if arranged is not None and len(arranged[0]) * _pitch(size) <= height:
+            return size, arranged[0], arranged[1]
     # Too many rows even at the smallest size: one row per detail, each cut to the width.
     rows: list[tuple[fields.Line, int]] = []
     cut: list[int] = []
@@ -179,7 +238,7 @@ def render_label(
     """The label picture for `data` with the chosen details and the code of `address`."""
     lines = fields.lines(data, chosen, caption)
     canvas = Image.new("L", (roll.dots_wide, roll.dots_high), 255)
-    code_width = _draw_code(canvas, address, roll, centre=not lines, has_text=bool(lines))
+    code_width, module = _draw_code(canvas, address, roll, centre=not lines, has_text=bool(lines))
     drawn: list[fields.Line] = []
     truncated: list[int] = []
     size = MIN_FONT_SIZE
@@ -195,4 +254,4 @@ def render_label(
         for position, line in enumerate(drawn):
             draw.text((left, top + position * pitch), line.text, font=_font(size, line.bold), fill=0, anchor="la")
     picture = canvas.point(lambda value: 255 if value >= 128 else 0).convert("1")
-    return Rendered(picture, drawn, truncated, size, code_width)
+    return Rendered(picture, drawn, truncated, size, code_width, module, _missing(drawn), _runs_right_to_left(drawn))

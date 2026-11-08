@@ -36,7 +36,7 @@
 <section class="card" id="label-preview-card">
   {% call ui.card_head("eye", t('labels.preview_title')) %}<button class="btn secondary" type="submit" form="settings-labels" formaction="/settings/labels/test">{{ ui.icon('printer') }}{{ t('labels.trial_print') }}</button>{% endcall %}
   <img id="label-preview" class="label-preview" src="/settings/labels/preview.png?fields={{ label_preview_fields }}" width="696" height="271" alt="{{ t('labels.preview_alt') }}">
-  <p class="alert" role="alert" id="label-cut" hidden>{{ t('labels.cut_warning') }}</p>
+  {% include "_label_notes.html" %}
   <p class="muted">{{ t('labels.preview_hint') }}</p>
   <p class="muted">{{ t('labels.keep_address') }}</p>
 </section>
