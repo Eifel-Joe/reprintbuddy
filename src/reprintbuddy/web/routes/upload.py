@@ -36,10 +36,19 @@ from reprintbuddy.domain.printfile import (
 from reprintbuddy.web.bambuddy_check import run_check
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import get_bambuddy, get_db, release_connection, render, stored_credentials, take_verdict
+from reprintbuddy.web.deps import (
+    current_language,
+    get_bambuddy,
+    get_db,
+    release_connection,
+    render,
+    stored_credentials,
+    take_verdict,
+)
 from reprintbuddy.web.filament_view import BAMBUDDY_ERRORS
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.forms import bounded_int
+from reprintbuddy.web.i18n import translate
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -77,7 +86,14 @@ def _crumbs(folders: list[LibraryFolder], folder_id: int | None) -> list[Library
 
 def _page(request: Request, *, state: str, status: int = 200, folder_id: int | None = None,
           crumbs: list[LibraryFolder] | None = None, error: str | None = None, **params: object):
-    """The upload page. `state`: form, no_right, external or problem; `error` a message key."""
+    """The upload page. `state`: form, no_right, external, unclear (no form: look in Bambuddy
+    first) or problem; `error` a message key.
+
+    The folder's path is plain text, escaped once by the template (security review v0.3.9: a
+    path built in the template was Markup, formatted into a text and escaped a second time).
+    """
+    root = translate(current_language(request), "articles.folder_root")
+    path = " / ".join([root, *(folder.name for folder in crumbs or [])])
     return render(
         request,
         "article_upload.html",
@@ -86,7 +102,7 @@ def _page(request: Request, *, state: str, status: int = 200, folder_id: int | N
         state=state,
         error=error,
         error_params=params,
-        crumbs=crumbs or [],
+        folder_path=path,
         folder_id=folder_id,
         action=PATH + _query(folder_id),
         back=f"/articles/new{_query(folder_id)}",
@@ -185,11 +201,15 @@ async def upload(request: Request, db: Session = Depends(get_db)):
     # Before anything reads the body: no `Transfer-Encoding`, a length within the limit
     # (`web/bodylimit.py`; the middleware counts what is read).
     if not upload_length_ok(request, BODY_LIMIT):
-        return _page(request, state="form", status=413, folder_id=folder_id, error="upload.error.too_large")
+        refused = _page(request, state="form", status=413, folder_id=folder_id, error="upload.error.too_large")
+        # Nothing reads the body: close the connection, or the server reads and drops all of it
+        # before the browser sees this page (security review v0.3.9).
+        refused.headers["Connection"] = "close"
+        return refused
     form = await request.form(max_files=1, max_fields=4)
-    await verify_csrf(request)  # reads the same, already parsed form
     upload_file = form.get(FIELD)
     try:
+        await verify_csrf(request)  # reads the same, already parsed form; a refusal closes the file too
         return await _upload(request, db, folder_raw, folder_id, upload_file)
     finally:
         if isinstance(upload_file, UploadFile):
@@ -249,7 +269,8 @@ async def _upload(request: Request, db: Session, folder_raw: str | None, folder_
             found = await _find_own(client, folder_id, name, size, sent_at, username if isinstance(username, str) else None)
             if found is None:
                 log.warning("upload: answer unclear and the file was not found")
-                return again("upload.unclear", 502)
+                # No form: a second click could send a copy that cannot be removed (review v0.3.9).
+                return _page(request, state="unclear", status=502, folder_id=folder_id, error="upload.unclear")
             flash(request, "upload.found_after_unclear")
             if not found.sliced:
                 return again("upload.bambuddy_not_sliced", 409, name=found.filename)

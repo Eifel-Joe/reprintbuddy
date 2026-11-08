@@ -28,7 +28,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -192,11 +192,20 @@ async def restore_upload(request: Request) -> Response:
     # `upload_length_ok`: no `Transfer-Encoding` (h11 would frame by it, not by the length) and a
     # plain length within the limit; the middleware counts what is read (v0.3.9 T0).
     if not upload_length_ok(request, fb.MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD):
-        return _back("restore_too_large", "ops-restore")
+        refused = _back("restore_too_large", "ops-restore")
+        # Nothing reads the body: close the connection, or the server reads and drops all of it
+        # before the browser follows the redirect (v0.3.9 review, sister of the print-file upload).
+        refused.headers["Connection"] = "close"
+        return refused
     # Parsed once, with limits; `verify_csrf` reads the same form (Starlette keeps it).
     form = await request.form(max_files=1, max_fields=4)
-    await verify_csrf(request)
     upload = form.get("backup_file")
+    try:
+        await verify_csrf(request)
+    except HTTPException:
+        if isinstance(upload, UploadFile):
+            await upload.close()  # a refused token leaves no temporary file behind
+        raise
     if not isinstance(upload, UploadFile) or not upload.filename:
         return _back("restore_nofile", "ops-restore")
     # The guard let this request in before the body was read; a restore may have begun since.

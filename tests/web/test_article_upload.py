@@ -412,3 +412,42 @@ def test_a_file_of_another_size_is_not_taken(up, fake_bambuddy, monkeypatch):
     monkeypatch.setattr(fake_bambuddy, "upload_file", shorter)
     fake_bambuddy.fail_next("upload_file", BambuddyUnavailable("timeout"), after_effect=True)
     assert post(up).status_code == 502
+
+
+# ---- after the security review --------------------------------------------------------------
+
+
+def test_a_folder_name_is_escaped_once(up, fake_bambuddy):
+    folder = fake_bambuddy.add_folder("A&B <x>")
+    html = up.get(f"{PAGE}?folder={folder.id}").text
+    sub = re.search(r'<p class="page-sub">(.*?)</p>', html, re.S).group(1)
+    assert "A&amp;B &lt;x&gt;" in sub and "&amp;amp;" not in sub
+
+
+def test_an_unclear_answer_offers_no_form_to_send_again(up, fake_bambuddy):
+    fake_bambuddy.fail_next("upload_file", BambuddyUnavailable("down"))
+    response = post(up)
+    assert response.status_code == 502
+    assert 'type="file"' not in response.text
+    assert 'href="/articles/new?folder=1"' in response.text  # back to the folder, to look there first
+
+
+def test_a_refusal_before_reading_closes_the_connection(up, monkeypatch):
+    """Otherwise the server reads and discards the rest of the declared body first."""
+    monkeypatch.setattr(upload_routes, "BODY_LIMIT", 100)
+    assert post(up).headers.get("connection") == "close"
+
+
+def test_the_temporary_file_is_closed_when_the_token_is_wrong(up, monkeypatch):
+    from starlette.datastructures import UploadFile
+
+    closed = []
+    original = UploadFile.close
+
+    async def recording(self):
+        closed.append(self.filename)
+        await original(self)
+
+    monkeypatch.setattr(UploadFile, "close", recording)
+    assert post(up, csrf="forged").status_code == 403
+    assert "New part.gcode.3mf" in closed
