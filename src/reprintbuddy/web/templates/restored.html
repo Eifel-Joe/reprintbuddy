@@ -4,7 +4,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('ops.restore.done_title') }}{% endblock %}
 {% block content %}
-{% call ui.page_head("archive-restore", t('ops.restore.done_title')) %}{% endcall %}
+{% call ui.page_head("archive-restore", t('ops.restore.done_title'), t('ops.restore.done_subtitle')) %}{% endcall %}
 <section class="card section">
   {% if restarted and new_url %}
   <p>{{ t('ops.restore.done') }}</p>

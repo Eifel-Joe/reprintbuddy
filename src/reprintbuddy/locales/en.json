@@ -458,6 +458,8 @@
   "ops.restore.cancel": "Cancel",
   "ops.restore.password_needed": "This backup is encrypted. Enter its password.",
   "ops.restore.wrong_password": "The password is wrong. Nothing was changed.",
+  "ops.restore.confirm_subtitle": "What the uploaded backup contains, before it replaces the current data.",
+  "ops.restore.done_subtitle": "The data of the backup is in place; Reprintbuddy restarts with it.",
   "ops.restore.done_title": "Backup restored",
   "ops.restore.done": "Sign in with the user name and password of the backup.",
   "ops.restore.restart_failed": "The backup is restored, but Reprintbuddy could not restart. Restart Reprintbuddy now: sign in with the account of the backup, then Settings → General → “Restart Reprintbuddy”. Changes are paused until then.",

@@ -458,6 +458,8 @@
   "ops.restore.cancel": "Abbrechen",
   "ops.restore.password_needed": "Diese Sicherung ist verschlüsselt. Bitte ihr Passwort eingeben.",
   "ops.restore.wrong_password": "Das Passwort ist falsch. Nichts wurde geändert.",
+  "ops.restore.confirm_subtitle": "Was die hochgeladene Sicherung enthält, bevor sie die aktuellen Daten ersetzt.",
+  "ops.restore.done_subtitle": "Die Daten der Sicherung sind eingespielt; Reprintbuddy startet damit neu.",
   "ops.restore.done_title": "Sicherung wiederhergestellt",
   "ops.restore.done": "Mit Benutzername und Passwort aus der Sicherung anmelden.",
   "ops.restore.restart_failed": "Die Sicherung ist wiederhergestellt, aber Reprintbuddy konnte nicht neu starten. Reprintbuddy jetzt neu starten: mit dem Konto aus der Sicherung anmelden, dann Einstellungen → Allgemein → „Reprintbuddy neu starten“. Bis dahin sind Änderungen gesperrt.",
