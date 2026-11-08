@@ -760,10 +760,33 @@ def restore_article_with_plate(
     article.file_name = file.filename
     article.file_fingerprint = file.fingerprint
     article.thumbnail = thumbnail
-    _take_over_filaments(session, article_id, requirements, keep_mapping=False)  # another file: no group stays
+    _take_over_filaments(session, article_id, requirements, keep_mapping=True)  # Spec 5.1: a slot that is the same keeps its group
     article.archived_at = None
     session.flush()
     return article
+
+
+def _filament_kinds(session: Session, article_id: int) -> dict[int, tuple[str | None, str | None]]:
+    """Slot -> (material, colour) of the file the article holds now."""
+    return {
+        row.slot: (row.material, row.color_hex)
+        for row in session.scalars(select(ArticleFilament).where(ArticleFilament.article_id == article_id))
+    }
+
+
+def slots_losing_group(session: Session, article_id: int, requirements: Sequence[FilamentRequirement]) -> list[int]:
+    """Slots of the new file whose filament group a change of the file takes away (Spec 5.1).
+
+    A slot that had spool sorts ticked and is now another material or colour: the person ticks it
+    again. Not the slots that never had a group, and not a slot the new file no longer has (there is
+    nothing to tick). Read before the change; the same rule as `_take_over_filaments`."""
+    old = _filament_kinds(session, article_id)
+    ticked = set(
+        session.scalars(select(ArticleFilamentSort.slot).where(ArticleFilamentSort.article_id == article_id))
+    )
+    return sorted(
+        r.slot for r in requirements if r.slot in ticked and old.get(r.slot) != (r.material, r.color_hex)
+    )
 
 
 def _take_over_filaments(
@@ -776,12 +799,7 @@ def _take_over_filaments(
     """Replace the filament rows. With `keep_mapping` a slot keeps its filament group (the ticked
     spool sorts, Spec 5.2) when material and colour stay the same (plan B4 decision 10); every other
     group of the article is dropped, so that a slot never counts spool sorts chosen for another colour."""
-    old = {
-        row.slot: (row.material, row.color_hex)
-        for row in session.scalars(
-            select(ArticleFilament).where(ArticleFilament.article_id == article_id)
-        )
-    }
+    old = _filament_kinds(session, article_id)
     new = {r.slot: (r.material, r.color_hex) for r in requirements}
     keep = {slot for slot, value in new.items() if keep_mapping and old.get(slot) == value}
     _delete_rows(
@@ -877,7 +895,7 @@ def relink_article(
     article.file_name = file.filename
     article.file_fingerprint = file.fingerprint
     article.thumbnail = thumbnail
-    _take_over_filaments(session, article_id, requirements, keep_mapping=False)
+    _take_over_filaments(session, article_id, requirements, keep_mapping=True)  # Spec 5.1 (v0.3.10)
     _lift_file_pause(article, ("file_changed", "file_missing"))
     session.flush()
     write_journal(
