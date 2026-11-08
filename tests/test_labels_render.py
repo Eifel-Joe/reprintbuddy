@@ -187,3 +187,75 @@ def test_sample_data_for_the_trial_print_and_the_preview():
     assert sample.sku and sample.label_text and sample.print_target
     for key in fields.FIELDS:
         assert fields.lines(sample, (key,), caption)  # every detail has something to show
+
+
+# ---- a number stays beside its word; the letters get smaller instead (p124) ----
+
+
+def caption_de(key):
+    return {
+        "min_stock": "Mindestbestand", "buffer": "Puffer", "target_qty": "Zielmenge",
+        "units_per_print": "Einheiten je Druck", "print_target": "Druckziel",
+    }[key]
+
+
+def text_width(label):
+    """The width the text may take beside the code, as `render_label` works it out."""
+    return 696 - (label.code_width + render._GAP) - render._PAD_X
+
+
+def test_the_live_case_keeps_the_number_beside_its_word():
+    """The label of the live test: article number, "Mindestbestand: 3", label text, roll 62 x 29.
+    It was drawn as "Mindestbestand" / ": 3" (a row for the word, one for the number)."""
+    label = render.render_label(
+        data(sku="AB-12", min_stock=3, label_text="Regal"), ("sku", "min_stock", "label_text"),
+        ADDRESS, DK_11209, caption_de,
+    )
+    assert [row.text for row in label.lines] == ["AB-12", "Mindestbestand: 3", "Regal"]
+    assert label.truncated == []
+    assert label.font_size > render.MIN_FONT_SIZE
+    font = render._font(label.font_size, False)
+    assert all(font.getlength(row.text) <= text_width(label) for row in label.lines)
+
+
+def test_every_detail_with_a_word_in_front_is_one_row_with_all_nine_chosen():
+    label = render.render_label(data(), fields.FIELDS, ADDRESS, DK_11209, caption_de)
+    texts = [row.text for row in label.lines]
+    for expected in ("Mindestbestand: 4", "Puffer: 2", "Zielmenge: 6", "Einheiten je Druck: 1", "Druckziel: Any A1"):
+        assert expected in texts
+
+
+@pytest.mark.parametrize("chosen", [("min_stock",), ("min_stock", "buffer", "target_qty", "units_per_print")])
+def test_a_number_detail_is_never_broken_whatever_the_size(chosen):
+    label = render.render_label(data(min_stock=1234567), chosen, ADDRESS, DK_11209, caption_de)
+    assert len(label.lines) == len(chosen) and label.truncated == []
+    assert label.lines[0].text == "Mindestbestand: 1234567"
+
+
+def test_a_long_value_after_a_word_is_cut_in_its_value_not_in_its_word():
+    label = render.render_label(
+        data(print_target="P" * 80), ("print_target",), ADDRESS, DK_11209, caption_de
+    )
+    assert len(label.lines) == 1 and label.truncated == [0]
+    assert label.font_size == render.MIN_FONT_SIZE
+    assert label.lines[0].text.startswith("Druckziel: P") and label.lines[0].text.endswith("…")
+
+
+def test_a_long_single_word_gets_smaller_letters_instead_of_being_broken_between_letters():
+    label = make(("name",), name="Kunststoffgehäusedeckel")
+    assert [row.text for row in label.lines] == ["Kunststoffgehäusedeckel"]
+    assert render.MIN_FONT_SIZE <= label.font_size < render.MAX_FONT_SIZE
+    assert label.truncated == []
+
+
+def test_the_free_text_of_the_label_is_not_broken_between_letters_either():
+    label = make(("label_text",), label_text="Regalfachbeschriftung")
+    assert [row.text for row in label.lines] == ["Regalfachbeschriftung"]
+    assert label.font_size >= render.MIN_FONT_SIZE
+
+
+def test_free_text_wraps_at_blanks_only_and_not_in_the_middle_of_a_word():
+    label = make(("name",), name="Wall panel template type A")
+    assert len(label.lines) == 2
+    assert {word for row in label.lines for word in row.text.split()} <= set("Wall panel template type A".split())
+    assert " ".join(row.text for row in label.lines) == "Wall panel template type A"

@@ -2,9 +2,10 @@
 
 Always landscape, in the printable size of the roll (62 x 29 mm: 696 x 271 dots at 300 dpi). The
 letters are as large as they can be so that every detail fits in height and width, never smaller
-than `MIN_FONT_SIZE` (about 2 mm). A detail that is too long for one row takes a second one; one
-that still does not fit is cut with an ellipsis and named in `truncated`, so the preview can say
-what did not fit. Pure drawing: no network, no database.
+than `MIN_FONT_SIZE` (about 2 mm). A number with its word ("Buffer: 2") always stays in one row, the
+letters get smaller instead; a free text that is too long for one row takes a second one, broken at
+blanks. Only at the smallest size is a word broken between letters, and a detail that still does not
+fit is cut with an ellipsis and named in `truncated`, so the preview can say what did not fit. Pure drawing: no network, no database.
 """
 
 from __future__ import annotations
@@ -74,7 +75,7 @@ def _pitch(size: int) -> int:
 
 
 def _break_word(word: str, bold: bool, size: int, width: int) -> list[str]:
-    """A word wider than a row, broken between letters."""
+    """A word wider than a row, broken between letters (the very last resort)."""
     font = _font(size, bold)
     pieces: list[str] = []
     current = ""
@@ -87,9 +88,9 @@ def _break_word(word: str, bold: bool, size: int, width: int) -> list[str]:
     return [*pieces, current] if current else pieces
 
 
-def _wrap(text: str, bold: bool, size: int, width: int) -> list[str]:
-    """The text in rows no wider than `width`, broken at blanks (a word wider than a row on its own
-    is broken between letters)."""
+def _wrap(text: str, bold: bool, size: int, width: int, *, split_words: bool) -> list[str] | None:
+    """The text in rows no wider than `width`, broken at blanks only. A word wider than a row on its
+    own: None, or with `split_words` broken between letters."""
     font = _font(size, bold)
     rows: list[str] = []
     current = ""
@@ -102,6 +103,8 @@ def _wrap(text: str, bold: bool, size: int, width: int) -> list[str]:
             rows.append(current)
         if font.getlength(word) <= width:
             current = word
+        elif not split_words:
+            return None
         else:
             *whole, current = _break_word(word, bold, size, width)
             rows.extend(whole)
@@ -110,12 +113,15 @@ def _wrap(text: str, bold: bool, size: int, width: int) -> list[str]:
     return rows or [""]
 
 
-def _cut(text: str, bold: bool, size: int, width: int) -> str:
-    """`text` shortened with an ellipsis so that it fits `width` (unchanged when it does)."""
+def _cut(text: str, bold: bool, size: int, width: int, head: int = 0) -> str:
+    """`text` shortened with an ellipsis so that it fits `width` (unchanged when it does). The first
+    `head` letters (the word before a number) stay as long as they fit with the ellipsis."""
     font = _font(size, bold)
     if font.getlength(text) <= width:
         return text
-    low, high = 0, len(text)
+    if head and font.getlength(text[:head].rstrip() + _ELLIPSIS) > width:
+        head = 0
+    low, high = head, len(text)
     while low < high:  # the longest start of the text that still fits with the ellipsis
         middle = (low + high + 1) // 2
         if font.getlength(text[:middle].rstrip() + _ELLIPSIS) <= width:
@@ -126,14 +132,27 @@ def _cut(text: str, bold: bool, size: int, width: int) -> str:
 
 
 def _arrange(
-    lines: list[fields.Line], size: int, width: int, *, allow_cut: bool
+    lines: list[fields.Line], size: int, width: int, *, split_words: bool, allow_cut: bool
 ) -> tuple[list[tuple[fields.Line, int]], list[int]] | None:
-    """The rows of all details at `size`: a detail may take up to `_MAX_ROWS` rows. Too long for
-    that: None, or with `allow_cut` its last row is cut with an ellipsis (and its index returned)."""
+    """The rows of all details at `size`, or None when they do not fit the width:
+    - a detail with a word in front ("Buffer: 2") is one row and never broken;
+    - a free text is one row, else broken at blanks into up to `_MAX_ROWS` rows (a word wider than a
+      row is broken between letters only with `split_words`);
+    - what still does not fit is cut with an ellipsis (the index is returned) if `allow_cut`, else None."""
     rows: list[tuple[fields.Line, int]] = []
     cut: list[int] = []
     for index, line in enumerate(lines):
-        parts = _wrap(line.text, line.bold, size, width)
+        if line.fixed:
+            text = _cut(line.text, line.bold, size, width, line.head)
+            if text != line.text:
+                if not allow_cut:
+                    return None
+                cut.append(index)
+            rows.append((fields.Line(text, line.bold), index))
+            continue
+        parts = _wrap(line.text, line.bold, size, width, split_words=split_words)
+        if parts is None:  # a word wider than a row, and breaking it is not allowed at this size
+            return None
         if len(parts) > _MAX_ROWS:
             if not allow_cut:
                 return None
@@ -147,22 +166,24 @@ def _arrange(
 def _choose(
     lines: list[fields.Line], width: int, height: int
 ) -> tuple[int, list[tuple[fields.Line, int]], list[int]]:
-    """The largest size at which every detail fits whole; else the smallest size with what can be
-    shown, cut where needed. Returns the size, the rows (with the index of their detail) and the
-    indexes of the cut details."""
+    """The largest size at which every detail fits whole, without a word broken between letters; at
+    the smallest size, in this order: words broken between letters, then details cut with an
+    ellipsis, then one row per detail. Returns the size, the rows (with the index of their detail)
+    and the indexes of the cut details."""
     for size in range(MAX_FONT_SIZE, MIN_FONT_SIZE - 1, -1):
-        arranged = _arrange(lines, size, width, allow_cut=False)
+        arranged = _arrange(lines, size, width, split_words=False, allow_cut=False)
         if arranged is not None and len(arranged[0]) * _pitch(size) <= height:
             return size, arranged[0], []
     size = MIN_FONT_SIZE
-    arranged = _arrange(lines, size, width, allow_cut=True)
-    if arranged is not None and len(arranged[0]) * _pitch(size) <= height:
-        return size, arranged[0], arranged[1]
+    for allow_cut in (False, True):
+        arranged = _arrange(lines, size, width, split_words=True, allow_cut=allow_cut)
+        if arranged is not None and len(arranged[0]) * _pitch(size) <= height:
+            return size, arranged[0], arranged[1]
     # Too many rows even at the smallest size: one row per detail, each cut to the width.
     rows: list[tuple[fields.Line, int]] = []
     cut: list[int] = []
     for index, line in enumerate(lines):
-        text = _cut(line.text, line.bold, size, width)
+        text = _cut(line.text, line.bold, size, width, line.head)
         if text != line.text:
             cut.append(index)
         rows.append((fields.Line(text, line.bold), index))

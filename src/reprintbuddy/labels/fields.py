@@ -46,6 +46,8 @@ class LabelData:
 class Line:
     text: str
     bold: bool = False
+    fixed: bool = False  # a word and its value ("Buffer: 2"): never broken into rows, the letters get smaller instead
+    head: int = 0  # how many letters at the start (the word and its colon) a cut never touches
 
 
 def clean(chosen: object) -> tuple[str, ...]:
@@ -64,9 +66,11 @@ def lines(data: LabelData, chosen: Iterable[str], caption: Callable[[str], str])
         if value is None or (isinstance(value, str) and not value.strip()):
             continue
         text = str(value).strip()
+        head = 0
         if key in _CAPTIONED:
-            text = f"{caption(key)}: {text}"
-        result.append(Line(text, bold=key == "name"))
+            prefix = f"{caption(key)}: "
+            text, head = prefix + text, len(prefix)
+        result.append(Line(text, bold=key == "name", fixed=key in _CAPTIONED, head=head))
     return result
 
 
