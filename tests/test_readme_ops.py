@@ -83,7 +83,7 @@ def test_readme_names_the_paths_and_commands(name):
         "reprintbuddy disable-https",
         "reprintbuddy set-port",
         "reprintbuddy --version",
-        "http://<container-ip>:8080/setup",
+        "http://<server-ip>:8080/setup",
     ):
         assert needle in text, (name, needle)
 

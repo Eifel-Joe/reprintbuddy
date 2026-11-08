@@ -113,7 +113,7 @@ Das Skript
 - installiert den Befehl `/usr/local/bin/reprintbuddy` (siehe *Kommandozeile*),
 - startet den Dienst und nennt die Adresse für die Ersteinrichtung.
 
-**Schließe die Einrichtung sofort ab** unter `http://<container-ip>:8080/setup`: Bis das
+**Schließe die Einrichtung sofort ab** unter `http://<server-ip>:8080/setup`: Bis das
 Admin-Konto existiert, kann es jeder in deinem Netz anlegen.
 
 Das Skript erneut auszuführen ist sicher: Version und Datenbank bleiben, es repariert Pakete,

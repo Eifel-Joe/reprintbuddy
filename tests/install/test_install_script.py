@@ -118,7 +118,7 @@ def test_dry_run_fresh(bash, tmp_path):
         "systemctl daemon-reload",
         "systemctl enable reprintbuddy.service",
         "systemctl restart reprintbuddy.service",
-        "Finish the setup now: http://<container-ip>:8080/setup",
+        "Finish the setup now: http://<server-ip>:8080/setup",
     ]
     position = 0
     for part in expected:
