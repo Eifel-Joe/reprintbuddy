@@ -918,6 +918,7 @@
   "labels.note_missing": "The label font does not have at least one character and prints it as an empty box. Replace the character in the name or the label text.",
   "labels.note_rtl": "The text has letters that are read from right to left. The label prints them from left to right, so they come out the wrong way round.",
   "labels.note_rows": "Not all details fit on the label; the last ones were left off. Untick another detail. Missing:",
+  "labels.preview_failed": "The preview could not be updated. The picture and the notes may be out of date.",
   "labels.note_fine": "The address for QR codes is so long that the dots of the code become very fine, and phones read it less well. Enter a shorter address.",
   "labels.trial_print": "Trial print",
   "labels.copies": "Number of labels",

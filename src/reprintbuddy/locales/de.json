@@ -918,6 +918,7 @@
   "labels.note_missing": "Mindestens ein Zeichen kennt die Schrift des Etiketts nicht und druckt es als leeres Kästchen. Das Zeichen im Namen oder im Etikettentext ersetzen.",
   "labels.note_rtl": "Der Text enthält Schrift, die von rechts nach links gelesen wird. Das Etikett druckt sie von links nach rechts, also falsch herum.",
   "labels.note_rows": "Nicht alle Angaben passen aufs Etikett, die letzten wurden weggelassen. Eine andere Angabe abwählen. Es fehlt:",
+  "labels.preview_failed": "Die Vorschau konnte nicht aktualisiert werden. Bild und Hinweise sind womöglich nicht aktuell.",
   "labels.note_fine": "Die Adresse für QR-Codes ist so lang, dass die Punkte des Codes sehr fein werden. Handys lesen ihn dann schlechter. Eine kürzere Adresse eintragen.",
   "labels.trial_print": "Probedruck",
   "labels.copies": "Anzahl Etiketten",

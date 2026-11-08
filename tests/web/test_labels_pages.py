@@ -688,3 +688,13 @@ def test_the_size_hint_says_that_too_many_details_are_left_off_and_the_preview_n
     assert "left off" in en("labels.content_hint") and "preview" in en("labels.content_hint")
     assert "weg" in de("labels.content_hint") and "Vorschau" in de("labels.content_hint")
     assert de("labels.content_hint") != en("labels.content_hint")
+
+
+def test_both_pages_carry_the_failure_note_hidden_until_the_script_shows_it(configured, article):
+    """The settings tab and the article's page share the notes block, so the note is on both."""
+    for url in ("/settings?tab=labels", f"/articles/{article}"):
+        page = configured.get(url).text
+        match = re.search(r"<p[^>]*data-failed[^>]*>.*?</p>", page, flags=re.S)
+        assert match, url
+        assert " hidden" in match.group(0) and 'role="alert"' in match.group(0)
+        assert en("labels.preview_failed") in match.group(0)
