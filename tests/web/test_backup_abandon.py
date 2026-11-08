@@ -291,3 +291,52 @@ async def test_cancelling_while_waiting_for_a_running_tick_gives_the_restore_sta
     assert app.state.restore.phase == "idle"
     assert await settled(ops_env) == []
     assert ops_env.runner.calls == []
+
+
+async def test_cancelling_once_the_replace_worker_has_begun_leaves_the_restore_pending(ops_env, monkeypatch):
+    """From the moment the worker began the database may be replaced: the state must not fall back to
+    "idle" (writes would go on against the state of the old database); the restart button stays usable."""
+    upload(ops_env, made_backup(ops_env, BACKUP_PASSWORD))
+    held = Held(monkeypatch, fb, "replace_database")
+    app = ops_env.client.app
+    async with async_client(ops_env) as ac:
+        data = {
+            "csrf_token": await token_of(ac),
+            "backup_password": BACKUP_PASSWORD,
+            "upload_token": upload_token(ops_env),
+            "login_password": PASSWORD,
+        }
+        task = asyncio.create_task(ac.post("/settings/restore", data=data))
+        await wait_for(held.entered)
+        await cancel_and_let_go(task, held)
+    assert app.state.restore.phase == "restart_pending"
+    assert await settled(ops_env) == []  # the worker ended the replace and removed the copy itself
+    assert ops_env.runner.calls == []
+
+
+def test_the_replace_gate_lets_exactly_one_side_win():
+    from reprintbuddy.web.routes.backup import _ReplaceGate
+
+    worker_first = _ReplaceGate()
+    assert worker_first.begin() is True and worker_first.abort() is False
+    route_first = _ReplaceGate()
+    assert route_first.abort() is True and route_first.begin() is False
+
+
+async def test_a_failing_replace_worker_leaves_no_copy_and_asks_to_try_again(ops_env, monkeypatch):
+    upload(ops_env, made_backup(ops_env, BACKUP_PASSWORD))
+
+    def fail(*args, **kwargs):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(fb, "replace_database", fail)
+    async with async_client(ops_env) as ac:
+        data = {
+            "csrf_token": await token_of(ac),
+            "backup_password": BACKUP_PASSWORD,
+            "upload_token": upload_token(ops_env),
+            "login_password": PASSWORD,
+        }
+        response = await ac.post("/settings/restore", data=data)
+    assert response.status_code == 200 and "file is not the cause" in response.text
+    assert await settled(ops_env) == []

@@ -71,6 +71,34 @@ class RestoreState:
         return self.phase != "idle"
 
 
+class _ReplaceGate:
+    """Settles, between the event loop and the replace worker, who came first - one of them, never both.
+
+    A cancelled request cannot stop a worker that was handed to a thread, and a thread may start just
+    as the cancellation arrives. Either the worker `begin`s (then the database may be replaced and the
+    route must not call the restore undone) or the route `abort`s first (then the worker replaces
+    nothing and the route may remove the candidate). Under the lock exactly one of the two succeeds."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._begun = False
+        self._aborted = False
+
+    def begin(self) -> bool:
+        with self._lock:
+            if self._aborted:
+                return False
+            self._begun = True
+            return True
+
+    def abort(self) -> bool:
+        with self._lock:
+            if self._begun:
+                return False
+            self._aborted = True
+            return True
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -356,11 +384,16 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         state.phase = "idle"
         _remove(candidate)
         raise
-    replace_begun = threading.Event()  # set by the worker as it starts: from then on the database may be replaced
+    gate = _ReplaceGate()
 
     def replace() -> None:
-        replace_begun.set()
-        fb.replace_database(candidate, app.state.db_path, now=_now(), protect=_protected(request))
+        if not gate.begin():  # the request was cancelled before this thread got going: replace nothing
+            return
+        try:
+            fb.replace_database(candidate, app.state.db_path, now=_now(), protect=_protected(request))
+        except BaseException:
+            _remove(candidate)  # nothing was replaced: the decrypted copy does not wait for the next start
+            raise
 
     try:
         async with app.state.ticker.hold():
@@ -374,13 +407,13 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         _discard(request)
         return _back("restore_failed", "ops-restore")
     except BaseException:  # cancelled (shutdown, a closed browser) while waiting for the tick or replacing
-        if replace_begun.is_set():
+        if gate.abort():  # the worker has not begun and now never will
+            state.phase = "idle"
+            _remove(candidate)
+        else:
             # The worker may have replaced the database, or still does: the old process holds state of the
             # old one. Writes stay paused and sign-in and the restart button work (as after a failed restart).
             state.phase = "restart_pending"
-        else:
-            state.phase = "idle"
-            _remove(candidate)
         raise
     # The old process holds state of the old database in memory (engine, rights): writes
     # and the engine stay paused until it is gone. Signing in and the restart button work,
