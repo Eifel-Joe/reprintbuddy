@@ -24,6 +24,7 @@ dependencies = [
     "tzdata>=2024.1",
     "websockets>=13",
     "segno>=1.6",
+    "Pillow>=13.0",  # draws the labels (Spec 8.5); HPND-style license, fine with the AGPL
 ]
 
 [project.optional-dependencies]
@@ -34,7 +35,6 @@ dev = [
     "PyYAML>=6",
     "trustme>=1.1",
     "zxing-cpp>=2",  # reads the QR codes back in the tests
-    "Pillow>=10",
 ]
 
 [project.scripts]
@@ -51,6 +51,7 @@ reprintbuddy = [
     "web/templates/**/*",
     "web/static/**/*",
     "locales/*.json",
+    "labels/fonts/*",
     "migrations/**/*",
 ]
 

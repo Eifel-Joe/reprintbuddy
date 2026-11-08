@@ -17,7 +17,7 @@ def test_tables_exist(db):
 
 def test_head_is_0007(db):
     with db() as s:
-        assert s.execute(text("select version_num from alembic_version")).scalar() == "0007"
+        assert s.execute(text("select version_num from alembic_version")).scalar() == "0009"
 
 
 def test_make_sort_key_and_label(db):

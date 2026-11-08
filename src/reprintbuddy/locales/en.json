@@ -167,6 +167,8 @@
   "articles.field.target": "Print target",
   "catalog.sku_taken": "The article number {sku} is already in use.",
   "catalog.field.sku": "Article number",
+  "articles.field.label_text": "Label text",
+  "articles.label_text_hint": "e.g. the shelf compartment",
   "sets.not_found": "This set does not exist.",
   "sets.no_positions": "A set needs at least one position.",
   "sets.position_empty": "Every position needs at least one article.",

@@ -90,6 +90,7 @@ SETTINGS_COLUMNS: dict[type, frozenset[str]] = {
         {
             "name",
             "sku",
+            "label_text",
             "units_per_print",
             "min_stock",
             "buffer",

@@ -8,6 +8,9 @@
 <label>{{ t('catalog.field.sku') }}
   <input name="sku" value="{{ values.sku }}" maxlength="64">
 </label>
+<label>{{ t('articles.field.label_text') }}
+  <input name="label_text" value="{{ values.label_text }}" maxlength="60" placeholder="{{ t('articles.label_text_hint') }}">
+</label>
 <div class="row">
   {% call ui.field("article-units_per_print", t('articles.field.units_per_print'), t('info.units_per_print')) %}
     <input id="article-units_per_print" name="units_per_print" inputmode="numeric" value="{{ values.units_per_print }}">

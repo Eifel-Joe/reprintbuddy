@@ -167,6 +167,8 @@
   "articles.field.target": "Druckziel",
   "catalog.sku_taken": "Die Artikelnummer {sku} ist schon vergeben.",
   "catalog.field.sku": "Artikelnummer",
+  "articles.field.label_text": "Etikettentext",
+  "articles.label_text_hint": "z. B. das Regalfach",
   "sets.not_found": "Dieses Set gibt es nicht.",
   "sets.no_positions": "Ein Set braucht mindestens eine Position.",
   "sets.position_empty": "Jede Position braucht mindestens einen Artikel.",
