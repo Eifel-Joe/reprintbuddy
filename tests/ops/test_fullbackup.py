@@ -850,3 +850,16 @@ def test_only_stored_or_deflated_database_member(live, work):
         archive.writestr("database.sqlite", content["database.sqlite"], compress_type=zipfile.ZIP_BZIP2)
     with pytest.raises(fb.NotABackup):
         fb.read_manifest(path)
+
+
+def test_an_untrusted_database_is_opened_defensively(tmp_path):
+    """v0.3.9 p101: `DEFENSIVE` is set unconditionally (Python 3.12 and later): nothing can write into the
+    schema of a crafted file, even with `writable_schema`."""
+    path = make_db(tmp_path / "d.db")
+    con = fb._open_untrusted(path)
+    try:
+        con.execute("PRAGMA writable_schema=ON")
+        with pytest.raises(sqlite3.DatabaseError):
+            con.execute("UPDATE sqlite_master SET sql = sql WHERE name = 'settings'")
+    finally:
+        con.close()

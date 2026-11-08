@@ -61,3 +61,27 @@ def test_respx_floor_supports_the_httpx_floor():
     root = Path(reprintbuddy.__file__).parents[2]
     project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     assert _floor(_requirement("respx", project["optional-dependencies"]["dev"])) >= (0, 22)
+
+
+def test_python_3_12_is_the_floor_everywhere():
+    """v0.3.9 p101: below 3.12 sqlite3 lacks `SQLITE_DBCONFIG_DEFENSIVE`, the setting that keeps a crafted
+    backup from writing into its own schema. The package, the CI matrix and the code agree on 3.12."""
+    import re
+    import tomllib
+    from pathlib import Path
+
+    root = Path(reprintbuddy.__file__).parents[2]
+    project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    assert project["requires-python"] == ">=3.12"
+    workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    versions = re.search(r"python:\s*\[([^\]]*)\]", workflow).group(1)
+    assert [v.strip().strip("\"'") for v in versions.split(",")] == ["3.12", "3.13"]
+    assert "3.11" not in workflow
+
+
+def test_no_code_is_left_that_only_serves_python_3_11():
+    from pathlib import Path
+
+    source = (Path(reprintbuddy.__file__).parent / "ops" / "fullbackup.py").read_text(encoding="utf-8")
+    assert 'getattr(sqlite3, "SQLITE_DBCONFIG_DEFENSIVE"' not in source
+    assert "on 3.11" not in source

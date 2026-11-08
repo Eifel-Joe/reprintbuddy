@@ -626,10 +626,7 @@ def _open_untrusted(path: Path) -> sqlite3.Connection:
     functions (`trusted_schema`), and nothing may write to its schema (`DEFENSIVE`)."""
     con = connect_existing(path)
     con.execute("PRAGMA trusted_schema=OFF")
-    # Python 3.12 and later; on 3.11 the file still decides nothing, only its rows are copied.
-    defensive = getattr(sqlite3, "SQLITE_DBCONFIG_DEFENSIVE", None)
-    if defensive is not None:
-        con.setconfig(defensive, True)
+    con.setconfig(sqlite3.SQLITE_DBCONFIG_DEFENSIVE, True)  # Python 3.12 and later: the minimum since v0.3.9
     return con
 
 
