@@ -124,7 +124,7 @@ async def save_language(request: Request, db: Session = Depends(get_db)):
     try:
         st.set_setting(db, "language", str(form.get("language", "")))
     except ValueError:
-        return _page(request, db, "settings.invalid_value", "language")
+        return _page(request, db, "settings.invalid_value", "language", busy=await update_busy(request))
     return _saved(request, tab=SECTION_TAB["language"])
 
 
@@ -137,7 +137,7 @@ async def save_qr(request: Request, db: Session = Depends(get_db)):
     try:
         st.set_setting(db, "qr_base_url", typed or None)
     except ValueError:
-        return _page(request, db, "settings.invalid_qr_base_url", "qr", qr_base_url=typed)
+        return _page(request, db, "settings.invalid_qr_base_url", "qr", busy=await update_busy(request), qr_base_url=typed)
     return _saved(request, tab=SECTION_TAB["qr"])
 
 
@@ -148,33 +148,33 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     entered_key = str(form.get("bambuddy_token", "")).strip()
     typed = {"bambuddy_address": address_input}
 
-    def fail(error: str, check=None):
-        return _page(request, db, error, "bambuddy", check, **typed)
+    async def fail(error: str, check=None):
+        return _page(request, db, error, "bambuddy", check, busy=await update_busy(request), **typed)
 
     if not address_input:
-        return fail("bambuddy.fields_required")
+        return await fail("bambuddy.fields_required")
     url, error = validate_address(address_input)
     if error:
-        return fail(error)
+        return await fail(error)
 
     if entered_key:
         entered_key, error = validate_key(entered_key)
         if error:
-            return fail(error)
+            return await fail(error)
 
     # An empty key field keeps the stored key, but only for the same address:
     # a stored key is never sent to a different scheme, host or port.
     api_key = entered_key
     if not api_key:
         if not st.same_address(str(url), str(st.get_setting(db, "bambuddy_url") or "")):
-            return fail("settings.key_required_new_address")
+            return await fail("settings.key_required_new_address")
         api_key = str(st.get_setting(db, "bambuddy_api_key") or "")
     if not api_key:
-        return fail("bambuddy.fields_required")
+        return await fail("bambuddy.fields_required")
 
     check = await run_check(request, db, url, api_key)
     if not check.ok:
-        return fail(f"bambuddy.reason.{check.reason}", check)
+        return await fail(f"bambuddy.reason.{check.reason}", check)
 
     # A standing connection belongs to the old address and key: only a change replaces it.
     stored_url = str(st.get_setting(db, "bambuddy_url") or "")
@@ -201,18 +201,18 @@ async def change_password(request: Request, db: Session = Depends(get_db)):
     repeat = str(form.get("new_password_repeat", ""))
     user = logged_in_user(request, db)
 
-    def fail(error: str):
-        return _page(request, db, error, "password")
+    async def fail(error: str):
+        return _page(request, db, error, "password", busy=await update_busy(request))
 
     limiter = request.app.state.hash_limiter
     # The login's way, brake and pause included: guessing the current password here must
     # cost what a login costs (a stolen session would otherwise guess it unbraked).
     if user is None or not await password_confirmed(request, db, current):
-        return fail("settings.password_wrong")
+        return await fail("settings.password_wrong")
     if new != repeat:
-        return fail("setup.mismatch")
+        return await fail("setup.mismatch")
     if len(new) < accounts.MIN_PASSWORD_LENGTH:
-        return fail("setup.too_short")
+        return await fail("setup.too_short")
     await limiter.run(accounts.set_password, db, user.username, new)
     # Every other session ends with the old password; this one is issued anew.
     start_session(request, user, db)
@@ -241,20 +241,20 @@ async def save_server(request: Request, db: Session = Depends(get_db)):
     port_text = str(form.get("port", "")).strip()
     typed = {"host": host, "port": port_text}
 
-    def fail(error: str):
-        return _page(request, db, error, "server", **typed)
+    async def fail(error: str):
+        return _page(request, db, error, "server", busy=await update_busy(request), **typed)
 
     try:
         port = st.validate("port", int(port_text))
     except ValueError:
-        return fail("settings.invalid_port")
+        return await fail("settings.invalid_port")
     try:
         host = str(st.validate("host", host))
     except ValueError:
-        return fail("settings.invalid_host")
+        return await fail("settings.invalid_host")
     # An address this machine cannot listen on would lock everybody out after the restart.
     if not await run_in_threadpool(can_bind, host):
-        return fail("settings.host_unbindable")
+        return await fail("settings.host_unbindable")
 
     remove_tls = form.get("tls_remove") is not None
     cert = key = None
@@ -266,15 +266,15 @@ async def save_server(request: Request, db: Session = Depends(get_db)):
             cert = st.validate("tls_cert", cert or st.get_setting(db, "tls_cert"))
             key = st.validate("tls_key", key or st.get_setting(db, "tls_key"))
         except ValueError:
-            return fail("settings.invalid_pem")  # never echoes the input
+            return await fail("settings.invalid_pem")  # never echoes the input
         if (cert is None) != (key is None):
-            return fail("ops.tls.incomplete")
+            return await fail("ops.tls.incomplete")
         if cert is not None and key is not None:
             # A pair that does not load would keep Reprintbuddy from starting after the restart.
             try:
                 await run_in_threadpool(validate_tls_pair, str(cert), str(key))
             except ValueError as problem:
-                return fail("ops.tls.encrypted" if str(problem) == "tls_encrypted" else "ops.tls.invalid")
+                return await fail("ops.tls.encrypted" if str(problem) == "tls_encrypted" else "ops.tls.invalid")
 
     # One transaction: no half a TLS pair, no new address with an old port.
     st.set_setting(db, "host", host, commit=False)
@@ -302,7 +302,7 @@ async def save_automation(request: Request, db: Session = Depends(get_db)):
         try:
             checked[name] = int(st.validate(name, int(text)))
         except ValueError:  # also not a number at all
-            return _page(request, db, f"settings.invalid_{name}", "automation", **flags, **numbers)
+            return _page(request, db, f"settings.invalid_{name}", "automation", busy=await update_busy(request), **flags, **numbers)
 
     old_poll_minutes = int(st.get_setting(db, "poll_minutes"))
     # One transaction: all five or none.

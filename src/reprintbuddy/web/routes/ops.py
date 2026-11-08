@@ -136,8 +136,9 @@ async def update_busy(request: Request) -> bool:
 
 
 def ops_view(request: Request, session: Session, busy: bool | None = None) -> OpsView:
-    """The state of the update card. `busy` is the answer of `update_busy` for a caller that can
-    await it; without it the question is asked here, in the calling thread (error pages only)."""
+    """The state of the update card. `busy` is the answer of `update_busy`, asked by the handler that
+    can await it (every page of the settings does). Without it the question is asked here, in the
+    calling thread: for a caller that cannot await, and in tests."""
     app = request.app
     ops = app.state.ops
     effective = ops.effective

@@ -493,6 +493,25 @@ def test_confirm_checks_for_an_update_itself(ops_env, monkeypatch):
     response = confirm_with(ops_env, shown)
     assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_busy#ops-restore"
     assert backups(ops_env) == []
+    assert ops_env.client.app.state.restore.phase == "idle"  # set before the question, given back after
+
+
+def test_a_failing_update_question_gives_the_restore_state_back(ops_env, monkeypatch):
+    """p96: the state is set before the question is asked; whatever goes wrong, it must not stay set."""
+    from reprintbuddy.ops import running
+
+    upload(ops_env, made_backup(ops_env))
+    shown = staged_token(ops_env)
+
+    async def breaks(*_args):
+        raise RuntimeError("systemd is not answering")
+
+    monkeypatch.setattr(running, "update_running_async", breaks)
+    with pytest.raises(RuntimeError):
+        confirm_with(ops_env, shown)
+    assert ops_env.client.app.state.restore.phase == "idle"  # writes and the engine are not locked out
+    assert backups(ops_env) == []
+    assert work_files(ops_env) == [] or all(not name.startswith("candidate-") for name in work_files(ops_env))
 
 
 def test_confirm_checks_for_another_restore_itself(ops_env, monkeypatch):

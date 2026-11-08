@@ -1265,7 +1265,12 @@ def test_hold_lets_a_waiting_tick_give_up(engine_env):
             task = asyncio.create_task(env.engine.tick(poll=False))
             # The tick asks (in a worker thread, p96) whether an update runs, then waits for the lock.
             assert await asyncio.to_thread(first_check_done.wait, 5)
-            await asyncio.sleep(0.05)
+            for _ in range(5000):  # until somebody waits at the lock: no guess at how long that takes
+                if env.engine._lock._waiters:
+                    break
+                await asyncio.sleep(0.001)
+            else:
+                raise AssertionError("the tick never came to wait for the lock")
             env.updating = True  # the restore says "do not touch the database"
         assert not env.engine.held()
         return await task
