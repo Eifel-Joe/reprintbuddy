@@ -415,3 +415,43 @@ async def test_the_whole_app_does_not_refuse_an_upload_path_under_a_sub_path(adm
     assert await status_of("/settings/server", "") != 413
     assert await status_of("/rb/settings/server", "/rb") != 413  # refused by the sign-in gate, not by the size
     assert await status_of("/rbx/settings/server", "/rb") == 413
+
+
+# ---- a path with a control character (v0.3.11 p142) ------------------------------------------
+#
+# Starlette's route expressions end on `$`, which also matches before a final line break: the
+# router ran the route of `/settings/server` for `/settings/server\n`, while the limit list
+# (an exact lookup) did not know the path and applied the general limit. Such a path is refused
+# before anything reads a body.
+
+
+def _post(path: str, body: bytes = b"a=b") -> bytes:
+    return (
+        f"POST {path} HTTP/1.1\r\nHost: x\r\nContent-Type: application/x-www-form-urlencoded\r\n"
+        f"Content-Length: {len(body)}\r\n\r\n".encode()
+        + body
+    )
+
+
+@pytest.mark.parametrize("encoded", ["%0A", "%0D", "%00", "%09", "%7F", "%C2%85"])
+def test_a_path_with_a_control_character_is_refused_by_a_real_server(server, encoded):
+    for base in ("/settings/server", "/settings/restore/upload", "/login"):
+        assert _status(server, _post(base + encoded)) == 400
+
+
+def test_the_same_path_without_the_control_character_still_reaches_its_route(server):
+    assert _status(server, _post("/login")) == 403  # the route ran: the CSRF check refused it
+
+
+@pytest.mark.parametrize("path", ["/settings/server\n", "/x\r", "/x\x00y", "/\x7f", "/a\u0085"])
+async def test_a_path_with_a_control_character_never_reaches_the_app(path):
+    seen: list = []
+    status = await _run(BodyLimitMiddleware(_reader_app(seen)), _scope(path), [b"ab"])
+    assert status == 400
+    assert seen == []
+
+
+async def test_a_plain_path_with_umlauts_and_spaces_passes():
+    seen: list = []
+    status = await _run(BodyLimitMiddleware(_reader_app(seen)), _scope("/ü ber/ö", [("content-length", "2")]), [b"ab"])
+    assert status == 200

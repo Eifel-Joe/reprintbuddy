@@ -14,6 +14,7 @@ Fix: one pure ASGI middleware for every request.
 - A length that is not one plain number → 400; over the limit of the path → 413. Paths with a
   limit of their own (the uploads) are let through with a longer declaration, so their route can
   refuse with a page of its own before reading (`upload_length_ok`).
+- A path with a control character → 400 (see `_CONTROL`; v0.3.11 p142).
 - What the app reads is counted: past the declared length or the limit the app gets an error and
   the client a 413, should a server ever deliver more than it announced.
 
@@ -24,6 +25,7 @@ runs before the route); a limit in Uvicorn (it has none for the body); relying o
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -34,6 +36,16 @@ DEFAULT_LIMIT = 1024 * 1024
 
 # Room for the CSRF field and the multipart boundaries around an uploaded file.
 MULTIPART_OVERHEAD = 64 * 1024
+
+
+# Control characters (C0, DEL, C1) in a path. Root (v0.3.11 p142): Starlette's route expressions end on
+# `$`, which also matches before a final "\n", so `/settings/server\n` runs the route of
+# `/settings/server`, while the limit list above is an exact lookup that does not know that path:
+# the route would run under the general limit instead of its own. No route of this app has such a
+# character in its address, so the request is refused before anything reads a body. (Rejected: making
+# the lookup match like the router - two rules to keep equal; the same lookalike trick is then closed
+# for every other character the router might ever ignore.)
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
 class _TooLarge(Exception):
@@ -94,7 +106,10 @@ class BodyLimitMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        own = self.limits.get(route_path(scope))
+        if _CONTROL.search(scope.get("path", "")):
+            await _answer(send, 400, b"Bad Request")
+            return
+        own =self.limits.get(route_path(scope))
         limit = self.default_limit if own is None else own
         if _header(scope, b"transfer-encoding") is not None:
             if own is None:
