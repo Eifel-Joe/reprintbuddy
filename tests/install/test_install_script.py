@@ -241,19 +241,85 @@ def test_help(bash, tmp_path):
     assert "--language" in lines(result) and "--dry-run" in lines(result)
 
 
+def fake_venv(dest: Path, version: str | None) -> None:
+    """The installed environment: `pyvenv.cfg` of that version and a `bin/python`, or no python at all (the one it
+    pointed to is gone). The script reads the version from the file and never runs the environment's python
+    as root."""
+    venv = dest / "opt/reprintbuddy/.venv"
+    venv.mkdir(parents=True, exist_ok=True)
+    (venv / "pyvenv.cfg").write_text(f"home = /usr/bin\nversion = {version or '3.11.2'}.4\n", encoding="utf-8")
+    if version is not None:
+        (venv / "bin").mkdir(exist_ok=True)
+        (venv / "bin/python").write_text("#!/bin/sh\n", encoding="utf-8")
+        (venv / "bin/python").chmod(0o755)
+
+
+def installed(dest: Path, venv: str | None = "3.13") -> None:
+    """A finished installation: code, environment, a database with content."""
+    os_release(dest)
+    for folder in ("opt/reprintbuddy/.git", "var/lib/reprintbuddy"):
+        (dest / folder).mkdir(parents=True, exist_ok=True)
+    fake_venv(dest, venv)
+    (dest / "var/lib/reprintbuddy/reprintbuddy.db").write_bytes(b"x")
+
+
 def test_rerun_keeps_database(bash, tmp_path):
-    os_release(tmp_path)
-    for folder in ("opt/reprintbuddy/.git", "opt/reprintbuddy/.venv", "var/lib/reprintbuddy"):
-        (tmp_path / folder).mkdir(parents=True)
-    (tmp_path / "var/lib/reprintbuddy/reprintbuddy.db").write_bytes(b"x")
+    installed(tmp_path)
     result = run(bash, tmp_path, "--repo", REPO)
     assert result.returncode == 0, result.stderr
     out = lines(result)
     assert "Existing installation found, keeping version." in out
     assert "Existing database kept." in out
     assert "systemctl restart reprintbuddy.service" in out
-    for forbidden in ("git clone", "checkout", "init --db", "-m venv"):
+    for forbidden in ("git clone", "checkout", "init --db", "-m venv", "rm -rf /opt/reprintbuddy/.venv"):
         assert forbidden not in out, forbidden
+
+
+@pytest.mark.parametrize("venv", [None, "3.11"], ids=["python-gone", "python-3.11"])
+def test_rerun_rebuilds_an_environment_whose_python_is_gone_or_too_old(bash, tmp_path, venv):
+    """v0.3.9 p101: after a release upgrade of Debian the environment points to a python3.11 that no longer
+    exists (the service does not start). The installer builds it again and keeps everything else."""
+    installed(tmp_path, venv)
+    result = run(bash, tmp_path, "--repo", REPO)
+    assert result.returncode == 0, result.stderr
+    out = lines(result)
+    steps = [
+        "systemctl stop reprintbuddy.service",
+        "rm -rf /opt/reprintbuddy/.venv /opt/reprintbuddy/.venv.rollback",
+        "python3 -m venv /opt/reprintbuddy/.venv",
+        "-m pip install --no-cache-dir --upgrade /opt/reprintbuddy",
+        "systemctl restart reprintbuddy.service",
+    ]
+    position = 0
+    for step in steps:
+        found = out.find(step, position)
+        assert found >= 0, f"{step!r} missing or out of order in: " + out
+        position = found + len(step)
+    assert "cannot be used" in out and "rebuilding" in out
+    # what is kept: the version, the database, the data folder
+    assert "Existing installation found, keeping version." in out
+    assert "Existing database kept." in out
+    for forbidden in ("git clone", "checkout", "init --db"):
+        assert forbidden not in out, forbidden
+    for line in out.splitlines():
+        if line.startswith("+ rm "):
+            assert "/var/lib/reprintbuddy" not in line and "reprintbuddy.db" not in line, line
+            assert line.startswith("+ rm -rf /opt/reprintbuddy/"), line
+
+
+def test_an_environment_on_python_3_12_or_newer_is_not_rebuilt(bash, tmp_path):
+    installed(tmp_path, "3.12")
+    out = lines(run(bash, tmp_path, "--repo", REPO))
+    assert "-m venv" not in out and "rm -rf" not in out.replace("rm -rf /opt/reprintbuddy/build", "")
+
+
+def test_the_data_of_a_rerun_is_untouched_in_the_test_folder(bash, tmp_path):
+    """A dry run only prints, so the claim "data stays" is also read from the files: the same before and after."""
+    installed(tmp_path, None)
+    before = {p.relative_to(tmp_path).as_posix(): p.read_bytes() for p in (tmp_path / "var").rglob("*") if p.is_file()}
+    assert run(bash, tmp_path, "--repo", REPO).returncode == 0
+    after = {p.relative_to(tmp_path).as_posix(): p.read_bytes() for p in (tmp_path / "var").rglob("*") if p.is_file()}
+    assert before == after and before
 
 
 def test_refuses_foreign_install_dir(bash, tmp_path):

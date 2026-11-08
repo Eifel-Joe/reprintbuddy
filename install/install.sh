@@ -126,7 +126,7 @@ require_root() {
 
 # Reprintbuddy needs Python 3.12 or newer. Debian 12 only has 3.11 in its own sources (main; there is
 # no python3.12 in bookworm-backports either), so Debian 13 or newer is the floor (v0.3.9 p101).
-NEEDS_DEBIAN_MESSAGE="Reprintbuddy needs Debian 13 or newer: it needs Python 3.12 or newer, and Debian 12 comes with Python 3.11."
+NEEDS_DEBIAN_MESSAGE="Reprintbuddy needs Debian 13 or newer: it needs Python 3.12 or newer, and Debian 12 comes with Python 3.11. On Debian 12, upgrade the system to Debian 13 (the Debian release upgrade), then run this installer again; it keeps your data."
 
 require_debian() {
     local release="${DESTDIR}/etc/os-release" id_ version
@@ -165,7 +165,7 @@ require_python() {
         local found
         found="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"
         die 1 "Reprintbuddy needs Python 3.12 or newer, but python3 here is Python ${found:-of an unknown version}." \
-            "Use Debian 13 or newer."
+            "Use Debian 13 or newer. On Debian 12, upgrade the system to Debian 13, then run this installer again."
     fi
 }
 
@@ -270,8 +270,33 @@ fetch_code() {
     checkout_newest_release
 }
 
+# Can the installed environment run? Its python is a link to the system's python3.x: a release upgrade of
+# Debian removes the old one (the service then does not start), and an environment on a Python older than
+# 3.12 cannot take a current release. Only the environment is rebuilt, never the data (v0.3.9 p101).
+# The version is read from pyvenv.cfg: the environment's own python is not run (as root) just to ask.
+venv_usable() {
+    local venv_python="${DESTDIR}${VENV_DIR}/bin/python" cfg="${DESTDIR}${VENV_DIR}/pyvenv.cfg" version major minor
+    [ -x "${venv_python}" ] && [ -r "${cfg}" ] || return 1
+    version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*//p' "${cfg}" | head -n 1)"
+    major="${version%%.*}"
+    minor="${version#*.}"
+    minor="${minor%%.*}"
+    case "${major}${minor}" in
+        '' | *[!0-9]*) return 1 ;;
+    esac
+    [ "${major}" -gt 3 ] || { [ "${major}" -eq 3 ] && [ "${minor}" -ge 12 ]; }
+}
+
 install_python() {
-    if [ ! -d "${DESTDIR}${VENV_DIR}" ]; then
+    local rebuild=0
+    if [ -d "${DESTDIR}${VENV_DIR}" ] && ! venv_usable; then
+        say "The Python environment cannot be used (its Python is gone or older than 3.12, for example after a"
+        say "system upgrade): rebuilding it. The installed version, the database and the settings are kept."
+        rebuild=1
+        run systemctl stop "${SERVICE}" || true
+        run rm -rf "${VENV_DIR}" "${INSTALL_DIR}/.venv.rollback"
+    fi
+    if [ "${rebuild}" -eq 1 ] || [ ! -d "${DESTDIR}${VENV_DIR}" ]; then
         as_service_user python3 -m venv "${VENV_DIR}"
     fi
     run rm -rf "${INSTALL_DIR}/build" # old build leftovers would bring back deleted modules
