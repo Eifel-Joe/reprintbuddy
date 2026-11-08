@@ -17,6 +17,7 @@ from reprintbuddy.web.bambuddy_check import (
     validate_key,
 )
 from reprintbuddy.web.deps import (
+    SETUP_NEXT_KEY,
     current_language,
     flash,
     get_db,
@@ -78,7 +79,10 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)):
         accounts.create_admin, db, username, password, commit=False
     )
     st.set_setting(db, "language", language, commit=False)
-    start_session(request, user, db, commit=False)
+    kept = request.session.get(SETUP_NEXT_KEY)  # the page opened before the account (a scanned QR code)
+    start_session(request, user, db, commit=False)  # drops the old cookie, the page with it ...
+    if kept is not None:
+        request.session[SETUP_NEXT_KEY] = kept  # ... so it is put back; `take_remembered_page` checks it again
     db.commit()
     return RedirectResponse("/setup/bambuddy", status_code=303)
 

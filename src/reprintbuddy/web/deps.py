@@ -251,6 +251,10 @@ def _plain_local_path(value: object) -> str | None:
     return value if value.isprintable() else None
 
 
+# The setup and the sign-in themselves are no pages to come back to.
+_NOT_REMEMBERED = ("/setup", "/login", "/logout")
+
+
 def remember_page(request: Request) -> None:
     """The page asked for before the Bambuddy step is done, kept in the signed session so that the
     setup can end there (p114: a scanned QR code must not lose its target).
@@ -258,6 +262,8 @@ def remember_page(request: Request) -> None:
     Only what a person's browser opens: a GET that asks for HTML. A script, a form post or a
     background fetch is not a page to go back to. The newest page replaces an older one."""
     if request.method != "GET" or "text/html" not in request.headers.get("accept", ""):
+        return
+    if request.url.path.startswith(_NOT_REMEMBERED):
         return
     target = _plain_local_path(request.url.path + (f"?{request.url.query}" if request.url.query else ""))
     if target is not None:
@@ -394,6 +400,7 @@ def _decide(request: Request) -> Response | None:
                 return error_response(request, 400, "host")
             if path == "/setup":
                 return None
+            remember_page(request)  # a scan before the first account must not lose its page either
             return RedirectResponse("/setup", status_code=303)
 
         # With an account, /setup answers 404 itself; /login is always open.

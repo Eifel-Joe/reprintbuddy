@@ -209,3 +209,57 @@ def test_a_good_value_is_followed_once():
     request = page_request("/x", session={deps.SETUP_NEXT_KEY: "/a/5"})
     assert deps.take_remembered_page(request) == "/a/5"
     assert deps.take_remembered_page(request) == "/"
+
+
+# ---- the same before the first account exists (the sister path of the gate) ----
+
+
+def create_account(client):
+    from conftest import finish_admin_setup
+
+    return finish_admin_setup(client)
+
+
+def test_a_scan_before_the_first_account_still_ends_on_its_page(client, respx_mock):
+    first = client.get("/a/5", headers=PAGE)
+    assert first.status_code == 303 and first.headers["location"] == "/setup"
+    create_account(client)  # the account is made: the session is renewed, the page is kept
+    walk_setup(client)
+    assert connect(client, respx_mock).headers["location"] == "/a/5"
+
+
+def test_the_last_page_before_the_first_account_counts(client, respx_mock):
+    client.get("/a/5", headers=PAGE)
+    client.get("/inspection?article=5", headers=PAGE)
+    create_account(client)
+    assert connect(client, respx_mock).headers["location"] == "/inspection?article=5"
+
+
+@pytest.mark.parametrize("path", ["/login", "/logout", "/setup/bambuddy", "/setup/bambuddy/key", "/static/x.css"])
+def test_pages_of_the_setup_and_sign_in_are_not_kept_before_the_first_account_either(client, respx_mock, path):
+    client.get(path, headers=PAGE)
+    create_account(client)
+    assert connect(client, respx_mock).headers["location"] == "/"
+
+
+def test_nothing_is_kept_before_the_first_account_for_a_script_or_a_post(client, respx_mock):
+    client.get("/a/5", headers={"Accept": "application/json"})
+    client.post("/a/6", headers=PAGE)
+    create_account(client)
+    assert connect(client, respx_mock).headers["location"] == "/"
+
+
+def test_a_failed_account_form_keeps_the_page_for_the_next_try(client, respx_mock):
+    client.get("/a/5", headers=PAGE)
+    token = csrf_of(client, "/setup")
+    bad = client.post("/setup", data={"csrf_token": token, "username": "", "password": "x", "password_repeat": "y", "language": "en"})
+    assert bad.status_code == 200
+    create_account(client)
+    assert connect(client, respx_mock).headers["location"] == "/a/5"
+
+
+def test_a_page_kept_before_the_account_is_checked_again_where_it_is_used(client):
+    """The cookie is signed, but the value is checked on the way out as well: the function that reads it
+    refuses anything that is not a plain local path (see the tests above for odd values)."""
+    request = page_request("/setup", session={deps.SETUP_NEXT_KEY: "//evil.example"})
+    assert deps.take_remembered_page(request) == "/"
