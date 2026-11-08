@@ -35,6 +35,7 @@ from reprintbuddy.ops.running import update_just_started, update_running
 from reprintbuddy.ops.versions import VersionInfo, check_versions, is_git_install
 from reprintbuddy.web import deps
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, BodyLimitMiddleware
+from reprintbuddy.web.subpath import SubPathWarning
 from reprintbuddy.web.flash import pop_flashes
 from reprintbuddy.web.formatting import decimal, fill_percent, local_date, local_dt, unit
 from reprintbuddy.web.formtoken import issue_form_token
@@ -385,6 +386,7 @@ def create_app(
     }
     app.state.upload_lock = upload_routes.make_lock()  # one upload at a time (Spec 5.1a)
     app.add_middleware(BodyLimitMiddleware, limits=app.state.body_limits)
+    app.add_middleware(SubPathWarning)  # a proxy sub-path is not supported: say so once (Spec 11.4)
     app.middleware("http")(deps.security_headers)  # outermost: covers every response
 
     app.add_exception_handler(StarletteHTTPException, deps.http_error_handler)

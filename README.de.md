@@ -264,7 +264,10 @@ privaten Schlüssel entfernen*.
 
 Alternativ läuft Reprintbuddy hinter einem vorhandenen Reverse-Proxy: Reprintbuddy bleibt bei
 HTTP, der Proxy macht TLS. Läuft der Proxy auf demselben System, stelle die Lauschadresse auf
-`127.0.0.1`.
+`127.0.0.1`. Gib Reprintbuddy am Proxy eine eigene Adresse oder einen eigenen Port
+(`https://reprintbuddy.example.net/` oder `https://example.net:8443/`). Ein Unterpfad
+(`https://example.net/reprintbuddy/`) geht nicht: Links und Weiterleitungen würden am Proxy
+vorbeizeigen. Wird Reprintbuddy so erreicht, schreibt es eine Warnung ins Protokoll.
 
 Ausgesperrt durch ein Zertifikat, das nicht mehr taugt (abgelaufen, falscher Name)? Auf dem System:
 

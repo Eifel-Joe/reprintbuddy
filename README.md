@@ -248,7 +248,10 @@ saves them, then restart. To go back to HTTP, tick *Remove certificate and priva
 
 Alternatively run Reprintbuddy behind a reverse proxy you already have: Reprintbuddy stays on
 HTTP and the proxy does TLS. If the proxy runs on the same system, set the listen address
-to `127.0.0.1`.
+to `127.0.0.1`. Give Reprintbuddy its own address or its own port on the proxy
+(`https://reprintbuddy.example.net/` or `https://example.net:8443/`). A sub-path
+(`https://example.net/reprintbuddy/`) does not work: links and redirects would point past the
+proxy. Reprintbuddy writes a warning to the log when it is reached that way.
 
 Locked out by a certificate that stopped working (expired, wrong name)? On the system:
 

@@ -23,6 +23,7 @@ import re
 import time
 import secrets
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -68,6 +69,34 @@ class RestoreState:
     @property
     def active(self) -> bool:
         return self.phase != "idle"
+
+
+class _ReplaceGate:
+    """Settles, between the event loop and the replace worker, who came first - one of them, never both.
+
+    A cancelled request cannot stop a worker that was handed to a thread, and a thread may start just
+    as the cancellation arrives. Either the worker `begin`s (then the database may be replaced and the
+    route must not call the restore undone) or the route `abort`s first (then the worker replaces
+    nothing and the route may remove the candidate). Under the lock exactly one of the two succeeds."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._begun = False
+        self._aborted = False
+
+    def begin(self) -> bool:
+        with self._lock:
+            if self._aborted:
+                return False
+            self._begun = True
+            return True
+
+    def abort(self) -> bool:
+        with self._lock:
+            if self._begun:
+                return False
+            self._aborted = True
+            return True
 
 
 def _now() -> datetime:
@@ -292,10 +321,15 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
     candidate = work / f"candidate-{secrets.token_hex(8)}.db"
 
     manifest: fb.Manifest | None = None
+    # Set when the request is cancelled: a cancellation does not stop the worker threads, they would
+    # finish the decrypted copy after the line below removed it (v0.3.11 p140). They watch this flag.
+    abandoned = threading.Event()
     try:
         manifest = await run_in_threadpool(fb.read_manifest, path)
-        await app.state.hash_limiter.run(fb.extract_database, path, manifest, password, candidate)
-        await run_in_threadpool(fb.verify_database, candidate, manifest, work_dir=work)
+        await app.state.hash_limiter.run(
+            fb.extract_database, path, manifest, password, candidate, abandoned=abandoned
+        )
+        await run_in_threadpool(fb.verify_database, candidate, manifest, work_dir=work, abandoned=abandoned)
     except (fb.PasswordNeeded, fb.WrongPassword) as error:
         _remove(candidate)
         assert manifest is not None
@@ -306,9 +340,16 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         return _back(f"restore_{error.code}", "ops-restore")
     except Exception as error:  # noqa: BLE001 - a full disk in a migration, say: nothing was changed
         _remove(candidate)
-        _discard(request)
         log.warning("restore check failed: %s", type(error).__name__)
+        if manifest is not None and fb.is_environmental(error):
+            # The machine failed, not the file (p141): the upload stays, the page asks to try again.
+            return _confirm_page(request, manifest, "ops.restore.retry", "retry")
+        _discard(request)
         return _back("restore_failed", "ops-restore")
+    except BaseException:  # cancelled (a closed browser, a shutdown): the flag first, then the file
+        abandoned.set()
+        _remove(candidate)
+        raise
 
     # The state is set first and the update asked about afterwards (in a worker thread, v0.3.8 p96):
     # from the check of `active` to setting it there is no `await`, so a second restore or an update
@@ -343,21 +384,37 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         state.phase = "idle"
         _remove(candidate)
         raise
+    gate = _ReplaceGate()
+
+    def replace() -> None:
+        if not gate.begin():  # the request was cancelled before this thread got going: replace nothing
+            return
+        try:
+            fb.replace_database(candidate, app.state.db_path, now=_now(), protect=_protected(request))
+        except BaseException:
+            _remove(candidate)  # nothing was replaced: the decrypted copy does not wait for the next start
+            raise
+
     try:
         async with app.state.ticker.hold():
-            await run_in_threadpool(
-                fb.replace_database,
-                candidate,
-                app.state.db_path,
-                now=_now(),
-                protect=_protected(request),
-            )
+            await run_in_threadpool(replace)
     except Exception as error:  # noqa: BLE001 - it fails before or in the one-step copy: nothing changed
         state.phase = "idle"
         _remove(candidate)
-        _discard(request)
         log.warning("restore failed: %s", type(error).__name__)
+        if fb.is_environmental(error):
+            return _confirm_page(request, manifest, "ops.restore.retry", "retry")  # p141: the upload stays
+        _discard(request)
         return _back("restore_failed", "ops-restore")
+    except BaseException:  # cancelled (shutdown, a closed browser) while waiting for the tick or replacing
+        if gate.abort():  # the worker has not begun and now never will
+            state.phase = "idle"
+            _remove(candidate)
+        else:
+            # The worker may have replaced the database, or still does: the old process holds state of the
+            # old one. Writes stay paused and sign-in and the restart button work (as after a failed restart).
+            state.phase = "restart_pending"
+        raise
     # The old process holds state of the old database in memory (engine, rights): writes
     # and the engine stay paused until it is gone. Signing in and the restart button work,
     # in case the restart below fails or systemd takes it and nothing happens.

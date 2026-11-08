@@ -463,6 +463,7 @@
   "ops.restore.cancel": "Cancel",
   "ops.restore.password_needed": "This backup is encrypted. Enter its password.",
   "ops.restore.wrong_password": "The password is wrong. Nothing was changed.",
+  "ops.restore.retry": "The check could not be finished, and the file is not the cause (for example the disk is full). Nothing was changed. The uploaded file is still here: fix the problem and try again.",
   "ops.restore.confirm_subtitle": "What the uploaded backup contains, before it replaces the current data.",
   "ops.restore.done_subtitle": "The data of the backup is in place; Reprintbuddy restarts with it.",
   "ops.restore.done_title": "Backup restored",
