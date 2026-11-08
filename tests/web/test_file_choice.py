@@ -41,7 +41,8 @@ def test_new_keys_are_appended_in_every_locale_file():
     folder = Path(__file__).resolve().parents[2] / "src" / "reprintbuddy" / "locales"
     for name in ("en.json", "de.json"):
         keys = list(json.loads((folder / name).read_text(encoding="utf-8")))
-        assert keys[-2:] == ["articles.not_sliced", "articles.relink_subtitle"], name
+        # appended, in this order, one after the other (later keys follow them)
+        assert keys.index("articles.relink_subtitle") == keys.index("articles.not_sliced") + 1, name
 
 
 def test_relink_subtitle_texts_are_final():

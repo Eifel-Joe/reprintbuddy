@@ -89,7 +89,7 @@ def _page(
     }
     values.update(typed)
     current_tab = SECTION_TAB.get(section or "") or _tab_from_query(request)
-    label_context = labels_view.settings_context(values) if current_tab == "labels" else {}
+    label_context = labels_view.settings_context(values, str(st.get_setting(db, "language"))) if current_tab == "labels" else {}
     return render(
         request,
         "settings.html",

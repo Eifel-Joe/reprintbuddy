@@ -138,7 +138,7 @@ def _error_text(lang: str, error: LabelError) -> str:
     return translate(lang, error.key)
 
 
-def settings_context(values: dict[str, object]) -> dict[str, object]:
+def settings_context(values: dict[str, object], lang: str) -> dict[str, object]:
     """What the "Labels" tab of the settings page needs beside the form values: the choices and the
     details the preview starts with (the saved choice, or what was typed when the form is shown again).
     The page draws nothing itself: the preview picture is a request of its own, and the note about a
@@ -146,7 +146,7 @@ def settings_context(values: dict[str, object]) -> dict[str, object]:
     selected = fields.clean(values.get("label_selected") or ())
     return {
         "label_rolls": list(ROLLS.values()),
-        "label_all_fields": fields.FIELDS,
+        "label_all_fields": [(key, translate(lang, f"labels.field.{key}")) for key in fields.FIELDS],
         "label_preview_fields": ",".join(selected),
     }
 

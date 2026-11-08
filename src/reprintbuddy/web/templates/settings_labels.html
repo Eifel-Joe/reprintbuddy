@@ -25,8 +25,8 @@
   {% call ui.card_head("qr-code", t('labels.content_title')) %}{% endcall %}
   <p class="muted">{{ t('labels.content_hint') }}</p>
   <div class="label-fields">
-    {% for key in label_all_fields %}
-    <label class="check"><input type="checkbox" name="label_field" value="{{ key }}" form="settings-labels"{% if key in label_selected %} checked{% endif %}><span>{{ t('labels.field.' ~ key) }}</span></label>
+    {% for key, name in label_all_fields %}
+    <label class="check"><input type="checkbox" name="label_field" value="{{ key }}" form="settings-labels"{% if key in label_selected %} checked{% endif %}><span>{{ name }}</span></label>
     {% endfor %}
   </div>
 </section>
