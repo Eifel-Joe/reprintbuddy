@@ -8,6 +8,7 @@ import pytest
 from PIL import Image
 
 from reprintbuddy.labels import brother
+from reprintbuddy.labels.errors import PrinterAddressRefused, PrinterUnreachable, SendAborted
 from reprintbuddy.labels.rolls import DK_11209, ROLLS, roll_by_key
 
 ROW = 90  # bytes per raster line: the print head has 720 dots
@@ -189,28 +190,28 @@ def test_nobody_listening_is_not_reachable():
     free.bind(("127.0.0.1", 0))
     port = free.getsockname()[1]
     free.close()
-    with pytest.raises(brother.PrinterUnreachable):
+    with pytest.raises(PrinterUnreachable):
         send(port, connect_timeout=0.5)
 
 
 def test_a_reset_in_the_middle_is_an_aborted_job(printer):
     p = printer(reset=True)  # reads the first label's worth, then resets the connection
-    with pytest.raises(brother.SendAborted):
+    with pytest.raises(SendAborted):
         brother.send_job("127.0.0.1", bytes(8_000_000), port=p.port, allow_local=True)
 
 
 def test_loopback_and_wildcard_are_refused_without_the_test_switch():
     for host in ("127.0.0.1", "::1", "0.0.0.0", "::", "localhost"):
-        with pytest.raises(brother.PrinterAddressRefused):
+        with pytest.raises(PrinterAddressRefused):
             brother.send_job(host, b"x", port=9)
 
 
 def test_a_name_that_resolves_to_this_machine_is_refused(monkeypatch):
     monkeypatch.setattr(
-        brother.socket, "getaddrinfo",
+        socket, "getaddrinfo",
         lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 9100))],
     )
-    with pytest.raises(brother.PrinterAddressRefused):
+    with pytest.raises(PrinterAddressRefused):
         brother.send_job("printer.example", b"x")
 
 
@@ -218,6 +219,6 @@ def test_a_name_that_does_not_resolve_is_not_reachable(monkeypatch):
     def fail(*a, **k):
         raise socket.gaierror("no such name")
 
-    monkeypatch.setattr(brother.socket, "getaddrinfo", fail)
-    with pytest.raises(brother.PrinterUnreachable):
+    monkeypatch.setattr(socket, "getaddrinfo", fail)
+    with pytest.raises(PrinterUnreachable):
         brother.send_job("printer.example", b"x")

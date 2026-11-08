@@ -13,15 +13,15 @@ may never be this machine itself (a loopback or wildcard address) unless a test 
 
 from __future__ import annotations
 
-import ipaddress
 import socket
 
 from PIL import Image
 
-from reprintbuddy.labels.errors import PrinterAddressRefused, PrinterUnreachable, SendAborted
+from reprintbuddy.labels.addresses import RAW_PORT, resolve
+from reprintbuddy.labels.errors import PrinterUnreachable, SendAborted
 from reprintbuddy.labels.rolls import HEAD_DOTS, Roll
 
-PORT = 9100
+PORT = RAW_PORT
 CONNECT_TIMEOUT = 3.0
 WAIT_TIMEOUT = 10.0
 _LINE_BYTES = HEAD_DOTS // 8  # 90
@@ -64,30 +64,6 @@ def build_job(image: Image.Image, roll: Roll) -> bytes:
     parts.extend(b"\x67\x00" + bytes([_LINE_BYTES]) + line for line in lines)
     parts.append(b"\x1a")  # print with feed (last page)
     return b"".join(parts)
-
-
-def resolve(host: str, port: int = PORT, *, allow_local: bool = False) -> str:
-    """The address to send to: an IP address as it is, a name looked up once. Refused: loopback,
-    the wildcard, multicast (never a printer); a name that gives nothing else is unreachable."""
-    text = host.strip()
-    try:
-        candidates = [str(ipaddress.ip_address(text))]
-    except ValueError:
-        try:
-            found = socket.getaddrinfo(text, port, type=socket.SOCK_STREAM)
-        except (OSError, UnicodeError):
-            raise PrinterUnreachable() from None
-        candidates = [info[4][0] for info in found]
-    for candidate in candidates:
-        try:
-            address = ipaddress.ip_address(candidate.split("%", 1)[0])
-        except ValueError:
-            continue
-        if allow_local or not (address.is_loopback or address.is_unspecified or address.is_multicast):
-            return candidate
-    if candidates:
-        raise PrinterAddressRefused()
-    raise PrinterUnreachable()
 
 
 def send_job(
