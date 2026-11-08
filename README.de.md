@@ -48,7 +48,8 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 - **Druckdateien direkt in Bambuddys Dateimanager**, hochgeladen und geslict (`.gcode.3mf`).
   Extern eingebundene Ordner reichen nicht: Für ihre Dateien führt Bambuddy keine Prüfsumme
   und liest Platten und Filament beim erneuten Einlesen nicht neu, eine geänderte Fassung
-  bliebe unbemerkt.
+  bliebe unbemerkt. Neue Druckdateien lassen sich auch aus Reprintbuddy hochladen (optional,
+  siehe *Druckdateien hochladen*), aber nicht in einen externen Ordner.
 - Ein **eigener Bambuddy-Benutzer** `reprintbuddy` in einer **eigenen Bambuddy-Gruppe** mit den
   Rechten, die unter *Erster Aufruf* stehen, und ein **API-Schlüssel** dieses Benutzers. Der
   eigene Benutzer macht Reprintbuddys Aufträge in Bambuddy erkennbar. Die Einrichtung
@@ -144,6 +145,12 @@ Einrichtung akzeptiert.
    - Read Filaments (`filaments:read`): um zu erkennen, ob Bambuddy die Spulen selbst führt oder
      in Spoolman
 
+   Empfohlen, nicht nötig – nur zum Hochladen von Druckdateien aus Reprintbuddy:
+
+   - Upload Library (`library:upload`)
+
+   Ohne dieses Recht geht alles andere; nur das Hochladen nicht.
+
    Nur zum Erzeugen des Schlüssels im nächsten Schritt braucht die Gruppe zusätzlich diese drei
    Rechte; Reprintbuddy prüft sie nicht, und sie dürfen danach wieder weg: Read Api Keys
    (`api_keys:read`), Create Api Keys (`api_keys:create`) und Read Settings (`settings:read`;
@@ -156,8 +163,10 @@ Einrichtung akzeptiert.
 3. **API-Schlüssel:** Melde dich in Bambuddy ab und als `reprintbuddy` an (ein Schlüssel gehört
    immer dem angemeldeten Benutzer). Öffne *Einstellungen → API-Schlüssel → Schlüssel erstellen*
    und stelle ihn genau so ein: Name „Reprintbuddy“; *Status lesen* (*Read Status*) **an**;
-   *Warteschlange verwalten* (*Manage Queue*) **an**; alle anderen **aus** (*Control Printer*,
-   *Manage Library*, *Manage Inventory*, *Manage Maintenance*, *Manage Archives*,
+   *Warteschlange verwalten* (*Manage Queue*) **an**; *Bibliothek verwalten* (*Manage Library*)
+   **an** (nur zum Hochladen von Druckdateien; am Schlüssel wirkt es nur, soweit die Gruppe es
+   erlaubt, und die Gruppe bekommt dafür nur *Upload Library*); alle anderen **aus**
+   (*Control Printer*, *Manage Inventory*, *Manage Maintenance*, *Manage Archives*,
    *Manage Projects*, *Allow Cloud Access*, *Update Electricity Price*, *Send Notifications*).
    Kopiere den Schlüssel
    sofort (Bambuddy zeigt ihn nur einmal) und melde dich wieder ab. Die Rechte eines Schlüssels
@@ -175,6 +184,23 @@ Einrichtung akzeptiert.
 
    Die beiden Felder sind so gekennzeichnet, dass Passwort-Manager sie nicht mit deinen eigenen
    Zugangsdaten füllen.
+
+## Druckdateien hochladen
+
+Unter *Artikel → Neuer Artikel aus Druckdatei* legt der Knopf *Druckdatei hochladen* eine
+geslicte 3MF-Datei (`.gcode.3mf`, höchstens 200 MB) in den gerade geöffneten Ordner in
+Bambuddys Dateimanager; danach wählst du wie gewohnt die Platte und legst den Artikel an.
+Reprintbuddy prüft die Datei, bevor er etwas schickt, weil er eine Datei in Bambuddy nicht
+wieder löschen kann: nur eine geslicte 3MF, Bambuddys Regeln für den Namen und keine Datei
+gleichen Namens in diesem Ordner (überschrieben oder umbenannt wird nie). Externe Ordner
+bekommen keinen Knopf.
+
+Hochladen braucht *Upload Library* (`library:upload`) in der Gruppe `Reprintbuddy` und
+*Manage Library* am API-Schlüssel. Beides ist optional. Eine Installation, die vor dieser
+Version eingerichtet wurde, ergänzt das Recht in der Gruppe und erzeugt, weil Bambuddy die
+Rechte eines Schlüssels nicht ändern kann, einen neuen Schlüssel mit *Read Status*,
+*Manage Queue* und *Manage Library*, trägt ihn unter *Einstellungen → Bambuddy* ein und löscht
+den alten.
 
 ## Einstellungen
 
