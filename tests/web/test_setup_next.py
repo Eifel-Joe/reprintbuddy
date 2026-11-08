@@ -2,12 +2,16 @@
 the setup the person lands where they were going. Only local paths are ever followed."""
 
 import pytest
-from conftest import csrf_of, mock_auth_me
+from conftest import csrf_of, finish_bambuddy_setup, mock_auth_me
+from starlette.requests import Request
+
+from reprintbuddy.web import deps
 
 URL = "http://bambuddy.test:8000"
 KEY = "bb_SETUPKEY_123456"
 CONNECT = "/setup/bambuddy/connect"
 PAGE = {"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
+BACKSLASH, CR, LF, TAB, NUL = chr(92), chr(13), chr(10), chr(9), chr(0)
 
 
 def connect(client, respx_mock, **me):
@@ -19,6 +23,21 @@ def connect(client, respx_mock, **me):
 def walk_setup(client):
     for path in ("/setup/bambuddy", "/setup/bambuddy/user", "/setup/bambuddy/key", CONNECT):
         client.get(path, headers=PAGE, follow_redirects=True)
+
+
+def page_request(path, *, session=None, method="GET", query=b"", accept="text/html"):
+    """A request built by hand, so the path reaches the app exactly as written (a test client
+    normalises addresses before sending them)."""
+    scope = {
+        "type": "http", "method": method, "path": path, "raw_path": path.encode(), "query_string": query,
+        "scheme": "http", "server": ("testserver", 80), "root_path": "",
+        "headers": [(b"host", b"testserver"), (b"accept", accept.encode())],
+        "session": {} if session is None else session,
+    }
+    return Request(scope)
+
+
+# ---- the way through the setup ----
 
 
 def test_a_page_opened_before_the_setup_is_where_the_setup_ends(admin_client, respx_mock):
@@ -53,77 +72,14 @@ def test_the_last_page_opened_counts(admin_client, respx_mock):
 def test_it_is_used_once(admin_client, respx_mock):
     admin_client.get("/a/5", headers=PAGE)
     assert connect(admin_client, respx_mock).headers["location"] == "/a/5"
-    # The key is saved now; a second visit of the setup page leads to the settings, never to /a/5.
+    # The key is saved now; the setup page of a finished installation leads to the settings.
     assert admin_client.get(CONNECT).headers["location"] == "/settings?tab=bambuddy"
 
 
-def test_an_administrator_key_still_ends_on_the_settings_and_drops_the_page(admin_client, respx_mock):
+def test_an_administrator_key_still_ends_on_the_settings(admin_client, respx_mock):
     admin_client.get("/a/5", headers=PAGE)
     done = connect(admin_client, respx_mock, is_admin=True)
     assert done.headers["location"] == "/settings?tab=bambuddy"
-
-
-# ---- what is never kept ----
-
-
-@pytest.mark.parametrize(
-    "path",
-    [
-        "/setup/bambuddy/key",  # the setup itself
-        "/logout",
-        "/static/css/reprintbuddy.css",
-        "/healthz",
-    ],
-)
-def test_pages_of_the_setup_and_the_like_are_not_kept(admin_client, respx_mock, path):
-    admin_client.get(path, headers=PAGE)
-    assert connect(admin_client, respx_mock).headers["location"] == "/"
-
-
-def test_a_request_that_is_not_a_page_is_not_kept(admin_client, respx_mock):
-    admin_client.get("/a/5", headers={"Accept": "application/json"})
-    admin_client.get("/a/6")  # no Accept header preference at all (*/*): a script, not a person
-    assert connect(admin_client, respx_mock).headers["location"] == "/"
-
-
-def test_a_post_is_not_kept(admin_client, respx_mock):
-    admin_client.post("/a/5", headers=PAGE)
-    assert connect(admin_client, respx_mock).headers["location"] == "/"
-
-
-@pytest.mark.parametrize(
-    "raw",
-    [
-        "//evil.example/x",
-        "/\\evil.example",
-        "/a/1%0d%0aX-Injected:%201",
-        "/a/1%0aSet-Cookie:%20x=1",
-        "/%2e%2e/x%00",
-    ],
-)
-def test_nothing_foreign_or_odd_is_followed(admin_client, respx_mock, raw):
-    admin_client.get(raw, headers=PAGE)
-    location = connect(admin_client, respx_mock).headers["location"]
-    assert "://" not in location and "\\" not in location  # never another site
-    assert "\r" not in location and "\n" not in location and "\x00" not in location
-    assert location.startswith("/") and not location.startswith("//")
-
-
-def test_a_tampered_cookie_cannot_make_the_setup_leave_the_site(admin_client, respx_mock):
-    """The target lives in the signed session; even if a value like this got in, the redirect
-    after the setup re-checks it."""
-    from reprintbuddy.web import deps
-
-    assert deps.safe_next("//evil.example") == "/"
-    assert deps.safe_next("http://evil.example") == "/"
-    assert deps.safe_next("javascript:alert(1)") == "/"
-
-
-def test_the_setup_is_not_left_by_a_second_account_or_a_ready_client(ready_client):
-    """Once set up, the gate keeps nothing and `/setup/bambuddy/connect` goes to the settings."""
-    ready_client.get("/a/5", headers=PAGE)
-    assert ready_client.get(CONNECT).headers["location"] == "/settings?tab=bambuddy"
-    assert ready_client.get(CONNECT).headers["location"] == "/settings?tab=bambuddy"
 
 
 def test_after_the_login_the_scanned_page_is_still_asked_for_and_then_the_setup_follows(client, respx_mock):
@@ -140,3 +96,116 @@ def test_after_the_login_the_scanned_page_is_still_asked_for_and_then_the_setup_
     gate = client.get("/a/5", headers=PAGE)
     assert gate.headers["location"] == "/setup/bambuddy"
     assert connect(client, respx_mock).headers["location"] == "/a/5"
+
+
+# ---- what is never kept ----
+
+
+@pytest.mark.parametrize("path", ["/setup/bambuddy/key", "/logout", "/static/css/reprintbuddy.css", "/healthz"])
+def test_pages_of_the_setup_and_the_like_are_not_kept(admin_client, respx_mock, path):
+    admin_client.get(path, headers=PAGE)
+    assert connect(admin_client, respx_mock).headers["location"] == "/"
+
+
+def test_a_request_that_is_not_a_page_is_not_kept(admin_client, respx_mock):
+    admin_client.get("/a/5", headers={"Accept": "application/json"})
+    admin_client.get("/a/6")  # no preference for HTML (*/*): a script, not a person
+    assert connect(admin_client, respx_mock).headers["location"] == "/"
+
+
+def test_a_post_is_not_kept(admin_client, respx_mock):
+    admin_client.post("/a/5", headers=PAGE)
+    assert connect(admin_client, respx_mock).headers["location"] == "/"
+
+
+def test_a_remembered_page_is_dropped_once_the_setup_is_done_elsewhere(admin_client):
+    admin_client.get("/a/5", headers=PAGE)
+    finish_bambuddy_setup(admin_client)  # done in another browser: the key is stored
+    admin_client.app.state.bambuddy_factory = lambda: None
+    assert admin_client.get("/settings", headers=PAGE).status_code == 200  # a page of the ready app
+    assert admin_client.get(CONNECT).headers["location"] == "/settings?tab=bambuddy"
+
+
+def test_odd_paths_that_do_reach_the_app_end_on_a_local_page(admin_client, respx_mock):
+    for raw in ("/a/1%0d%0aX-Injected:%201", "/%2f%2fevil.example", "/%5Cevil.example"):
+        admin_client.get(raw, headers=PAGE)
+    location = connect(admin_client, respx_mock).headers["location"]
+    assert location.startswith("/") and not location.startswith("//")
+    assert "://" not in location and CR not in location and LF not in location and BACKSLASH not in location
+
+
+# ---- the two functions on their own, with paths exactly as written ----
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "//evil.example/x",
+        f"/{BACKSLASH}evil.example",
+        f"/{TAB}/evil.example",
+        f"/a/1{NUL}",
+        f"/a/1{CR}{LF}X: y",
+        "/",
+        "",
+        "evil",
+        "http://evil.example",
+    ],
+)
+def test_nothing_foreign_or_odd_is_remembered(path):
+    """Either refused, or (Starlette rebuilds the path: a backslash is encoded, a line break dropped,
+    a missing slash added) a plain path on this very site: one slash, nothing that could break a header."""
+    request = page_request(path)
+    deps.remember_page(request)
+    kept = request.session.get(deps.SETUP_NEXT_KEY)
+    assert kept is None or (
+        kept.startswith("/")
+        and not kept.startswith("//")
+        and kept.isprintable()
+        and BACKSLASH not in kept
+        and kept != "/"
+    )
+    for refused in ("//evil.example/x", f"/{TAB}/evil.example", f"/a/1{NUL}", "/", ""):
+        if path == refused:
+            assert kept is None
+
+
+@pytest.mark.parametrize("path", ["/a/5", "/inspection", "/articles/3/edit"])
+def test_a_plain_local_page_is_remembered_as_it_is(path):
+    query = "article=5" if path == "/inspection" else ""
+    request = page_request(path, query=query.encode())
+    deps.remember_page(request)
+    assert request.session[deps.SETUP_NEXT_KEY] == path + (f"?{query}" if query else "")
+
+
+@pytest.mark.parametrize("method,accept", [("POST", "text/html"), ("GET", "application/json"), ("GET", "*/*"), ("GET", "")])
+def test_only_a_get_that_asks_for_html_is_remembered(method, accept):
+    request = page_request("/a/5", method=method, accept=accept)
+    deps.remember_page(request)
+    assert deps.SETUP_NEXT_KEY not in request.session
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "//evil.example",
+        "http://evil.example",
+        "javascript:alert(1)",
+        f"/{BACKSLASH}evil",
+        f"/a/1{CR}{LF}X: y",
+        f"/a{NUL}",
+        "",
+        None,
+        5,
+        "/",
+    ],
+)
+def test_a_tampered_value_in_the_session_is_never_followed(value):
+    request = page_request("/setup/bambuddy/connect", session={deps.SETUP_NEXT_KEY: value})
+    assert deps.take_remembered_page(request) == "/"
+    assert deps.SETUP_NEXT_KEY not in request.session  # used up, also when it was refused
+
+
+def test_a_good_value_is_followed_once():
+    request = page_request("/x", session={deps.SETUP_NEXT_KEY: "/a/5"})
+    assert deps.take_remembered_page(request) == "/a/5"
+    assert deps.take_remembered_page(request) == "/"

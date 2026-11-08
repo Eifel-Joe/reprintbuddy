@@ -410,6 +410,8 @@ def _decide(request: Request) -> Response | None:
         if not st.bambuddy_configured(session) and not in_bambuddy_setup and path != "/logout":
             remember_page(request)
             return RedirectResponse("/setup/bambuddy", status_code=303)
+        if st.bambuddy_configured(session) and SETUP_NEXT_KEY in request.session:
+            request.session.pop(SETUP_NEXT_KEY, None)  # a page kept for a setup that was finished elsewhere
         # Signed in and set up: a page of the interface. The first one after a start also
         # checks what the stored key may do (Spec 11.3, "Rights after an update").
         request.state.rights_due = st.bambuddy_configured(session) and not in_bambuddy_setup
