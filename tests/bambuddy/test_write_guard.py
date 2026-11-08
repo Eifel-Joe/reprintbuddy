@@ -431,8 +431,10 @@ def test_bypass_is_caught(line, reason):
 
 
 def test_put_through_send_is_caught():
-    problems = check_source(BASE.replace('_send("GET", path)', '_send("PUT", path)'))
-    assert "_send with 'PUT' in _get (line 8)" in problems
+    changed = BASE.replace('_send("GET", path)', '_send("PUT", path)')
+    # the line is looked up in the text, not written down: a change of `BASE` must not break this
+    line = next(n for n, text in enumerate(changed.splitlines(), 1) if '_send("PUT", path)' in text)
+    assert f"_send with 'PUT' in _get (line {line})" in check_source(changed)
 
 
 @pytest.mark.parametrize(

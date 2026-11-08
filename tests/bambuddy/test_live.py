@@ -27,15 +27,17 @@ from reprintbuddy.bambuddy.client import (
     BambuddyUnexpected,
     HttpBambuddyClient,
 )
+from reprintbuddy.web.app import shared_tls_client_factory
 from fixtures import API, KEY, client
 
-# One TLS context for every client of this module: building it per call costs most of a
-# second, and the listener asks for a token at almost every attempt.
-_TLS = httpx.create_ssl_context()
+# The clients of this module are made the way the app makes its own: one shared TLS context, built
+# once (building it per call costs most of a second, and the listener asks for a token at almost
+# every attempt). Not an own `ssl` set-up of the test (v0.3.9 p79).
+_CLIENTS = shared_tls_client_factory()
 
 
 def quick_client() -> HttpBambuddyClient:
-    return client(lambda: httpx.AsyncClient(verify=_TLS))
+    return client(_CLIENTS)
 
 
 TOKEN_URL = f"{API}/auth/ws-token"
@@ -559,9 +561,11 @@ async def test_secret_never_logged(respx_mock, caplog, case):
 
 
 def quiet_server_log() -> logging.Logger:
-    """A logger for the test server: its own lines show the request with the token."""
-    server_log = logging.getLogger("tests.live.server")
-    server_log.propagate = False
+    """A logger for the test server: its own lines show the request with the token.
+
+    A logger of its own that is not registered in `logging`'s tree: nothing global is changed (no
+    `propagate` set, no handler added to a shared logger on every call; v0.3.9 p79)."""
+    server_log = logging.Logger("tests.live.server")
     server_log.addHandler(logging.NullHandler())
     return server_log
 
@@ -606,7 +610,7 @@ async def test_real_library_logs_no_secret(respx_mock, caplog):
                 done.set()
 
         subject = live.LiveListener(
-            HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), on_event
+            HttpBambuddyClient(base, KEY, _CLIENTS), on_event
         )
         task = asyncio.create_task(subject.run())
         try:
@@ -644,7 +648,7 @@ async def test_real_library_round_trip(respx_mock):
             if len(seen) == 2:
                 both.set()
 
-        subject = live.LiveListener(HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), on_event)
+        subject = live.LiveListener(HttpBambuddyClient(base, KEY, _CLIENTS), on_event)
         task = asyncio.create_task(subject.run())
         try:
             await asyncio.wait_for(both.wait(), timeout=5)
@@ -673,7 +677,7 @@ async def test_real_library_handshake_refusal_is_no_right(respx_mock):
         events = Events()
         sleeps = Sleeps(1)
         subject = live.LiveListener(
-            HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), events, sleep=sleeps, now=Clock()
+            HttpBambuddyClient(base, KEY, _CLIENTS), events, sleep=sleeps, now=Clock()
         )
         await run_until_stopped(subject)
     assert subject.state == "no_right"
@@ -959,7 +963,7 @@ async def _serve_and_note_the_close_code(respx_mock, scenario):
         base = f"http://127.0.0.1:{port}"
         respx_mock.post(f"{base}/api/v1/auth/ws-token").respond(json={"token": "t1"})
         subject = live.LiveListener(
-            HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), Events()
+            HttpBambuddyClient(base, KEY, _CLIENTS), Events()
         )
         task = asyncio.create_task(subject.run())
         try:
@@ -1008,7 +1012,7 @@ async def test_a_silent_bambuddy_does_not_hold_the_shutdown_longer_than_the_clos
         base = f"http://127.0.0.1:{port}"
         respx_mock.post(f"{base}/api/v1/auth/ws-token").respond(json={"token": "t1"})
         subject = live.LiveListener(
-            HttpBambuddyClient(base, KEY, lambda: httpx.AsyncClient(verify=_TLS)), Events()
+            HttpBambuddyClient(base, KEY, _CLIENTS), Events()
         )
         task = asyncio.create_task(subject.run())
         try:
