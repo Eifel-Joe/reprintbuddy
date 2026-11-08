@@ -86,11 +86,13 @@ def test_no_button_in_an_external_folder_or_below_it(up, fake_bambuddy):
         assert _button(up.get(f"/articles/new?folder={folder}").text) is None, folder
 
 
-def test_no_button_when_choosing_another_file_for_an_article(up, fake_bambuddy):
+def test_button_when_choosing_another_file_for_an_article_leads_to_the_upload_of_this_article(up, fake_bambuddy):
+    """Spec 5.1a (08.11.2026): the same button when changing the print file; the target is the article."""
     from test_archive_pages import make
 
     article = make(up, name="Template A", library_file_id=1, plate_id=1)
-    assert _button(up.get(f"/articles/{article}/relink").text) is None
+    assert _button(up.get(f"/articles/{article}/relink").text).group(1) == f"{PAGE}?article={article}"
+    assert _button(up.get(f"/articles/{article}/relink?folder=1").text).group(1) == f"{PAGE}?folder=1&amp;article={article}"
 
 
 # ---- the page --------------------------------------------------------------------------------
