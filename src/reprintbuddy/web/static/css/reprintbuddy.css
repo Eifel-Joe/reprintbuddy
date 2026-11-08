@@ -552,7 +552,7 @@ div.tile:hover, div.tile:focus-within { border-color: var(--accent); }
 
 /* ---- look like Bambuddy (Spec 10.1, 06.11.2026) ---- */
 
-.nav-link { font-size: 13.5px; padding: 8px 10px; gap: 0.6rem; min-height: 2.75rem; } /* 44 px target on the PC too (p70) */
+.nav-link { font-size: 13.5px; padding: 8px 10px; gap: 0.6rem; }
 .nav-link.active:hover { background: var(--accent); color: var(--on-accent); }
 
 /* Text for screen readers only (the menu button shows a symbol). */

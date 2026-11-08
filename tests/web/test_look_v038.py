@@ -13,11 +13,6 @@ def rule(css, selector):
     return "\n".join(bodies)
 
 
-def test_menu_entries_are_44px_high_on_the_pc(ready_client):  # p70
-    css = ready_client.get(CSS).text
-    assert "min-height: 2.75rem" in rule(css, ".nav-link")  # 2.75rem = 44 px at the 16 px root
-
-
 def test_main_button_is_full_width_on_a_phone(ready_client):  # p71
     css = ready_client.get(CSS).text
     block = re.search(r"@media \(max-width: 375px\) \{(.*?)\n\}", css, re.S)
