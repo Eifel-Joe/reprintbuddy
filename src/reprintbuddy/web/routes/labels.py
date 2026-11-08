@@ -28,6 +28,7 @@ from reprintbuddy.web.deps import current_language, get_db, release_connection
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
 from reprintbuddy.web.forms import duplicate_redirect
+from reprintbuddy.web.routes.ops import ops_ready
 from reprintbuddy.web.routes.settings import SECTION_TAB, _page, _saved
 
 router = APIRouter()
@@ -83,7 +84,7 @@ async def save_labels(request: Request, db: Session = Depends(get_db)):
     typed = {"label_host": host, "label_roll": roll, "label_selected": list(fields.clean(chosen))}
     result = _checked(host, roll, chosen, labels_view.own_addresses(request))
     if isinstance(result, str):
-        return _page(request, db, result, "labels", **typed)
+        return _page(request, db, result, "labels", busy=await ops_ready(request), **typed)
     checked_host, checked_roll, checked_fields = result
     with write_transaction(request) as tx:  # all three or none
         st.set_setting(tx, "label_printer_host", checked_host, commit=False)
@@ -114,20 +115,20 @@ async def trial_print(request: Request, db: Session = Depends(get_db)):
     typed = {"label_host": host, "label_roll": roll_key, "label_selected": list(fields.clean(chosen))}
     result = _checked(host, roll_key, chosen, labels_view.own_addresses(request))
     if isinstance(result, str):
-        return _page(request, db, result, "labels", **typed)
+        return _page(request, db, result, "labels", busy=await ops_ready(request), **typed)
     checked_host, checked_roll, checked_fields = result
     if checked_host is None:
         flash(request, "labels.not_configured", warning=True)
-        return _page(request, db, None, "labels", **typed)
+        return _page(request, db, None, "labels", busy=await ops_ready(request), **typed)
     try:  # the one-time token is used up first and committed: the printing below holds no lock
         with form_transaction(request, str(form.get("form_token", ""))):
             pass
     except FormTokenUsed:
         flash(request, "form.duplicate")
-        return _page(request, db, None, "labels", **typed)
+        return _page(request, db, None, "labels", busy=await ops_ready(request), **typed)
     except FormTokenInvalid:
         flash(request, "form.expired", warning=True)
-        return _page(request, db, None, "labels", **typed)
+        return _page(request, db, None, "labels", busy=await ops_ready(request), **typed)
     lang = current_language(request)
     roll = ROLLS[checked_roll]
     address = labels_view.label_address(request, db, labels_view.SAMPLE_ARTICLE_ID)
@@ -135,7 +136,7 @@ async def trial_print(request: Request, db: Session = Depends(get_db)):
         labels_view.draw, lang, labels_view.sample_data(lang), checked_fields, address, roll
     )
     await _print(request, db, lang, str(checked_host), roll, rendered.image, 1)
-    return _page(request, db, None, "labels", **typed)
+    return _page(request, db, None, "labels", busy=await ops_ready(request), **typed)
 
 
 # ---- the article's page: preview and print --------------------------------------------------
