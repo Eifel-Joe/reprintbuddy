@@ -205,4 +205,3 @@ async def _print(request: Request, db: Session, lang: str, host: str, roll, imag
     )
     key, params, warning = labels_view.outcome_message(lang, outcome, roll)
     flash(request, key, warning=warning, **params)
-

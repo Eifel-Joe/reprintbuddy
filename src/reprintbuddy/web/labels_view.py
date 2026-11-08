@@ -138,7 +138,7 @@ def _error_text(lang: str, error: LabelError) -> str:
     return translate(lang, error.key)
 
 
-def settings_context(request: Request, db: Session, values: dict[str, object]) -> dict[str, object]:
+def settings_context(values: dict[str, object]) -> dict[str, object]:
     """What the "Labels" tab of the settings page needs beside the form values: the choices and the
     details the preview starts with (the saved choice, or what was typed when the form is shown again).
     The page draws nothing itself: the preview picture is a request of its own, and the note about a
