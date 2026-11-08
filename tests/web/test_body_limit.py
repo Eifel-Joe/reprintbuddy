@@ -263,3 +263,48 @@ async def test_transfer_encoding_on_an_upload_path_is_left_to_its_route_which_re
 
     mw = BodyLimitMiddleware(refusing, default_limit=10, limits={"/up": 100})
     assert await _run(mw, _scope("/up", headers), [b"x" * 50]) == 303
+
+
+# ---- through the whole app: the inner middleware layers wrap the error (security review) ------
+
+
+async def test_reading_past_the_declared_length_is_413_through_the_whole_app(admin_client):
+    """BaseHTTPMiddleware layers inside (gate, tick, update guard) hand the error on as an
+    ExceptionGroup; it must still become a 413, not a 500."""
+    app = admin_client.app
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
+        "scheme": "http", "path": "/login", "raw_path": b"/login", "root_path": "", "query_string": b"",
+        "headers": [(b"host", b"testserver"), (b"content-type", b"application/x-www-form-urlencoded"),
+                    (b"content-length", b"10")],
+        "client": ("127.0.0.1", 1234), "server": ("testserver", 80),
+    }
+    chunks = [{"type": "http.request", "body": b"a=" + b"x" * 6, "more_body": True},
+              {"type": "http.request", "body": b"x" * 8, "more_body": False}]
+
+    async def receive():
+        return chunks.pop(0) if chunks else {"type": "http.disconnect"}
+
+    sent = []
+
+    async def send(message):
+        sent.append(message)
+
+    await app(scope, receive, send)
+    assert [m["status"] for m in sent if m["type"] == "http.response.start"] == [413]
+
+
+async def test_a_group_with_other_errors_is_passed_on():
+    async def app(scope, receive, send):
+        try:
+            await receive()
+            await receive()
+        except Exception as caught:
+            raise ExceptionGroup("inner", [caught, RuntimeError("other")]) from None
+
+    async def receive():
+        return {"type": "http.request", "body": b"x" * 8, "more_body": True}
+
+    mw = BodyLimitMiddleware(app, default_limit=100)
+    with pytest.raises(ExceptionGroup):
+        await mw(_scope(headers=[("content-length", "10")]), receive, lambda m: None)

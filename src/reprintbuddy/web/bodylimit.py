@@ -121,6 +121,15 @@ class BodyLimitMiddleware:
         except _TooLarge:
             if not started:
                 await _answer(send, 413, b"Request Entity Too Large")
+        except BaseExceptionGroup as group:
+            # The `BaseHTTPMiddleware` layers inside (gate, tick, update guard) run the app in a
+            # task group and hand the error on wrapped (security review v0.3.9). Only a group
+            # made of nothing but `_TooLarge` becomes a 413; anything else goes on as it came.
+            rest = group.split(_TooLarge)[1]
+            if rest is not None:
+                raise
+            if not started:
+                await _answer(send, 413, b"Request Entity Too Large")
 
 
 async def _answer(send: Send, status: int, text: bytes) -> None:
