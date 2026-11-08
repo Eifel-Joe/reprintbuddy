@@ -3,8 +3,8 @@
 Always landscape, in the printable size of the roll (62 x 29 mm: 696 x 271 dots at 300 dpi). The
 letters are as large as they can be so that every detail fits in height and width, never smaller
 than `MIN_FONT_SIZE` (about 2 mm). A number with its word ("Buffer: 2") always stays in one row, the
-letters get smaller instead; a free text that is too long for one row takes a second one, broken at
-blanks. Only at the smallest size is a word broken between letters, and a detail that still does not
+letters get smaller instead; a text (also the print target with its word) that is too long for one
+row takes a second one, broken at blanks. Only at the smallest size is a word broken between letters, and a detail that still does not
 fit is cut with an ellipsis and named in `truncated`, so the preview can say what did not fit. When even one
 row per detail is too high for the roll (all nine details), the last details are left off, never drawn
 over the margin, and named in `dropped`. Pure drawing: no network, no database.
@@ -176,9 +176,9 @@ def _arrange(
     lines: list[fields.Line], size: int, width: int, *, split_words: bool, allow_cut: bool
 ) -> tuple[list[tuple[fields.Line, int]], list[int]] | None:
     """The rows of all details at `size`, or None when they do not fit the width:
-    - a detail with a word in front ("Buffer: 2") is one row and never broken;
-    - a free text is one row, else broken at blanks into up to `_MAX_ROWS` rows (a word wider than a
-      row is broken between letters only with `split_words`);
+    - a number with its word in front ("Buffer: 2") is one row and never broken;
+    - a text (the print target with its word too) is one row, else broken at blanks into up to
+      `_MAX_ROWS` rows (a word wider than a row is broken between letters only with `split_words`);
     - what still does not fit is cut with an ellipsis (the index is returned) if `allow_cut`, else None."""
     rows: list[tuple[fields.Line, int]] = []
     cut: list[int] = []

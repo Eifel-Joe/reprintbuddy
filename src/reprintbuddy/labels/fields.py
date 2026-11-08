@@ -2,7 +2,8 @@
 
 The QR code is always on; these nine are chosen in the settings. Their order on the label is fixed
 (the order below), whatever order they were ticked in. Text details stand alone, numbers get a short
-word in front.
+word in front and stay in one row; the print target has its word too but is text: it breaks at blanks
+like a free text instead of making all the letters smaller.
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ class LabelData:
 class Line:
     text: str
     bold: bool = False
-    fixed: bool = False  # a word and its value ("Buffer: 2"): never broken into rows, the letters get smaller instead
+    fixed: bool = False  # a number with its word ("Buffer: 2"): never broken into rows, the letters get smaller instead
     key: str = ""  # the detail this row belongs to (one of FIELDS), so a note can name it
 
 
@@ -68,7 +69,7 @@ def lines(data: LabelData, chosen: Iterable[str], caption: Callable[[str], str])
         text = " ".join(str(value).split())  # a line break or tab in a value is a blank: the font would draw rows of its own
         if key in _CAPTIONED:
             text = f"{caption(key)}: {text}"
-        result.append(Line(text, bold=key == "name", fixed=key in _CAPTIONED, key=key))
+        result.append(Line(text, bold=key == "name", fixed=key in _NUMBERS, key=key))
     return result
 
 

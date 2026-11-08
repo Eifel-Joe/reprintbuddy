@@ -315,11 +315,44 @@ def test_a_number_detail_is_never_broken_whatever_the_size(chosen):
 
 def test_a_long_value_after_a_word_is_cut_in_its_value_not_in_its_word():
     label = render.render_label(
-        data(print_target="P" * 80), ("print_target",), ADDRESS, DK_11209, caption_de
+        data(min_stock=int("9" * 80)), ("min_stock",), ADDRESS, DK_11209, caption_de
     )
     assert len(label.lines) == 1 and label.truncated == [0]
     assert label.font_size == render.MIN_FONT_SIZE
-    assert label.lines[0].text.startswith("Druckziel: P") and label.lines[0].text.endswith("…")
+    assert label.lines[0].text.startswith("Mindestbestand: 9") and label.lines[0].text.endswith("…")
+
+
+# ---- the print target is not a number: it wraps at blanks like a free text (p128) ----
+
+LONG_TARGET = "Any A1 mini X1C special build desk"
+
+
+def test_only_the_four_numbers_are_fixed_to_one_row():
+    rows = {row.text.split(":")[0]: row for row in fields.lines(data(), fields.FIELDS, caption_de)}
+    for word in ("Mindestbestand", "Puffer", "Zielmenge", "Einheiten je Druck"):
+        assert rows[word].fixed is True, word
+    assert rows["Druckziel"].fixed is False  # a word and a text: it may take a second row
+
+
+def test_a_long_print_target_wraps_at_blanks_and_nothing_is_cut():
+    """Before, the whole target was one row: it was cut with an ellipsis at the smallest letters."""
+    label = render.render_label(
+        data(print_target=LONG_TARGET), ("sku", "print_target", "label_text"), ADDRESS, DK_11209, caption_de
+    )
+    assert label.truncated == [] and label.dropped == ()
+    assert [row.text for row in label.lines][0] == "TA-100" and [row.text for row in label.lines][-1] == "Shelf B3"
+    target_rows = [row.text for row in label.lines][1:-1]
+    assert len(target_rows) == 2
+    assert " ".join(target_rows) == f"Druckziel: {LONG_TARGET}"
+    font = render._font(label.font_size, False)
+    assert all(font.getlength(row) <= text_width(label) for row in target_rows)
+
+
+def test_a_print_target_that_is_one_long_word_is_cut_not_dropped_or_run_over():
+    label = render.render_label(data(print_target="P" * 80), ("print_target",), ADDRESS, DK_11209, caption_de)
+    assert label.truncated == [0] and label.lines[-1].text.endswith("…")
+    first, last = ink_rows(label)
+    assert first >= render._PAD_Y and last < DK_11209.dots_high - render._PAD_Y
 
 
 def test_a_long_single_word_gets_smaller_letters_instead_of_being_broken_between_letters():
