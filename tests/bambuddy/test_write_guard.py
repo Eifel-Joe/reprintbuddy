@@ -61,6 +61,7 @@ WEBSOCKETS_IMPORTERS = {"bambuddy/live.py"}
 LIVE_IMPORTS = {
     "__future__": {"annotations"},
     "asyncio": None,
+    "contextlib": None,  # `suppress` around the closing handshake at a shutdown (v0.3.8 p80)
     "inspect": None,
     "json": None,
     "logging": None,
