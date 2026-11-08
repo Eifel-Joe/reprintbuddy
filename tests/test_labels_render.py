@@ -448,3 +448,44 @@ def test_a_longer_address_makes_the_code_too_fine():
 def test_the_code_alone_in_the_middle_has_the_same_dots_per_module_note():
     label = render.render_label(data(), (), FINE, DK_11209, caption)
     assert label.fine_code is True
+
+
+# ---- p136: too high with two-row details: shorten from the back only, as many as needed ----
+
+
+def test_when_two_row_details_do_not_fit_only_the_last_ones_lose_their_second_row():
+    """Six details, four of them two rows long = ten rows, more than the eight that fit. Only as many
+    details as needed are cut to one row, counted from the back; the front ones keep both rows."""
+    chosen = ("name", "sku", "min_stock", "print_target", "label_text", "date")
+    long = "alpha bravo charlie delta echo foxtrot golf"
+    label = make(chosen, name=long, sku=long, print_target=long, label_text=long)
+    texts = [row.text for row in label.lines]
+    assert label.dropped == ()
+    assert label.font_size == render.MIN_FONT_SIZE
+    assert len(texts) == 8
+    assert " ".join(texts[0:2]) == long and " ".join(texts[2:4]) == long  # name and sku keep both rows, whole
+    assert texts[4] == "Minimum stock: 4" and texts[7] == "08.11.2026"
+    assert texts[5].startswith("Print target: alpha") and texts[5].endswith("…")  # the last two: one row, cut
+    assert texts[6].startswith("alpha") and texts[6].endswith("…")
+    assert label.truncated == [3, 4]  # the print target and the label text, by their place in the order chosen
+
+
+def test_one_detail_is_enough_when_a_single_second_row_is_too_much():
+    """Nine rows (room for eight): only the last two-row detail gives up its second row."""
+    chosen = ("name", "sku", "min_stock", "print_target", "label_text", "date")
+    long = "alpha bravo charlie delta echo foxtrot golf"
+    label = make(chosen, name=long, sku=long, print_target="Any A1", label_text=long)
+    texts = [row.text for row in label.lines]
+    assert label.dropped == () and len(texts) == 8  # name 2, sku 2, minimum, print target, label text cut, date = 8
+    assert " ".join(texts[0:2]) == long and " ".join(texts[2:4]) == long
+    assert label.truncated == [4] and texts[-2].endswith("…")
+
+
+def test_when_every_detail_is_one_row_and_it_is_still_too_high_the_last_ones_are_left_off():
+    """Two-row details are cut from the back first; the nine rows left are still too high, so the last goes."""
+    long = "alpha bravo charlie delta echo foxtrot golf"
+    label = make(fields.FIELDS, name=long, sku=long, print_target=long, label_text=long)
+    texts = [row.text for row in label.lines]
+    assert label.dropped == ("date",) and len(texts) == 8
+    assert label.truncated == [0, 1, 6, 7]  # all four two-row details were set to one row, none could keep its second
+    assert len(texts) * render._pitch(label.font_size) <= TEXT_HEIGHT

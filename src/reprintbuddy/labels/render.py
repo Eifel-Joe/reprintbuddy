@@ -5,8 +5,9 @@ letters are as large as they can be so that every detail fits in height and widt
 than `MIN_FONT_SIZE` (about 2 mm). A number with its word ("Buffer: 2") always stays in one row, the
 letters get smaller instead; a text (also the print target with its word) that is too long for one
 row takes a second one, broken at blanks. Only at the smallest size is a word broken between letters, and a detail that still does not
-fit is cut with an ellipsis and named in `truncated`, so the preview can say what did not fit. When even one
-row per detail is too high for the roll (all nine details), the last details are left off, never drawn
+fit is cut with an ellipsis and named in `truncated`, so the preview can say what did not fit. When the rows are
+still too high for the roll, the details of two rows lose their second row, the last detail first, only as many
+as needed; when even one row per detail is too high (all nine details), the last details are left off, never drawn
 over the margin, and named in `dropped`. Pure drawing: no network, no database.
 """
 
@@ -209,7 +210,8 @@ def _choose(
 ) -> tuple[int, list[tuple[fields.Line, int]], list[int], tuple[str, ...]]:
     """The largest size at which every detail fits whole, without a word broken between letters; at
     the smallest size, in this order: words broken between letters, then details cut with an
-    ellipsis, then one row per detail, and if that is still too high the last details are left off.
+    ellipsis, then the details of two rows set to one cut row, the last detail first and only as many
+    as needed, and if even one row per detail is too high the last details are left off.
     Returns the size, the rows (with the index of their detail), the indexes of the cut details and
     the keys of the details left off."""
     for size in range(MAX_FONT_SIZE, MIN_FONT_SIZE - 1, -1):
@@ -221,18 +223,28 @@ def _choose(
         arranged = _arrange(lines, size, width, split_words=True, allow_cut=allow_cut)
         if arranged is not None and len(arranged[0]) * _pitch(size) <= height:
             return size, arranged[0], arranged[1], ()
-    # Too many rows even at the smallest size: one row per detail, each cut to the width.
-    rows: list[tuple[fields.Line, int]] = []
-    cut: list[int] = []
-    for index, line in enumerate(lines):
-        text = _cut(line.text, line.bold, size, width)
-        if text != line.text:
-            cut.append(index)
-        rows.append((fields.Line(text, line.bold), index))
+    # Too many rows even at the smallest size (p136). `arranged` is the cut variant, which is never None.
+    # Details of two rows are set to one cut row, the last detail first, and only until the rest fits:
+    # the front details keep their second row. If one row per detail is still too high, the last ones are left off.
     room = max(1, height // _pitch(size))  # rows that fit between the margins (one at least: never an empty text area)
-    dropped = tuple(line.key for line in lines[room:])
-    cut = [index for index in cut if index < room]
-    return size, rows[:room], cut, dropped
+    assert arranged is not None
+    rows, cut = arranged
+    for index in range(len(lines) - 1, -1, -1):
+        if len(rows) <= room:
+            break
+        if sum(1 for _, owner in rows if owner == index) < 2:
+            continue
+        line = lines[index]
+        first = next(position for position, (_, owner) in enumerate(rows) if owner == index)
+        rows = [pair for pair in rows if pair[1] != index]
+        rows.insert(first, (fields.Line(_cut(line.text, line.bold, size, width), line.bold), index))
+        if index not in cut:
+            cut.append(index)
+    dropped = tuple(line.key for line in lines[room:]) if len(rows) > room else ()
+    if dropped:  # one row per detail by now: the rows after the first `room` belong to the details left off
+        rows = rows[:room]
+        cut = [index for index in cut if index < room]
+    return size, rows, sorted(cut), dropped
 
 
 def render_label(
