@@ -10,6 +10,7 @@ fit is cut with an ellipsis and named in `truncated`, so the preview can say wha
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import lru_cache
@@ -35,6 +36,12 @@ _ELLIPSIS = "…"
 _MAX_ROWS = 2  # a detail that is too long for one row may take a second one
 _ERROR_LEVEL = "m"
 _CODE_SHARE = 0.46  # the code never takes more than this part of the width
+# A code whose dots (modules) are smaller than this is flagged: 6 dots = 0.51 mm at 300 dpi, the usual
+# advice for a phone held at arm's length is 0.5 mm. The code is at most 271 dots high: an address of
+# up to 86 characters (code version 5) keeps 6 dots, the usual one of 30 characters has 7, one of 87 to
+# 106 characters (version 6) has 5, one of about 125 has 4 (0.34 mm).
+MIN_MODULE_DOTS = 6
+_NOTDEF_PROBE = "￿"  # a noncharacter no font has: drawn as the font's own "missing" box
 
 
 @dataclass(frozen=True)
@@ -44,6 +51,14 @@ class Rendered:
     truncated: list[int]  # indexes of the details (in the order chosen) that did not fit and were cut
     font_size: int
     code_width: int  # dots the code takes, with its quiet border
+    module_dots: int  # dots of one square of the code
+    missing: tuple[str, ...] = ()  # characters of the rows drawn that the font does not have (they show as an empty box)
+    rtl: bool = False  # the rows hold letters that run right to left, which are drawn left to right
+
+    @property
+    def fine_code(self) -> bool:
+        """The code is so fine that a phone may read it badly (a very long address)."""
+        return self.module_dots < MIN_MODULE_DOTS
 
 
 @lru_cache(maxsize=64)
@@ -51,7 +66,8 @@ def _font(size: int, bold: bool) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(FONT_BOLD if bold else FONT_REGULAR), size)
 
 
-def _draw_code(canvas: Image.Image, address: str, roll: Roll, centre: bool, has_text: bool) -> int:
+def _draw_code(canvas: Image.Image, address: str, roll: Roll, centre: bool, has_text: bool) -> tuple[int, int]:
+    """Draws the code; returns its width with the quiet border and the dots of one square."""
     matrix = segno.make(address, error=_ERROR_LEVEL, micro=False).matrix
     across = len(matrix) + 2 * _QUIET_MODULES
     limit = min(roll.dots_high, int(roll.dots_wide * _CODE_SHARE)) if has_text else roll.dots_high
@@ -66,12 +82,34 @@ def _draw_code(canvas: Image.Image, address: str, roll: Roll, centre: bool, has_
             if cell:
                 x, y = left + origin + column * module, top + origin + row * module
                 draw.rectangle([x, y, x + module - 1, y + module - 1], fill=0)
-    return size
+    return size, module
 
 
 def _pitch(size: int) -> int:
     ascent, descent = _font(size, False).getmetrics()
     return ascent + descent
+
+
+@lru_cache(maxsize=1024)
+def _has_glyph(char: str, bold: bool) -> bool:
+    font = _font(40, bold)
+    return bytes(font.getmask(char)) != bytes(font.getmask(_NOTDEF_PROBE))
+
+
+def _missing(rows: Iterable[fields.Line]) -> tuple[str, ...]:
+    """The characters of `rows` the font has no glyph for, once each, in the order they appear."""
+    found: dict[str, None] = {}
+    for row in rows:
+        for char in row.text:
+            if unicodedata.category(char)[0] in "CZ" or char in found:
+                continue
+            if not _has_glyph(char, row.bold):
+                found[char] = None
+    return tuple(found)
+
+
+def _runs_right_to_left(rows: Iterable[fields.Line]) -> bool:
+    return any(unicodedata.bidirectional(char) in ("R", "AL") for row in rows for char in row.text)
 
 
 def _break_word(word: str, bold: bool, size: int, width: int) -> list[str]:
@@ -200,7 +238,7 @@ def render_label(
     """The label picture for `data` with the chosen details and the code of `address`."""
     lines = fields.lines(data, chosen, caption)
     canvas = Image.new("L", (roll.dots_wide, roll.dots_high), 255)
-    code_width = _draw_code(canvas, address, roll, centre=not lines, has_text=bool(lines))
+    code_width, module = _draw_code(canvas, address, roll, centre=not lines, has_text=bool(lines))
     drawn: list[fields.Line] = []
     truncated: list[int] = []
     size = MIN_FONT_SIZE
@@ -216,4 +254,4 @@ def render_label(
         for position, line in enumerate(drawn):
             draw.text((left, top + position * pitch), line.text, font=_font(size, line.bold), fill=0, anchor="la")
     picture = canvas.point(lambda value: 255 if value >= 128 else 0).convert("1")
-    return Rendered(picture, drawn, truncated, size, code_width)
+    return Rendered(picture, drawn, truncated, size, code_width, module, _missing(drawn), _runs_right_to_left(drawn))

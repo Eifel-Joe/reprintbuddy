@@ -259,3 +259,78 @@ def test_free_text_wraps_at_blanks_only_and_not_in_the_middle_of_a_word():
     assert len(label.lines) == 2
     assert {word for row in label.lines for word in row.text.split()} <= set("Wall panel template type A".split())
     assert " ".join(row.text for row in label.lines) == "Wall panel template type A"
+
+
+# ---- what the label cannot show right: the notes of the preview (p118) ----
+
+COARSE = "https://" + "a" * 50 + ".example.org:8443/a/123456"  # 84 characters: still version 5, dots of 6
+FINE = "https://" + "a" * 60 + ".example.org:8443/a/123456"  # 94 characters: version 6, dots of 5
+FINER = "https://" + "a" * 100 + ".example.org/a/1"  # 124 characters: dots of 4
+
+
+def test_a_character_the_font_does_not_know_is_named():
+    label = make(("name",), name="Plate 中 and 日本")
+    assert label.missing == ("中", "日", "本")
+
+
+def test_the_characters_the_font_has_are_not_named():
+    label = make(("name", "sku", "label_text"), name="Größe Ä ö ü ß × € ← ✓", label_text="Fach 3, schräg")
+    assert label.missing == ()
+
+
+def test_a_missing_character_is_named_once_and_blanks_do_not_count():
+    assert make(("name",), name="中 中  中").missing == ("中",)
+
+
+def test_bold_and_regular_text_are_both_checked():
+    label = make(("name", "label_text"), name="Plain", label_text="中")  # the name is bold, the text is not
+    assert label.missing == ("中",)
+    assert make(("name",), name="中").missing == ("中",)
+
+
+def test_a_character_that_was_cut_off_is_not_named():
+    label = make(("name",), name="A" * 200 + " 中")
+    assert label.truncated == [0] and label.missing == ()
+
+
+def test_text_that_runs_right_to_left_is_flagged():
+    hebrew = make(("name",), name="שלום")
+    arabic = make(("sku",), sku="مرحبا")
+    assert hebrew.rtl and arabic.rtl
+    assert hebrew.missing == () and arabic.missing == ()  # the font has the letters, only the direction is wrong
+
+
+def test_left_to_right_text_is_not_flagged():
+    label = make(fields.FIELDS)
+    assert label.rtl is False and label.missing == () and label.fine_code is False
+
+
+def test_the_notes_are_empty_for_an_ordinary_label():
+    label = make()
+    assert (label.missing, label.rtl, label.fine_code) == ((), False, False)
+
+
+def test_the_limit_of_a_fine_code_is_half_a_millimetre_at_300_dpi():
+    assert render.MIN_MODULE_DOTS == 6  # 6 dots = 0.51 mm; the usual advice for a phone at arm's length is 0.5 mm
+
+
+def test_a_usual_address_has_big_dots_and_no_note():
+    label = make()
+    assert label.module_dots == 7 and label.fine_code is False
+
+
+def test_an_address_of_up_to_eighty_odd_characters_is_still_fine():
+    label = render.render_label(data(), fields.DEFAULT_FIELDS, COARSE, DK_11209, caption)
+    assert label.module_dots == 6 and label.fine_code is False
+    assert scanned(label.image) == [COARSE]
+
+
+def test_a_longer_address_makes_the_code_too_fine():
+    for address, dots in ((FINE, 5), (FINER, 4)):
+        label = render.render_label(data(), fields.DEFAULT_FIELDS, address, DK_11209, caption)
+        assert label.module_dots == dots and label.fine_code is True
+
+
+def test_the_code_alone_in_the_middle_has_the_same_dots_per_module_note():
+    label = render.render_label(data(), (), FINE, DK_11209, caption)
+    assert label.fine_code is True
