@@ -176,7 +176,8 @@ def _install_auto_check(app: FastAPI) -> None:
     app.state.auto_check = AutoCheck(
         enabled=enabled,
         is_install=lambda: is_git_install(app.state.ops.install_dir),
-        busy=lambda: update_running(app.state.db_path.parent, app.state.ops.runner, datetime.now(UTC)),
+        busy=lambda: app.state.update_starting
+        or update_running(app.state.db_path.parent, app.state.ops.runner, datetime.now(UTC)),
         check=check,
         store=store,
         wait=wait,
@@ -308,9 +309,13 @@ def create_app(
         sessionmaker,
         lambda: deps.bambuddy_client(app),
         # A restore counts like an update: the engine must not touch the database it replaces.
+        # A restore, and a click on "Update" whose sudo is still on its way, count like a running update.
         update_running=lambda: app.state.restore.active
+        or app.state.update_starting
         or update_running(db_path.parent, app.state.ops.runner, datetime.now(UTC)),
-        update_started=lambda: app.state.restore.active or update_just_started(db_path.parent, datetime.now(UTC)),
+        update_started=lambda: app.state.restore.active
+        or app.state.update_starting
+        or update_just_started(db_path.parent, datetime.now(UTC)),
         publish=live.publish,
     )
     app.state.ticker.add_poll_hook("filament", filament.poll_hook)  # the daily record and receipt check (B6)

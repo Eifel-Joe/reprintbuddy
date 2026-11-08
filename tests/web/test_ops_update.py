@@ -548,17 +548,17 @@ async def test_a_restore_that_begins_while_the_start_asks_systemd_wins(ops_env, 
     )
     app = ops_env.client.app
 
-    asked = []
+    armed = []  # set right before the POST: the first question after that is the handler's own
 
     async def stale_then_a_restore_begins(*_args):
-        asked.append(1)
-        if len(asked) == 2:  # the first is the write guard, the second the handler itself
+        if armed:
             app.state.restore.phase = "running"
         return False  # systemd says the old update is dead
 
     monkeypatch.setattr(routes, "update_running_async", stale_then_a_restore_begins)
     async with asgi_client(app, ops_env.client.cookies.get(COOKIE)) as client:
         token = token_of(await client.get("/settings"))
+        armed.append(1)
         response = await client.post("/settings/update", data={"csrf_token": token})
     assert response.status_code == 303, response.text[:300]
     assert response.headers["location"] == "/settings?tab=maintenance&ops=busy#ops-update"
@@ -584,6 +584,7 @@ async def test_cancelling_the_start_stops_sudo_and_frees_the_gate(ops_env):
         assert time.monotonic() - began < 2
     assert await asyncio.to_thread(seen_stop.wait, 5)  # the command itself was told to stop
     assert app.state.update_starting is False
+    assert read_status(data_dir(ops_env)).state == "queued"  # left as it is; believed for the grace only
 
 
 async def test_cancelling_the_restart_stops_sudo(ops_env):
@@ -625,3 +626,23 @@ def test_the_installed_tag_is_asked_in_a_worker_thread(ops_env):
     assert where == ["worker thread"]
     ops_env.client.get("/settings?tab=maintenance")
     assert where == ["worker thread"]  # asked once, then remembered
+
+
+# --- review: a click whose sudo is still on its way counts as a running update everywhere ----------------------
+
+
+def test_a_start_on_its_way_pauses_writes_and_is_seen_by_the_engine(ops_env):
+    """"queued" is believed for 15 s only and sudo may take as long: the gate itself says busy."""
+    app = ops_env.client.app
+    app.state.update_starting = True
+    try:
+        token = csrf_of(ops_env.client, "/settings")
+        response = ops_env.client.post("/settings/language", data={"csrf_token": token, "language": "de"})
+        assert response.status_code == 503  # the write guard
+        assert app.state.ticker.update_running() is True  # the engine holds its ticks and sends
+        assert app.state.ticker.update_started() is True
+    finally:
+        app.state.update_starting = False
+    assert app.state.ticker.update_running() is False
+    token = csrf_of(ops_env.client, "/settings")
+    assert ops_env.client.post("/settings/language", data={"csrf_token": token, "language": "de"}).status_code == 303

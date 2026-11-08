@@ -862,3 +862,23 @@ def test_restart_is_asked_even_if_the_new_address_cannot_be_read(ops_env, monkey
     response = confirm(ops_env)
     assert response.status_code == 200
     assert RESTART_CMD in ops_env.runner.calls
+
+
+def test_a_restore_is_refused_while_a_click_on_update_has_its_sudo_on_the_way(ops_env, monkeypatch):
+    """The write guard already pauses it; this is the restore's own look (the gate may be set after the guard)."""
+    from reprintbuddy.web.routes import ops as routes
+
+    async def not_running(_request):
+        return False
+
+    monkeypatch.setattr(routes, "update_busy", not_running)  # past the guard
+    upload(ops_env, made_backup(ops_env))
+    shown = staged_token(ops_env)
+    app = ops_env.client.app
+    app.state.update_starting = True
+    try:
+        response = confirm_with(ops_env, shown)
+    finally:
+        app.state.update_starting = False
+    assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_busy#ops-restore"
+    assert app.state.restore.phase == "idle" and backups(ops_env) == []

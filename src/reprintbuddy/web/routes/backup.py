@@ -306,7 +306,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
     # starting meanwhile finds the restore running and is refused.
     state: RestoreState = app.state.restore
     data_dir = app.state.db_path.parent
-    if state.active:
+    if state.active or app.state.update_starting:  # a click on "Update" whose sudo is still on its way
         _remove(candidate)
         return _back("restore_busy", "ops-restore")
     state.phase = "running"

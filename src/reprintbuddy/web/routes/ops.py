@@ -138,7 +138,13 @@ async def warm_installed(request: Request) -> None:
 
 
 async def update_busy(request: Request) -> bool:
-    """Does an update really run? Asked in a worker thread (v0.3.8 p96): systemd may take seconds."""
+    """Does an update really run? Asked in a worker thread (v0.3.8 p96): systemd may take seconds.
+
+    A click on "Update" whose sudo is still on its way counts as running: "queued" is only believed
+    for `QUEUE_GRACE` seconds, and sudo may take as long (review of v0.3.8).
+    """
+    if request.app.state.update_starting:
+        return True
     return await update_running_async(_data_dir(request), request.app.state.ops.runner, _utc_now())
 
 
@@ -348,9 +354,11 @@ async def _start_update(request: Request):
     info: VersionInfo | None = getattr(app.state, "version_info", None)
     if info is None or not info.update_available:
         return _back("no_update")
-    # From the last look at the restore to "queued" there is no `await`.
+    # From the last look at the restore to "queued" there is no `await`. `started_at` is taken here,
+    # not before the questions above: the grace in which "queued" counts as running starts now.
     if app.state.restore.active:
         return _back("busy")
+    now = _utc_now()
     write_status(
         data_dir,
         UpdateStatus(
@@ -361,6 +369,9 @@ async def _start_update(request: Request):
             started_at=now,
         ),
     )
+    # Cancelled here (a shutdown): sudo is killed, the gate is freed and "queued" stays; it is believed
+    # for the grace only, then systemd's word counts (the unit never started), and the card shows
+    # "interrupted" until the status is old. Not rewritten to "failed": `--no-block` may have gone through.
     try:
         result = await in_thread(start_update_unit, ops.runner)  # sudo may take seconds
     except Exception as error:  # noqa: BLE001 - the state must not stay "queued" for a unit that never started
