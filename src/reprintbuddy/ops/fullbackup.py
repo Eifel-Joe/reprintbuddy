@@ -284,6 +284,7 @@ def create_backup(
     token = secrets.token_hex(8)
     snapshot = work_dir / f"snapshot-{token}.db"
     path = work_dir / f"backup-{token}.zip"
+    blocks: Iterable[bytes] | None = None
     try:
         _snapshot(db_path, snapshot)
         revision = _revision(snapshot)
@@ -338,6 +339,11 @@ def create_backup(
                 path.unlink()
             raise
     finally:
+        # The block reader holds the snapshot open; after a failure in the middle of writing it is still
+        # alive (the traceback keeps it), and a file that is open cannot be removed on Windows.
+        close = getattr(blocks, "close", None)
+        if close is not None:
+            close()
         remove_database_files(snapshot)
     suffix = "-encrypted" if password else ""
     return CreatedBackup(path, f"reprintbuddy-backup-{now:%Y%m%d-%H%M%S}{suffix}.zip")

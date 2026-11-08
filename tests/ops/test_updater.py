@@ -493,8 +493,9 @@ def test_reason_of_a_pip_failure_skips_the_retry_warnings(update_env):
 
 
 def test_an_environment_with_an_older_python_than_the_new_version_needs_rolls_back_and_says_so(update_env):
-    """v0.3.9 p101: the new version needs Python 3.12; an installation whose environment was built on 3.11
-    (Debian 12) cannot take it. pip refuses; the old version goes on, and the page names the reason in plain words."""
+    """v0.3.9 p101: pip refuses a release whose Python floor is above the environment's Python; the old version goes
+    on and the page names the reason in plain words. This is the updater of v0.3.9 and later (the one of an installed
+    v0.3.8 on Debian 12 is the old code and shows pip's raw line: the rollback below is the same either way)."""
     e = update_env
     pip_says = (
         "Processing /opt/reprintbuddy\n"

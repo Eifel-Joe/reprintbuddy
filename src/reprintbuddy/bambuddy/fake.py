@@ -350,7 +350,9 @@ class FakeBambuddy:
             if printer is None:
                 raise BambuddyRejected("Printer not found", status=400)
         else:
-            # matched without regard to case; stored the way the printer spells it
+            # Matched without regard to case; stored the way the printer spells it. Left out: Bambuddy's
+            # `normalize_model_name` also turns internal codes and long names ("C13", "Bambu Lab X1 Carbon")
+            # into the short name first; Reprintbuddy only ever sends the short names of its own printers.
             match = next(
                 (
                     p for p in self._printers
@@ -372,7 +374,7 @@ class FakeBambuddy:
                 f"{target_model} printers",
                 status=400,
             )
-        if not file.sliced:
+        if not file.sliced and file.filename.lower().endswith(".3mf"):  # Bambuddy: `ensure_sliced` looks at .3mf only
             raise BambuddyRejected(
                 f"{file.filename} isn't sliced yet. Slice it first, then print the sliced file.",
                 status=400,

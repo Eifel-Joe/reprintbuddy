@@ -175,3 +175,36 @@ def test_a_database_over_the_limit_is_refused_before_it_is_packed(live, work, mo
     with pytest.raises(fb.TooLarge):
         fb.create_backup(live, work_dir=work, password=None, now=NOW)
     assert list(work.iterdir()) == []  # nothing is left behind
+
+
+@pytest.mark.parametrize("password", [None, "sicher-genug-1"])
+def test_the_file_equals_the_old_one_also_across_block_boundaries(big_live, work, monkeypatch, password):
+    """A database of 24 MiB is read in 24 blocks: packing and sealing across the block ends gives the same bytes."""
+    monkeypatch.setattr(bc, "new_salt", lambda: b"S" * bc.SALT_BYTES)
+    monkeypatch.setattr(bc, "new_nonce", lambda: b"N" * bc.NONCE_BYTES)
+    old = legacy_create_backup(big_live, work_dir=work, password=password, now=NOW)
+    old_bytes = old.read_bytes()
+    old.unlink()
+    new = fb.create_backup(big_live, work_dir=work, password=password, now=NOW)
+    assert new.path.read_bytes() == old_bytes
+
+
+@pytest.mark.parametrize("password", [None, "sicher-genug-1"])
+def test_a_failure_in_the_middle_of_writing_leaves_nothing_behind(live, work, monkeypatch, password):
+    """The snapshot and the half-written file are gone, and the snapshot is closed first (on Windows an open
+    file cannot be removed)."""
+    real = fb._write_member
+    calls = []
+
+    def failing(archive, info, blocks):
+        calls.append(info.filename)
+        if info.filename == fb.MANIFEST:
+            return real(archive, info, blocks)
+        next(iter(blocks))  # the first block of the database has been read
+        raise OSError("disk full")
+
+    monkeypatch.setattr(fb, "_write_member", failing)
+    with pytest.raises(OSError, match="disk full"):
+        fb.create_backup(live, work_dir=work, password=password, now=NOW)
+    assert len(calls) == 2
+    assert list(work.iterdir()) == []

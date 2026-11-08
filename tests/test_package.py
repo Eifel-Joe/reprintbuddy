@@ -49,8 +49,9 @@ def test_httpx_floor_is_the_version_the_shared_tls_context_was_checked_with():
     project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     floor = _floor(_requirement("httpx", project["dependencies"]))
     assert floor >= (0, 28, 1)
-    installed = tuple(int(part) for part in metadata.version("httpx").split(".")[:3])
-    assert installed >= floor
+    from packaging.version import Version
+
+    assert Version(metadata.version("httpx")) >= Version(".".join(str(part) for part in floor))
 
 
 def test_respx_floor_supports_the_httpx_floor():

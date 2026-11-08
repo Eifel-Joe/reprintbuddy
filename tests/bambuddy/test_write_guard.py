@@ -291,13 +291,25 @@ def check_live(text: str) -> list[str]:
     return problems
 
 
+def _on_a_client(call: ast.Call) -> bool:
+    """`getattr(<something called client or http>, ...)`: reaching a method of the client by text. Other
+    `getattr` calls (settings of the app, optional attributes) are everyday code."""
+    target = call.args[0] if call.args else None
+    name = (_name(target) or "") if target is not None else ""
+    return "client" in name.lower() or "http" in name.lower()
+
+
 def check_holder(text: str) -> list[str]:
     """Every way a module holding an `httpx.AsyncClient` could send with it itself."""
     problems = []
     for node in ast.walk(ast.parse(text)):
-        if isinstance(node, ast.Call) and _name(node.func) in HTTP_METHODS:
+        # the client's own helpers (`_post`, `_send`) and a name reached by text (`getattr`) too: a holder
+        # that went round the public methods would be as much a write as one calling `.post` (v0.3.9 p75)
+        if isinstance(node, ast.Call) and (
+            _name(node.func) in GUARDED or (_name(node.func) == "getattr" and _on_a_client(node))
+        ):
             problems.append(f"call of {_name(node.func)} (line {node.lineno})")
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value in HTTP_METHODS:
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value in GUARDED:
             problems.append(f"the name {node.value!r} appears as a text (line {node.lineno})")
     return problems
 
@@ -517,7 +529,11 @@ HOLDER_BYPASSES = {
     "request": ('await client.request("DELETE", url)', "call of request"),
     "stream": ('client.stream("PUT", url)', "call of stream"),
     "send": ('await client.send(client.build_request("POST", url))', "call of send"),
-    "getattr": ('await getattr(client, "patch")(url)', "the name 'patch' appears as a text"),
+    "getattr": ('await getattr(client, "patch")(url)', "call of getattr"),
+    "getattr-variable": ("await getattr(client, name)(url)", "call of getattr"),
+    "send-helper": ('await client._send("DELETE", "/queue/1")', "call of _send"),
+    "post-helper": ('await client._post("/queue/1/start", {})', "call of _post"),
+    "helper-as-text": ('helper = "_post"', "the name '_post' appears as a text"),
 }
 
 

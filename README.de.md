@@ -56,8 +56,9 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 - Ein Rechner, eine VM oder ein Container (z. B. Proxmox-LXC, unprivilegiert genügt) mit
   **Debian 13** oder neuer. Reprintbuddy braucht Python 3.12 oder neuer; Debian 12 hat nur
   Python 3.11, deshalb bricht das Installationsskript dort ab, und eine auf Debian 12 gemachte
-  Installation kann nicht auf diese Version aktualisieren (die Update-Seite sagt es, die laufende
-  Version bleibt). Ein CPU-Kern, 1 GB RAM und 8 GB Platte reichen. Docker ist nicht nötig.
+  Installation kann nicht auf diese Version aktualisieren: das Update scheitert mit der Meldung von
+  pip („requires a different Python“), wird zurückgerollt, und die laufende Version bleibt.
+  Vorher eine Sicherung ziehen und Reprintbuddy auf Debian 13 neu einrichten (*Sicherung und Export*). Ein CPU-Kern, 1 GB RAM und 8 GB Platte reichen. Docker ist nicht nötig.
 - Ausgehender Netzzugang dieses Rechners zu den Debian-Paketquellen (`apt`),
   `github.com` und `raw.githubusercontent.com` (Installation und Updates),
   `pypi.org` und `files.pythonhosted.org` (Python-Pakete, bei der Installation und
