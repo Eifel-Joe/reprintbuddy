@@ -64,8 +64,8 @@ def _too_old_python(result: CommandResult) -> str | None:
         return None
     return (
         f"the new version needs Python {found['needed']} or newer, this installation runs Python {found['found']}; "
-        "upgrade the system to Debian 13, then run the install command again (it keeps your data), "
-        "or set Reprintbuddy up again on Debian 13 and restore a backup there"
+        "upgrade the system to a Debian release that has it, then run the install command again (it keeps "
+        "your data), or set Reprintbuddy up again there and restore a backup"
     )
 
 

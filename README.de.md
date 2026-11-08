@@ -57,7 +57,7 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
   **Debian 13** oder neuer. Reprintbuddy braucht Python 3.12 oder neuer; Debian 12 hat nur
   Python 3.11, deshalb bricht das Installationsskript dort ab. **Auf einem Debian-12-System:** das
   System auf Debian 13 aktualisieren (das Debian-Release-Upgrade), danach den Installationsbefehl
-  erneut ausführen. Er erkennt, dass die Python-Umgebung fehlt, baut sie neu und behält die
+  erneut ausführen. Er erkennt, dass die Python-Umgebung nicht mehr zum System-Python passt, baut sie neu und behält die
   installierte Version, die Datenbank und alle Einstellungen. Eine auf Debian 12 gemachte Installation
   kann vorher nicht auf diese Version aktualisieren: das Update scheitert mit der Meldung von pip
   („requires a different Python“), wird zurückgerollt, und die laufende Version bleibt. Vorher eine

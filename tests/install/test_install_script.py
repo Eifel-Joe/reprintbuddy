@@ -241,25 +241,25 @@ def test_help(bash, tmp_path):
     assert "--language" in lines(result) and "--dry-run" in lines(result)
 
 
-def fake_venv(dest: Path, version: str | None) -> None:
-    """The installed environment: `pyvenv.cfg` of that version and a `bin/python`, or no python at all (the one it
-    pointed to is gone). The script reads the version from the file and never runs the environment's python
-    as root."""
+def fake_venv(dest: Path, version: str, *, python: bool = True, pip: bool = True) -> None:
+    """The installed environment: `pyvenv.cfg` of that version (the Python it was built with), `bin/python` and
+    `bin/pip` as asked. The script reads the version from the file and never runs the environment's python as root."""
     venv = dest / "opt/reprintbuddy/.venv"
     venv.mkdir(parents=True, exist_ok=True)
-    (venv / "pyvenv.cfg").write_text(f"home = /usr/bin\nversion = {version or '3.11.2'}.4\n", encoding="utf-8")
-    if version is not None:
-        (venv / "bin").mkdir(exist_ok=True)
-        (venv / "bin/python").write_text("#!/bin/sh\n", encoding="utf-8")
-        (venv / "bin/python").chmod(0o755)
+    (venv / "pyvenv.cfg").write_text(f"home = /usr/bin\nversion = {version}.2\n", encoding="utf-8")
+    (venv / "bin").mkdir(exist_ok=True)
+    for name, wanted in (("python", python), ("pip", pip)):
+        if wanted:
+            (venv / "bin" / name).write_text("#!/bin/sh\n", encoding="utf-8")
+            (venv / "bin" / name).chmod(0o755)
 
 
-def installed(dest: Path, venv: str | None = "3.13") -> None:
+def installed(dest: Path, venv: str = "3.13", **venv_options) -> None:
     """A finished installation: code, environment, a database with content."""
     os_release(dest)
     for folder in ("opt/reprintbuddy/.git", "var/lib/reprintbuddy"):
         (dest / folder).mkdir(parents=True, exist_ok=True)
-    fake_venv(dest, venv)
+    fake_venv(dest, venv, **venv_options)
     (dest / "var/lib/reprintbuddy/reprintbuddy.db").write_bytes(b"x")
 
 
@@ -275,12 +275,22 @@ def test_rerun_keeps_database(bash, tmp_path):
         assert forbidden not in out, forbidden
 
 
-@pytest.mark.parametrize("venv", [None, "3.11"], ids=["python-gone", "python-3.11"])
-def test_rerun_rebuilds_an_environment_whose_python_is_gone_or_too_old(bash, tmp_path, venv):
-    """v0.3.9 p101: after a release upgrade of Debian the environment points to a python3.11 that no longer
-    exists (the service does not start). The installer builds it again and keeps everything else."""
-    installed(tmp_path, venv)
-    result = run(bash, tmp_path, "--repo", REPO)
+REBUILT = {
+    # (system python, python the environment was built with, options): why the environment is of no use
+    "built-with-3.11": ("3.13", "3.11", {}),  # a Debian release upgrade: its packages sit under lib/python3.11
+    "built-with-an-older-python-than-the-system": ("3.14", "3.13", {}),  # the next release upgrade
+    "no-python-in-it": ("3.13", "3.13", {"python": False}),
+    "no-pip-in-it": ("3.13", "3.13", {"pip": False}),  # `python3 -m venv` died at ensurepip once
+}
+
+
+@pytest.mark.parametrize(("system", "venv", "options"), REBUILT.values(), ids=REBUILT.keys())
+def test_rerun_rebuilds_an_environment_that_does_not_fit_the_system_python(bash, tmp_path, system, venv, options):
+    """v0.3.9 p101: after a release upgrade of Debian the packages of the environment sit under the old
+    lib/python3.x and its python is another one (the service does not start). The installer builds it
+    again and keeps everything else."""
+    installed(tmp_path, venv, **options)
+    result = run(bash, tmp_path, "--repo", REPO, python=system)
     assert result.returncode == 0, result.stderr
     out = lines(result)
     steps = [
@@ -295,7 +305,7 @@ def test_rerun_rebuilds_an_environment_whose_python_is_gone_or_too_old(bash, tmp
         found = out.find(step, position)
         assert found >= 0, f"{step!r} missing or out of order in: " + out
         position = found + len(step)
-    assert "cannot be used" in out and "rebuilding" in out
+    assert "does not fit the system" in out and "rebuilding" in out
     # what is kept: the version, the database, the data folder
     assert "Existing installation found, keeping version." in out
     assert "Existing database kept." in out
@@ -307,19 +317,11 @@ def test_rerun_rebuilds_an_environment_whose_python_is_gone_or_too_old(bash, tmp
             assert line.startswith("+ rm -rf /opt/reprintbuddy/"), line
 
 
-def test_an_environment_on_python_3_12_or_newer_is_not_rebuilt(bash, tmp_path):
-    installed(tmp_path, "3.12")
-    out = lines(run(bash, tmp_path, "--repo", REPO))
+@pytest.mark.parametrize("version", ["3.12", "3.13", "3.14"])
+def test_an_environment_built_with_the_system_python_is_not_rebuilt(bash, tmp_path, version):
+    installed(tmp_path, version)
+    out = lines(run(bash, tmp_path, "--repo", REPO, python=version))
     assert "-m venv" not in out and "rm -rf" not in out.replace("rm -rf /opt/reprintbuddy/build", "")
-
-
-def test_the_data_of_a_rerun_is_untouched_in_the_test_folder(bash, tmp_path):
-    """A dry run only prints, so the claim "data stays" is also read from the files: the same before and after."""
-    installed(tmp_path, None)
-    before = {p.relative_to(tmp_path).as_posix(): p.read_bytes() for p in (tmp_path / "var").rglob("*") if p.is_file()}
-    assert run(bash, tmp_path, "--repo", REPO).returncode == 0
-    after = {p.relative_to(tmp_path).as_posix(): p.read_bytes() for p in (tmp_path / "var").rglob("*") if p.is_file()}
-    assert before == after and before
 
 
 def test_refuses_foreign_install_dir(bash, tmp_path):

@@ -270,13 +270,21 @@ fetch_code() {
     checkout_newest_release
 }
 
-# Can the installed environment run? Its python is a link to the system's python3.x: a release upgrade of
-# Debian removes the old one (the service then does not start), and an environment on a Python older than
-# 3.12 cannot take a current release. Only the environment is rebuilt, never the data (v0.3.9 p101).
-# The version is read from pyvenv.cfg: the environment's own python is not run (as root) just to ask.
+# Does the installed environment still fit? It was built with one Python and holds its packages under that
+# Python's lib/python3.x; its `bin/python` is a link to the system's python3. After a release upgrade of
+# Debian the system's python3 is another one (3.11 -> 3.13): the link is alive, but the packages are not found,
+# and the service does not start. The environment is of no use when it was built with another Python than the
+# system's now, with a Python older than 3.12, or when python or pip is missing in it. Only the environment is
+# rebuilt, never the data (v0.3.9 p101). Its Python version is read from pyvenv.cfg: the environment's own
+# python is not run (as root) just to ask.
+python_version_of_system() {
+    python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true
+}
+
 venv_usable() {
-    local venv_python="${DESTDIR}${VENV_DIR}/bin/python" cfg="${DESTDIR}${VENV_DIR}/pyvenv.cfg" version major minor
-    [ -x "${venv_python}" ] && [ -r "${cfg}" ] || return 1
+    local venv_python="${DESTDIR}${VENV_DIR}/bin/python" venv_pip="${DESTDIR}${VENV_DIR}/bin/pip"
+    local cfg="${DESTDIR}${VENV_DIR}/pyvenv.cfg" version major minor system
+    [ -x "${venv_python}" ] && [ -x "${venv_pip}" ] && [ -r "${cfg}" ] || return 1
     version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*//p' "${cfg}" | head -n 1)"
     major="${version%%.*}"
     minor="${version#*.}"
@@ -284,14 +292,16 @@ venv_usable() {
     case "${major}${minor}" in
         '' | *[!0-9]*) return 1 ;;
     esac
-    [ "${major}" -gt 3 ] || { [ "${major}" -eq 3 ] && [ "${minor}" -ge 12 ]; }
+    { [ "${major}" -gt 3 ] || { [ "${major}" -eq 3 ] && [ "${minor}" -ge 12 ]; }; } || return 1
+    system="$(python_version_of_system)"
+    [ -z "${system}" ] || [ "${system}" = "${major}.${minor}" ]
 }
 
 install_python() {
     local rebuild=0
     if [ -d "${DESTDIR}${VENV_DIR}" ] && ! venv_usable; then
-        say "The Python environment cannot be used (its Python is gone or older than 3.12, for example after a"
-        say "system upgrade): rebuilding it. The installed version, the database and the settings are kept."
+        say "The Python environment does not fit the system's Python any more (for example after a system"
+        say "upgrade): rebuilding it. The installed version, the database and the settings are kept."
         rebuild=1
         run systemctl stop "${SERVICE}" || true
         run rm -rf "${VENV_DIR}" "${INSTALL_DIR}/.venv.rollback"

@@ -508,7 +508,7 @@ def test_an_environment_with_an_older_python_than_the_new_version_needs_rolls_ba
     assert ("git", "-C", e.d, "checkout", "--quiet", "--detach", REF) in e.runner.calls  # back on the old code
     assert STOP_CMD in e.runner.calls and START_CMD in e.runner.calls  # and the service was started again
     assert result.message.startswith("install:")
-    for word in ("Python 3.12", "Python 3.11.2", "Debian 13"):
+    for word in ("Python 3.12", "Python 3.11.2", "install command"):
         assert word in result.message, result.message
     assert "ERROR" not in result.message  # pip's line is not shown raw
 
