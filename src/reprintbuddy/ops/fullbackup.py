@@ -851,8 +851,11 @@ def verify_database(
     """
     try:
         _verify_database(candidate, manifest, work_dir, abandoned)
-    except Abandoned:
-        remove_database_files(candidate)  # also the copy the last step put in its place
+    except BaseException:
+        # Abandoned, or any other end of a check nobody waits for: where the caller's own removal failed
+        # (Windows: the file was still open in this thread), the file goes now.
+        if abandoned is not None and abandoned.is_set():
+            remove_database_files(candidate)  # also the copy the last step put in its place
         raise
 
 

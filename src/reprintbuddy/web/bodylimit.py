@@ -109,7 +109,7 @@ class BodyLimitMiddleware:
         if _CONTROL.search(scope.get("path", "")):
             await _answer(send, 400, b"Bad Request")
             return
-        own =self.limits.get(route_path(scope))
+        own = self.limits.get(route_path(scope))
         limit = self.default_limit if own is None else own
         if _header(scope, b"transfer-encoding") is not None:
             if own is None:

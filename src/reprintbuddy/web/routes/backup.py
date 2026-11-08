@@ -356,15 +356,15 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         state.phase = "idle"
         _remove(candidate)
         raise
+    replace_begun = threading.Event()  # set by the worker as it starts: from then on the database may be replaced
+
+    def replace() -> None:
+        replace_begun.set()
+        fb.replace_database(candidate, app.state.db_path, now=_now(), protect=_protected(request))
+
     try:
         async with app.state.ticker.hold():
-            await run_in_threadpool(
-                fb.replace_database,
-                candidate,
-                app.state.db_path,
-                now=_now(),
-                protect=_protected(request),
-            )
+            await run_in_threadpool(replace)
     except Exception as error:  # noqa: BLE001 - it fails before or in the one-step copy: nothing changed
         state.phase = "idle"
         _remove(candidate)
@@ -373,6 +373,15 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
             return _confirm_page(request, manifest, "ops.restore.retry", "retry")  # p141: the upload stays
         _discard(request)
         return _back("restore_failed", "ops-restore")
+    except BaseException:  # cancelled (shutdown, a closed browser) while waiting for the tick or replacing
+        if replace_begun.is_set():
+            # The worker may have replaced the database, or still does: the old process holds state of the
+            # old one. Writes stay paused and sign-in and the restart button work (as after a failed restart).
+            state.phase = "restart_pending"
+        else:
+            state.phase = "idle"
+            _remove(candidate)
+        raise
     # The old process holds state of the old database in memory (engine, rights): writes
     # and the engine stay paused until it is gone. Signing in and the restart button work,
     # in case the restart below fails or systemd takes it and nothing happens.

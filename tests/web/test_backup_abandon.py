@@ -6,6 +6,11 @@ route's `except Exception` did not even see the cancellation. These tests cancel
 (an `httpx` client on the ASGI app, `task.cancel()`) while the worker is held inside the check, then let
 the worker go on, and look at the work folder once the worker has ended.
 
+What these tests secure, honestly: through the middleware layers of the app the cancellation reaches the
+route only after the worker has ended, so here it is the route's own handling of the cancellation
+(`except BaseException`) that removes the file; the flag that stops a worker still running is tested on
+its own in tests/ops/test_fullbackup_abandon.py.
+
 p141. A file that cannot be checked because the machine failed (disk full, I/O error) is not a bad
 file: it stays, and the page asks to try again without uploading it a second time.
 """
@@ -255,3 +260,34 @@ def test_the_download_text_of_a_full_disk_is_unchanged(ops_env, monkeypatch):
     monkeypatch.setattr(fb, "create_backup", disk_full)
     response = download(ops_env)
     assert response.headers["location"] == f"{MAINTENANCE}&ops=backup_failed#ops-backup"
+
+
+async def test_cancelling_while_waiting_for_a_running_tick_gives_the_restore_state_back(ops_env):
+    """The restore waits for the tick lock after the check: a shutdown that cancels it there leaves neither
+    the decrypted copy nor a restore state stuck on "running" (found in the review of v0.3.11)."""
+    upload(ops_env, made_backup(ops_env, BACKUP_PASSWORD))
+    app = ops_env.client.app
+    lock = app.state.ticker._lock
+    await lock.acquire()  # a tick is running
+    try:
+        async with async_client(ops_env) as ac:
+            data = {
+                "csrf_token": await token_of(ac),
+                "backup_password": BACKUP_PASSWORD,
+                "upload_token": upload_token(ops_env),
+                "login_password": PASSWORD,
+            }
+            task = asyncio.create_task(ac.post("/settings/restore", data=data))
+            deadline = time.monotonic() + 20
+            while not (app.state.restore.phase == "running" and lock._waiters):
+                assert time.monotonic() < deadline
+                await asyncio.sleep(0.02)
+            assert [n for n in secret_files(ops_env) if n.startswith("candidate-")] != []  # the copy is there
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+    finally:
+        lock.release()
+    assert app.state.restore.phase == "idle"
+    assert await settled(ops_env) == []
+    assert ops_env.runner.calls == []
