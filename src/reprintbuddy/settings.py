@@ -6,6 +6,7 @@ Sensitive values are only ever shown as `MASK`; see `display_value`.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import secrets
@@ -15,6 +16,9 @@ from urllib.parse import urlsplit
 from sqlalchemy.orm import Session
 
 from reprintbuddy.bambuddy.connection import ConnectionCheck
+from reprintbuddy.labels import fields as label_fields
+from reprintbuddy.labels.addresses import is_local_or_wildcard
+from reprintbuddy.labels.rolls import DEFAULT_ROLL, ROLLS
 from reprintbuddy.models import Setting
 
 MASK = "********"
@@ -28,6 +32,9 @@ DEFAULTS: dict[str, object] = {
     "queue_running": True,
     "update_check": True,  # the automatic check for new versions (Spec 11.3a)
     "qr_base_url": None,  # the start of the address inside the QR codes (Spec 8.4); none = the server's own network address (found by Reprintbuddy)
+    "label_printer_host": None,  # the Brother label printer in the network (Spec 8.5); none = not set up
+    "label_roll": DEFAULT_ROLL,  # the roll in it (Spec 8.5)
+    "label_fields": list(label_fields.DEFAULT_FIELDS),  # the details on the label besides the QR code
     "bambuddy_url": None,
     "bambuddy_username": None,
     "bambuddy_api_key": None,
@@ -156,6 +163,49 @@ def _qr_base_url(value: Any) -> str | None:
     return text
 
 
+_HOSTNAME_LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?", re.IGNORECASE)
+
+
+def _label_printer_host(value: Any) -> str | None:
+    """The address of the label printer (Spec 8.5): an IP address or a name, nothing else (no web
+    address, port, path or user), and never this machine itself: the printer is another device.
+    Empty means not set up. The printer's address comes from here only, never from a request."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("expected an address")
+    text = value.strip()
+    if not text:
+        return None
+    if "%" in text:
+        raise ValueError("expected an IP address or a name")
+    try:
+        address = ipaddress.ip_address(text)
+    except ValueError:
+        name = text.rstrip(".")
+        if len(name) > 253 or not all(_HOSTNAME_LABEL.fullmatch(label) for label in name.split(".")):
+            raise ValueError("expected an IP address or a name") from None
+        if name.lower() == "localhost" or name.lower().endswith(".localhost"):
+            raise ValueError("the printer is another device, not this computer")
+        return name
+    if is_local_or_wildcard(str(address)):
+        raise ValueError("the printer is another device, not this computer")
+    return str(address)
+
+
+def _label_roll(value: Any) -> str:
+    if not isinstance(value, str) or value not in ROLLS:
+        raise ValueError("unknown roll")
+    return value
+
+
+def _label_fields(value: Any) -> list[str]:
+    """The chosen details, once each, in their fixed order."""
+    if not isinstance(value, list) or not all(isinstance(item, str) and item in label_fields.FIELDS for item in value):
+        raise ValueError("unknown detail")
+    return list(label_fields.clean(value))
+
+
 def _optional_pem(value: Any) -> str | None:
     if value is None:
         return None
@@ -174,6 +224,9 @@ _VALIDATORS: dict[str, Callable[[Any], object]] = {
     "queue_running": _bool,
     "update_check": _bool,
     "qr_base_url": _qr_base_url,
+    "label_printer_host": _label_printer_host,
+    "label_roll": _label_roll,
+    "label_fields": _label_fields,
     "bambuddy_url": _optional_url,
     "bambuddy_username": _optional_nonempty,
     "bambuddy_api_key": _api_key,

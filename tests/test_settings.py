@@ -28,6 +28,9 @@ EXPECTED_DEFAULTS = {
     "tls_cert": None,
     "tls_key": None,
     "update_check": True,  # v0.3.6, Spec 11.3a: the automatic check for new versions is on
+    "label_printer_host": None,  # v0.3.8, Spec 8.5: the label printer; none = not set up
+    "label_roll": "DK-11209",
+    "label_fields": ["name", "sku", "label_text"],
     "qr_base_url": None,  # v0.3.7, Spec 8.4: the address inside the QR codes; none = the address in use
 }
 
