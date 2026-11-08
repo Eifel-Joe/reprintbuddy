@@ -435,3 +435,103 @@ async def test_foreign_item_not_pending_has_int_position():
     fake = FakeBambuddy()
     done = fake.add_foreign_item("Done", status="completed")
     assert done.position == 0
+
+
+# ---- the fake checks in Bambuddy's order and with its rules (v0.3.9 p76) --------------------
+# Source: Bambuddy `backend/app/api/routes/print_queue.py` `add_to_queue`, `utils/printer_models.py`
+# `is_gcode_compatible`, `routes/library.py` `list_files`.
+
+
+async def test_enqueue_checks_printer_and_model_before_the_file():
+    """Bambuddy: printer (400) -> model with an active printer (400) -> library file (404)."""
+    fake = FakeBambuddy()
+    fake.add_printer("Printer 1", "A1")
+    with pytest.raises(BambuddyRejected) as err:
+        await fake.enqueue(_req(99, target_model="X1"))  # neither the model nor the file is there
+    assert (err.value.status, err.value.detail) == (400, "No active printers for model: X1")
+    with pytest.raises(BambuddyRejected) as err:
+        await fake.enqueue(_req(99, target_model=None, printer_id=7))
+    assert (err.value.status, err.value.detail) == (400, "Printer not found")
+    with pytest.raises(BambuddyRejected) as err:
+        await fake.enqueue(_req(99))
+    assert (err.value.status, err.value.detail) == (404, "Library file not found")
+
+
+async def test_enqueue_matches_the_model_without_regard_to_case_and_stores_the_printers_spelling():
+    fake = FakeBambuddy()
+    fake.add_printer("Printer 1", "X1C")
+    fid = fake.add_file("Template A.gcode.3mf", printer_model=None).id
+    item = await fake.enqueue(_req(fid, target_model="x1c"))
+    assert item.target_model == "X1C"
+
+
+@pytest.mark.parametrize(
+    ("sliced_for", "target", "accepted"),
+    [
+        ("A1", "A1", True),
+        ("a1", "A1", True),  # case does not matter
+        ("A1 mini", "A1MINI", True),  # neither do spaces
+        (None, "A1", True),  # no declaration: anything goes
+        ("A1", "P1S", False),  # another model
+        ("X1C", "P1S", True),  # same family (X1, X1C, X1E, P1P, P1S)
+        ("P1S", "X1", True),
+        ("C11", "P1P", True),  # internal code resolves to the short name
+        ("H2D", "A1", False),
+    ],
+)
+async def test_enqueue_refuses_a_file_sliced_for_an_incompatible_model(sliced_for, target, accepted):
+    fake = FakeBambuddy()
+    fake.add_printer("Printer 1", target)
+    fid = fake.add_file("Template A.gcode.3mf", printer_model=sliced_for).id
+    if accepted:
+        assert (await fake.enqueue(_req(fid, target_model=target))).target_model == target
+        return
+    with pytest.raises(BambuddyRejected) as err:
+        await fake.enqueue(_req(fid, target_model=target))
+    assert err.value.status == 400
+    assert err.value.detail == f"File was sliced for {sliced_for} and cannot be dispatched to {target} printers"
+    assert await fake.list_all_items() == []
+
+
+async def test_enqueue_to_a_printer_does_not_check_the_model_of_the_file():
+    """Bambuddy runs the model gate only for a model target (`if target_model_norm:`)."""
+    fake = FakeBambuddy()
+    fake.add_printer("Printer 1", "P1S")
+    fid = fake.add_file("Template A.gcode.3mf", printer_model="A1").id
+    assert (await fake.enqueue(_req(fid, target_model=None, printer_id=1))).printer_id == 1
+
+
+async def test_enqueue_refuses_a_file_that_is_not_sliced():
+    fake, fid = _ready()
+    raw = fake.add_file("Template B.3mf", sliced=False).id
+    with pytest.raises(BambuddyRejected) as err:
+        await fake.enqueue(_req(raw))
+    assert err.value.status == 400
+    assert err.value.detail == "Template B.3mf isn't sliced yet. Slice it first, then print the sliced file."
+
+
+async def test_a_new_entry_shifts_exactly_the_pending_entries_from_its_position_on():
+    """Bambuddy: `UPDATE ... WHERE status = 'pending' AND position >= p SET position = position + 1`;
+    the place is capped at (highest pending) + 1; entries in other states keep their position."""
+    fake, fid = _ready()
+    a, b, c = (fake.add_foreign_item(name) for name in "ABC")
+    fake.delete_item(b.id)  # a gap: positions 1 and 3
+    printing = fake.add_foreign_item("P")
+    fake.set_status(printing.id, "printing")  # leaves the pending positions (4)
+    placed = await fake.enqueue(_req(fid, insert_position=2))
+    assert placed.position == 2
+    assert (await fake.get_queue_item(a.id)).position == 1
+    assert (await fake.get_queue_item(c.id)).position == 4  # was 3, moved up
+    assert (await fake.get_queue_item(printing.id)).position == 4  # not pending: unchanged
+    capped = await fake.enqueue(_req(fid, insert_position=50))
+    assert capped.position == 5  # highest pending is 4
+
+
+async def test_files_come_back_sorted_by_name_like_bambuddys_listing():
+    fake = FakeBambuddy()
+    fake.add_file("Template C.gcode.3mf")
+    fake.add_file("Template A.gcode.3mf")
+    fake.add_file("Template B.gcode.3mf")
+    assert [f.filename for f in await fake.list_files(None)] == [
+        "Template A.gcode.3mf", "Template B.gcode.3mf", "Template C.gcode.3mf",
+    ]
