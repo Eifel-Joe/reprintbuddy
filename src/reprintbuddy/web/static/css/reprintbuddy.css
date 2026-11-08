@@ -1075,9 +1075,10 @@ form > .btn + .btn.secondary { margin-left: 0.5rem; }
 .label-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.6rem 1rem; }
 #label-preview-card .label-preview { margin-bottom: 0.75rem; }
 /* p118: the notes under a preview (a cut line, a missing character, right-to-left text, a fine code) */
-.label-notes { width: 100%; }
+.label-notes { display: contents; }  /* the wrapper takes no room: only a shown note adds a gap */
 .label-notes > .alert { margin: 0 0 0.75rem; }
 .label-notes > .alert[hidden] { display: none; }
+.label-body .label-notes > .alert { margin: 0; width: 100%; box-sizing: border-box; }
 .setting-row.stack .setting-control select { width: 100%; }
 
 /* The Bambuddy address (p113): a text area that wraps at any character, so a long address on a phone

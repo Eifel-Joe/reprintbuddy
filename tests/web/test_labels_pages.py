@@ -583,9 +583,12 @@ def test_a_very_long_qr_address_is_a_note_on_both_previews(configured, article):
     assert notes_of(configured.get(f"/articles/{article}/label.png")) == ["fine"]
 
 
-def test_a_cut_line_is_in_the_notes_too(ready_client):
-    every = ready_client.get("/settings/labels/preview.png?fields=" + ",".join(fields.FIELDS))
-    assert notes_of(every) == (["cut"] if every.headers["x-label-cut"] else [])
+def test_a_cut_line_is_in_the_notes_too(configured, ready_client):
+    with sm_of(ready_client).begin() as s:
+        long = make_article(s, name="N" * 300, sku="TA-202").id
+    response = configured.get(f"/articles/{long}/label.png")
+    assert response.headers["x-label-cut"] == "0"
+    assert notes_of(response) == ["cut"]
 
 
 def test_the_notes_are_on_the_settings_tab_and_the_article_card_hidden_until_the_script_shows_them(configured, article):

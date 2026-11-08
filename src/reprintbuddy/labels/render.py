@@ -63,7 +63,9 @@ class Rendered:
 
 @lru_cache(maxsize=64)
 def _font(size: int, bold: bool) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(str(FONT_BOLD if bold else FONT_REGULAR), size)
+    # The basic layout on every machine: raqm (where a system has it) would draw right-to-left text the
+    # right way round and measure other widths, so the picture and the note about it would differ.
+    return ImageFont.truetype(str(FONT_BOLD if bold else FONT_REGULAR), size, layout_engine=ImageFont.Layout.BASIC)
 
 
 def _draw_code(canvas: Image.Image, address: str, roll: Roll, centre: bool, has_text: bool) -> tuple[int, int]:
@@ -151,15 +153,13 @@ def _wrap(text: str, bold: bool, size: int, width: int, *, split_words: bool) ->
     return rows or [""]
 
 
-def _cut(text: str, bold: bool, size: int, width: int, head: int = 0) -> str:
-    """`text` shortened with an ellipsis so that it fits `width` (unchanged when it does). The first
-    `head` letters (the word before a number) stay as long as they fit with the ellipsis."""
+def _cut(text: str, bold: bool, size: int, width: int) -> str:
+    """`text` shortened with an ellipsis so that it fits `width` (unchanged when it does). The start
+    stays, so the word before a number is kept as long as it fits."""
     font = _font(size, bold)
     if font.getlength(text) <= width:
         return text
-    if head and font.getlength(text[:head].rstrip() + _ELLIPSIS) > width:
-        head = 0
-    low, high = head, len(text)
+    low, high = 0, len(text)
     while low < high:  # the longest start of the text that still fits with the ellipsis
         middle = (low + high + 1) // 2
         if font.getlength(text[:middle].rstrip() + _ELLIPSIS) <= width:
@@ -181,7 +181,7 @@ def _arrange(
     cut: list[int] = []
     for index, line in enumerate(lines):
         if line.fixed:
-            text = _cut(line.text, line.bold, size, width, line.head)
+            text = _cut(line.text, line.bold, size, width)
             if text != line.text:
                 if not allow_cut:
                     return None
@@ -221,7 +221,7 @@ def _choose(
     rows: list[tuple[fields.Line, int]] = []
     cut: list[int] = []
     for index, line in enumerate(lines):
-        text = _cut(line.text, line.bold, size, width, line.head)
+        text = _cut(line.text, line.bold, size, width)
         if text != line.text:
             cut.append(index)
         rows.append((fields.Line(text, line.bold), index))
