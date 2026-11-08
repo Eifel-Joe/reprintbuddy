@@ -39,6 +39,7 @@ from reprintbuddy.db import known_revisions
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops import running
 from reprintbuddy.ops.server import address_changed, base_url, effective_from_settings
+from reprintbuddy.ops.runner import in_thread
 from reprintbuddy.ops.service import request_restart
 from reprintbuddy.ops.status import read_status
 from reprintbuddy.web.csrf import verify_csrf
@@ -364,7 +365,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
                 new_url = base_url(_display_host(request, saved), saved.port, saved.tls)
     except Exception as error:  # noqa: BLE001 - only a hint; the restart must be asked for anyway
         log.warning("address after restore unreadable: %s", type(error).__name__)
-    result = await run_in_threadpool(request_restart, app.state.ops.runner)
+    result = await in_thread(request_restart, app.state.ops.runner)  # sudo may take seconds; a shutdown stops it
     if not result.ok:
         log.warning("restart after restore failed: %s", (result.stderr or "").strip()[:300])
     return render(request, "restored.html", restarted=result.ok, new_url=new_url, active_nav="settings")

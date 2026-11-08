@@ -23,7 +23,7 @@ from reprintbuddy.ops.tls import validate_tls_pair
 from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.routes.auth import password_confirmed
-from reprintbuddy.web.routes.ops import ops_view, update_busy
+from reprintbuddy.web.routes.ops import ops_view, update_busy, warm_installed
 from reprintbuddy.web.deps import flash, get_db, logged_in_user, render, start_session, take_verdict
 from reprintbuddy.web.formtoken import write_transaction
 
@@ -115,6 +115,7 @@ def _saved(
 @router.get("/settings")
 async def settings_page(request: Request, db: Session = Depends(get_db)):
     # The update card asks whether an update runs (systemd, in a worker thread: v0.3.8 p96).
+    await warm_installed(request)
     return _page(request, db, busy=await update_busy(request))
 
 

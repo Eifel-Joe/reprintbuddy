@@ -438,3 +438,190 @@ def test_the_write_guard_and_the_settings_page_ask_in_a_worker_thread(ops_env, m
     response = ops_env.client.post("/settings/language", data={"csrf_token": token, "language": "en"})  # the guard
     assert response.status_code == 303
     assert seen and set(seen) == {"worker thread"}, seen
+
+
+# --- v0.3.8: starting the update and the restart do not hold the event loop, and a shutdown stops them ----------
+
+import asyncio  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
+
+from test_concurrency import COOKIE, asgi_client, token_of  # noqa: E402
+
+from reprintbuddy.ops.runner import cancel_flag  # noqa: E402
+from reprintbuddy.ops.service import RESTART_CMD  # noqa: E402
+
+
+def hanging_sudo(env, command):
+    """Make `command` block (in the worker thread) until the test lets it go."""
+    started, release = threading.Event(), threading.Event()
+
+    def blocked(_call):
+        started.set()
+        release.wait(10)
+        return CommandResult(0)
+
+    env.runner.on(command, blocked)
+    return started, release
+
+
+def sudo_until_told_to_stop(env, command):
+    """A `command` that waits for the cancel flag of `in_thread` (what the real runner would do)."""
+    started, seen_stop = threading.Event(), threading.Event()
+
+    def waits(_call):
+        flag = cancel_flag.get()
+        started.set()
+        deadline = time.monotonic() + 10
+        while not flag.is_set() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if flag.is_set():
+            seen_stop.set()
+        return CommandResult(130, "", "cancelled")
+
+    env.runner.on(command, waits)
+    return started, seen_stop
+
+
+async def test_a_hanging_sudo_holds_neither_the_loop_nor_lets_a_second_click_through(ops_env):
+    git_env(ops_env)
+    check(ops_env)
+    started, release = hanging_sudo(ops_env, START_UPDATE_CMD)
+    app = ops_env.client.app
+    async with asgi_client(app, ops_env.client.cookies.get(COOKIE)) as client:
+        token = token_of(await client.get("/settings"))
+        first = asyncio.create_task(client.post("/settings/update", data={"csrf_token": token}))
+        assert await asyncio.to_thread(started.wait, 5)  # sudo is hanging in its worker thread
+        began = time.monotonic()
+        assert (await client.get("/healthz")).status_code == 200  # the loop answers meanwhile
+        assert time.monotonic() - began < 2
+        second = await client.post("/settings/update", data={"csrf_token": token})
+        assert second.headers["location"] == "/settings?tab=maintenance&ops=busy#ops-update"
+        assert app.state.update_starting is True
+        release.set()
+        response = await asyncio.wait_for(first, 10)
+    assert response.headers["location"] == "/settings?tab=maintenance#ops-update"
+    assert ops_env.runner.calls.count(START_UPDATE_CMD) == 1
+    assert app.state.update_starting is False
+    assert read_status(data_dir(ops_env)).state == "queued"
+
+
+async def test_a_failing_start_gives_the_gate_and_the_state_back(ops_env):
+    git_env(ops_env)
+    check(ops_env)
+    ops_env.runner.on(START_UPDATE_CMD, CommandResult(1, "", "sudo: a password is required"))
+    app = ops_env.client.app
+    async with asgi_client(app, ops_env.client.cookies.get(COOKIE)) as client:
+        token = token_of(await client.get("/settings"))
+        response = await client.post("/settings/update", data={"csrf_token": token})
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=start_failed#ops-update"
+    assert read_status(data_dir(ops_env)).state == "failed"
+    assert app.state.update_starting is False
+
+
+async def test_a_runner_that_raises_is_a_failed_start_not_a_stuck_one(ops_env):
+    git_env(ops_env)
+    check(ops_env)
+
+    def breaks(_call):
+        raise PermissionError("sudo")
+
+    ops_env.runner.on(START_UPDATE_CMD, breaks)
+    app = ops_env.client.app
+    async with asgi_client(app, ops_env.client.cookies.get(COOKIE)) as client:
+        token = token_of(await client.get("/settings"))
+        response = await client.post("/settings/update", data={"csrf_token": token})
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=start_failed#ops-update"
+    status = read_status(data_dir(ops_env))
+    assert (status.state, status.message) == ("failed", "start: PermissionError")
+    assert app.state.update_starting is False
+
+
+async def test_a_restore_that_begins_while_the_start_asks_systemd_wins(ops_env, monkeypatch):
+    """The restore sets its state before it asks; the start looks again right before it writes queued."""
+    from reprintbuddy.web.routes import ops as routes
+
+    git_env(ops_env)
+    check(ops_env)
+    write_status(
+        data_dir(ops_env), UpdateStatus(state="running", step="install", started_at=now() - timedelta(minutes=2))
+    )
+    app = ops_env.client.app
+
+    asked = []
+
+    async def stale_then_a_restore_begins(*_args):
+        asked.append(1)
+        if len(asked) == 2:  # the first is the write guard, the second the handler itself
+            app.state.restore.phase = "running"
+        return False  # systemd says the old update is dead
+
+    monkeypatch.setattr(routes, "update_running_async", stale_then_a_restore_begins)
+    async with asgi_client(app, ops_env.client.cookies.get(COOKIE)) as client:
+        token = token_of(await client.get("/settings"))
+        response = await client.post("/settings/update", data={"csrf_token": token})
+    assert response.status_code == 303, response.text[:300]
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=busy#ops-update"
+    assert START_UPDATE_CMD not in ops_env.runner.calls
+    assert read_status(data_dir(ops_env)).state == "running"  # nothing was written over it
+    assert app.state.update_starting is False
+
+
+async def test_cancelling_the_start_stops_sudo_and_frees_the_gate(ops_env):
+    """A shutdown (or a closed request) does not wait for a sudo that hangs."""
+    git_env(ops_env)
+    check(ops_env)
+    started, seen_stop = sudo_until_told_to_stop(ops_env, START_UPDATE_CMD)
+    app = ops_env.client.app
+    async with asgi_client(app, ops_env.client.cookies.get(COOKIE)) as client:
+        token = token_of(await client.get("/settings"))
+        task = asyncio.create_task(client.post("/settings/update", data={"csrf_token": token}))
+        assert await asyncio.to_thread(started.wait, 5)
+        began = time.monotonic()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert time.monotonic() - began < 2
+    assert await asyncio.to_thread(seen_stop.wait, 5)  # the command itself was told to stop
+    assert app.state.update_starting is False
+
+
+async def test_cancelling_the_restart_stops_sudo(ops_env):
+    started, seen_stop = sudo_until_told_to_stop(ops_env, RESTART_CMD)
+    app = ops_env.client.app
+    async with asgi_client(app, ops_env.client.cookies.get(COOKIE)) as client:
+        token = token_of(await client.get("/settings"))
+        task = asyncio.create_task(client.post("/settings/restart", data={"csrf_token": token}))
+        assert await asyncio.to_thread(started.wait, 5)
+        began = time.monotonic()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert time.monotonic() - began < 2
+    assert await asyncio.to_thread(seen_stop.wait, 5)
+
+
+def test_the_installed_tag_is_asked_in_a_worker_thread(ops_env):
+    """v0.3.8: `git describe` (once per process) is not run in the event loop by the settings page."""
+    import asyncio
+
+    git_env(ops_env)
+    where = []
+    real = ops_env.runner
+
+    def runner(args, **kwargs):
+        if "describe" in args:
+            try:
+                asyncio.get_running_loop()
+                where.append("event loop")
+            except RuntimeError:
+                where.append("worker thread")
+        return real(args, **kwargs)
+
+    app = ops_env.client.app
+    ops = app.state.ops
+    app.state.ops = type(ops)(install_dir=ops.install_dir, runner=runner, effective=ops.effective)
+    assert ops_env.client.get("/settings?tab=maintenance").status_code == 200
+    assert where == ["worker thread"]
+    ops_env.client.get("/settings?tab=maintenance")
+    assert where == ["worker thread"]  # asked once, then remembered

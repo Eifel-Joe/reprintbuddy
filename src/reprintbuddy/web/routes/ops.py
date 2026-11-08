@@ -13,7 +13,6 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
@@ -27,7 +26,7 @@ from reprintbuddy.ops.server import (
     effective_from_settings,
 )
 from reprintbuddy.ops.running import update_running, update_running_async
-from reprintbuddy.ops.runner import in_thread
+from reprintbuddy.ops.runner import CommandResult, in_thread
 from reprintbuddy.ops.service import request_restart, start_update_unit
 from reprintbuddy.ops.status import (
     BUSY_STATES,
@@ -128,6 +127,14 @@ def _installed(request: Request) -> str | None:
     if not hasattr(app.state, "installed_tag"):
         app.state.installed_tag = installed_tag(ops.install_dir, ops.runner)
     return app.state.installed_tag
+
+
+async def warm_installed(request: Request) -> None:
+    """Ask for the installed tag (`git describe`, once per process) in a worker thread, so the page that
+    needs it does not run git in the event loop (v0.3.8 p96, same family)."""
+    app = request.app
+    if is_git_install(app.state.ops.install_dir) and not hasattr(app.state, "installed_tag"):
+        await in_thread(_installed, request)
 
 
 async def update_busy(request: Request) -> bool:
@@ -256,7 +263,7 @@ def export(db: Session = Depends(get_db)):
 @router.post("/settings/restart", dependencies=[Depends(verify_csrf)])
 async def restart(request: Request, db: Session = Depends(get_db)):
     ops = request.app.state.ops
-    result = await run_in_threadpool(request_restart, ops.runner)  # sudo may take seconds
+    result = await in_thread(request_restart, ops.runner)  # sudo may take seconds; a shutdown stops it
     if not result.ok:
         # The reason (sudo output) goes to the log only, never onto the page.
         log.warning("restart failed: %s", (result.stderr or "").strip()[:300])
@@ -307,19 +314,43 @@ async def update_auto(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/settings/update", dependencies=[Depends(verify_csrf)])
 async def update_start(request: Request):
-    # No await between the busy check and writing "queued": two clicks cannot both pass.
+    """Start the update helper. Nothing here blocks the event loop (v0.3.8 p96): the questions to
+    systemd and the start of the unit through sudo (up to 15 s) run in worker threads.
+
+    What keeps two clicks, or a click and a restore, from both getting through: `update_starting` is
+    set with no `await` between looking at it and setting it; the restore state is looked at again
+    right before "queued" is written, with no `await` between those two either. A restore sets its own
+    state before it asks about updates, so one of the two sees the other.
+    """
     app = request.app
     ops = app.state.ops
     if not is_git_install(ops.install_dir):
         return _back("not_git")
+    # A restore that is replacing the database (or waits for its restart) counts as busy, and so does
+    # another click that is still on its way.
+    if app.state.restore.active or app.state.update_starting:
+        return _back("busy")
+    app.state.update_starting = True
+    try:
+        return await _start_update(request)
+    finally:
+        app.state.update_starting = False
+
+
+async def _start_update(request: Request):
+    app = request.app
+    ops = app.state.ops
     data_dir = _data_dir(request)
     now = _utc_now()
-    # A restore that is replacing the database (or waits for its restart) counts as busy.
-    if app.state.restore.active or update_running(data_dir, ops.runner, now):
+    # The state file alone says "idle" for most clicks; only a recorded update needs systemd's word.
+    if is_busy(read_status(data_dir), now) and await update_running_async(data_dir, ops.runner, now):
         return _back("busy")
     info: VersionInfo | None = getattr(app.state, "version_info", None)
     if info is None or not info.update_available:
         return _back("no_update")
+    # From the last look at the restore to "queued" there is no `await`.
+    if app.state.restore.active:
+        return _back("busy")
     write_status(
         data_dir,
         UpdateStatus(
@@ -330,7 +361,10 @@ async def update_start(request: Request):
             started_at=now,
         ),
     )
-    result = start_update_unit(ops.runner)
+    try:
+        result = await in_thread(start_update_unit, ops.runner)  # sudo may take seconds
+    except Exception as error:  # noqa: BLE001 - the state must not stay "queued" for a unit that never started
+        result = CommandResult(1, "", type(error).__name__)
     if not result.ok:
         lines = (result.stderr or "").strip().splitlines()
         reason = lines[0][:300] if lines else f"exit code {result.returncode}"
