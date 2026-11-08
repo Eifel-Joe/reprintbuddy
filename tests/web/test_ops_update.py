@@ -232,7 +232,9 @@ def test_state_and_step_keys_exist():
     from typing import get_args
 
     locales = i18n.load_locales()
-    wanted = {f"ops.update.state.{state}" for state in get_args(UpdateState)}
+    # `ops_view` builds a key for every state but "idle" (nothing has run: the card shows no state); a busy
+    # state nobody runs any more is "interrupted" (v0.3.10 p129: no text for "idle").
+    wanted = {f"ops.update.state.{state}" for state in get_args(UpdateState) if state != "idle"}
     wanted |= {f"ops.update.step.{step}" for step in UPDATE_STEPS}
     wanted |= {"ops.update.in_progress", "ops.update.state.interrupted"}
     for lang in ("en", "de"):

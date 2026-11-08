@@ -122,10 +122,43 @@ class Sealer:
         return self._encryptor.finalize() + self._encryptor.tag
 
 
-def open_sealed(key: bytes, nonce: bytes, sealed: bytes, aad: bytes) -> bytes:
-    if len(nonce) != NONCE_BYTES or len(sealed) < TAG_BYTES:
-        raise DecryptError("not a sealed payload")
-    try:
-        return AESGCM(key).decrypt(nonce, sealed, aad)
-    except InvalidTag as error:
-        raise DecryptError("the data does not open with this key") from error
+class Opener:
+    """The counterpart of `Sealer`: `seal` read back in blocks, without the whole data in memory (v0.3.10 p125).
+
+    `update(block)` takes the next bytes of the sealed payload (ciphertext, then the 16-byte tag) and returns
+    the plaintext that is certain to be ciphertext; the last 16 bytes seen so far are held back, because the
+    tag sits at the end and its length is not known before the data ends. `finish()` checks the tag and raises
+    `DecryptError` if it does not fit.
+
+    AES-GCM authenticates only at the end: everything `update` returned is UNVERIFIED until `finish()` has
+    returned. A caller must keep it out of reach (a temporary file that is deleted on any error) until then.
+    Used once, in that order."""
+
+    def __init__(self, key: bytes, nonce: bytes, aad: bytes) -> None:
+        if len(nonce) != NONCE_BYTES:
+            raise ValueError("wrong nonce length")
+        self._decryptor = Cipher(algorithms.AES(key), modes.GCM(nonce)).decryptor()
+        self._decryptor.authenticate_additional_data(aad)
+        self._held = b""
+        self._finished = False
+
+    def update(self, data: bytes) -> bytes:
+        if self._finished:
+            raise ValueError("already finished")
+        held = self._held + data
+        if len(held) <= TAG_BYTES:
+            self._held = held
+            return b""
+        self._held = held[-TAG_BYTES:]
+        return self._decryptor.update(held[:-TAG_BYTES])
+
+    def finish(self) -> None:
+        if self._finished:
+            raise ValueError("already finished")
+        self._finished = True
+        if len(self._held) != TAG_BYTES:
+            raise DecryptError("not a sealed payload")
+        try:
+            self._decryptor.finalize_with_tag(self._held)
+        except InvalidTag as error:
+            raise DecryptError("the data does not open with this key") from error

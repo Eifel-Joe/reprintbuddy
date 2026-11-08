@@ -110,7 +110,7 @@ What the installer does:
 - installs the command `/usr/local/bin/reprintbuddy` (see *Command line*),
 - starts the service and prints the address for the first-run setup.
 
-**Finish the setup right away** at `http://<container-ip>:8080/setup`: until the admin
+**Finish the setup right away** at `http://<server-ip>:8080/setup`: until the admin
 account exists, anyone in your network can create it.
 
 Running the installer again is safe: the installed version and the database stay as they

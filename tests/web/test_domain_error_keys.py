@@ -5,6 +5,7 @@ from pathlib import Path
 
 import reprintbuddy
 from reprintbuddy.domain import stock
+from reprintbuddy.models import Article
 from reprintbuddy.web import i18n
 
 ROOT = Path(reprintbuddy.__file__).parent
@@ -21,7 +22,15 @@ def test_domain_error_and_field_keys_have_texts():
     for path in (p for folder in SCANNED for p in folder.rglob("*.py")):
         text = path.read_text(encoding="utf-8")
         used |= set(ERROR_KEY.findall(text)) | set(FIELD_KEY.findall(text))
-    used |= {f"stock.limit.{f}" for f in ("stock", "reserved", "provisional", "awaiting_assembly", "part")}
+    # The counters of an article that a booking can push below 0 (`StockLimitError(f"stock.limit.{field}")`
+    # in `domain/stock.py`): the CHECK constraints name them. A part has no such error (v0.3.10 p129).
+    counters = {
+        m.group(1)
+        for c in Article.__table__.constraints
+        if (m := re.fullmatch(r"(\w+) >= 0", str(getattr(c, "sqltext", ""))))
+    }
+    assert {"stock", "reserved", "provisional", "awaiting_assembly"} <= counters, counters
+    used |= {f"stock.limit.{f}" for f in counters}
     assert len(used) > 20, "scan found too little: the patterns are wrong"
     assert used <= set(en), f"missing in en: {sorted(used - set(en))}"
     assert used <= set(de), f"missing in de: {sorted(used - set(de))}"

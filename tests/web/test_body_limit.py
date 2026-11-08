@@ -246,7 +246,11 @@ def test_the_upload_routes_have_their_own_limits(client):
     from reprintbuddy.ops import fullbackup as fb
 
     assert limits["/settings/restore/upload"] >= fb.MAX_UPLOAD_BYTES
-    assert all(limit > bodylimit.DEFAULT_LIMIT for limit in limits.values())
+    # The file uploads are above the default; the certificate form (two PEM files of 64 KiB, two pasted
+    # texts) is smaller than the default but has an entry so that its route may refuse with a page (p132).
+    others = {path: limit for path, limit in limits.items() if path != "/settings/server"}
+    assert all(limit > bodylimit.DEFAULT_LIMIT for limit in others.values())
+    assert 4 * 64 * 1024 <= limits["/settings/server"] < bodylimit.DEFAULT_LIMIT
 
 
 async def test_transfer_encoding_on_an_upload_path_is_left_to_its_route_which_reads_nothing():
@@ -308,3 +312,106 @@ async def test_a_group_with_other_errors_is_passed_on():
     mw = BodyLimitMiddleware(app, default_limit=100)
     with pytest.raises(ExceptionGroup):
         await mw(_scope(headers=[("content-length", "10")]), receive, lambda m: None)
+
+
+# ---- behind a proxy under a sub-path (v0.3.10 p133) -------------------------------------------
+# Uvicorn with `--root-path /rb` hands the app `path` WITH the prefix and `root_path` "/rb" (ASGI
+# 3.0, like Starlette's router, which removes the prefix again before it looks for a route). The
+# limits of the upload paths are written without the prefix, so they must be compared the same way.
+
+
+def _prefixed(path, root_path, headers=()):
+    return {**_scope(path, headers), "root_path": root_path}
+
+
+async def _long_declaration_reaches_the_route(path: str, root_path: str) -> bool:
+    """True when the route got a declaration over the default limit (the path has a limit of its own)."""
+    called = []
+
+    async def app(scope, receive, send):
+        called.append(True)
+        await send({"type": "http.response.start", "status": 303, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    mw = BodyLimitMiddleware(app, default_limit=10, limits={"/up": 100})
+    status = await _run(mw, _prefixed(path, root_path, [("content-length", "50")]), [b"x"])
+    assert status in (303, 413)
+    return status == 303 and called == [True]
+
+
+@pytest.mark.parametrize(
+    ("path", "root_path"),
+    [
+        ("/up", ""),  # no proxy
+        ("/rb/up", "/rb"),  # the server passes the prefix in the path
+        ("/up", "/rb"),  # the proxy removed it and the server did not add it
+        ("/a/b/up", "/a/b"),
+    ],
+)
+async def test_the_limit_of_a_path_applies_behind_a_sub_path(path, root_path):
+    assert await _long_declaration_reaches_the_route(path, root_path)
+
+
+@pytest.mark.parametrize(
+    ("path", "root_path"),
+    [
+        ("/rbx/up", "/rb"),  # not at a "/" boundary: another path that starts with the same letters
+        ("/rb", "/rb"),  # the root itself
+        ("/rb/rb/up", "/rb"),  # only one prefix is removed
+        ("/RB/up", "/rb"),  # case matters, as for the router
+        ("/rb/up/", "/rb"),  # a different path, no entry
+        ("/rb/up", "/rb/"),  # a root with a trailing slash is not removed (the router does not either)
+        ("/other/up", "/rb"),
+        ("/up", "/up"),  # the whole path is the root
+    ],
+)
+async def test_a_path_that_is_not_the_upload_path_keeps_the_small_limit_behind_a_sub_path(path, root_path):
+    assert not await _long_declaration_reaches_the_route(path, root_path)
+
+
+async def test_the_small_limit_cuts_off_what_is_read_for_a_lookalike_path():
+    seen: list = []
+    mw = BodyLimitMiddleware(_reader_app(seen), default_limit=10, limits={"/up": 100})
+    assert await _run(mw, _prefixed("/rbx/up", "/rb", [("content-length", "50")]), [b"x" * 50]) == 413
+    assert seen == []
+
+
+def test_route_path():
+    route_path = bodylimit.route_path
+    assert route_path({"path": "/rb/up", "root_path": "/rb"}) == "/up"
+    assert route_path({"path": "/up", "root_path": ""}) == "/up"
+    assert route_path({"path": "/up"}) == "/up"
+    assert route_path({"path": "/rb", "root_path": "/rb"}) == ""
+    assert route_path({"path": "/rbx/up", "root_path": "/rb"}) == "/rbx/up"
+    assert route_path({}) == ""
+
+
+async def test_the_whole_app_does_not_refuse_an_upload_path_under_a_sub_path(admin_client):
+    """A declaration of 2 MiB on the certificate form is the route's to answer, also behind a proxy."""
+    app = admin_client.app
+    length = 2 * bodylimit.DEFAULT_LIMIT
+
+    def scope(path, root_path):
+        return {
+            "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
+            "scheme": "http", "path": path, "raw_path": path.encode(), "root_path": root_path, "query_string": b"",
+            "headers": [(b"host", b"testserver"), (b"content-type", b"multipart/form-data; boundary=b"),
+                        (b"content-length", str(length).encode())],
+            "client": ("127.0.0.1", 1234), "server": ("testserver", 80),
+        }
+
+    async def status_of(path, root_path):
+        sent = []
+
+        async def receive():
+            return {"type": "http.disconnect"}
+
+        async def send(message):
+            sent.append(message)
+
+        await app(scope(path, root_path), receive, send)
+        return [m["status"] for m in sent if m["type"] == "http.response.start"][0]
+
+    assert await status_of("/settings/server", "") != 413
+    assert await status_of("/rb/settings/server", "/rb") != 413  # refused by the sign-in gate, not by the size
+    assert await status_of("/rbx/settings/server", "/rb") == 413

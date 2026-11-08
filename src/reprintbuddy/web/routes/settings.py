@@ -23,6 +23,7 @@ from reprintbuddy.ops.tls import validate_tls_pair
 from reprintbuddy.web import labels_view
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
+from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.flash import flash as flash_message  # a list: "Saved" does not replace it
 from reprintbuddy.web.routes.auth import password_confirmed
@@ -33,6 +34,9 @@ from reprintbuddy.web.formtoken import write_transaction
 router = APIRouter()
 
 MAX_UPLOAD_BYTES = 64 * 1024
+# The whole form of the server card: certificate and key, each as a file or as pasted text.
+SERVER_PATH = "/settings/server"
+SERVER_BODY_LIMIT = 4 * MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD
 
 # Tabs of the page: (key, icon, label key). Another feature adds its tab as a line at the agreed
 # position (Automation sits second, p43) and renders its cards when `current_tab` is its key.
@@ -252,9 +256,27 @@ async def _pem_input(form, text_field: str, file_field: str) -> str | None:
     return text if text.strip() else None
 
 
-@router.post("/settings/server", dependencies=[Depends(verify_csrf)])
+@router.post(SERVER_PATH)
 async def save_server(request: Request, db: Session = Depends(get_db)):
-    form = await request.form()
+    # The length first, before anything reads the body: the CSRF check reads the whole form, and a
+    # certificate over the limit of the middleware would get its bare 413 (v0.3.10 p132). Like the
+    # backup and print-file uploads; the route has a limit of its own in `body_limits`.
+    if not upload_length_ok(request, SERVER_BODY_LIMIT):
+        refused = _page(request, db, "settings.invalid_pem", "server", busy=await ops_ready(request))
+        refused.status_code = 413
+        # Nothing reads the body: close the connection, or the server reads and drops all of it
+        # before the browser sees this page.
+        refused.headers["Connection"] = "close"
+        return refused
+    form = await request.form(max_files=2, max_fields=10)
+    try:
+        await verify_csrf(request)  # reads the same, already parsed form; nothing is stored before it passed
+        return await _save_server(request, db, form)
+    finally:
+        await form.close()  # the temporary files of the uploaded parts, also after a refused token
+
+
+async def _save_server(request: Request, db: Session, form):
     host = str(form.get("host", "")).strip()
     port_text = str(form.get("port", "")).strip()
     typed = {"host": host, "port": port_text}

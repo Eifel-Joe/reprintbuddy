@@ -446,7 +446,7 @@ start_service() {
 }
 
 print_next_steps() {
-    local ip="<container-ip>" url
+    local ip="<server-ip>" url
     if [ "${DRY_RUN}" -eq 1 ]; then
         url="http://${ip}:8080/"
         if [ "${NEW_DATABASE}" -eq 1 ]; then
@@ -454,7 +454,7 @@ print_next_steps() {
         fi
     else
         ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
-        ip="${ip:-<container-ip>}"
+        ip="${ip:-<server-ip>}"
         url="$(capture_as_service_user "${VENV_DIR}/bin/reprintbuddy" url --db "${DB_FILE}" --host "${ip}" --next)"
     fi
     case "${url}" in
