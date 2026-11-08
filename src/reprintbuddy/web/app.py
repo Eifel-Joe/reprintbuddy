@@ -44,6 +44,7 @@ from reprintbuddy.web.preload import PreloadedLoader
 from reprintbuddy.web.rights import RightsMonitor
 from reprintbuddy.web.throttle import FailureBrake, HashLimiter
 from reprintbuddy.web.routes import articles as articles_routes
+from reprintbuddy.web.routes import upload as upload_routes
 from reprintbuddy.web.routes import auth as auth_routes
 from reprintbuddy.web.routes import backup as backup_routes
 from reprintbuddy.web.routes import bookings as bookings_routes
@@ -379,7 +380,9 @@ def create_app(
     # have limits of their own and refuse a longer declaration with a page of their own.
     app.state.body_limits = {
         "/settings/restore/upload": fullbackup.MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD,
+        upload_routes.PATH: upload_routes.BODY_LIMIT,
     }
+    app.state.upload_lock = upload_routes.make_lock()  # one upload at a time (Spec 5.1a)
     app.add_middleware(BodyLimitMiddleware, limits=app.state.body_limits)
     app.middleware("http")(deps.security_headers)  # outermost: covers every response
 
@@ -404,6 +407,7 @@ def create_app(
     app.include_router(parts_routes.router)
     app.include_router(filament_routes.router)
     app.include_router(reorder_routes.router)
+    app.include_router(upload_routes.router)  # before the articles: /articles/new/upload
     app.include_router(articles_routes.router)
     app.include_router(journal_routes.router)
     app.include_router(sets_routes.router)
