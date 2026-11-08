@@ -363,8 +363,11 @@ class HttpBambuddyClient:
         instead of sending it again.
         """
         content.seek(0)
-        files = {"file": (filename, content, "application/octet-stream")}
-        return _parse.parse_upload(await self._post_file("/library/files", folder_id=folder_id, files=files))
+        # One part named `file`, written where it is sent: the watch checks it there.
+        answer = await self._post_file(
+            "/library/files", folder_id=folder_id, files={"file": (filename, content, "application/octet-stream")}
+        )
+        return _parse.parse_upload(answer)
 
     # ---- the live channel (Spec 7.6; not in the Protocol, B4's interface stays as it is) ----
     async def ws_token(self) -> str:

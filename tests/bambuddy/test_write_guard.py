@@ -227,6 +227,73 @@ def check_source(text: str) -> list[str]:
             if len(call.args) > 1 or None in keywords or not keywords <= {"path", "folder_id", "files"}:
                 problems.append(f"_post_file with other arguments (line {call.lineno})")
     problems += _post_file_signature(text)
+    problems += _posters_keep_their_inputs(text)
+    problems += _request_arguments(scan)
+    problems += _upload_files(scan)
+    return problems
+
+
+# What `.request(...)` inside `_send` may receive: nothing beyond the known parts.
+REQUEST_KEYWORDS = {"params", "json", "files", "headers", "timeout", "follow_redirects"}
+
+
+def _request_arguments(scan: _Scan) -> list[str]:
+    problems = []
+    for call, where in scan.calls:
+        if _name(call.func) == "request" and where == "_send":
+            keywords = {kw.arg for kw in call.keywords}
+            if len(call.args) != 2 or None in keywords or not keywords <= REQUEST_KEYWORDS:
+                problems.append(f"request with other arguments (line {call.lineno})")
+    return problems
+
+
+def _upload_files(scan: _Scan) -> list[str]:
+    """`_post_file(..., files={"file": ...})`: one part, named `file`, written where it is sent."""
+    problems = []
+    for call, _ in scan.calls:
+        if _name(call.func) != "_post_file":
+            continue
+        files = _arg(call, 99, "files")
+        if not (
+            isinstance(files, ast.Dict)
+            and len(files.keys) == 1
+            and _text(files.keys[0]) == "file"
+        ):
+            problems.append(f"_post_file with files other than one part 'file' (line {call.lineno})")
+    return problems
+
+
+def _posters_keep_their_inputs(text: str) -> list[str]:
+    """In `_post` and `_post_file` the path is never changed, and in `_post_file` the query is
+    made once, from `folder_id`, and only handed to `_send` (security review v0.3.9)."""
+    problems: list[str] = []
+    tree = ast.parse(text)
+    for node in ast.walk(tree):
+        if not (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in POSTERS):
+            continue
+        parents = {id(child): parent for parent in ast.walk(node) for child in ast.iter_child_nodes(parent)}
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Name) and inner.id == "path" and not isinstance(inner.ctx, ast.Load):
+                problems.append(f"path is changed in {node.name} (line {inner.lineno})")
+            if isinstance(inner, ast.NamedExpr) and inner.target.id == "path":
+                problems.append(f"path is changed in {node.name} (line {inner.lineno})")
+        if node.name != "_post_file":
+            continue
+        uses = [n for n in ast.walk(node) if isinstance(n, ast.Name) and n.id == "params"]
+        stores = [n for n in uses if isinstance(n.ctx, ast.Store)]
+        loads = [n for n in uses if isinstance(n.ctx, ast.Load)]
+        good_store = len(stores) == 1 and isinstance(parents.get(id(stores[0])), ast.Assign) and len(
+            parents[id(stores[0])].targets
+        ) == 1
+        good_loads = all(
+            isinstance(parents.get(id(n)), ast.keyword)
+            and parents[id(n)].arg == "params"
+            and isinstance(parents.get(id(parents[id(n)])), ast.Call)
+            and _name(parents[id(parents[id(n)])].func) == "_send"
+            for n in loads
+        )
+        if not (good_store and good_loads) or len(uses) != len(stores) + len(loads):
+            problems.append(f"params is used other than made once and handed to _send (line {node.lineno})")
     return problems
 
 
@@ -518,6 +585,33 @@ def _base_with(old: str, new: str) -> str:
         ("params = None if folder_id is None", "params = extra if folder_id is None", "query built from more than folder_id"),
         ("async def _post_file(self, path, *, folder_id, files):", "async def _post_file(self, path, *, folder_id, files, **more):", "another signature"),
         ("async def _post_file(self, path, *, folder_id, files):", "async def _post_file(self, path, folder_id, files):", "another signature"),
+        # security review v0.3.9: the path and the query must not be changed after the check
+        ('        params = None if folder_id is None else {"folder_id": folder_id}\n',
+         '        params = None if folder_id is None else {"folder_id": folder_id}\n        path = "/library/files/1/move"\n',
+         "path is changed in _post_file"),
+        ('        return await self._send("POST", path, body=body)',
+         '        path = "/printers/1/stop"\n        return await self._send("POST", path, body=body)',
+         "path is changed in _post"),
+        ('        params = None if folder_id is None else {"folder_id": folder_id}\n',
+         '        params = None if folder_id is None else {"folder_id": folder_id}\n        params["overwrite"] = 1\n',
+         "params is used other than"),
+        ('        params = None if folder_id is None else {"folder_id": folder_id}\n',
+         '        params = None if folder_id is None else {"folder_id": folder_id}\n        params |= {"x": 1}\n',
+         "params is used other than"),
+        ('        params = None if folder_id is None else {"folder_id": folder_id}\n',
+         '        params: dict = {"folder_id": folder_id, "x": "1"}\n',
+         "params is used other than"),
+        ('        params = None if folder_id is None else {"folder_id": folder_id}\n',
+         '        params = None if folder_id is None else {"folder_id": folder_id}\n        params = params or {}\n',
+         "params is used other than"),
+        ('        params = None if folder_id is None else {"folder_id": folder_id}\n',
+         '        params = None if folder_id is None else {"folder_id": folder_id}\n        params.update(x=1)\n',
+         "params is used other than"),
+        ("return await http.request(method, path, params=params, json=body)",
+         "return await http.request(method, path, params=params, json=body, data={'x': 1})",
+         "request with other arguments"),
+        ('files={"file": (name, content)})', 'files={"file": (name, content), "folder_id": "9"})', "files other than"),
+        ('files={"file": (name, content)})', "files=extra)", "files other than"),
     ],
 )
 def test_upload_helper_bypass_is_caught(old, new, reason):
