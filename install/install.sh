@@ -124,9 +124,10 @@ require_root() {
     fi
 }
 
-# Reprintbuddy needs Python 3.12 or newer. Debian 12 only has 3.11 in its own sources (main; there is
-# no python3.12 in bookworm-backports either), so Debian 13 or newer is the floor (v0.3.9 p101).
-NEEDS_DEBIAN_MESSAGE="Reprintbuddy needs Debian 13 or newer: it needs Python 3.12 or newer, and Debian 12 comes with Python 3.11. On Debian 12, upgrade the system to Debian 13 (the Debian release upgrade), then run this installer again; it keeps your data."
+# Reprintbuddy needs Python 3.13 or newer. Debian 12 only has 3.11 in its own sources (main; there is
+# no python3.12 in bookworm-backports either), so Debian 13 or newer is the floor (v0.3.9 p101). Debian 13
+# brings Python 3.13, which is why that is the floor of Python itself since v0.3.12 (p163).
+NEEDS_DEBIAN_MESSAGE="Reprintbuddy needs Debian 13 or newer: it needs Python 3.13 or newer, and Debian 12 comes with Python 3.11. On Debian 12, upgrade the system to Debian 13 (the Debian release upgrade), then run this installer again; it keeps your data."
 
 require_debian() {
     local release="${DESTDIR}/etc/os-release" id_ version
@@ -160,7 +161,7 @@ require_debian() {
     fi
 }
 
-# The python3 that will build the virtual environment must be 3.12 or newer, whatever the system
+# The python3 that will build the virtual environment must be 3.13 or newer, whatever the system
 # claims to be. Checked before anything is created. Without python3 (a dry run on a bare system)
 # there is nothing to ask.
 require_python() {
@@ -170,10 +171,10 @@ require_python() {
         fi
         die 1 "python3 was not found after installing the packages."
     fi
-    if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)'; then
+    if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 13) else 1)'; then
         local found
         found="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"
-        die 1 "Reprintbuddy needs Python 3.12 or newer, but python3 here is Python ${found:-of an unknown version}." \
+        die 1 "Reprintbuddy needs Python 3.13 or newer, but python3 here is Python ${found:-of an unknown version}." \
             "Use Debian 13 or newer. On Debian 12, upgrade the system to Debian 13, then run this installer again."
     fi
 }
@@ -283,7 +284,7 @@ fetch_code() {
 # Python's lib/python3.x; its `bin/python` is a link to the system's python3. After a release upgrade of
 # Debian the system's python3 is another one (3.11 -> 3.13): the link is alive, but the packages are not found,
 # and the service does not start. The environment is of no use when it was built with another Python than the
-# system's now, with a Python older than 3.12, or when python or pip is missing in it. Only the environment is
+# system's now, with a Python older than 3.13, or when python or pip is missing in it. Only the environment is
 # rebuilt, never the data (v0.3.9 p101). Its Python version is read from pyvenv.cfg: the environment's own
 # python is not run (as root) just to ask.
 python_version_of_system() {
@@ -301,7 +302,7 @@ venv_usable() {
     case "${major}${minor}" in
         '' | *[!0-9]*) return 1 ;;
     esac
-    { [ "${major}" -gt 3 ] || { [ "${major}" -eq 3 ] && [ "${minor}" -ge 12 ]; }; } || return 1
+    { [ "${major}" -gt 3 ] || { [ "${major}" -eq 3 ] && [ "${minor}" -ge 13 ]; }; } || return 1
     system="$(python_version_of_system)"
     [ -z "${system}" ] || [ "${system}" = "${major}.${minor}" ]
 }

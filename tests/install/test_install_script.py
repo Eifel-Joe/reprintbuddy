@@ -32,7 +32,7 @@ def os_release(dest: Path, id_: str = "debian", version: str = "13") -> None:
 
 
 def fake_python(folder: Path, version: str) -> Path:
-    """A `python3` that only knows the two questions the script asks: is it 3.12 or newer (the exit
+    """A `python3` that only knows the two questions the script asks: is it 3.13 or newer (the exit
     status), and which version is it (the printed text)."""
     folder.mkdir(parents=True, exist_ok=True)
     major, minor = (int(part) for part in version.split("."))
@@ -41,7 +41,7 @@ def fake_python(folder: Path, version: str) -> Path:
         "#!/bin/sh" + "\n"
         + 'case "$2" in' + "\n"
         + f'  *print*) echo "{version}" ;;' + "\n"
-        + f"  *) [ {major * 100 + minor} -ge 312 ] ;;" + "\n"
+        + f"  *) [ {major * 100 + minor} -ge 313 ] ;;" + "\n"
         + "esac" + "\n",
         encoding="utf-8",
         newline="\n",
@@ -140,12 +140,13 @@ def test_dry_run_changes_nothing(bash, tmp_path):
 
 
 def test_debian12_is_refused_and_says_why(bash, tmp_path):
-    """v0.3.9 p101: Python 3.12 is required; Debian 12 only has 3.11 (main), no backports."""
+    """v0.3.9 p101: Debian 13 is the floor, since Debian 12 only has Python 3.11 (main), no backports; v0.3.12 p163: the
+    message names Python 3.13, the one Debian 13 brings along."""
     os_release(tmp_path, version="12")
     result = run(bash, tmp_path, "--repo", REPO)
     assert result.returncode == 1
     message = result.stderr + result.stdout
-    assert "Debian 13" in message and "Python 3.12" in message and "Debian 12" in message
+    assert "Debian 13" in message and "Python 3.13" in message and "Debian 12" in message
 
 
 def test_a_newer_debian_is_accepted(bash, tmp_path):
@@ -193,13 +194,15 @@ def test_a_release_without_version_that_is_not_debian_is_refused(bash, tmp_path)
     assert "needs Debian 13 or newer" in result.stderr + result.stdout
 
 
-def test_python_older_than_3_12_stops_the_script_with_the_version_named(bash, tmp_path):
-    """Whatever the system says it is: the Python that would build the venv decides."""
+@pytest.mark.parametrize("python", ["3.11", "3.12"])
+def test_python_older_than_3_13_stops_the_script_with_the_version_named(bash, tmp_path, python):
+    """Whatever the system says it is: the Python that would build the venv decides. v0.3.12 p163: 3.12 is
+    refused too (no Debian release the script accepts has it)."""
     os_release(tmp_path)
-    result = run(bash, tmp_path, "--repo", REPO, python="3.11")
+    result = run(bash, tmp_path, "--repo", REPO, python=python)
     assert result.returncode == 1
     message = result.stderr + result.stdout
-    assert "Python 3.12 or newer" in message and "Python 3.11" in message
+    assert "Python 3.13 or newer" in message and f"python3 here is Python {python}" in message
 
 
 def test_the_python_check_comes_before_anything_is_created(bash, tmp_path):
@@ -318,6 +321,7 @@ def test_rerun_keeps_database(bash, tmp_path):
 REBUILT = {
     # (system python, python the environment was built with, options): why the environment is of no use
     "built-with-3.11": ("3.13", "3.11", {}),  # a Debian release upgrade: its packages sit under lib/python3.11
+    "built-with-3.12": ("3.13", "3.12", {}),  # an environment of the old floor (v0.3.9 to v0.3.11)
     "built-with-an-older-python-than-the-system": ("3.14", "3.13", {}),  # the next release upgrade
     "no-python-in-it": ("3.13", "3.13", {"python": False}),
     "no-pip-in-it": ("3.13", "3.13", {"pip": False}),  # `python3 -m venv` died at ensurepip once
@@ -357,11 +361,33 @@ def test_rerun_rebuilds_an_environment_that_does_not_fit_the_system_python(bash,
             assert line.startswith("+ rm -rf /opt/reprintbuddy/"), line
 
 
-@pytest.mark.parametrize("version", ["3.12", "3.13", "3.14"])
+@pytest.mark.parametrize("version", ["3.13", "3.14"])
 def test_an_environment_built_with_the_system_python_is_not_rebuilt(bash, tmp_path, version):
     installed(tmp_path, version)
     out = lines(run(bash, tmp_path, "--repo", REPO, python=version))
     assert "-m venv" not in out and "rm -rf" not in out.replace("rm -rf /opt/reprintbuddy/build", "")
+
+
+def silent_python(folder: Path) -> Path:
+    """A `python3` that is 3.13 or newer as far as the floor check goes, but cannot say which version
+    (the question for the version fails): the installer then knows nothing of the system's Python."""
+    folder.mkdir(parents=True, exist_ok=True)
+    script = folder / "python3"
+    body = '#!/bin/sh\ncase "$2" in\n  *print*) exit 1 ;;\n  *) exit 0 ;;\nesac\n'
+    script.write_text(body, encoding="utf-8", newline="\n")
+    script.chmod(0o755)
+    return folder
+
+
+@pytest.mark.parametrize(("venv", "rebuilt"), [("3.12", True), ("3.13", False)])
+def test_the_environment_floor_is_3_13_even_when_the_system_python_is_unknown(bash, tmp_path, venv, rebuilt):
+    """v0.3.12 p163: `venv_usable` has a floor of its own for when the system's version cannot be read; it is the
+    same 3.13 as the one of `require_python`."""
+    installed(tmp_path, venv)
+    folder = silent_python(tmp_path.parent / f"{tmp_path.name}-silent")
+    env = {"PATH": f"{folder.as_posix()}{os.pathsep}{os.environ['PATH']}"}
+    out = lines(run(bash, tmp_path, "--repo", REPO, python=None, env_extra=env))
+    assert ("-m venv" in out) is rebuilt, out
 
 
 def test_refuses_foreign_install_dir(bash, tmp_path):

@@ -51,14 +51,15 @@ _WRONG_PYTHON = re.compile(r"requires a different Python: (?P<found>[0-9][0-9.]*
 def _too_old_python(result: CommandResult) -> str | None:
     """pip's refusal because the environment's Python is older than the new version needs, in plain words.
 
-    Root: from v0.3.9 on a release needs Python 3.12, and pip's own line ("requires a different Python:
-    3.11.2 not in '>=3.12'") says it only to those who know what it means. The update is rolled back as for
-    any other install failure; only the text differs.
+    Root: a release has a Python floor (3.12 from v0.3.9 on, 3.13 from v0.3.12 on), and pip's own line
+    ("requires a different Python: 3.12.3 not in '>=3.13'") says it only to those who know what it means.
+    The update is rolled back as for any other install failure; only the text differs.
 
     Limit, stated plainly: the update runs the code of the INSTALLED version. An installation made on Debian 12
     (v0.3.8, Python 3.11) therefore updates with its old updater and shows pip's raw line; this text appears
-    only from v0.3.9 on, for a later release that raises the floor again (its environment is then on 3.12 or
-    newer already). The rollback itself is the one every install failure gets."""
+    only from v0.3.9 on, for a later release that raises the floor again (its environment is then on the
+    floor of the installed version or newer already; the Debian 13 installations run 3.13, so v0.3.12's floor
+    does not stop them). The rollback itself is the one every install failure gets."""
     found = _WRONG_PYTHON.search("\n".join((result.stderr or "", result.stdout or "")))
     if found is None:
         return None
