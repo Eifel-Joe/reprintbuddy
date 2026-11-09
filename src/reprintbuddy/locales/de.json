@@ -431,7 +431,7 @@
   "ops.msg.restart_failed": "Neustart fehlgeschlagen. Ist Reprintbuddy mit dem Installationsskript installiert?",
   "ops.msg.check_failed": "Die Suche nach Updates ist fehlgeschlagen. Ist der Server online?",
   "ops.msg.busy": "Es läuft bereits ein Update.",
-  "ops.msg.no_update": "Es gibt keine neuere Version. Suchen Sie zuerst nach Updates.",
+  "ops.msg.no_update": "Es gibt keine neuere Version. Suche zuerst nach Updates.",
   "ops.msg.start_failed": "Das Update ließ sich nicht starten.",
   "ops.msg.not_git": "Updates aus der Oberfläche brauchen eine Installation mit dem Installationsskript.",
   "ops.tls.invalid": "Zertifikat und privater Schlüssel passen nicht zusammen oder sind nicht lesbar. Nichts gespeichert.",

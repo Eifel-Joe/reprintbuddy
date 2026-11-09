@@ -160,3 +160,32 @@ def test_german_restart_hint_is_in_german():
     de = i18n.load_locales()["de"]["settings.restart_needed"]
     assert "Neustart" in de
     assert "restart" not in de.lower()
+
+
+# v0.3.14 p175: the German texts speak with "du". One message of the update card said "Suchen Sie ...".
+# "Sie" as a subject at the start of a sentence means "she/it/they" and is fine; the polite form shows as
+# "<verb> Sie" (inverted), "<conjunction> Sie" or as "Ihr..." in the middle of a sentence.
+_POLITE_SIE = re.compile(
+    r"\b[A-Za-zäöüÄÖÜß]+(?:en|ern|eln|ten|nn|ßt|st) Sie\b"
+    r"|\b(?:wenn|dass|ob|falls|damit|bevor|sobald|weil|und|oder|bitte|dann|dort|hier|jetzt|nun) Sie\b"
+    r"|(?<=[a-zäöüß,;] )Ihr(?:e|en|em|er|es)?\b"
+)
+_NOT_POLITE = {"Dann sind Sie"}  # none today; add an exact snippet here when a third-person "Sie" trips the check
+
+
+def _polite_hits(text):
+    return [m.group(0) for m in _POLITE_SIE.finditer(text) if m.group(0) not in _NOT_POLITE]
+
+
+def test_german_texts_have_no_polite_sie_form():
+    bad = {key: _polite_hits(value) for key, value in _raw("de").items() if _polite_hits(value)}
+    assert not bad, f"Sie-Form in de.json (use du): {bad}"
+
+
+def test_german_docs_and_readme_have_no_polite_sie_form():
+    root = Path(__file__).resolve().parents[2]
+    files = [root / "README.de.md", root / "CONTRIBUTING.de.md", *(root / "docs").rglob("*.de.md")]
+    assert len(files) > 10
+    bad = {path.name: _polite_hits(path.read_text(encoding="utf-8")) for path in files}
+    bad = {name: hits for name, hits in bad.items() if hits}
+    assert not bad, f"Sie-Form in German docs (use du): {bad}"
