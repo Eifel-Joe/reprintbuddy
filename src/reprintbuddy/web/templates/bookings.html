@@ -36,7 +36,7 @@
         </select>
       </label>
       <label>{{ t('bookings.field.counted') }}
-        <input name="counted" inputmode="numeric" value="{{ v.get('counted', '') }}" required>
+        <input name="counted" inputmode="numeric" min="0" value="{{ v.get('counted', '') }}" required>
       </label>
     </div>
     <label>{{ t('journal.field.note') }} <input name="note" value="{{ v.get('note', '') }}" maxlength="500"></label>
@@ -55,7 +55,7 @@
     <input type="hidden" name="form_token" value="{{ form_token() }}">
     <label>{{ t('bookings.field.part') }} {{ part_select('part_id', v.get('part_id')) }}</label>
     <label>{{ t('bookings.field.counted') }}
-      <input name="counted" inputmode="numeric" value="{{ v.get('counted', '') }}" required>
+      <input name="counted" inputmode="numeric" min="0" value="{{ v.get('counted', '') }}" required>
     </label>
     <label>{{ t('journal.field.note') }} <input name="note" value="{{ v.get('note', '') }}" maxlength="500"></label>
     <button class="btn" type="submit">{{ t('bookings.book') }}</button>
@@ -73,7 +73,7 @@
     <input type="hidden" name="form_token" value="{{ form_token() }}">
     <label>{{ t('bookings.field.part') }} {{ part_select('part_id', v.get('part_id')) }}</label>
     <label>{{ t('bookings.field.qty') }}
-      <input name="qty" inputmode="numeric" value="{{ v.get('qty', '') }}" required>
+      <input name="qty" inputmode="numeric" min="1" value="{{ v.get('qty', '') }}" required>
     </label>
     <label>{{ t('journal.field.note') }} <input name="note" value="{{ v.get('note', '') }}" maxlength="500"></label>
     <button class="btn" type="submit">{{ t('bookings.book') }}</button>
@@ -92,7 +92,7 @@
     <input type="hidden" name="form_token" value="{{ form_token() }}">
     <label>{{ t('bookings.field.article') }} {{ article_select('article_id', v.get('article_id')) }}</label>
     <label>{{ t('bookings.field.qty') }}
-      <input name="qty" inputmode="numeric" value="{{ v.get('qty', '') }}" required>
+      <input name="qty" inputmode="numeric" min="1" value="{{ v.get('qty', '') }}" required>
     </label>
     <label>{{ t('journal.field.note') }} <input name="note" value="{{ v.get('note', '') }}" maxlength="500"></label>
     <button class="btn" type="submit">{{ t('bookings.book') }}</button>
@@ -111,7 +111,7 @@
     <input type="hidden" name="form_token" value="{{ form_token() }}">
     <label>{{ t('bookings.field.article') }} {{ article_select('article_id', v.get('article_id')) }}</label>
     <label>{{ t('bookings.field.qty') }}
-      <input name="qty" inputmode="numeric" value="{{ v.get('qty', '') }}" required>
+      <input name="qty" inputmode="numeric" min="1" value="{{ v.get('qty', '') }}" required>
     </label>
     {% call ui.check_row(t('info.consume_parts'), t('bookings.consume_parts')) %}
     <label class="check">

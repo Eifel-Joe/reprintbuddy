@@ -32,7 +32,7 @@
     {% set i = loop.index0 %}
     <div class="position">
       <label>{{ t('sets.field.qty') }}
-        <input name="pos_{{ i }}_qty" inputmode="numeric" value="{{ row.qty }}">
+        <input name="pos_{{ i }}_qty" inputmode="numeric" min="1" value="{{ row.qty }}">
       </label>
       <label>{{ t('sets.field.articles') }}
         <select name="pos_{{ i }}_articles" multiple size="{{ 4 if articles|length > 4 else (articles|length or 1) }}">

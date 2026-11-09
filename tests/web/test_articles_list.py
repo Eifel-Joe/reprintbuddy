@@ -18,7 +18,11 @@ def test_list_shows_numbers(ready_client):
     assert '<td class="num neg">-2</td>' in page
     # Target quantity with its fill bar (0 % here: nothing available); reserved, provisional and
     # awaiting assembly are on the detail page now (Spec 10.1, design section 3).
-    assert '<td class="num target">6<span class="bar tone-bad" role="progressbar"' in page
+    # p154: the target is a field with the current number (6 = 4 + 2), and the bar stays under it
+    assert re.search(
+        r'<td class="num target"><form class="target-form".*?name="target"[^>]* value="6".*?</form>'
+        r'<span class="bar tone-bad" role="progressbar"', page, re.S,
+    )
     assert 'aria-valuenow="0"' in page
     assert "4 / 6" not in page and "Reserved" not in page
 

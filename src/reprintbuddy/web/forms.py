@@ -96,14 +96,15 @@ async def run_form_action(
     request: Request,
     *,
     work: Callable[[Any], dict[str, object]],
-    success_url: str,
+    success_url: str | Callable[[], str],
     flash_key: str,
     on_error: Callable[[str, int, Exception], Any],
 ):
     """A one-time form with one action (archive, restore, ...): `work(tx)` runs in the write
     transaction and returns the parameters of the success message. A second submission of
     the same form is reported as such; a rejected action shows `on_error(text, status, exc)`
-    (which may be a coroutine)."""
+    (which may be a coroutine). `success_url` may be a function: it is called once `work` is
+    done (or was skipped as a repeat), for an address that depends on what the work found."""
     from reprintbuddy.web.deps import current_language
 
     form = await request.form()
@@ -111,8 +112,8 @@ async def run_form_action(
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
             params = work(tx)
     except FormTokenUsed:
-        return duplicate_redirect(request, success_url)
+        return duplicate_redirect(request, success_url() if callable(success_url) else success_url)
     except (DomainError, FormTokenInvalid) as exc:
         result = on_error(error_text(current_language(request), exc), error_status(exc), exc)
         return await result if inspect.isawaitable(result) else result
-    return saved_redirect(request, success_url, flash_key, **params)
+    return saved_redirect(request, success_url() if callable(success_url) else success_url, flash_key, **params)

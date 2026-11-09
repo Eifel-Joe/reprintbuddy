@@ -31,7 +31,7 @@
     {% set i = loop.index0 %}
     <div class="position">
       <label>{{ t('orders.field.qty') }}
-        <input name="qty_{{ i }}" inputmode="numeric" value="{{ row.qty }}">
+        <input name="qty_{{ i }}" inputmode="numeric" min="1" value="{{ row.qty }}">
       </label>
       <label>{{ t('orders.item') }}
         <select name="item_{{ i }}">

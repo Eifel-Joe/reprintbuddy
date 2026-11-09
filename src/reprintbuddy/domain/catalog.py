@@ -320,6 +320,34 @@ def update_article(session: Session, article_id: int, data: ArticleInput) -> Art
     return article
 
 
+def set_target_quantity(session: Session, article_id: int, target: int) -> Article:
+    """Set the target quantity of an article from the list or a tile (Spec 10.1, p154).
+
+    The target quantity is minimum stock + buffer (Spec 4), so the new target sets the minimum stock
+    to target - buffer; the buffer stays. A target below the buffer cannot be: the minimum stock would
+    be negative. Same checks and same transaction as the edit form (`update_article`: number range,
+    archived article refused), and like it no journal entry (the journal is for stock bookings).
+    Rule 7.1 reads the minimum stock on its next look, as after any edit.
+
+    The buffer is read here, in the transaction that writes: a buffer changed in the meantime on
+    another device cannot make the minimum stock negative, the target is then refused with the buffer
+    it is measured against. The value sent last wins, as with the edit form.
+    """
+    article = session.get(Article, article_id)
+    if article is None:
+        raise NotFoundError("articles.not_found")
+    if article.archived_at is not None:
+        raise ConflictError("articles.edit_archived")
+    target = _int_in(target, "articles.target_quantity", 0, MAX_QTY)
+    if target < article.buffer:
+        raise ValidationError("articles.target_below_buffer", buffer=article.buffer)
+    minimum = target - article.buffer
+    if article.min_stock != minimum:
+        article.min_stock = minimum
+        session.flush()
+    return article
+
+
 def set_auto_enabled(session: Session, article_id: int, enabled: bool) -> Article:
     """Switch the automation of one article on or off (the switch of the list, p44).
 
@@ -361,6 +389,7 @@ class ArticleRow:
     in_progress_units: int
     in_progress_prints: int  # open prints in Bambuddy: the note "N in Bambuddy" (Spec 10.1)
     auto_enabled: bool = False  # the switch of the list (p44)
+    buffer: int = 0  # the field of the target quantity stops at it (p154)
 
 
 def article_row(
@@ -395,6 +424,7 @@ def article_row(
         in_progress_units=in_progress_units,
         in_progress_prints=in_progress_prints,
         auto_enabled=article.auto_enabled,
+        buffer=article.buffer,
     )
 
 
@@ -774,6 +804,16 @@ def _filament_kinds(session: Session, article_id: int) -> dict[int, tuple[str | 
     }
 
 
+def same_filament_kind(a: tuple[str | None, str | None] | None, b: tuple[str | None, str | None] | None) -> bool:
+    """Two slots are of the same kind: the same material and the same colour (`(material, colour)` of each).
+
+    The one comparison of the program for "the same filament in a slot": a slot keeps its filament
+    group after another print file is chosen (Spec 5.1), and the filament page of a new article starts
+    from the group of a similar article (Spec 5.2, p156; `filament.suggest_from_similar`). `None` is
+    "no such slot": it equals only itself."""
+    return a == b
+
+
 def slots_losing_group(session: Session, article_id: int, requirements: Sequence[FilamentRequirement]) -> list[int]:
     """Slots of the new file the person has to tick again after a change of the file (Spec 5.1).
 
@@ -785,7 +825,7 @@ def slots_losing_group(session: Session, article_id: int, requirements: Sequence
         session.scalars(select(ArticleFilamentSort.slot).where(ArticleFilamentSort.article_id == article_id))
     )
     new = {r.slot: (r.material, r.color_hex) for r in requirements}
-    kept = {slot for slot in ticked if old.get(slot) == new.get(slot)}
+    kept = {slot for slot in ticked if same_filament_kind(old.get(slot), new.get(slot))}
     if ticked <= kept:
         return []
     return sorted(slot for slot in new if slot not in kept)
@@ -802,7 +842,7 @@ def _take_over_filaments(
     another colour."""
     old = _filament_kinds(session, article_id)
     new = {r.slot: (r.material, r.color_hex) for r in requirements}
-    keep = {slot for slot, value in new.items() if old.get(slot) == value}
+    keep = {slot for slot, value in new.items() if same_filament_kind(old.get(slot), value)}
     _delete_rows(
         session,
         select(ArticleFilamentSort).where(

@@ -94,7 +94,8 @@ def ticked(client, article_id):
 def test_unchanged_slot_keeps_its_group_and_no_note(bb_client, fake_bambuddy):
     a, sort_id = _with_group(bb_client)
     fake_bambuddy.set_requirements(2, 1, [FilamentRequirement(1, 10.0, "PLA", "#000000")])
-    assert choose(bb_client, a).status_code == 303
+    response = choose(bb_client, a)
+    assert response.status_code == 303 and response.headers["location"] == f"/articles/{a}"  # nothing to tick again
     assert ticked(bb_client, a) == [sort_id]
     page = bb_client.get(f"/articles/{a}").text
     assert en("articles.relinked", name="Template A") in page
@@ -104,9 +105,11 @@ def test_unchanged_slot_keeps_its_group_and_no_note(bb_client, fake_bambuddy):
 def test_changed_slot_loses_its_group_and_the_page_says_to_tick_again(bb_client, fake_bambuddy):
     a, _ = _with_group(bb_client)
     fake_bambuddy.set_requirements(2, 1, [FilamentRequirement(1, 10.0, "PETG", "#FF0000")])
-    assert choose(bb_client, a).status_code == 303
+    response = choose(bb_client, a)
+    assert response.status_code == 303 and response.headers["location"] == f"/articles/{a}/filaments?later=1"  # p153
     assert ticked(bb_client, a) == []
-    page = bb_client.get(f"/articles/{a}").text
+    page = bb_client.get(response.headers["location"]).text  # the filament page, where the slots are ticked again
+    assert en("filament.title") in page
     assert en("articles.relinked", name="Template A") in page
     assert en("articles.relinked_regroup", slots="1") in page
     assert en("articles.relinked_regroup", slots="1") not in bb_client.get(f"/articles/{a}").text  # shown once
@@ -128,7 +131,8 @@ def test_a_repeated_form_makes_no_second_note(bb_client, fake_bambuddy):
     data = {"csrf_token": csrf_of(bb_client, page), "form_token": form_token_of(bb_client, page, path)}
     assert bb_client.post(path, data=data).status_code == 303
     bb_client.get(f"/articles/{a}")  # the first page shows (and empties) the messages
-    assert bb_client.post(path, data=data).status_code == 303  # the same form again
+    again = bb_client.post(path, data=data)  # the same form again: nothing is done, so no filament page either
+    assert again.status_code == 303 and again.headers["location"] == f"/articles/{a}"
     assert en("articles.relinked_regroup", slots="1") not in bb_client.get(f"/articles/{a}").text
 
 
@@ -148,5 +152,68 @@ def test_restoring_with_another_file_names_the_slots_too(bb_client, fake_bambudd
     a = _changed_slot(bb_client, fake_bambuddy)
     with sm_of(bb_client).begin() as s:
         s.get(Article, a).archived_at = utcnow()
-    assert choose(bb_client, a).status_code == 303
-    assert en("articles.relinked_regroup", slots="1") in bb_client.get(f"/articles/{a}").text
+    response = choose(bb_client, a)
+    assert response.status_code == 303 and response.headers["location"] == f"/articles/{a}/filaments?later=1"
+    page = bb_client.get(response.headers["location"]).text
+    assert en("articles.relinked_regroup", slots="1") in page
+    assert en("articles.flash_restored", name="Template A") in page
+    with sm_of(bb_client)() as s:
+        assert s.get(Article, a).archived_at is None  # active again: the page lets the person save
+
+
+# ---- "Confirm the file" is a way of choosing the file again (Spec 5.1, p153) ---------------------------
+
+
+def _changed_file(client, fake_bambuddy, requirements):
+    """An article with a group whose file was changed in Bambuddy (the pause `file_changed`), now needing `requirements`."""
+    a, sort_id = _with_group(client)
+    with sm_of(client).begin() as s:
+        row = s.get(Article, a)
+        row.file_fingerprint, row.paused, row.pause_reason = "v1", True, "file_changed"
+    fake_bambuddy.update_file(1, fingerprint="v2")
+    fake_bambuddy.set_requirements(1, 1, requirements)
+    return a, sort_id
+
+
+def confirm(client, a, **keep):
+    page = f"/articles/{a}"
+    action = f"/articles/{a}/confirm-file"
+    data = {"csrf_token": csrf_of(client, page), "form_token": form_token_of(client, page, action), **keep}
+    return client.post(action, data=data), data
+
+
+def test_confirming_a_changed_slot_leads_to_the_filament_page_with_the_slots_named(bb_client, fake_bambuddy):
+    a, _ = _changed_file(bb_client, fake_bambuddy, [FilamentRequirement(1, 10.0, "PETG", "#FF0000")])
+    response, _ = confirm(bb_client, a)
+    assert response.status_code == 303 and response.headers["location"] == f"/articles/{a}/filaments?later=1"
+    assert ticked(bb_client, a) == []  # the group of that slot is gone
+    page = bb_client.get(response.headers["location"]).text
+    assert en("filament.title") in page
+    assert en("articles.file_confirmed", name="Template A") in page
+    assert en("articles.relinked_regroup", slots="1") in page
+
+
+def test_confirming_an_unchanged_slot_keeps_its_group_and_goes_to_the_article(bb_client, fake_bambuddy):
+    a, sort_id = _changed_file(bb_client, fake_bambuddy, [FilamentRequirement(1, 10.0, "PLA", "#000000")])
+    response, _ = confirm(bb_client, a)
+    assert response.status_code == 303 and response.headers["location"] == f"/articles/{a}"
+    assert ticked(bb_client, a) == [sort_id]
+    assert en("articles.relinked_regroup", slots="1") not in bb_client.get(f"/articles/{a}").text
+
+
+def test_confirming_without_any_group_to_lose_goes_to_the_article(bb_client, fake_bambuddy):
+    a = make(bb_client, library_file_id=1, plate_id=1, file_fingerprint="v1", paused=True, pause_reason="file_changed")
+    fake_bambuddy.update_file(1, fingerprint="v2")
+    fake_bambuddy.set_requirements(1, 1, [FilamentRequirement(1, 10.0, "PETG", "#FF0000")])
+    response, _ = confirm(bb_client, a)
+    assert response.status_code == 303 and response.headers["location"] == f"/articles/{a}"
+
+
+def test_a_repeated_confirm_does_nothing_and_stays_on_the_article(bb_client, fake_bambuddy):
+    a, _ = _changed_file(bb_client, fake_bambuddy, [FilamentRequirement(1, 10.0, "PETG", "#FF0000")])
+    first, data = confirm(bb_client, a)
+    bb_client.get(first.headers["location"])  # shows (and empties) the messages
+    again = bb_client.post(f"/articles/{a}/confirm-file", data=data)
+    assert again.status_code == 303 and again.headers["location"] == f"/articles/{a}"
+    assert en("articles.relinked_regroup", slots="1") not in bb_client.get(f"/articles/{a}").text
+

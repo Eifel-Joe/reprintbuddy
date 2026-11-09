@@ -30,7 +30,7 @@ from reprintbuddy.domain import stock as stock_mod
 from reprintbuddy.models import (
     Article, ArticleFilament, ArticleFilamentSort, ArticlePart, Dispatch, FilamentSort, Part, WorkQueueEntry,
 )
-from reprintbuddy.web import kpis, labels_view, listing
+from reprintbuddy.web import kpis, labels_view, listing, regions
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, local_next, release_connection, render
@@ -55,6 +55,13 @@ from reprintbuddy.web.routes.upload import upload_url
 from reprintbuddy.web.i18n import translate
 
 router = APIRouter()
+
+# p153: appended to the address of the filament page when a person is led there right after creating
+# an article or changing its print file; the page then offers "Later" instead of "Cancel".
+LATER = "?later=1"
+# p156: only right after creating: the page also starts from the group of a similar article (a display
+# only: nothing is stored before "Save"). Not after a change of the file, not on a later visit.
+NEW_ARTICLE = "?later=1&suggest=1"
 
 
 class NotSliced(Exception):
@@ -283,9 +290,18 @@ async def articles_list(
     cards = kpis.state_cards(t, "article", icon, len(every), t(label), named)
     keep = (("status", status), ("view", "archived" if archived else None))
     layout = listing.layout_of(request, "articles")
+    shown = [row for row in found if status is None or row.status == status]
+    # A refused target quantity (`article_target`) is shown once, at the field of its article. Like a
+    # message it is not used up by a fetch of regions (another tab on the same cookie): it belongs to
+    # the page that follows the redirect. When the article has no field here (archived on another device
+    # meanwhile, hidden by the search or the filter) the text stands above the list instead.
+    target_error = None if regions.requested(request) else request.session.pop(TARGET_ERROR_KEY, None)
+    orphan_error = None
+    if target_error is not None and not any(row.id == target_error["id"] for row in shown):
+        target_error, orphan_error = None, target_error["text"]
     return render(
-        request, "articles_list.html", active_nav="articles", archived=archived,
-        rows=[row for row in found if status is None or row.status == status],
+        request, "articles_list.html", active_nav="articles", archived=archived, target_error=target_error,
+        orphan_error=orphan_error, rows=shown,
         total=len(every),
         kpis=cards,
         filters=listing.filter_links(request, states, counts, len(found), status),
@@ -295,6 +311,39 @@ async def articles_list(
         status=status,
         search_keep=[(name, value) for name, value in keep if value],  # a new search keeps these
         here=request.url.path + (f"?{request.url.query}" if request.url.query else ""),  # the switches return here
+    )
+
+
+TARGET_ERROR_KEY = "target_error"  # session: {"id": article id, "value": what was typed, "text": the refusal}
+
+
+@router.post("/articles/{article_id:int}/target", dependencies=[Depends(verify_csrf)])
+async def article_target(request: Request, article_id: int, db: Session = Depends(get_db)):
+    """A new target quantity from the list or a tile: the minimum stock becomes target - buffer
+    (`catalog.set_target_quantity`, the same checks as the edit form).
+
+    Back to the list the form came from (`next`, a local path). A refusal comes back there too and
+    shows at the field of the article (the list reads it from the session once), with what was typed.
+    Only this form saves: the arrows of a number field (spinbox.js) change the value in the field and
+    never send it, because every saved change lets rule 7.1 plan prints, and three clicks on an arrow
+    must not be three changes.
+    """
+    name = _get_article(db, article_id).name
+    form = await request.form()
+    after = local_next(form) or "/articles"
+    raw = str(form.get("target", ""))
+
+    def work(tx):
+        target = parse_int(raw, field="articles.target_quantity", min=0, max=MAX_QTY)
+        catalog.set_target_quantity(tx, article_id, target)
+        return {"name": name, "target": target}
+
+    def on_error(text: str, status: int, exc: Exception):
+        request.session[TARGET_ERROR_KEY] = {"id": article_id, "value": raw[:24], "text": text}
+        return RedirectResponse(after, status_code=303)
+
+    return await run_form_action(
+        request, work=work, success_url=after, flash_key="articles.target_saved", on_error=on_error
     )
 
 
@@ -542,7 +591,7 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
             article = catalog.create_article(
                 tx, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail, data=data
             )
-            article_id, article_name = article.id, article.name
+            article_id, article_name, has_slots = article.id, article.name, bool(requirements)
     except FormTokenUsed:
         return duplicate_redirect(request, "/articles")
     except (DomainError, FormTokenInvalid) as exc:
@@ -553,7 +602,14 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
             printers=printers, parts=parts, values=values,
             error=error, field_errors=field_errors, status=error_status(exc),
         )
-    return saved_redirect(request, f"/articles/{article_id}", "articles.created", name=article_name)
+    # p153: a new article has no spool sorts ticked yet, and it is easy to forget (the article would
+    # show "not assigned" for good): the filament page comes first, its save leads to the article.
+    # A plate without filament slots has nothing to assign. A new article is never archived.
+    if not has_slots:
+        return saved_redirect(request, f"/articles/{article_id}", "articles.created", name=article_name)
+    flash(request, "articles.created", name=article_name)
+    flash(request, "articles.created_filament")
+    return RedirectResponse(f"/articles/{article_id}/filaments{NEW_ARTICLE}", status_code=303)
 
 
 # ---- detail, thumbnail, settings -------------------------------------------------------------
@@ -776,19 +832,28 @@ def _filament_page(request: Request, spools, article_id: int, typed: _Typed | No
     """The form to tick the spool sorts of each slot. Reads (and enters new spool sorts, Entscheidung 4)
     in one write transaction; `typed` holds what a rejected submission ticked, which stays as it was."""
     lang = current_language(request)
+    later = request.query_params.get("later") == "1"  # p153: led here by a creation or a change of the file
+    suggest = later and request.query_params.get("suggest") == "1"  # p156: only right after creating
     with write_transaction(request) as tx:
         article = tx.get(Article, article_id)
         if article is None:
             raise HTTPException(status_code=404)
         sorts, day = filament.known_sorts(tx, spools)
         groups = filament.slot_groups(tx, article_id)
+        suggestions = filament.suggest_from_similar(tx, article_id) if suggest and article.archived_at is None else {}
         by_id = {s.id: s for s in tx.scalars(select(FilamentSort))}
         name, archived = article.name, article.archived_at is not None
         slots = []
         for g in groups:
+            suggestion = suggestions.get(g.slot)
             if typed is not None and g.slot in typed:
                 ticked, reordered = typed[g.slot]
+                suggestion = None  # what a rejected submission ticked stays as it was
+            elif suggestion is not None and not g.ticked:  # a slot that has a group keeps it
+                ticked = {str(i) for i in suggestion.sort_ids}
+                reordered = str(suggestion.reordered) if suggestion.reordered is not None else ""
             else:
+                suggestion = None
                 ticked = {str(i) for i in g.ticked}
                 reordered = str(g.reordered) if g.reordered is not None else ""
             choices = [
@@ -804,6 +869,7 @@ def _filament_page(request: Request, spools, article_id: int, typed: _Typed | No
                 "color": color_mod.display_hex(g.color_hex) if g.color_hex else "",
                 "swatch": g.color_hex if g.color_hex and COLOR.fullmatch(g.color_hex) else None,
                 "choices": choices,
+                "suggested_from": suggestion.source_name if suggestion is not None else None,
             })
     if archived and error is None:
         error = translate(lang, "articles.edit_archived")
@@ -811,6 +877,7 @@ def _filament_page(request: Request, spools, article_id: int, typed: _Typed | No
         request, "article_filaments.html", status_code=status, active_nav="articles",
         article_id=article_id, article_name=name, slots=slots, sorts_unknown=sorts is None,
         stale_day=format_date(day, lang) if day else None, read_only=archived, error=error,
+        later=later, query=(NEW_ARTICLE if suggest else LATER if later else ""),
     )
 
 
@@ -956,7 +1023,9 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
     response = await run_form_action(
         request,
         work=work,
-        success_url=f"/articles/{article_id}",
+        # p153: slots to tick again (the note below says which) are ticked on the filament page; a repeat
+        # of the form did no work (`changed` stays False) and goes to the article as always
+        success_url=lambda: f"/articles/{article_id}/filaments{LATER}" if again and changed else f"/articles/{article_id}",
         flash_key="articles.flash_restored" if archived else "articles.relinked",
         on_error=lambda text, status, exc: _plates_page(
             request, db, file_id, file_base=f"{base}/file", back_base=base, relink_id=article_id,
@@ -1050,13 +1119,27 @@ async def article_confirm_file(request: Request, article_id: int, db: Session = 
         return refused("articles.file_missing")
     file, _plate, requirements, thumbnail = read
 
+    # Confirming is a way of choosing the file again (Spec 5.1): a slot that is another material or
+    # colour in the changed file loses its group, and the person ticks it again on the filament page
+    # (p153; the same rule and the same way as `relink_restore`).
+    again: list[int] = []
+    changed = False
+
     def work(tx):
+        nonlocal changed
+        again.extend(catalog.slots_losing_group(tx, article_id, requirements))  # before the change
         catalog.confirm_article_file(
             tx, article_id, file=file, requirements=requirements, thumbnail=thumbnail, actor="user"
         )
+        changed = True
         return {"name": name}
 
-    return await run_form_action(
-        request, work=work, success_url=f"/articles/{article_id}", flash_key="articles.file_confirmed",
+    response = await run_form_action(
+        request, work=work,
+        success_url=lambda: f"/articles/{article_id}/filaments{LATER}" if again and changed else f"/articles/{article_id}",
+        flash_key="articles.file_confirmed",
         on_error=lambda text, status, exc: _detail_refused(request, db, article_id, text, status),
     )
+    if again and changed:
+        flash(request, "articles.relinked_regroup", warning=True, slots=", ".join(map(str, again)))
+    return response

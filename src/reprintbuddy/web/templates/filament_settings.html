@@ -12,15 +12,15 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="row">
       {% call ui.field("filament-lead_time_days", t('filament.field.lead_time_days'), t('info.filament_lead_time')) %}
-        <input id="filament-lead_time_days" name="lead_time_days" inputmode="numeric" value="{{ values.lead_time_days }}">
+        <input id="filament-lead_time_days" name="lead_time_days" inputmode="numeric" min="0" value="{{ values.lead_time_days }}">
       {% endcall %}
       {% call ui.field("filament-pack_grams", t('filament.field.pack_grams'), t('info.filament_pack_grams')) %}
-        <input id="filament-pack_grams" name="pack_grams" inputmode="numeric" value="{{ values.pack_grams }}">
+        <input id="filament-pack_grams" name="pack_grams" inputmode="numeric" min="1" value="{{ values.pack_grams }}">
       {% endcall %}
     </div>
     <div class="row">
       {% call ui.field("filament-safety_value", t('filament.field.safety_value'), t('info.filament_safety')) %}
-        <input id="filament-safety_value" name="safety_value" inputmode="numeric" value="{{ values.safety_value }}">
+        <input id="filament-safety_value" name="safety_value" inputmode="numeric" min="0" value="{{ values.safety_value }}">
       {% endcall %}
       {% call ui.field("filament-safety_unit", t('filament.field.safety_unit')) %}
         <select id="filament-safety_unit" name="safety_unit">
@@ -30,7 +30,7 @@
       {% endcall %}
     </div>
     {% call ui.field("filament-min_order_packs", t('filament.field.min_order_packs'), t('info.filament_min_order_packs')) %}
-      <input id="filament-min_order_packs" name="min_order_packs" inputmode="numeric" value="{{ values.min_order_packs }}">
+      <input id="filament-min_order_packs" name="min_order_packs" inputmode="numeric" min="1" value="{{ values.min_order_packs }}">
     {% endcall %}
     {% call ui.field("filament-supplier", t('filament.field.supplier')) %}
       <input id="filament-supplier" name="supplier" value="{{ values.supplier }}" maxlength="200">

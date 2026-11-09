@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from reprintbuddy.bambuddy.client import BambuddyClient
 from reprintbuddy.bambuddy.types import Spool
 from reprintbuddy.domain import color, rules
+from reprintbuddy.domain import catalog
 from reprintbuddy.domain.catalog import _int_in
 from reprintbuddy.domain.catalog import _text as _form_text
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
@@ -433,6 +434,71 @@ def _ticked_rows(session: Session, article_id: int) -> dict[int, list[ArticleFil
     for row in session.scalars(select(ArticleFilamentSort).where(ArticleFilamentSort.article_id == article_id)):
         rows[row.slot].append(row)
     return rows
+
+
+@dataclass(frozen=True)
+class Suggestion:
+    """What the filament page of a new article may tick for one slot, taken from a similar article."""
+
+    source_id: int
+    source_name: str
+    sort_ids: frozenset[int]
+    reordered: int | None
+
+
+def suggest_from_similar(session: Session, article_id: int) -> dict[int, Suggestion]:
+    """For each slot of a new article the group of a similar article (Spec 5.2, 9.1, p156); nothing is stored.
+
+    Similar: any slot of another article that is not archived with the same material and colour
+    (`catalog.same_filament_kind`, the rule of keeping a group after a change of the print file); the slot
+    NUMBER does not matter, the same colour may sit in another slot of another file. The source must have
+    a group in such a slot (an empty slot has nothing to suggest). Of several articles the one created
+    last counts (highest id: there is no date of an assignment; the owner's decision); of several such slots of
+    that article the one with the smallest number that has a group. Only sorts the new slot offers itself
+    (`is_candidate`) are suggested; the reordered one is the source's if it is still there, else the only
+    sort left, else none (saving asks the person to choose). A slot without material or colour gets none."""
+    slots = session.scalars(
+        select(ArticleFilament).where(ArticleFilament.article_id == article_id).order_by(ArticleFilament.slot)
+    ).all()
+    wanted = [slot for slot in slots if _norm(slot.material) and _norm(slot.color_hex)]
+    if not wanted:
+        return {}
+    sources = session.execute(
+        select(Article.id, Article.name)
+        .where(Article.id != article_id, Article.archived_at.is_(None))
+        .order_by(Article.id.desc())
+    ).all()
+    kinds: dict[int, list[tuple[int, str | None, str | None]]] = defaultdict(list)
+    for row in session.scalars(
+        select(ArticleFilament).where(ArticleFilament.article_id.in_([s.id for s in sources])).order_by(ArticleFilament.slot)
+    ):
+        kinds[row.article_id].append((row.slot, row.material, row.color_hex))
+    ticked: dict[int, dict[int, list[ArticleFilamentSort]]] = defaultdict(lambda: defaultdict(list))
+    for row in session.scalars(
+        select(ArticleFilamentSort).where(ArticleFilamentSort.article_id.in_([s.id for s in sources]))
+    ):
+        ticked[row.article_id][row.slot].append(row)
+    sorts = {s.id: s for s in session.scalars(select(FilamentSort).where(FilamentSort.legacy.is_(False)))}
+    found: dict[int, Suggestion] = {}
+    for slot in wanted:
+        for source in sources:
+            for number, material, color_hex in kinds.get(source.id, ()):
+                if not catalog.same_filament_kind((material, color_hex), (slot.material, slot.color_hex)):
+                    continue
+                rows = [
+                    r for r in ticked[source.id].get(number, ())
+                    if r.sort_id in sorts and is_candidate(sorts[r.sort_id], slot.material, slot.color_hex)
+                ]
+                if not rows:
+                    continue
+                ids = frozenset(r.sort_id for r in rows)
+                named = next((r.sort_id for r in rows if r.reordered), None)
+                reordered = named if named is not None else (next(iter(ids)) if len(ids) == 1 else None)
+                found[slot.slot] = Suggestion(source.id, source.name, ids, reordered)
+                break
+            if slot.slot in found:
+                break
+    return found
 
 
 def slot_groups(session: Session, article_id: int) -> list[SlotGroup]:
