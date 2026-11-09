@@ -804,6 +804,16 @@ def _filament_kinds(session: Session, article_id: int) -> dict[int, tuple[str | 
     }
 
 
+def same_filament_kind(a: tuple[str | None, str | None] | None, b: tuple[str | None, str | None] | None) -> bool:
+    """Two slots are of the same kind: the same material and the same colour (`(material, colour)` of each).
+
+    The one comparison of the program for "the same filament in a slot": a slot keeps its filament
+    group after another print file is chosen (Spec 5.1), and the filament page of a new article starts
+    from the group of a similar article (Spec 5.2, p156; `filament.suggest_from_similar`). `None` is
+    "no such slot": it equals only itself."""
+    return a == b
+
+
 def slots_losing_group(session: Session, article_id: int, requirements: Sequence[FilamentRequirement]) -> list[int]:
     """Slots of the new file the person has to tick again after a change of the file (Spec 5.1).
 
@@ -815,7 +825,7 @@ def slots_losing_group(session: Session, article_id: int, requirements: Sequence
         session.scalars(select(ArticleFilamentSort.slot).where(ArticleFilamentSort.article_id == article_id))
     )
     new = {r.slot: (r.material, r.color_hex) for r in requirements}
-    kept = {slot for slot in ticked if old.get(slot) == new.get(slot)}
+    kept = {slot for slot in ticked if same_filament_kind(old.get(slot), new.get(slot))}
     if ticked <= kept:
         return []
     return sorted(slot for slot in new if slot not in kept)
@@ -832,7 +842,7 @@ def _take_over_filaments(
     another colour."""
     old = _filament_kinds(session, article_id)
     new = {r.slot: (r.material, r.color_hex) for r in requirements}
-    keep = {slot for slot, value in new.items() if old.get(slot) == value}
+    keep = {slot for slot, value in new.items() if same_filament_kind(old.get(slot), value)}
     _delete_rows(
         session,
         select(ArticleFilamentSort).where(
