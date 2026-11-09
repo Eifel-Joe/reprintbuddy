@@ -655,7 +655,7 @@ a.btn, button.btn { display: inline-flex; align-items: center; justify-content: 
 html[lang="de"] .kpi-label { hyphens: auto; }
 /* Recorded numbers say from when they are (p63): a small line under the label, under the column head. */
 .kpi-note { color: var(--text-2); font-size: 11px; margin-top: 1px; overflow-wrap: break-word; }
-.col-note { display: block; font-size: 10px; font-weight: 400; letter-spacing: 0; text-transform: none; white-space: normal; }
+.col-note { display: block; font-size: 10px; font-weight: 400; letter-spacing: 0; text-transform: none; white-space: nowrap; }
 
 /* Symbol buttons at the end of a row: small picture, 44 px target. */
 .icon-btn {
