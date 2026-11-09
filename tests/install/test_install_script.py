@@ -575,3 +575,83 @@ def test_checkout_refuses_a_release_that_is_no_version_tag(bash, tmp_path, tagge
     done = _call_checkout(bash, tmp_path, tagged_repo, "--force")
     assert done.returncode == 1
     assert "not a version tag" in done.stderr
+
+
+# --- review of p168: the re-run paths of fetch_code on a real clone -------------------------------------
+
+
+def _run_fetch_code(bash, tmp_path, origin, *, checked_out, database):
+    """`fetch_code` of the script on a clone of `origin` that sits on `checked_out`, with or without the
+    database. REPRINTBUDDY_DESTDIR points the file checks at the test folder; the same stand-in for
+    `setsid ... runuser` as above runs git on the clone."""
+    git = shutil.which("git")
+    install = tmp_path / "root" / "opt" / "reprintbuddy"
+    install.parent.mkdir(parents=True)
+    subprocess.run([git, "clone", "-q", origin.as_posix(), install.as_posix()], check=True, capture_output=True)
+    subprocess.run([git, "-C", install.as_posix(), "checkout", "-q", "--detach", checked_out], check=True, capture_output=True)
+    if database:
+        db = tmp_path / "root" / "var" / "lib" / "reprintbuddy" / "reprintbuddy.db"
+        db.parent.mkdir(parents=True)
+        db.write_bytes(b"")
+    text = INSTALL_SH.read_text(encoding="utf-8").replace("\r\n", "\n").rstrip()
+    assert text.endswith('main "$@"')
+    functions = tmp_path / "functions.sh"
+    functions.write_text(text.removesuffix('main "$@"'), encoding="utf-8", newline="\n")
+    shims = tmp_path / "shims"
+    shims.mkdir()
+    (shims / "setsid").write_text(SHIM, encoding="utf-8", newline="\n")
+    (shims / "setsid").chmod(0o755)
+    env = dict(
+        os.environ, FAKE_INSTALL=install.as_posix(), REPRINTBUDDY_DESTDIR=(tmp_path / "root").as_posix(),
+        PATH=f"{shims.as_posix()}{os.pathsep}{os.environ['PATH']}",
+    )
+    command = f'source "{functions.as_posix()}"; fetch_code; git -C "{install.as_posix()}" describe --tags --exact-match'
+    return subprocess.run(
+        [bash, "-c", command], capture_output=True, text=True, encoding="utf-8", env=env,
+        stdin=subprocess.DEVNULL, timeout=120,
+    )
+
+
+@pytest.fixture
+def origin_repo(tmp_path):
+    """The repository the installer clones from: an older release, the one of the script and a newer one;
+    the default branch stands on the newest (as main does after a release)."""
+    git = shutil.which("git")
+    if not git:
+        pytest.skip("git is not installed")
+    repo = tmp_path / "origin"
+    repo.mkdir()
+    subprocess.run([git, "init", "-q", repo.as_posix()], check=True, capture_output=True)
+    for tag in ("v0.0.1", PINNED, "v99.0.0"):
+        (repo / "version.txt").write_text(tag, encoding="utf-8")
+        for args in (["add", "version.txt"], ["commit", "-q", "-m", tag], ["tag", tag]):
+            subprocess.run(
+                [git, "-C", repo.as_posix(), "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
+                check=True, capture_output=True,
+            )
+    return repo
+
+
+def test_a_rerun_without_database_moves_to_the_release_of_the_script_even_when_head_is_on_another_tag(
+    bash, tmp_path, origin_repo
+):
+    """The first run stopped after the clone: the default branch stands on the newest release (a tag too).
+    Nothing is installed, so the re-run must still go to the release of this script."""
+    done = _run_fetch_code(bash, tmp_path, origin_repo, checked_out="v99.0.0", database=False)
+    assert done.returncode == 0, done.stderr
+    assert "Unfinished installation found" in done.stdout
+    assert done.stdout.strip().splitlines()[-1] == PINNED
+
+
+def test_a_rerun_with_database_keeps_the_installed_version_and_says_which(bash, tmp_path, origin_repo):
+    done = _run_fetch_code(bash, tmp_path, origin_repo, checked_out="v0.0.1", database=True)
+    assert done.returncode == 0, done.stderr
+    assert "Existing installation found, keeping version v0.0.1" in done.stdout
+    assert PINNED in done.stdout  # it says which release this script is, and where versions change
+    assert done.stdout.strip().splitlines()[-1] == "v0.0.1"
+
+
+def test_a_rerun_with_database_on_the_release_of_the_script_says_nothing_more(bash, tmp_path, origin_repo):
+    done = _run_fetch_code(bash, tmp_path, origin_repo, checked_out=PINNED, database=True)
+    assert done.returncode == 0, done.stderr
+    assert "Existing installation found, keeping version." in done.stdout

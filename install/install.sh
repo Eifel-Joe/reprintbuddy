@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Reprintbuddy installer for Debian 13 or newer (native install, no Docker, systemd).
 #
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/main/install/install.sh)"
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
 #
 # Run as root on the system that is to run Reprintbuddy. The tag in the address is the version that gets
 # installed (RELEASE_TAG below, set together with the package version). Safe to run again: the installed
@@ -270,15 +270,22 @@ fetch_code() {
     if [ -e "${DESTDIR}${INSTALL_DIR}/.git" ]; then
         # A first run that stopped after the clone (for example "was not found" before the
         # tag existed) leaves the default branch checked out and no database behind.
-        # Nothing is installed yet then, so move to the release instead of keeping that state.
-        if [ ! -e "${DESTDIR}${DB_FILE}" ] &&
-            ! capture_as_service_user git -C "${INSTALL_DIR}" describe --tags --exact-match HEAD >/dev/null 2>&1; then
+        # Nothing is installed yet then, so move to the release of this script instead of keeping that
+        # state. Whatever HEAD stands on is no reason to keep it: the default branch can carry a release
+        # tag too, and so can the checkout of an earlier run of another script.
+        if [ ! -e "${DESTDIR}${DB_FILE}" ]; then
             say "Unfinished installation found, switching to release ${RELEASE_TAG}."
             as_service_user git -C "${INSTALL_DIR}" fetch --prune --prune-tags --force --tags origin
             checkout_release
             return 0
         fi
-        say "Existing installation found, keeping version."
+        local installed
+        installed="$(capture_as_service_user git -C "${INSTALL_DIR}" describe --tags --exact-match HEAD 2>/dev/null || true)"
+        if [ -n "${installed}" ] && [ "${installed}" != "${RELEASE_TAG}" ]; then
+            say "Existing installation found, keeping version ${installed} (this script is ${RELEASE_TAG}; the version changes through the update on the settings page)."
+        else
+            say "Existing installation found, keeping version."
+        fi
         return 0
     fi
     as_service_user git clone "${REPO_URL}" "${INSTALL_DIR}"
@@ -410,9 +417,10 @@ stage_system_files() {
     fi
 }
 
-# This script comes from the branch the user fetched it from, the code from a release tag.
-# If the two disagree about the units, the sudoers rule or the wrapper, installing this
-# script's copies would put files on the system that the installed version does not expect.
+# A fresh installation puts the release of this script in place, so script and code agree. An existing
+# installation keeps its version, which can be another one than the script's. If the two disagree about
+# the units, the sudoers rule or the wrapper, installing this script's copies would put files on the
+# system that the installed version does not expect.
 check_installer_matches_code() {
     stage_system_files
     local file tree tag
