@@ -1,0 +1,49 @@
+{# The tab "Log" of the settings page (Spec 10.7): what happened besides the journal, newest first.
+   Filters by group and by who (links, so it works without JavaScript); follows live (topic "activity"). #}
+<div class="settings-wide">
+{% call ui.region("activity-log", "activity") %}
+<div class="toolbar log-filters">
+  <nav class="filters" aria-label="{{ t('activity.filter_area') }}">
+    {%- for link in log_area_links %}
+    <a class="filter{% if link.active %} active{% endif %}" href="{{ link.href }}"{% if link.active %} aria-current="true"{% endif %}>{{ link.label }} <span class="count">{{ link.count }}</span></a>
+    {%- endfor %}
+  </nav>
+  <nav class="filters" aria-label="{{ t('activity.filter_actor') }}">
+    {%- for link in log_actor_links %}
+    <a class="filter{% if link.active %} active{% endif %}" href="{{ link.href }}"{% if link.active %} aria-current="true"{% endif %}>{{ link.label }} <span class="count">{{ link.count }}</span></a>
+    {%- endfor %}
+  </nav>
+</div>
+{% if log_rows %}
+<div class="card table-wrap">
+  <table class="log-table">
+    <thead>
+      <tr>
+        <th>{{ t('activity.col.time') }}</th>
+        <th>{{ t('activity.col.area') }}</th>
+        <th>{{ t('activity.col.event') }}</th>
+        <th>{{ t('activity.col.actor') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in log_rows %}
+      <tr>
+        <td class="nowrap">{{ row.at|local_dt }}</td>
+        <td>{{ row.area_label }}</td>
+        <td>{% if row.link %}<a href="{{ row.link }}">{{ row.text }}</a>{% else %}{{ row.text }}{% endif %}
+          {%- for extra in row.extras %}<br><span class="muted">{{ extra }}</span>{% endfor %}</td>
+        <td>{{ row.actor }}{% if row.address %}<br><span class="muted">{{ row.address }}</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p>
+  {% if log_newer %}<a class="btn-link" href="{{ log_newer }}">{{ t('journal.newer') }}</a>{% endif %}
+  {% if log_older %}<a class="btn-link" href="{{ log_older }}">{{ t('journal.older') }}</a>{% endif %}
+</p>
+{% else %}
+<div class="card"><p class="muted">{{ t('activity.empty_filtered' if log_filtered else 'activity.empty') }}</p></div>
+{% endif %}
+{% endcall %}
+</div>

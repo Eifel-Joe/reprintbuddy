@@ -20,6 +20,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.live import NO_RIGHT_DELAY
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops.tls import validate_tls_pair
+from reprintbuddy.web import activity_view
 from reprintbuddy.web import labels_view, notify_view
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
@@ -48,6 +49,7 @@ SETTINGS_TABS: list[tuple[str, str, str]] = [
     ("notify", "bell", "settings.tab.notify"),  # push messages through Home Assistant (Spec 10.6)
     ("account", "user", "settings.tab.account"),
     ("maintenance", "download", "settings.tab.maintenance"),
+    ("log", "history", "settings.tab.log"),  # the activity log (Spec 10.7)
 ]
 DEFAULT_TAB = "general"
 # The tab that shows the card of a section: a page re-rendered with an error opens it.
@@ -104,6 +106,7 @@ def _page(
     current_tab = SECTION_TAB.get(section or "") or _tab_from_query(request)
     label_context = labels_view.settings_context(values, str(st.get_setting(db, "language"))) if current_tab == "labels" else {}
     notify_context = notify_view.settings_context(request, db) if current_tab == "notify" else {}
+    log_context = activity_view.context(request, db, str(st.get_setting(db, "language"))) if current_tab == "log" else {}
     return render(
         request,
         "settings.html",
@@ -125,6 +128,7 @@ def _page(
         check=check,
         **label_context,
         **notify_context,
+        **log_context,
         **values,
     )
 
