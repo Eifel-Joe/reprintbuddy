@@ -304,6 +304,79 @@ def test_one_table_card_per_slot_inside_the_form(bb_client, fake_bambuddy):
         assert len(re.findall(r"<th[ >]", table)) == 4  # narrow enough for a phone
 
 
+# ---- p153: led here right after creating an article or changing its file: "Later" -------------------------
+
+
+def later_link(html, a):
+    return re.search(rf'<a class="btn secondary" href="/articles/{a}">([^<]*)</a>', html)
+
+
+def test_later_replaces_cancel_and_the_form_keeps_the_way(bb_client, fake_bambuddy):
+    two_blacks(fake_bambuddy)
+    a = make(bb_client)
+    plain = bb_client.get(f"/articles/{a}/filaments").text
+    assert later_link(plain, a).group(1) == "Cancel" and f'action="/articles/{a}/filaments"' in plain
+    led = bb_client.get(f"/articles/{a}/filaments?later=1").text
+    assert later_link(led, a).group(1) == translate("en", "filament.later") == "Later"
+    assert f'action="/articles/{a}/filaments?later=1"' in led
+
+
+def test_later_stays_after_a_refused_save_and_a_save_goes_to_the_article(bb_client, fake_bambuddy):
+    fake_bambuddy.add_spool("PETG", brand="Brand A", color_hex="#000000", color_name="Black")
+    fake_bambuddy.add_spool("PLA", brand="Brand B", color_hex="#000000", color_name="Black")
+    a = make(bb_client)
+    bb_client.get(f"/articles/{a}/filaments")
+    petg, pla = sort_id(bb_client, "Brand A", "PETG"), sort_id(bb_client, "Brand B")
+
+    def send(*ticks):
+        data = {"csrf_token": csrf_of(bb_client, f"/articles/{a}/filaments"), "slot": "1", "tick_1": [str(t) for t in ticks]}
+        return bb_client.post(f"/articles/{a}/filaments?later=1", data=data, follow_redirects=False)
+
+    refused = send(petg)  # does not fit: the form is shown again, still with "Later"
+    assert refused.status_code == 200 and later_link(refused.text, a).group(1) == "Later"
+    assert f'action="/articles/{a}/filaments?later=1"' in refused.text
+    saved = send(pla)
+    assert saved.status_code == 303 and saved.headers["location"] == f"/articles/{a}"
+    assert group(bb_client, a)[0] == {pla}
+
+
+def test_later_leaves_the_article_unassigned_as_before(bb_client, fake_bambuddy):
+    two_blacks(fake_bambuddy)
+    a = make(bb_client)
+    link = later_link(bb_client.get(f"/articles/{a}/filaments?later=1").text, a)
+    assert link is not None  # nothing is saved by it: it is a plain link to the article
+    detail = bb_client.get(f"/articles/{a}")
+    assert detail.status_code == 200 and translate("en", "filament.not_assigned") in detail.text
+    assert group(bb_client, a) == (set(), None)
+
+
+def test_later_in_german(bb_client, fake_bambuddy):
+    two_blacks(fake_bambuddy)
+    a = make(bb_client)
+    with sm_of(bb_client).begin() as s:
+        st.set_setting(s, "language", "de", commit=False)
+    assert later_link(bb_client.get(f"/articles/{a}/filaments?later=1").text, a).group(1) == "Später"
+
+
+def test_without_bambuddy_the_page_still_leads_on(ready_client):
+    """Bambuddy cannot be reached and nothing is recorded: no sorts to tick, but "Later" is there and works."""
+    a = make(ready_client)
+    page = ready_client.get(f"/articles/{a}/filaments?later=1")
+    assert page.status_code == 200 and translate("en", "filament.unknown") in unescape(page.text)
+    assert boxes(page.text) == [] and translate("en", "filament.no_candidates") in unescape(page.text)
+    assert later_link(page.text, a).group(1) == "Later"
+    assert ready_client.get(f"/articles/{a}").status_code == 200
+
+
+def test_with_a_recorded_stock_but_no_bambuddy_the_old_sorts_are_offered(bb_client, fake_bambuddy):
+    two_blacks(fake_bambuddy)
+    a = make(bb_client)
+    bb_client.get(f"/articles/{a}/filaments")  # enters the sorts
+    fake_bambuddy.unavailable = True
+    page = bb_client.get(f"/articles/{a}/filaments?later=1")
+    assert page.status_code == 200 and len(boxes(page.text)) == 2 and later_link(page.text, a).group(1) == "Later"
+
+
 def test_info_button_says_what_the_intro_does_not(bb_client, fake_bambuddy):  # p62
     two_blacks(fake_bambuddy)
     a = make(bb_client)

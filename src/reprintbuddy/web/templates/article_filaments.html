@@ -7,7 +7,7 @@
 {% call ui.region("form", "article-settings:" ~ article_id ~ " filament") %}
 {% if sorts_unknown %}<p class="alert" role="status">{{ t('filament.unknown') }}</p>
 {% elif stale_day %}<p class="alert" role="status">{{ t('filament.stale', day=stale_day) }}</p>{% endif %}
-<form method="post" action="/articles/{{ article_id }}/filaments" data-live-watch="article-settings:{{ article_id }}">
+<form method="post" action="/articles/{{ article_id }}/filaments{% if later %}?later=1{% endif %}" data-live-watch="article-settings:{{ article_id }}">
   {{ ui.live_stale() }}
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="card spaced">
@@ -42,7 +42,7 @@
   </div>
   {% endfor %}
   {% if not read_only %}<button class="btn" type="submit">{{ t('common.save') }}</button>{% endif %}
-  <a class="btn secondary" href="/articles/{{ article_id }}">{{ t('common.cancel') }}</a>
+  <a class="btn secondary" href="/articles/{{ article_id }}">{{ t('filament.later') if later else t('common.cancel') }}</a>
 </form>
 {% endcall %}
 {% endblock %}

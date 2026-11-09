@@ -632,6 +632,7 @@
   "filament.unknown": "Der Filamentbestand ist gerade nicht bekannt. Die Auswahl zeigt die zuletzt bekannten Spulensorten ohne Bestand.",
   "filament.invalid_sort": "Wähle eine Spulensorte aus der Liste.",
   "filament.mapping_saved": "Filamentzuordnung gespeichert.",
+  "filament.later": "Später",
   "filament.map_link": "Spulensorten ankreuzen",
   "filament.live": "Live aus Bambuddy.",
   "filament.stale": "Bestand vom {day} (Bambuddy ist nicht erreichbar).",

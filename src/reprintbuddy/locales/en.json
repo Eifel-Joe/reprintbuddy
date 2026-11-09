@@ -632,6 +632,7 @@
   "filament.unknown": "The filament stock is not known right now. The choice shows the spool sorts known last, without stock.",
   "filament.invalid_sort": "Choose a spool sort from the list.",
   "filament.mapping_saved": "Filament assignment saved.",
+  "filament.later": "Later",
   "filament.map_link": "Tick spool sorts",
   "filament.live": "Live from Bambuddy.",
   "filament.stale": "Stock as of {day} (Bambuddy cannot be reached).",

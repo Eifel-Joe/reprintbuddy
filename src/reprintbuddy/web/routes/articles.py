@@ -822,6 +822,7 @@ def _filament_page(request: Request, spools, article_id: int, typed: _Typed | No
         request, "article_filaments.html", status_code=status, active_nav="articles",
         article_id=article_id, article_name=name, slots=slots, sorts_unknown=sorts is None,
         stale_day=format_date(day, lang) if day else None, read_only=archived, error=error,
+        later=request.query_params.get("later") == "1",  # p153: led here by a creation or a change of the file
     )
 
 
