@@ -8,7 +8,7 @@ After most actions the page shows a message at the top, for example that somethi
 
 ## Where warnings appear
 
-The warnings are on the *Overview* and on the *Queue* page, each as a card. Under them stands **Last successful query of Bambuddy: …** (or "Bambuddy has not been queried successfully yet."). The button **Query Bambuddy now** asks Bambuddy at once instead of waiting for the next regular query; most warnings go away by themselves at the next query that succeeds.
+The warnings are on the *Overview* and on the *Queue* page, each as a card. On the Queue page, under them stands **Last successful query of Bambuddy: …** (or "Bambuddy has not been queried successfully yet."); the Overview shows it in its head line as **Last query**, next to the state of the connection (see [Overview](../use/overview.md)). The button **Query Bambuddy now** asks Bambuddy at once instead of waiting for the next regular query; most warnings go away by themselves at the next query that succeeds.
 
 A **red** card means that Bambuddy does not answer or refuses, that a hand-over is unclear, or that a push message did not go through. A **yellow** card is a state that you chose or that waits for you.
 

@@ -34,7 +34,7 @@ Example: minimum stock 10, buffer 5 (target quantity 15), 4 units per print.
 
 | Switch or setting | Where | Default |
 |---|---|---|
-| **Automation (main switch)** | *Settings → Automation* | off |
+| **Automation (main switch)** | *Settings → Automation*, and the head line of the [Overview](overview.md) | off |
 | **Automation** per article | The switch in the article list and tiles, and the field **Automation** in the article's settings | off |
 | **Stop the queue (nothing is handed over to Bambuddy)** | *Settings → Automation* | off, the queue runs |
 | **Limit of open prints in Bambuddy** | *Settings → Automation* | 10 (1 to 999) |

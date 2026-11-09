@@ -34,7 +34,7 @@ Beispiel: Mindestbestand 10, Puffer 5 (Zielmenge 15), 4 Stück je Druck.
 
 | Schalter oder Einstellung | Wo | Vorgabe |
 |---|---|---|
-| **Automatik (Hauptschalter)** | *Einstellungen → Automatik* | aus |
+| **Automatik (Hauptschalter)** | *Einstellungen → Automatik* und die Kopfzeile der [Übersicht](overview.md) | aus |
 | **Automatik** je Artikel | Der Schalter in der Artikelliste und auf den Kacheln, und das Feld **Automatik** in den Einstellungen des Artikels | aus |
 | **Warteschlange anhalten (nichts wird an Bambuddy übergeben)** | *Einstellungen → Automatik* | aus, die Warteschlange läuft |
 | **Obergrenze offener Drucke in Bambuddy** | *Einstellungen → Automatik* | 10 (1 bis 999) |

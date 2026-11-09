@@ -8,7 +8,7 @@ Nach den meisten Aktionen zeigt die Seite oben eine Meldung, zum Beispiel dass e
 
 ## Wo Warnungen erscheinen
 
-Die Warnungen stehen auf der *Übersicht* und auf der Seite *Warteschlange*, jeweils als Karte. Darunter steht **Letzte erfolgreiche Abfrage bei Bambuddy: …** (oder „Bambuddy wurde noch nicht erfolgreich abgefragt.“). Der Knopf **Jetzt bei Bambuddy abfragen** fragt Bambuddy sofort, statt auf die nächste reguläre Abfrage zu warten; die meisten Warnungen verschwinden von selbst bei der nächsten Abfrage, die gelingt.
+Die Warnungen stehen auf der *Übersicht* und auf der Seite *Warteschlange*, jeweils als Karte. Auf der Warteschlange steht darunter **Letzte erfolgreiche Abfrage bei Bambuddy: …** (oder „Bambuddy wurde noch nicht erfolgreich abgefragt.“); die Übersicht zeigt das in ihrer Kopfzeile als **Letzte Abfrage**, neben dem Zustand der Verbindung (siehe [Übersicht](../use/overview.md)). Der Knopf **Jetzt bei Bambuddy abfragen** fragt Bambuddy sofort, statt auf die nächste reguläre Abfrage zu warten; die meisten Warnungen verschwinden von selbst bei der nächsten Abfrage, die gelingt.
 
 Eine **rote** Karte heißt: Bambuddy antwortet nicht oder lehnt ab, eine Übergabe ist unklar, oder eine Push-Nachricht ging nicht durch. Eine **gelbe** Karte ist ein Zustand, den du gewählt hast oder der auf dich wartet.
 
