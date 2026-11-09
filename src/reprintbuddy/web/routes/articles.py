@@ -30,7 +30,7 @@ from reprintbuddy.domain import stock as stock_mod
 from reprintbuddy.models import (
     Article, ArticleFilament, ArticleFilamentSort, ArticlePart, Dispatch, FilamentSort, Part, WorkQueueEntry,
 )
-from reprintbuddy.web import kpis, labels_view, listing
+from reprintbuddy.web import kpis, labels_view, listing, regions
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, local_next, release_connection, render
@@ -290,11 +290,18 @@ async def articles_list(
     cards = kpis.state_cards(t, "article", icon, len(every), t(label), named)
     keep = (("status", status), ("view", "archived" if archived else None))
     layout = listing.layout_of(request, "articles")
-    # A refused target quantity (`article_target`) is shown once, at the field of its article.
-    target_error = request.session.pop(TARGET_ERROR_KEY, None)
+    shown = [row for row in found if status is None or row.status == status]
+    # A refused target quantity (`article_target`) is shown once, at the field of its article. Like a
+    # message it is not used up by a fetch of regions (another tab on the same cookie): it belongs to
+    # the page that follows the redirect. When the article has no field here (archived on another device
+    # meanwhile, hidden by the search or the filter) the text stands above the list instead.
+    target_error = None if regions.requested(request) else request.session.pop(TARGET_ERROR_KEY, None)
+    orphan_error = None
+    if target_error is not None and not any(row.id == target_error["id"] for row in shown):
+        target_error, orphan_error = None, target_error["text"]
     return render(
         request, "articles_list.html", active_nav="articles", archived=archived, target_error=target_error,
-        rows=[row for row in found if status is None or row.status == status],
+        orphan_error=orphan_error, rows=shown,
         total=len(every),
         kpis=cards,
         filters=listing.filter_links(request, states, counts, len(found), status),

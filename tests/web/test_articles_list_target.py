@@ -191,3 +191,26 @@ def test_an_archived_article_is_refused_without_an_error_page(bb_client):
     assert response.status_code == 303 and stored(bb_client, a) == (3, 0)
     assert bb_client.get("/articles?view=archived").status_code == 200
     assert bb_client.get("/articles").status_code == 200  # the stored error does not outlive the next list
+
+
+def test_a_fetch_of_regions_by_another_tab_does_not_use_up_the_refusal(bb_client):
+    a = make(bb_client, min_stock=10, buffer=5)
+    send(bb_client, a, "3")
+    fetched = bb_client.get("/articles", headers={"X-Live-Regions": "list"})  # what live.js of another tab asks for
+    assert fetched.status_code == 200 and en("articles.target_below_buffer", buffer=5) not in unescape(fetched.text)
+    _, found = error_at_field(bb_client.get("/articles").text, a)  # the page that follows the redirect still has it
+    assert found and unescape(found.group(2)) == en("articles.target_below_buffer", buffer=5)
+
+
+def test_a_refusal_for_an_article_without_a_field_here_stands_above_the_list(bb_client):
+    a = make(bb_client, min_stock=10, buffer=5)
+    other = make(bb_client, name="Other", min_stock=1)
+    token = form_token_of(bb_client, "/articles", f"/articles/{a}/target")
+    with sm_of(bb_client).begin() as s:
+        s.get(Article, a).archived_at = utcnow()  # archived on another device while the field was in use
+    send(bb_client, a, "20", form_token=token)
+    page = bb_client.get("/articles").text
+    assert re.search(r'<p class="alert" role="alert">' + re.escape(en("articles.edit_archived")) + "</p>", unescape(page))
+    assert forms_of(page, other) and forms_of(page, a) == []
+    assert en("articles.edit_archived") not in unescape(bb_client.get("/articles").text)  # once
+

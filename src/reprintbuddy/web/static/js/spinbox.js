@@ -108,19 +108,32 @@
   function setValue(input, value, options) {
     var text = writeNumber(value, decimalsOf(options.step), document.documentElement.lang, input.type === "number");
     if (input.value === text) {
-      return;
+      return false;
     }
     input.value = text;
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
   }
 
+  // true when the field changed; a held arrow stops as soon as it does not.
   function count(input, direction) {
     if (input.disabled || input.readOnly) {
-      return;
+      return false;
     }
     var options = optionsOf(input);
-    setValue(input, stepped(currentOf(input), direction, options), options);
+    return setValue(input, stepped(currentOf(input), direction, options), options);
+  }
+
+  // The repeat of every held arrow of the page. A browser may not send the end of a press to an arrow
+  // that has just been switched off (it reached its limit): so a press elsewhere, the end of any press
+  // on the page, or a count that changes nothing stops them all.
+  var holding = [];
+
+  function stopAll() {
+    holding.slice().forEach(function (stop) {
+      stop();
+    });
   }
 
   function refresh(input, up, down) {
@@ -145,6 +158,9 @@
     var again = null;
 
     function stop() {
+      if (first === null && again === null) {
+        return;
+      }
       if (first !== null) {
         window.clearTimeout(first);
         first = null;
@@ -153,6 +169,7 @@
         window.clearInterval(again);
         again = null;
       }
+      holding.splice(holding.indexOf(stop), 1);
     }
 
     button.addEventListener("mousedown", function (event) {
@@ -163,12 +180,15 @@
         return;
       }
       event.preventDefault(); // the field keeps the focus
-      stop();
+      stopAll();
       count(input, direction);
+      holding.push(stop);
       first = window.setTimeout(function () {
         first = null;
         again = window.setInterval(function () {
-          count(input, direction);
+          if (!count(input, direction)) {
+            stop();
+          }
         }, REPEAT_MS);
       }, REPEAT_FIRST_MS);
     });
@@ -226,6 +246,8 @@
   }
 
   function start() {
+    document.addEventListener("pointerup", stopAll);
+    document.addEventListener("pointercancel", stopAll);
     enhanceWithin(document.body);
     if (window.MutationObserver) {
       new window.MutationObserver(function (records) {

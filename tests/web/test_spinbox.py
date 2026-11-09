@@ -95,6 +95,12 @@ def test_fields_that_appear_later_are_enhanced_once(result):
     assert result["not_twice"] is True
 
 
+def test_a_held_arrow_stops_when_another_press_begins_even_if_its_own_end_never_comes(result):
+    """The arrow that reached its limit is switched off; a browser may never send it the end of the press.
+    Pressing the other arrow ends the first one's repeat, so "up" does not keep counting against "down"."""
+    assert result["held_arrow_runs_on"] == "2"
+
+
 # ---- the pages ---------------------------------------------------------------------------------
 
 

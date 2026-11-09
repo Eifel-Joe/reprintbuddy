@@ -119,5 +119,16 @@ observer.cb([{ addedNodes: [swapped] }]); observer.cb([{ addedNodes: [swapped] }
 out.later = [wrapOf(later) !== null, wrapOf(later).children.filter((c) => c.className === "spin-btns").length, later.parentNode.parentNode === swapped];
 observer.cb([{ addedNodes: [wrapOf(later)] }]); // an enhanced field that moves with its wrapper is not wrapped twice
 out.not_twice = later.parentNode.parentNode === swapped;
-console.log(JSON.stringify(out));
-process.exit(0);
+// A held arrow that reaches its limit is switched off, and a browser may never tell it that the press ended
+// (it was the one switched off). A press elsewhere ends it anyway: the count must not run on by itself.
+text.value = "2";
+const pointerdown = (button) => button.listeners.pointerdown.forEach((fn) => fn({ button: 0, preventDefault() {} }));
+const [upArrow, downArrow] = buttonsOf(text);
+pointerdown(upArrow); // 2 -> 3, the up arrow is off now, no end of the press is ever sent to it
+pointerdown(downArrow); // 3 -> 2: a click on the other arrow ...
+downArrow.listeners.pointerup.forEach((fn) => fn({})); // ... which ends at once
+setTimeout(() => {
+  out.held_arrow_runs_on = text.value; // "2": the repeat of the first arrow did not count it up again
+  console.log(JSON.stringify(out));
+  process.exit(0);
+}, 900);

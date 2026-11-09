@@ -29,6 +29,7 @@
 {%- endmacro %}
 
 {% call ui.page_head("package", t('articles.title') ~ (' · ' ~ t('catalog.archived') if archived else ''), t('articles.subtitle')) %}<a class="btn" href="/articles/new">{{ ui.icon('plus') }}{{ t('articles.new') }}</a>{% endcall %}
+{% if orphan_error %}<p class="alert" role="alert">{{ orphan_error }}</p>{% endif %}
 {% call ui.region("summary", "article") %}{{ ui.kpi_row(kpis) }}{% endcall %}
 
 <div class="toolbar">
