@@ -36,8 +36,14 @@ async def _wait_for_brake(request: Request, db: Session) -> None:
         await asyncio.sleep(pause)
 
 
+def _address(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
 async def _failed(request: Request, db: Session) -> None:
     request.app.state.login_brake.record_failure()
+    # Never the typed name or password (Spec 10.7): the address of the device only.
+    request.app.state.activity.record("login_failed", "user", address=_address(request))
     # A short pause per failed attempt slows down guessing; no connection is held meanwhile.
     release_connection(db)
     await asyncio.sleep(request.app.state.login_failure_delay)
@@ -76,6 +82,7 @@ async def login(request: Request, db: Session = Depends(get_db)):
         await _failed(request, db)
         return render(request, "login.html", status_code=200, next=target, error="login.failed")
     start_session(request, user, db)
+    request.app.state.activity.record("login", "user", address=_address(request))
     return RedirectResponse(target, status_code=303)
 
 
@@ -85,4 +92,5 @@ async def logout(request: Request, db: Session = Depends(get_db)):
     # other browsers stay signed in.
     accounts.end_session(db, request.session.get(SID_KEY))
     request.session.clear()
+    request.app.state.activity.record("logout", "user", address=_address(request))
     return RedirectResponse("/login", status_code=303)
