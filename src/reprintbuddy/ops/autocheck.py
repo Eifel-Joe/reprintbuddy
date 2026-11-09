@@ -16,12 +16,21 @@ the web layer or of the clock; the app hands in what it needs (see `web/app.py`)
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Awaitable, Callable
 
 from reprintbuddy.ops.runner import in_thread
 from reprintbuddy.ops.versions import VersionInfo
 
 log = logging.getLogger(__name__)
+
+# p166: this line reaches the system log. git names the remote address in its error; a user and a
+# token in that address (`https://user:token@host/…`) are replaced before the line is written.
+_CREDENTIALS_IN_URL = re.compile(r"(?<=://)[^/@\s]+@")
+
+
+def _without_credentials(text: str) -> str:
+    return _CREDENTIALS_IN_URL.sub("***@", text)
 
 # Spec 11.3a: "once a day". The spec says "next time" for a failed check and fixes no distance;
 # an hour, so that a start without network (a container that boots before the router) does not
@@ -72,7 +81,7 @@ class AutoCheck:
         try:
             info = await in_thread(self._check)
         except Exception as exc:  # the remote, the network, git: any failure is silent
-            log.info("automatic check for new versions failed: %s", str(exc)[:300])
+            log.info("automatic check for new versions failed: %s", _without_credentials(str(exc))[:300])
             return RETRY_AFTER_FAILURE
         self._store(info)
         return CHECK_INTERVAL

@@ -22,6 +22,7 @@ import uvicorn
 from reprintbuddy import __version__, auth
 from reprintbuddy import settings as st
 from reprintbuddy.activity import capture as activity_capture
+from reprintbuddy.logsetup import configure_logging
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops import restorecmd
 from reprintbuddy.ops.context import OpsContext
@@ -73,6 +74,7 @@ def _pem_files(cert: str, key: str) -> Iterator[tuple[str, str]]:
 
 
 def _serve(args: argparse.Namespace) -> int:
+    configure_logging()  # p166: INFO lines of Reprintbuddy reach the system log
     app = create_app(args.db)
     with app.state.sessionmaker() as session:
         effective = effective_from_settings(session)
