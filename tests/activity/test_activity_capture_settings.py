@@ -188,3 +188,61 @@ def test_writing_a_setting_row_directly_is_covered_too(db):
         s.add(Setting(key="queue_cap", value="3"))
     [line] = lines(db)
     assert line.details["settings"] == [{"setting": "queue_cap", "old": 10, "new": 3}]
+
+
+def test_a_failing_save_keeps_its_own_error_and_logs_no_secret(db, tmp_path, caplog):
+    """Review finding 1: the save of the change itself fails (a locked database). Its own error goes
+    through unchanged, and nothing of the log writes the statement's values into the system log."""
+    import sqlite3
+
+    from sqlalchemy.exc import OperationalError
+
+    engine = db.kw["bind"]
+    path = engine.url.database
+    engine.dispose()
+    lock = sqlite3.connect(path, timeout=0)
+    lock.execute("BEGIN IMMEDIATE")
+    try:
+        with db() as s:
+            s.connection().exec_driver_sql("PRAGMA busy_timeout=50")
+            st.set_setting(s, "bambuddy_api_key", "SUPERSECRETKEY", commit=False)
+            with caplog.at_level(logging.DEBUG):
+                with pytest.raises(OperationalError):
+                    s.commit()
+    finally:
+        lock.rollback()
+        lock.close()
+    assert "SUPERSECRETKEY" not in caplog.text
+    assert "activity log" not in caplog.text  # not the log's fault
+
+
+def test_a_new_key_with_the_same_owner_names_the_owner(db):
+    """Review finding 2."""
+    with db.begin() as s:
+        st.set_setting(s, "bambuddy_username", "reprintbuddy", commit=False)
+    with db.begin() as s:
+        st.set_setting(s, "bambuddy_username", "reprintbuddy", commit=False)  # unchanged
+        st.set_setting(s, "bambuddy_api_key", "KEY-2", commit=False)
+    line = lines(db)[-1]
+    assert line.details == {"settings": [{"setting": "bambuddy_key", "change": "changed"}], "owner": "reprintbuddy"}
+
+
+def test_a_line_that_cannot_be_written_leaves_the_change(db, caplog):
+    """Review finding 7: an actor nobody knows breaks the line's insert, never the change."""
+    with caplog.at_level(logging.WARNING):
+        with db.begin() as s:
+            s.info[capture.ACTOR] = "intruder"
+            st.set_setting(s, "automation", True, commit=False)
+    with db() as s:
+        assert st.get_setting(s, "automation") is True
+    [line] = lines(db)
+    assert line.actor == "system"  # an unknown actor counts as the system
+
+
+def test_an_address_changed_only_behind_host_and_port_says_changed(db):
+    """Review finding 13: a new path must not read "http://x -> http://x"."""
+    with db.begin() as s:
+        st.set_setting(s, "bambuddy_url", "http://bambuddy.test:8000", commit=False)
+    with db.begin() as s:
+        st.set_setting(s, "bambuddy_url", "http://bambuddy.test:8000/proxy", commit=False)
+    assert lines(db)[-1].details["settings"] == [{"setting": "bambuddy_url", "change": "changed"}]

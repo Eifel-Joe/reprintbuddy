@@ -175,3 +175,14 @@ def test_a_test_label_and_an_article_label(configured, net, article):
         ("label_test", "user", {"printed": 1, "requested": 1, "result": "printed"}),
         ("label_printed", "user", {"id": article, "name": "Template A", "printed": 2, "requested": 2, "result": "printed"}),
     ]
+
+
+async def test_another_reason_of_failing_is_logged_again(env, respx_mock):
+    """Review finding 4: only the same failure of the same message is left out."""
+    route = respx_mock.post(notify_tests.CALL)
+    route.side_effect = [httpx.Response(503), httpx.Response(503), httpx.Response(401)]
+    env.pause()
+    for _ in range(3):
+        env.notifier.after_tick(False)
+        await env.settle()
+    assert [details["outcome"] for _k, _a, details in lines(env.db, "messages")] == ["server", "token"]

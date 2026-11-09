@@ -124,4 +124,7 @@ def shown_change(key: str, old: object, new: object) -> dict[str, object]:
         return {"setting": name, "change": "removed" if new is None else "uploaded"}
     if kind in ("list", "text"):
         return {"setting": name, "change": "changed"}
-    return {"setting": name, "old": _plain(kind, old), "new": _plain(kind, new)}
+    before, after = _plain(kind, old), _plain(kind, new)
+    if before == after:  # e.g. an address changed only behind scheme, host and port
+        return {"setting": name, "change": "changed"}
+    return {"setting": name, "old": before, "new": after}

@@ -236,3 +236,13 @@ def test_bookings_and_pauses_are_the_journals_not_the_logs(db):
         stock.count_article(s, a.id, "stock", 5, actor="user")
         pause_article(s, a.id, "file_missing", actor="auto")
     assert since(db, last) == []
+
+
+def test_order_settings_saved_first_with_the_defaults_are_no_change(db):
+    """Review finding 14: "changed" means something differs after saving."""
+    with db.begin() as s:
+        sort = make_sort(s)
+    last = mark(db)
+    with db.begin() as s:
+        filament.save_settings(s, sort.id, FilamentSettingsInput())
+    assert since(db, last) == []

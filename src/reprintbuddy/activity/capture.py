@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy import settings as st
 from reprintbuddy.activity import values
-from reprintbuddy.activity.kinds import area_of
+from reprintbuddy.activity.kinds import ACTORS, area_of
 from reprintbuddy.models import (
     ActivityEntry,
     Article,
@@ -104,7 +104,9 @@ def _data(session: Session) -> _Data:
 
 
 def _actor(session: Session) -> str:
-    return str(session.info.get(ACTOR) or "system")
+    """Who writes; anything but a known actor is the system (the table allows only those)."""
+    actor = session.info.get(ACTOR)
+    return actor if actor in ACTORS else "system"
 
 
 @contextmanager
@@ -179,6 +181,16 @@ def _collect_setting(data: _Data, obj: Setting, change: str, actor: str) -> None
         data.settings[key] = [old, new, actor]
 
 
+def _differs_from_defaults(obj: FilamentSettings) -> bool:
+    """A first saving that keeps every default changes nothing (Spec 10.7: "wirklich etwas unterscheidet")."""
+    columns = FilamentSettings.__table__.c
+    for name in FILAMENT_COLUMNS:
+        default = columns[name].default.arg if columns[name].default is not None else None
+        if getattr(obj, name) != default:
+            return True
+    return False
+
+
 def _collect_row(session: Session, data: _Data, obj: object, change: str, actor: str) -> None:
     if isinstance(obj, Setting):
         _collect_setting(data, obj, change, actor)
@@ -242,7 +254,7 @@ def _collect_row(session: Session, data: _Data, obj: object, change: str, actor:
         elif change == "deleted":
             thing.old_rows.setdefault("positions", Counter())[row] += 1
     elif isinstance(obj, FilamentSettings):
-        if change == "new" or (
+        if (change == "new" and _differs_from_defaults(obj)) or (
             change == "dirty" and any(_history(obj, name)[0] for name in FILAMENT_COLUMNS)
         ):
             data.filament.setdefault(obj.spool_filament_id, actor)
@@ -272,8 +284,9 @@ def _after_flush(session: Session, _flush_context: object) -> None:
         rows.sort(key=lambda item: 0 if isinstance(item[0], SetPosition) else 1)
         for obj, change in rows:
             _collect_row(session, data, obj, change, actor)
-    except Exception:  # the change is saved anyway; only its line is missing
-        log.exception("activity log: a change could not be collected")
+    except Exception as error:  # the change is saved anyway; only its line is missing
+        # The kind of error only: a traceback could carry the values of a statement (Spec 11.5a).
+        log.error("activity log: a change could not be collected (%s)", type(error).__name__)
         session.info[_DATA] = _Data()
 
 
@@ -291,7 +304,7 @@ def _entry(data: _Data, kind: str, actor: str, details: dict[str, Any] | None, *
     )
 
 
-def _settings_entries(data: _Data) -> list[ActivityEntry]:
+def _settings_entries(session: Session, data: _Data) -> list[ActivityEntry]:
     by_actor: dict[str, list[dict[str, object]]] = {}
     owner: dict[str, object] = {}
     for key in values.SETTINGS:  # the order of the settings pages, not the order of saving
@@ -302,7 +315,7 @@ def _settings_entries(data: _Data) -> list[ActivityEntry]:
             continue
         by_actor.setdefault(actor, []).append(values.shown_change(key, old, new))
         if key.startswith("bambuddy_"):
-            owner[actor] = data.settings.get("bambuddy_username", [None, st.DEFAULTS["bambuddy_username"]])[1]
+            owner[actor] = st.get_setting(session, "bambuddy_username")  # as stored now, changed or not
     entries = []
     for actor, changes in by_actor.items():
         details: dict[str, object] = {"settings": changes}
@@ -367,7 +380,7 @@ def _build(session: Session, data: _Data) -> list[ActivityEntry]:
         # The setup saves the language with the account: one line, "account created".
         entries.append(_entry(data, "account_created", data.account_created, None, address=True))
     else:
-        entries += _settings_entries(data)
+        entries += _settings_entries(session, data)
     if data.credentials_changed is not None:
         entries.append(_entry(data, "credentials_changed", data.credentials_changed, None, address=True))
     entries += _thing_entries(session, data)
@@ -388,15 +401,19 @@ def _build(session: Session, data: _Data) -> list[ActivityEntry]:
 def _before_commit(session: Session) -> None:
     if session.in_nested_transaction():
         return
+    # Outside the guard below: a failing save of the change itself keeps its own error and is not
+    # taken for the log's (review v0.3.13 C, finding 1).
+    session.flush()  # what is still pending is collected, too
+    data = session.info.pop(_DATA, None)
+    if data is None:
+        return
     try:
-        session.flush()  # what is still pending is collected, too
-        data = session.info.pop(_DATA, None)
-        if data is None:
-            return
         entries = _build(session, data)
-    except Exception:  # the change is committed anyway; only its line is missing (Spec 10.7)
-        log.exception("activity log: a line could not be built")
-        session.info.pop(_DATA, None)
+        for entry in entries:
+            json.dumps(entry.details)  # what the JSON column could not store fails here, not in the commit
+    except Exception as error:  # the change is committed anyway; only its line is missing (Spec 10.7)
+        # The kind of error only: a traceback could carry the values of a statement (Spec 11.5a).
+        log.error("activity log: a line could not be built (%s)", type(error).__name__)
         return
     if entries:
         session.add_all(entries)

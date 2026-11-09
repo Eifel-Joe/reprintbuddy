@@ -75,15 +75,17 @@ def _target(session: Session) -> _Target | None:
 
 def log_message(session: Session, event: str, count: int, outcome: str, now: datetime) -> None:
     """A sent message in the activity log (Spec 10.7, group 6): every accepted one; of a message that
-    fails again and again only the first failure. Never title or text. In the transaction of the marks;
-    a line that cannot be added is left out, the marks are written anyway."""
+    fails again and again for the same reason only the first failure. Never title or text. In the
+    transaction of the marks; a line that cannot be added is left out, the marks are written anyway."""
+    session.flush()  # the marks first, outside the guard: their own errors are not the log's
     try:
         with session.begin_nested():
             entry = activity_line("message_sent", "system", {"event": event, "count": max(count, 1), "outcome": outcome})
             accepted = outcome == "accepted"
-            write_transition(session, "ha.send", "accepted" if accepted else "failed", entry, now=now, repeat=accepted)
-    except Exception:  # noqa: BLE001 - the log must not stop the marks
-        log.exception("activity log: a message could not be logged")
+            # One state per kind of message: another kind, or another reason, is a change of its own.
+            write_transition(session, f"ha.send.{event}", outcome, entry, now=now, repeat=accepted)
+    except Exception as error:  # noqa: BLE001 - the log must not stop the marks
+        log.error("activity log: a message could not be logged (%s)", type(error).__name__)
 
 
 class Notifier:
