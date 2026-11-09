@@ -429,3 +429,38 @@ async def test_an_upload_cancelled_without_middleware_leaves_no_uploaded_file(op
     await cancel_bare(backup_routes.restore_upload(request), held)
     assert await settled(ops_env) == []
     assert [n for n in work_files(ops_env) if n.startswith("upload-")] == []
+
+
+async def test_an_upload_cancelled_while_it_is_closed_leaves_no_uploaded_file(ops_env, monkeypatch):
+    """The last await of the upload: closing a spooled upload runs in a worker thread. Cancelled there, after
+    the file was saved and checked, the cancellation came out of `finally` and the complete file stayed
+    (found in the review of v0.3.12)."""
+    from starlette.datastructures import UploadFile
+
+    async def no_check(request):
+        return None
+
+    monkeypatch.setattr(backup_routes, "verify_csrf", no_check)
+    content = made_backup(ops_env)
+    entered = asyncio.Event()
+    real_close = UploadFile.close
+
+    async def slow_close(self):
+        entered.set()
+        await asyncio.sleep(30)  # the shutdown comes while it closes
+        await real_close(self)
+
+    monkeypatch.setattr(UploadFile, "close", slow_close)
+    boundary = "p149boundary"
+    body = (
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"backup_file\"; filename=\"b.zip\"\r\n"
+        "Content-Type: application/zip\r\n\r\n"
+    ).encode() + content + f"\r\n--{boundary}--\r\n".encode()
+    request = bare_request(ops_env, "/settings/restore/upload", body, f"multipart/form-data; boundary={boundary}")
+    task = asyncio.create_task(backup_routes.restore_upload(request))
+    await asyncio.wait_for(entered.wait(), 20)
+    assert [n for n in work_files(ops_env) if n.startswith("upload-")] != []  # saved and checked
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert [n for n in work_files(ops_env) if n.startswith("upload-")] == []

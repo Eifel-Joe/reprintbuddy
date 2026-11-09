@@ -281,7 +281,13 @@ async def restore_upload(request: Request) -> Response:
         _remove(target)
         raise
     finally:
-        await upload.close()
+        try:
+            await upload.close()  # a spooled upload is closed in a worker thread: one more await
+        except BaseException:  # cancelled while closing: the saved file has no session entry, nobody keeps it
+            _remove(target)
+            raise
+    # Not covered (Windows only, not a supported host): a cancellation while `read_manifest` still has the
+    # file open; the removal above fails there and the file stays until the stale cleanup (an hour).
     request.session[SESSION_KEY] = {"token": token, "at": _now().isoformat()}
     return RedirectResponse("/settings/restore", status_code=303)
 
