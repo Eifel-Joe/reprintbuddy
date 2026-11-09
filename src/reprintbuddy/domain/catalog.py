@@ -10,6 +10,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from reprintbuddy.activity.capture import quiet
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
 from reprintbuddy.domain import rules, workqueue
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
@@ -832,6 +833,16 @@ def slots_losing_group(session: Session, article_id: int, requirements: Sequence
 
 
 def _take_over_filaments(
+    session: Session,
+    article_id: int,
+    requirements: Sequence[FilamentRequirement],
+) -> None:
+    """`_replace_filaments`, left out of the activity log: a new print file is the journal's (Spec 10.7)."""
+    with quiet(session):
+        _replace_filaments(session, article_id, requirements)
+
+
+def _replace_filaments(
     session: Session,
     article_id: int,
     requirements: Sequence[FilamentRequirement],
