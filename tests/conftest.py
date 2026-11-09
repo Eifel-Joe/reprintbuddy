@@ -125,6 +125,17 @@ def make_client(db_path, **create_kwargs) -> TestClient:
 
 
 @pytest.fixture(autouse=True)
+def fixed_display_zone(monkeypatch):
+    """p183: times are shown in the zone of the server. The tests pin one, so that they read the same on a
+    machine in any zone (CI runs in UTC); tests/web/test_server_time_zone.py sets the default back."""
+    from zoneinfo import ZoneInfo
+
+    from reprintbuddy.web import formatting
+
+    monkeypatch.setattr(formatting, "LOCAL_ZONE", ZoneInfo("Europe/Berlin"))
+
+
+@pytest.fixture(autouse=True)
 def no_release_notes_request(monkeypatch):
     """p143: the release notes never come from the real GitHub. `with_notes` swallows every error, so a
     request that slipped through would go unnoticed; it is refused here and fails the test. Tests of the
