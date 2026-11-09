@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 from sqlalchemy import select
@@ -108,6 +109,13 @@ def _clean_note(note: str | None) -> str | None:
     return note
 
 
+def _booked(booked_at: datetime | None) -> datetime | None:
+    """A booking may be dated back, never ahead (Spec 6.2, p172). Naive UTC like every time."""
+    if booked_at is not None and booked_at > utcnow():
+        raise ValidationError("bookings.date_future")
+    return booked_at
+
+
 def _article(session: Session, article_id: int) -> Article:
     article = session.get(Article, article_id)
     if article is None:
@@ -136,12 +144,19 @@ def write_journal(
     order_id: int | None = None,
     note: str | None = None,
     details: dict | None = None,
+    booked_at: datetime | None = None,
 ) -> JournalEntry:
-    """One journal line. Also used for actions without a stock change (B4)."""
+    """One journal line. Also used for actions without a stock change (B4).
+
+    `booked_at`: when a hand booking counts if it is dated back (Spec 6.2, p172); `at` stays the
+    time it is saved. Without it the booking counts when it is saved.
+    """
     if kind not in KINDS:
         raise ValueError(f"unknown journal kind: {kind}")
+    now = utcnow()
     entry = JournalEntry(
-        at=utcnow(),
+        at=now,
+        booked_at=now if booked_at is None else booked_at,
         actor=actor,
         kind=kind,
         article_id=article_id,
@@ -164,8 +179,8 @@ def journal_page(
     limit: int = 100,
     offset: int = 0,
 ) -> list[JournalEntry]:
-    """Newest first."""
-    query = select(JournalEntry).order_by(JournalEntry.at.desc(), JournalEntry.id.desc())
+    """Newest first by the booking date: a booking dated back sorts in at its day (p172)."""
+    query = select(JournalEntry).order_by(JournalEntry.booked_at.desc(), JournalEntry.id.desc())
     if article_id is not None:
         query = query.where(JournalEntry.article_id == article_id)
     if part_id is not None:
@@ -205,7 +220,8 @@ def _plan_parts(session: Session, article: Article, units: int) -> list[_PartPla
 
 
 def _consume_parts(
-    session: Session, plans: list[_PartPlan], article: Article, cause: str, actor: Actor
+    session: Session, plans: list[_PartPlan], article: Article, cause: str, actor: Actor,
+    booked_at: datetime | None = None,
 ) -> list[PartShortage]:
     shortages: list[PartShortage] = []
     for plan in plans:
@@ -225,6 +241,7 @@ def _consume_parts(
                 "shortage": shortage,
                 "changes": changes,
             },
+            booked_at=booked_at,  # the parts leave with the booking that uses them (Spec 9.2)
         )
         if shortage:
             shortages.append(PartShortage(plan.part.id, plan.needed, plan.had))
@@ -304,10 +321,12 @@ def _simple(
     *,
     parts_cause: str | None = None,
     extra_details: dict | None = None,
+    booked_at: datetime | None = None,
 ) -> list[PartShortage]:
     """One booking on one article, optionally consuming parts. Plan first, then write."""
     note = _clean_note(note)
     n = _qty(n)
+    booked_at = _booked(booked_at)
     article = _article(session, article_id)
     changes = _plan_article(article, {f: sign * n for f, sign in deltas.items()})
     plans = _plan_parts(session, article, n) if parts_cause else []
@@ -320,15 +339,17 @@ def _simple(
         article_id=article.id,
         note=note,
         details={**(extra_details or {}), "changes": changes},
+        booked_at=booked_at,
     )
-    return _consume_parts(session, plans, article, parts_cause, actor) if parts_cause else []
+    return _consume_parts(session, plans, article, parts_cause, actor, booked_at) if parts_cause else []
 
 
 def sell_unreserved(
-    session: Session, article_id: int, n: int, actor: Actor, note: str | None = None
+    session: Session, article_id: int, n: int, actor: Actor, note: str | None = None, *,
+    booked_at: datetime | None = None,
 ) -> None:
     """Sale without a reservation: stock − n (Spec 6.2). Available may become negative."""
-    _simple(session, "sale", article_id, n, actor, note, {"stock": -1})
+    _simple(session, "sale", article_id, n, actor, note, {"stock": -1}, booked_at=booked_at)
 
 
 def stock_in(
@@ -339,11 +360,12 @@ def stock_in(
     note: str | None = None,
     *,
     consume_parts: bool,
+    booked_at: datetime | None = None,
 ) -> list[PartShortage]:
     """Stock in without a print (Spec 6.2); with `consume_parts` the parts are used up (Spec 6.6)."""
     return _simple(
         session, "stock_in", article_id, n, actor, note, {"stock": 1},
-        parts_cause="stock_in" if consume_parts else None,
+        parts_cause="stock_in" if consume_parts else None, booked_at=booked_at,
     )
 
 
@@ -405,12 +427,19 @@ def count_article(
     counted: int,
     actor: Actor,
     note: str | None = None,
+    *,
+    booked_at: datetime | None = None,
 ) -> int:
-    """Inventory: sets the value to the counted quantity and books the difference (Spec 6.2)."""
+    """Inventory: sets the value to the counted quantity and books the difference (Spec 6.2).
+
+    A date in the past only dates the row: the value is set now, bookings since then are not
+    replayed (the counters keep no history to replay).
+    """
     if field not in ("stock", "awaiting_assembly"):
         raise ValidationError("bookings.invalid_field", value=str(field))
     note = _clean_note(note)
     counted = _counted(counted)
+    booked_at = _booked(booked_at)
     article = _article(session, article_id)
     before = getattr(article, field)
     difference = counted - before
@@ -424,31 +453,36 @@ def count_article(
         article_id=article.id,
         note=note,
         details={"field": field, "counted": counted, "changes": changes},
+        booked_at=booked_at,
     )
     return difference
 
 
 def receive_part(
-    session: Session, part_id: int, n: int, actor: Actor, note: str | None = None
+    session: Session, part_id: int, n: int, actor: Actor, note: str | None = None, *,
+    booked_at: datetime | None = None,
 ) -> None:
     """Goods receipt of a purchased part (Spec 6.2)."""
     note = _clean_note(note)
     n = _qty(n)
+    booked_at = _booked(booked_at)
     part = _part(session, part_id)
     changes = {"stock": [part.stock, part.stock + n]}
     _apply(part, changes)
     write_journal(
         session, kind="part_receipt", actor=actor, qty=n, part_id=part.id, note=note,
-        details={"changes": changes},
+        details={"changes": changes}, booked_at=booked_at,
     )
 
 
 def count_part(
-    session: Session, part_id: int, counted: int, actor: Actor, note: str | None = None
+    session: Session, part_id: int, counted: int, actor: Actor, note: str | None = None, *,
+    booked_at: datetime | None = None,
 ) -> int:
     """Inventory of a purchased part; also books the initial stock (Spec 5.3, 6.5)."""
     note = _clean_note(note)
     counted = _counted(counted)
+    booked_at = _booked(booked_at)
     part = _part(session, part_id)
     difference = counted - part.stock
     changes = {"stock": [part.stock, counted]}
@@ -456,5 +490,6 @@ def count_part(
     write_journal(
         session, kind="inventory", actor=actor, qty=difference, part_id=part.id, note=note,
         details={"field": "stock", "counted": counted, "changes": changes},
+        booked_at=booked_at,
     )
     return difference

@@ -242,6 +242,11 @@ class OrderLine(Base):
     set_qty: Mapped[int | None] = mapped_column(default=None)
 
 
+def _booked_default(context) -> datetime:
+    """A journal row without a booking date is booked when it is saved: its `at`."""
+    return context.get_current_parameters()["at"]
+
+
 class JournalEntry(Base):
     """Every booking and every action of the automation (Spec 6.3). Never changed or deleted."""
 
@@ -252,7 +257,9 @@ class JournalEntry(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    at: Mapped[datetime] = mapped_column(DateTime, index=True, default=utcnow)
+    at: Mapped[datetime] = mapped_column(DateTime, index=True, default=utcnow)  # when it was saved
+    # When the booking counts (Spec 6.2, p172): a hand booking may be dated back; else the same as `at`.
+    booked_at: Mapped[datetime] = mapped_column(DateTime, index=True, default=_booked_default)
     actor: Mapped[str] = mapped_column(String)
     kind: Mapped[str] = mapped_column(String)
     article_id: Mapped[int | None] = mapped_column(ForeignKey("articles.id"), default=None)

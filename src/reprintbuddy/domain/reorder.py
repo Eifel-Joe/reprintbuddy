@@ -101,9 +101,10 @@ def part_consumption(session: Session, part_id: int, today: date) -> float:
     """Units per day from the assembly bookings of the last 30 days (Spec 9.2).
 
     Divided by the days since the oldest row of the whole journal, at most 30 and at least 1;
-    0.0 for an empty journal. Only `part_consumed` rows with the cause "assembly" count.
+    0.0 for an empty journal. Only `part_consumed` rows with the cause "assembly" count. Rows count
+    by their booking date, not by when they were saved (p172).
     """
-    oldest = session.scalar(select(func.min(JournalEntry.at)))
+    oldest = session.scalar(select(func.min(JournalEntry.booked_at)))
     if oldest is None:
         return 0.0
     since = datetime.combine(today - timedelta(days=WINDOW_DAYS), datetime.min.time())
@@ -111,7 +112,7 @@ def part_consumption(session: Session, part_id: int, today: date) -> float:
         select(JournalEntry).where(
             JournalEntry.kind == "part_consumed",
             JournalEntry.part_id == part_id,
-            JournalEntry.at >= since,
+            JournalEntry.booked_at >= since,
         )
     )
     used = sum(r.qty for r in rows if (r.details or {}).get("cause") == "assembly")
@@ -230,7 +231,7 @@ def suggestions(
             if sug is not None:
                 result.append(sug)
     part_needs = part_demand(session)
-    part_history = session.scalar(select(func.min(JournalEntry.at))) is not None
+    part_history = session.scalar(select(func.min(JournalEntry.booked_at))) is not None
     for part in session.scalars(
         select(Part).where(Part.archived_at.is_(None)).order_by(Part.name, Part.id)
     ):

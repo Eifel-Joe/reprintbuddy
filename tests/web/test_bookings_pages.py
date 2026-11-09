@@ -224,3 +224,88 @@ def test_booking_posts_require_csrf(ready_client):
 
 def test_nav_bookings_active(ready_client):
     assert 'class="nav-link active" href="/bookings"' in ready_client.get("/bookings").text
+
+
+# ---- p172: every hand booking has a date, today by default, never in the future (Spec 6.2) --------
+
+import re  # noqa: E402
+from datetime import timedelta  # noqa: E402
+
+from reprintbuddy.models import utcnow  # noqa: E402
+from reprintbuddy.web.formatting import to_local  # noqa: E402
+
+FORMS = ("inventory", "part-inventory", "part-receipt", "sale", "stock-in")
+
+
+def local_today():
+    return to_local(utcnow()).date()
+
+
+def test_each_booking_form_has_a_date_today_and_no_later(ready_client):
+    html = ready_client.get("/bookings").text
+    today = f"{local_today():%Y-%m-%d}"
+    for action in FORMS:
+        form = html.split(f'action="/bookings/{action}"', 1)[1].split("</form>", 1)[0]
+        field = re.search(r'<input[^>]*name="booked_on"[^>]*>', form)
+        assert field, action
+        assert f'type="date"' in field[0] and f'value="{today}"' in field[0] and f'max="{today}"' in field[0], action
+        assert "required" in field[0], action
+
+
+def test_a_booking_dated_yesterday_counts_yesterday_and_keeps_when_it_was_saved(ready_client):
+    a = article(ready_client, stock=5)
+    yesterday = local_today() - timedelta(days=1)
+    response, _ = post(ready_client, "sale", article_id=a, qty="1", booked_on=f"{yesterday:%Y-%m-%d}")
+    assert response.status_code == 303
+    (row,) = journal(ready_client)
+    assert to_local(row.booked_at).date() == yesterday
+    assert to_local(row.at).date() == local_today() and row.at > row.booked_at
+    assert number(ready_client, Article, a, "stock") == 4
+
+
+def test_a_booking_dated_today_counts_when_it_is_saved(ready_client):
+    a = article(ready_client, stock=5)
+    response, _ = post(ready_client, "sale", article_id=a, qty="1", booked_on=f"{local_today():%Y-%m-%d}")
+    assert response.status_code == 303
+    (row,) = journal(ready_client)
+    assert row.booked_at == row.at
+
+
+@pytest.mark.parametrize("action", FORMS)
+def test_a_future_date_is_rejected_and_nothing_is_booked(ready_client, action):
+    a, p = article(ready_client, stock=5), part(ready_client, stock=5)
+    fields = {"article_id": a, "part_id": p, "qty": "1", "counted": "3", "field": "stock", "consume_parts": "1"}
+    tomorrow = f"{local_today() + timedelta(days=1):%Y-%m-%d}"
+    response, _ = post(ready_client, action, booked_on=tomorrow, **fields)
+    assert response.status_code == 200, action  # the page again, with the message at the form
+    assert en("bookings.date_future") in response.text
+    assert journal(ready_client) == []
+    assert f'value="{tomorrow}"' in response.text  # the typed date stays in its form
+
+
+@pytest.mark.parametrize("bad", ["", "yesterday", "2026-13-01", "1999-12-31"])
+def test_a_missing_or_odd_date_is_rejected(ready_client, bad):
+    a = article(ready_client, stock=5)
+    response, _ = post(ready_client, "sale", article_id=a, qty="1", booked_on=bad)
+    assert response.status_code == 200 and journal(ready_client) == []
+    assert 'role="alert"' in response.text
+
+
+def test_a_form_without_the_date_field_books_today(ready_client):  # a page loaded before the update
+    a = article(ready_client, stock=5)
+    response, _ = post(ready_client, "sale", article_id=a, qty="1")
+    assert response.status_code == 303
+    (row,) = journal(ready_client)
+    assert row.booked_at == row.at
+
+
+def test_journal_shows_the_booking_date_and_when_it_was_saved(ready_client):
+    a = article(ready_client, stock=5)
+    yesterday = local_today() - timedelta(days=1)
+    post(ready_client, "sale", article_id=a, qty="1", booked_on=f"{yesterday:%Y-%m-%d}")
+    post(ready_client, "sale", article_id=a, qty="2", booked_on=f"{local_today():%Y-%m-%d}")
+    html = ready_client.get("/journal").text
+    cells = re.findall(r'<td class="nowrap">(.*?)</td>', html, re.S)
+    dated, plain = cells[1], cells[0]  # newest first: today's sale, then yesterday's
+    assert f"{yesterday:%Y-%m-%d}" in dated and en("journal.saved_at", at="").strip() in dated
+    assert "col-note" not in plain

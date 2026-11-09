@@ -538,3 +538,21 @@ def test_on_way_amounts_of_parts_and_filament(db):
         reorder.mark_ordered(s, "part", part.id, 3)
         reorder.mark_ordered(s, "filament", sort.id, 2)
         assert reorder.on_way(s) == {("part", part.id): 150.0, ("filament", sort.id): 1500.0}
+
+
+# ---- p172: usage counts by the booking date, not by when it was saved (Spec 9.2) ----------------
+
+
+def test_part_consumption_counts_by_the_booking_date(db):
+    with db.begin() as s:
+        part = make_part(s)
+        now = datetime.combine(TODAY, datetime.min.time())
+        old = now - timedelta(days=10)
+        s.add(JournalEntry(at=now, booked_at=old, actor="user", kind="inventory", qty=0))  # first booking: 10 days ago
+        s.add(JournalEntry(at=now, booked_at=old + timedelta(days=1), actor="user", kind="part_consumed",
+                           part_id=part.id, qty=30, details={"cause": "assembly"}))
+        s.add(JournalEntry(at=now, booked_at=now - timedelta(days=40), actor="user", kind="part_consumed",
+                           part_id=part.id, qty=99, details={"cause": "assembly"}))  # outside the window
+        s.flush()
+        # the oldest row is booked 40 days back: 30 days of history; the 99 outside the window do not count
+        assert reorder.part_consumption(s, part.id, TODAY) == 1.0  # 30 over 30 days; by `at` it would be 129 / 1
