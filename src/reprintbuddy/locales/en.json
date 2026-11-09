@@ -264,6 +264,8 @@
   "articles.file": "Print file",
   "articles.target_quantity": "Target quantity",
   "articles.target_below_buffer": "The target quantity cannot be less than the buffer ({buffer}).",
+  "articles.set_target": "Set the target quantity of {name}",
+  "articles.target_saved": "Target quantity of {name} set to {target}.",
   "articles.no_parts": "No purchased parts are used.",
   "articles.recent_journal": "Latest journal entries",
   "articles.all_journal": "Whole journal of this article",

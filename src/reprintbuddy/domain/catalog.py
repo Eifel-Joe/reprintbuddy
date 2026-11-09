@@ -389,6 +389,7 @@ class ArticleRow:
     in_progress_units: int
     in_progress_prints: int  # open prints in Bambuddy: the note "N in Bambuddy" (Spec 10.1)
     auto_enabled: bool = False  # the switch of the list (p44)
+    buffer: int = 0  # the field of the target quantity stops at it (p154)
 
 
 def article_row(
@@ -423,6 +424,7 @@ def article_row(
         in_progress_units=in_progress_units,
         in_progress_prints=in_progress_prints,
         auto_enabled=article.auto_enabled,
+        buffer=article.buffer,
     )
 
 

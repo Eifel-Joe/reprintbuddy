@@ -1118,3 +1118,21 @@ textarea.address { resize: none; min-height: 5.5rem; overflow-wrap: anywhere; wo
   .spin-btns { flex: 0 0 5.5rem; margin-left: -5.5rem; margin-right: 0; flex-direction: row; padding: 0; }
   .spin-btn { min-width: 2.75rem; min-height: 2.75rem; border-radius: 0; }
 }
+
+/* The target quantity of an article as a field (p154): field and button on one line, a refusal below.
+   In the table the column is narrow and right-aligned; in a tile the field has a label beside it. */
+.target-form { margin: 0; }
+.target-line { display: inline-flex; align-items: center; gap: 0.25rem; max-width: 100%; }
+/* `.target-form` in front: the general field rule (input:not([type=checkbox])) is stronger than a class alone. */
+.target-form .target-input { width: 5.5rem; margin: 0; padding-top: 0.35rem; padding-bottom: 0.35rem; text-align: right; font-variant-numeric: tabular-nums; }
+.target-form .spin > .target-input { padding-right: 2rem; }
+.target-form .target-input[aria-invalid="true"] { border-color: var(--danger); }
+@media (pointer: coarse) {
+  /* the two arrows side by side (5.5rem) leave room for the number; the tile has the width for it */
+  .target-form .spin > .target-input { padding-right: 5.75rem; width: 9.5rem; }
+}
+.target-set { flex: 0 0 auto; }
+.target-form .field-error { margin: 0.3rem 0 0; text-align: left; max-width: 16rem; white-space: normal; }
+td.target .target-form { display: inline-block; }
+.tile-target { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; color: var(--text-2); font-size: 0.88rem; flex-wrap: wrap; }
+.tile-target .target-form { flex: 0 1 auto; }

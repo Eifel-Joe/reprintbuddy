@@ -287,8 +287,10 @@ async def articles_list(
     cards = kpis.state_cards(t, "article", icon, len(every), t(label), named)
     keep = (("status", status), ("view", "archived" if archived else None))
     layout = listing.layout_of(request, "articles")
+    # A refused target quantity (`article_target`) is shown once, at the field of its article.
+    target_error = request.session.pop(TARGET_ERROR_KEY, None)
     return render(
-        request, "articles_list.html", active_nav="articles", archived=archived,
+        request, "articles_list.html", active_nav="articles", archived=archived, target_error=target_error,
         rows=[row for row in found if status is None or row.status == status],
         total=len(every),
         kpis=cards,
@@ -299,6 +301,39 @@ async def articles_list(
         status=status,
         search_keep=[(name, value) for name, value in keep if value],  # a new search keeps these
         here=request.url.path + (f"?{request.url.query}" if request.url.query else ""),  # the switches return here
+    )
+
+
+TARGET_ERROR_KEY = "target_error"  # session: {"id": article id, "value": what was typed, "text": the refusal}
+
+
+@router.post("/articles/{article_id:int}/target", dependencies=[Depends(verify_csrf)])
+async def article_target(request: Request, article_id: int, db: Session = Depends(get_db)):
+    """A new target quantity from the list or a tile: the minimum stock becomes target - buffer
+    (`catalog.set_target_quantity`, the same checks as the edit form).
+
+    Back to the list the form came from (`next`, a local path). A refusal comes back there too and
+    shows at the field of the article (the list reads it from the session once), with what was typed.
+    Only this form saves: the arrows of a number field (spinbox.js) change the value in the field and
+    never send it, because every saved change lets rule 7.1 plan prints, and three clicks on an arrow
+    must not be three changes.
+    """
+    name = _get_article(db, article_id).name
+    form = await request.form()
+    after = local_next(form) or "/articles"
+    raw = str(form.get("target", ""))
+
+    def work(tx):
+        target = parse_int(raw, field="articles.target_quantity", min=0, max=MAX_QTY)
+        catalog.set_target_quantity(tx, article_id, target)
+        return {"name": name, "target": target}
+
+    def on_error(text: str, status: int, exc: Exception):
+        request.session[TARGET_ERROR_KEY] = {"id": article_id, "value": raw[:24], "text": text}
+        return RedirectResponse(after, status_code=303)
+
+    return await run_form_action(
+        request, work=work, success_url=after, flash_key="articles.target_saved", on_error=on_error
     )
 
 
