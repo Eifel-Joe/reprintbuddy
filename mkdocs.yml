@@ -109,4 +109,23 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting started:
+    - Requirements: start/requirements.md
     - Installation: start/install.md
+    - First setup: start/setup.md
+  - Use:
+    - Articles: use/articles.md
+    - Filament: use/filament.md
+    - Automation: use/automation.md
+    - Queue: use/queue.md
+    - To check and assembly: use/inspection.md
+    - Labels and QR codes: use/labels.md
+    - Reorder suggestions: use/reorder.md
+    - Push messages: use/notifications.md
+  - Operation:
+    - Settings: operate/settings.md
+    - Update and backup: operate/update-backup.md
+    - Network and security: operate/network.md
+    - Command line: operate/cli.md
+  - Help:
+    - Limits: help/limits.md
+    - Troubleshooting: help/troubleshooting.md

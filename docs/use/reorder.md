@@ -1,0 +1,68 @@
+# Reorder suggestions
+
+Reprintbuddy watches your filament and your bought parts and tells you what to order and how much, early enough that it arrives before you run short. It never orders anything itself. The page **Reorder suggestions** (*Reorder* in the menu) lists what to buy and what is already on its way.
+
+![The page Reorder suggestions with suggestion tiles and the list On its way](../assets/images/en/reorder.png)
+
+The cards at the top count the open **Suggestions**, split into **Filament** and **Parts**, and what is **On its way**.
+
+## What a suggestion shows
+
+Each suggestion is a tile with the filament or part it is about and four figures:
+
+| Figure | Meaning |
+|---|---|
+| **Stock** | What you have now. |
+| **Demand** | What the planned prints and builds will use up. |
+| **Usage × lead time** | The usage per day of the last 30 days, multiplied by the lead time in days. |
+| **Lower limit** | The reserve that should still be left. |
+
+Below the figures stands the suggestion, for example `1 × 50 (50 pcs)`, then the supplier and **Open**, a link to the order page that opens in a new window. Supplier and link come from the settings of the part or the filament.
+
+## When a suggestion appears
+
+A suggestion appears when this holds:
+
+> Stock − Demand − Usage per day × Lead time < Lower limit
+
+In words: take what you have, subtract what the planned prints will use and what is used while the order is on its way. If what remains is below the lower limit, it is time to order.
+
+- **Stock.** For a part, its stock. For filament, the remaining weight of all spool sorts ticked in the slots where it is **Reordered** (see [Filament](filament.md)).
+- **Demand.** For filament, the grams of the prints in Reprintbuddy's queue and in progress, plus the prints still missing to reach the target quantity of the articles. For a part, the quantity per piece times the pieces that wait for assembly, are queued or in progress, or are still missing to the target quantity of the articles that need the part.
+- **Usage per day.** Measured over the last 30 days. For filament it comes from the daily record of the remaining weight of each spool; only decreases count, so a new spool adds nothing. With less than two days of record the page says "no history yet". For a part it comes from the parts used at assembly bookings, divided by the days since the first journal entry, at most 30.
+- **Lead time.** Days from ordering to arrival, from the settings.
+- **Lower limit.** For filament, the safety stock. For a part, the larger of its safety margin and its minimum stock; the two do not add up. A safety margin in days is the usage of that many days.
+
+A part below its minimum stock therefore gets a suggestion even without any demand: ordering when the stock is already gone would be too late.
+
+**Example.** A part is bought in packs of 50 and has a stock of 40, a minimum stock of 10, a safety margin of 3 days and a lead time of 7 days. Its usage is 1 per day and the planned builds need 30. Then 40 − 30 − 1 × 7 = 3. The lower limit is the larger of 10 and 3 days × 1 per day, so 10. Since 3 is below 10, there is a suggestion. The shortfall is 10 + 30 + 7 − 40 = 7 pieces, so the suggestion is one pack of 50.
+
+### How much to order
+
+The suggested quantity is the smallest number of whole order units that closes the shortfall, but at least the minimum order quantity. If the minimum order quantity is 2 packs of 50, the suggestion is 100 pieces even when 7 are missing. You see the quantity in order units and, for parts, in pieces.
+
+### What you must enter
+
+Suggestions need the order settings, because Reprintbuddy cannot guess your supplier's lead time:
+
+- For a part: **Minimum stock**, **Order unit (pieces per pack)**, **Minimum order quantity (packs)**, **Lead time (days)**, **Safety margin**, **Supplier** and **Order link** on the part, see [To check and assembly](inspection.md#bought-parts).
+- For filament: the reorder settings of the spool sort on the Filament page, see [Filament](filament.md). Only spool sorts that are marked **Reordered** in at least one article get suggestions.
+
+!!! note "Without the spool list"
+    Filament suggestions need the filament stock. If Bambuddy cannot be reached, the page shows the last recorded stock with its date. With no record at all, filament suggestions are left out and only parts are shown.
+
+## Mark as ordered
+
+When you have ordered:
+
+1. Check the number in **Order units**. It starts with the suggested quantity; you can enter 1 to 1000.
+2. Press **mark as ordered**.
+
+The item moves to the list **On its way**, showing the quantity and the date under **Ordered on**. Reprintbuddy makes no new suggestion for it until it has arrived. The suggestion ends by itself when the goods show up:
+
+- A part: with the first **Goods receipt of a part** booking after you marked it. Book the receipt on the Bookings page, see [To check and assembly](inspection.md#bookings).
+- Filament: as soon as Bambuddy's spool list shows new spools of that sort, created after your mark, that together weigh at least the ordered quantity.
+
+You can also press **arrived** in the list yourself, for example for a delivery that you do not book.
+
+Push messages can tell you about new suggestions, see [Push messages](notifications.md).

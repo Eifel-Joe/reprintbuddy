@@ -14,13 +14,13 @@ Run it as root on that system:
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v{{ version }}/install/install.sh)"
 ```
 
-Fresh Debian systems often come without curl; the first part installs it. The tag in the address (`v{{ version }}`) is the version that gets installed, so installer and code are guaranteed to belong together. The installer asks for the language of the interface (English or German). To skip the question, add the language:
+Fresh Debian systems often come without curl; the first part installs it. The installer puts the **newest release** in place. The tag in the address (`v{{ version }}`) is the version of the installer script itself, and it belongs to that release. The installer asks for the language of the interface (English or German). To skip the question, add the language:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v{{ version }}/install/install.sh)" _ --language de
 ```
 
-To install another version, put its tag into the address in place of `<tag>`:
+The script must come from the tag of the release that gets installed. If it does not, it stops with a message that names the right tag when its system files differ from that release's, and you run it again with that tag in place of `<tag>`:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"

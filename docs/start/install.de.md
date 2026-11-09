@@ -14,13 +14,13 @@ Als root auf diesem System ausführen:
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v{{ version }}/install/install.sh)"
 ```
 
-Frische Debian-Systeme haben oft kein curl; der erste Teil installiert es. Der Tag in der Adresse (`v{{ version }}`) ist die Version, die installiert wird, so gehören Installationsskript und Code garantiert zusammen. Das Skript fragt nach der Sprache der Oberfläche (Englisch oder Deutsch). Um die Frage zu überspringen, hängst du die Sprache an:
+Frische Debian-Systeme haben oft kein curl; der erste Teil installiert es. Das Skript legt das **neueste Release** auf. Der Tag in der Adresse (`v{{ version }}`) ist die Version des Installationsskripts selbst, und sie gehört zu diesem Release. Das Skript fragt nach der Sprache der Oberfläche (Englisch oder Deutsch). Um die Frage zu überspringen, hängst du die Sprache an:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v{{ version }}/install/install.sh)" _ --language de
 ```
 
-Für eine andere Version setzt du ihren Tag anstelle von `<tag>` in die Adresse:
+Das Skript muss vom Tag des Releases stammen, das installiert wird. Tut es das nicht, bricht es ab, wenn sich seine Systemdateien von denen des Releases unterscheiden, und nennt den richtigen Tag; dann führst du es mit diesem Tag anstelle von `<tag>` noch einmal aus:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
