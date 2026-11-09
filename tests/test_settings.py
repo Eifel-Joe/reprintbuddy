@@ -164,6 +164,17 @@ def test_validate_returns_normalised_value():
         ("http://h:8000", "http://other:8000", False),
         ("http://h:8000", None, False),
         (None, None, False),
+        # p159: the path belongs to the address - behind a proxy another path can be another service
+        ("http://h:8000/bb", "http://h:8000/bb/", True),
+        ("HTTP://H:80/bb", "http://h/bb", True),
+        ("http://h:8000", "http://h:8000/bb", False),
+        ("http://h:8000/bb", "http://h:8000/other", False),
+        ("http://h:8000/bb", "http://h:8000/bb/sub", False),
+        ("http://h:8000/bb", "http://h:8000/BB", False),  # paths are case-sensitive
+        # whatever else the address field lets through counts too: in doubt, type the key again
+        ("http://h:8000", "http://h:8000?x=1", False),
+        ("http://h:8000", "http://h:8000#x", False),
+        ("http://h:8000", "http://user@h:8000", False),
     ],
 )
 def test_same_address(a, b, same):

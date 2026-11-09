@@ -413,20 +413,35 @@ def apply_check(session: Session, url: object, api_key: str, check: ConnectionCh
 
 
 def same_address(a: str | None, b: str | None) -> bool:
-    """Do two stored/entered addresses point at the same scheme, host and port?
+    """Do a stored and an entered address name the same place?
 
-    Used to decide whether a stored API key may be sent to an address: the key
-    belongs to one Bambuddy address and never travels to another.
+    Decides whether a stored secret (the Bambuddy key, the Home Assistant token, Spec 10.6
+    "Sicherheit", 11.5a) may be sent to an address: it belongs to one address and never travels to
+    another. Written differently is the same: case of scheme and host, a default port left out, a
+    trailing slash. Everything else counts, the path too (p159): behind a proxy that routes by path,
+    another path can be another service. Query, fragment and user part count as well - in doubt the
+    secret is typed again, never sent too far. Rejected: one comparison per secret (until v0.3.12 the
+    token compared the path and the key did not; two rules for one question drift apart).
     """
     if not a or not b:
         return False
 
-    def origin(url: str) -> tuple[str, str, int | None]:
+    def place(url: str) -> tuple[object, ...]:
         parts = urlsplit(url.strip())
-        default = {"http": 80, "https": 443}.get(parts.scheme)
-        return parts.scheme, (parts.hostname or "").lower(), parts.port or default
+        scheme = parts.scheme.lower()
+        default = {"http": 80, "https": 443}.get(scheme)
+        return (
+            scheme,
+            (parts.hostname or "").lower(),
+            parts.port or default,
+            parts.path.rstrip("/"),
+            parts.query,
+            parts.fragment,
+            parts.username,
+            parts.password,
+        )
 
     try:
-        return origin(a) == origin(b)
+        return place(a) == place(b)
     except ValueError:  # an invalid port or address is never "the same"
         return False
