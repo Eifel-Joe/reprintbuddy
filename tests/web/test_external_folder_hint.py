@@ -97,3 +97,20 @@ def test_the_docs_no_longer_say_that_nothing_warns():
     assert "warnt aber davor" in (root / "docs/help/limits.de.md").read_text(encoding="utf-8")
     for name in ("README.md", "README.de.md"):
         assert "warning" in (root / name).read_text(encoding="utf-8").lower() or "Warnung" in (root / name).read_text(encoding="utf-8")
+
+
+def test_a_failing_folder_list_only_leaves_the_warning_out(external, fake_bambuddy, monkeypatch):
+    """The folder list is read for the warning alone. When only that call fails the plates page still
+    shows (review of p169); without the folder list there is no way to tell, so no warning."""
+    from reprintbuddy.bambuddy.client import BambuddyUnavailable
+
+    client, _mounted, _below, outside, _deep = external
+
+    async def broken():
+        raise BambuddyUnavailable("folders")
+
+    monkeypatch.setattr(fake_bambuddy, "list_folders", broken)
+    response = client.get(f"/articles/new/file/{outside.id}")
+    assert response.status_code == 200
+    assert translate("en", "articles.plate") in response.text  # the plates are there
+    assert hint() not in response.text

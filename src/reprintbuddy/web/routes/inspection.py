@@ -183,7 +183,7 @@ def _counts(raw: bytes) -> tuple[int | str | None, int | str | None]:
         raise ValidationError("inspections.invalid_body")
     if "good_units" not in body and "scrap_units" not in body:
         raise ValidationError("inspections.invalid_body")
-    counts: list[int | None] = []
+    counts: list[int | str | None] = []
     for key in ("good_units", "scrap_units"):
         if key not in body:
             counts.append(None)

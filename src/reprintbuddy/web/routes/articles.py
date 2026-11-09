@@ -427,15 +427,19 @@ async def _plates_page(
     try:
         file = await client.get_file(file_id)
         plates = await client.list_plates(file_id) if file is not None and file.sliced else []
-        # p169: a file from a folder linked from outside (or below one) is chosen with a warning; the
-        # folder is read fresh, as the block on uploading does.
-        external = file is not None and file.sliced and is_external_folder(await client.list_folders(), file.folder_id)
     except BAMBUDDY_ERRORS:
         return _problem(request, "articles.bambuddy_error", relink=relink_id is not None)
     if file is None:
         return _problem(request, "articles.file_missing", 404, relink=relink_id is not None)
     if not file.sliced:
         return _problem(request, "articles.not_sliced", 409, relink=relink_id is not None)
+    # p169: a file from a folder linked from outside (or below one) is chosen with a warning; the folder
+    # list is read fresh, as the block on uploading does. It serves the warning alone: when it cannot be
+    # read the page shows without the warning instead of failing.
+    try:
+        external = is_external_folder(await client.list_folders(), file.folder_id)
+    except BAMBUDDY_ERRORS:
+        external = False
     return render(
         request,
         "article_plates.html",
