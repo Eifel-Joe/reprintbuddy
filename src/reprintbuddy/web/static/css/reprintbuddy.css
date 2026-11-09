@@ -1151,3 +1151,12 @@ td.target .target-form { display: inline-block; }
 .settings-wide { grid-column: 1 / -1; min-width: 0; }
 .log-filters { flex-direction: column; align-items: stretch; gap: 0.5rem; }
 .log-table td { vertical-align: top; }
+.log-filters .filters { align-items: center; }
+.filters-label { min-width: 5.5rem; color: var(--text-2); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+/* On a narrow screen the group moves under the time and who under the event, so the event keeps the room. */
+.log-area-inline, .log-actor-inline { display: none; }
+@media (max-width: 599px) {
+  .log-table .log-area, .log-table .log-actor { display: none; }
+  .log-area-inline, .log-actor-inline { display: inline; }
+  .log-filters .filters-label { min-width: 100%; }
+}

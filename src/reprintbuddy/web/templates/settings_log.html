@@ -4,11 +4,13 @@
 {% call ui.region("activity-log", "activity") %}
 <div class="toolbar log-filters">
   <nav class="filters" aria-label="{{ t('activity.filter_area') }}">
+    <span class="filters-label">{{ t('activity.col.area') }}</span>
     {%- for link in log_area_links %}
     <a class="filter{% if link.active %} active{% endif %}" href="{{ link.href }}"{% if link.active %} aria-current="true"{% endif %}>{{ link.label }} <span class="count">{{ link.count }}</span></a>
     {%- endfor %}
   </nav>
   <nav class="filters" aria-label="{{ t('activity.filter_actor') }}">
+    <span class="filters-label">{{ t('activity.col.actor') }}</span>
     {%- for link in log_actor_links %}
     <a class="filter{% if link.active %} active{% endif %}" href="{{ link.href }}"{% if link.active %} aria-current="true"{% endif %}>{{ link.label }} <span class="count">{{ link.count }}</span></a>
     {%- endfor %}
@@ -20,19 +22,20 @@
     <thead>
       <tr>
         <th>{{ t('activity.col.time') }}</th>
-        <th>{{ t('activity.col.area') }}</th>
+        <th class="log-area">{{ t('activity.col.area') }}</th>
         <th>{{ t('activity.col.event') }}</th>
-        <th>{{ t('activity.col.actor') }}</th>
+        <th class="log-actor">{{ t('activity.col.actor') }}</th>
       </tr>
     </thead>
     <tbody>
     {% for row in log_rows %}
       <tr>
-        <td class="nowrap">{{ row.at|local_dt }}</td>
-        <td>{{ row.area_label }}</td>
+        <td class="nowrap">{{ row.at|local_dt }}<span class="log-area-inline muted"><br>{{ row.area_label }}</span></td>
+        <td class="log-area">{{ row.area_label }}</td>
         <td>{% if row.link %}<a href="{{ row.link }}">{{ row.text }}</a>{% else %}{{ row.text }}{% endif %}
-          {%- for extra in row.extras %}<br><span class="muted">{{ extra }}</span>{% endfor %}</td>
-        <td>{{ row.actor }}{% if row.address %}<br><span class="muted">{{ row.address }}</span>{% endif %}</td>
+          {%- for extra in row.extras %}<br><span class="muted">{{ extra }}</span>{% endfor %}
+          <span class="log-actor-inline"><br>{{ row.actor }}{% if row.address %} · <span class="muted">{{ row.address }}</span>{% endif %}</span></td>
+        <td class="log-actor">{{ row.actor }}{% if row.address %}<br><span class="muted">{{ row.address }}</span>{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
