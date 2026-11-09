@@ -80,14 +80,17 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 ```
 
 Als root auf diesem System ausführen. Frische Debian-Systeme bringen oft kein curl mit; der erste Teil installiert es.
-Der Tag in der Adresse (`v0.3.12`) ist die Version, die installiert wird; Skript und Code gehören sicher zusammen.
+Das Skript legt das neueste Release auf. Der Tag in der Adresse (`v0.3.12`) ist die Version des Installationsskripts
+selbst, und sie gehört zu diesem Release.
 Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.12/install/install.sh)" _ --language de
 ```
 
-Für eine andere Version setze ihren Tag in die Adresse (für `<tag>` zum Beispiel `v0.3.12`):
+Das Skript muss vom Tag des Releases stammen, das installiert wird. Tut es das nicht, bricht es ab, wenn sich seine
+Systemdateien von denen des Releases unterscheiden, und nennt den richtigen Tag; führe es dann mit diesem Tag anstelle
+von `<tag>` noch einmal aus:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
