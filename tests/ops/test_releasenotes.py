@@ -6,7 +6,8 @@ Never against the real GitHub: every test hands in a fake HTTP function.
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -112,7 +113,7 @@ def test_a_long_note_is_cut():
 
 def test_date_and_body_are_taken_over():
     entry = rn.select_notes([release("v0.2.0", "Some *news*.")], installed="v0.1.0", newest="v0.2.0")[0]
-    assert entry.published == date(2026, 11, 9)
+    assert entry.published == datetime(2026, 11, 9, 15, 19, tzinfo=UTC)  # the page shows it in local time
     assert entry.body == "Some *news*."
     assert entry.cut is False
 
@@ -148,9 +149,10 @@ def test_one_request_to_the_releases_of_the_origin_without_a_login():
     assert tags(notes.entries) == ["v0.2.0"]
     assert notes.page_url == "https://github.com/owner/repo/releases"
     [(url, headers)] = http.calls
-    assert url == "https://api.github.com/repos/owner/repo/releases?per_page=100"
+    assert url == "https://api.github.com/repos/owner/repo/releases?per_page=30"  # review: 10 are shown
     assert headers["User-Agent"].startswith("Reprintbuddy/")
     assert headers["Accept"] == "application/vnd.github+json"
+    assert headers["Accept-Encoding"] == "identity"  # review: the size limit counts what arrives
     assert not any(name.lower() in ("authorization", "cookie") for name in headers)
 
 
@@ -176,6 +178,54 @@ def test_a_failure_gives_failed_notes_with_the_fixed_link(http):
 def test_no_release_for_the_newer_versions_counts_as_failed():
     notes = fetch(answering(release("v0.1.0")))
     assert notes.failed is True
+
+
+def test_a_newest_tag_without_its_release_yet_counts_as_failed():
+    """Review: the card would say "up to v0.3.0" and list only v0.2.0."""
+    notes = fetch(answering(release("v0.2.0")), newest="v0.3.0")
+    assert notes.failed is True
+
+
+def test_the_whole_request_has_ten_seconds(monkeypatch):
+    """Review: httpx's timeouts count per step; the request as a whole is watched."""
+    import threading
+
+    import httpx
+
+    release_handler = threading.Event()
+
+    def slow(request):
+        release_handler.wait(5)  # a server that answers late, step by step
+        return httpx.Response(200, content=b"[]")
+
+    monkeypatch.setattr(rn, "TIMEOUT", 0.2)
+    started = time.monotonic()
+    with pytest.raises(rn.NotesError):
+        rn.httpx_get("https://api.github.com/x", {}, transport=httpx.MockTransport(slow))
+    assert time.monotonic() - started < 2
+    release_handler.set()
+
+
+def test_a_body_over_the_limit_stops_the_download(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(rn, "MAX_RESPONSE_BYTES", 10)
+    big = httpx.MockTransport(lambda request: httpx.Response(200, content=iter([b"x" * 50, b"x" * 50])))
+    with pytest.raises(rn.NotesError):
+        rn.httpx_get("https://api.github.com/x", {}, transport=big)
+
+
+def test_a_redirect_is_not_followed():
+    import httpx
+
+    calls = []
+
+    def moved(request):
+        calls.append(str(request.url))
+        return httpx.Response(302, headers={"location": "https://elsewhere.invalid/"})
+
+    assert rn.httpx_get("https://api.github.com/x", {}, transport=httpx.MockTransport(moved))[0] == 302
+    assert calls == ["https://api.github.com/x"]
 
 
 @pytest.mark.parametrize("origin", ["https://gitlab.example/owner/repo.git", None])

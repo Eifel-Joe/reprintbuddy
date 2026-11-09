@@ -24,8 +24,10 @@ _NUMBERED = re.compile(r"^\s*\d{1,9}[.)]\s+(.*)$")
 _CODE = re.compile(r"`([^`]+)`")
 _IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 _LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_STRONG_EM = re.compile(r"\*\*\*(?=\S)([^<>]+?)(?<=\S)\*\*\*")
 _STRONG = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*|(?<!\w)__(?=\S)(.+?)(?<=\S)__(?!\w)")
-_EM = re.compile(r"\*(?=\S)(.+?)(?<=\S)\*|(?<!\w)_(?=\S)(.+?)(?<=\S)_(?!\w)")
+# Review of v0.3.13: italic never spans a tag, so `*a **b* c**` cannot give <em>a <strong>b</em> c</strong>.
+_EM = re.compile(r"\*(?=\S)([^<>]+?)(?<=\S)\*|(?<!\w)_(?=\S)([^<>]+?)(?<=\S)_(?!\w)")
 _SLOT = "\x00{}\x00"  # stands for a code span while the other rules run; NUL never comes from escaping
 
 
@@ -42,6 +44,7 @@ def _inline(text: str) -> str:
     html = _CODE.sub(keep_code, html)
     html = _IMAGE.sub(lambda m: m[1], html)
     html = _LINK.sub(lambda m: m[1], html)
+    html = _STRONG_EM.sub(lambda m: f"<strong><em>{m[1]}</em></strong>", html)
     html = _STRONG.sub(lambda m: f"<strong>{m[1] or m[2]}</strong>", html)
     html = _EM.sub(lambda m: f"<em>{m[1] or m[2]}</em>", html)
     return re.sub(r"\x00(\d+)\x00", lambda m: codes[int(m[1])], html)

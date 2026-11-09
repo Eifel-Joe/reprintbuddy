@@ -41,7 +41,7 @@ from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, BodyLimitMiddleware
 from reprintbuddy.web.subpath import SubPathWarning
 from reprintbuddy.web.flash import pop_flashes
-from reprintbuddy.web.formatting import decimal, fill_percent, local_date, local_dt, unit
+from reprintbuddy.web.formatting import decimal, fill_percent, local_date, local_day, local_dt, unit
 from reprintbuddy.web.notes_markdown import render_notes
 from reprintbuddy.web.formtoken import issue_form_token
 from reprintbuddy.web.i18n import load_locales
@@ -384,6 +384,7 @@ def create_app(
     templates.env.globals["app_version"] = __version__
     templates.env.filters["local_dt"] = local_dt
     templates.env.filters["local_date"] = local_date
+    templates.env.filters["local_day"] = local_day
     templates.env.filters["notes_markdown"] = render_notes  # p143: always escaped
     templates.env.filters["num"] = decimal
     templates.env.filters["unit"] = unit

@@ -18,10 +18,11 @@ import dataclasses
 import json
 import logging
 import re
+import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +59,7 @@ class NotesError(Exception):
 @dataclass(frozen=True)
 class ReleaseNote:
     tag: str
-    published: date | None
+    published: datetime | None  # UTC; the page shows the local day
     body: str  # Markdown as GitHub keeps it; rendered escaped by the page
     cut: bool = False
 
@@ -88,18 +89,47 @@ def releases_page(owner: str, repo: str) -> str:
     return f"https://github.com/{owner}/{repo}/releases"
 
 
-def httpx_get(url: str, headers: Mapping[str, str]) -> tuple[int, bytes]:
+def httpx_get(url: str, headers: Mapping[str, str], *, transport: Any = None) -> tuple[int, bytes]:
     """The production GET: TLS checked, no redirect followed, at most `TIMEOUT` seconds and
-    `MAX_RESPONSE_BYTES` in all (httpx's timeouts count per step, so the whole is watched here)."""
+    `MAX_RESPONSE_BYTES` in all. `transport` is for the tests only.
+
+    Review of v0.3.13: httpx's timeouts count per step (connect, each read), so a server that answers
+    slowly step by step could hold the check far longer. The request runs in its own daemon thread and
+    is given up after `TIMEOUT` seconds as a whole; the thread itself ends by httpx's step timeouts.
+    The size is counted on the raw bytes (the request asks for no compression), so a small packed
+    answer cannot grow in memory before the limit is seen. Tests: test_releasenotes.py "review".
+    """
+    outcome: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            outcome["result"] = _get(url, headers, transport)
+        except BaseException as error:  # noqa: BLE001 - handed to the waiting thread
+            outcome["error"] = error
+
+    worker = threading.Thread(target=run, name="release-notes", daemon=True)
+    worker.start()
+    worker.join(TIMEOUT)
+    if worker.is_alive():
+        raise NotesError("timeout")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["result"]
+
+
+def _get(url: str, headers: Mapping[str, str], transport: Any) -> tuple[int, bytes]:
     import httpx
 
     deadline = time.monotonic() + TIMEOUT
-    with httpx.Client(timeout=httpx.Timeout(TIMEOUT), follow_redirects=False) as client:
+    options: dict[str, Any] = {"timeout": httpx.Timeout(TIMEOUT), "follow_redirects": False, "trust_env": False}
+    if transport is not None:
+        options["transport"] = transport
+    with httpx.Client(**options) as client:
         with client.stream("GET", url, headers=dict(headers)) as response:
             if response.status_code != 200:
                 return response.status_code, b""
             data = bytearray()
-            for chunk in response.iter_bytes():
+            for chunk in response.iter_raw():
                 data += chunk
                 if len(data) > MAX_RESPONSE_BYTES:
                     raise NotesError("answer too large")
@@ -108,13 +138,14 @@ def httpx_get(url: str, headers: Mapping[str, str]) -> tuple[int, bytes]:
             return response.status_code, bytes(data)
 
 
-def _published(value: Any) -> date | None:
+def _published(value: Any) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value).date()
+        moment = datetime.fromisoformat(value)
     except ValueError:
         return None
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
 
 
 def select_notes(releases: Any, *, installed: str, newest: str) -> tuple[ReleaseNote, ...]:
@@ -157,9 +188,12 @@ def fetch_notes(
         log.info("release notes: origin is no GitHub repository")
         return ReleaseNotes(failed=True)
     page = releases_page(*repo)
-    url = f"{API}/repos/{repo[0]}/{repo[1]}/releases?per_page=100"
+    # 30, not 100 (review): only `MAX_VERSIONS` are shown, and GitHub lists the newest first; a page of
+    # 100 releases with all their fields could pass the size limit one day and fail every time.
+    url = f"{API}/repos/{repo[0]}/{repo[1]}/releases?per_page=30"
     headers = {
         "Accept": "application/vnd.github+json",
+        "Accept-Encoding": "identity",
         "User-Agent": f"Reprintbuddy/{__version__}",
         "X-GitHub-Api-Version": "2022-11-28",
     }
@@ -170,8 +204,9 @@ def fetch_notes(
         if len(body) > MAX_RESPONSE_BYTES:
             raise NotesError("answer too large")
         entries = select_notes(json.loads(body), installed=installed, newest=newest)
-        if not entries:
-            raise NotesError("no release notes for the newer versions")
+        if not entries or entries[0].tag != newest:
+            # Review: a tag whose release is not published yet would leave "up to vX" without vX.
+            raise NotesError("no release notes for the newest version")
     except NotesError as error:
         log.info("release notes could not be loaded: %s", error)
         return ReleaseNotes(page_url=page, failed=True)

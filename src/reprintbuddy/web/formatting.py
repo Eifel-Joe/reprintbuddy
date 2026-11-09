@@ -51,6 +51,12 @@ def format_decimal(value: float, digits: int, lang: str) -> str:
 
 
 @pass_context
+def local_day(context, dt: datetime | None) -> str:
+    """Jinja filter `local_day`: the local calendar day of a moment (a naive one means UTC)."""
+    return format_date(to_local(dt).date(), context.get("lang", "en")) if dt is not None else ""
+
+
+@pass_context
 def decimal(context, value: float | None, digits: int = 1) -> str:
     """Jinja filter `num`: `{{ grams|num }}` or `{{ x|num(2) }}`, in the language of the request."""
     return format_decimal(value, digits, context.get("lang", "en")) if value is not None else ""

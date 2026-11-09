@@ -142,3 +142,19 @@ def test_the_bar_leads_to_the_notes(ops_env):
     with_github(ops_env)
     check(ops_env)
     assert 'href="/settings?tab=maintenance#ops-notes"' in banner(ops_env.client.get("/").text)
+
+
+def test_without_notes_the_bar_leads_to_the_card(ops_env):
+    """Review: an anchor that is not on the page left the reader at the top."""
+    with_github(ops_env)
+    check(ops_env)
+    app = ops_env.client.app
+    app.state.version_info = dataclasses.replace(app.state.version_info, notes=None)
+    assert 'href="/settings?tab=maintenance#ops-update"' in banner(ops_env.client.get("/").text)
+
+
+def test_the_date_is_the_local_one(ops_env):
+    late = [dict(NOTES[0], published_at="2026-11-09T23:30:00Z")]  # already 10 November in Berlin
+    with_github(ops_env, FakeGitHub(releases=late))
+    check(ops_env)
+    assert format_date(date(2026, 11, 10), "en") in notes_block(maintenance(ops_env))

@@ -39,7 +39,7 @@
     {% else %}
     {% for entry in notes.entries %}
     <article class="release-note" lang="en">
-      <h3>{{ entry.tag }}{% if entry.published %} <span class="muted">· {{ entry.published | local_date }}</span>{% endif %}</h3>
+      <h3>{{ entry.tag }}{% if entry.published %} <span class="muted">· {{ entry.published | local_day }}</span>{% endif %}</h3>
       {{ entry.body | notes_markdown }}
       {% if entry.cut %}<p class="hint">{{ t('ops.notes.cut') }}</p>{% endif %}
     </article>

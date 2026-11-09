@@ -43,6 +43,22 @@ def test_bold_italic_code():
     )
 
 
+def test_bold_and_italic_do_not_interleave():
+    """Review: `*a **b* c**` gave <em>a <strong>b</em> c</strong>."""
+    html = str(render_notes("*a **b* c**"))
+    stack = []
+    for closing, name in re.findall(r"<(/?)([a-z]+)>", html):
+        if closing:
+            assert stack and stack.pop() == name, html
+        else:
+            stack.append(name)
+    assert stack == []
+
+
+def test_bold_italic_together():
+    assert render_notes("***x***") == "<p><strong><em>x</em></strong></p>"
+
+
 def test_underscores_inside_words_stay():
     assert render_notes("snake_case_name") == "<p>snake_case_name</p>"
 
