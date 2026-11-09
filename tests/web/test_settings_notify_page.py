@@ -59,6 +59,13 @@ def save(client, **over):
     return client.post("/settings/notify", data=form(client, **over))
 
 
+def saved_page(client, **over):
+    """Save, then the page the redirect leads to (with its flash messages)."""
+    response = save(client, **over)
+    assert response.status_code == 303
+    return client.get(response.headers["location"]).text
+
+
 def send_test(client, **over):
     data = form(client, **over)
     data["form_token"] = form_token_of(client, PAGE, "/settings/notify")
@@ -132,9 +139,32 @@ def test_a_new_address_needs_the_token_again(ready_client):
 
 def test_switched_off_a_new_address_drops_the_token(ready_client):
     save(ready_client)
-    save(ready_client, ha_enabled=None, ha_url=OTHER, ha_token="")
+    page = saved_page(ready_client, ha_enabled=None, ha_url=OTHER, ha_token="")
     assert stored(ready_client, "ha_url") == OTHER
     assert stored(ready_client, "ha_token") is None
+    # p160: not silently - the page says the token has to be entered again
+    assert en("notify.token_dropped") in page
+
+
+@pytest.mark.parametrize("url", ["", "http://proxy.test/other"], ids=["emptied", "other-path"])
+def test_switched_off_an_emptied_or_moved_address_says_the_token_is_gone(ready_client, url):
+    save(ready_client)
+    page = saved_page(ready_client, ha_enabled=None, ha_url=url, ha_token="")
+    assert stored(ready_client, "ha_token") is None
+    assert en("notify.token_dropped") in page
+
+
+def test_no_word_about_the_token_when_it_stays_or_none_was_stored(ready_client):
+    page = saved_page(ready_client, ha_enabled=None, ha_token="", ha_url=OTHER)  # nothing stored yet
+    assert en("notify.token_dropped") not in page
+    assert en("settings.saved") in page
+    save(ready_client)
+    page = saved_page(ready_client, ha_enabled=None, ha_url=URL + "/", ha_token="")  # same address
+    assert stored(ready_client, "ha_token") == TOKEN
+    assert en("notify.token_dropped") not in page
+    page = saved_page(ready_client, ha_enabled=None, ha_url=OTHER, ha_token="eyJ.new.sig")  # a new one typed
+    assert stored(ready_client, "ha_token") == "eyJ.new.sig"
+    assert en("notify.token_dropped") not in page
 
 
 @pytest.mark.parametrize(
@@ -262,6 +292,46 @@ def test_a_failed_message_shows_the_warning_and_the_last_result(ready_client, re
         assert en("warning.ha_unreachable", reason=raw("notify.outcome.server")) in overview
         page = ready_client.get(PAGE).text
         assert en("notify.outcome.server") in page
+
+
+def test_a_rejected_token_shows_its_own_warning_until_the_card_is_saved(ready_client, respx_mock):
+    """p152, Spec 10.6: after a 401 nothing more is tried; the warning says what to do."""
+    call = respx_mock.post(CALL).respond(401)
+    save(ready_client)
+    paused_article(ready_client)
+    with ready_client:  # the app's loop runs the sending task
+        ready_client.portal.call(functools.partial(ready_client.app.state.ticker.tick, poll=False))
+        ready_client.portal.call(_settle, ready_client)
+        assert stored(ready_client, "ha_token_rejected") is True
+        warning = en("warning.ha_token_rejected")
+        assert warning in ready_client.get("/").text
+        assert warning in ready_client.get(PAGE).text
+        ready_client.portal.call(functools.partial(ready_client.app.state.ticker.tick, poll=True))
+        ready_client.portal.call(_settle, ready_client)
+        assert call.call_count == 1  # no further try
+        assert saved_page(ready_client, ha_token="eyJ.new.sig")  # saving lifts the stop
+        assert stored(ready_client, "ha_token_rejected") is False
+        assert warning not in ready_client.get("/").text
+
+
+def test_switching_off_lifts_the_stop_too(ready_client):
+    save(ready_client)
+    with sm_of(ready_client).begin() as s:
+        st.set_setting(s, "ha_token_rejected", True, commit=False)
+    saved_page(ready_client, ha_enabled=None)
+    assert stored(ready_client, "ha_token_rejected") is False
+
+
+def test_the_test_message_neither_sets_nor_lifts_the_stop(ready_client, respx_mock):
+    respx_mock.post(CALL).respond(401)
+    save(ready_client)
+    send_test(ready_client)
+    assert stored(ready_client, "ha_token_rejected") is False
+    with sm_of(ready_client).begin() as s:
+        st.set_setting(s, "ha_token_rejected", True, commit=False)
+    respx_mock.post(CALL).respond(200, json=[])
+    send_test(ready_client)
+    assert stored(ready_client, "ha_token_rejected") is True
 
 
 async def _settle(client):

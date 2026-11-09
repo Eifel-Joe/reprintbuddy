@@ -3,7 +3,6 @@
 {% block title %}{{ t('settings.title') }}{% endblock %}
 {% block content %}
 {% call ui.page_head("settings", t('settings.title'), t('settings.subtitle')) %}{% endcall %}
-{% if notice %}{% if notice_warning %}<p class="alert" role="alert">{{ t(notice) }}</p>{% else %}<p class="notice" role="status">{{ t(notice) }}</p>{% endif %}{% endif %}
 {# One tab per topic; the tabs are links (`?tab=`), so the page works without JavaScript. #}
 {% set tab_items = [] %}
 {% for key, icon_name, label_key in settings_tabs %}{% set _ = tab_items.append((key, icon_name, t(label_key), '/settings?tab=' ~ key)) %}{% endfor %}

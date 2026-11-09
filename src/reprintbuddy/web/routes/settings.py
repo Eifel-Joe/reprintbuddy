@@ -7,7 +7,6 @@ written into a page: the form fields stay empty and an empty field means
 
 from __future__ import annotations
 
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
@@ -25,10 +24,10 @@ from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.flash import flash as flash_message  # a list: "Saved" does not replace it
+from reprintbuddy.web.flash import flash
 from reprintbuddy.web.routes.auth import password_confirmed
 from reprintbuddy.web.routes.ops import ops_ready, ops_view
-from reprintbuddy.web.deps import flash, get_db, logged_in_user, render, start_session, take_verdict
+from reprintbuddy.web.deps import get_db, logged_in_user, render, start_session, take_verdict
 from reprintbuddy.web.formtoken import write_transaction
 
 router = APIRouter()
@@ -187,8 +186,8 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
         if error:
             return await fail(error)
 
-    # An empty key field keeps the stored key, but only for the same address:
-    # a stored key is never sent to a different scheme, host or port.
+    # An empty key field keeps the stored key, but only for the same address: a stored key is never
+    # sent to a different scheme, host, port or path (p159; the token's rule, `st.same_address`).
     api_key = entered_key
     if not api_key:
         if not st.same_address(str(url), str(st.get_setting(db, "bambuddy_url") or "")):
@@ -204,8 +203,7 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     # A standing connection belongs to the old address and key: only a change replaces it.
     stored_url = str(st.get_setting(db, "bambuddy_url") or "")
     changed = not (
-        st.same_address(str(url), stored_url)
-        and urlsplit(str(url)).path.rstrip("/") == urlsplit(stored_url).path.rstrip("/")  # a path prefix counts too
+        st.same_address(str(url), stored_url)  # a path prefix counts too
         and api_key == str(st.get_setting(db, "bambuddy_api_key") or "")
     )
     # One transaction: a failure must not leave a new address with the old key.
@@ -214,7 +212,7 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     request.app.state.live_listener.wake(reconnect=changed)
     take_verdict(request, check)  # a fixed key clears the notice at once
     # The optional right (Spec 11.3 c, 5.1a): saved either way, the person learns whether uploading works.
-    flash_message(request, "bambuddy.upload_right_ok" if check.can_upload else "bambuddy.upload_right_missing")
+    flash(request, "bambuddy.upload_right_ok" if check.can_upload else "bambuddy.upload_right_missing")
     if check.owner_is_admin:
         return _saved(request, "bambuddy.admin_warning", warning=True, tab=SECTION_TAB["bambuddy"])
     return _saved(request, tab=SECTION_TAB["bambuddy"])

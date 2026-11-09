@@ -19,6 +19,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.backup import backup_dir_for, update_backup_since
 from reprintbuddy.ops.export import export_bytes
+from reprintbuddy.ops.releasenotes import with_notes
 from reprintbuddy.ops.server import (
     EffectiveServer,
     address_changed,
@@ -46,6 +47,9 @@ from reprintbuddy.ops.versions import (
 )
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render
+from reprintbuddy.web.flash import flash
+from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
+from reprintbuddy.web.forms import duplicate_redirect
 
 log = logging.getLogger("reprintbuddy.ops")
 router = APIRouter()
@@ -364,21 +368,36 @@ async def update_check(request: Request):
     except UpdateCheckError as error:
         log.warning("update check failed: %s", str(error)[:300])  # not shown on the page
         return _back("check_failed")
+    # p143: the notes of the newer versions in the same round (one request to GitHub, never raises).
+    info = await in_thread(with_notes, info, ops.install_dir, ops.runner, ops.http_get)
     app.state.version_info = info
     app.state.installed_tag = info.installed
     return _back()
 
 
 @router.post("/settings/update/auto", dependencies=[Depends(verify_csrf)])
-async def update_auto(request: Request, db: Session = Depends(get_db)):
+async def update_auto(request: Request):
     """The switch of the automatic check (Spec 11.3a): `enabled=1|0` is the wanted state, never a
     toggle (two open tabs cannot turn each other back). A value that is neither changes nothing.
-    Ends the pause of the check loop, so a check that was switched on runs now."""
+    Ends the pause of the check loop, so a check that was switched on runs now.
+
+    v0.3.13 p99: the one-time token is used up like on every other form. Setting the same state twice
+    did no harm, but a form sent again from an old tab set back what another tab had changed since.
+    A repeat or an expired token changes nothing and does not wake the loop. Tests: test_update_banner.py "p99".
+    """
     form = await request.form()
     wanted = str(form.get("enabled", "")).strip()
-    if wanted in ("0", "1"):
-        st.set_setting(db, "update_check", wanted == "1")
-        request.app.state.update_check_wake.set()
+    if wanted not in ("0", "1"):
+        return _back()
+    try:
+        with form_transaction(request, str(form.get("form_token", ""))) as tx:
+            st.set_setting(tx, "update_check", wanted == "1", commit=False)
+    except FormTokenUsed:
+        return duplicate_redirect(request, _back().headers["location"])
+    except FormTokenInvalid:
+        flash(request, "form.expired", warning=True)
+        return _back()
+    request.app.state.update_check_wake.set()
     return _back()
 
 

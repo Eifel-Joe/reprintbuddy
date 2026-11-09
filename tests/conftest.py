@@ -125,6 +125,28 @@ def make_client(db_path, **create_kwargs) -> TestClient:
 
 
 @pytest.fixture(autouse=True)
+def no_release_notes_request(monkeypatch):
+    """p143: the release notes never come from the real GitHub. `with_notes` swallows every error, so a
+    request that slipped through would go unnoticed; it is refused here and fails the test. Tests of the
+    HTTP function itself hand in an httpx transport and pass."""
+    from reprintbuddy.ops import releasenotes
+
+    real = releasenotes._get
+    asked: list[str] = []
+
+    def guarded(url, headers, transport):
+        if transport is None:
+            asked.append(url)
+            raise RuntimeError("no network in tests")
+        return real(url, headers, transport)
+
+    monkeypatch.setattr(releasenotes, "_get", guarded)
+    yield
+    if asked:
+        pytest.fail(f"a test asked GitHub for release notes: {asked}", pytrace=False)
+
+
+@pytest.fixture(autouse=True)
 def no_test_host_lookup(monkeypatch):
     """Fail any test that looks up a `.test` host: that is a request no respx route caught."""
     guard = NetworkGuard()

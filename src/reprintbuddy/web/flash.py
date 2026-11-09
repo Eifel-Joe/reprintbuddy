@@ -1,7 +1,8 @@
 """Messages for the next page shown (Post/Redirect/Get), with parameters.
 
-B1's `deps.flash` keeps one translation key for the settings page; this module
-keeps a list of (key, params) under its own session key and is shown by the layout.
+The one queue of messages (since v0.3.13 the settings page uses it too): a list of
+(key, params, warning) under its own session key, shown by the layout in one box that
+static/js/flash.js looks after (good news goes away by itself, trouble stays until dismissed).
 """
 
 from __future__ import annotations

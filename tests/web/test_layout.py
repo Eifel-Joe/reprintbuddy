@@ -107,6 +107,7 @@ def test_mobile_menu_without_javascript(ready_client):
         f'<script src="/static/js/info.js?v={__version__}" defer>',
         f'<script src="/static/js/thumbs.js?v={__version__}" defer>',
         f'<script src="/static/js/spinbox.js?v={__version__}" defer>',
+        f'<script src="/static/js/flash.js?v={__version__}" defer>',
     ]
 
 

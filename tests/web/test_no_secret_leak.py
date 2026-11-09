@@ -117,6 +117,6 @@ def test_session_cookie_holds_no_secret(ready_client, respx_mock):
     cookie = ready_client.cookies.get("reprintbuddy_session")
     payload = cookie.split(".")[0]
     decoded = base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)).decode()
-    assert set(json.loads(decoded)) <= {"uid", "sid", "csrf", "flash"}
+    assert set(json.loads(decoded)) <= {"uid", "sid", "csrf", "flashes"}  # the one queue of messages (v0.3.13: no second "flash" key)
     for secret in SECRETS:
         assert secret not in decoded

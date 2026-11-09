@@ -157,6 +157,25 @@ def test_api_invalid_body(ready_client, body, raw):  # Review Focus 3
     assert journal_kinds(ready_client).count("inspection_good") == 0
 
 
+@pytest.mark.parametrize("body", [{"scrap_units": "0"}, {"scrap_units": True}, {"scrap_units": 2}, {"scrap_units": 10**30}])
+def test_api_scrap_error_names_the_range_of_the_print(ready_client, body):  # p93: the same text as the page
+    a, i = finished(ready_client, units=1)
+    response = api_post(ready_client, i, body)
+    assert response.status_code == 422
+    expected = en("form.invalid_number", field=en("inspections.field.scrap"), min=0, max=1)
+    assert response.json()["message"] == expected
+    assert open_count(ready_client) == 1
+
+
+def test_api_wrong_scrap_type_on_an_unknown_or_resolved_print_is_not_found_or_conflict(ready_client):
+    # The wrong type is judged in the domain now (with the units of the print), after the print is looked up.
+    assert api_post(ready_client, 4242, {"scrap_units": "x"}).status_code == 404
+    a, i = finished(ready_client, units=1)
+    assert api_post(ready_client, i, {"scrap_units": 0}).status_code == 200
+    response = api_post(ready_client, i, {"scrap_units": "x"})
+    assert response.status_code == 409 and response.json()["error"] == "inspections.already_resolved"
+
+
 def test_api_invalid_body_wrong_content_type(ready_client):
     a, i = finished(ready_client)
     response = api_post(ready_client, i, raw="good_units=1", content_type="application/x-www-form-urlencoded")

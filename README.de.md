@@ -261,8 +261,8 @@ Nur der Pfad der Datenbank wird auf der Kommandozeile angegeben (`--db`).
 
 ## Update
 
-*Einstellungen → Update*: **Nach Updates suchen** drücken; gibt es eine neuere Version,
-**Auf … aktualisieren**. *Verfügbar ab der ersten Version.* Das Update
+*Einstellungen → Update*: **Nach Updates suchen** drücken; gibt es eine neuere Version, zeigt die Karte, was sie mitbringt, dann
+**Auf … aktualisieren**. Die Prüfung fragt GitHub (die Versionshinweise kommen ohne Anmeldung über GitHubs API), dabei sieht GitHub die Adresse deiner Installation. *Verfügbar ab der ersten Version.* Das Update
 
 1. sichert die Datenbank,
 2. wechselt auf den neuen Release-Tag,

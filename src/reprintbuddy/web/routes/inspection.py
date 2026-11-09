@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import inspection, stock
+from reprintbuddy.domain import inspection
 from reprintbuddy.domain.errors import ConflictError, DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Article, Inspection
@@ -19,7 +19,7 @@ from reprintbuddy.web import listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.flash import flash
-from reprintbuddy.web.forms import duplicate_redirect, error_status, error_text, parse_int, parse_text
+from reprintbuddy.web.forms import duplicate_redirect, error_status, error_text, parse_int
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
 from reprintbuddy.web.i18n import translate
 from reprintbuddy.web.kpis import Kpi
@@ -27,10 +27,12 @@ from reprintbuddy.web.routes.bookings import WARNING_KEYS, _active_article, _sho
 
 router = APIRouter()
 
-# The most good units of one print a form accepts; the domain holds the real limit (the units).
+# The most good units of one print the JSON interface accepts as `good_units`; the domain holds the real limit.
 MAX_GOOD = 1000
 # An id in a form: ASCII digits only, at most 18 of them like every id in an address.
 _ID = re.compile(r"[0-9]{1,18}", re.ASCII)
+# A whole number in a form: ASCII digits, at most 18, a leading minus allowed (the domain refuses it then).
+_NUMBER = re.compile(r"-?[0-9]{1,18}", re.ASCII)
 INSPECTION_URL = "/inspection"
 
 
@@ -60,6 +62,17 @@ def _inspection_page(request: Request, db: Session, *, article: object = None,
         error=error,
         values=values or {},
     )
+
+
+def _scrap_value(raw: object) -> int | str:
+    """The scrap of the form ("Ausschuss"): empty is 0 (Spec 8.2). Anything that is no whole number
+    is handed on as it is. The range is checked in the domain, against the target number of the
+    print: every wrong value gets that one text, "from 0 to the target number" (p93). A range
+    checked here would be a second one (it was 1000, whatever the print)."""
+    text = str(raw or "").strip()
+    if not text:
+        return 0
+    return int(text) if _NUMBER.fullmatch(text) else text
 
 
 def _back(article: object) -> str:
@@ -114,7 +127,7 @@ async def resolve_inspection(inspection_id: int, request: Request, db: Session =
         if "good" in form:
             raise ValidationError("inspections.form_outdated")
         # "Ausschuss", default 0 (Spec 8.2): good units are the units of the print minus the scrap.
-        scrap = parse_int(form.get("scrap"), field="inspections.field.scrap", min=0, max=MAX_GOOD, default=0)
+        scrap = _scrap_value(form.get("scrap"))
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
             result = inspection.resolve_scrap(tx, inspection_id, scrap, "user")
             name = tx.scalar(
@@ -155,13 +168,14 @@ def _api_error(request: Request, exc: DomainError) -> JSONResponse:
     )
 
 
-def _counts(raw: bytes) -> tuple[int | None, int | None]:
+def _counts(raw: bytes) -> tuple[int | None, int | str | None]:
     """`(good_units, scrap_units)` of a JSON body; one of them or both, whole numbers, nothing else.
 
     `scrap_units` is the input of the list (Spec 8.2: good = units of the print minus scrap);
     `good_units` stays for the displays that already send it. No `bool` (`true` is an int in
     Python), no `1.0`, no text: a display that sends the wrong type is told so instead of being
     guessed at. The range, and that both add up to the units, is checked against the print.
+    A `scrap_units` of the wrong type is handed on as text for that check (the same text as the page).
     """
     try:
         body = json.loads(raw)
@@ -178,6 +192,11 @@ def _counts(raw: bytes) -> tuple[int | None, int | None]:
             continue
         value = body[key]
         if isinstance(value, bool) or not isinstance(value, int):
+            if key == "scrap_units":
+                # Handed on as text, the domain refuses it with the range of the print: the same
+                # text as on the page (p93). `None` stays "not sent" only when the key is missing.
+                counts.append(str(value))
+                continue
             raise ValidationError("form.invalid_number", field=field, min=0, max=MAX_GOOD)
         counts.append(value)
     return counts[0], counts[1]
@@ -228,7 +247,10 @@ async def api_resolve(inspection_id: int, request: Request):
                     select(Inspection.units, Inspection.resolved_at).where(Inspection.id == inspection_id)
                 ).first()
                 still_open = found is not None and found.resolved_at is None
-                if still_open and good is not None and good + scrap != found.units:
+                if (
+                    still_open and good is not None
+                    and isinstance(scrap, int) and good + scrap != found.units
+                ):
                     raise ValidationError("inspections.counts_mismatch", units=found.units)
                 result = inspection.resolve_scrap(tx, inspection_id, scrap, "user")
     except DomainError as exc:
@@ -276,11 +298,10 @@ async def book_assembly(article_id: int, request: Request, db: Session = Depends
     values = {k: str(v) for k, v in form.items() if k not in ("csrf_token", "form_token", "article")}
     try:
         qty = parse_int(form.get("qty"), field="bookings.field.qty", min=1, max=MAX_QTY)
-        note = parse_text(form.get("note"), field="journal.field.note", max_len=stock.MAX_NOTE)
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
             article_row = _active_article(tx, article_id)
             name = article_row.name
-            shortages = inspection.assemble(tx, article_id, qty, "user", note)
+            shortages = inspection.assemble(tx, article_id, qty, "user")
             messages = _shortages(tx, shortages)
     except FormTokenUsed:
         return duplicate_redirect(request, back)

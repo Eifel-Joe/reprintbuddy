@@ -10,7 +10,7 @@ import re
 from types import SimpleNamespace
 
 import pytest
-from conftest import csrf_of, make_client, sm_of
+from conftest import csrf_of, form_token_of, make_client, sm_of
 from test_ops_update import REMOTE_TWO, git_env
 
 from reprintbuddy import settings as st
@@ -19,7 +19,7 @@ from reprintbuddy.ops.runner import CommandResult
 from reprintbuddy.web.i18n import translate
 
 PAGES = ["/", "/queue", "/articles", "/settings", "/settings?tab=maintenance"]
-LINK = 'href="/settings?tab=maintenance#ops-update"'
+LINK = 'href="/settings?tab=maintenance#ops-notes"'  # p143: straight to what the new version brings
 
 
 def banner(page: str) -> str | None:
@@ -131,15 +131,19 @@ def test_no_switch_without_a_git_installation(ops_env):
     assert 'action="/settings/update/auto"' not in ops_env.client.get("/settings?tab=maintenance").text
 
 
+def switch_tokens(env) -> dict[str, str]:
+    """Both tokens of the switch form on the update card."""
+    page = "/settings?tab=maintenance"
+    return {"csrf_token": csrf_of(env.client, page), "form_token": form_token_of(env.client, page, "/settings/update/auto")}
+
+
 @pytest.mark.parametrize("wanted", ["0", "1"])
 def test_the_switch_saves_the_wanted_state_and_wakes_the_loop(ops_env, wanted):
     git_env(ops_env)
     app = ops_env.client.app
     app.state.update_check_wake.clear()
-    token = csrf_of(ops_env.client, "/settings?tab=maintenance")
     response = ops_env.client.post(
-        "/settings/update/auto",
-        data={"csrf_token": token, "enabled": wanted, "next": "/settings?tab=maintenance"},
+        "/settings/update/auto", data={**switch_tokens(ops_env), "enabled": wanted, "next": "/settings?tab=maintenance"}
     )
     assert response.status_code == 303
     assert response.headers["location"] == "/settings?tab=maintenance#ops-update"
@@ -155,10 +159,38 @@ def test_the_switch_needs_the_csrf_token(ops_env):
         assert st.get_setting(s, "update_check") is True
 
 
+def test_p99_the_switch_needs_the_one_time_token(ops_env):
+    git_env(ops_env)
+    app = ops_env.client.app
+    app.state.update_check_wake.clear()
+    token = csrf_of(ops_env.client, "/settings?tab=maintenance")
+    response = ops_env.client.post("/settings/update/auto", data={"csrf_token": token, "enabled": "0"})
+    assert response.status_code == 303
+    with sm_of(ops_env.client)() as s:
+        assert st.get_setting(s, "update_check") is True
+    assert not app.state.update_check_wake.is_set()
+    assert translate("en", "form.expired") in ops_env.client.get(response.headers["location"]).text
+
+
+def test_p99_a_second_submission_of_the_same_form_changes_nothing(ops_env):
+    """Switched off, switched on in another tab, then the first form sent again: it stays on."""
+    git_env(ops_env)
+    app = ops_env.client.app
+    first = {**switch_tokens(ops_env), "enabled": "0"}
+    ops_env.client.post("/settings/update/auto", data=first)
+    ops_env.client.post("/settings/update/auto", data={**switch_tokens(ops_env), "enabled": "1"})
+    app.state.update_check_wake.clear()
+    response = ops_env.client.post("/settings/update/auto", data=first)
+    assert response.status_code == 303
+    with sm_of(ops_env.client)() as s:
+        assert st.get_setting(s, "update_check") is True
+    assert not app.state.update_check_wake.is_set()
+    assert translate("en", "form.duplicate") in ops_env.client.get(response.headers["location"]).text
+
+
 def test_a_wrong_value_changes_nothing(ops_env):
     git_env(ops_env)
-    token = csrf_of(ops_env.client, "/settings?tab=maintenance")
-    ops_env.client.post("/settings/update/auto", data={"csrf_token": token, "enabled": "toggle"})
+    ops_env.client.post("/settings/update/auto", data={**switch_tokens(ops_env), "enabled": "toggle"})
     with sm_of(ops_env.client)() as s:
         assert st.get_setting(s, "update_check") is True
 

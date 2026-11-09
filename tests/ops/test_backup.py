@@ -174,6 +174,10 @@ def named(folder: Path, name: str) -> None:
         ("reprintbuddy-v0.0.9-20261109T101645Z.db", "v0.1.0", False),  # another installed version's label
         ("reprintbuddy-0123456789ab-20261109T101645Z.db", None, True),  # no tag: the commit's first 12
         ("reprintbuddy-before-restore-20261109T101645Z.db", None, False),
+        # p158: the card and the helper each ask `git describe`; their answers may differ.
+        ("reprintbuddy-v0.1.0-20261109T101645Z.db", None, True),  # the card knew no tag, the helper did
+        ("reprintbuddy-0123456789ab-20261109T101645Z.db", "v0.1.0", True),  # the card knew it, the helper not
+        ("reprintbuddy-v0.1.0-beta-20261109T101645Z.db", None, False),  # not a release tag, no commit
         ("notes-20261109T101645Z.db", "v0.1.0", False),  # a foreign file in the folder
         ("reprintbuddy-v0.1.0-20261109T101645Z.db-wal", "v0.1.0", False),
         ("reprintbuddy-v0.1.0-20261399T101645Z.db", "v0.1.0", False),  # no real time

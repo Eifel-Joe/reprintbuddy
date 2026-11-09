@@ -97,8 +97,8 @@ def test_bambuddy_same_address_written_differently_keeps_key(ready_client, respx
 
 @pytest.mark.parametrize(
     "new_url",
-    [NEW_URL, "https://bambuddy.test:8000", "http://bambuddy.test:9000"],
-    ids=["host", "scheme", "port"],
+    [NEW_URL, "https://bambuddy.test:8000", "http://bambuddy.test:9000", f"{OLD_URL}/other"],
+    ids=["host", "scheme", "port", "path"],
 )
 def test_settings_changed_address_needs_key(ready_client, respx_mock, new_url):
     """A stored key is never sent to a different address."""
@@ -111,6 +111,19 @@ def test_settings_changed_address_needs_key(ready_client, respx_mock, new_url):
     assert not route.called, "the stored key must not leave for the new address"
     assert saved(ready_client, "bambuddy_url") == OLD_URL
     assert saved(ready_client, "bambuddy_api_key") == "bb_testkey"
+
+
+def test_settings_dropping_the_path_needs_key(ready_client, respx_mock):
+    """p159: stored behind a path prefix, the bare host is another address (another service behind the proxy)."""
+    respx_mock.get(f"{OLD_URL}/bb/api/v1/auth/me").respond(200, json=auth_me())
+    post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address=f"{OLD_URL}/bb", bambuddy_token="bb_testkey"))
+    assert saved(ready_client, "bambuddy_url") == f"{OLD_URL}/bb"
+    route = respx_mock.get(f"{OLD_URL}/api/v1/auth/me").respond(200, json=auth_me())
+    response = post(ready_client, "/settings/bambuddy", **bambuddy_form(bambuddy_address=OLD_URL))
+    assert response.status_code == 200
+    assert "enter the API key again" in response.text
+    assert not route.called, "the stored key must not leave for another path"
+    assert saved(ready_client, "bambuddy_url") == f"{OLD_URL}/bb"
 
 
 def test_bambuddy_new_address_with_new_key_is_saved(ready_client, respx_mock):
@@ -208,7 +221,7 @@ def _is_warning(tag):
 
 
 def _is_plain_notice(tag):
-    return 'class="notice"' in tag and 'role="status"' in tag
+    return 'class="flash"' in tag and 'role="status"' in tag  # since v0.3.13 the one message look (p161)
 
 
 def test_a_plain_save_stays_in_the_calm_look(ready_client, respx_mock):
