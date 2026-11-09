@@ -388,7 +388,9 @@ small.editor { display: block; color: var(--muted); font-size: 0.75rem; }
 .where { display: block; color: var(--text-2); font-size: 0.8rem; }
 table.keytable { width: 100%; margin: 0.5rem 0; border-collapse: collapse; font-size: 0.85rem; }
 table.keytable th, table.keytable td { padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-table.keytable th { font-weight: 400; color: var(--text-2); }
+/* The global head rule keeps a head on one line; here the head also holds the sentence what the right is for
+   (p187, v0.3.14): it wraps, so the table stays inside its card. */
+table.keytable th { font-weight: 400; color: var(--text-2); white-space: normal; overflow-wrap: anywhere; }
 table.keytable td.on { color: var(--accent); font-weight: 600; }
 table.keytable td.off { color: var(--muted); }
 
