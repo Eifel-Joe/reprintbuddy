@@ -154,6 +154,12 @@ async def download_backup(request: Request, db: Session = Depends(get_db)) -> Re
         return _back("backup_login", "ops-backup")
     work = fb.ensure_work_dir(_work_dir(request))
     fb.clear_work_dir(work, older_than=fb.STALE_AFTER)
+    # v0.3.12 p149: the route names the file and holds a flag, as the restore does (p140). Root: a
+    # cancellation that reaches `run_in_threadpool` at once (no middleware that waits for the thread, as the
+    # app's does today) left the worker writing a file with every secret that nobody knew to delete until
+    # the next cleanup; `RemovedAfterSending` is never made then. Tests: test_backup_abandon.py "p149".
+    target = work / f"backup-{secrets.token_hex(8)}.zip"
+    abandoned = threading.Event()
     try:
         # Argon2 needs 64 MiB and noticeable time: through the limiter, like a login.
         created = await request.app.state.hash_limiter.run(
@@ -162,10 +168,16 @@ async def download_backup(request: Request, db: Session = Depends(get_db)) -> Re
             work_dir=work,
             password=password or None,
             now=_now(),
+            abandoned=abandoned,
+            target=target,
         )
     except (OSError, sqlite3.Error, fb.BackupError) as error:
         log.warning("backup failed: %s", type(error).__name__)  # never the message: no paths, no values
         return _back("backup_failed", "ops-backup")
+    except BaseException:  # cancelled (a closed browser, a shutdown): the flag first, then the file
+        abandoned.set()
+        _remove(target)
+        raise
     return RemovedAfterSending(
         created.path,
         media_type="application/zip",
@@ -248,8 +260,14 @@ async def restore_upload(request: Request) -> Response:
     fb.clear_work_dir(work, older_than=fb.STALE_AFTER)
     token = secrets.token_urlsafe(24)
     target = work / f"upload-{token}.zip"
+    # v0.3.12 p149, sister of the download: an unencrypted backup holds every secret, and a cancellation
+    # that reaches `run_in_threadpool` at once left the saved file behind (above all while the manifest was
+    # read: the file was complete). The flag stops the saving thread; the line below removes the file.
+    abandoned = threading.Event()
     try:
-        await run_in_threadpool(fb.save_upload, upload.file, target, limit=fb.MAX_UPLOAD_BYTES)
+        await run_in_threadpool(
+            fb.save_upload, upload.file, target, limit=fb.MAX_UPLOAD_BYTES, abandoned=abandoned
+        )
         await run_in_threadpool(fb.read_manifest, target)
     except fb.BackupError as error:
         _remove(target)
@@ -258,8 +276,18 @@ async def restore_upload(request: Request) -> Response:
         _remove(target)
         log.warning("restore upload failed: %s", type(error).__name__)
         return _back("restore_failed", "ops-restore")
+    except BaseException:  # cancelled (a closed browser, a shutdown): the flag first, then the file
+        abandoned.set()
+        _remove(target)
+        raise
     finally:
-        await upload.close()
+        try:
+            await upload.close()  # a spooled upload is closed in a worker thread: one more await
+        except BaseException:  # cancelled while closing: the saved file has no session entry, nobody keeps it
+            _remove(target)
+            raise
+    # Not covered (Windows only, not a supported host): a cancellation while `read_manifest` still has the
+    # file open; the removal above fails there and the file stays until the stale cleanup (an hour).
     request.session[SESSION_KEY] = {"token": token, "at": _now().isoformat()}
     return RedirectResponse("/settings/restore", status_code=303)
 

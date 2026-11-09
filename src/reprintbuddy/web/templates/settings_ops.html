@@ -29,11 +29,17 @@
   {# The automatic check (Spec 11.3a): a switch that posts its wanted state; saved at once. #}
   {% call ui.setting_row(t('ops.update.auto'), t('ops.update.auto_hint')) %}{{ ui.switch_post("/settings/update/auto", update_check, t('ops.update.auto'), "/settings?tab=maintenance") }}{% endcall %}
   {% if ops.state_key %}
-  <div class="{% if ops.update.state in ('failed', 'rolled_back', 'rollback_failed') or ops.interrupted or ops.not_started %}alert{% else %}notice{% endif %}" role="status">
-    <strong>{{ t(ops.state_key) }}</strong>
+  <div class="{% if ops.update.state in ('failed', 'rolled_back', 'rollback_failed') or ops.interrupted or ops.not_started or ops.unrecorded %}alert{% else %}notice{% endif %}" role="status">
+    <strong>{{ t(ops.state_key, **ops.state_params) }}</strong>
     {% if ops.step_key %}<br>{{ t(ops.step_key) }}{% endif %}
     {% if ops.update.message %}<br>{{ ops.update.message }}{% endif %}
     {% if ops.update.backup %}<br><span class="hint">{{ ops.update.backup }}</span>{% endif %}
+    {% if ops.state_key == 'ops.update.state.not_started_check' %}
+    <form method="post" action="/settings/update/check">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn" type="submit">{{ t('ops.update.check_button') }}</button>
+    </form>
+    {% endif %}
   </div>
   {% endif %}
   {% if ops.busy %}

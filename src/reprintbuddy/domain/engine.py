@@ -132,6 +132,7 @@ class Engine:
             log.warning("engine: the Bambuddy client could not be made", exc_info=True)
         self.hooks: dict[str, PollHook] = {}
         self._lock = asyncio.Lock()
+        self._waiting = 0  # callers waiting for `_lock`; see `waiting`
         self._wake = asyncio.Event()
         self._poll_requested = False
         self._published = _snapshot(self.status)
@@ -159,11 +160,35 @@ class Engine:
         `update_running()` true first: a tick that waited for the lock then gives up
         instead of running on the new database with what it read from the old one.
         """
-        async with self._lock:
+        async with self._acquired():
             yield
 
     def held(self) -> bool:
         return self._lock.locked()
+
+    def waiting(self) -> int:
+        """How many callers (`hold`, `tick`) wait for the lock right now. Only to be looked at
+        (tests): nothing in the engine decides by it.
+
+        Root (v0.3.12 p150): tests that had to wait until a tick or a restore queued up behind the lock
+        read `asyncio.Lock._waiters`, a private field a new Python may change. A taken free lock does
+        not yield to the event loop, so outside callers see 0 for it, never a passing 1.
+        Tests: test_engine.py "p150".
+        """
+        return self._waiting
+
+    @contextlib.asynccontextmanager
+    async def _acquired(self):
+        """`async with self._lock`, counting the wait (`waiting`); a cancelled wait is no longer counted."""
+        self._waiting += 1
+        try:
+            await self._lock.acquire()
+        finally:
+            self._waiting -= 1
+        try:
+            yield
+        finally:
+            self._lock.release()
 
     # ---- the tick ------------------------------------------------------------------------
 
@@ -196,8 +221,8 @@ class Engine:
         if await self._update_is_running():
             self.status.skipped_for_update = True
             return TickResult("update", 0, 0)
-        waited = self._lock.locked()
-        async with self._lock:
+        waited = self._lock.locked()  # asked before waiting: `_acquired` does not move it
+        async with self._acquired():
             # An update may have started while this tick waited for the other one.
             if waited and await self._update_is_running():
                 self.status.skipped_for_update = True

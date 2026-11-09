@@ -203,3 +203,92 @@ def test_a_damaged_file_is_still_a_damaged_file(live, work):
     target.write_bytes(bytes(data))
     with pytest.raises(fb.BackupError):
         fb.verify_database(target, manifest, work_dir=work)
+
+
+# --- p149 (v0.3.12): making a backup for the download, and saving an upload, stop on the flag too ----------
+
+
+@pytest.mark.parametrize("password", [None, PASSWORD])
+def test_making_a_backup_with_the_flag_set_before_the_start_writes_nothing(live, work, password):
+    flag = threading.Event()
+    flag.set()
+    target = work / "backup-x.zip"
+    with pytest.raises(fb.Abandoned):
+        fb.create_backup(live, work_dir=work, password=password, now=NOW, abandoned=flag, target=target)
+    assert leftovers(work) == []
+
+
+@pytest.mark.parametrize("password", [None, PASSWORD])
+def test_making_a_backup_with_the_flag_set_while_writing_removes_the_file(live, work, password, monkeypatch):
+    flag = threading.Event()
+    write = fb._write_member
+    seen: list[bool] = []
+
+    def write_then_abandon(archive, info, blocks):
+        write(archive, info, blocks)
+        seen.append(True)
+        flag.set()  # the request is cancelled once the manifest reached the disk
+
+    monkeypatch.setattr(fb, "_write_member", write_then_abandon)
+    target = work / "backup-x.zip"
+    with pytest.raises(fb.Abandoned):
+        fb.create_backup(live, work_dir=work, password=password, now=NOW, abandoned=flag, target=target)
+    assert seen == [True]  # it stopped before the database member was written
+    assert leftovers(work) == []
+
+
+@pytest.mark.parametrize("password", [None, PASSWORD])
+def test_making_a_backup_with_the_flag_set_after_the_last_block_removes_the_file(live, work, password, monkeypatch):
+    flag = threading.Event()
+    write = fb._write_member
+    calls: list[str] = []
+
+    def write_and_count(archive, info, blocks):
+        write(archive, info, blocks)
+        calls.append(info.filename)
+        if len(calls) == 2:
+            flag.set()  # everything is written; the flag comes right before the function returns
+
+    monkeypatch.setattr(fb, "_write_member", write_and_count)
+    target = work / "backup-x.zip"
+    with pytest.raises(fb.Abandoned):
+        fb.create_backup(live, work_dir=work, password=password, now=NOW, abandoned=flag, target=target)
+    assert leftovers(work) == []
+
+
+def test_making_a_backup_at_a_given_target_without_a_flag(live, work):
+    target = work / "backup-given.zip"
+    created = fb.create_backup(live, work_dir=work, password=None, now=NOW, target=target)
+    assert created.path == target
+    assert fb.read_manifest(target).encrypted is False
+    assert leftovers(work) == ["backup-given.zip"]
+
+
+def test_saving_an_upload_with_the_flag_set_writes_nothing(work):
+    import io
+
+    flag = threading.Event()
+    flag.set()
+    target = work / "upload-x.zip"
+    with pytest.raises(fb.Abandoned):
+        fb.save_upload(io.BytesIO(b"x" * 10), target, abandoned=flag)
+    assert leftovers(work) == []
+
+
+def test_saving_an_upload_with_the_flag_set_midway_removes_the_file(work):
+    flag = threading.Event()
+
+    class Source:
+        def __init__(self):
+            self.reads = 0
+
+        def read(self, size):
+            self.reads += 1
+            if self.reads == 2:
+                flag.set()  # the request is cancelled after the first block reached the disk
+            return b"x" * 1024 if self.reads < 5 else b""
+
+    target = work / "upload-x.zip"
+    with pytest.raises(fb.Abandoned):
+        fb.save_upload(Source(), target, abandoned=flag)
+    assert leftovers(work) == []

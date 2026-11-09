@@ -237,6 +237,8 @@ def test_state_and_step_keys_exist():
     wanted = {f"ops.update.state.{state}" for state in get_args(UpdateState) if state != "idle"}
     wanted |= {f"ops.update.step.{step}" for step in UPDATE_STEPS}
     wanted |= {"ops.update.in_progress", "ops.update.state.interrupted", "ops.update.state.not_started"}
+    left_behind = ("not_started_check", "not_started_none", "unrecorded", "unrecorded_target")  # p144, p145
+    wanted |= {f"ops.update.state.{key}" for key in left_behind}
     for lang in ("en", "de"):
         assert wanted <= set(locales[lang]), (lang, sorted(wanted - set(locales[lang])))
 
@@ -694,3 +696,95 @@ def test_a_start_on_its_way_pauses_writes_and_is_seen_by_the_engine(ops_env):
     assert app.state.ticker.update_running() is False
     token = csrf_of(ops_env.client, "/settings")
     assert ops_env.client.post("/settings/language", data={"csrf_token": token, "language": "de"}).status_code == 303
+
+
+# --- v0.3.12 p144/p145: what the card says about a "queued" the helper never overwrote -------------------------
+# p144: "please start it again" needs a way to do so. p145: a helper that could not write its state at all
+# leaves "queued" behind although it backed up the database (and maybe rolled back); the backup made after
+# the start tells the two apart.
+
+
+def backup_made(env, *, label="v0.1.0", at=None):
+    folder = data_dir(env) / "backups"
+    folder.mkdir(exist_ok=True)
+    moment = at or now()
+    path = folder / f"reprintbuddy-{label}-{moment:%Y%m%dT%H%M%SZ}.db"
+    path.write_bytes(b"")
+    return path
+
+
+def maintenance(env):
+    return env.client.get("/settings?tab=maintenance").text
+
+
+def test_p144_a_start_that_never_began_without_a_check_offers_the_check(ops_env):
+    git_env(ops_env)  # no check since the start: the process that would know the newest version is gone
+    queued_long_ago(ops_env)
+    unit_state(ops_env, "inactive")
+    page = maintenance(ops_env)
+    assert "The update did not start. Please check for updates, then start it again." in page
+    notice = page.split("The update did not start.", 1)[1].split("</section>", 1)[0]
+    assert 'action="/settings/update/check"' in notice  # the check is offered right at the notice
+    assert calls_with(ops_env, "ls-remote") == []  # the page asked GitHub nothing
+
+
+def test_p144_a_start_that_never_began_with_nothing_newer_says_so(ops_env):
+    git_env(ops_env, remote=REMOTE_ONE)  # the version was withdrawn: the check finds nothing newer
+    check(ops_env)
+    queued_long_ago(ops_env)
+    unit_state(ops_env, "inactive")
+    page = maintenance(ops_env)
+    assert "The update to v0.2.0 did not start, and there is no newer version now." in page
+    assert "Please start it again" not in page
+    assert 'action="/settings/update"' not in page
+
+
+def test_p144_a_start_that_never_began_with_a_newer_version_keeps_the_button(ops_env):
+    git_env(ops_env)
+    check(ops_env)
+    queued_long_ago(ops_env)
+    unit_state(ops_env, "inactive")
+    page = maintenance(ops_env)
+    assert "The update did not start. Please start it again." in page
+    assert "Update to v0.2.0" in page
+
+
+def test_p145_a_helper_that_backed_up_but_could_not_record_is_no_start_that_never_began(ops_env):
+    git_env(ops_env)  # v0.1.0 runs again: the helper rolled back, or stopped after the backup
+    check(ops_env)
+    queued_long_ago(ops_env)
+    backup_made(ops_env)
+    unit_state(ops_env, "inactive")
+    page = maintenance(ops_env)
+    assert "did not start" not in page
+    assert "Update finished" not in page
+    assert "could not save its state" in page
+    assert "journalctl -u reprintbuddy-update" in page
+
+
+def test_p145_the_target_runs_after_a_backup_points_to_the_log_not_to_finished(ops_env):
+    git_env(ops_env, describe="v0.2.0\n")
+    queued_long_ago(ops_env)
+    backup_made(ops_env)
+    unit_state(ops_env, "inactive")
+    page = maintenance(ops_env)
+    assert "Version v0.2.0 is running. The update helper could not save its state" in page
+    assert "journalctl -u reprintbuddy-update" in page
+    assert "Update finished" not in page
+
+
+@pytest.mark.parametrize(
+    "label, age",
+    [
+        ("v0.1.0", timedelta(minutes=10)),  # made before this start: an earlier update's backup
+        ("before-restore", timedelta(0)),  # a restore after the grace: not the helper's
+    ],
+)
+def test_p145_other_backups_do_not_count(ops_env, label, age):
+    git_env(ops_env)
+    check(ops_env)
+    queued_long_ago(ops_env)
+    backup_made(ops_env, label=label, at=now() - age)
+    unit_state(ops_env, "inactive")
+    page = maintenance(ops_env)
+    assert "The update did not start. Please start it again." in page

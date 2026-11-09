@@ -7,7 +7,7 @@ is the local `git describe` (once per process); GitHub is asked only on a button
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request
@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
 from reprintbuddy.ops import fullbackup
+from reprintbuddy.ops.backup import backup_dir_for, update_backup_since
 from reprintbuddy.ops.export import export_bytes
 from reprintbuddy.ops.server import (
     EffectiveServer,
@@ -102,6 +103,8 @@ class OpsView:
     busy: bool = False
     interrupted: bool = False  # the state says "running" but the helper is gone
     not_started: bool = False  # a "queued" start the helper never picked up (p123)
+    unrecorded: bool = False  # the helper ran (it backed up) but could not write its state (p145)
+    state_params: dict[str, str] = field(default_factory=dict)  # values for the text of `state_key`
     state_key: str | None = None  # translation key for the update state
     step_key: str | None = None  # translation key for the running step
 
@@ -189,18 +192,7 @@ def ops_view(request: Request, session: Session, busy: bool | None = None) -> Op
     )
     view.interrupted = view.update.state in BUSY_STATES and not view.busy
     if view.interrupted and view.update.state == "queued":
-        # v0.3.11 p123: a start cut off by a shutdown. The helper's first act is to overwrite
-        # "queued" with "running" (`updater.run_update`), before it changes anything; a "queued"
-        # whose grace is over and whose unit does not run was never picked up, so "interrupted"
-        # would name a run that never began. If the target version runs anyway, the helper did its
-        # work but could not record it (status file not writable): that is a finished update.
-        # Only the card says so; the file stays, a late helper still overwrites it.
-        view.interrupted = False
-        if view.installed and view.installed == view.update.to_tag:
-            view.state_key = "ops.update.state.succeeded"
-        else:
-            view.not_started = True
-            view.state_key = "ops.update.state.not_started"
+        _queued_left_behind(view, app.state.db_path)
     elif view.interrupted:
         view.state_key = "ops.update.state.interrupted"
     elif view.update.state != "idle":
@@ -208,6 +200,55 @@ def ops_view(request: Request, session: Session, busy: bool | None = None) -> Op
     if (view.busy or view.interrupted) and view.update.step in UPDATE_STEPS:
         view.step_key = f"ops.update.step.{view.update.step}"
     return view
+
+
+def _queued_left_behind(view: OpsView, db_path) -> None:
+    """The card for a "queued" whose grace is over and whose unit does not run.
+
+    v0.3.11 p123: a start cut off by a shutdown. The helper's first act is to overwrite "queued" with
+    "running" (`updater.run_update`); a "queued" left behind was never picked up, so "interrupted" would
+    name a run that never began. Only the card says so; the file stays, a later start overwrites it.
+
+    v0.3.12 p145: a helper that cannot write its state file at all (a read-only file, say) also leaves
+    "queued" behind, after it backed up the database, changed things and maybe rolled them back. The
+    backup it made after the start tells the two apart (`update_backup_since`): with one, the card points
+    to the helper's log, whichever version runs, and never says "finished" or "did not start". Without
+    one the helper changed nothing: it never began, or it began and already the backup failed (a full
+    disk); "did not start" is right for both. "Finished" only when the target version runs and no backup
+    was made since the start (not reached by today's helper, which always backs up first).
+
+    v0.3.12 p144: "please start it again" needs a way to: the update button appears only after a check.
+    The page does not ask GitHub (the check runs on a button press, or at the start and daily when it is
+    switched on, Spec 11.3a). Without a check since the start the card asks for one and the template puts
+    the check button at the notice; when the check found nothing newer (a withdrawn version), it says so.
+    Tests: test_ops_update.py "p123", "p144", "p145".
+    """
+    view.interrupted = False
+    status = view.update
+    target_runs = bool(view.installed) and view.installed == status.to_tag
+    backed_up = status.started_at is not None and update_backup_since(
+        backup_dir_for(db_path), status.started_at, status.from_tag
+    )
+    if backed_up:
+        view.unrecorded = True
+        if target_runs:
+            view.state_key = "ops.update.state.unrecorded_target"
+            view.state_params = {"version": status.to_tag or ""}
+        else:
+            view.state_key = "ops.update.state.unrecorded"
+        return
+    if target_runs:
+        view.state_key = "ops.update.state.succeeded"
+        return
+    view.not_started = True
+    info = view.version_info
+    if info is None:
+        view.state_key = "ops.update.state.not_started_check"
+    elif info.update_available:
+        view.state_key = "ops.update.state.not_started"
+    else:
+        view.state_key = "ops.update.state.not_started_none"
+        view.state_params = {"version": status.to_tag or ""}
 
 
 def restore_blocks(request: Request) -> bool:
