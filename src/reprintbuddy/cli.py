@@ -21,6 +21,7 @@ import uvicorn
 
 from reprintbuddy import __version__, auth
 from reprintbuddy import settings as st
+from reprintbuddy.activity import capture as activity_capture
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops import restorecmd
 from reprintbuddy.ops.context import OpsContext
@@ -45,7 +46,11 @@ def _error(message: str) -> int:
 def _session(db: Path):
     engine = make_engine(db)
     upgrade(engine)
-    return make_sessionmaker(engine)()
+    session = make_sessionmaker(engine)()
+    # A command on the server is the user, with that note in the activity log (Spec 10.7).
+    session.info[activity_capture.ACTOR] = "user"
+    session.info[activity_capture.VIA] = "cli"
+    return session
 
 
 @contextlib.contextmanager

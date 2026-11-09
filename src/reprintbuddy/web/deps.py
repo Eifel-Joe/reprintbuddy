@@ -16,6 +16,7 @@ from reprintbuddy import auth
 from reprintbuddy.bambuddy.client import BambuddyClient
 from reprintbuddy.bambuddy.connection import ConnectionCheck
 from reprintbuddy import settings as st
+from reprintbuddy.activity import capture as activity_capture
 from reprintbuddy.models import User
 from reprintbuddy.ops.versions import parse_release_tag
 from reprintbuddy.web import regions
@@ -57,6 +58,9 @@ def db_session(request: Request) -> Session:
     db = getattr(request.state, "db", None)
     if db is None:
         db = request.app.state.sessionmaker()
+        # What a request saves, the user saved; the address is the device as the server sees it (Spec 10.7).
+        db.info[activity_capture.ACTOR] = "user"
+        db.info[activity_capture.ADDRESS] = request.client.host if request.client else None
         request.state.db = db
     elif not db.is_active:
         db.rollback()  # a failed flush leaves the session unusable until rolled back
