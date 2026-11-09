@@ -72,10 +72,12 @@ async def _page(
         sum(1 for r in rows if r["item_type"] != "filament"),
         len(under_way),
     )
+    stale_day = format_date(day, lang) if day else None
     return render(
         request, "reorder.html", status_code=status, active_nav="reorder", rows=rows, cards=cards,
-        under_way=under_way, filament_unknown=sorts is None, error=error,
-        stale_day=format_date(day, lang) if day else None,
+        under_way=under_way, filament_unknown=sorts is None, error=error, stale_day=stale_day,
+        # p182: recorded filament stock says so at the number, as on the filament page (p63)
+        as_of=translate(lang, "filament.as_of", day=stale_day) if stale_day else None,
     )
 
 

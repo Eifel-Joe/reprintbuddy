@@ -50,7 +50,7 @@ Suggestions need the order settings, because Reprintbuddy cannot guess your supp
 - For filament: the reorder settings of the spool sort on the Filament page, see [Filament](filament.md). Only spool sorts that are marked **Reordered** in at least one article get suggestions.
 
 !!! note "Without the spool list"
-    Filament suggestions need the filament stock. If Bambuddy cannot be reached, the page shows the last recorded stock with its date. With no record at all, filament suggestions are left out and only parts are shown.
+    Filament suggestions need the filament stock. If Bambuddy cannot be reached, the page shows the last recorded stock with its date; each filament tile says **As of …** at its stock. With no record at all, filament suggestions are left out and only parts are shown.
 
 ## Mark as ordered
 

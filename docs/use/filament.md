@@ -69,6 +69,6 @@ A suggestion appears when the stock minus the planned demand minus the use durin
 
 The pages keep working and nothing is guessed.
 
-- The assignment shows the spool sorts known last, without stock.
 - The *Filament* page shows the stock of the last recorded day, with its date. If nothing was recorded yet, it says that the stock is not known right now and shows dashes.
-- The *Reorder suggestions* page then shows no filament suggestions, only those for purchased parts.
+- The filament assignment of an article shows the stock of the last recorded day too; the head of the column **Stock** says **As of …**. Without any record it shows the spool sorts known last, without stock.
+- The *Reorder suggestions* page computes the filament suggestions from the last recorded stock; each filament tile says **As of …** at its stock. Without any record it shows no filament suggestions, only those for purchased parts.

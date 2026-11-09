@@ -50,7 +50,7 @@ Vorschläge brauchen die Bestelleinstellungen, denn Reprintbuddy kann die Liefer
 - Bei Filament: die Bestelleinstellungen der Spulensorte auf der Seite Filament, siehe [Filament](filament.md). Nur Spulensorten, die in mindestens einem Artikel als **Nachgekauft** gewählt sind, bekommen Vorschläge.
 
 !!! note "Ohne Spulenliste"
-    Filament-Vorschläge brauchen den Filamentbestand. Ist Bambuddy nicht erreichbar, zeigt die Seite den zuletzt aufgezeichneten Bestand mit seinem Datum. Gibt es gar keine Aufzeichnung, entfallen die Filament-Vorschläge, und es werden nur Zukaufteile gezeigt.
+    Filament-Vorschläge brauchen den Filamentbestand. Ist Bambuddy nicht erreichbar, zeigt die Seite den zuletzt aufgezeichneten Bestand mit seinem Datum; jede Filament-Kachel sagt an ihrem Bestand **Stand vom …**. Gibt es gar keine Aufzeichnung, entfallen die Filament-Vorschläge, und es werden nur Zukaufteile gezeigt.
 
 ## Als bestellt markieren
 

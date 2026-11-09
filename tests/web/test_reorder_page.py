@@ -412,6 +412,37 @@ def test_the_count_is_the_number_of_tiles(bb_client, fake_bambuddy, case):  # p6
     assert expected == {"live": 2, "record": 2, "nothing": 1, "part_received": 1}[case]
 
 
+# ---- p182: recorded stock is marked at the numbers, as on the filament page -----------------------
+
+
+def test_recorded_filament_stock_is_marked_at_the_number(bb_client, fake_bambuddy):
+    from reprintbuddy.web.i18n import translate
+
+    yesterday = utcnow().date() - timedelta(days=1)
+    pid = add_part(bb_client)
+    with sm_of(bb_client).begin() as s:
+        sort = make_sort(s)
+        make_filament_settings(s, sort.id, pack_grams=1000, safety_value=2000, safety_unit="grams")
+        assign_sort(s, sort)
+        make_snapshot(s, yesterday, 1, sort.id, 100.0)
+    fake_bambuddy.unavailable = True
+    html = bb_client.get("/reorder").text
+    note = translate("en", "filament.as_of", day=f"{yesterday:%Y-%m-%d}")
+    tiles = re.findall(r'<div class="tile">(.*?)</form>\s*</div>', html, re.S)
+    (film,) = [t for t in tiles if "PLA Black" in t]
+    (part,) = [t for t in tiles if "Insert M4" in t]
+    stock_label = translate("en", "reorder.col.stock")
+    assert re.search(rf'{re.escape(stock_label)} <strong>100 g</strong><span class="col-note">{re.escape(note)}</span>', film)
+    assert "col-note" not in part and pid  # the stock of a part is always current
+    assert translate("en", "filament.stale", day=f"{yesterday:%Y-%m-%d}") in html  # the notice on top stays
+
+
+def test_live_filament_stock_is_not_marked(bb_client, fake_bambuddy):
+    add_filament(bb_client, fake_bambuddy)
+    html = bb_client.get("/reorder").text
+    assert "PLA Black" in html and "col-note" not in html and "As of" not in html
+
+
 def test_a_tile_shows_what_is_on_its_way_in_its_group(bb_client, fake_bambuddy):  # p171
     from factories import tick_sorts
     from reprintbuddy.domain import reorder

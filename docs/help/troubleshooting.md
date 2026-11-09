@@ -61,7 +61,7 @@ A paused article has its own card: the name of the article, then the reason. Whi
 
 - **Bambuddy right missing** (a dialog, or a warning line at the top after **Later**): the stored key lacks a right that this version needs. See [First setup](../start/setup.md#missing-rights-later).
 - **Filament not assigned** (on the article), or "These filament slots have no ticked spool sort yet, so their demand is not counted" (on the filament page): a filament slot of the article has no spool sort ticked. Assign it on the article, see [Filament](../use/filament.md). Such a slot does not count for stock and demand.
-- **Stock as of …  (Bambuddy cannot be reached)**: the filament numbers are the last known ones, because Bambuddy cannot be reached right now. The day stands again under the cards and in the head of the columns, as **As of …**.
+- **Stock as of …  (Bambuddy cannot be reached)**: the filament numbers are the last known ones, because Bambuddy cannot be reached right now. The day stands again at the numbers, as **As of …**: on the Filament page under the cards and in the head of the columns, in the filament assignment of an article in the head of the column **Stock**, and on the reorder suggestions at the stock of each filament tile.
 
 ## An update failed or was interrupted
 

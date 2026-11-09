@@ -69,6 +69,6 @@ Ein Vorschlag erscheint, wenn der Bestand minus geplanter Bedarf minus Verbrauch
 
 Die Seiten funktionieren weiter, und es wird nichts geraten.
 
-- Die Zuordnung zeigt die zuletzt bekannten Spulensorten ohne Bestand.
 - Die Seite *Filament* zeigt den Bestand des zuletzt festgehaltenen Tages, mit Datum. Wurde noch nichts festgehalten, sagt sie, dass der Bestand gerade nicht bekannt ist, und zeigt Striche.
-- Die Seite *Bestellvorschläge* zeigt dann keine Filament-Vorschläge, nur die für Zukaufteile.
+- Die Filament-Zuordnung eines Artikels zeigt ebenfalls den Bestand des zuletzt festgehaltenen Tages; im Kopf der Spalte **Bestand** steht **Stand vom …**. Ohne Aufzeichnung zeigt sie die zuletzt bekannten Spulensorten ohne Bestand.
+- Die Seite *Bestellvorschläge* rechnet die Filament-Vorschläge mit dem zuletzt festgehaltenen Bestand; jede Filament-Kachel sagt an ihrem Bestand **Stand vom …**. Ohne Aufzeichnung zeigt sie keine Filament-Vorschläge, nur die für Zukaufteile.

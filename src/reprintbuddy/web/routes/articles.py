@@ -877,6 +877,8 @@ def _filament_page(request: Request, spools, article_id: int, typed: _Typed | No
         request, "article_filaments.html", status_code=status, active_nav="articles",
         article_id=article_id, article_name=name, slots=slots, sorts_unknown=sorts is None,
         stale_day=format_date(day, lang) if day else None, read_only=archived, error=error,
+        # p182: recorded stock says so at the stock column, as on the filament page (p63)
+        as_of=translate(lang, "filament.as_of", day=format_date(day, lang)) if day else None,
         later=later, query=(NEW_ARTICLE if suggest else LATER if later else ""),
     )
 
