@@ -853,7 +853,7 @@ def test_only_stored_or_deflated_database_member(live, work):
 
 
 def test_an_untrusted_database_is_opened_defensively(tmp_path):
-    """v0.3.9 p101: `DEFENSIVE` is set unconditionally (Python 3.12 and later): nothing can write into the
+    """v0.3.9 p101: `DEFENSIVE` is set unconditionally (the floor, 3.13, has it): nothing can write into the
     schema of a crafted file, even with `writable_schema`."""
     path = make_db(tmp_path / "d.db")
     con = fb._open_untrusted(path)

@@ -492,15 +492,17 @@ def test_reason_of_a_pip_failure_skips_the_retry_warnings(update_env):
     assert e.update().message.startswith("install: ERROR: Could not find a version")
 
 
-def test_an_environment_with_an_older_python_than_the_new_version_needs_rolls_back_and_says_so(update_env):
-    """v0.3.9 p101: pip refuses a release whose Python floor is above the environment's Python; the old version goes
-    on and the page names the reason in plain words. This is the updater of v0.3.9 and later (the one of an installed
-    v0.3.8 on Debian 12 is the old code and shows pip's raw line: the rollback below is the same either way)."""
+@pytest.mark.parametrize("found", ["3.12.3", "3.11.2"])
+def test_an_environment_with_an_older_python_than_the_new_version_needs_rolls_back_and_says_so(update_env, found):
+    """v0.3.9 p101, floor 3.13 since v0.3.12 p163: pip refuses a release whose Python floor is above the
+    environment's Python; the old version goes on and the page names the reason in plain words, not a half
+    update. This is the updater of v0.3.9 and later (the one of an installed v0.3.8 on Debian 12 is the old
+    code and shows pip's raw line: the rollback below is the same either way)."""
     e = update_env
     pip_says = (
         "Processing /opt/reprintbuddy\n"
         "  Installing build dependencies: started\n"
-        "ERROR: Package 'reprintbuddy' requires a different Python: 3.11.2 not in '>=3.12'"
+        f"ERROR: Package 'reprintbuddy' requires a different Python: {found} not in '>=3.13'"
     )
     e.runner.on((e.py, "-m", "pip"), CommandResult(1, "", pip_says), CommandResult(0))
     result = e.update()
@@ -508,9 +510,19 @@ def test_an_environment_with_an_older_python_than_the_new_version_needs_rolls_ba
     assert ("git", "-C", e.d, "checkout", "--quiet", "--detach", REF) in e.runner.calls  # back on the old code
     assert STOP_CMD in e.runner.calls and START_CMD in e.runner.calls  # and the service was started again
     assert result.message.startswith("install:")
-    for word in ("Python 3.12", "Python 3.11.2", "install command"):
+    for word in ("Python 3.13", f"Python {found}", "install command"):
         assert word in result.message, result.message
     assert "ERROR" not in result.message  # pip's line is not shown raw
+
+
+def test_an_environment_on_python_3_13_updates_to_a_release_that_needs_3_13(update_env):
+    """v0.3.12 p163: a Debian 13 installation (Python 3.13) meets the new floor; pip accepts the release and the
+    update goes through as any other (no Python message, no rollback)."""
+    e = update_env
+    e.runner.on((e.py, "-m", "pip"), CommandResult(0))
+    result = e.update()
+    assert result.state == "succeeded", result.message
+    assert "Python" not in (result.message or "")
 
 
 def test_a_different_python_error_of_another_kind_keeps_pips_own_line(update_env):
