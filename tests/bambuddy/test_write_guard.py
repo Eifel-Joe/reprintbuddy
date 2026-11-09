@@ -67,6 +67,7 @@ HTTPX_IMPORTERS = {
     "web/app.py",
     "web/rights.py",
     "notify/homeassistant.py",  # v0.3.12: push messages, never Bambuddy (`check_home_assistant`)
+    "ops/releasenotes.py",  # v0.3.13 p143: one GET to GitHub, never Bambuddy (`check_release_notes`)
 }
 
 # The one module that sends (checked with `check_source`, not with `check_holder`).
@@ -76,6 +77,11 @@ CLIENT_MODULE = "bambuddy/client.py"
 # the Bambuddy client; `check_home_assistant` watches that it can reach nothing else.
 HOME_ASSISTANT_MODULE = "notify/homeassistant.py"
 HOME_ASSISTANT_PATHS = {"/api/services/notify/", "/api/"}
+
+# The third: the release notes (v0.3.13 p143, Spec 11.3a). One GET to GitHub's API, nothing else;
+# `check_release_notes` watches it.
+RELEASE_NOTES_MODULE = "ops/releasenotes.py"
+RELEASE_NOTES_HOSTS = {"https://api.github.com", "https://github.com"}
 
 # Modules that import websockets: the live channel only.
 WEBSOCKETS_IMPORTERS = {"bambuddy/live.py"}
@@ -465,7 +471,7 @@ def _holders() -> set[str]:
         for path in (SRC / "web").rglob("*.py")
         if HOLDER_MARK in path.read_text(encoding="utf-8")
     }
-    return (held | _importers("httpx") | HTTPX_IMPORTERS) - {CLIENT_MODULE, HOME_ASSISTANT_MODULE}
+    return (held | _importers("httpx") | HTTPX_IMPORTERS) - {CLIENT_MODULE, HOME_ASSISTANT_MODULE, RELEASE_NOTES_MODULE}
 
 
 def check_home_assistant(text: str) -> list[str]:
@@ -494,6 +500,58 @@ def check_home_assistant(text: str) -> list[str]:
     if calls != 1:
         problems.append(f"{calls} HTTP calls instead of one")
     return problems
+
+
+def check_release_notes(text: str) -> list[str]:
+    """Every way the release notes module could send more than its one GET: exactly one HTTP call in
+    the whole module, `.stream("GET", ...)`; no import from the Bambuddy package; no address but GitHub's."""
+    problems = []
+    calls = 0
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("reprintbuddy.bambuddy"):
+            problems.append(f"imports {node.module} (line {node.lineno})")
+        if isinstance(node, ast.Import) and any(a.name.startswith("reprintbuddy.bambuddy") for a in node.names):
+            problems.append(f"imports the Bambuddy package (line {node.lineno})")
+        if isinstance(node, ast.Call) and _name(node.func) in GUARDED:
+            method = node.args[0] if node.args else None
+            if (
+                _name(node.func) == "stream"
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(method, ast.Constant)
+                and method.value == "GET"
+            ):
+                calls += 1
+            else:
+                problems.append(f"call of {_name(node.func)} (line {node.lineno})")
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value.startswith(("http://", "https://"))
+            and node.value.rstrip("/") not in RELEASE_NOTES_HOSTS
+        ):
+            problems.append(f"address {node.value!r} (line {node.lineno})")
+    if calls != 1:
+        problems.append(f"{calls} HTTP calls instead of one")
+    return problems
+
+
+def test_the_release_notes_module_sends_nothing_but_one_get():
+    assert check_release_notes((SRC / RELEASE_NOTES_MODULE).read_text(encoding="utf-8")) == []
+
+
+@pytest.mark.parametrize(
+    "bypass",
+    [
+        "from reprintbuddy.bambuddy.client import HttpBambuddyClient\n",
+        "def f(client):\n    client.post('https://api.github.com/x')\n",
+        "def f(client):\n    client.stream('POST', 'https://api.github.com/x')\n",
+        "def f(client):\n    client.stream('GET', 'https://api.github.com/x')\n",  # a second call
+        "OTHER = 'https://elsewhere.example/api'\n",
+    ],
+)
+def test_the_release_notes_watch_catches_each_bypass(bypass):
+    text = (SRC / RELEASE_NOTES_MODULE).read_text(encoding="utf-8") + "\n" + bypass
+    assert check_release_notes(text) != []
 
 
 def test_the_home_assistant_module_reaches_nothing_but_its_two_calls():
