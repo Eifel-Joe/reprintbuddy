@@ -330,3 +330,21 @@ def test_install_texts_do_not_say_the_script_installs_the_newest_release(name):
     ):
         assert old not in text, (name, old)
 
+
+PLANNED = [
+    ("README.md", "## Planned", ["label printers", "Avery", "Shopify", "email", "webhook", "shelf", "several users", "pre-releases"]),
+    ("README.de.md", "## Geplant", ["Etikettendrucker", "Avery", "Shopify", "E-Mail", "Webhook", "Regal", "mehrere Benutzer", "Vorabversionen"]),
+    ("docs/index.md", "## Planned", ["label printers", "Avery", "Shopify", "email", "webhook", "shelf", "several users", "pre-releases"]),
+    ("docs/index.de.md", "## Geplant", ["Etikettendrucker", "Avery", "Shopify", "E-Mail", "Webhook", "Regal", "mehrere Benutzer", "Vorabversionen"]),
+]
+
+
+@pytest.mark.parametrize("name, heading, words", PLANNED)
+def test_what_is_planned_is_listed_without_dates(name, heading, words):  # v0.3.14: the "Planned" section
+    """A short list of directions in the README and on the start page: no dates, no version numbers."""
+    text = read(name).replace("\r\n", "\n")
+    assert text.count(heading + "\n") == 1, name
+    section = text.split(heading + "\n", 1)[1].split("\n## ", 1)[0]
+    for word in words:
+        assert word in section, (name, word)
+    assert not any(char.isdigit() for char in section), "no dates or version numbers in the planned list"

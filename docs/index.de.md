@@ -22,6 +22,18 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 3. Bambuddy druckt. Ist ein Druck fertig, erscheint er unter **Zu prüfen**. Du zählst die guten Stücke und buchst sie in den Bestand.
 4. Reprintbuddy beobachtet dein **Filament** und die **Zukaufteile** und schlägt vor, was nachzubestellen ist.
 
+## Geplant
+
+Ideen für spätere Versionen. Das ist eine Liste von Richtungen, kein Versprechen: Es gibt keine Termine, und nichts davon ist sicher.
+
+- weitere Etikettendrucker und Etikettenbögen (etwa von Avery) für gewöhnliche Drucker,
+- eine Anbindung an Shopify,
+- Bestelleingang per E-Mail,
+- eine Anzeige am Regal (ein eigenes Gerät), um fertige Drucke zu bestätigen und die Stückzahl zu ändern,
+- weitere Wege für Nachrichten: E-Mail und ein allgemeiner Webhook,
+- mehrere Benutzer,
+- Vorabversionen, die sich im Updater wählen lassen.
+
 ## Wie es weitergeht
 
 | Ich will … | Seite |

@@ -22,6 +22,18 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 3. Bambuddy prints. When a print is finished, it shows up under **To check**. You count the good pieces and book them into stock.
 4. Reprintbuddy watches your **filament** and the **bought-in parts** and suggests what to reorder.
 
+## Planned
+
+Ideas for later versions. This is a list of directions, not a promise: there are no dates, and nothing here is certain.
+
+- more label printers, and label sheets (such as Avery) for ordinary printers,
+- a connection to Shopify,
+- receiving orders by email,
+- a display at the shelf (a device of its own) to confirm finished prints and to change the quantity,
+- more ways to send messages: email and a general webhook,
+- several users,
+- pre-releases to choose from in the updater.
+
 ## Where to go next
 
 | I want to … | Page |

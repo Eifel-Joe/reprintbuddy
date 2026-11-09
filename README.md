@@ -409,6 +409,18 @@ user name is no obstacle.
 Restart the service afterwards (`set-port` and `set-host` need it to take effect).
 `set-host` sets the listen address (for example `0.0.0.0`) if a wrong one locked you out.
 
+## Planned
+
+Ideas for later versions. This is a list of directions, not a promise: there are no dates, and nothing here is certain.
+
+- more label printers, and label sheets (such as Avery) for ordinary printers,
+- a connection to Shopify,
+- receiving orders by email,
+- a display at the shelf (a device of its own) to confirm finished prints and to change the quantity,
+- more ways to send messages: email and a general webhook,
+- several users,
+- pre-releases to choose from in the updater.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
