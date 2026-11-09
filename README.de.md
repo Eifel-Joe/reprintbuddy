@@ -230,7 +230,8 @@ wenn es sich erledigt hat; was zusammen anfällt, kommt als eine Nachricht.
    Assistant (z. B. `http://homeassistant.local:8123`), das Token und den Dienst eintragen, die
    Ereignisse ankreuzen, dann *Testnachricht senden*. Angenommen werden nur Dienste der Domain `notify`.
 
-Reprintbuddy ruft `POST /api/services/notify/<Dienst>` auf und sonst nichts. „Angenommen“ heißt:
+Reprintbuddy ruft `POST /api/services/notify/<Dienst>` auf und, um nach einer fehlgeschlagenen Nachricht
+zu prüfen, ob Home Assistant wieder antwortet, `GET /api/`; sonst nichts. „Angenommen“ heißt:
 Home Assistant hat die Nachricht übernommen; ob das Handy sie bekommt, weiß nur Home Assistant. Geht
 eine Nachricht nicht durch, zeigt die Übersicht „Home Assistant nicht erreichbar“; Bestand und Drucke
 laufen weiter wie bisher.

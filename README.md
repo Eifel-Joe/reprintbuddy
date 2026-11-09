@@ -219,7 +219,8 @@ once and again only after it has settled; what comes together goes as one messag
    Assistant (for example `http://homeassistant.local:8123`), the token and the service, tick
    the events, then *Send test message*. Only services of the `notify` domain are accepted.
 
-Reprintbuddy calls `POST /api/services/notify/<service>` and nothing else. "Accepted" means Home
+Reprintbuddy calls `POST /api/services/notify/<service>` and, to check that Home Assistant answers
+again after a failed message, `GET /api/`; nothing else. "Accepted" means Home
 Assistant took the message; whether the phone got it, only Home Assistant knows. If a message
 does not go through, the overview shows "Home Assistant not reachable"; stock and printing go on
 as before.

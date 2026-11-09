@@ -294,3 +294,20 @@ def test_after_a_test_with_a_typed_token_the_page_says_to_type_it_again_for_savi
     save(ready_client)
     respx_mock.post(CALL).respond(200, json=[])
     assert en("notify.test.retype_token") not in send_test(ready_client, ha_token="").text  # stored one used
+
+
+def test_a_stored_token_never_goes_to_another_path_of_the_same_host(ready_client, respx_mock):
+    """Final review 4: behind a proxy another path can be another service (Spec 10.6: who changes the
+    address enters the token again)."""
+    save(ready_client, ha_url="http://proxy.test/ha")
+    other = respx_mock.post("http://proxy.test/other/api/services/notify/mobile_app_phone").respond(200, json=[])
+    response = send_test(ready_client, ha_url="http://proxy.test/other", ha_token="")
+    assert en("notify.token_required_new_address") in response.text
+    assert other.call_count == 0
+    response = save(ready_client, ha_url="http://proxy.test/other", ha_token="")
+    assert en("notify.token_required_new_address") in response.text
+    assert stored(ready_client, "ha_url") == "http://proxy.test/ha"
+    # the same address with a trailing slash is the same address
+    same = respx_mock.post("http://proxy.test/ha/api/services/notify/mobile_app_phone").respond(200, json=[])
+    send_test(ready_client, ha_url="http://proxy.test/ha/", ha_token="")
+    assert same.call_count == 1

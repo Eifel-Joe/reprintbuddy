@@ -1078,9 +1078,15 @@ form > .btn + .btn.secondary { margin-left: 0.5rem; }
 .label-print .field { margin: 0; }
 .label-copies { width: 6rem; }
 .label-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.6rem 1rem; }
-/* Push messages (Spec 10.6): the tick boxes of the events, one per line; the test button under the form. */
-.notify-events { display: grid; gap: 0.6rem; }
+/* Push messages (Spec 10.6): the tick boxes of the events, one per line, inside the card; the test
+   button under the form; the last message as a section of the card. */
+.notify-events { display: grid; gap: 0.6rem; border: 0; border-top: 1px solid var(--line); margin: 0.75rem 0 0; padding: 0.75rem 0 0; min-width: 0; }
+.notify-events legend { padding: 0; font-weight: 600; font-size: 0.9rem; color: var(--text); }
+.notify-events > .muted { margin: 0; font-size: 12.5px; }
 .card .card-actions { margin: 0.75rem 0 0.6rem; }
+.notify-status { border-top: 1px solid var(--line); margin: 0.75rem 0; padding-top: 0.75rem; }
+.notify-status h3 { display: flex; align-items: center; gap: 0.4rem; margin: 0 0 0.4rem; font-size: 0.9rem; }
+.notify-status p { margin: 0 0 0.4rem; font-size: 12.5px; }
 .label-preview[hidden] { display: none; }
 #label-preview-card .label-preview { margin-bottom: 0.75rem; }
 /* p118: the notes under a preview (a cut line, a missing character, right-to-left text, a fine code) */

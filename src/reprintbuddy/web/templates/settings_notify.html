@@ -1,7 +1,8 @@
-{# The "Notifications" tab of the settings (Spec 10.6): the card "Home Assistant" with switch, address,
-   token, service and "name things", the tick boxes of the events (`form="settings-notify"`), the test
-   message (sends what is typed without saving it) and, live on topic "notify", the last message.
-   The token is never shown again: only the sign that one is stored (Spec 11.5a). #}
+{# The "Notifications" tab of the settings (Spec 10.6): one card "Home Assistant" with switch, address,
+   token, service, "name things", one tick box per event and the test message (sends what is typed
+   without saving it); under it the time and outcome of the last message, a section of its own that
+   follows live on topic "notify". The token is never shown again: only the sign that one is stored
+   (Spec 11.5a). Final review 5: tick boxes and last message belong into this card, as Spec 10.6 says. #}
 <div class="settings-col">
 <section class="card" id="home-assistant">
   {% call ui.card_head("bell", t('notify.card_title')) %}<button class="btn" type="submit" form="settings-notify">{{ t('settings.save') }}</button>{% endcall %}
@@ -26,37 +27,33 @@
       <input id="ha_service" name="ha_service" type="text" value="{{ ha_service }}" placeholder="notify.mobile_app_…" autocomplete="off" spellcheck="false" maxlength="200">
     {% endcall %}
     {% call ui.setting_row(t('notify.names'), t('notify.names_hint'), "ha_names") %}{{ ui.switch("ha_names", ha_names, t('notify.names'), "ha_names") }}{% endcall %}
+    <fieldset class="notify-events" id="notify-events">
+      <legend>{{ t('notify.events_title') }}</legend>
+      <p class="muted">{{ t('notify.events_hint') }}</p>
+      {% for key in ha_event_keys %}{% set event_key = 'notify.event.' ~ key %}
+      <label class="check"><input type="checkbox" name="ha_event" value="{{ key }}"{% if key in ha_events %} checked{% endif %}><span>{{ t(event_key) }}</span></label>
+      {% endfor %}
+    </fieldset>
   </form>
   <p class="card-actions"><button class="btn secondary" type="submit" form="settings-notify" formaction="/settings/notify/test">{{ ui.icon('bell') }}{{ t('notify.test.button') }}</button></p>
   <p class="muted">{{ t('notify.test.hint') }}</p>
+  {% call ui.region("notify-status", "notify settings") %}
+  <section class="notify-status" id="notify-status">
+    <h3>{{ ui.icon('clock') }}{{ t('notify.status_title') }}</h3>
+    {% if notify_status and notify_status.last_at %}
+    {% set tone = outcome_tone.get(notify_status.last_outcome, 'bad') %}
+    {% set badge_key = 'notify.outcome_badge.ok' if tone == 'ok' else 'notify.outcome_badge.problem' %}{% set last_key = 'notify.outcome.' ~ notify_status.last_outcome %}
+    <p class="status"><span class="badge tone-{{ tone }}">{{ t(badge_key) }}</span> {{ t('notify.status_last', at=notify_status.last_at|local_dt, outcome=t(last_key)) }}</p>
+    {% else %}
+    <p class="status">{{ t('notify.status_none') }}</p>
+    {% endif %}
+    {% if notify_status and notify_status.problem %}{% set problem_key = 'notify.outcome.' ~ notify_status.problem %}<p class="alert" role="alert">{{ t('warning.ha_unreachable', reason=t(problem_key)) }}</p>{% endif %}
+    <p class="muted">{{ t('notify.status_hint') }}</p>
+  </section>
+  {% endcall %}
   <p class="muted">{{ t('notify.ip_ban_hint') }}</p>
   <p class="muted">{{ t('notify.push_services_hint') }}</p>
   <p class="muted">{{ t('notify.user_hint') }}</p>
 </section>
 </div>
-
-<div class="settings-col">
-<section class="card" id="notify-events">
-  {% call ui.card_head("list", t('notify.events_title')) %}{% endcall %}
-  <p class="muted">{{ t('notify.events_hint') }}</p>
-  <div class="notify-events">
-    {% for key in ha_event_keys %}{% set event_key = 'notify.event.' ~ key %}
-    <label class="check"><input type="checkbox" name="ha_event" value="{{ key }}" form="settings-notify"{% if key in ha_events %} checked{% endif %}><span>{{ t(event_key) }}</span></label>
-    {% endfor %}
-  </div>
-</section>
-{% call ui.region("notify-status", "notify settings") %}
-<section class="card section" id="notify-status">
-  {% call ui.card_head("clock", t('notify.status_title')) %}{% endcall %}
-  {% if notify_status and notify_status.last_at %}
-  {% set tone = outcome_tone.get(notify_status.last_outcome, 'bad') %}
-  {% set badge_key = 'notify.outcome_badge.ok' if tone == 'ok' else 'notify.outcome_badge.problem' %}{% set last_key = 'notify.outcome.' ~ notify_status.last_outcome %}
-  <p class="status"><span class="badge tone-{{ tone }}">{{ t(badge_key) }}</span> {{ t('notify.status_last', at=notify_status.last_at|local_dt, outcome=t(last_key)) }}</p>
-  {% else %}
-  <p class="status">{{ t('notify.status_none') }}</p>
-  {% endif %}
-  {% if notify_status and notify_status.problem %}{% set problem_key = 'notify.outcome.' ~ notify_status.problem %}<p class="alert" role="alert">{{ t('warning.ha_unreachable', reason=t(problem_key)) }}</p>{% endif %}
-  <p class="muted">{{ t('notify.status_hint') }}</p>
-</section>
-{% endcall %}
-</div>
+<div class="settings-col"></div>
