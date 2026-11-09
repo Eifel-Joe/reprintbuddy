@@ -31,11 +31,18 @@ function world(options) {
   const docListeners = {};
   const container = element("div", ["flashes"], { "data-flashes": "", "data-label-close": "Dismiss message" });
   const success = container.appendChild(element("p", ["flash"], { role: "status" }));
+  success.textContent = "Saved.";
   const alert = container.appendChild(element("p", ["alert"], { role: "alert" }));
+  const body = element("body");
+  const main = element("main");
+  main.focused = false;
+  main.focus = () => { main.focused = true; };
   const document = {
+    body,
     hidden: opts.hidden,
     readyState: "complete",
     querySelectorAll: (sel) => (sel === "[data-flashes]" && opts.boxes ? [container] : []),
+    querySelector: (sel) => (sel === "main" ? main : null),
     createElement: (tag) => element(tag),
     addEventListener: (name, fn) => { (docListeners[name] = docListeners[name] || []).push(fn); },
   };
@@ -67,7 +74,18 @@ function world(options) {
     return { present, leaving: present && el.classList.contains("flash-leaving") };
   };
   const setHidden = (value) => { document.hidden = value; (docListeners.visibilitychange || []).forEach((fn) => fn({})); };
-  return { success, alert, container, advance, state, setHidden };
+  container.querySelector = (sel) => {
+    const find = (el) => {
+      for (const c of el.children) {
+        if (sel === ".flash-close" && c.classList.contains("flash-close")) return c;
+        const d = find(c);
+        if (d) return d;
+      }
+      return null;
+    };
+    return find(container);
+  };
+  return { success, alert, container, body, main, advance, state, setHidden };
 }
 
 const out = {};
@@ -90,6 +108,32 @@ const button = w.alert.children.find((c) => c.tagName === "BUTTON");
 out.alert_after_long = { present: w.state(w.alert).present, button: button ? button.getAttribute("aria-label") : null };
 button.dispatch("click");
 out.alert_button_removes = !w.state(w.alert).present;
+out.focus_goes_to_main = w.main.focused;
+
+// good news is also said by a hidden live region, a moment after the load and long before it goes
+w = world();
+w.advance(99);
+out.announce_before = w.body.children.length ? w.body.children[0].textContent : null;
+w.advance(1);
+const region = w.body.children[0];
+out.announce_after = region
+  ? { role: region.getAttribute("role"), live: region.getAttribute("aria-live"), cls: region.className, text: region.textContent }
+  : null;
+out.announce_only_good_news = w.body.children.length === 1;
+
+// the focus on the message holds the clock, too (a keyboard user), together with the pointer
+w = world();
+w.advance(4000);
+w.success.dispatch("focusin");
+w.advance(20000);
+out.focus_paused = { present: w.state(w.success).present };
+w.success.dispatch("mouseenter");
+w.success.dispatch("focusout");
+w.advance(20000);
+out.focus_and_pointer_paused = { present: w.state(w.success).present };
+w.success.dispatch("mouseleave");
+w.advance(4300); // the rest of the clock, and the fade
+out.focus_and_pointer_released = { present: w.state(w.success).present };
 
 w = world();
 w.advance(4000);

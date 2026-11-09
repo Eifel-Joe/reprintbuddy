@@ -131,6 +131,16 @@ def test_the_script_behaves():
     # trouble stays however long we wait, and has a button with the label of the page
     assert result["alert_after_long"] == {"present": True, "button": "Dismiss message"}
     assert result["alert_button_removes"] is True
+    assert result["focus_goes_to_main"] is True  # not to the top of the page after the dismiss
+    # a screen reader says the good news from a hidden live region soon after the load, not only
+    # when its reading cursor gets there (the message itself is gone after 8 s)
+    assert result["announce_before"] == ""  # the region is there, empty, until a moment after the load
+    assert result["announce_after"] == {"role": "status", "live": "polite", "cls": "sr-only", "text": "Saved."}
+    assert result["announce_only_good_news"] is True
+    # the keyboard focus holds the clock like the pointer; with both on it, both have to let go
+    assert result["focus_paused"] == {"present": True}
+    assert result["focus_and_pointer_paused"] == {"present": True}
+    assert result["focus_and_pointer_released"] == {"present": False}
     # the pointer over the message holds the clock; leaving lets the rest run
     assert result["hover_paused"] == {"present": True}
     assert result["hover_resumed_early"] == {"present": True}
