@@ -88,3 +88,14 @@ def test_collapsed_menu_stacks_the_links_and_each_target_is_44_px(ready_client):
     assert re.search(r"\.sidebar-collapsed \.sidebar \.nav-about \{[^}]*flex-direction: column", css)
     block = re.search(r"\.nav-about a \{([^}]*)\}", css)
     assert block and "min-width: 2.75rem" in block.group(1) and "min-height: 2.75rem" in block.group(1)
+
+
+@pytest.mark.parametrize(("page", "file"), [("en", "index.md"), ("de", "index.de.md")])
+def test_the_docs_describe_the_foot_of_the_menu(page, file):
+    """Spec 11.8: what the menu shows is in the documentation, in both languages, with the names of the interface."""
+    import json
+
+    texts = json.loads((WEB.parent / "locales" / f"{page}.json").read_text(encoding="utf-8"))
+    text = (ROOT / "docs" / file).read_text(encoding="utf-8")
+    assert f"**{texts['nav.open_bambuddy']}**" in text and f"**{texts['nav.logout']}**" in text
+    assert "GitHub" in text

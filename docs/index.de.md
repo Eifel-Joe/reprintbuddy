@@ -22,6 +22,10 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 3. Bambuddy druckt. Ist ein Druck fertig, erscheint er unter **Zu prüfen**. Du zählst die guten Stücke und buchst sie in den Bestand.
 4. Reprintbuddy beobachtet dein **Filament** und die **Zukaufteile** und schlägt vor, was nachzubestellen ist.
 
+## Das Menü
+
+Das Menü links (am Handy ein Knopf) führt zu jeder Seite. Am Fuß stehen **Bambuddy öffnen** (wenn Bambuddy verbunden ist) und **Abmelden**, darunter zwei Symbole: Das GitHub-Zeichen öffnet den Quellcode, das aufgeschlagene Buch diese Dokumentation, jeweils in einem neuen Tab. Darunter stehen die Version und der Knopf, der das Menü auf Symbole einklappt.
+
 ## Wie es weitergeht
 
 | Ich will … | Seite |
