@@ -99,6 +99,42 @@ class _ReplaceGate:
             return True
 
 
+_restarts: set[asyncio.Task] = set()  # strong references: a task nobody awaits any more is not collected
+
+
+def _restart_finished(task: asyncio.Task) -> None:
+    _restarts.discard(task)
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error is not None:
+        log.warning("restart after restore failed: %s", type(error).__name__)
+    elif not task.result().ok:
+        log.warning("restart after restore failed: %s", (task.result().stderr or "").strip()[:300])
+
+
+async def _restart_after_restore(runner):
+    """Ask for the restart once the database is replaced, whether or not the request is still awaited.
+
+    p157 (v0.3.12). Root: through the app's middleware a cancelled request (a closed browser) reaches the
+    route only after the replace worker has ended, at the next wait - the one for this restart, already
+    handed to a thread. Cancelling that wait dropped the restart if no thread had picked it up yet, and let
+    it run if one had: the same closed browser restarted the service or left it running on the old state,
+    by chance (CI, under load). Spec 11.6: the restore replaces the database and restarts; from here on the
+    restart belongs to the replace, not to the browser. So it runs as a task of its own that the
+    cancellation of the request does not reach (`shield`); its failure is logged by the task itself, as
+    nobody may be waiting for it.
+    Dropped: checking for the cancellation before handing the restart over - it arrives only at the wait,
+    so there is nothing to check before it; and "never restart once cancelled" - the old process would keep
+    running on the state of the old database until someone presses the restart button.
+    Test: tests/web/test_backup_abandon.py::test_cancelling_once_the_replace_worker_has_begun_leaves_the_restore_pending
+    """
+    task = asyncio.ensure_future(in_thread(request_restart, runner))  # sudo may take seconds
+    _restarts.add(task)
+    task.add_done_callback(_restart_finished)
+    return await asyncio.shield(task)
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -459,7 +495,5 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
                 new_url = base_url(_display_host(request, saved), saved.port, saved.tls)
     except Exception as error:  # noqa: BLE001 - only a hint; the restart must be asked for anyway
         log.warning("address after restore unreadable: %s", type(error).__name__)
-    result = await in_thread(request_restart, app.state.ops.runner)  # sudo may take seconds; a shutdown stops it
-    if not result.ok:
-        log.warning("restart after restore failed: %s", (result.stderr or "").strip()[:300])
+    result = await _restart_after_restore(app.state.ops.runner)
     return render(request, "restored.html", restarted=result.ok, new_url=new_url, active_nav="settings")
