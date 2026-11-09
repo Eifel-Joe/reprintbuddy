@@ -16,7 +16,7 @@
 
 {% call ui.region("summary", "queue article bambuddy") %}{{ ui.kpi_row(cards) }}{% endcall %}
 
-{% call ui.region("warnings", "bambuddy queue article settings") %}{% include "_warnings.html" %}{% endcall %}
+{% call ui.region("warnings", "bambuddy queue article settings notify") %}{% include "_warnings.html" %}{% endcall %}
 
 {# What the drag script says when a move was refused (the server's text); outside the regions,
    so a fresh region does not take it away. #}

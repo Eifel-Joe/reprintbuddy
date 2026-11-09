@@ -65,6 +65,8 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
   `github.com` and `raw.githubusercontent.com` (installation and updates),
   `pypi.org` and `files.pythonhosted.org` (Python packages, at installation and at
   every update) and to your Bambuddy.
+- Optional: [Home Assistant](https://www.home-assistant.io/) with its phone app for push
+  messages (see *Push messages through Home Assistant*); then also access to Home Assistant.
 
 ## Installation
 
@@ -198,10 +200,35 @@ version adds the right to the group and, because Bambuddy cannot change the righ
 creates a new key with *Read Status*, *Manage Queue* and *Manage Library*, enters it under
 *Settings → Bambuddy* and deletes the old one.
 
+## Push messages through Home Assistant
+
+Optional: Reprintbuddy can report events to [Home Assistant](https://www.home-assistant.io/),
+which brings them to your phone as push messages through its app. Without an entry nothing is
+sent and Home Assistant is never contacted. What it can report, each event ticked on its own:
+a print finished and waits for inspection, a print failed in Bambuddy, an article paused by
+the automation, an article below its minimum stock, a new reorder suggestion, a fault (a red
+warning seen at two regular queries in a row) and a missing right in Bambuddy. Each one reports
+once and again only after it has settled; what comes together goes as one message.
+
+1. In Home Assistant, create a user of its own **without admin rights** (recommended), sign in as
+   that user and create a *long-lived access token* under your profile → *Security*. Copy it:
+   Home Assistant shows it only once.
+2. Find the notification service of your phone: in Home Assistant under *Developer tools →
+   Actions*, the actions `notify.mobile_app_…` (one per phone with the Home Assistant app).
+3. In Reprintbuddy under *Settings → Notifications*: switch on, enter the address of Home
+   Assistant (for example `http://homeassistant.local:8123`), the token and the service, tick
+   the events, then *Send test message*. Only services of the `notify` domain are accepted.
+
+Reprintbuddy calls `POST /api/services/notify/<service>` and nothing else. "Accepted" means Home
+Assistant took the message; whether the phone got it, only Home Assistant knows. If a message
+does not go through, the overview shows "Home Assistant not reachable"; stock and printing go on
+as before.
+
 ## Settings
 
 There is **no configuration file**. Every setting lives in the database and is
 changed under *Settings* in the web interface: language, Bambuddy connection,
+push messages,
 password, listen address, port, optional HTTPS certificate, restart, update and
 export. The only thing
 given on the command line is the database path (`--db`).
@@ -318,6 +345,11 @@ systemctl start reprintbuddy
   visible while you type them. Once saved, the interface shows `********`;
   an empty field keeps the stored value, a new entry replaces it. Passwords are
   stored only as hashes.
+- The Home Assistant token is treated like the API keys. It acts with all rights of its
+  Home Assistant user, so create it for a user without admin rights. It only goes to the
+  address entered with it; for a new address, enter it again. Push messages to a phone pass
+  through the push service of Google or Apple and name articles, spool sorts and parts as long
+  as *Name things in messages* is on.
 - Every change needs a signed-in session and a CSRF token.
 - The database file is readable only by the service user. Anyone who is root on
   the machine can read it.

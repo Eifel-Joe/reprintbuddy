@@ -20,7 +20,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.live import NO_RIGHT_DELAY
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops.tls import validate_tls_pair
-from reprintbuddy.web import labels_view
+from reprintbuddy.web import labels_view, notify_view
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
@@ -45,6 +45,7 @@ SETTINGS_TABS: list[tuple[str, str, str]] = [
     ("automation", "list-ordered", "settings.tab.automation"),
     ("labels", "printer", "settings.tab.labels"),
     ("bambuddy", "link", "settings.tab.bambuddy"),
+    ("notify", "bell", "settings.tab.notify"),  # push messages through Home Assistant (Spec 10.6)
     ("account", "user", "settings.tab.account"),
     ("maintenance", "download", "settings.tab.maintenance"),
 ]
@@ -58,6 +59,7 @@ SECTION_TAB = {
     "password": "account",
     "automation": "automation",
     "labels": "labels",
+    "notify": "notify",
 }
 
 
@@ -96,10 +98,12 @@ def _page(
         "queue_cap": st.get_setting(db, "queue_cap"),
         "insert_next": st.get_setting(db, "insert_next"),
         "poll_minutes": st.get_setting(db, "poll_minutes"),
+        **notify_view.stored_values(db),
     }
     values.update(typed)
     current_tab = SECTION_TAB.get(section or "") or _tab_from_query(request)
     label_context = labels_view.settings_context(values, str(st.get_setting(db, "language"))) if current_tab == "labels" else {}
+    notify_context = notify_view.settings_context(request, db) if current_tab == "notify" else {}
     return render(
         request,
         "settings.html",
@@ -120,6 +124,7 @@ def _page(
         **permission_context(),
         check=check,
         **label_context,
+        **notify_context,
         **values,
     )
 

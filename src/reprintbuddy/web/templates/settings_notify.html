@@ -1,0 +1,62 @@
+{# The "Notifications" tab of the settings (Spec 10.6): the card "Home Assistant" with switch, address,
+   token, service and "name things", the tick boxes of the events (`form="settings-notify"`), the test
+   message (sends what is typed without saving it) and, live on topic "notify", the last message.
+   The token is never shown again: only the sign that one is stored (Spec 11.5a). #}
+<div class="settings-col">
+<section class="card" id="home-assistant">
+  {% call ui.card_head("bell", t('notify.card_title')) %}<button class="btn" type="submit" form="settings-notify">{{ t('settings.save') }}</button>{% endcall %}
+  <p class="muted">{{ t('notify.card_hint') }}</p>
+  {% if error and error_section == 'notify' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
+  {% if notify_test %}
+  {% set tone = outcome_tone.get(notify_test, 'bad') %}{% set outcome_key = 'notify.outcome.' ~ notify_test %}
+  <p class="{{ 'flash' if tone == 'ok' else 'alert' }}" role="status" id="notify-test-result">{{ t('notify.test.result', outcome=t(outcome_key)) }}</p>
+  {% if notify_retype %}<p class="muted">{{ t('notify.test.retype_token') }}</p>{% endif %}
+  {% endif %}
+  <form id="settings-notify" method="post" action="/settings/notify" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    {% call ui.setting_row(t('notify.enabled'), t('notify.enabled_hint'), "ha_enabled") %}{{ ui.switch("ha_enabled", ha_enabled, t('notify.enabled'), "ha_enabled") }}{% endcall %}
+    {% call ui.setting_row(t('notify.url'), t('notify.url_hint'), "ha_url", stack=true) %}
+      <input id="ha_url" name="ha_url" type="text" value="{{ ha_url }}" placeholder="http://homeassistant.local:8123" autocomplete="off" spellcheck="false" maxlength="500" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
+    {% endcall %}
+    {% call ui.setting_row(t('notify.token'), ui.with_stored(t('notify.token_hint'), t('settings.secret_stored')) if ha_token_mask else t('notify.token_hint'), "ha_token", stack=true) %}
+      <input id="ha_token" name="ha_token" type="password" value="" autocomplete="new-password" maxlength="2000" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"{% if ha_token_mask %} placeholder="{{ ha_token_mask }}"{% endif %}>
+    {% endcall %}
+    {% call ui.setting_row(t('notify.service'), t('notify.service_hint'), "ha_service", stack=true) %}
+      <input id="ha_service" name="ha_service" type="text" value="{{ ha_service }}" placeholder="notify.mobile_app_…" autocomplete="off" spellcheck="false" maxlength="200">
+    {% endcall %}
+    {% call ui.setting_row(t('notify.names'), t('notify.names_hint'), "ha_names") %}{{ ui.switch("ha_names", ha_names, t('notify.names'), "ha_names") }}{% endcall %}
+  </form>
+  <p class="card-actions"><button class="btn secondary" type="submit" form="settings-notify" formaction="/settings/notify/test">{{ ui.icon('bell') }}{{ t('notify.test.button') }}</button></p>
+  <p class="muted">{{ t('notify.test.hint') }}</p>
+  <p class="muted">{{ t('notify.ip_ban_hint') }}</p>
+  <p class="muted">{{ t('notify.push_services_hint') }}</p>
+  <p class="muted">{{ t('notify.user_hint') }}</p>
+</section>
+</div>
+
+<div class="settings-col">
+<section class="card" id="notify-events">
+  {% call ui.card_head("list", t('notify.events_title')) %}{% endcall %}
+  <p class="muted">{{ t('notify.events_hint') }}</p>
+  <div class="notify-events">
+    {% for key in ha_event_keys %}{% set event_key = 'notify.event.' ~ key %}
+    <label class="check"><input type="checkbox" name="ha_event" value="{{ key }}" form="settings-notify"{% if key in ha_events %} checked{% endif %}><span>{{ t(event_key) }}</span></label>
+    {% endfor %}
+  </div>
+</section>
+{% call ui.region("notify-status", "notify settings") %}
+<section class="card section" id="notify-status">
+  {% call ui.card_head("clock", t('notify.status_title')) %}{% endcall %}
+  {% if notify_status and notify_status.last_at %}
+  {% set tone = outcome_tone.get(notify_status.last_outcome, 'bad') %}
+  {% set badge_key = 'notify.outcome_badge.ok' if tone == 'ok' else 'notify.outcome_badge.problem' %}{% set last_key = 'notify.outcome.' ~ notify_status.last_outcome %}
+  <p class="status"><span class="badge tone-{{ tone }}">{{ t(badge_key) }}</span> {{ t('notify.status_last', at=notify_status.last_at|local_dt, outcome=t(last_key)) }}</p>
+  {% else %}
+  <p class="status">{{ t('notify.status_none') }}</p>
+  {% endif %}
+  {% if notify_status and notify_status.problem %}{% set problem_key = 'notify.outcome.' ~ notify_status.problem %}<p class="alert" role="alert">{{ t('warning.ha_unreachable', reason=t(problem_key)) }}</p>{% endif %}
+  <p class="muted">{{ t('notify.status_hint') }}</p>
+</section>
+{% endcall %}
+</div>
