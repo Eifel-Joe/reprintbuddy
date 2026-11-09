@@ -2,7 +2,8 @@
    Context from web/engine_view.warnings_context: `warnings` (text, tone, article_id, action) and
    `last_poll_at`, the end of the last regular query that Bambuddy did not refuse. The queue page and
    the overview show it inside a region on the topics "bambuddy queue article settings"; B7 takes it
-   over. A paused article's notice says how to go on (p49): `action` "resume" is a button (a plain
+   over. `hide_last_poll` leaves out the line of the last query (the overview has it in its head
+   line). A paused article's notice says how to go on (p49): `action` "resume" is a button (a plain
    form, with its own one-time token, which the region brings fresh each time it is fetched and which
    returns to the page it was on: `live_src`), the others are links to where the pause is settled. #}
 {% import "_ui.html" as ui with context %}
@@ -25,5 +26,5 @@
 {%- endif %}
 </div>
 {%- endfor %}
-<p class="last-poll">{% if last_poll_at %}{{ t('queue.last_poll', at=last_poll_at|local_dt) }}{% else %}{{ t('queue.never_polled') }}{% endif %}</p>
+{% if not hide_last_poll %}<p class="last-poll">{% if last_poll_at %}{{ t('queue.last_poll', at=last_poll_at|local_dt) }}{% else %}{{ t('queue.never_polled') }}{% endif %}</p>{% endif %}
 </div>

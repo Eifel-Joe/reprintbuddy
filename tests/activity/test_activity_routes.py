@@ -40,6 +40,7 @@ LOGGED = {
     "/sets/{set_id:int}/edit": "test_a_set_created_changed_archived_and_restored",
     "/sets/{set_id:int}/restore": "test_a_set_created_changed_archived_and_restored",
     "/settings/automation": "test_the_automation_settings_saved_on_the_page",
+    "/settings/automation/main": "test_the_main_switch_of_the_automation_on_the_overview",
     "/settings/backup": "test_a_full_backup_says_whether_it_is_encrypted",
     "/settings/bambuddy": "test_secrets_of_the_settings_pages_never_reach_log_page_or_export",
     "/settings/labels": "test_the_label_settings_saved_on_the_page",

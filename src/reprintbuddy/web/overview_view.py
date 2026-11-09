@@ -18,6 +18,15 @@ from reprintbuddy.web.kpis import Kpi
 # is below the minimum too, but its reprint is already planned.
 RED_STATES = ("below_min", "overbooked")
 
+# The text of each connection state (written out, so the language files see every key in use).
+CONNECTION_KEYS = {
+    "connected": "overview.connection.connected",
+    "unreachable": "overview.connection.unreachable",
+    "rejected": "overview.connection.rejected",
+    "not_configured": "overview.connection.not_configured",
+    "unknown": "overview.connection.unknown",
+}
+
 
 class _Row(Protocol):  # the fields of catalog.ArticleRow the figures read
     status: str

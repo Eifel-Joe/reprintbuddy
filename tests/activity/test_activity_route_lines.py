@@ -250,6 +250,19 @@ def test_the_automation_settings_saved_on_the_page(ready_client):
     assert "poll_minutes" not in names  # unchanged
 
 
+def test_the_main_switch_of_the_automation_on_the_overview(ready_client):
+    before = len(lines_of(ready_client, "settings_changed"))
+    action = "/settings/automation/main"
+    response = ready_client.post(
+        action,
+        data={"csrf_token": csrf_of(ready_client, "/"), "form_token": form_token_of(ready_client, "/", action),
+              "enabled": "1", "next": "/"},
+    )
+    assert response.status_code == 303
+    names = setting_names(new_settings_line(ready_client, before))
+    assert names == {"automation": {"setting": "automation", "old": False, "new": True}}
+
+
 def test_the_address_in_the_qr_codes_saved_on_the_page(ready_client):
     before = len(lines_of(ready_client, "settings_changed"))
     response = ready_client.post(

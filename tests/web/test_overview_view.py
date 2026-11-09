@@ -9,7 +9,7 @@ import pytest
 from reprintbuddy.domain.engine import EngineStatus
 from reprintbuddy.domain.status import article_status
 from reprintbuddy.web.i18n import translate
-from reprintbuddy.web.overview_view import connection_state, figures
+from reprintbuddy.web.overview_view import CONNECTION_KEYS, connection_state, figures
 
 
 def row(name="A", *, available=5, min_stock=2, coverage=None, provisional=0, awaiting_assembly=0,
@@ -42,6 +42,7 @@ def row(name="A", *, available=5, min_stock=2, coverage=None, provisional=0, awa
 )
 def test_connection_state(status, state, tone):
     assert connection_state(status) == (state, tone)
+    assert CONNECTION_KEYS[state] == f"overview.connection.{state}"
 
 
 # ---- key figures --------------------------------------------------------------------------

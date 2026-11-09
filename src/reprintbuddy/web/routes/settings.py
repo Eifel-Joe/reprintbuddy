@@ -17,6 +17,7 @@ from starlette.datastructures import UploadFile
 from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.live import NO_RIGHT_DELAY
+from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops.tls import validate_tls_pair
 from reprintbuddy.web import activity_view
@@ -28,7 +29,8 @@ from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.routes.auth import password_confirmed
 from reprintbuddy.web.routes.ops import ops_ready, ops_view
-from reprintbuddy.web.deps import get_db, logged_in_user, render, start_session, take_verdict
+from reprintbuddy.web.deps import get_db, logged_in_user, render, safe_next, start_session, take_verdict
+from reprintbuddy.web.forms import run_form_action
 from reprintbuddy.web.formtoken import write_transaction
 
 router = APIRouter()
@@ -335,6 +337,17 @@ async def _save_server(request: Request, db: Session, form):
     return _saved(request, "settings.restart_needed", tab=SECTION_TAB["server"])
 
 
+def set_main_automation(session: Session, on: bool) -> None:
+    """The main switch of the automation (Spec 7.7), in the caller's transaction.
+
+    One way to write it from both places that show it: the card Settings -> Automation (saved with
+    its other fields) and the head line of the overview (Spec 10.2). The log line ("Automation
+    off -> on", Spec 10.7) and the live notice come from saving the setting; the background loop is
+    woken by the write request itself (`web.app.tick_after_write`), so rule 7.1 runs at once.
+    """
+    st.set_setting(session, "automation", on, commit=False)
+
+
 @router.post("/settings/automation", dependencies=[Depends(verify_csrf)])
 async def save_automation(request: Request, db: Session = Depends(get_db)):
     """Main switch, stop the queue, limit, insert as next, poll interval (Spec 7.3, 7.6, 7.7).
@@ -354,7 +367,7 @@ async def save_automation(request: Request, db: Session = Depends(get_db)):
     old_poll_minutes = int(st.get_setting(db, "poll_minutes"))
     # One transaction: all five or none.
     with write_transaction(request) as session:
-        st.set_setting(session, "automation", flags["automation"], commit=False)
+        set_main_automation(session, flags["automation"])
         st.set_setting(session, "queue_running", not flags["queue_stopped"], commit=False)
         st.set_setting(session, "queue_cap", checked["queue_cap"], commit=False)
         st.set_setting(session, "insert_next", flags["insert_next"], commit=False)
@@ -364,3 +377,30 @@ async def save_automation(request: Request, db: Session = Depends(get_db)):
         # the new one (a shorter interval would otherwise wait for the old one to end).
         request.app.state.ticker.request_poll()
     return _saved(request, tab=SECTION_TAB["automation"])
+
+
+@router.post("/settings/automation/main", dependencies=[Depends(verify_csrf)])
+async def switch_main_automation(request: Request):
+    """The main switch in the head line of the overview (Spec 10.2): `enabled=1|0` is the wanted
+    state, never a toggle, so two open tabs cannot turn each other back. A one-time form like the
+    automation switch of an article (p44); back to the page it was on (`next`, local), a refusal is
+    a warning there."""
+    form = await request.form()
+    after = safe_next(str(form.get("next", "")))
+    wanted = str(form.get("enabled", "")).strip()
+
+    def work(tx: Session) -> dict[str, object]:
+        if wanted not in ("0", "1"):
+            raise ValidationError("overview.automation_bad_value")
+        set_main_automation(tx, wanted == "1")
+        return {}
+
+    def refused(text: str, status: int, exc: Exception):
+        flash(request, exc.key if isinstance(exc, DomainError) else "form.expired", warning=True)
+        return RedirectResponse(after, status_code=303)
+
+    return await run_form_action(
+        request, work=work, success_url=after,
+        flash_key="overview.automation_now_on" if wanted == "1" else "overview.automation_now_off",
+        on_error=refused,
+    )
