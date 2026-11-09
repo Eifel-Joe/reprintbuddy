@@ -24,12 +24,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from reprintbuddy import settings as st
-from reprintbuddy.domain import catalog, filament, reorder
+from reprintbuddy.domain import filament, reorder, rules, workqueue
 from reprintbuddy.domain.engine import EngineStatus, collect_warnings
+from reprintbuddy.domain.status import article_status
 from reprintbuddy.i18n import translate, translate_count
 from reprintbuddy.models import Article, Dispatch, FilamentSort, NotifyMark, Part, ReorderMark
 from reprintbuddy.notify.homeassistant import Message
@@ -77,7 +78,10 @@ class _Config:
     names: bool
     events: list[str]
     since: datetime  # naive UTC
+    # Every mark of a state, but of the prints only the due ones: those of the last 30 days are
+    # many and only their keys are needed (`printed`). Measured for condition 2 of the approval.
     marks: dict[tuple[str, str], NotifyMark] = field(default_factory=dict)
+    printed: set[tuple[str, str]] = field(default_factory=set)
 
 
 # ---- detect ---------------------------------------------------------------------------------------
@@ -94,13 +98,25 @@ def _config(session: Session, now: datetime) -> _Config:
         since = now
     else:
         since = _naive_utc(datetime.fromisoformat(str(raw)))
-    marks = {(m.kind, m.ref): m for m in session.scalars(select(NotifyMark))}
+    marks = {
+        (m.kind, m.ref): m
+        for m in session.scalars(
+            select(NotifyMark).where(or_(NotifyMark.kind.not_in(ONCE_PER_PRINT), NotifyMark.state == "due"))
+        )
+    }
+    printed = {
+        (kind, ref)
+        for kind, ref in session.execute(
+            select(NotifyMark.kind, NotifyMark.ref).where(NotifyMark.kind.in_(ONCE_PER_PRINT))
+        )
+    }
     return _Config(
         lang=str(st.get_setting(session, "language")),
         names=bool(st.get_setting(session, "ha_names")),
         events=list(st.get_setting(session, "ha_events")),  # type: ignore[arg-type]
         since=since,
         marks=marks,
+        printed=printed,
     )
 
 
@@ -143,13 +159,20 @@ def _detect_prints(session: Session, cfg: _Config, ctx: Context) -> None:
         # Unticked: the print is passed over for good, so ticking the box later sends nothing old.
         state = "due" if kind in cfg.events else "sent"
         for dispatch_id in ids:
-            if (kind, str(dispatch_id)) not in cfg.marks:
-                _add(session, cfg, kind, str(dispatch_id), ctx.now, state)
+            key = (kind, str(dispatch_id))
+            if key not in cfg.printed:
+                cfg.printed.add(key)
+                _add(session, cfg, kind, key[1], ctx.now, state)
+                if state != "due":
+                    cfg.marks.pop(key)  # only due prints are kept in `marks`
     old = ctx.now - MARK_LIFETIME
-    for kind in ONCE_PER_PRINT:
-        for mark in _of_kind(cfg, kind):
-            if mark.first_seen_at < old:
-                _drop(session, cfg, mark)
+    session.flush()
+    session.execute(
+        delete(NotifyMark).where(NotifyMark.kind.in_(ONCE_PER_PRINT), NotifyMark.first_seen_at < old)
+    )
+    for key, mark in list(cfg.marks.items()):
+        if key[0] in ONCE_PER_PRINT and mark.first_seen_at < old:
+            cfg.marks.pop(key)
 
 
 def _paused_refs(session: Session) -> list[str]:
@@ -163,9 +186,37 @@ def _paused_refs(session: Session) -> list[str]:
     return [str(i) for i in ids]
 
 
-def _below_min_refs(session: Session) -> list[str]:
-    # After the tick, so after rule 7.1: "low" (yellow, a reprint on its way) is no event (D8).
-    return [str(row.id) for row in catalog.list_articles(session) if row.status in ("below_min", "overbooked")]
+RED = ("below_min", "overbooked")
+
+
+def red_articles(session: Session) -> dict[int, str]:
+    """Active articles in a red state (Spec 10.1), by id. After the tick, so after rule 7.1: "low"
+    (yellow, a reprint on its way) is no event (D8).
+
+    The same numbers and rules as `catalog.article_row` (the overview), but over the few columns it
+    needs: `list_articles` loads every article whole, thumbnail included, which took most of the time
+    of a tick's detection with 500 articles (condition 2 of the plan's approval, measured in the
+    report). tests/notify/test_events.py checks that both agree.
+    """
+    queued = workqueue.queued_prints(session)
+    in_progress = workqueue.in_progress_units(session)
+    rows = session.execute(
+        select(
+            Article.id, Article.stock, Article.reserved, Article.min_stock, Article.units_per_print,
+            Article.provisional, Article.awaiting_assembly,
+        ).where(Article.archived_at.is_(None))
+    )
+    red: dict[int, str] = {}
+    for row in rows:
+        available = rules.available(row.stock, row.reserved)
+        coverage = rules.coverage(
+            available, queued.get(row.id, 0) * row.units_per_print, in_progress.get(row.id, 0),
+            row.provisional, row.awaiting_assembly,
+        )
+        state = article_status(available=available, min_stock=row.min_stock, coverage=coverage)
+        if state in RED:
+            red[row.id] = state
+    return red
 
 
 def _detect_reorder(session: Session, cfg: _Config, ctx: Context) -> None:
@@ -216,8 +267,9 @@ def _detect_trouble(session: Session, cfg: _Config, ctx: Context) -> None:
             mark.state = "due"
 
 
-def detect(session: Session, ctx: Context) -> None:
-    """Bring the marks up to date after a tick (in the caller's write transaction)."""
+def detect(session: Session, ctx: Context) -> _Config:
+    """Bring the marks up to date after a tick (in the caller's write transaction). The result can
+    be handed to `due` in the same transaction, which then does not read the marks again."""
     cfg = _config(session, ctx.now)
     _detect_prints(session, cfg, ctx)
     for kind in ("paused", "below_min", "reorder", "trouble", "rights"):
@@ -228,7 +280,7 @@ def detect(session: Session, ctx: Context) -> None:
     if "paused" in cfg.events:
         _follow_states(session, cfg, "paused", _paused_refs(session), ctx.now)
     if "below_min" in cfg.events:
-        _follow_states(session, cfg, "below_min", _below_min_refs(session), ctx.now)
+        _follow_states(session, cfg, "below_min", [str(i) for i in red_articles(session)], ctx.now)
     if "reorder" in cfg.events and ctx.poll:
         _detect_reorder(session, cfg, ctx)
     if "trouble" in cfg.events and ctx.poll:
@@ -236,6 +288,7 @@ def detect(session: Session, ctx: Context) -> None:
     if "rights" in cfg.events and ctx.rights.status != "unknown":
         _follow_states(session, cfg, "rights", [RIGHTS_REF] if ctx.rights.status == "missing" else [], ctx.now)
     session.flush()
+    return cfg
 
 
 # ---- due: one message per kind --------------------------------------------------------------------
@@ -286,7 +339,7 @@ def _message(session: Session, ctx: Context, cfg: _Config, kind: str, marks: lis
                 for a in articles
             ]
         else:
-            overbooked = {r.id for r in catalog.list_articles(session) if r.status == "overbooked"}
+            overbooked = {i for i, state in red_articles(session).items() if state == "overbooked"}
             items = [
                 translate(lang, "notify.below_min.overbooked", name=a.name) if a.id in overbooked else a.name
                 for a in articles
@@ -309,9 +362,12 @@ def _message(session: Session, ctx: Context, cfg: _Config, kind: str, marks: lis
     return Message(title, text, _link(ctx, "/"))
 
 
-def due(session: Session, ctx: Context, *, exclude: frozenset[int]) -> list[Outgoing]:
-    """The messages to send now: one per ticked kind, in the order of Spec 10.6."""
-    cfg = _config(session, ctx.now)
+def due(
+    session: Session, ctx: Context, *, exclude: frozenset[int], cfg: _Config | None = None
+) -> list[Outgoing]:
+    """The messages to send now: one per ticked kind, in the order of Spec 10.6. `cfg`: what
+    `detect` returned in the same transaction."""
+    cfg = cfg if cfg is not None else _config(session, ctx.now)
     result: list[Outgoing] = []
     for kind in st.HA_EVENTS:
         if kind not in cfg.events:

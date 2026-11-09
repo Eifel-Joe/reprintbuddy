@@ -468,3 +468,27 @@ def test_every_pause_reason_and_red_warning_has_a_short_text(lang):
         assert f"notify.reason.{reason}" in texts
     for key in BAD_WARNINGS:
         assert f"notify.trouble.{key.removeprefix('warning.')}" in texts
+
+
+def test_red_articles_agree_with_the_overview(db):
+    """`red_articles` reads only a few columns; its states must be the overview's (Spec 10.1)."""
+    from reprintbuddy.domain import catalog
+
+    with db.begin() as s:
+        cases = [
+            dict(min_stock=2, stock=0),  # below minimum
+            dict(min_stock=0, stock=1, reserved=3),  # overbooked
+            dict(min_stock=2, stock=0, units_per_print=2),  # low: one queued print brings 2
+            dict(min_stock=3, stock=1, provisional=1, awaiting_assembly=1),  # low by what waits
+            dict(min_stock=4, stock=1),  # below, one print in Bambuddy is not enough
+            dict(min_stock=1, stock=5),  # ok
+        ]
+        made = [make_article(s, name=f"Case {i}", **fields) for i, fields in enumerate(cases)]
+        make_entry(s, made[2].id, prints=1)
+        make_dispatch(s, made[4].id, status="printing", units=1)
+        archived = make_article(s, name="Archived", min_stock=5)
+        archived.archived_at = NOW
+    with db() as s:
+        expected = {r.id: r.status for r in catalog.list_articles(s) if r.status in ("below_min", "overbooked")}
+        assert ev.red_articles(s) == expected
+        assert set(expected) == {made[0].id, made[1].id, made[4].id}
