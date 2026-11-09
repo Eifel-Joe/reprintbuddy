@@ -34,6 +34,8 @@ def _attr(tag, name):
 def test_the_addresses_are_the_published_ones():
     assert links.REPO_URL == "https://github.com/Eifel-Joe/reprintbuddy"
     assert links.DOCS_URL == "https://eifel-joe.github.io/reprintbuddy/"
+    assert links.docs_url("en") == links.DOCS_URL
+    assert links.docs_url("de") == links.DOCS_URL + "de/"  # the German pages of the site sit under /de/
     assert f"site_url: {links.DOCS_URL}" in (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
     assert links.REPO_URL in (ROOT / "README.md").read_text(encoding="utf-8")
 
@@ -62,8 +64,20 @@ def test_names_in_both_languages(ready_client):
     assert english == ["Source code on GitHub", "Documentation"]
     with ready_client.app.state.sessionmaker() as s:
         st.set_setting(s, "language", "de")
-    german = [_attr(a, "title") for a in _about_links(_menus(ready_client.get("/").text)["sidebar"])]
-    assert german == ["Quellcode auf GitHub", "Dokumentation"]
+    found = _about_links(_menus(ready_client.get("/").text)["sidebar"])
+    assert [_attr(a, "title") for a in found] == ["Quellcode auf GitHub", "Dokumentation"]
+    assert [_attr(a, "href") for a in found] == [links.REPO_URL, links.DOCS_URL + "de/"]  # the German interface links to the German pages
+
+
+def test_an_error_page_in_the_layout_has_the_row_too(ready_client):
+    response = ready_client.get("/no-such-page")
+    assert response.status_code == 404
+    assert [_attr(a, "href") for a in _about_links(_menus(response.text)["sidebar"])] == [links.REPO_URL, links.DOCS_URL]
+
+
+def test_the_set_up_and_sign_in_pages_have_no_menu(client):
+    html = client.get("/setup").text
+    assert 'class="nav-about"' not in html
 
 
 def test_the_row_sits_between_the_account_links_and_the_version(ready_client):
@@ -98,4 +112,5 @@ def test_the_docs_describe_the_foot_of_the_menu(page, file):
     texts = json.loads((WEB.parent / "locales" / f"{page}.json").read_text(encoding="utf-8"))
     text = (ROOT / "docs" / file).read_text(encoding="utf-8")
     assert f"**{texts['nav.open_bambuddy']}**" in text and f"**{texts['nav.logout']}**" in text
-    assert "GitHub" in text
+    assert text.count("## The menu" if page == "en" else "## Das Menü") == 1  # the heading of the new paragraph
+    assert "GitHub" in text.split("## ")[[h.startswith(("The menu", "Das Menü")) for h in text.split("## ")].index(True)]

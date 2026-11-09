@@ -24,7 +24,7 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 
 ## Das Menü
 
-Das Menü links (am Handy ein Knopf) führt zu jeder Seite. Am Fuß stehen **Bambuddy öffnen** (wenn Bambuddy verbunden ist) und **Abmelden**, darunter zwei Symbole: Das GitHub-Zeichen öffnet den Quellcode, das aufgeschlagene Buch diese Dokumentation, jeweils in einem neuen Tab. Darunter stehen die Version und der Knopf, der das Menü auf Symbole einklappt.
+Das Menü links (am Handy ein Knopf) führt zu jeder Seite. Am Fuß stehen **Bambuddy öffnen** (wenn Bambuddy verbunden ist) und **Abmelden**, darunter zwei Symbole: Das GitHub-Zeichen öffnet den Quellcode, das aufgeschlagene Buch diese Dokumentation, jeweils in einem neuen Tab. Darunter steht die Version; am Computer daneben der Knopf, der das Menü auf Symbole einklappt. Mit der deutschen Oberfläche führt der Link zu den deutschen Seiten.
 
 ## Wie es weitergeht
 

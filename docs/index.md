@@ -24,7 +24,7 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 
 ## The menu
 
-The menu on the left (a button on a phone) leads to every page. At its foot are **Open Bambuddy** (if Bambuddy is connected) and **Log out**, then two symbols: the GitHub mark opens the source code, the open book opens this documentation, each in a new tab. Under them stand the version and the button that folds the menu to symbols.
+The menu on the left (a button on a phone) leads to every page. At its foot are **Open Bambuddy** (if Bambuddy is connected) and **Log out**, then two symbols: the GitHub mark opens the source code, the open book opens this documentation, each in a new tab. Under them stands the version; on a computer the button that folds the menu to symbols is next to it. The German interface links to the German pages.
 
 ## Where to go next
 

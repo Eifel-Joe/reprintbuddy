@@ -119,7 +119,7 @@ def render(request: Request, name: str, status_code: int = 200, **context: objec
     context["open_bambuddy_url"] = st.get_setting(session, "bambuddy_url")
     # The two links at the foot of the menu (the addresses live in `links.py`, not in a template).
     context["repo_url"] = links.REPO_URL
-    context["docs_url"] = links.DOCS_URL
+    context["docs_url"] = links.docs_url(str(context["lang"]))
     context.setdefault("active_nav", None)
     context["min_password_length"] = auth.MIN_PASSWORD_LENGTH
     context["csrf_token"] = csrf_token(request)
