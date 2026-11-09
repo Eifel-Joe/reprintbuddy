@@ -48,6 +48,7 @@ async def _page(
             "item_type": sug.item_type, "item_id": sug.item_id, "label": sug.label,
             "swatch": swatch if swatch and COLOR.fullmatch(swatch) else None,
             "stock": _number(sug.stock), "demand": _number(sug.demand),
+            "on_way": _number(sug.on_way) if sug.on_way > 0 else None,  # p171: it counts, so it shows
             "per_day": sug.per_day if sug.has_history else None,  # p59: no "0.0 g/day" without history
             "packs_value": typed[2] if typed and typed[:2] == (sug.item_type, str(sug.item_id)) else sug.packs, "lead_days": sug.lead_days,
             "safety": _number(sug.safety), "packs": sug.packs, "size": _number(sug.pack_size),
@@ -71,10 +72,12 @@ async def _page(
         sum(1 for r in rows if r["item_type"] != "filament"),
         len(under_way),
     )
+    stale_day = format_date(day, lang) if day else None
     return render(
         request, "reorder.html", status_code=status, active_nav="reorder", rows=rows, cards=cards,
-        under_way=under_way, filament_unknown=sorts is None, error=error,
-        stale_day=format_date(day, lang) if day else None,
+        under_way=under_way, filament_unknown=sorts is None, error=error, stale_day=stale_day,
+        # p182: recorded filament stock says so at the number, as on the filament page (p63)
+        as_of=translate(lang, "filament.as_of", day=stale_day) if stale_day else None,
     )
 
 

@@ -4,6 +4,7 @@ without order, stock-in without a print (Spec 6.2). One form and one POST route 
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -11,12 +12,13 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import catalog, stock
-from reprintbuddy.domain.errors import DomainError, NotFoundError
+from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
-from reprintbuddy.models import Article, Part
+from reprintbuddy.models import Article, Part, utcnow
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.flash import flash
+from reprintbuddy.web.formatting import to_local
 from reprintbuddy.web.forms import duplicate_redirect, error_status, error_text, parse_bool, parse_int, parse_text
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
 from reprintbuddy.web.journal_view import journal_rows
@@ -40,6 +42,7 @@ def _page(request: Request, db: Session, *, error_form: str | None = None, error
         error=error,
         values=values or {},
         consume_checked=parse_bool((values or {}).get("consume_parts")) if error_form == "stock-in" else True,
+        today=f"{_local_today():%Y-%m-%d}",  # the date field's default and latest day (p172)
     )
 
 
@@ -66,6 +69,34 @@ def _counted(form) -> int:
 
 def _note(form) -> str | None:
     return parse_text(form.get("note"), field="journal.field.note", max_len=stock.MAX_NOTE)
+
+
+EARLIEST = date(2000, 1, 1)  # catches a mistyped year; nothing older can be booked meaningfully
+
+
+def _local_today() -> date:
+    return to_local(utcnow()).date()
+
+
+def _booked_at(form) -> datetime | None:
+    """The date of a hand booking (Spec 6.2, p172): today by default, earlier days allowed, no
+    future day. None books it when it is saved: today, or a form without the field (a page loaded
+    before this version). An earlier day counts at the same clock time on that day, so the journal
+    keeps an order within the day; `at` keeps the real saving time."""
+    if "booked_on" not in form:
+        return None
+    try:
+        day = date.fromisoformat(str(form.get("booked_on", "")).strip())
+    except ValueError:
+        raise ValidationError("form.invalid_date", field="bookings.field.date") from None
+    if day < EARLIEST:
+        raise ValidationError("form.invalid_date", field="bookings.field.date")
+    now = to_local(utcnow())
+    if day > now.date():
+        raise ValidationError("bookings.date_future")
+    if day == now.date():
+        return None
+    return datetime.combine(day, now.timetz()).astimezone(UTC).replace(tzinfo=None)
 
 
 def _active_article(tx: Session, article_id: int) -> Article:
@@ -124,11 +155,13 @@ async def _book(
 async def book_inventory(request: Request, db: Session = Depends(get_db)):
     def prepare(form):
         return {"article_id": _article_id(form), "field": str(form.get("field", "")),
-                "counted": _counted(form), "note": _note(form)}
+                "counted": _counted(form), "note": _note(form), "booked_at": _booked_at(form)}
 
     def book(tx, p):
         _active_article(tx, p["article_id"])
-        diff = stock.count_article(tx, p["article_id"], p["field"], p["counted"], "user", p["note"])
+        diff = stock.count_article(
+            tx, p["article_id"], p["field"], p["counted"], "user", p["note"], booked_at=p["booked_at"]
+        )
         item = tx.get(Article, p["article_id"]).name
         return [("bookings.inventory_done", {"item": item, "counted": p["counted"], "diff": f"{diff:+d}"})]
 
@@ -138,11 +171,12 @@ async def book_inventory(request: Request, db: Session = Depends(get_db)):
 @router.post("/bookings/part-inventory", dependencies=[Depends(verify_csrf)])
 async def book_part_inventory(request: Request, db: Session = Depends(get_db)):
     def prepare(form):
-        return {"part_id": _part_id(form), "counted": _counted(form), "note": _note(form)}
+        return {"part_id": _part_id(form), "counted": _counted(form), "note": _note(form),
+                "booked_at": _booked_at(form)}
 
     def book(tx, p):
         _active_part(tx, p["part_id"])
-        diff = stock.count_part(tx, p["part_id"], p["counted"], "user", p["note"])
+        diff = stock.count_part(tx, p["part_id"], p["counted"], "user", p["note"], booked_at=p["booked_at"])
         item = tx.get(Part, p["part_id"]).name
         return [("bookings.inventory_done", {"item": item, "counted": p["counted"], "diff": f"{diff:+d}"})]
 
@@ -152,11 +186,12 @@ async def book_part_inventory(request: Request, db: Session = Depends(get_db)):
 @router.post("/bookings/part-receipt", dependencies=[Depends(verify_csrf)])
 async def book_part_receipt(request: Request, db: Session = Depends(get_db)):
     def prepare(form):
-        return {"part_id": _part_id(form), "qty": _qty(form), "note": _note(form)}
+        return {"part_id": _part_id(form), "qty": _qty(form), "note": _note(form),
+                "booked_at": _booked_at(form)}
 
     def book(tx, p):
         _active_part(tx, p["part_id"])
-        stock.receive_part(tx, p["part_id"], p["qty"], "user", p["note"])
+        stock.receive_part(tx, p["part_id"], p["qty"], "user", p["note"], booked_at=p["booked_at"])
         return [("bookings.part_receipt_done", {"item": tx.get(Part, p["part_id"]).name, "qty": p["qty"]})]
 
     return await _book(request, db, "part-receipt", prepare, book)
@@ -165,11 +200,12 @@ async def book_part_receipt(request: Request, db: Session = Depends(get_db)):
 @router.post("/bookings/sale", dependencies=[Depends(verify_csrf)])
 async def book_sale(request: Request, db: Session = Depends(get_db)):
     def prepare(form):
-        return {"article_id": _article_id(form), "qty": _qty(form), "note": _note(form)}
+        return {"article_id": _article_id(form), "qty": _qty(form), "note": _note(form),
+                "booked_at": _booked_at(form)}
 
     def book(tx, p):
         _active_article(tx, p["article_id"])
-        stock.sell_unreserved(tx, p["article_id"], p["qty"], "user", p["note"])
+        stock.sell_unreserved(tx, p["article_id"], p["qty"], "user", p["note"], booked_at=p["booked_at"])
         return [("bookings.sale_done", {"item": tx.get(Article, p["article_id"]).name, "qty": p["qty"]})]
 
     return await _book(request, db, "sale", prepare, book)
@@ -179,12 +215,13 @@ async def book_sale(request: Request, db: Session = Depends(get_db)):
 async def book_stock_in(request: Request, db: Session = Depends(get_db)):
     def prepare(form):
         return {"article_id": _article_id(form), "qty": _qty(form), "note": _note(form),
-                "consume_parts": parse_bool(form.get("consume_parts"))}
+                "consume_parts": parse_bool(form.get("consume_parts")), "booked_at": _booked_at(form)}
 
     def book(tx, p):
         _active_article(tx, p["article_id"])
         shortages = stock.stock_in(
-            tx, p["article_id"], p["qty"], "user", p["note"], consume_parts=p["consume_parts"]
+            tx, p["article_id"], p["qty"], "user", p["note"], consume_parts=p["consume_parts"],
+            booked_at=p["booked_at"],
         )
         item = tx.get(Article, p["article_id"]).name
         return [("bookings.stock_in_done", {"item": item, "qty": p["qty"]}), *_shortages(tx, shortages)]

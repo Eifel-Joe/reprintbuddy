@@ -65,7 +65,7 @@ Pieces that already wait here stay bookable if you later untick the box. Article
 
 ## Bookings
 
-The page **Bookings** holds the stock changes that belong to no print and no order. Each booking is stamped with the time and takes an optional **Note** of up to 500 characters. Below the forms the page shows the latest 20 bookings.
+The page **Bookings** holds the stock changes that belong to no print and no order. Each booking has a **Date** and takes an optional **Note** of up to 500 characters. The date is today unless you change it; an earlier day is allowed, for example for a delivery that came yesterday, a later one is not. The booking changes the numbers at once either way; the date says when it counts in the journal and in the usage of bought parts. An inventory sets the value you enter right now, whatever its date: if something was booked since you counted, enter the count that is true now. Below the forms the page shows the latest 20 bookings.
 
 ![The page Bookings with its forms and the latest bookings](../assets/images/en/bookings.png)
 
@@ -140,7 +140,7 @@ A part can be archived only when no active article needs it. Archived parts leav
 
 Every booking is written to the journal with the time, who triggered it (**Manual** or **Automation**), the article, part or order, the quantity, the counters before and after, and the note. The automation also writes its actions there, such as a queue entry being handed to Bambuddy.
 
-You reach it with the **Journal** button on the article list and on an article, with the history icon in the lists, and with **Whole journal** on the Bookings page. The page shows 100 entries, newest first; **Older** and **Newer** page through them. A journal opened for one article or part shows only its entries.
+You reach it with the **Journal** button on the article list and on an article, with the history icon in the lists, and with **Whole journal** on the Bookings page. The page shows 100 entries, newest first by the day they count; a booking dated back shows its date and, below it, **saved …** with the time it was entered; **Older** and **Newer** page through them. A journal opened for one article or part shows only its entries.
 
 Entries are never deleted or changed. Correct a mistake with another booking, for example an inventory booking.
 

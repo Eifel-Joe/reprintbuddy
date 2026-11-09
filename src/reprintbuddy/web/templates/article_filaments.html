@@ -24,7 +24,7 @@
       <thead><tr>
         <th class="check-col"><span class="sr-only">{{ t('filament.col.use') }}</span></th>
         <th>{{ t('filament.col.spool_sort') }}</th>
-        <th class="num">{{ t('filament.col.stock') }}</th>
+        <th class="num">{{ t('filament.col.stock') }}{% if as_of %}<span class="col-note">{{ as_of }}</span>{% endif %}</th>
         <th class="check-col">{{ t('filament.col.reordered') }}</th>
       </tr></thead>
       <tbody>

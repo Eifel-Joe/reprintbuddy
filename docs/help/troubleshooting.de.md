@@ -61,7 +61,7 @@ Ein pausierter Artikel hat eine eigene Karte: der Name des Artikels, dann der Gr
 
 - **Bambuddy-Recht fehlt** (ein Hinweisfenster, oder nach **Später** eine Warnzeile oben): Dem gespeicherten Schlüssel fehlt ein Recht, das diese Version braucht. Siehe [Ersteinrichtung](../start/setup.md#fehlende-rechte-spater).
 - **Filament nicht zugeordnet** (am Artikel) oder „Diese Filament-Slots haben noch keine angekreuzte Spulensorte, ihr Bedarf wird nicht gezählt“ (auf der Filamentseite): Bei einem Filament-Slot des Artikels ist keine Spulensorte angekreuzt. Ordne sie am Artikel zu, siehe [Filament](../use/filament.md). Ein solcher Slot zählt nicht für Bestand und Bedarf.
-- **Bestand vom … (Bambuddy ist nicht erreichbar)**: Die Filamentzahlen sind die zuletzt bekannten, weil Bambuddy gerade nicht erreichbar ist. Der Tag steht noch einmal unter den Karten und im Kopf der Spalten, als **Stand vom …**.
+- **Bestand vom … (Bambuddy ist nicht erreichbar)**: Die Filamentzahlen sind die zuletzt bekannten, weil Bambuddy gerade nicht erreichbar ist. Der Tag steht noch einmal an den Zahlen, als **Stand vom …**: auf der Seite Filament unter den Karten und im Kopf der Spalten, in der Filament-Zuordnung eines Artikels im Kopf der Spalte **Bestand** und bei den Bestellvorschlägen am Bestand jeder Filament-Kachel.
 
 ## Ein Update ist gescheitert oder wurde unterbrochen
 

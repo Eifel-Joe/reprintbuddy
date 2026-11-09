@@ -417,3 +417,59 @@ def test_journal_page_newest_first_and_filtered(db):
         assert [r.kind for r in stock.journal_page(s, part_id=p)] == ["part_receipt"]
         assert len(stock.journal_page(s, limit=2)) == 2
         assert [r.qty for r in stock.journal_page(s, limit=2, offset=2)] == [1, 1]
+
+
+# ---- p172: every booking has a date (Spec 6.2) --------------------------------------------------
+
+from datetime import timedelta  # noqa: E402
+
+
+def _hand_bookings(s):
+    """Each hand booking of the bookings page, as (name, call taking booked_at)."""
+    a = make_article(s, name="Template A", stock=5).id
+    p = make_part(s, stock=5).id
+    return [
+        ("inventory", lambda at: stock.count_article(s, a, "stock", 4, "user", booked_at=at)),
+        ("part inventory", lambda at: stock.count_part(s, p, 4, "user", booked_at=at)),
+        ("part receipt", lambda at: stock.receive_part(s, p, 1, "user", booked_at=at)),
+        ("sale", lambda at: stock.sell_unreserved(s, a, 1, "user", booked_at=at)),
+        ("stock in", lambda at: stock.stock_in(s, a, 1, "user", consume_parts=False, booked_at=at)),
+    ]
+
+
+def test_a_booking_without_a_date_is_dated_when_it_is_saved(db):
+    with db.begin() as s:
+        for _name, book in _hand_bookings(s):
+            book(None)
+        stock.add_provisional(s, make_article(s, name="Template B").id, 1, "auto")  # automatic: always now
+        assert all(row.booked_at == row.at for row in journal(s))
+
+
+def test_each_hand_booking_can_be_dated_back_and_keeps_when_it_was_saved(db):
+    earlier = utcnow() - timedelta(days=3)
+    with db.begin() as s:
+        for name, book in _hand_bookings(s):
+            book(earlier)
+            row = journal(s)[-1]
+            assert row.booked_at == earlier and row.at > earlier, name
+
+
+def test_a_booking_cannot_be_dated_into_the_future(db):
+    with db.begin() as s:
+        for name, book in _hand_bookings(s):
+            before = count_journal(s)
+            with pytest.raises(ValidationError) as exc:
+                book(utcnow() + timedelta(days=1))
+            assert exc.value.key == "bookings.date_future", name
+            assert count_journal(s) == before
+        assert s.get(Article, 1).stock == 5 and s.get(Part, 1).stock == 5  # nothing was changed
+
+
+def test_journal_is_newest_first_by_the_booking_date(db):
+    with db.begin() as s:
+        a = make_article(s, name="Template A", stock=10).id
+        stock.sell_unreserved(s, a, 1, "user")
+        stock.sell_unreserved(s, a, 2, "user", booked_at=utcnow() - timedelta(days=1))  # saved later
+        stock.sell_unreserved(s, a, 3, "user")
+    with db.begin() as s:
+        assert [r.qty for r in stock.journal_page(s)] == [3, 1, 2]

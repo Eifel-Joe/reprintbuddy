@@ -431,3 +431,33 @@ def test_each_slot_is_a_named_group_and_each_choice_says_what_it_is(bb_client, f
     rows = re.findall(r'<tr class="choice">.*?</tr>', page, re.S)
     texts = {re.sub(r"<[^>]+>|\s+", " ", re.search(r"<label for=.*?</label>", r, re.S).group(0)).strip() for r in rows}
     assert len(texts) == 3  # two "Brand A Black" rows show their colour value
+
+
+# ---- p182: recorded stock is marked at the numbers, as on the filament page -----------------------
+
+
+def test_recorded_stock_is_marked_at_the_stock_column(bb_client, fake_bambuddy):
+    from datetime import timedelta
+
+    from factories import make_snapshot
+
+    two_blacks(fake_bambuddy)
+    a = make(bb_client)
+    bb_client.get(f"/articles/{a}/filaments")
+    yesterday = utcnow().date() - timedelta(days=1)
+    brand_a = sort_id(bb_client, "Brand A")
+    with sm_of(bb_client).begin() as s:
+        make_snapshot(s, yesterday, 1, brand_a, 640.0)
+    fake_bambuddy.unavailable = True
+    page = unescape(bb_client.get(f"/articles/{a}/filaments").text)
+    note = translate("en", "filament.as_of", day=f"{yesterday:%Y-%m-%d}")
+    heads = re.findall(r"<th[^>]*>(.*?)</th>", page, re.S)
+    marked = [h for h in heads if note in h]
+    assert marked == [f'{translate("en", "filament.col.stock")}<span class="col-note">{note}</span>']
+
+
+def test_live_stock_is_not_marked_at_the_stock_column(bb_client, fake_bambuddy):
+    two_blacks(fake_bambuddy)
+    a = make(bb_client)
+    page = bb_client.get(f"/articles/{a}/filaments").text
+    assert "col-note" not in page and "As of" not in page

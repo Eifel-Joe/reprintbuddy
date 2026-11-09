@@ -16,7 +16,7 @@
     <tbody>
     {% for row in rows %}
       <tr>
-        <td class="nowrap">{{ row.at|local_dt }}</td>
+        <td class="nowrap">{% if row.saved_at %}{{ row.day|local_date }}<span class="col-note">{{ t('journal.saved_at', at=row.saved_at|local_dt) }}</span>{% else %}{{ row.at|local_dt }}{% endif %}</td>
         <td>{{ t(row.actor_key) }}</td>
         <td>{{ t(row.kind_key) }}</td>
         <td>

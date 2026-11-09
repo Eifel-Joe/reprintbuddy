@@ -8,11 +8,12 @@ Die Karten oben zählen die offenen **Vorschläge**, aufgeteilt in **Filament** 
 
 ## Was ein Vorschlag zeigt
 
-Jeder Vorschlag ist eine Kachel mit dem Filament oder Zukaufteil, um das es geht, und vier Zahlen:
+Jeder Vorschlag ist eine Kachel mit dem Filament oder Zukaufteil, um das es geht, und seinen Zahlen:
 
 | Zahl | Bedeutung |
 |---|---|
 | **Bestand** | Was du jetzt hast. |
+| **Unterwegs** | Nur wenn etwas unterwegs ist: was du als bestellt markiert hast und noch nicht eingetroffen ist (siehe unten). |
 | **Bedarf** | Was die geplanten Drucke und Montagen verbrauchen werden. |
 | **Verbrauch × Lieferzeit** | Der Verbrauch je Tag der letzten 30 Tage, mal der Lieferzeit in Tagen. |
 | **Untergrenze** | Die Reserve, die noch übrig sein soll. |
@@ -27,9 +28,9 @@ Ein Vorschlag erscheint, wenn gilt:
 
 In Worten: Nimm, was du hast, und ziehe ab, was die geplanten Drucke verbrauchen und was verbraucht wird, während die Bestellung unterwegs ist. Liegt der Rest unter der Untergrenze, ist es Zeit zu bestellen.
 
-- **Bestand.** Bei einem Zukaufteil sein Bestand. Bei Filament das Restgewicht aller Spulensorten, die in den Slots angekreuzt sind, in denen es **Nachgekauft** ist (siehe [Filament](filament.md)).
+- **Bestand.** Bei einem Zukaufteil sein Bestand. Bei Filament das Restgewicht aller Spulensorten, die in den Slots angekreuzt sind, in denen es **Nachgekauft** ist (siehe [Filament](filament.md)). Was **unterwegs** ist, zählt wie Bestand: bei Filament, was du von einer der dort angekreuzten Spulensorten als bestellt markiert hast.
 - **Bedarf.** Bei Filament die Gramm der Drucke in Reprintbuddys Warteschlange und in Arbeit, dazu die Drucke, die bis zur Zielmenge der Artikel noch fehlen. Bei einem Zukaufteil die Menge je Stück mal die Stücke, die auf Montage warten, eingereiht oder in Arbeit sind oder bis zur Zielmenge der Artikel, die das Teil brauchen, noch fehlen.
-- **Verbrauch je Tag.** Gemessen über die letzten 30 Tage. Bei Filament stammt er aus der täglichen Aufzeichnung des Restgewichts jeder Spule; nur Abnahmen zählen, eine neue Spule bringt also nichts. Bei weniger als zwei Tagen Aufzeichnung steht auf der Seite "noch kein Verlauf". Bei einem Zukaufteil stammt er aus den Teilen, die bei Montage-Buchungen verbraucht wurden, geteilt durch die Tage seit dem ersten Journal-Eintrag, höchstens 30.
+- **Verbrauch je Tag.** Gemessen über die letzten 30 Tage. Bei Filament stammt er aus der täglichen Aufzeichnung des Restgewichts jeder Spule; nur Abnahmen zählen, eine neue Spule bringt also nichts. Bei weniger als zwei Tagen Aufzeichnung steht auf der Seite "noch kein Verlauf". Bei einem Zukaufteil stammt er aus den Buchungen, die das Teil vom Bestand abziehen: Montage, die Prüfung **gut** eines Artikels ohne Handarbeit und **Einbuchen ohne Druck** mit Häkchen **Zukaufteile abziehen**. Sie zählen nach ihrem Buchungsdatum, geteilt durch die Tage seit dem ersten Journal-Eintrag, höchstens 30.
 - **Lieferzeit.** Tage von der Bestellung bis zum Eintreffen, aus den Einstellungen.
 - **Untergrenze.** Bei Filament das Sicherheitspolster. Bei einem Zukaufteil der größere Wert aus Sicherheitspolster und Mindestbestand; beide werden nicht addiert. Ein Sicherheitspolster in Tagen ist der Verbrauch dieser Tage.
 
@@ -49,7 +50,7 @@ Vorschläge brauchen die Bestelleinstellungen, denn Reprintbuddy kann die Liefer
 - Bei Filament: die Bestelleinstellungen der Spulensorte auf der Seite Filament, siehe [Filament](filament.md). Nur Spulensorten, die in mindestens einem Artikel als **Nachgekauft** gewählt sind, bekommen Vorschläge.
 
 !!! note "Ohne Spulenliste"
-    Filament-Vorschläge brauchen den Filamentbestand. Ist Bambuddy nicht erreichbar, zeigt die Seite den zuletzt aufgezeichneten Bestand mit seinem Datum. Gibt es gar keine Aufzeichnung, entfallen die Filament-Vorschläge, und es werden nur Zukaufteile gezeigt.
+    Filament-Vorschläge brauchen den Filamentbestand. Ist Bambuddy nicht erreichbar, zeigt die Seite den zuletzt aufgezeichneten Bestand mit seinem Datum; jede Filament-Kachel sagt an ihrem Bestand **Stand vom …**. Gibt es gar keine Aufzeichnung, entfallen die Filament-Vorschläge, und es werden nur Zukaufteile gezeigt.
 
 ## Als bestellt markieren
 
@@ -58,7 +59,7 @@ Wenn du bestellt hast:
 1. Prüfe die Zahl bei **Bestelleinheiten**. Sie ist mit der vorgeschlagenen Menge vorbelegt; du kannst 1 bis 1000 eintragen.
 2. Klicke auf **als bestellt markieren**.
 
-Der Posten wandert in die Liste **Unterwegs**, mit der Menge und dem Datum unter **Bestellt am**. Bis er eingetroffen ist, macht Reprintbuddy dafür keinen neuen Vorschlag. Der Vorschlag endet von selbst, wenn die Ware auftaucht:
+Der Posten wandert in die Liste **Unterwegs**, mit der Menge und dem Datum unter **Bestellt am**. Bis er eingetroffen ist, macht Reprintbuddy dafür keinen neuen Vorschlag. So lange zählt die bestellte Menge als unterwegs: Sie zählt wie Bestand überall, wo der Posten zählt, bei Filament auch im Vorschlag einer anderen Spulensorte, in deren Slots er angekreuzt ist. Eine solche Kachel zeigt die Zeile **Unterwegs**. Der Vorschlag endet von selbst, wenn die Ware auftaucht:
 
 - Bei einem Zukaufteil mit der ersten Buchung **Zukaufteil-Eingang** nach deiner Markierung. Den Eingang buchst du auf der Seite Buchen, siehe [Zu prüfen und Montage](inspection.md#buchen).
 - Bei Filament, sobald Bambuddys Spulenliste neue Spulen dieser Sorte zeigt, die nach deiner Markierung angelegt wurden und zusammen mindestens die bestellte Menge wiegen.

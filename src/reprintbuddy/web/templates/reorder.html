@@ -16,7 +16,8 @@
   <div class="tile">
     <div class="tile-head">{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}<div>{{ r.label }}</div></div>
     <div class="tile-stats">
-      <span>{{ t('reorder.col.stock') }} <strong>{{ r.stock }} {{ r.unit|unit }}</strong></span>
+      <span>{{ t('reorder.col.stock') }} <strong>{{ r.stock }} {{ r.unit|unit }}</strong>{% if as_of and r.item_type == 'filament' %}<span class="col-note">{{ as_of }}</span>{% endif %}</span>
+      {% if r.on_way is not none %}<span>{{ t('reorder.under_way') }} <strong>{{ r.on_way }} {{ r.unit|unit }}</strong></span>{% endif %}
       <span>{{ t('reorder.col.demand') }} <strong>{{ r.demand }} {{ r.unit|unit }}</strong></span>
       <span>{{ t('reorder.col.usage') }} <strong>{% if r.per_day is not none %}{{ t('reorder.per_day_days', per_day=r.per_day|num, unit=r.unit|unit, days=r.lead_days) }}{% else %}{{ t('filament.no_history') }}{% endif %}</strong></span>
       <span>{{ t('reorder.col.safety') }} <strong>{{ r.safety }} {{ r.unit|unit }}</strong></span>
