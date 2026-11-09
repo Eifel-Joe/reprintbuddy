@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -14,6 +14,7 @@ from reprintbuddy.ops.backup import (
     backup_dir_for,
     prune_backups,
     restore_database,
+    update_backup_since,
 )
 
 NOW = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
@@ -151,3 +152,46 @@ def test_prune_never_deletes_a_protected_backup(tmp_path):
     assert prune_backups(folder, protect=[old]) == []
     assert old.exists()
     assert len(list(folder.iterdir())) == 6  # the protected one lives on top of the newest five
+
+
+# --- v0.3.12 p145: did the update helper back up the database since the start? -------------------------------
+
+STARTED = datetime(2026, 11, 9, 10, 15, 30, 640000, tzinfo=UTC)
+
+
+def named(folder: Path, name: str) -> None:
+    folder.mkdir(exist_ok=True)
+    (folder / name).write_bytes(b"")
+
+
+@pytest.mark.parametrize(
+    "name, from_tag, expected",
+    [
+        ("reprintbuddy-v0.1.0-20261109T101530Z.db", "v0.1.0", True),  # the very second of the start
+        ("reprintbuddy-v0.1.0-20261109T101645Z.db", "v0.1.0", True),
+        ("reprintbuddy-v0.1.0-20261109T101529Z.db", "v0.1.0", False),  # one second before: an earlier one
+        ("reprintbuddy-before-restore-20261109T101645Z.db", "v0.1.0", False),  # a restore's
+        ("reprintbuddy-v0.0.9-20261109T101645Z.db", "v0.1.0", False),  # another installed version's label
+        ("reprintbuddy-0123456789ab-20261109T101645Z.db", None, True),  # no tag: the commit's first 12
+        ("reprintbuddy-before-restore-20261109T101645Z.db", None, False),
+        ("notes-20261109T101645Z.db", "v0.1.0", False),  # a foreign file in the folder
+        ("reprintbuddy-v0.1.0-20261109T101645Z.db-wal", "v0.1.0", False),
+        ("reprintbuddy-v0.1.0-20261399T101645Z.db", "v0.1.0", False),  # no real time
+    ],
+)
+def test_p145_update_backup_since(tmp_path, name, from_tag, expected):
+    folder = tmp_path / "backups"
+    named(folder, name)
+    assert update_backup_since(folder, STARTED, from_tag) is expected
+
+
+def test_p145_update_backup_since_compares_in_utc(tmp_path):
+    folder = tmp_path / "backups"
+    named(folder, "reprintbuddy-v0.1.0-20261109T101645Z.db")
+    same_moment_elsewhere = STARTED.astimezone(timezone(timedelta(hours=2)))  # 12:15:30 at +02:00
+    assert update_backup_since(folder, same_moment_elsewhere, "v0.1.0") is True
+    assert update_backup_since(folder, same_moment_elsewhere + timedelta(minutes=2), "v0.1.0") is False
+
+
+def test_p145_update_backup_since_without_a_folder(tmp_path):
+    assert update_backup_since(tmp_path / "backups", STARTED, "v0.1.0") is False
