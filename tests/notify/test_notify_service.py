@@ -296,3 +296,99 @@ async def test_the_spool_list_counts_as_read_only_when_a_regular_query_reached_i
     env.notifier.after_tick(True)  # the hook failed
     await env.settle()
     assert seen == [True, False, False, False]
+
+
+# ---- final review 2 and 3: results kept message by message; switched off stays off ----------------
+
+
+def restarted(env) -> Notifier:
+    """A new process on the same database (the status in memory is gone, the marks are not)."""
+    return Notifier(
+        env.db, http_factory=factory, engine_status=lambda: env.status, rights=lambda: ev.Rights("ok", ()),
+        update_started=lambda: False, base=lambda s: None,
+    )
+
+
+async def _settle_of(notifier) -> None:
+    for _ in range(200):
+        if notifier.task is None or notifier.task.done():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("the sending task did not end")
+
+
+async def test_an_abort_after_one_kind_keeps_what_went_through(env, respx_mock):
+    """Final review 2: kind 1 accepted, kind 2 hangs, the process stops: after the restart only kind 2
+    goes out (Spec 10.6: a restart sends nothing twice)."""
+    messages: list[str] = []
+    hang = asyncio.Event()
+
+    async def answer(request):
+        body = json.loads(request.content)
+        messages.append(body["title"])
+        if body["title"] == "Below minimum stock" and not hang.is_set():
+            await asyncio.sleep(60)
+        return httpx.Response(200, json=[])
+
+    respx_mock.post(CALL).mock(side_effect=answer)
+    env.pause("Bracket")
+    with env.db.begin() as s:
+        make_article(s, name="Cover", min_stock=2)
+    env.notifier.after_tick(False)
+    for _ in range(100):
+        if len(messages) == 2:
+            break
+        await asyncio.sleep(0.01)
+    await env.notifier.stop()
+    assert messages == ["Article paused", "Below minimum stock"]
+    hang.set()
+    again = restarted(env)
+    again.after_tick(False)
+    await _settle_of(again)
+    assert messages == ["Article paused", "Below minimum stock", "Below minimum stock"]
+
+
+async def test_a_print_is_marked_before_it_is_sent(env, respx_mock):
+    """Final review 2: events 1 and 2 are never tried again, so they are marked before the call: an
+    abort during the call cannot bring them back after a restart."""
+    calls: list[str] = []
+
+    async def hanging(request):
+        calls.append(json.loads(request.content)["title"])
+        await asyncio.sleep(60)
+        return httpx.Response(200, json=[])
+
+    respx_mock.post(CALL).mock(side_effect=hanging)
+    with env.db.begin() as s:
+        from factories import make_dispatch
+
+        make_dispatch(s, make_article(s).id, status="completed", finished_at=NOW)
+    env.notifier.after_tick(False)
+    await asyncio.sleep(0.05)
+    await env.notifier.stop()
+    assert calls == ["Ready for inspection"]
+    again = restarted(env)
+    again.after_tick(False)
+    await _settle_of(again)
+    assert calls == ["Ready for inspection"]
+
+
+async def test_switching_off_during_a_hanging_message_keeps_the_warning_off(env, respx_mock):
+    """Final review 3: Spec 10.6, the warning goes when the switch is off - also when a message that
+    was on its way fails only afterwards."""
+    release = asyncio.Event()
+
+    async def hanging(request):
+        await release.wait()
+        return httpx.Response(503)
+
+    respx_mock.post(CALL).mock(side_effect=hanging)
+    env.pause()
+    env.notifier.after_tick(False)
+    await asyncio.sleep(0.05)
+    with env.db.begin() as s:
+        st.set_setting(s, "ha_enabled", False, commit=False)
+    env.notifier.after_tick(False)
+    release.set()
+    await env.settle()
+    assert env.notifier.status.problem is None

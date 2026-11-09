@@ -158,20 +158,23 @@ class Notifier:
         tried: set[int] = set()
         try:
             while True:
-                results: list[tuple[ev.Outgoing, str]] = []
                 for out in outgoing:
-                    outcome = await ha.send(self.http_factory, target.url, target.token, target.service, out.message)
-                    results.append((out, outcome))
                     tried.update(out.mark_ids)
+                    # Root cause (final review 2): the outcomes of a round were written after its
+                    # last message, so a stop, an update or a failed write after the first accepted
+                    # message left it due, and the next process sent it again (Spec 10.6: "ein
+                    # Neustart schickt nichts doppelt"). Fix: a print (events 1 and 2, never tried
+                    # again) is marked before its call, every outcome is written right after it.
+                    # Rejected: one write after the round with a `finally` - a cancelled task cannot
+                    # write safely while a restore may be replacing the database.
+                    if out.kind in ev.ONCE_PER_PRINT and not self._store([(out, "sending")], None, None):
+                        return
+                    outcome = await ha.send(self.http_factory, target.url, target.token, target.service, out.message)
+                    if not self._store([(out, outcome)], None, self.now()):
+                        return
                 checked = await ha.ping(self.http_factory, target.url, target.token) if check else None
-                # Synchronous from here to the end of the block: nothing runs in between.
-                if self.update_started():
-                    return  # the database may be replaced: the marks stay as they are
-                now = self.now()
-                with self.sm.begin() as session:
-                    for out, outcome in results:
-                        ev.record(session, out, outcome, now)
-                self._take(results, checked, now)
+                if checked is not None and not self._store([], checked, self.now()):
+                    return
                 if not self._again or self._last_ctx is None:
                     return
                 self._again = False
@@ -192,6 +195,28 @@ class Notifier:
             raise
         except Exception:
             log.exception("push messages: sending failed")
+
+    def _store(
+        self, results: list[tuple[ev.Outgoing, str]], checked: str | None, now: datetime | None
+    ) -> bool:
+        """Write outcomes and take them into the status; synchronous, nothing runs in between.
+
+        False: the task stops - an update or restore has begun (the database may be replaced, the
+        marks stay as they are), or the messages were switched off meanwhile (final review 3: the
+        warning stays off, Spec 10.6). `now` None: only the marks of prints before their call.
+        """
+        if self.update_started():
+            return False
+        with self.sm.begin() as session:
+            for out, outcome in results:
+                ev.record(session, out, outcome, now or self.now())
+            switched_on = _target(session) is not None
+        if not switched_on:
+            self._set(problem=None)
+            return False
+        if now is not None:
+            self._take(results, checked, now)
+        return True
 
     def _take(self, results: list[tuple[ev.Outgoing, str]], checked: str | None, now: datetime) -> None:
         problem = self.status.problem
