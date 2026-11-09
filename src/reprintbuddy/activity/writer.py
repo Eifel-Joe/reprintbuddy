@@ -15,6 +15,7 @@ restart logs no new change; from "unknown" to the good state is no change either
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import threading
@@ -162,7 +163,8 @@ class ActivityLog:
         return events
 
     def _failed_sign_in(self, session: Session, event: _Event) -> None:
-        since = event.at - FAILED_SIGN_IN_WINDOW
+        """One line per address and 10 minutes from the first attempt; it stands at the last attempt,
+        so a running attack is at the top and the line lives 90 days from its last attempt."""
         same_address = (
             ActivityEntry.address.is_(None) if event.address is None else ActivityEntry.address == event.address
         )
@@ -174,34 +176,55 @@ class ActivityLog:
         ).first()
         if last is not None:
             details = dict(last.details or {})
-            last_at = datetime.fromisoformat(str(details.get("last"))) if details.get("last") else last.at
-            if last_at >= since:
+            try:
+                first = datetime.fromisoformat(str(details.get("first")))
+            except ValueError:
+                first = None
+            if first is not None and event.at - first < FAILED_SIGN_IN_WINDOW:
                 details["count"] = int(details.get("count", 1)) + 1
                 details["last"] = event.at.isoformat()
                 last.details = details
+                last.at = event.at
                 return
         session.add(
             ActivityEntry(
                 at=event.at, area="login", kind="login_failed", actor=event.actor, address=event.address,
-                via=event.via, details={"count": 1, "last": event.at.isoformat()},
+                via=event.via,
+                details={"count": 1, "first": event.at.isoformat(), "last": event.at.isoformat()},
             )
         )
-        session.flush()
+
+    def _write_one(self, session: Session, event: _Event) -> None:
+        if event.kind == "login_failed":
+            self._failed_sign_in(session, event)
+            return
+        entry = ActivityEntry(
+            at=event.at, area=area_of(event.kind), kind=event.kind, actor=event.actor,
+            details=event.details, address=event.address, via=event.via,
+        )
+        if event.key is None:
+            session.add(entry)
+            return
+        mark = session.get(ActivityMark, event.key)
+        if event.kind == "update_result" and (mark is None or mark.state != event.state):
+            # The start of the update, from its state file too, before its result: the old process
+            # writes nothing while the update runs, and a rollback would take a line of that time with it
+            # (Spec 11.3a; review v0.3.13 C, finding 3).
+            details = event.details or {}
+            session.add(ActivityEntry(
+                at=_naive(datetime.fromisoformat(str(event.state))), area=area_of("update_started"),
+                kind="update_started", actor="user", details={"from": details.get("from"), "to": details.get("to")},
+            ))
+            session.flush()
+        write_transition(session, event.key, str(event.state), entry, now=event.at)
 
     def _write(self, session: Session, events: list[_Event]) -> None:
         for event in events:
-            if event.kind == "login_failed":
-                self._failed_sign_in(session, event)
-                continue
-            entry = ActivityEntry(
-                at=event.at, area=area_of(event.kind), kind=event.kind, actor=event.actor,
-                details=event.details, address=event.address, via=event.via,
-            )
-            if event.key is None:
-                session.add(entry)
-            else:
-                write_transition(session, event.key, str(event.state), entry, now=event.at)
-                session.flush()
+            try:
+                with session.begin_nested():  # one bad event never takes the others with it
+                    self._write_one(session, event)
+            except Exception as error:  # noqa: BLE001
+                log.warning("activity log: an event could not be written (%s)", type(error).__name__)
 
     def drain(self) -> int:
         """Write what is queued (blocking; a worker thread or a test calls it). Returns how many
@@ -233,8 +256,9 @@ class ActivityLog:
             log.warning("activity log: the state of the last update could not be read", exc_info=True)
             return
         if result is not None:
-            key_state = str(result.pop("started_at"))
-            self.transition("update.result", key_state, "update_result", "system", result)
+            started = str(result.pop("started_at"))
+            result.pop("finished_at", None)
+            self.transition("update.result", started, "update_result", "system", result)
 
     # ---- the background task ---------------------------------------------------------------------
 
@@ -252,10 +276,11 @@ class ActivityLog:
         if not self.may_write():
             return False
         self.begin_write()  # no `await` since `may_write()`
-        try:
-            await in_thread(func)
-        finally:
-            self.end_write()
+        # The count drops when the thread is done, not when this task is cancelled (a shutdown): a
+        # restore must not replace the database under a write that is still running.
+        done = asyncio.ensure_future(in_thread(func))
+        done.add_done_callback(lambda _future: self.end_write())
+        await asyncio.shield(done)
         return True
 
     async def run(self) -> None:
@@ -273,9 +298,9 @@ class ActivityLog:
                 await self.drain_counted()
                 await asyncio.sleep(DRAIN_EVERY)
         finally:
-            # A last run at shutdown, in this thread: nothing waits for it any more.
-            if self.may_write():
-                self.drain()
+            # A last run at shutdown, counted like every other (the shutdown waits a few seconds).
+            with contextlib.suppress(BaseException):
+                await self.drain_counted()
 
 
 def read_restored_marker(data_dir: Path) -> dict[str, Any] | None:

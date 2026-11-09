@@ -66,11 +66,11 @@ def test_failed_sign_ins_of_one_address_within_ten_minutes_are_one_line(db):
     clock.at = T0 + timedelta(minutes=25)  # 16 minutes after the last one: a new line
     activity.record("login_failed", "user", address="192.0.2.7")
     activity.drain()
-    found = [(r.address, r.at, r.details) for r in rows(db)]
+    found = [(r.address, r.at, r.details["count"]) for r in rows(db)]
     assert found == [
-        ("192.0.2.7", T0, {"count": 3, "last": (T0 + timedelta(minutes=9)).isoformat()}),
-        ("198.51.100.1", T0 + timedelta(minutes=10), {"count": 1, "last": (T0 + timedelta(minutes=10)).isoformat()}),
-        ("192.0.2.7", T0 + timedelta(minutes=25), {"count": 1, "last": (T0 + timedelta(minutes=25)).isoformat()}),
+        ("192.0.2.7", T0 + timedelta(minutes=9), 3),  # stands at its last attempt
+        ("198.51.100.1", T0 + timedelta(minutes=10), 1),
+        ("192.0.2.7", T0 + timedelta(minutes=25), 1),
     ]
 
 
@@ -204,9 +204,11 @@ def test_the_result_of_an_update_once_per_update(db, tmp_path):
     for _ in range(3):  # read every minute and at every start
         activity.check_update()
         activity.drain()
-    [line] = rows(db)
-    assert (line.kind, line.actor) == ("update_result", "system")
-    assert line.details == {"from": "v0.3.12", "to": "v0.3.13", "result": "done"}
+    start, result = rows(db)
+    assert (start.kind, start.actor, start.at) == ("update_started", "user", started.replace(tzinfo=None))
+    assert start.details == {"from": "v0.3.12", "to": "v0.3.13"}
+    assert (result.kind, result.actor) == ("update_result", "system")
+    assert result.details == {"from": "v0.3.12", "to": "v0.3.13", "result": "done"}
 
 
 @pytest.mark.parametrize(
@@ -251,7 +253,7 @@ class _Status:
         (_Status(reachable=None), None),
         (_Status(reachable=False), "unreachable"),
         (_Status(poll_error="forbidden"), "refused"),
-        (_Status(rejected="queue"), "refused"),
+        (_Status(rejected="queue"), "ok"),  # a refused hand-over of a print is the journal's, not the poll's
         (_Status(), "ok"),
     ],
 )
@@ -259,3 +261,66 @@ def test_the_connection_state(status, state):
     assert states.connection_state(status) == state
 
 
+
+
+def test_failed_sign_ins_keep_a_fixed_window_and_sort_by_the_last(db):
+    """Review finding 6: the window starts with the first attempt; the line stands at its last one."""
+    clock = Clock()
+    activity = ActivityLog(db, now=clock)
+    for minutes in (0, 6, 9, 12):  # 12 is outside the 10 minutes after the first
+        clock.at = T0 + timedelta(minutes=minutes)
+        activity.record("login_failed", "user", address="192.0.2.7")
+        activity.drain()
+    first, second = rows(db)
+    assert first.details == {"count": 3, "first": T0.isoformat(), "last": (T0 + timedelta(minutes=9)).isoformat()}
+    assert first.at == T0 + timedelta(minutes=9)
+    assert second.details["count"] == 1 and second.at == T0 + timedelta(minutes=12)
+
+
+def test_one_bad_event_does_not_take_the_others_with_it(db, caplog):
+    """Review finding 8."""
+    activity = ActivityLog(db)
+    activity.record("login", "user")
+    activity.record("logout", "user", {"bad": object()})  # cannot be stored as JSON
+    activity.record("login", "user")
+    with caplog.at_level(logging.WARNING):
+        activity.drain()
+    assert [r.kind for r in rows(db)] == ["login", "login"]
+
+
+async def test_a_cancelled_run_stays_counted_until_its_thread_is_done(db):
+    """Review finding 9: the count drops when the write is done, not when the waiting task is cancelled."""
+    in_flight = 0
+    entered, release = threading.Event(), threading.Event()
+
+    def begin():
+        nonlocal in_flight
+        in_flight += 1
+
+    def end():
+        nonlocal in_flight
+        in_flight -= 1
+
+    activity = ActivityLog(db, begin_write=begin, end_write=end)
+    real = activity.drain
+
+    def slow() -> int:
+        entered.set()
+        release.wait(5)
+        return real()
+
+    activity.drain = slow
+    activity.record("login", "user")
+    task = asyncio.create_task(activity.drain_counted())
+    while not entered.is_set():
+        await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert in_flight == 1  # the thread still writes
+    release.set()
+    for _ in range(200):
+        if in_flight == 0:
+            break
+        await asyncio.sleep(0.01)
+    assert in_flight == 0

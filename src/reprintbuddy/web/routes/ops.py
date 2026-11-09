@@ -469,7 +469,6 @@ async def _start_update(request: Request):
             ),
         )
         return _back("start_failed")
-    app.state.activity.record("update_started", "user", {"from": info.installed, "to": info.newest})
     return _back()
 
 

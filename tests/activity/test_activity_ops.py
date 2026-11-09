@@ -102,12 +102,38 @@ def test_a_restart_that_was_asked_for(ops_env):
     assert ops_lines(ops_env) == [("restart_requested", "user", None)]
 
 
-def test_update_started_and_the_new_version_once(ops_env):
+def test_the_new_version_once_and_the_start_of_an_update_with_its_result(ops_env):
+    """The start and the result come from the state file of the update, at the next look after it
+    ended: the old process writes nothing while the update runs, and a rollback would take a line of
+    that time with it (Spec 11.3a; review v0.3.13 C, finding 3)."""
+    from datetime import UTC, datetime, timedelta
+
+    from reprintbuddy.ops.status import UpdateStatus, write_status
+
     git_env(ops_env)
     post(ops_env, "/settings/update/check")
     post(ops_env, "/settings/update/check")  # found again: no second line
     assert post(ops_env, "/settings/update").status_code == 303
-    assert ops_lines(ops_env) == [
+    app = ops_env.client.app
+    # While the update runs, nothing is written: also after its first seconds.
+    import asyncio
+
+    write_status(ops_env.db_path.parent, UpdateStatus(
+        state="running", step="install", from_tag="v0.1.0", to_tag="v0.2.0",
+        started_at=datetime.now(UTC) - timedelta(minutes=3),
+    ))
+    app.state.activity.record("login", "user")
+    assert asyncio.run(app.state.activity.drain_counted()) is False
+    started = datetime.now(UTC) - timedelta(minutes=3)
+    write_status(ops_env.db_path.parent, UpdateStatus(
+        state="succeeded", step="done", from_tag="v0.1.0", to_tag="v0.2.0",
+        started_at=started, finished_at=started + timedelta(minutes=2), message="pip: text",
+    ))
+    app.state.activity.check_update()
+    assert asyncio.run(app.state.activity.drain_counted()) is True
+    found = [line for line in ops_lines(ops_env) if line[0] != "login"]
+    assert found == [
         ("version_found", "user", {"version": "v0.2.0"}),
         ("update_started", "user", {"from": "v0.1.0", "to": "v0.2.0"}),
+        ("update_result", "system", {"from": "v0.1.0", "to": "v0.2.0", "result": "done"}),
     ]

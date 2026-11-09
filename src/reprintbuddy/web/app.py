@@ -36,7 +36,7 @@ from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.autocheck import AutoCheck
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.running import update_just_started, update_running
-from reprintbuddy.ops.status import read_status
+from reprintbuddy.ops.status import is_busy, read_status
 from reprintbuddy.ops.versions import VersionInfo, check_versions, is_git_install
 from reprintbuddy.web import deps
 from reprintbuddy.web import qr as qr_view
@@ -200,10 +200,12 @@ def _install_activity_log(app: FastAPI, sessionmaker, db_path: Path) -> None:
     written (the queue keeps it). Decided and counted in the loop, with no `await` in between."""
 
     def may_write() -> bool:
+        now = datetime.now(UTC)
         return not (
             app.state.restore.active
             or app.state.update_starting
-            or update_just_started(db_path.parent, datetime.now(UTC))
+            or update_just_started(db_path.parent, now)
+            or is_busy(read_status(db_path.parent), now)  # for the whole update (review v0.3.13 C, finding 3)
         )
 
     def begin_write() -> None:

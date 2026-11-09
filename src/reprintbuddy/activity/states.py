@@ -31,6 +31,7 @@ def update_outcome(status: UpdateStatus) -> dict[str, Any] | None:
         result = "interrupted"
     return {
         "started_at": status.started_at.isoformat(),
+        "finished_at": status.finished_at.isoformat() if status.finished_at else None,
         "from": status.from_tag,
         "to": status.to_tag,
         "result": result,
@@ -45,7 +46,8 @@ def connection_state(engine_status: Any) -> str | None:
         return "unreachable"
     if engine_status.reachable is None:
         return None
-    if engine_status.poll_error is not None or engine_status.rejected is not None:
+    # Only the answer of the regular poll: a refused hand-over of a print is the journal's.
+    if engine_status.poll_error is not None:
         return "refused"
     return "ok"
 
