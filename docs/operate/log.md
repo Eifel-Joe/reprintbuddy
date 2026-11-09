@@ -47,8 +47,9 @@ Reprintbuddy knows no names of people, only these four.
 ## Backup, restore and update
 
 - The log is part of the [full backup](update-backup.md#full-backup). After a restore the log is the one from the backup, and it gets an entry about the restore. Entries made after the backup was taken are no longer visible; a copy of the database stays on the server until newer backups push it out.
+- States the log records only as changes (connection to Bambuddy, its rights, a new version found, the result of the last update, failing push messages) keep what the log had before the restore. So a state that was logged before is not logged again just because the backup is older.
 - Start and result of every [update](update-backup.md) are logged. A rolled-back update also restores the database, so entries from the time of the update are lost; the result is entered after that.
 
 ## Log and system log
 
-Two different things have "log" in their name. The **Log** tab described here is Reprintbuddy's own record of what happened. The **system log** is what the service writes to the system, read with `journalctl` on the server, for example `journalctl -u reprintbuddy` or `journalctl -u reprintbuddy-update`. Technical details and errors that are not for the interface go there, never anything sensitive.
+Two different things have "log" in their name. The **Log** tab described here is Reprintbuddy's own record of what happened. The **system log** is what the service writes to the system, read with `journalctl` on the server, for example `journalctl -u reprintbuddy` or `journalctl -u reprintbuddy-update`. Technical details and errors that are not for the interface go there, never anything sensitive. Besides warnings and errors, Reprintbuddy writes notes there that help when looking for a fault, for example that the live channel to Bambuddy is connected, how Home Assistant answered a message, or that the automatic check for new versions failed. Database errors there never contain the values that were to be saved.

@@ -259,7 +259,8 @@ Es gibt **keine Konfigurationsdatei**. Jede Einstellung liegt in der Datenbank
 und wird in der Weboberfläche unter *Einstellungen* geändert: Sprache, Adresse für QR-Codes,
 Bambuddy-Verbindung, Automatik, Etiketten, Push-Nachrichten, Passwort, Adresse, Port, optionales
 HTTPS-Zertifikat, Neustart, Update-Prüfung, Update und Sicherung sowie Export. *Einstellungen → Protokoll* zeigt nur, was passiert ist (wer was geändert hat, Anmeldungen, Updates, Nachrichten), siehe die Doku-Seiten.
-Nur der Pfad der Datenbank wird auf der Kommandozeile angegeben (`--db`).
+Nur der Pfad der Datenbank wird auf der Kommandozeile angegeben (`--db`). Zeitpunkte erscheinen in
+der Zeitzone des Servers (`timedatectl set-timezone …`, danach neu starten).
 
 ## Update
 
@@ -312,7 +313,10 @@ HTTP, der Proxy macht TLS. Läuft der Proxy auf demselben System, stelle die Lau
 `127.0.0.1`. Gib Reprintbuddy am Proxy eine eigene Adresse oder einen eigenen Port
 (`https://reprintbuddy.example.net/` oder `https://example.net:8443/`). Ein Unterpfad
 (`https://example.net/reprintbuddy/`) geht nicht: Links und Weiterleitungen würden am Proxy
-vorbeizeigen. Wird Reprintbuddy so erreicht, schreibt es eine Warnung ins Systemprotokoll.
+vorbeizeigen. Wird Reprintbuddy so erreicht, schreibt es eine Warnung ins Systemprotokoll. Eine
+Anfrage, die über HTTPS kam, bekommt Cookies mit der Markierung „nur über HTTPS“; hinter einem Proxy
+gilt das, wenn er auf demselben System läuft und `X-Forwarded-Proto: https` schickt (von anderen
+Adressen wird der Header übergangen).
 
 Ausgesperrt durch ein Zertifikat, das nicht mehr taugt (abgelaufen, falscher Name)? Auf dem System:
 

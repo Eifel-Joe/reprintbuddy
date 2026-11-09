@@ -105,6 +105,7 @@ Dieser Reiter enthält das Update, die vollständige Sicherung, das Wiederherste
 ## Was nicht auf dieser Seite steht
 
 - Der **Pfad der Datenbank** ist keine Einstellung. Der Dienst übergibt ihn mit `--db`.
+- Die **Zeitzone** ist keine Einstellung. Alle Zeitpunkte (Journal, Protokoll, Meldungen, Versionshinweise, das Datum auf einem Etikett) erscheinen in der Zeitzone des Servers, mit deren Sommerzeit. Um sie zu ändern, stelle die Zone auf dem Server ein, zum Beispiel `timedatectl set-timezone Europe/Vienna`, und starte Reprintbuddy neu.
 - Werte, die Reprintbuddy für sich behält, werden nie angezeigt: das Geheimnis, mit dem die Sitzungs-Cookies signiert werden und das Reprintbuddy beim ersten Start selbst erzeugt, und die Merker der Verbindungsprüfung.
 - Einstellungen einzelner Artikel, Filamentsorten und Zukaufteile stehen auf deren eigenen Seiten, nicht hier.
 

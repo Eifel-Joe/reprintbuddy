@@ -44,6 +44,7 @@ Du kannst Reprintbuddy auch hinter einem Reverse-Proxy betreiben, den du schon h
 - Ein **Unterpfad** wie `https://example.net/reprintbuddy/` funktioniert **nicht**: Links und Weiterleitungen würden am Proxy vorbeizeigen. Reprintbuddy schreibt eine Warnung ins Systemprotokoll, einmal, wenn es so erreicht wird (ein Root-Pfad oder ein Header `X-Forwarded-Prefix`). Das Systemprotokoll liest du mit `journalctl -u reprintbuddy`.
 - Die Seiten aktualisieren sich über einen Datenstrom unter `/live` (Server-Sent Events). Der Proxy muss ihn ohne Pufferung weiterreichen; Reprintbuddy sendet den Header `X-Accel-Buffering: no`, den nginx beachtet.
 - Trage die Adresse des Proxys unter *Einstellungen → Allgemein → QR-Codes* ein, damit die QR-Codes sie tragen.
+- Reprintbuddy markiert seine Cookies (auch das der Anmeldung) als „nur über HTTPS senden“, sobald die Anfrage über HTTPS kam: mit eigenem Zertifikat, oder wenn ein Proxy auf **demselben System** den Header `X-Forwarded-Proto: https` mitschickt, wie Proxys es üblicherweise tun. `X-Forwarded-Proto` und `X-Forwarded-For` nimmt Reprintbuddy nur vom selben System an (`127.0.0.1` oder `::1`); von jeder anderen Adresse werden sie übergangen, damit niemand im Netz eine einfache Verbindung als HTTPS ausgeben kann. Hinter einem Proxy auf einem anderen Rechner gehen die Cookies deshalb ohne die Markierung hinaus. Über einfaches HTTP geöffnet setzt Reprintbuddy Cookies ohne die Markierung, die Anmeldung über HTTP in deinem Netz geht also weiter.
 
 ## Ersteinrichtung und Namen aus öffentlichen Domains
 

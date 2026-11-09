@@ -44,6 +44,7 @@ You can also run Reprintbuddy behind a reverse proxy you already have. Reprintbu
 - A **sub-path** such as `https://example.net/reprintbuddy/` does **not** work: links and redirects would point past the proxy. Reprintbuddy writes a warning to the system log, once, when it is reached that way (a root path or an `X-Forwarded-Prefix` header). Read the system log with `journalctl -u reprintbuddy`.
 - Pages update themselves over a stream at `/live` (server-sent events). The proxy must pass it on without buffering; Reprintbuddy sends the header `X-Accel-Buffering: no`, which nginx respects.
 - Enter the address of the proxy under *Settings → General → QR codes*, so that the QR codes carry it.
+- Reprintbuddy marks its cookies (the sign-in among them) to be sent over HTTPS only whenever the request came over HTTPS: with its own certificate, or when a proxy on the **same system** passes the header `X-Forwarded-Proto: https`, as proxies usually do. Reprintbuddy takes `X-Forwarded-Proto` and `X-Forwarded-For` only from the same system (`127.0.0.1` or `::1`); from any other address they are ignored, so nobody in the network can claim HTTPS for a plain connection. Behind a proxy on another machine the cookies therefore go out without the mark. Opened over plain HTTP, Reprintbuddy sets cookies without the mark, so signing in over HTTP in your network keeps working.
 
 ## First setup and names from public domains
 

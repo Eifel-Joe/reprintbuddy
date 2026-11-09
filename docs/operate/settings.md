@@ -105,6 +105,7 @@ This tab holds the update, the full backup, the restore and the export. They are
 ## What is not on this page
 
 - The **path of the database** is not a setting. The service passes it with `--db`.
+- The **time zone** is not a setting. Every time (journal, log, messages, release notes, the date on a label) is shown in the time zone of the server, with its summer time. To change it, set the zone on the server, for example `timedatectl set-timezone Europe/Vienna`, and restart Reprintbuddy.
 - Values Reprintbuddy keeps for itself are never shown: the secret that signs the session cookies, which it creates on the first start, and the marks that follow the connection check.
 - Settings of single articles, filament sorts and bought-in parts are on their own pages, not here.
 
