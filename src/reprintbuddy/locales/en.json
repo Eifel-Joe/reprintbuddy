@@ -645,6 +645,7 @@
   "filament.map_link": "Tick spool sorts",
   "filament.live": "Live from Bambuddy.",
   "filament.stale": "Stock as of {day} (Bambuddy cannot be reached).",
+  "filament.as_of": "As of {day}",
   "filament.no_history": "no history yet",
   "filament.configured": "configured",
   "filament.configure": "Configure",

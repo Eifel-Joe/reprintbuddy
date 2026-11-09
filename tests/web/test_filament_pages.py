@@ -58,6 +58,41 @@ def test_filament_page_unavailable_uses_snapshot(bb_client, fake_bambuddy):  # R
     assert "640" in page.text and f"Stock as of {yesterday:%Y-%m-%d}" in page.text
 
 
+def recorded_page(bb_client, fake_bambuddy):
+    """The page while Bambuddy cannot be reached and a record of yesterday is shown."""
+    yesterday = utcnow().date() - timedelta(days=1)
+    with sm_of(bb_client).begin() as s:
+        sort = make_sort(s)
+        assign_sort(s, sort)
+        make_snapshot(s, yesterday, 2, sort.id, 640.0)
+    fake_bambuddy.unavailable = True
+    return bb_client.get("/filament").text, f"{yesterday:%Y-%m-%d}"
+
+
+def test_recorded_stock_is_marked_at_the_numbers(bb_client, fake_bambuddy):  # p63
+    page, day = recorded_page(bb_client, fake_bambuddy)
+    note = en("filament.as_of", day=day)
+    summary = regions.extract(page, ["summary"])["summary"]
+    # The two cards that show recorded numbers say from when they are; the card of the sorts is no stock.
+    for label in (en("kpi.filament_stock"), en("kpi.filament_spools")):
+        assert re.search(rf'<span class="kpi-label">{re.escape(label)}</span><span class="kpi-note">{re.escape(note)}</span>', summary), label
+    assert summary.count('class="kpi-note"') == 2
+    assert [label for _, label in kpi_cards(summary)][:3] == [
+        en("kpi.filament_sorts"), en("kpi.filament_stock"), en("kpi.filament_spools"),
+    ]
+    heads = re.findall(r"<th[^>]*>(.*?)</th>", page, re.S)
+    marked = [h for h in heads if note in h]
+    assert len(marked) == 2 and en("filament.col.stock") in marked[0] and en("filament.col.spools") in marked[1]
+    assert en("filament.stale", day=day) in page  # the notice on top stays
+
+
+def test_live_stock_is_not_marked(bb_client, fake_bambuddy):  # p63: nothing to say while it is live
+    fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black", remaining_g=800.0)
+    use_sort(bb_client)
+    page = bb_client.get("/filament").text
+    assert "kpi-note" not in page and "col-note" not in page and "As of" not in page
+
+
 def test_filament_page_unknown_without_record(bb_client, fake_bambuddy):  # Anti-Ziel 4
     with sm_of(bb_client).begin() as s:
         sort = make_sort(s)

@@ -13,7 +13,7 @@
   <table>
     <thead><tr>
       <th>{{ t('filament.col.sort') }}</th><th>{{ t('articles.filament.material') }}</th>
-      <th class="num">{{ t('filament.col.stock') }}</th><th class="num">{{ t('filament.col.spools') }}</th>
+      <th class="num">{{ t('filament.col.stock') }}{% if as_of %}<span class="col-note">{{ as_of }}</span>{% endif %}</th><th class="num">{{ t('filament.col.spools') }}{% if as_of %}<span class="col-note">{{ as_of }}</span>{% endif %}</th>
       <th class="num">{{ t('filament.col.per_day') }}</th><th class="num">{{ t('filament.col.demand') }}</th>
       <th class="actions-col"><span class="sr-only">{{ t('list.col.actions') }}</span></th>
     </tr></thead>

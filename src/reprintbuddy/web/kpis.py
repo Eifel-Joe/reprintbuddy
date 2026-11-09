@@ -30,6 +30,7 @@ class Kpi:
     tone: str
     value: int
     label: str
+    note: str = ""  # a small line below the label (finished text); empty: none
 
 
 def state_cards(
@@ -55,20 +56,22 @@ def state_cards(
 
 
 def filament_cards(
-    t: Callable[[str], str], sorts: int, stock_g: int | None, spools: int | None, unconfigured: int
+    t: Callable[[str], str], sorts: int, stock_g: int | None, spools: int | None, unconfigured: int,
+    recorded_note: str = "",
 ) -> list[Kpi]:
     """Cards of the filament page: the sorts, the total stock in grams, the spools.
 
     Stock and spools are `None` while the stock is not known (Bambuddy cannot be reached and
     nothing is recorded): they are left out then, never shown as 0. `unconfigured` counts the
     sorts without settings, which get no order suggestions (Spec 9.3); its card shows only
-    above zero.
+    above zero. `recorded_note` ("as of <day>") goes under the stock and spools cards when they
+    show the recorded stock instead of the live one (p63).
     """
     cards = [Kpi(icon="disc-3", tone="accent", value=sorts, label=t("kpi.filament_sorts"))]
     if stock_g is not None:
-        cards.append(Kpi(icon="boxes", tone="info", value=stock_g, label=t("kpi.filament_stock")))
+        cards.append(Kpi(icon="boxes", tone="info", value=stock_g, label=t("kpi.filament_stock"), note=recorded_note))
     if spools is not None:
-        cards.append(Kpi(icon="package", tone="neutral", value=spools, label=t("kpi.filament_spools")))
+        cards.append(Kpi(icon="package", tone="neutral", value=spools, label=t("kpi.filament_spools"), note=recorded_note))
     if unconfigured > 0:
         cards.append(Kpi(
             icon="triangle-alert", tone="warn", value=unconfigured, label=t("kpi.filament_unconfigured"),

@@ -645,6 +645,7 @@
   "filament.map_link": "Spulensorten ankreuzen",
   "filament.live": "Live aus Bambuddy.",
   "filament.stale": "Bestand vom {day} (Bambuddy ist nicht erreichbar).",
+  "filament.as_of": "Stand vom {day}",
   "filament.no_history": "noch kein Verlauf",
   "filament.configured": "eingestellt",
   "filament.configure": "einstellen",

@@ -61,6 +61,8 @@ async def filament_list(request: Request):
         })
     unmapped = filament.unmapped_slots(db)
     rows.sort(key=lambda r: (r["label"].casefold(), r["id"]))
+    stale_day = format_date(day, lang) if day else None
+    as_of = translate(lang, "filament.as_of", day=stale_day) if stale_day else None
     # The key figures add up the numbers the rows show (the rounded grams), nothing is recomputed.
     # Unknown stock (sorts is None) leaves the stock and spool cards out instead of showing 0.
     known = sorts is not None
@@ -69,10 +71,12 @@ async def filament_list(request: Request):
         sum(int(r["stock"]) for r in rows if r["stock"] is not None) if known else None,
         sum(r["spools"] for r in rows if r["spools"] is not None) if known else None,
         sum(1 for r in rows if r["reordered"] and not r["configured"]),  # only these get suggestions
+        # Recorded numbers say from when they are, at the numbers and not only in the notice on top (p63).
+        recorded_note=as_of if as_of else "",
     )
     return render(
         request, "filament_list.html", active_nav="filament", rows=rows, unmapped=unmapped, cards=cards,
-        live=sorts is not None and day is None, stale_day=format_date(day, lang) if day else None,
+        live=sorts is not None and day is None, stale_day=stale_day, as_of=as_of,
     )
 
 
