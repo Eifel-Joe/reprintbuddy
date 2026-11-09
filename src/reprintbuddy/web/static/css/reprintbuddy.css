@@ -1093,3 +1093,28 @@ textarea.address { resize: none; min-height: 5.5rem; overflow-wrap: anywhere; wo
 @supports (field-sizing: content) {
   textarea.address { field-sizing: content; min-height: 2.75rem; }
 }
+
+/* Arrows on number fields (Spec 10.1, p155; spinbox.js wraps each field). The wrapper holds the field
+   and the arrows, which sit over the right edge of the field (negative margin), so the width a page gave
+   the field (6rem, 100%, ...) stays the width of the field. The margin above moves from the field to the
+   wrapper. Without the script nothing of this is drawn. */
+.spin { display: flex; align-items: stretch; margin-top: 0.35rem; max-width: 100%; }
+.setting-control .spin, .menu-prints .spin, .part-row .spin, .line .spin, .field > .spin, .reorder-mark .spin { margin-top: 0; }
+.spin > input { margin: 0; padding-right: 2rem; flex: 0 1 auto; min-width: 0; -moz-appearance: textfield; appearance: textfield; }
+.spin > input::-webkit-outer-spin-button, .spin > input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.spin-btns { flex: 0 0 1.75rem; margin-left: -1.9rem; margin-right: 0.15rem; display: flex; flex-direction: column; padding: 2px 0; position: relative; }
+.spin-btn {
+  flex: 1 1 0; min-height: 0; padding: 0; margin: 0; border: 0; border-radius: 6px; background: transparent;
+  color: var(--text-2); cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.spin-btn::before { content: ""; width: 0.4rem; height: 0.4rem; border: solid currentColor; border-width: 0 2px 2px 0; }
+.spin-up::before { transform: translateY(2px) rotate(-135deg); }
+.spin-down::before { transform: translateY(-2px) rotate(45deg); }
+.spin-btn:hover:not(:disabled) { color: var(--text); background: var(--hover-soft); }
+.spin-btn:disabled { opacity: 0.3; cursor: default; }
+/* A finger: both arrows side by side, each at least 44 px wide, still on the right of the field. */
+@media (pointer: coarse) {
+  .spin > input { padding-right: 5.5rem; min-height: 2.75rem; }
+  .spin-btns { flex: 0 0 5.5rem; margin-left: -5.5rem; margin-right: 0; flex-direction: row; padding: 0; }
+  .spin-btn { min-width: 2.75rem; min-height: 2.75rem; border-radius: 0; }
+}

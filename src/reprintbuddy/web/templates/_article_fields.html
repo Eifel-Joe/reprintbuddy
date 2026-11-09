@@ -13,7 +13,7 @@
 </label>
 <div class="row">
   {% call ui.field("article-units_per_print", t('articles.field.units_per_print'), t('info.units_per_print')) %}
-    <input id="article-units_per_print" name="units_per_print" inputmode="numeric" value="{{ values.units_per_print }}">
+    <input id="article-units_per_print" name="units_per_print" inputmode="numeric" min="1" value="{{ values.units_per_print }}">
   {% endcall %}
   {% call ui.field("article-target", t('articles.field.target'), t('info.target')) %}
     <select id="article-target" name="target">
@@ -26,10 +26,10 @@
 </div>
 <div class="row">
   {% call ui.field("article-min_stock", t('articles.field.min_stock'), t('info.min_stock')) %}
-    <input id="article-min_stock" name="min_stock" inputmode="numeric" value="{{ values.min_stock }}">
+    <input id="article-min_stock" name="min_stock" inputmode="numeric" min="0" value="{{ values.min_stock }}">
   {% endcall %}
   {% call ui.field("article-buffer", t('articles.field.buffer'), t('info.buffer')) %}
-    <input id="article-buffer" name="buffer" inputmode="numeric" value="{{ values.buffer }}">
+    <input id="article-buffer" name="buffer" inputmode="numeric" min="0" value="{{ values.buffer }}">
   {% endcall %}
 </div>
 {% call ui.check_row(t('info.needs_assembly'), t('articles.field.needs_assembly')) %}

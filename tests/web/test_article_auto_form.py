@@ -50,7 +50,7 @@ def test_edit_with_automation_and_no_target_shows_the_error_at_the_field(ready_c
     assert 'aria-invalid="true"' in tick and 'aria-describedby="auto-enabled-error"' in tick
     assert 'id="auto-enabled-error"' in response.text
     assert 'name="name" value="Renamed"' in response.text  # what was typed stays
-    assert 'name="min_stock" inputmode="numeric" value="3"' in response.text
+    assert re.search(r'name="min_stock"[^>]* value="3"', response.text)  # p155: the field also names its minimum
     assert checkbox_checked(response.text, "auto_enabled")
     with sm_of(ready_client)() as s:
         art = s.get(Article, a)

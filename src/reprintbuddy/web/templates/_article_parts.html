@@ -15,7 +15,7 @@
     <option value="{{ id }}"{% if id == row.part %} selected{% endif %}{% if elsewhere %} disabled hidden{% endif %}>{{ part.name }}</option>
     {% endfor %}
   </select>
-  <input name="parts_qty" inputmode="numeric" value="{{ row.qty }}" data-label="{{ t('articles.field.qty_per_unit') }}" aria-label="{{ t('articles.field.qty_per_unit') }} {{ n }}">
+  <input name="parts_qty" inputmode="numeric" min="1" value="{{ row.qty }}" data-label="{{ t('articles.field.qty_per_unit') }}" aria-label="{{ t('articles.field.qty_per_unit') }} {{ n }}">
   <button class="icon-btn" type="submit" name="parts_remove" value="{{ index }}" title="{{ t('articles.part_remove') }}" formnovalidate data-parts-remove>{{ ui.icon('x') }}<span>{{ t('articles.part_remove') }}</span><span class="sr-only" data-parts-name>{% for part in parts %}{% if part.id | string == row.part %}{{ part.name }}{% endif %}{% endfor %}</span></button>
 </div>
 {%- endmacro %}
