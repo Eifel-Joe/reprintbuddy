@@ -123,7 +123,7 @@ def test_create_article(bb_client):  # Spec 5.1
     created = articles(bb_client)
     assert len(created) == 1
     # p153: with filament slots the filament page comes first (the article page follows its save)
-    assert response.status_code == 303 and response.headers["location"] == f"/articles/{created[0].id}/filaments?later=1"
+    assert response.status_code == 303 and response.headers["location"] == f"/articles/{created[0].id}/filaments?later=1&suggest=1"
     art = created[0]
     assert (art.file_name, art.plate_id, art.file_fingerprint, art.sku) == ("Template A.gcode.3mf", 1, "v1", "A-100")
     assert art.thumbnail == b"\x89PNG\r\n\x1a\n1:1"

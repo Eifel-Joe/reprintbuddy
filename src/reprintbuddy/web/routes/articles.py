@@ -59,6 +59,9 @@ router = APIRouter()
 # p153: appended to the address of the filament page when a person is led there right after creating
 # an article or changing its print file; the page then offers "Later" instead of "Cancel".
 LATER = "?later=1"
+# p156: only right after creating: the page also starts from the group of a similar article (a display
+# only: nothing is stored before "Save"). Not after a change of the file, not on a later visit.
+NEW_ARTICLE = "?later=1&suggest=1"
 
 
 class NotSliced(Exception):
@@ -599,7 +602,7 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
         return saved_redirect(request, f"/articles/{article_id}", "articles.created", name=article_name)
     flash(request, "articles.created", name=article_name)
     flash(request, "articles.created_filament")
-    return RedirectResponse(f"/articles/{article_id}/filaments{LATER}", status_code=303)
+    return RedirectResponse(f"/articles/{article_id}/filaments{NEW_ARTICLE}", status_code=303)
 
 
 # ---- detail, thumbnail, settings -------------------------------------------------------------
@@ -822,19 +825,28 @@ def _filament_page(request: Request, spools, article_id: int, typed: _Typed | No
     """The form to tick the spool sorts of each slot. Reads (and enters new spool sorts, Entscheidung 4)
     in one write transaction; `typed` holds what a rejected submission ticked, which stays as it was."""
     lang = current_language(request)
+    later = request.query_params.get("later") == "1"  # p153: led here by a creation or a change of the file
+    suggest = later and request.query_params.get("suggest") == "1"  # p156: only right after creating
     with write_transaction(request) as tx:
         article = tx.get(Article, article_id)
         if article is None:
             raise HTTPException(status_code=404)
         sorts, day = filament.known_sorts(tx, spools)
         groups = filament.slot_groups(tx, article_id)
+        suggestions = filament.suggest_from_similar(tx, article_id) if suggest and article.archived_at is None else {}
         by_id = {s.id: s for s in tx.scalars(select(FilamentSort))}
         name, archived = article.name, article.archived_at is not None
         slots = []
         for g in groups:
+            suggestion = suggestions.get(g.slot)
             if typed is not None and g.slot in typed:
                 ticked, reordered = typed[g.slot]
+                suggestion = None  # what a rejected submission ticked stays as it was
+            elif suggestion is not None and not g.ticked:  # a slot that has a group keeps it
+                ticked = {str(i) for i in suggestion.sort_ids}
+                reordered = str(suggestion.reordered) if suggestion.reordered is not None else ""
             else:
+                suggestion = None
                 ticked = {str(i) for i in g.ticked}
                 reordered = str(g.reordered) if g.reordered is not None else ""
             choices = [
@@ -850,6 +862,7 @@ def _filament_page(request: Request, spools, article_id: int, typed: _Typed | No
                 "color": color_mod.display_hex(g.color_hex) if g.color_hex else "",
                 "swatch": g.color_hex if g.color_hex and COLOR.fullmatch(g.color_hex) else None,
                 "choices": choices,
+                "suggested_from": suggestion.source_name if suggestion is not None else None,
             })
     if archived and error is None:
         error = translate(lang, "articles.edit_archived")
@@ -857,7 +870,7 @@ def _filament_page(request: Request, spools, article_id: int, typed: _Typed | No
         request, "article_filaments.html", status_code=status, active_nav="articles",
         article_id=article_id, article_name=name, slots=slots, sorts_unknown=sorts is None,
         stale_day=format_date(day, lang) if day else None, read_only=archived, error=error,
-        later=request.query_params.get("later") == "1",  # p153: led here by a creation or a change of the file
+        later=later, query=(NEW_ARTICLE if suggest else LATER if later else ""),
     )
 
 

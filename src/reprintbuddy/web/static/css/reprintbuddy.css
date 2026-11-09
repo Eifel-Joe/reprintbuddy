@@ -1136,3 +1136,5 @@ textarea.address { resize: none; min-height: 5.5rem; overflow-wrap: anywhere; wo
 td.target .target-form { display: inline-block; }
 .tile-target { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; color: var(--text-2); font-size: 0.88rem; flex-wrap: wrap; }
 .tile-target .target-form { flex: 0 1 auto; }
+/* The note of a suggestion on the filament page (p156): a line between the caption of a slot and its table. */
+.slot-group .filament-suggested { margin: 0; padding: 0.5rem 0.75rem; font-size: 0.85rem; border-bottom: 1px solid var(--line); }
