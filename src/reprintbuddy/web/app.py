@@ -21,6 +21,8 @@ from starlette.templating import Jinja2Templates
 
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
+from reprintbuddy.activity import states as activity_states
+from reprintbuddy.activity.writer import ActivityLog, read_restored_marker
 from reprintbuddy.bambuddy.client import BambuddyUnavailable
 from reprintbuddy.bambuddy.factory import make_http_factory
 from reprintbuddy.bambuddy.live import LiveListener
@@ -34,6 +36,7 @@ from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.autocheck import AutoCheck
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.running import update_just_started, update_running
+from reprintbuddy.ops.status import read_status
 from reprintbuddy.ops.versions import VersionInfo, check_versions, is_git_install
 from reprintbuddy.web import deps
 from reprintbuddy.web import qr as qr_view
@@ -192,6 +195,43 @@ def _install_auto_check(app: FastAPI) -> None:
     )
 
 
+def _install_activity_log(app: FastAPI, sessionmaker, db_path: Path) -> None:
+    """The writer of the activity log (Spec 10.7). Its runs count as writes in flight, like a request:
+    a restore waits for a run in its worker thread, and while a restore or an update runs, nothing is
+    written (the queue keeps it). Decided and counted in the loop, with no `await` in between."""
+
+    def may_write() -> bool:
+        return not (
+            app.state.restore.active
+            or app.state.update_starting
+            or update_just_started(db_path.parent, datetime.now(UTC))
+        )
+
+    def begin_write() -> None:
+        app.state.writes_in_flight += 1
+
+    def end_write() -> None:
+        app.state.writes_in_flight -= 1
+
+    app.state.activity = ActivityLog(
+        sessionmaker,
+        may_write=may_write,
+        begin_write=begin_write,
+        end_write=end_write,
+        update_result=lambda: activity_states.update_outcome(read_status(db_path.parent)),
+    )
+
+
+def _log_start(app: FastAPI) -> None:
+    """At every start: "Reprintbuddy started", and a restore the last process finished (Spec 10.7)."""
+    activity: ActivityLog = app.state.activity
+    restored = read_restored_marker(app.state.db_path.parent)
+    if restored is not None:
+        via = restored.pop("via", None)
+        activity.record("restore_done", "user", restored, via=via if via == "cli" else None)
+    activity.record("started", "system", {"version": __version__})
+
+
 SHUTDOWN_TASK_WAIT = 5.0  # seconds the background tasks get to stop; the process must not hang on one
 
 
@@ -238,6 +278,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         tasks = [ticker_task, live_task, asyncio.create_task(app.state.auto_check.run(), name="update-check")]
     app.state.ticker_task = ticker_task
     app.state.live_task = live_task
+    _log_start(app)
+    if app.state.run_engine:
+        tasks.append(asyncio.create_task(app.state.activity.run(), name="activity"))
     try:
         yield
     finally:
@@ -346,6 +389,7 @@ def create_app(
         publish=live.publish,
     )
     app.state.ticker.after_tick.append(app.state.notifier.after_tick)
+    _install_activity_log(app, sessionmaker, db_path)
     app.state.run_engine = run_engine
     app.state.ticker_task = None  # the background loop while the app runs (see _lifespan)
     # Bambuddy's live channel (Spec 7.6): a message that may have changed the queue, and every
