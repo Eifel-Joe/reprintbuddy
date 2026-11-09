@@ -63,6 +63,9 @@ DEFAULTS: dict[str, object] = {
     "ha_names": True,  # name articles, spool sorts and parts in the messages
     "ha_events": list(HA_EVENTS),
     "ha_since": None,  # when the messages were switched on (plan D1); set by Reprintbuddy, not shown
+    # Home Assistant refused the stored token (401): no automatic try until the card is saved again
+    # (Spec 10.6 "Token abgelehnt", p152); set by Reprintbuddy, not shown, kept over a restart.
+    "ha_token_rejected": False,
 }
 
 SENSITIVE: frozenset[str] = frozenset({"bambuddy_api_key", "tls_key", "ha_token"})
@@ -319,6 +322,7 @@ _VALIDATORS: dict[str, Callable[[Any], object]] = {
     "ha_names": _bool,
     "ha_events": _ha_events,
     "ha_since": _ha_since,
+    "ha_token_rejected": _bool,
 }
 
 

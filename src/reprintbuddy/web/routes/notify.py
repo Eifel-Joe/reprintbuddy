@@ -94,6 +94,8 @@ async def save_notify(request: Request, db: Session = Depends(get_db)):
         st.set_setting(tx, "ha_service", service, commit=False)
         st.set_setting(tx, "ha_names", bool(typed["ha_names"]), commit=False)
         st.set_setting(tx, "ha_events", chosen, commit=False)
+        # p152, Spec 10.6: saving the card (on or off) lifts the stop after a rejected token.
+        st.set_setting(tx, "ha_token_rejected", False, commit=False)
         if enabled and (not was_on or st.get_setting(tx, "ha_since") is None):
             # From now on (plan D1): prints finished before are never reported.
             st.set_setting(tx, "ha_since", datetime.now(UTC).isoformat(), commit=False)
@@ -101,6 +103,7 @@ async def save_notify(request: Request, db: Session = Depends(get_db)):
             # Switched off, nothing is followed; switched on again, everything starts anew.
             st.set_setting(tx, "ha_since", None, commit=False)
             events.forget_all(tx)
+    request.app.state.notifier.settings_saved()  # its warning goes with the stop
     if had_token and token is None:
         # p160: switched off, a new or emptied address drops the stored token (it never goes to another
         # address, Spec 10.6). Said, not silent: switching on again needs it typed in.

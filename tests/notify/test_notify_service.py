@@ -176,14 +176,14 @@ async def test_a_hanging_home_assistant_does_not_hold_up_the_engine(engine_env, 
     await notifier.stop()
 
 
-@pytest.mark.parametrize("outcome_status", [503, 401])
+@pytest.mark.parametrize("outcome_status", [503, 403])  # 403: already banned, an ordinary failure (p152)
 async def test_a_failed_state_shows_the_warning_and_is_sent_again(env, respx_mock, outcome_status):
     route = respx_mock.post(CALL)
     route.side_effect = [httpx.Response(outcome_status), httpx.Response(200, json=[])]
     env.pause()
     env.notifier.after_tick(False)
     await env.settle()
-    assert env.notifier.status.problem in ("server", "token")
+    assert env.notifier.status.problem in ("server", "blocked")
     assert frozenset({TOPIC}) in env.published
     assert env.marks() == [("paused", "due")]
     env.notifier.after_tick(False)
@@ -392,3 +392,135 @@ async def test_switching_off_during_a_hanging_message_keeps_the_warning_off(env,
     release.set()
     await env.settle()
     assert env.notifier.status.problem is None
+
+
+# ---- p152: a rejected token stops every automatic attempt (Spec 10.6 "Token abgelehnt (401)") -----------
+
+
+def _rejected(env) -> bool:
+    with env.db() as s:
+        return st.get_setting(s, "ha_token_rejected") is True
+
+
+def _saved_again(env, notifier=None) -> None:
+    """What saving the card does: the flag goes, the notifier hears of it."""
+    with env.db.begin() as s:
+        st.set_setting(s, "ha_token_rejected", False, commit=False)
+    (notifier or env.notifier).settings_saved()
+
+
+async def test_a_rejected_token_stops_sending_and_checking(env, respx_mock):
+    """Each further try with that token counts in Home Assistant as a failed login (IP ban)."""
+    call = respx_mock.post(CALL).respond(401)
+    ping = respx_mock.get(PING).respond(401)
+    env.pause()
+    env.notifier.after_tick(False)
+    await env.settle()
+    assert call.call_count == 1
+    assert env.notifier.status.problem == "token"
+    assert _rejected(env)
+    for poll in (False, True, True):  # short ticks and regular queries alike
+        env.notifier.after_tick(poll)
+        await env.settle()
+    assert call.call_count == 1
+    assert ping.call_count == 0
+    assert env.marks() == [("paused", "due")]  # the state is still to be reported once allowed again
+
+
+async def test_a_rejected_token_ends_the_round_at_once(env, respx_mock):
+    call = respx_mock.post(CALL).respond(401)
+    env.pause("Bracket")
+    with env.db.begin() as s:
+        make_article(s, name="Cover", min_stock=2)  # a second kind due in the same round
+    env.notifier.after_tick(False)
+    await env.settle()
+    assert call.call_count == 1
+
+
+async def test_a_rejected_check_stops_too(env, respx_mock):
+    respx_mock.post(CALL).respond(503)
+    ping = respx_mock.get(PING).respond(401)
+    with env.db.begin() as s:
+        st.set_setting(s, "ha_events", ["print_done"], commit=False)
+        s.add(NotifyMark(kind="print_done", ref="99", state="due", first_seen_at=NOW))
+    env.notifier.after_tick(False)
+    await env.settle()
+    env.notifier.after_tick(True)
+    await env.settle()
+    assert ping.call_count == 1
+    assert _rejected(env)
+    assert env.notifier.status.problem == "token"
+    env.notifier.after_tick(True)
+    await env.settle()
+    assert ping.call_count == 1
+
+
+async def test_the_stop_holds_over_a_restart(env, respx_mock):
+    call = respx_mock.post(CALL).respond(401)
+    ping = respx_mock.get(PING).respond(401)
+    env.pause()
+    env.notifier.after_tick(False)
+    await env.settle()
+    await env.notifier.stop()
+    again = restarted(env)
+    again.after_tick(True)
+    await _settle_of(again)
+    assert call.call_count == 1
+    assert ping.call_count == 0
+    assert again.status.problem == "token"  # the warning is there again after the restart
+
+
+async def test_saving_the_card_lifts_the_stop_and_the_warning(env, respx_mock):
+    call = respx_mock.post(CALL)
+    call.side_effect = [httpx.Response(401), httpx.Response(200, json=[])]
+    env.pause()
+    env.notifier.after_tick(False)
+    await env.settle()
+    assert env.notifier.status.problem == "token"
+    _saved_again(env)
+    assert env.notifier.status.problem is None
+    env.notifier.after_tick(False)
+    await env.settle()
+    assert call.call_count == 2  # the state that still holds goes out now
+    assert env.marks() == [("paused", "sent")]
+
+
+async def test_prints_finished_during_the_stop_are_not_caught_up(env, respx_mock):
+    from factories import make_dispatch
+
+    call = respx_mock.post(CALL)
+    call.side_effect = [httpx.Response(401), httpx.Response(200, json=[])]
+    env.pause()
+    env.notifier.after_tick(False)
+    await env.settle()
+    with env.db.begin() as s:
+        make_dispatch(s, make_article(s, name="Cover").id, status="completed", finished_at=NOW)
+    env.notifier.after_tick(False)
+    await env.settle()
+    assert call.call_count == 1
+    _saved_again(env)
+    env.notifier.after_tick(False)
+    await env.settle()
+    titles = [json.loads(c.request.content)["title"] for c in call.calls]
+    assert titles == ["Article paused", "Article paused"]  # no "Ready for inspection" afterwards
+
+
+async def test_a_rejection_of_a_token_replaced_meanwhile_stops_nothing(env, respx_mock):
+    """Saved while a message with the old token was on its way: its 401 must not stop the new token."""
+    release = asyncio.Event()
+
+    async def hanging(request):
+        await release.wait()
+        return httpx.Response(401)
+
+    respx_mock.post(CALL).mock(side_effect=hanging)
+    env.pause()
+    env.notifier.after_tick(False)
+    await asyncio.sleep(0.05)
+    with env.db.begin() as s:
+        st.set_setting(s, "ha_token", "eyJ.replaced.sig", commit=False)
+    _saved_again(env)
+    release.set()
+    await env.settle()
+    assert not _rejected(env)
+    assert env.notifier.status.problem != "token"

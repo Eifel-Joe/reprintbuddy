@@ -294,6 +294,46 @@ def test_a_failed_message_shows_the_warning_and_the_last_result(ready_client, re
         assert en("notify.outcome.server") in page
 
 
+def test_a_rejected_token_shows_its_own_warning_until_the_card_is_saved(ready_client, respx_mock):
+    """p152, Spec 10.6: after a 401 nothing more is tried; the warning says what to do."""
+    call = respx_mock.post(CALL).respond(401)
+    save(ready_client)
+    paused_article(ready_client)
+    with ready_client:  # the app's loop runs the sending task
+        ready_client.portal.call(functools.partial(ready_client.app.state.ticker.tick, poll=False))
+        ready_client.portal.call(_settle, ready_client)
+        assert stored(ready_client, "ha_token_rejected") is True
+        warning = en("warning.ha_token_rejected")
+        assert warning in ready_client.get("/").text
+        assert warning in ready_client.get(PAGE).text
+        ready_client.portal.call(functools.partial(ready_client.app.state.ticker.tick, poll=True))
+        ready_client.portal.call(_settle, ready_client)
+        assert call.call_count == 1  # no further try
+        assert saved_page(ready_client, ha_token="eyJ.new.sig")  # saving lifts the stop
+        assert stored(ready_client, "ha_token_rejected") is False
+        assert warning not in ready_client.get("/").text
+
+
+def test_switching_off_lifts_the_stop_too(ready_client):
+    save(ready_client)
+    with sm_of(ready_client).begin() as s:
+        st.set_setting(s, "ha_token_rejected", True, commit=False)
+    saved_page(ready_client, ha_enabled=None)
+    assert stored(ready_client, "ha_token_rejected") is False
+
+
+def test_the_test_message_neither_sets_nor_lifts_the_stop(ready_client, respx_mock):
+    respx_mock.post(CALL).respond(401)
+    save(ready_client)
+    send_test(ready_client)
+    assert stored(ready_client, "ha_token_rejected") is False
+    with sm_of(ready_client).begin() as s:
+        st.set_setting(s, "ha_token_rejected", True, commit=False)
+    respx_mock.post(CALL).respond(200, json=[])
+    send_test(ready_client)
+    assert stored(ready_client, "ha_token_rejected") is True
+
+
 async def _settle(client):
     import asyncio
 

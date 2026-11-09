@@ -20,6 +20,11 @@ Outcomes (Spec 10.6): "accepted" clears the warning "Home Assistant not reachabl
 message whose answer was unclear can arrive twice. The warning also goes when the check `GET /api/`
 succeeds at a regular query, or when the messages are switched off.
 
+A rejected token (401) is the exception (Spec 10.6, p152): every further try counts in Home Assistant as
+a failed login and can lead to an IP ban that has to be lifted there by hand. So after it nothing is
+sent and nothing checked until the card is saved again; the stop is the setting `ha_token_rejected`
+and holds over a restart. A 403 (already banned) stays an ordinary failure.
+
 The status lives in memory like the engine's (`EngineStatus`): after a restart the next tick finds
 out again. It goes to open pages as topic `notify`.
 """
@@ -59,6 +64,10 @@ class _Target:
     url: str
     token: str
     service: str
+
+
+def _token_rejected(session: Session) -> bool:
+    return st.get_setting(session, "ha_token_rejected") is True
 
 
 def _target(session: Session) -> _Target | None:
@@ -133,15 +142,28 @@ class Notifier:
         now = self.now()
         with self.sm.begin() as session:
             target = _target(session)
+            rejected = False
             if target is None:
                 outgoing: list[ev.Outgoing] = []
             else:
                 ctx = self._context(session, poll, now)
                 cfg = self._detect(session, ctx)
                 self._last_ctx = ctx
-                outgoing = [] if self._sending() else ev.due(session, ctx, exclude=frozenset(), cfg=cfg)
+                rejected = _token_rejected(session)
+                if rejected:
+                    # p152: no send and no check until the card is saved again. Prints are not caught
+                    # up afterwards (Spec 10.6): marked like a failed send; states stay due.
+                    for out in ev.due(session, ctx, exclude=frozenset(), cfg=cfg):
+                        if out.kind in ev.ONCE_PER_PRINT:
+                            ev.record(session, out, "token", now)
+                    outgoing = []
+                else:
+                    outgoing = [] if self._sending() else ev.due(session, ctx, exclude=frozenset(), cfg=cfg)
         if target is None:
             self._set(problem=None)
+            return
+        if rejected:
+            self._set(problem="token")  # also after a restart: the stop is kept in the database
             return
         if self._sending():
             self._again = True
@@ -170,10 +192,10 @@ class Notifier:
                     if out.kind in ev.ONCE_PER_PRINT and not self._store([(out, "sending")], None, None):
                         return
                     outcome = await ha.send(self.http_factory, target.url, target.token, target.service, out.message)
-                    if not self._store([(out, outcome)], None, self.now()):
-                        return
+                    if not self._store([(out, outcome)], None, self.now(), target) or outcome == "token":
+                        return  # p152: after a rejected token not one more call, not even in this round
                 checked = await ha.ping(self.http_factory, target.url, target.token) if check else None
-                if checked is not None and not self._store([], checked, self.now()):
+                if checked is not None and not self._store([], checked, self.now(), target):
                     return
                 if not self._again or self._last_ctx is None:
                     return
@@ -183,7 +205,9 @@ class Notifier:
                 with self.sm.begin() as session:
                     next_target = _target(session)
                     outgoing = (
-                        ev.due(session, self._last_ctx, exclude=frozenset(tried)) if next_target else []
+                        ev.due(session, self._last_ctx, exclude=frozenset(tried))
+                        if next_target and not _token_rejected(session)
+                        else []
                     )
                 if next_target is None:
                     self._set(problem=None)
@@ -197,23 +221,37 @@ class Notifier:
             log.exception("push messages: sending failed")
 
     def _store(
-        self, results: list[tuple[ev.Outgoing, str]], checked: str | None, now: datetime | None
+        self,
+        results: list[tuple[ev.Outgoing, str]],
+        checked: str | None,
+        now: datetime | None,
+        target: _Target | None = None,
     ) -> bool:
         """Write outcomes and take them into the status; synchronous, nothing runs in between.
 
         False: the task stops - an update or restore has begun (the database may be replaced, the
         marks stay as they are), or the messages were switched off meanwhile (final review 3: the
         warning stays off, Spec 10.6). `now` None: only the marks of prints before their call.
+        A rejected token (401) of `target` stops every automatic try until the card is saved (p152).
         """
         if self.update_started():
             return False
         with self.sm.begin() as session:
             for out, outcome in results:
                 ev.record(session, out, outcome, now or self.now())
-            switched_on = _target(session) is not None
+            current = _target(session)
+            switched_on = current is not None
+            rejected = checked == "token" or any(outcome == "token" for _, outcome in results)
+            if rejected and current == target:
+                # Only the token that was refused: saved meanwhile, a new one is not stopped by the old
+                # one's answer. Rejected: keeping the stop only in memory - every restart (an update
+                # too) would cost another failed login in Home Assistant.
+                st.set_setting(session, "ha_token_rejected", True, commit=False)
         if not switched_on:
             self._set(problem=None)
             return False
+        if rejected and current != target:
+            return False  # the refused token is gone: its answer says nothing about the new one
         if now is not None:
             self._take(results, checked, now)
         return True
@@ -238,6 +276,12 @@ class Notifier:
                 self.publish(frozenset({TOPIC}))
             except Exception:  # a page that misses it catches up on reconnect
                 log.warning("push messages: publishing the status failed", exc_info=True)
+
+    def settings_saved(self) -> None:
+        """The card was saved: a stop after a rejected token is lifted (the route clears the flag in
+        its transaction), and its warning goes with it (Spec 10.6). The next tick tries again."""
+        if self.status.problem == "token":
+            self._set(problem=None)
 
     async def send_test(self, url: str, token: str, service: str, message: ha.Message) -> str:
         """The test message of the settings page (Spec 10.6): with what is typed, nothing stored, no
