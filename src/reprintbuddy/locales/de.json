@@ -992,6 +992,7 @@
   "notify.invalid_token": "Das Token enthält Zeichen, die nicht erlaubt sind.",
   "notify.fields_required": "Mit eingeschalteten Push-Nachrichten sind Adresse, Token und Benachrichtigungsdienst nötig.",
   "notify.token_required_new_address": "Für eine neue Adresse das Token neu eingeben: Ein gespeichertes Token geht nie an eine andere Adresse.",
+  "notify.token_dropped": "Das gespeicherte Token ist verworfen, weil sich die Adresse geändert hat: Ein Token geht nie an eine andere Adresse. Zum Einschalten das Token neu eintragen.",
   "warning.ha_unreachable": "Home Assistant nicht erreichbar – die letzte Push-Nachricht ging nicht durch: {reason}",
   "settings.invalid_label_host": "Den Drucker als IP-Adresse oder Namen eintragen, ohne http://, ohne Port und nicht diesen Computer.",
   "settings.invalid_label_roll": "Diese Rolle ist nicht bekannt.",

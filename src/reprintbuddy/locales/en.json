@@ -992,6 +992,7 @@
   "notify.invalid_token": "The token contains characters that are not allowed.",
   "notify.fields_required": "With push messages on, address, token and notification service are needed.",
   "notify.token_required_new_address": "For a new address enter the token again: a stored token never goes to another address.",
+  "notify.token_dropped": "The stored token was dropped because the address changed: a token never goes to another address. Enter the token again to switch the messages on.",
   "warning.ha_unreachable": "Home Assistant not reachable – the last push message did not go through: {reason}",
   "settings.invalid_label_host": "Enter the printer as an IP address or a name, without http://, without a port, and not this computer.",
   "settings.invalid_label_roll": "That roll is not known.",

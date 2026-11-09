@@ -59,6 +59,13 @@ def save(client, **over):
     return client.post("/settings/notify", data=form(client, **over))
 
 
+def saved_page(client, **over):
+    """Save, then the page the redirect leads to (with its flash messages)."""
+    response = save(client, **over)
+    assert response.status_code == 303
+    return client.get(response.headers["location"]).text
+
+
 def send_test(client, **over):
     data = form(client, **over)
     data["form_token"] = form_token_of(client, PAGE, "/settings/notify")
@@ -132,9 +139,32 @@ def test_a_new_address_needs_the_token_again(ready_client):
 
 def test_switched_off_a_new_address_drops_the_token(ready_client):
     save(ready_client)
-    save(ready_client, ha_enabled=None, ha_url=OTHER, ha_token="")
+    page = saved_page(ready_client, ha_enabled=None, ha_url=OTHER, ha_token="")
     assert stored(ready_client, "ha_url") == OTHER
     assert stored(ready_client, "ha_token") is None
+    # p160: not silently - the page says the token has to be entered again
+    assert en("notify.token_dropped") in page
+
+
+@pytest.mark.parametrize("url", ["", "http://proxy.test/other"], ids=["emptied", "other-path"])
+def test_switched_off_an_emptied_or_moved_address_says_the_token_is_gone(ready_client, url):
+    save(ready_client)
+    page = saved_page(ready_client, ha_enabled=None, ha_url=url, ha_token="")
+    assert stored(ready_client, "ha_token") is None
+    assert en("notify.token_dropped") in page
+
+
+def test_no_word_about_the_token_when_it_stays_or_none_was_stored(ready_client):
+    page = saved_page(ready_client, ha_enabled=None, ha_token="", ha_url=OTHER)  # nothing stored yet
+    assert en("notify.token_dropped") not in page
+    assert en("settings.saved") in page
+    save(ready_client)
+    page = saved_page(ready_client, ha_enabled=None, ha_url=URL + "/", ha_token="")  # same address
+    assert stored(ready_client, "ha_token") == TOKEN
+    assert en("notify.token_dropped") not in page
+    page = saved_page(ready_client, ha_enabled=None, ha_url=OTHER, ha_token="eyJ.new.sig")  # a new one typed
+    assert stored(ready_client, "ha_token") == "eyJ.new.sig"
+    assert en("notify.token_dropped") not in page
 
 
 @pytest.mark.parametrize(
