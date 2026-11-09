@@ -36,7 +36,26 @@ Bitte angeben (die Fehler-Vorlage fragt jeden Punkt ab):
 - **Tests für neues Verhalten** schreiben, und **alle Tests müssen grün sein**.
 - Keine Schlüssel, Passwörter oder persönlichen Daten, auch nicht in Tests oder
   Beispielen. Neutrale Beispieldaten benutzen.
-- **Dokumentation in beiden Sprachen** (Englisch und Deutsch) anpassen.
+- **Dokumentation in beiden Sprachen** (Englisch und Deutsch) anpassen. Die README
+  und die Seiten unter `docs/` kommen im **selben Pull Request** mit, wenn sich
+  Installation, Einrichtung oder Bedienung ändern; die Pull-Request-Vorlage fragt
+  danach.
+
+## Dokumentation
+
+Die Seiten unter `docs/` werden mit MkDocs gebaut und auf GitHub Pages
+veröffentlicht. Jede Seite gibt es zweimal: `seite.md` auf Englisch und daneben
+`seite.de.md` auf Deutsch.
+
+```bash
+.venv/bin/pip install -e ".[docs]"
+.venv/bin/mkdocs serve           # Vorschau im Browser
+.venv/bin/mkdocs build --strict  # das läuft in der CI: ein kaputter Link fällt durch
+```
+
+Bildschirmfotos zeigen nur erfundene Beispieldaten, nie echte Artikel, Namen oder
+Adressen. `tools/docs_screenshots.py` nimmt sie von einer Testinstanz auf
+(Aufruf im Kopf des Skripts); nach einer geänderten Oberfläche läuft es erneut.
 
 ## Lizenz von Beiträgen
 

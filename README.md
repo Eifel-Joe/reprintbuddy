@@ -19,6 +19,8 @@
 
 [Deutsch: README.de.md](README.de.md)
 
+**Documentation:** <https://eifel-joe.github.io/reprintbuddy/> – installation, setup and use, in English and German.
+
 Reprintbuddy keeps the stock of 3D-printed items. It reprints what runs low by
 handing print jobs to Bambuddy's queue,
 lets you check finished prints, and tells you what to reorder. It runs as a
@@ -38,6 +40,16 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
   stop or pause anything, and it never writes to Spoolman.
 - It contains no articles of its own: you create articles, sets, parts and
   rules in the web interface.
+
+## Screenshots
+
+Invented example data. More pictures are on the [documentation pages](https://eifel-joe.github.io/reprintbuddy/).
+
+![Articles: stock, available stock and target per article](docs/assets/images/en/articles-list.png)
+
+![To check: finished prints waiting for a look](docs/assets/images/en/inspection.png)
+
+![Reorder: suggestions for filament and bought-in parts](docs/assets/images/en/reorder.png)
 
 ## Requirements
 
@@ -62,7 +74,8 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
   export*).
   One CPU core, 1 GB RAM and 8 GB disk are enough. No Docker needed.
 - Outgoing network access from that machine to the Debian package sources (`apt`),
-  `github.com` and `raw.githubusercontent.com` (installation and updates),
+  `github.com` and `raw.githubusercontent.com` (installation and updates), `api.github.com` (the
+  release notes on the update card),
   `pypi.org` and `files.pythonhosted.org` (Python packages, at installation and at
   every update) and to your Bambuddy.
 - Optional: [Home Assistant](https://www.home-assistant.io/) with its phone app for push
@@ -75,14 +88,15 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 ```
 
 Run it as root on that system. Fresh Debian systems often come without curl; the first part installs it.
-The tag in the address (`v0.3.12`) is the version that gets installed; installer and code are guaranteed to belong
-together. To skip the language question, add the language:
+The installer puts the newest release in place. The tag in the address (`v0.3.12`) is the version of the installer
+script itself, and it belongs to that release. To skip the language question, add the language:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.12/install/install.sh)" _ --language de
 ```
 
-To install another version, put its tag into the address, for example `v0.3.12` for `<tag>`:
+The script must come from the tag of the release that gets installed. If it does not, it stops with a message that
+names the right tag when its system files differ from that release's; run it again with that tag in place of `<tag>`:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
@@ -223,21 +237,22 @@ Reprintbuddy calls `POST /api/services/notify/<service>` and, to check that Home
 again after a failed message, `GET /api/`; nothing else. "Accepted" means Home
 Assistant took the message; whether the phone got it, only Home Assistant knows. If a message
 does not go through, the overview shows "Home Assistant not reachable"; stock and printing go on
-as before.
+as before. If Home Assistant refuses the token (401), Reprintbuddy stops sending and checking at once, because every
+further try would count as a failed login there; saving the card again lifts the stop.
 
 ## Settings
 
 There is **no configuration file**. Every setting lives in the database and is
-changed under *Settings* in the web interface: language, Bambuddy connection,
-push messages,
-password, listen address, port, optional HTTPS certificate, restart, update and
-export. The only thing
+changed under *Settings* in the web interface: language, QR code address, Bambuddy connection,
+automation, labels, push messages, password, listen address, port, optional HTTPS certificate,
+restart, update check, update and backup, and export. *Settings → Log* only shows what happened (who changed what, sign-ins, updates, messages), see the documentation pages. The only thing
 given on the command line is the database path (`--db`).
 
 ## Update
 
-*Settings → Update*: press **Check for updates**; if a newer release exists, the card lists what it brings and you press
-**Update to …**. The check asks GitHub (the release notes come from GitHub's API without a login), so GitHub sees the address of your installation. *Available from the first release.* The update
+*Settings → Update and backup*: press **Check for updates**; if a newer release exists, the card lists what it brings and you press
+**Update to …**. Reprintbuddy also checks by itself at the start and once a day and then shows a bar at the top
+of every page; the switch **Check for new versions automatically** on the card turns that off. The check asks GitHub (the release notes come from GitHub's API without a login), so GitHub sees the IP address of your server. The update
 
 1. backs up the database,
 2. switches to the new release tag,
@@ -256,14 +271,14 @@ does not start, restore the backup named on the page (see *Backup and export*) a
 The page shows the Git tag and, if it differs, the package version next to it.
 
 Backups are kept in `/var/lib/reprintbuddy/backups/` (the last 5; a backup named by a failed rollback is never deleted). To start an update by hand:
-`systemctl start reprintbuddy-update.service`; its log is `journalctl -u reprintbuddy-update`.
+`systemctl start reprintbuddy-update.service`; its system log is `journalctl -u reprintbuddy-update`.
 
 Versions are git tags `vX.Y.Z`, and the package version equals the tag. If a release changes the
 systemd units or the sudoers rule, its release notes say so; then run the installer again.
 
 ## Restart
 
-*Settings → Restart* restarts Reprintbuddy. Address, port and HTTPS take effect only after a
+*Settings → General → Restart* restarts Reprintbuddy. Address, port and HTTPS take effect only after a
 restart; the settings page says when a saved change is still waiting. After a change of
 address or port the restart page names the new address. On the system:
 `systemctl restart reprintbuddy`.
@@ -279,7 +294,7 @@ HTTP and the proxy does TLS. If the proxy runs on the same system, set the liste
 to `127.0.0.1`. Give Reprintbuddy its own address or its own port on the proxy
 (`https://reprintbuddy.example.net/` or `https://example.net:8443/`). A sub-path
 (`https://example.net/reprintbuddy/`) does not work: links and redirects would point past the
-proxy. Reprintbuddy writes a warning to the log when it is reached that way.
+proxy. Reprintbuddy writes a warning to the system log when it is reached that way.
 
 Locked out by a certificate that stopped working (expired, wrong name)? On the system:
 
@@ -348,7 +363,7 @@ systemctl start reprintbuddy
   stored only as hashes.
 - The Home Assistant token is treated like the API keys. It acts with all rights of its
   Home Assistant user, so create it for a user without admin rights. It only goes to the
-  address entered with it; for a new address, enter it again. Push messages to a phone pass
+  address entered with it, path included; for a new address, enter it again. Push messages to a phone pass
   through the push service of Google or Apple and name articles, spool sorts and parts as long
   as *Name things in messages* is on.
 - Every change needs a signed-in session and a CSRF token.

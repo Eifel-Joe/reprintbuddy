@@ -37,6 +37,14 @@ dev = [
     "zxing-cpp>=2",  # reads the QR codes back in the tests
 ]
 
+# The documentation pages (docs/, mkdocs.yml): build tools only, not part of the installed program.
+# MkDocs is BSD-2-Clause, Material for MkDocs and mkdocs-static-i18n are MIT: all fine with the AGPL.
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material~=9.5",
+    "mkdocs-static-i18n~=1.2",
+]
+
 [project.scripts]
 reprintbuddy = "reprintbuddy.cli:main"
 

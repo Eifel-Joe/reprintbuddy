@@ -1,0 +1,133 @@
+site_name: Reprintbuddy
+site_description: Documentation of Reprintbuddy - stock keeping for 3D-printed items, with reprints through Bambuddy's queue
+site_url: https://eifel-joe.github.io/reprintbuddy/
+repo_name: Eifel-Joe/reprintbuddy
+repo_url: https://github.com/Eifel-Joe/reprintbuddy
+# No "edit this page" link: pages change through a pull request that also changes the code.
+edit_uri: ""
+
+theme:
+  name: material
+  # No web fonts: the browser's own fonts, so a visit loads nothing from another host.
+  font: false
+  logo: assets/logo.svg
+  favicon: assets/favicon.svg
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: green
+      accent: green
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: green
+      accent: green
+      toggle:
+        icon: material/brightness-4
+        name: Switch to the browser's setting
+  features:
+    - navigation.tabs
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - content.code.copy
+
+extra_css:
+  - stylesheets/extra.css
+
+# Puts the version of this release into the pages ({{ version }}), see tools/docs_hooks.py.
+hooks:
+  - tools/docs_hooks.py
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Eifel-Joe/reprintbuddy
+      name: Reprintbuddy on GitHub
+
+copyright: Reprintbuddy, AGPL-3.0-or-later
+
+plugins:
+  - search
+  # English and German side by side: page.md next to page.de.md. A page
+  # without a German file falls back to English.
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: de
+          name: Deutsch
+          build: true
+          copyright: Reprintbuddy, AGPL-3.0-or-later
+          nav_translations:
+            Home: Start
+            Getting started: Erste Schritte
+            Requirements: Voraussetzungen
+            Installation: Installation
+            First setup: Ersteinrichtung
+            Use: Benutzen
+            Articles: Artikel
+            Filament: Filament
+            Automation: Automatik
+            Queue: Warteschlange
+            To check and assembly: Zu prüfen und Montage
+            Labels and QR codes: Etiketten und QR-Codes
+            Reorder suggestions: Bestellvorschläge
+            Push messages: Push-Nachrichten
+            Operation: Betrieb
+            Settings: Einstellungen
+            Update and backup: Update und Sicherung
+            Log: Protokoll
+            Network and security: Netz und Sicherheit
+            Command line: Kommandozeile
+            Help: Hilfe
+            Limits: Grenzen
+            Troubleshooting: Fehlersuche
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+      toc_depth: 2
+
+nav:
+  - Home: index.md
+  - Getting started:
+    - Requirements: start/requirements.md
+    - Installation: start/install.md
+    - First setup: start/setup.md
+  - Use:
+    - Articles: use/articles.md
+    - Filament: use/filament.md
+    - Automation: use/automation.md
+    - Queue: use/queue.md
+    - To check and assembly: use/inspection.md
+    - Labels and QR codes: use/labels.md
+    - Reorder suggestions: use/reorder.md
+    - Push messages: use/notifications.md
+  - Operation:
+    - Settings: operate/settings.md
+    - Update and backup: operate/update-backup.md
+    - Log: operate/log.md
+    - Network and security: operate/network.md
+    - Command line: operate/cli.md
+  - Help:
+    - Limits: help/limits.md
+    - Troubleshooting: help/troubleshooting.md

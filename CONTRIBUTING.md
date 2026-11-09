@@ -36,7 +36,24 @@ Please include (the bug template asks for each of these):
 - **Add tests** for new behaviour, and make sure **all tests pass**.
 - No keys, passwords or personal data, not even in tests or examples. Use
   neutral example data.
-- Update the **documentation in both languages** (English and German).
+- Update the **documentation in both languages** (English and German). The README
+  and the pages under `docs/` go into the **same pull request** when installation,
+  setup or use changes; the pull request template asks for it.
+
+## Documentation
+
+The pages under `docs/` are built with MkDocs and published on GitHub Pages. Every
+page exists twice: `page.md` in English and `page.de.md` in German next to it.
+
+```bash
+.venv/bin/pip install -e ".[docs]"
+.venv/bin/mkdocs serve           # preview in the browser
+.venv/bin/mkdocs build --strict  # what the CI runs: a broken link fails
+```
+
+Screenshots show invented example data only, never real articles, names or
+addresses. `tools/docs_screenshots.py` takes them from a test instance (usage in
+its header), so a changed interface means running it again.
 
 ## License of contributions
 
