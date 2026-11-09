@@ -138,6 +138,29 @@ class Suggestion:
     supplier: str | None
     order_url: str | None
     has_history: bool = True  # False: no usage recorded yet, the tile says so instead of "0.0 g/day" (p59)
+    on_way: float = 0.0  # ordered and not arrived yet (Spec 9.4, p171); counts like stock, shown apart
+
+
+def on_way(session: Session) -> dict[tuple[str, int], float]:
+    """What counts as on its way per item, in its unit: the open marks, packs x pack size (Spec 9.4).
+
+    p171: before, an open mark only hid its own suggestion and the amount counted nowhere; a spool
+    sort ticked in the group of another reordered sort then made that suggestion come too early.
+    The amount counts in full until the mark closes: Spec 9.4 says the ordered amount counts until it
+    has arrived; a partial delivery is not taken off (rejected: subtracting new spools seen so far,
+    which the spec does not ask for and which the snapshot path could not do the same way).
+    """
+    amounts: dict[tuple[str, int], float] = defaultdict(float)
+    for mark in session.scalars(select(ReorderMark).where(ReorderMark.received_at.is_(None))):
+        if mark.item_type == "part":
+            part = session.get(Part, mark.item_id)
+            size = part.pack_size if part is not None else 0
+        else:
+            settings = session.get(FilamentSettings, mark.item_id)
+            # without settings a mark counts in the default unit, as "on its way" shows it (open_marks)
+            size = settings.pack_grams if settings is not None else filament.FilamentSettingsInput.pack_grams
+        amounts[(mark.item_type, mark.item_id)] += mark.qty * size
+    return dict(amounts)
 
 
 def _open_marked(session: Session) -> set[tuple[str, int]]:
@@ -150,19 +173,20 @@ def _open_marked(session: Session) -> set[tuple[str, int]]:
 def _suggest(
     kind: Literal["filament", "part"], item_id: int, label: str, unit: str, *, stock: float,
     demand: float, per_day: float, lead_days: int, safety: float, pack: float, min_packs: int,
-    supplier: str | None, order_url: str | None, has_history: bool = True,
+    supplier: str | None, order_url: str | None, has_history: bool = True, coming: float = 0.0,
 ) -> Suggestion | None:
+    have = stock + coming  # what is on its way counts like stock (Spec 9.4)
     if not rules.needs_reorder(
-        stock=stock, demand=demand, per_day=per_day, lead_days=lead_days, safety=safety
+        stock=have, demand=demand, per_day=per_day, lead_days=lead_days, safety=safety
     ):
         return None
     packs = rules.suggest_packs(
-        stock=stock, demand=demand, per_day=per_day, lead_days=lead_days, safety=safety,
+        stock=have, demand=demand, per_day=per_day, lead_days=lead_days, safety=safety,
         pack=pack, min_packs=min_packs,
     )
     return Suggestion(
         kind, item_id, label, unit, stock, demand, per_day, lead_days, safety, packs, pack,
-        supplier, order_url, has_history,
+        supplier, order_url, has_history, coming,
     )
 
 
@@ -170,13 +194,15 @@ def suggestions(
     session: Session, *, sorts: Mapping[int, filament.SortStock] | None, today: date
 ) -> list[Suggestion]:
     """Reorder suggestions: reordered spool sorts with settings (only when the stock is known, i.e.
-    `sorts` is not None), then every active part. Items with an open mark have none (Entscheidung 14).
+    `sorts` is not None), then every active part. Items with an open mark have none (Entscheidung 14);
+    what is on its way counts like stock, also in the group of another sort (Spec 9.4, p171).
 
     A reordered spool sort counts, over the slots where it is reordered, the stock and the usage of
     every spool sort ticked there (Spec 9.2); a sort ticked in the slots of two reordered sorts
     counts for both.
     """
     marked = _open_marked(session)
+    coming = on_way(session)
     result: list[Suggestion] = []
     if sorts is not None:
         demand = filament_demand(session)
@@ -195,6 +221,7 @@ def suggestions(
             have = sum(sorts[m].stock_g for m in members if m in sorts)
             sug = _suggest(
                 "filament", sort.id, sort.label, "g", stock=have, demand=demand.get(sort.id, 0.0),
+                coming=sum(coming.get(("filament", m), 0.0) for m in members),
                 per_day=per_day, lead_days=settings.lead_time_days,
                 safety=rules.safety_amount(settings.safety_value, settings.safety_unit, per_day),
                 pack=settings.pack_grams, min_packs=settings.min_order_packs,
@@ -218,6 +245,7 @@ def suggestions(
             ),
             pack=part.pack_size, min_packs=part.min_order_packs, supplier=part.supplier,
             order_url=part.order_url, has_history=part_history,
+            coming=coming.get(("part", part.id), 0.0),  # 0 here, a part with an open mark is skipped
         )
         if sug is not None:
             result.append(sug)

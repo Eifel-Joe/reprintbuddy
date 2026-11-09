@@ -8,11 +8,12 @@ The cards at the top count the open **Suggestions**, split into **Filament** and
 
 ## What a suggestion shows
 
-Each suggestion is a tile with the filament or part it is about and four figures:
+Each suggestion is a tile with the filament or part it is about and its figures:
 
 | Figure | Meaning |
 |---|---|
 | **Stock** | What you have now. |
+| **On its way** | Only when something is: what you marked as ordered and has not arrived yet (see below). |
 | **Demand** | What the planned prints and builds will use up. |
 | **Usage × lead time** | The usage per day of the last 30 days, multiplied by the lead time in days. |
 | **Lower limit** | The reserve that should still be left. |
@@ -27,7 +28,7 @@ A suggestion appears when this holds:
 
 In words: take what you have, subtract what the planned prints will use and what is used while the order is on its way. If what remains is below the lower limit, it is time to order.
 
-- **Stock.** For a part, its stock. For filament, the remaining weight of all spool sorts ticked in the slots where it is **Reordered** (see [Filament](filament.md)).
+- **Stock.** For a part, its stock. For filament, the remaining weight of all spool sorts ticked in the slots where it is **Reordered** (see [Filament](filament.md)). What is **on its way** counts like stock: for filament, what you marked as ordered of any spool sort ticked there.
 - **Demand.** For filament, the grams of the prints in Reprintbuddy's queue and in progress, plus the prints still missing to reach the target quantity of the articles. For a part, the quantity per piece times the pieces that wait for assembly, are queued or in progress, or are still missing to the target quantity of the articles that need the part.
 - **Usage per day.** Measured over the last 30 days. For filament it comes from the daily record of the remaining weight of each spool; only decreases count, so a new spool adds nothing. With less than two days of record the page says "no history yet". For a part it comes from the parts used at assembly bookings, divided by the days since the first journal entry, at most 30.
 - **Lead time.** Days from ordering to arrival, from the settings.
@@ -58,7 +59,7 @@ When you have ordered:
 1. Check the number in **Order units**. It starts with the suggested quantity; you can enter 1 to 1000.
 2. Press **mark as ordered**.
 
-The item moves to the list **On its way**, showing the quantity and the date under **Ordered on**. Reprintbuddy makes no new suggestion for it until it has arrived. The suggestion ends by itself when the goods show up:
+The item moves to the list **On its way**, showing the quantity and the date under **Ordered on**. Reprintbuddy makes no new suggestion for it until it has arrived. Until then the ordered quantity counts as on its way: it counts like stock wherever the item counts, for filament also in the suggestion of another spool sort whose slots tick it. Such a tile shows the line **On its way**. The suggestion ends by itself when the goods show up:
 
 - A part: with the first **Goods receipt of a part** booking after you marked it. Book the receipt on the Bookings page, see [To check and assembly](inspection.md#bookings).
 - Filament: as soon as Bambuddy's spool list shows new spools of that sort, created after your mark, that together weigh at least the ordered quantity.

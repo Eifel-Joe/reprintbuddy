@@ -48,6 +48,7 @@ async def _page(
             "item_type": sug.item_type, "item_id": sug.item_id, "label": sug.label,
             "swatch": swatch if swatch and COLOR.fullmatch(swatch) else None,
             "stock": _number(sug.stock), "demand": _number(sug.demand),
+            "on_way": _number(sug.on_way) if sug.on_way > 0 else None,  # p171: it counts, so it shows
             "per_day": sug.per_day if sug.has_history else None,  # p59: no "0.0 g/day" without history
             "packs_value": typed[2] if typed and typed[:2] == (sug.item_type, str(sug.item_id)) else sug.packs, "lead_days": sug.lead_days,
             "safety": _number(sug.safety), "packs": sug.packs, "size": _number(sug.pack_size),

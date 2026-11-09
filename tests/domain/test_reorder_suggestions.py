@@ -496,3 +496,45 @@ def test_a_legacy_sort_cannot_be_marked_ordered(db):
             reorder.mark_ordered(s, "filament", old.id, 1)
         assert err.value.key == "reorder.item_not_found"
         assert s.query(ReorderMark).count() == 0
+
+
+# ---- p171: an "ordered" mark counts as on its way (Spec 9.4) ----------------------------------
+
+
+def test_ordered_filament_counts_as_on_its_way_in_other_groups(db):
+    """Spec 9.4: the ordered amount counts as on its way, also in the group of another reordered
+    sort where the marked sort is ticked (else that suggestion comes too early)."""
+    with db.begin() as s:
+        a = filament_setup(s)
+        b = filament_setup(s, make_sort(s, brand="Brand B"))
+        with_demand(s, a, b, name="One")
+        with_demand(s, b, name="Two")
+        stock_map = sorts_of((a, 300.0), (b, 700.0))
+        reorder.mark_ordered(s, "filament", b.id, 1)  # 1000 g on its way
+        (sug,) = reorder.suggestions(s, sorts=stock_map, today=TODAY)
+        assert (sug.item_id, sug.stock, sug.on_way) == (a.id, 1000.0, 1000.0)
+        assert sug.packs == 1  # 2000 + 170 - (1000 + 1000) = 170 missing: one pack, not two
+        reorder.mark_received(s, reorder.open_marks(s)[0].id)
+        reorder.mark_ordered(s, "filament", b.id, 2)  # 2000 g on its way: 3000 - 170 >= 2000
+        assert [x.item_id for x in reorder.suggestions(s, sorts=stock_map, today=TODAY)] == []
+
+
+def test_ordered_amount_is_on_its_way_only_until_it_arrived(db):
+    with db.begin() as s:
+        a = filament_setup(s)
+        b = filament_setup(s, make_sort(s, brand="Brand B"))
+        with_demand(s, a, b, name="One")
+        mark = reorder.mark_ordered(s, "filament", b.id, 2)
+        reorder.mark_received(s, mark.id)
+        (sug,) = reorder.suggestions(s, sorts=sorts_of((a, 300.0), (b, 700.0)), today=TODAY)
+        assert (sug.item_id, sug.on_way, sug.packs) == (a.id, 0.0, 2)
+
+
+def test_on_way_amounts_of_parts_and_filament(db):
+    """The amounts that count as on its way, in the item's unit: packs x pack size (Spec 9.4)."""
+    with db.begin() as s:
+        part = part_with_demand(s)
+        sort = filament_setup(s, pack_grams=750)
+        reorder.mark_ordered(s, "part", part.id, 3)
+        reorder.mark_ordered(s, "filament", sort.id, 2)
+        assert reorder.on_way(s) == {("part", part.id): 150.0, ("filament", sort.id): 1500.0}
