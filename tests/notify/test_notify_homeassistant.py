@@ -70,7 +70,8 @@ async def test_timeouts_are_five_seconds_to_connect_and_thirty_in_all(respx_mock
     "status,outcome",
     [
         (200, "accepted"),
-        (201, "accepted"),
+        (201, "refused"),  # Spec 10.6: "angenommen" when Home Assistant answers 200
+        (204, "refused"),
         (401, "token"),
         (400, "request"),
         (403, "blocked"),
@@ -106,6 +107,10 @@ async def test_a_redirect_is_not_followed(respx_mock):
         (httpx.WriteTimeout("slow"), "unclear"),
         (httpx.RemoteProtocolError("cut"), "unclear"),
         (httpx.ReadError("cut"), "unclear"),
+        # The request never went out: not reachable rather than unclear (final review 7).
+        (httpx.UnsupportedProtocol("no"), "unreachable"),
+        (httpx.ProxyError("no"), "unreachable"),
+        (httpx.LocalProtocolError("no"), "unreachable"),
     ],
 )
 async def test_network_errors(respx_mock, error, outcome):
@@ -158,3 +163,12 @@ def test_outcomes_are_a_closed_list():
     assert ha.OUTCOMES == (
         "accepted", "token", "request", "blocked", "server", "redirect", "unreachable", "unclear", "refused",
     )
+
+
+@pytest.mark.parametrize("url", ["http://xn--a:8123", "http://[::1:8123"])
+async def test_an_address_httpx_cannot_use_is_not_reachable_and_raises_nothing(respx_mock, url):
+    """Final review 1: the settings accept it, httpx refuses it (`InvalidURL`, an IDNA error). The
+    caller must get an outcome, never an exception: a test button answers with a page, the sending
+    task records the failure and shows the warning."""
+    assert await send(url=url) == "unreachable"
+    assert respx_mock.calls.call_count == 0

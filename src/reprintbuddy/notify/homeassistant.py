@@ -59,7 +59,7 @@ def call_path(service: str) -> str:
 
 
 def _outcome(status: int) -> Outcome:
-    if 200 <= status < 300:
+    if status == 200:  # Spec 10.6: "angenommen", wenn Home Assistant 200 antwortet
         return "accepted"
     if 300 <= status < 400:
         return "redirect"
@@ -89,7 +89,14 @@ async def _call(
                     timeout=httpx.Timeout(TOTAL_TIMEOUT, connect=CONNECT_TIMEOUT),
                     follow_redirects=False,
                 )
-    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
+    except (
+        httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout,
+        # The request never went out (final review 1, 7): an address httpx cannot use (an IDNA
+        # error is a ValueError), a scheme it does not speak, a proxy that refused, a request it
+        # could not even write. The settings accept a few such addresses; the caller must still
+        # get an outcome, never an exception.
+        httpx.InvalidURL, httpx.UnsupportedProtocol, httpx.ProxyError, httpx.LocalProtocolError, ValueError,
+    ) as exc:
         log.info("Home Assistant %s %s: not reachable (%s)", method, path, type(exc).__name__)
         return "unreachable"
     except (httpx.HTTPError, TimeoutError) as exc:
