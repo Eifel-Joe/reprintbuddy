@@ -33,6 +33,7 @@ from reprintbuddy.notify.service import Notifier
 from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.autocheck import AutoCheck
 from reprintbuddy.ops.context import OpsContext
+from reprintbuddy.ops.releasenotes import with_notes
 from reprintbuddy.ops.running import update_just_started, update_running
 from reprintbuddy.ops.versions import VersionInfo, check_versions, is_git_install
 from reprintbuddy.web import deps
@@ -40,7 +41,8 @@ from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, BodyLimitMiddleware
 from reprintbuddy.web.subpath import SubPathWarning
 from reprintbuddy.web.flash import pop_flashes
-from reprintbuddy.web.formatting import decimal, fill_percent, local_date, local_dt, unit
+from reprintbuddy.web.formatting import decimal, fill_percent, local_date, local_day, local_dt, unit
+from reprintbuddy.web.notes_markdown import render_notes
 from reprintbuddy.web.formtoken import issue_form_token
 from reprintbuddy.web.i18n import load_locales
 from reprintbuddy.web.live import LIVE_CHANNEL_TOPIC, LiveBroker
@@ -177,9 +179,10 @@ def _install_auto_check(app: FastAPI) -> None:
             await asyncio.wait_for(wake.wait(), delay)
         wake.clear()
 
-    def check() -> VersionInfo:  # blocking (git); `AutoCheck` runs it in a thread
+    def check() -> VersionInfo:  # blocking (git, GitHub); `AutoCheck` runs it in a thread
         ops = app.state.ops
-        return check_versions(ops.install_dir, ops.runner, now=datetime.now(UTC))
+        info = check_versions(ops.install_dir, ops.runner, now=datetime.now(UTC))
+        return with_notes(info, ops.install_dir, ops.runner, ops.http_get)  # p143: same round
 
     app.state.auto_check = AutoCheck(
         enabled=enabled,
@@ -381,6 +384,8 @@ def create_app(
     templates.env.globals["app_version"] = __version__
     templates.env.filters["local_dt"] = local_dt
     templates.env.filters["local_date"] = local_date
+    templates.env.filters["local_day"] = local_day
+    templates.env.filters["notes_markdown"] = render_notes  # p143: always escaped
     templates.env.filters["num"] = decimal
     templates.env.filters["unit"] = unit
     templates.env.globals["form_token"] = lambda: issue_form_token(secret)

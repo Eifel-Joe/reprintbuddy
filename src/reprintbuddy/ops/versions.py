@@ -10,9 +10,12 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
 from reprintbuddy.ops.runner import CommandRunner
+
+if TYPE_CHECKING:
+    from reprintbuddy.ops.releasenotes import ReleaseNotes
 
 # ASCII digits only (`\d` also matches the digits of other scripts) and no leading zeros,
 # so that every version has exactly one tag name.
@@ -85,6 +88,9 @@ class VersionInfo:
     installed: str | None
     newest: str | None
     checked_at: datetime
+    # The release notes of the newer versions (p143), fetched in the same round as the check
+    # (`releasenotes.with_notes`); None when there is nothing newer or nothing was asked.
+    notes: "ReleaseNotes | None" = None
 
     @property
     def update_available(self) -> bool:

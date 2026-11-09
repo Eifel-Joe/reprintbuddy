@@ -26,6 +26,28 @@
       {% else %}{{ t('ops.update.not_checked') }}{% endif %}
     </p>
   </div>
+  {# p143 (Spec 11.3a "Neuerungen"): the notes of the newer versions, fetched with the check, closed at
+     first. The text comes from GitHub and goes only through `notes_markdown`, which escapes it; the one
+     link is built from `origin`, never taken from the text. #}
+  {% set notes = ops.version_info.notes if ops.version_info and ops.version_info.update_available else none %}
+  {% if notes %}
+  <details class="release-notes" id="ops-notes">
+    <summary>{{ ui.icon('history') }}{{ t('ops.notes.title', version=ops.version_info.newest) }}</summary>
+    {% if lang != 'en' %}<p class="hint">{{ t('ops.notes.english_only') }}</p>{% endif %}
+    {% if notes.failed %}
+    <p class="status">{{ t('ops.notes.failed') }}</p>
+    {% else %}
+    {% for entry in notes.entries %}
+    <article class="release-note" lang="en">
+      <h3>{{ entry.tag }}{% if entry.published %} <span class="muted">· {{ entry.published | local_day }}</span>{% endif %}</h3>
+      {{ entry.body | notes_markdown }}
+      {% if entry.cut %}<p class="hint">{{ t('ops.notes.cut') }}</p>{% endif %}
+    </article>
+    {% endfor %}
+    {% endif %}
+    {% if notes.page_url %}<p><a href="{{ notes.page_url }}" target="_blank" rel="noopener noreferrer">{{ t('ops.notes.all_link') }} {{ ui.icon('external-link') }}</a></p>{% endif %}
+  </details>
+  {% endif %}
   {# The automatic check (Spec 11.3a): a switch that posts its wanted state; saved at once. #}
   {% call ui.setting_row(t('ops.update.auto'), t('ops.update.auto_hint')) %}{{ ui.switch_post("/settings/update/auto", update_check, t('ops.update.auto'), "/settings?tab=maintenance") }}{% endcall %}
   {% if ops.state_key %}

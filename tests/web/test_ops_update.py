@@ -393,10 +393,10 @@ def test_stale_running_state_is_shown_as_interrupted_not_as_running(ops_env):
 # whose unit is not running was never picked up by the helper, so nothing was changed.
 
 
-def queued_long_ago(env, *, age=timedelta(minutes=2), to_tag="v0.2.0"):
+def queued_long_ago(env, *, age=timedelta(minutes=2), to_tag="v0.2.0", from_tag="v0.1.0"):
     write_status(
         data_dir(env),
-        UpdateStatus(state="queued", step="start", from_tag="v0.1.0", to_tag=to_tag, started_at=now() - age),
+        UpdateStatus(state="queued", step="start", from_tag=from_tag, to_tag=to_tag, started_at=now() - age),
     )
 
 
@@ -771,6 +771,24 @@ def test_p145_the_target_runs_after_a_backup_points_to_the_log_not_to_finished(o
     assert "Version v0.2.0 is running. The update helper could not save its state" in page
     assert "journalctl -u reprintbuddy-update" in page
     assert "Update finished" not in page
+
+
+@pytest.mark.parametrize(
+    "card_tag, helper_label",
+    [
+        (None, "v0.1.0"),  # p158: the card's `git describe` failed at the start, the helper's did not
+        ("v0.1.0", "0123456789ab"),  # the mirror: the helper's `git describe` failed, it named the commit
+    ],
+)
+def test_p158_the_helpers_backup_is_found_whichever_side_knew_the_tag(ops_env, card_tag, helper_label):
+    git_env(ops_env)
+    check(ops_env)
+    queued_long_ago(ops_env, from_tag=card_tag)
+    backup_made(ops_env, label=helper_label)
+    unit_state(ops_env, "inactive")
+    page = maintenance(ops_env)
+    assert "did not start" not in page
+    assert "could not save its state" in page
 
 
 @pytest.mark.parametrize(

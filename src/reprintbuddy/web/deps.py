@@ -154,6 +154,9 @@ def _add_update_notice(request: Request, context: dict[str, object], session) ->
         return
     if st.get_setting(session, "update_check"):
         context["update_version"] = info.newest
+        # p143: straight to what the new version brings; the card itself when there are no notes
+        # (the section is only on the page with them, review of v0.3.13).
+        context["update_anchor"] = "ops-notes" if info.notes is not None else "ops-update"
 
 
 def _own_address(request: Request) -> str:

@@ -16,6 +16,8 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
+from reprintbuddy.ops.versions import RELEASE_TAG
+
 BACKUP_DIRNAME = "backups"
 KEEP_BACKUPS = 5
 
@@ -113,6 +115,14 @@ def update_backup_since(backup_dir: Path, moment: datetime, from_tag: str | None
     seconds) is compared with `moment` cut to whole seconds. Used by the update card (v0.3.12 p145) to tell
     a start the helper never picked up from a run that could not write its state. A folder that cannot be
     read counts as "no backup". Tests: tests/ops/test_backup.py "p145", test_ops_update.py "p145".
+
+    v0.3.13 p158: `from_tag` is what the card's `git describe` said at the start; the helper asks
+    `git describe` once more and names the backup by its own answer. The two may differ: the card knew no
+    tag and the helper did, or the mirror case, the card knew the tag and the helper's call failed (it then
+    names the commit). So a commit label always counts, and without `from_tag` any release tag counts too.
+    With `from_tag` another version's label still does not count: the helper backs up the version that runs.
+    Rejected: writing the helper's label into the state file (the case at hand is a helper that could not
+    write it). Tests: test_backup.py and test_ops_update.py "p158".
     """
     since = moment.astimezone(UTC).replace(microsecond=0, tzinfo=None)
     wanted = _safe_label(from_tag) if from_tag else None
@@ -125,7 +135,10 @@ def update_backup_since(backup_dir: Path, moment: datetime, from_tag: str | None
         if found is None:
             continue
         label = found["label"]
-        helpers = label == wanted if wanted is not None else bool(_COMMIT_LABEL.match(label))
+        if wanted is not None:
+            helpers = label == wanted or bool(_COMMIT_LABEL.match(label))
+        else:
+            helpers = bool(_COMMIT_LABEL.match(label) or RELEASE_TAG.match(label))
         if not helpers:
             continue
         try:
