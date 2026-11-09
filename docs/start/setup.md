@@ -31,15 +31,14 @@ In Bambuddy open *Settings → Users* and create a group named `Reprintbuddy` wi
 
 Bambuddy adds a hint to the label of *Print Without Review* ("else jobs wait for someone to start them"); it is the same right.
 
-One more right is recommended but not required:
+Two more rights are recommended but not required:
 
 | Bambuddy label | Internal name | What it is for |
 |---|---|---|
 | Upload Library | `library:upload` | only to upload print files from Reprintbuddy |
+| Connect Websocket | `websocket:connect` | so that Bambuddy reports changes at once; without it Reprintbuddy only asks at the set interval |
 
-Without it everything else works; only uploading is not possible.
-
-Also recommended but not required: the group right `websocket:connect`. With it Bambuddy reports finished prints at once through the live channel; without it everything runs through the regular query, and the card **Live channel** under *Settings → Bambuddy* says "Right missing". See [Automation](../use/automation.md).
+Without *Upload Library* everything else works; only uploading is not possible. Without *Connect Websocket* everything runs through the regular query, and the card **Live channel** under *Settings → Bambuddy* says "Right missing" (see [Automation](../use/automation.md)). At the key, *Read Status* is enough for the live channel; there is nothing more to set.
 
 To create the key in the next step, the group also needs these three rights. Reprintbuddy does not check them, and you can remove them again once the key exists:
 
@@ -96,11 +95,11 @@ Reprintbuddy asks Bambuddy whom the key belongs to and what it may really do. Th
 - **Group right:** if the group `Reprintbuddy` lacks it, add it there in Bambuddy (*Settings → Users*). You do not need a new key.
 - **Key right:** if the key lacks it (for example *Read Status* or *Manage Queue*), create a new key as in step 3.
 
-Below the list, apart from it, the page shows whether the optional right to upload print files is there.
+Below the list, apart from it, the page shows the two recommended rights (uploading print files, the live channel), each with a check mark or a cross.
 
-When the check succeeds, Reprintbuddy saves the address and the key, takes the owner's name from Bambuddy's answer, opens the interface, and says in one line whether print files can be uploaded with this key. If the key lacks the right to upload, everything else works.
+When the check succeeds, Reprintbuddy saves the address and the key and takes the owner's name from Bambuddy's answer. The page then shows what Bambuddy reported: the owner of the key and every required right with a check mark, and in one line each whether print files can be uploaded with this key and whether Bambuddy can report changes at once. If the key lacks one of these two rights, everything else works. A check that fails lists the two recommended rights apart from the required ones, also with a check mark or a cross; they never decide whether the key is saved, and a missing one never opens the notice after an update. Press **Continue** to open the interface (the page you wanted to open before the setup, if there was one).
 
-A key that belongs to an administrator is accepted, with the warning that it may do more than Reprintbuddy needs. It is safer to use the user `reprintbuddy` from step 2.
+A key that belongs to an administrator is accepted, with the warning that it may do more than Reprintbuddy needs. It is safer to use the user `reprintbuddy` from step 2. With such a key, **Continue** leads to *Settings → Bambuddy* instead of the page you wanted to open. Reloading the result page asks the browser to send the form again; nothing is saved twice, and Reprintbuddy leads you to *Settings → Bambuddy*, because the setup is done.
 
 The two fields are marked so that password managers do not fill in your own credentials.
 

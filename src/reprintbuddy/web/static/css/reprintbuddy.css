@@ -388,7 +388,9 @@ small.editor { display: block; color: var(--muted); font-size: 0.75rem; }
 .where { display: block; color: var(--text-2); font-size: 0.8rem; }
 table.keytable { width: 100%; margin: 0.5rem 0; border-collapse: collapse; font-size: 0.85rem; }
 table.keytable th, table.keytable td { padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-table.keytable th { font-weight: 400; color: var(--text-2); }
+/* The global head rule keeps a head on one line; here the head also holds the sentence what the right is for
+   (p187, v0.3.14): it wraps, so the table stays inside its card. */
+table.keytable th { font-weight: 400; color: var(--text-2); white-space: normal; overflow-wrap: anywhere; }
 table.keytable td.on { color: var(--accent); font-weight: 600; }
 table.keytable td.off { color: var(--muted); }
 
@@ -589,6 +591,16 @@ div.tile:hover, div.tile:focus-within { border-color: var(--accent); }
 .nav-collapse .icon-expand { display: none; }
 .mobile-menu .nav-collapse { display: none; }
 
+/* Links to the code and to the documentation, a row of symbols above the version (p188, v0.3.14). */
+.nav-about { display: flex; gap: 2px; padding: 0.6rem 0 0; }
+.nav-about a {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 2.75rem; min-height: 2.75rem; border-radius: 8px;
+  color: var(--text-2); text-decoration: none;
+}
+.nav-about a:hover { background: var(--hover-soft); color: var(--text); }
+.nav-about + .nav-version-row { padding-top: 0; }
+
 /* Folded menu (cookie rb_sidebar): symbols only, the name is the title of the link. */
 .app.sidebar-collapsed { --sidebar-w: 64px; }
 .sidebar-collapsed .sidebar { padding-left: 0.5rem; padding-right: 0.5rem; }
@@ -597,6 +609,7 @@ div.tile:hover, div.tile:focus-within { border-color: var(--accent); }
 .sidebar-collapsed .sidebar .nav-label { display: none; }
 .sidebar-collapsed .sidebar .nav-link { justify-content: center; padding-left: 0; padding-right: 0; }
 .sidebar-collapsed .sidebar .nav-version-row { flex-direction: column; padding-left: 0; padding-right: 0; }
+.sidebar-collapsed .sidebar .nav-about { flex-direction: column; align-items: center; }
 .sidebar-collapsed .sidebar .nav-version { font-size: 10px; overflow-wrap: anywhere; text-align: center; }
 .sidebar-collapsed .sidebar .nav-collapse .icon-collapse { display: none; }
 .sidebar-collapsed .sidebar .nav-collapse .icon-expand { display: inline-block; }

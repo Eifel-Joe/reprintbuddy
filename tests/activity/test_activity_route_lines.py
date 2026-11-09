@@ -307,7 +307,7 @@ def test_the_bambuddy_connection_of_the_setup(admin_client, respx_mock):
             "bambuddy_token": "bb_SETUPKEY_123456",
         },
     )
-    assert response.status_code == 303
+    assert response.status_code == 200  # the page with the result (p179)
     line = new_settings_line(admin_client, before)
     names = setting_names(line)
     assert names["bambuddy_url"]["new"] == "http://bambuddy.test:8000"

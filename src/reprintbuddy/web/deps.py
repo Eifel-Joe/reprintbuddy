@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from jinja2 import pass_context
 from sqlalchemy.orm import Session
 
-from reprintbuddy import auth
+from reprintbuddy import auth, links
 from reprintbuddy.bambuddy.client import BambuddyClient
 from reprintbuddy.bambuddy.connection import ConnectionCheck
 from reprintbuddy import settings as st
@@ -117,6 +117,9 @@ def render(request: Request, name: str, status_code: int = 200, **context: objec
     context.setdefault("lang", str(st.get_setting(session, "language")))
     # Target of the "Open Bambuddy" link; the key is never part of it.
     context["open_bambuddy_url"] = st.get_setting(session, "bambuddy_url")
+    # The two links at the foot of the menu (the addresses live in `links.py`, not in a template).
+    context["repo_url"] = links.REPO_URL
+    context["docs_url"] = links.docs_url(str(context["lang"]))
     context.setdefault("active_nav", None)
     context["min_password_length"] = auth.MIN_PASSWORD_LENGTH
     context["csrf_token"] = csrf_token(request)

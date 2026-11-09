@@ -1,11 +1,13 @@
 {# Result of the connection check: key owner and every required right with a check or a cross;
-   below them, apart, the optional right to upload print files (Spec 11.3 c, 5.1a); `show_optional=False`
-   leaves it out where only the required rights matter (the notice after an update).
+   below them, apart, the recommended rights (upload print files, Spec 5.1a; live channel, p170; Spec 11.3 c);
+   `show_optional=False` leaves them out where only the required rights matter (the notice after an update,
+   and the page after a good check, which says them in one sentence each). Shown after a failed check and
+   after a good one (p179).
    Needs `check` (ConnectionCheck) and the permission context; `guide_link` adds links to the guide pages. #}
 {% if check and check.owner %}
 <div class="result" role="status">
   <p><strong>{{ t('bambuddy.result.owner', owner=check.owner) }}</strong></p>
-  {% if check.reason == 'missing_permissions' %}
+  {% if check.reason == 'missing_permissions' or check.ok %}
   <p>{{ t('bambuddy.result.rights') }}</p>
   <ul class="perms">
     {% for code in required_permissions %}
@@ -18,7 +20,7 @@
     </li>
     {% endfor %}
   </ul>
-  <p class="muted">{{ t('bambuddy.result.fix') }}</p>
+  {% if not check.ok %}<p class="muted">{{ t('bambuddy.result.fix') }}</p>{% endif %}
   {% if show_optional is not defined or show_optional %}
   <p>{{ t('bambuddy.result.optional') }}</p>
   <ul class="perms">

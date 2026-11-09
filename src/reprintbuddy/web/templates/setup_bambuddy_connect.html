@@ -2,6 +2,17 @@
 {% block title %}{{ t('bambuddy.title') }}{% endblock %}
 {% block content %}
 <p class="progress">{{ t('bambuddy.progress', n=4) }}</p>
+{% if connected %}
+{# The check succeeded and the key is saved (p179): what Bambuddy reported, then the way on. #}
+<h1>{{ t('bambuddy.connected.title') }}</h1>
+<p class="muted">{{ t('bambuddy.connected.intro') }}</p>
+{% set show_optional = False %}
+{% include "_bambuddy_result.html" %}
+<p class="status">{{ t('bambuddy.upload_right_ok' if check.can_upload else 'bambuddy.upload_right_missing') }}</p>
+<p class="status">{{ t('bambuddy.live_right_ok' if check.can_live else 'bambuddy.live_right_missing') }}</p>
+{% if check.owner_is_admin %}<p class="alert" role="alert">{{ t('bambuddy.admin_note') }}</p>{% endif %}
+<p class="actions"><a class="btn" href="{{ continue_url }}">{{ t('bambuddy.connected.continue') }}</a></p>
+{% else %}
 <h1>{{ t('bambuddy.connect.title') }}</h1>
 <p class="muted">{{ t('bambuddy.connect.intro') }}</p>
 {% if error %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
@@ -20,4 +31,5 @@
     <button class="btn" type="submit">{{ t('bambuddy.submit') }}</button>
   </p>
 </form>
+{% endif %}
 {% endblock %}

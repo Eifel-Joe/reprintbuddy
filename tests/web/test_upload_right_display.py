@@ -39,27 +39,25 @@ def _connect(client, respx_mock, permissions):
 def test_a_failed_check_shows_the_upload_right_apart(admin_client, respx_mock):
     without = [p for p in REQUIRED if p != "queue:create"]
     html = _connect(admin_client, respx_mock, without).text
-    assert _optional(html) == {"library:upload": "bad"}
+    assert _optional(html) == {"library:upload": "bad", "websocket:connect": "bad"}
     assert en("bambuddy.result.optional") in html
 
 
 def test_a_failed_check_with_the_upload_right_ticks_it(admin_client, respx_mock):
     without = [p for p in REQUIRED if p != "queue:create"]
     html = _connect(admin_client, respx_mock, [*without, "library:upload"]).text
-    assert _optional(html) == {"library:upload": "ok"}
+    assert _optional(html) == {"library:upload": "ok", "websocket:connect": "bad"}
 
 
 def test_setup_saves_without_the_upload_right_and_says_uploading_is_off(admin_client, respx_mock):
     response = _connect(admin_client, respx_mock, list(REQUIRED))
-    assert response.status_code == 303  # saved: the right is not required
-    page = admin_client.get(response.headers["location"]).text
-    assert en("bambuddy.upload_right_missing") in page
+    assert response.status_code == 200  # saved: the right is not required; the result page says it
+    assert en("bambuddy.upload_right_missing") in response.text
 
 
 def test_setup_with_the_upload_right_says_uploading_is_on(admin_client, respx_mock):
     response = _connect(admin_client, respx_mock, [*REQUIRED, "library:upload"])
-    page = admin_client.get(response.headers["location"]).text
-    assert en("bambuddy.upload_right_ok") in page
+    assert en("bambuddy.upload_right_ok") in response.text
 
 
 def _settings_check(client, respx_mock, permissions):

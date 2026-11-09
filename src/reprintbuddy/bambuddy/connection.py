@@ -42,7 +42,11 @@ REQUIRED_PERMISSIONS: tuple[str, ...] = (
 # `core/auth.py`: LIBRARY_UPLOAD -> can_manage_library); `/auth/me` lists the right only when
 # both allow it.
 UPLOAD_PERMISSION = "library:upload"
-OPTIONAL_PERMISSIONS: tuple[str, ...] = (UPLOAD_PERMISSION,)
+# Bambuddy's live channel (p170, Spec 7.6, 11.3, 14): `POST /auth/ws-token` needs this right in the
+# group; at the key "Read Status" covers it (Bambuddy `core/auth.py`: WEBSOCKET_CONNECT -> can_read_status).
+# Without it Reprintbuddy only asks at the set interval: recommended, not required.
+LIVE_PERMISSION = "websocket:connect"
+OPTIONAL_PERMISSIONS: tuple[str, ...] = (UPLOAD_PERMISSION, LIVE_PERMISSION)
 
 # Assumption until the first live test shows the names Bambuddy really reports (Spec 14):
 # for the two "read all" rights, the older name without the suffix counts as well.
@@ -65,6 +69,7 @@ EDITOR_LABELS: dict[str, str] = {
     "inventory:read": "Read Inventory",
     "filaments:read": "Read Filaments",
     UPLOAD_PERMISSION: "Upload Library",  # optional (Spec 5.1a)
+    LIVE_PERMISSION: "Connect Websocket",  # optional (p170); Bambuddy makes the label from the name
 }
 
 # Needed only while the key is created (the user must open the API keys page and create a key).
@@ -87,6 +92,7 @@ KEY_RIGHT_FOR: dict[str, str] = {
     "queue:create": "queue",
     "queue:start_unreviewed": "queue",
     UPLOAD_PERMISSION: "library",  # "Manage Library"
+    LIVE_PERMISSION: "status",  # "Read Status"
 }
 
 # The settings page 3 of the setup asks for: (id, Bambuddy's English label, on or off).
@@ -124,6 +130,11 @@ class ConnectionCheck:
     def can_upload(self) -> bool:
         """The key may upload print files (optional right, Spec 5.1a)."""
         return UPLOAD_PERMISSION in self.granted
+
+    @property
+    def can_live(self) -> bool:
+        """The key may open Bambuddy's live channel (optional right, p170)."""
+        return LIVE_PERMISSION in self.granted
 
 
 def _missing(granted: frozenset[str]) -> tuple[str, ...]:
