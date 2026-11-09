@@ -19,6 +19,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.backup import backup_dir_for, update_backup_since
 from reprintbuddy.ops.export import export_bytes
+from reprintbuddy.ops.releasenotes import with_notes
 from reprintbuddy.ops.server import (
     EffectiveServer,
     address_changed,
@@ -367,6 +368,8 @@ async def update_check(request: Request):
     except UpdateCheckError as error:
         log.warning("update check failed: %s", str(error)[:300])  # not shown on the page
         return _back("check_failed")
+    # p143: the notes of the newer versions in the same round (one request to GitHub, never raises).
+    info = await in_thread(with_notes, info, ops.install_dir, ops.runner, ops.http_get)
     app.state.version_info = info
     app.state.installed_tag = info.installed
     return _back()

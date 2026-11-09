@@ -19,7 +19,7 @@ from reprintbuddy.ops.runner import CommandResult
 from reprintbuddy.web.i18n import translate
 
 PAGES = ["/", "/queue", "/articles", "/settings", "/settings?tab=maintenance"]
-LINK = 'href="/settings?tab=maintenance#ops-update"'
+LINK = 'href="/settings?tab=maintenance#ops-notes"'  # p143: straight to what the new version brings
 
 
 def banner(page: str) -> str | None:

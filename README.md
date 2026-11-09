@@ -236,8 +236,8 @@ given on the command line is the database path (`--db`).
 
 ## Update
 
-*Settings → Update*: press **Check for updates**; if a newer release exists, press
-**Update to …**. *Available from the first release.* The update
+*Settings → Update*: press **Check for updates**; if a newer release exists, the card lists what it brings and you press
+**Update to …**. The check asks GitHub (the release notes come from GitHub's API without a login), so GitHub sees the address of your installation. *Available from the first release.* The update
 
 1. backs up the database,
 2. switches to the new release tag,
