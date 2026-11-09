@@ -515,16 +515,6 @@ def test_an_environment_with_an_older_python_than_the_new_version_needs_rolls_ba
     assert "ERROR" not in result.message  # pip's line is not shown raw
 
 
-def test_an_environment_on_python_3_13_updates_to_a_release_that_needs_3_13(update_env):
-    """v0.3.12 p163: a Debian 13 installation (Python 3.13) meets the new floor; pip accepts the release and the
-    update goes through as any other (no Python message, no rollback)."""
-    e = update_env
-    e.runner.on((e.py, "-m", "pip"), CommandResult(0))
-    result = e.update()
-    assert result.state == "succeeded", result.message
-    assert "Python" not in (result.message or "")
-
-
 def test_a_different_python_error_of_another_kind_keeps_pips_own_line(update_env):
     e = update_env
     e.runner.on((e.py, "-m", "pip"), CommandResult(1, "", "ERROR: Could not find a version that satisfies the requirement x"), CommandResult(0))

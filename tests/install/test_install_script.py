@@ -321,7 +321,7 @@ def test_rerun_keeps_database(bash, tmp_path):
 REBUILT = {
     # (system python, python the environment was built with, options): why the environment is of no use
     "built-with-3.11": ("3.13", "3.11", {}),  # a Debian release upgrade: its packages sit under lib/python3.11
-    "built-with-3.12": ("3.13", "3.12", {}),  # the same, from a system that had 3.12 (v0.3.12 p163: no longer the floor)
+    "built-with-3.12": ("3.13", "3.12", {}),  # an environment of the old floor (v0.3.9 to v0.3.11)
     "built-with-an-older-python-than-the-system": ("3.14", "3.13", {}),  # the next release upgrade
     "no-python-in-it": ("3.13", "3.13", {"python": False}),
     "no-pip-in-it": ("3.13", "3.13", {"pip": False}),  # `python3 -m venv` died at ensurepip once
