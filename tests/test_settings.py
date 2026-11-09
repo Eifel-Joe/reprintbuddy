@@ -32,6 +32,14 @@ EXPECTED_DEFAULTS = {
     "label_roll": "DK-11209",
     "label_fields": ["name", "sku", "label_text"],
     "qr_base_url": None,  # v0.3.7, Spec 8.4: the address inside the QR codes; none = the address in use
+    # v0.3.12, Spec 10.6: push messages through Home Assistant; off and empty until entered
+    "ha_enabled": False,
+    "ha_url": None,
+    "ha_token": None,
+    "ha_service": None,
+    "ha_names": True,
+    "ha_events": ["print_done", "print_failed", "paused", "below_min", "reorder", "trouble", "rights"],
+    "ha_since": None,
 }
 
 
@@ -42,7 +50,7 @@ def test_defaults(session):
 
 
 def test_sensitive_keys():
-    assert st.SENSITIVE == frozenset({"bambuddy_api_key", "tls_key"})
+    assert st.SENSITIVE == frozenset({"bambuddy_api_key", "tls_key", "ha_token"})
 
 
 def test_roundtrip(session):

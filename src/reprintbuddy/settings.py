@@ -10,6 +10,7 @@ import ipaddress
 import json
 import re
 import secrets
+from datetime import datetime
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
@@ -22,6 +23,17 @@ from reprintbuddy.labels.rolls import DEFAULT_ROLL, ROLLS
 from reprintbuddy.models import Setting
 
 MASK = "********"
+
+# The events of the push messages, in the order of Spec 10.6 (one tick box each).
+HA_EVENTS: tuple[str, ...] = (
+    "print_done",
+    "print_failed",
+    "paused",
+    "below_min",
+    "reorder",
+    "trouble",
+    "rights",
+)
 
 DEFAULTS: dict[str, object] = {
     "language": "en",
@@ -43,9 +55,17 @@ DEFAULTS: dict[str, object] = {
     "port": 8080,
     "tls_cert": None,
     "tls_key": None,
+    # Push messages through Home Assistant (Spec 10.6): off and empty until entered.
+    "ha_enabled": False,
+    "ha_url": None,
+    "ha_token": None,
+    "ha_service": None,
+    "ha_names": True,  # name articles, spool sorts and parts in the messages
+    "ha_events": list(HA_EVENTS),
+    "ha_since": None,  # when the messages were switched on (plan D1); set by Reprintbuddy, not shown
 }
 
-SENSITIVE: frozenset[str] = frozenset({"bambuddy_api_key", "tls_key"})
+SENSITIVE: frozenset[str] = frozenset({"bambuddy_api_key", "tls_key", "ha_token"})
 
 # Never part of an export, a log line or any page: the sensitive settings plus the
 # values Reprintbuddy keeps for itself.
@@ -210,6 +230,57 @@ def _label_fields(value: Any) -> list[str]:
     return list(label_fields.clean(value))
 
 
+def _ha_url(value: Any) -> str | None:
+    """The address of Home Assistant (Spec 10.6): http or https, host, port and, behind a proxy, a path
+    in front. No credentials, query or fragment: Reprintbuddy appends the path of the call."""
+    if value is None:
+        return None
+    text = _optional_url(value)
+    assert text is not None
+    if any(char in text for char in "?#\\") or "@" in text:
+        raise ValueError("address must be a plain web address without credentials, query or fragment")
+    if urlsplit(text).netloc.endswith(":"):
+        raise ValueError("address has an invalid host or port")
+    return text
+
+
+# Only services of the `notify` domain, never `notify.send_message` (it knows no link): Spec 10.6.
+# The pattern also keeps the path of the call fixed: no slash, dot or blank after the domain.
+_HA_SERVICE = re.compile(r"notify\.[a-z0-9_]+")
+
+
+def _ha_service(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("expected a service name")
+    name = value.strip()
+    if not _HA_SERVICE.fullmatch(name) or name == "notify.send_message":
+        raise ValueError("expected a service of the notify domain, such as notify.mobile_app_phone")
+    return name
+
+
+def _ha_events(value: Any) -> list[str]:
+    """The ticked events, once each, in the order of `HA_EVENTS`."""
+    if not isinstance(value, list) or not all(isinstance(item, str) and item in HA_EVENTS for item in value):
+        raise ValueError("unknown event")
+    return [event for event in HA_EVENTS if event in value]
+
+
+def _ha_since(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("expected a point in time")
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        raise ValueError("expected a point in time") from None
+    if moment.tzinfo is None:
+        raise ValueError("expected a point in time with its zone")
+    return value
+
+
 def _optional_pem(value: Any) -> str | None:
     if value is None:
         return None
@@ -239,6 +310,13 @@ _VALIDATORS: dict[str, Callable[[Any], object]] = {
     "port": _int_range(1, 65535),
     "tls_cert": _optional_pem,
     "tls_key": _optional_pem,
+    "ha_enabled": _bool,
+    "ha_url": _ha_url,
+    "ha_token": _api_key,  # a long-lived access token: visible ASCII, like an API key
+    "ha_service": _ha_service,
+    "ha_names": _bool,
+    "ha_events": _ha_events,
+    "ha_since": _ha_since,
 }
 
 
@@ -302,6 +380,16 @@ def bambuddy_configured(session: Session) -> bool:
         and get_setting(session, "bambuddy_username")
         and get_setting(session, "bambuddy_api_key")
         and get_setting(session, "bambuddy_review_confirmed")
+    )
+
+
+def ha_configured(session: Session) -> bool:
+    """Push messages are switched on and everything they need is entered (Spec 10.6)."""
+    return bool(
+        get_setting(session, "ha_enabled")
+        and get_setting(session, "ha_url")
+        and get_setting(session, "ha_token")
+        and get_setting(session, "ha_service")
     )
 
 
