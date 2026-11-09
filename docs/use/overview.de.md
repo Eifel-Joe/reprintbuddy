@@ -10,7 +10,7 @@ Von oben nach unten:
 
 | Teil | Bedeutung |
 |---|---|
-| **Bambuddy** | Der Zustand der Verbindung: **verbunden**, **nicht erreichbar** oder **Antwort abgelehnt** (rot), **nicht eingerichtet** oder **noch nicht abgefragt** (grau, gleich nach dem Start bis zur ersten regulären Abfrage). |
+| **Bambuddy** | Der Zustand der Verbindung: **verbunden**, **nicht erreichbar** oder **Antwort abgelehnt** (rot), **nicht eingerichtet** oder **noch nicht abgefragt** (grau: Reprintbuddy hat Bambuddy seit dem Start noch nicht erreicht). |
 | **Letzte Abfrage** | Wann Bambuddy zuletzt auf eine reguläre Abfrage geantwortet hat, oder **noch keine**. |
 | **Automatik** | Der Hauptschalter der Automatik (siehe [Automatik](automation.md)). Es ist derselbe Schalter wie unter *Einstellungen → Automatik*; hier wirkt er sofort, ohne Speichern-Knopf. Aus: Die Regel legt keine Einträge in der Warteschlange an; Ersatz und von Hand drucken gehen weiter. |
 
@@ -27,8 +27,8 @@ Vier Karten, immer alle vier, auch mit 0. Jede Karte führt zu ihrer Seite.
 | Karte | Zählt | Führt zu |
 |---|---|---|
 | **Unter Mindestbestand** | Artikel mit dem Status **unter Minimum** oder **überbucht** (rot). Ein Artikel, der **knapp** ist (gelb), zählt nicht: Sein Nachdruck ist schon geplant. Die kleine Zeile nennt, wie viele davon überbucht sind. | Artikel |
-| **Geplant und in Arbeit** | Drucke in Reprintbuddys Warteschlange (auch zurückgehaltene) plus Drucke, die an Bambuddy übergeben und noch nicht fertig sind. Die kleine Zeile trennt beides. | Warteschlange |
-| **Zu prüfen** | Stück, die auf die Prüfung warten, plus Stück, die auf die Montage warten. Die kleine Zeile trennt beides. | Zu prüfen |
+| **Geplant und in Arbeit** | Drucke in Reprintbuddys Warteschlange, auch zurückgehaltene und Einträge pausierter Artikel (sie zählen für die Nachdruck-Regel weiter mit), plus Drucke, die an Bambuddy übergeben und noch nicht fertig sind. Die kleine Zeile trennt beides. Die Karte **Wartende Drucke** auf der Warteschlange lässt zurückgehaltene und pausierte Einträge weg und kann deshalb weniger zeigen. | Warteschlange |
+| **Zu prüfen** | Stück, die auf die Prüfung warten, plus Stück, die auf die Montage warten. Die kleine Zeile trennt beides. | Zu prüfen; Montage, wenn nur die Montage wartet |
 | **Bestellvorschläge** | Die offenen Vorschläge für Filament und Zukaufteile, dieselbe Zahl wie auf der Seite [Bestellvorschläge](reorder.md). | Bestellvorschläge |
 
 ## Artikel
@@ -52,4 +52,4 @@ Am Handy ist die Seite einspaltig: Die Kopfzeile wird zu Zeilen aus Bezeichnung 
 
 ## Eine frische Installation
 
-Gleich nach der Ersteinrichtung gibt es noch keine Artikel. Die Kennzahlen zeigen 0, und statt der Tabelle sagt die Seite das und bietet **Neuer Artikel aus Druckdatei** an. Bis zur ersten regulären Abfrage steht in der Kopfzeile **noch nicht abgefragt**.
+Gleich nach der Ersteinrichtung gibt es noch keine Artikel. Die Kennzahlen zeigen 0, und statt der Tabelle sagt die Seite das und bietet **Neuer Artikel aus Druckdatei** an. Bis Reprintbuddy Bambuddy erreicht hat, steht in der Kopfzeile **noch nicht abgefragt**.

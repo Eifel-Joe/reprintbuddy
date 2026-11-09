@@ -241,8 +241,18 @@ def current(session: Session, spools: Sequence[Spool] | None, now: datetime) -> 
     return Current(sorts, day, suggestions(session, sorts=sorts, today=now.date()))
 
 
-def count_suggestions(session: Session, spools: Sequence[Spool] | None, now: datetime) -> int:
-    """The number of suggestions the reorder page shows (the key figure of Spec 9.4)."""
+def count_suggestions(
+    session: Session, spools: Sequence[Spool] | None, now: datetime, *, write: bool = True
+) -> int:
+    """The number of suggestions the reorder page shows (the key figure of Spec 9.4).
+
+    `write=False` writes nothing, for the time writes are paused (a restore or an update): the stock
+    comes from the record (no new spool sorts are entered) and arrived marks stay open until the
+    next count that may write. The number can lag behind then, never the stored data.
+    """
+    if not write:
+        sorts, _day = filament.known_sorts(session, None)
+        return len(suggestions(session, sorts=sorts, today=now.date()))
     return len(current(session, spools, now).suggestions)
 
 

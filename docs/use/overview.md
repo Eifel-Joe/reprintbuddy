@@ -10,7 +10,7 @@ From top to bottom:
 
 | Part | Meaning |
 |---|---|
-| **Bambuddy** | The state of the connection: **connected**, **not reachable** or **answer refused** (red), **not set up** or **not queried yet** (grey, right after the start until the first regular query). |
+| **Bambuddy** | The state of the connection: **connected**, **not reachable** or **answer refused** (red), **not set up** or **not queried yet** (grey: Reprintbuddy has not reached Bambuddy since it started). |
 | **Last query** | When Bambuddy last answered a regular query, or **none yet**. |
 | **Automation** | The main switch of the automation (see [Automation](automation.md)). It is the same switch as under *Settings → Automation*; switching it here takes effect at once, without a save button. Off: the rule adds no entries to the queue; replacements and manual prints still work. |
 
@@ -27,8 +27,8 @@ Four cards, always all four, also at 0. Each card leads to its page.
 | Card | Counts | Leads to |
 |---|---|---|
 | **Below minimum stock** | Articles whose state is **below minimum** or **overbooked** (red). An article that is **low** (yellow) does not count: its reprint is already planned. The small line names how many of them are overbooked. | Articles |
-| **Planned and in progress** | Prints in Reprintbuddy's queue (held entries too) plus prints handed over to Bambuddy and not finished yet. The small line splits the two. | Queue |
-| **To check** | Pieces that wait for the check plus pieces that wait for assembly. The small line splits the two. | To check |
+| **Planned and in progress** | Prints in Reprintbuddy's queue, held entries and entries of paused articles too (they still count for the reprint rule), plus prints handed over to Bambuddy and not finished yet. The small line splits the two. The card **Prints waiting** on the Queue page leaves held and paused entries out, so it can show less. | Queue |
+| **To check** | Pieces that wait for the check plus pieces that wait for assembly. The small line splits the two. | To check; Assembly when only assembly waits |
 | **Reorder suggestions** | The open suggestions for filament and bought parts, the same number as on the page [Reorder suggestions](reorder.md). | Reorder suggestions |
 
 ## Articles
@@ -52,4 +52,4 @@ On a phone the page is one column: the head line becomes rows of label and value
 
 ## A fresh installation
 
-Right after the first setup there are no articles yet. The key figures show 0, and instead of the table the page says so and offers **New article from print file**. Until the first regular query the head line says **not queried yet**.
+Right after the first setup there are no articles yet. The key figures show 0, and instead of the table the page says so and offers **New article from print file**. Until Reprintbuddy has reached Bambuddy, the head line says **not queried yet**.

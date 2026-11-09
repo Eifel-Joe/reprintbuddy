@@ -58,6 +58,8 @@ def seed(client):
         make_entry(s, ok.id, prints=1, held=True)
         make_dispatch(s, below.id, status="printing", units=2)
         make_dispatch(s, over.id, status="queued", units=1)
+        make_dispatch(s, ok.id, status="completed", units=5)  # finished: neither planned nor in progress
+        make_dispatch(s, ok.id, status="failed", units=5)
         make_part(s, name="Insert", stock=0, min_stock=10)  # a part below its minimum: one suggestion
         return ok.id, below.id, over.id
 
@@ -113,6 +115,7 @@ def test_table_rows_show_the_numbers(ready_client):
     assert cells(row)[1:7] == [["7"], ["1"], ["4", "/", "6"], ["0"], ["0"], []]
     assert 'aria-valuenow="100"' in row  # 7 of 6
     assert en("status.article.ok") in row
+    assert "Reprint running" not in row  # its prints in Bambuddy are finished or failed
     row = table_row(part, "Clip")
     # available 1 < 3, coverage 1 + 4 queued + 2 in progress = 7: yellow
     assert cells(row)[1:6] == [["1"], ["0"], ["3", "/", "4"], ["2"], ["0"]]
@@ -123,6 +126,7 @@ def test_table_rows_show_the_numbers(ready_client):
     assert 'class="num neg"' in row  # available -2 in red
     assert cells(row)[1:6] == [["-2"], ["2"], ["1", "/", "2"], ["1"], ["4"]]
     assert en("status.article.overbooked") in row and en("status.paused") in row
+    assert en("overview.reprint_running", n=1) in row
     assert 'aria-valuenow="0"' in row
     row = table_row(part, "Dowel")
     assert en("status.article.below_min") in row
@@ -176,3 +180,70 @@ def test_german(ready_client):
     assert "Unter Mindestbestand" in page and "Geplant und in Arbeit" in page
     assert "Nachdruck läuft (1)" in page
     assert "Füllstand" in page
+
+
+def test_to_check_leads_to_assembly_when_only_assembly_waits(ready_client):
+    with sm_of(ready_client).begin() as s:
+        make_article(s, name="Kit", awaiting_assembly=2)
+    assert card(region(ready_client.get("/").text, "summary"), "overview.kpi.to_check")[0] == "/assembly"
+
+
+# ---- what the page asks of Bambuddy and the database ---------------------------------------
+
+
+def spool_calls(monkeypatch):
+    from reprintbuddy.web.routes import overview as route
+
+    calls = []
+
+    async def counted(request):
+        calls.append(request.url.path)
+        return None
+
+    monkeypatch.setattr(route, "spools_or_none", counted)
+    return calls
+
+
+def test_only_the_key_figures_ask_for_the_spools(ready_client, monkeypatch):
+    status = ready_client.app.state.ticker.status
+    status.configured, status.reachable = True, True
+    calls = spool_calls(monkeypatch)
+    ready_client.get("/")
+    assert len(calls) == 1
+    for name in ("status", "warnings", "list"):
+        ready_client.get("/", headers={regions.HEADER: name})
+    assert len(calls) == 1
+    ready_client.get("/", headers={regions.HEADER: "summary"})
+    assert len(calls) == 2
+
+
+def test_no_spool_query_while_bambuddy_is_down_or_not_set_up(ready_client, monkeypatch):
+    """The start page does not wait for a Bambuddy that is known not to answer: the count uses the
+    recorded stock, as it would after the timeout."""
+    status = ready_client.app.state.ticker.status
+    calls = spool_calls(monkeypatch)
+    status.configured, status.reachable = True, False
+    seed(ready_client)
+    page = ready_client.get("/").text
+    status.configured, status.reachable = False, None
+    ready_client.get("/")
+    assert calls == []
+    assert card(region(page, "summary"), "overview.kpi.reorder")[1] == 1  # the part still counts
+
+
+def test_nothing_is_written_while_writes_are_paused(ready_client, monkeypatch):
+    """During a restore or an update the overview counts read-only (the rule of the activity log)."""
+    from reprintbuddy.domain import reorder
+
+    seed(ready_client)
+    monkeypatch.setattr(ready_client.app.state.activity, "may_write", lambda: False)
+
+    def no_write(*args, **kwargs):
+        raise AssertionError("the overview wrote while writes are paused")
+
+    monkeypatch.setattr(reorder, "current", no_write)
+    calls = spool_calls(monkeypatch)
+    page = ready_client.get("/")
+    assert page.status_code == 200
+    assert calls == []
+    assert card(region(page.text, "summary"), "overview.kpi.reorder")[1] == 1

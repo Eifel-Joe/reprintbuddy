@@ -78,7 +78,9 @@ def test_last_query_in_the_head_not_twice(ready_client):
     page = ready_client.get("/").text
     head = region(page, "status")
     assert en("overview.never_polled") not in head
-    assert "2026" in head or "09.11." in head or "11/9" in head or "Nov" in head  # any format of the day
+    from reprintbuddy.web.formatting import format_local
+
+    assert f'<span class="status-value">{format_local(status_of(ready_client).last_poll_at, "en")}</span>' in head
     # The warnings below do not repeat the line on the overview (the queue page keeps it).
     assert "last-poll" not in region(page, "warnings")
     assert "last-poll" in region(ready_client.get("/queue").text, "warnings")
@@ -138,6 +140,11 @@ def test_bad_value_changes_nothing(ready_client):
     assert done.status_code == 303 and done.headers["location"] == "/"
     assert main_switch(ready_client) is False
     assert en("overview.automation_bad_value") in ready_client.get("/").text
+
+
+def test_back_to_another_local_page(ready_client):
+    done = switch_post(ready_client, "1", next="/queue")
+    assert done.headers["location"] == "/queue"
 
 
 def test_next_must_be_local(ready_client):

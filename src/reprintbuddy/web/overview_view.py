@@ -82,7 +82,7 @@ def figures(
             icon="clipboard-check", tone="warn" if check + assembly else "neutral", value=check + assembly,
             label=t("overview.kpi.to_check"),
             note=t("overview.kpi.to_check_note", check=check, assembly=assembly) if check + assembly else "",
-            href="/inspection",
+            href="/assembly" if assembly and not check else "/inspection",  # where something waits
         ),
         Kpi(
             icon="shopping-bag", tone="warn" if suggestions else "neutral", value=suggestions,

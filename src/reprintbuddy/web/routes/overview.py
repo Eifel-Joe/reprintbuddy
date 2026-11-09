@@ -25,9 +25,19 @@ async def _suggestions(request: Request) -> int:
     """The key figure of Spec 9.4 with the function of the reorder page (p64).
 
     The spools are read before the write transaction, never inside one; the count writes like the
-    reorder page does (new spool sorts, arrived marks closed).
+    reorder page does (new spool sorts, arrived marks closed). Two exceptions, because this is the
+    page everybody lands on:
+    - While writes are paused (a restore or an update; the rule of the activity log,
+      `app._install_activity_log`), it counts read-only from the record: after a restore the
+      database may be one the running process must not write to.
+    - A Bambuddy that is not set up or did not answer the last query is not asked: the page would
+      wait for its timeout and then count from the record anyway.
     """
-    spools = await spools_or_none(request)
+    if not request.app.state.activity.may_write():
+        return reorder.count_suggestions(db_session(request), None, utcnow(), write=False)
+    status = request.app.state.ticker.status
+    known_down = not status.configured or status.reachable is False
+    spools = None if known_down else await spools_or_none(request)
     with write_transaction(request) as tx:
         return reorder.count_suggestions(tx, spools, utcnow())
 
