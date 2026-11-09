@@ -263,6 +263,7 @@
   "articles.settings": "Einstellungen",
   "articles.file": "Druckdatei",
   "articles.target_quantity": "Zielmenge",
+  "articles.target_below_buffer": "Die Zielmenge darf nicht kleiner sein als der Puffer ({buffer}).",
   "articles.no_parts": "Es werden keine Zukaufteile verwendet.",
   "articles.recent_journal": "Letzte Journal-Einträge",
   "articles.all_journal": "Ganzes Journal dieses Artikels",

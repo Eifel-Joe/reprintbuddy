@@ -320,6 +320,34 @@ def update_article(session: Session, article_id: int, data: ArticleInput) -> Art
     return article
 
 
+def set_target_quantity(session: Session, article_id: int, target: int) -> Article:
+    """Set the target quantity of an article from the list or a tile (Spec 10.1, p154).
+
+    The target quantity is minimum stock + buffer (Spec 4), so the new target sets the minimum stock
+    to target - buffer; the buffer stays. A target below the buffer cannot be: the minimum stock would
+    be negative. Same checks and same transaction as the edit form (`update_article`: number range,
+    archived article refused), and like it no journal entry (the journal is for stock bookings).
+    Rule 7.1 reads the minimum stock on its next look, as after any edit.
+
+    The buffer is read here, in the transaction that writes: a buffer changed in the meantime on
+    another device cannot make the minimum stock negative, the target is then refused with the buffer
+    it is measured against. The value sent last wins, as with the edit form.
+    """
+    article = session.get(Article, article_id)
+    if article is None:
+        raise NotFoundError("articles.not_found")
+    if article.archived_at is not None:
+        raise ConflictError("articles.edit_archived")
+    target = _int_in(target, "articles.target_quantity", 0, MAX_QTY)
+    if target < article.buffer:
+        raise ValidationError("articles.target_below_buffer", buffer=article.buffer)
+    minimum = target - article.buffer
+    if article.min_stock != minimum:
+        article.min_stock = minimum
+        session.flush()
+    return article
+
+
 def set_auto_enabled(session: Session, article_id: int, enabled: bool) -> Article:
     """Switch the automation of one article on or off (the switch of the list, p44).
 

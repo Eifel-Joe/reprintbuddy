@@ -204,6 +204,89 @@ def test_update_article(db):
         assert s.get(Article, art_id).plate_id == 1  # file and plate stay
 
 
+# ---- the target quantity of the list and the tiles (Spec 10.1, p154) ----------------------------
+
+
+def test_target_quantity_sets_the_minimum_stock_and_keeps_the_buffer(db):
+    with db.begin() as s:
+        art_id = create(s, data=ArticleInput(name="Template A", min_stock=4, buffer=2)).id
+        art = catalog.set_target_quantity(s, art_id, 10)
+        assert (art.min_stock, art.buffer) == (8, 2)
+    with db.begin() as s:
+        row = catalog.list_articles(s)[0]
+        assert (row.target, row.min_stock) == (10, 8)
+
+
+def test_target_quantity_equal_to_the_buffer_makes_minimum_stock_zero(db):
+    with db.begin() as s:
+        art_id = create(s, data=ArticleInput(name="Template A", min_stock=4, buffer=3)).id
+        assert catalog.set_target_quantity(s, art_id, 3).min_stock == 0
+
+
+def test_target_quantity_below_the_buffer_is_refused_and_changes_nothing(db):
+    with db.begin() as s:
+        art_id = create(s, data=ArticleInput(name="Template A", min_stock=4, buffer=3)).id
+    with pytest.raises(ValidationError) as info:
+        with db.begin() as s:
+            catalog.set_target_quantity(s, art_id, 2)
+    assert info.value.key == "articles.target_below_buffer" and info.value.params["buffer"] == 3
+    with db.begin() as s:
+        assert (s.get(Article, art_id).min_stock, s.get(Article, art_id).buffer) == (4, 3)
+
+
+@pytest.mark.parametrize("bad", [-1, 10**9, True, "7", None, 3.5])
+def test_target_quantity_must_be_a_whole_number_in_range(db, bad):
+    with db.begin() as s:
+        art_id = create(s).id
+    with pytest.raises(ValidationError) as info:
+        with db.begin() as s:
+            catalog.set_target_quantity(s, art_id, bad)
+    assert info.value.key == "form.invalid_number"
+
+
+def test_target_quantity_refuses_an_archived_article_and_an_unknown_one(db):
+    with db.begin() as s:
+        art_id = create(s, data=ArticleInput(name="Template A", min_stock=1)).id
+        catalog.archive_article(s, art_id)
+    with pytest.raises(ConflictError) as info:
+        with db.begin() as s:
+            catalog.set_target_quantity(s, art_id, 5)
+    assert info.value.key == "articles.edit_archived"
+    with pytest.raises(NotFoundError):
+        with db.begin() as s:
+            catalog.set_target_quantity(s, 999, 5)
+    with db.begin() as s:
+        assert s.get(Article, art_id).min_stock == 1
+
+
+def test_target_quantity_touches_nothing_else_of_the_article(db):
+    with db.begin() as s:
+        part = make_part(s, name="Insert M4")
+        art_id = create(
+            s, data=ArticleInput(name="Template A", sku="TPL-1", min_stock=1, buffer=1, auto_enabled=True,
+                                 target_model="A1", parts={part.id: 2}, needs_assembly=True),
+        ).id
+        catalog.set_target_quantity(s, art_id, 9)
+    with db.begin() as s:
+        art = s.get(Article, art_id)
+        assert (art.name, art.sku, art.auto_enabled, art.target_model, art.needs_assembly) == ("Template A", "TPL-1", True, "A1", True)
+        assert [(link.part_id, link.qty_per_unit) for link in s.scalars(select(ArticlePart))] == [(1, 2)]
+        assert art.min_stock == 8
+
+
+def test_a_new_target_changes_the_state_rule_7_1_looks_at(db):
+    """The state follows the new minimum stock like after an edit: 5 on hand are enough for 5 and short for 9."""
+    with db.begin() as s:
+        art_id = create(s, data=ArticleInput(name="Template A", min_stock=0, buffer=0)).id
+        s.get(Article, art_id).stock = 5
+    with db.begin() as s:
+        assert catalog.list_articles(s)[0].status == "ok"
+        catalog.set_target_quantity(s, art_id, 9)
+    with db.begin() as s:
+        row = catalog.list_articles(s)[0]
+        assert row.min_stock == 9 and row.status == "below_min"
+
+
 def test_update_unknown_article(db):
     with pytest.raises(NotFoundError) as info:
         with db.begin() as s:
