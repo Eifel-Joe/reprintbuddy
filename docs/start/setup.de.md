@@ -95,11 +95,11 @@ Reprintbuddy fragt Bambuddy, wem der Schlüssel gehört und was er wirklich darf
 - **Gruppenrecht:** fehlt es der Gruppe `Reprintbuddy`, ergänze es dort in Bambuddy (*Einstellungen → Benutzer*). Ein neuer Schlüssel ist nicht nötig.
 - **Schlüsselrecht:** fehlt es am Schlüssel (zum Beispiel *Status lesen* oder *Warteschlange verwalten*), erzeuge einen neuen Schlüssel wie in Schritt 3.
 
-Unter der Liste, abgesetzt, zeigt die Seite, ob das wahlweise Recht zum Hochladen von Druckdateien da ist.
+Unter der Liste, abgesetzt, zeigt die Seite die zwei empfohlenen Rechte (Hochladen von Druckdateien, Live-Kanal), jeweils mit Haken oder Kreuz.
 
 Gelingt die Prüfung, speichert Reprintbuddy Adresse und Schlüssel und übernimmt den Namen des Besitzers aus Bambuddys Antwort. Die Seite zeigt dann, was Bambuddy gemeldet hat: den Besitzer des Schlüssels und jedes Pflichtrecht mit einem Haken, dazu in je einer Zeile, ob sich mit diesem Schlüssel Druckdateien hochladen lassen und ob Bambuddy Änderungen sofort melden kann. Fehlt dem Schlüssel eines dieser beiden Rechte, geht alles andere. Eine fehlgeschlagene Prüfung führt die beiden empfohlenen Rechte getrennt von den nötigen auf, ebenfalls mit Haken oder Kreuz; sie entscheiden nie darüber, ob der Schlüssel gespeichert wird, und ein fehlendes öffnet nach einem Update nie den Hinweis. Mit **Weiter** öffnest du die Oberfläche (die Seite, die du vor der Einrichtung öffnen wolltest, falls es eine gab).
 
-Ein Schlüssel, der einem Administrator gehört, wird angenommen, mit der Warnung, dass er mehr darf, als Reprintbuddy braucht. Sicherer ist der Benutzer `reprintbuddy` aus Schritt 2.
+Ein Schlüssel, der einem Administrator gehört, wird angenommen, mit der Warnung, dass er mehr darf, als Reprintbuddy braucht. Sicherer ist der Benutzer `reprintbuddy` aus Schritt 2. Bei einem solchen Schlüssel führt **Weiter** zu *Einstellungen → Bambuddy* statt zu der Seite, die du öffnen wolltest. Lädst du die Ergebnisseite neu, fragt der Browser, ob er das Formular noch einmal senden soll; es wird nichts doppelt gespeichert, und Reprintbuddy führt dich zu *Einstellungen → Bambuddy*, weil die Einrichtung fertig ist.
 
 Die beiden Felder sind so gekennzeichnet, dass Passwort-Manager sie nicht mit deinen eigenen Zugangsdaten füllen.
 
