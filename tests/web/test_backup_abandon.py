@@ -18,6 +18,7 @@ file: it stays, and the page asks to try again without uploading it a second tim
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import errno
 import re
 import threading
@@ -30,6 +31,7 @@ from starlette.requests import Request
 
 from reprintbuddy.ops import backupcrypto as bc
 from reprintbuddy.ops import fullbackup as fb
+from reprintbuddy.ops.service import RESTART_CMD
 from reprintbuddy.web.routes import backup as backup_routes
 
 from test_ops_full_backup import MAINTENANCE, confirm, download, made_backup, upload, work_files
@@ -305,9 +307,47 @@ async def test_cancelling_while_waiting_for_a_running_tick_gives_the_restore_sta
     assert ops_env.runner.calls == []
 
 
+class SlowStartPool(concurrent.futures.ThreadPoolExecutor):
+    """A thread pool whose threads take a moment to pick a job up, as a pool under load does.
+
+    `asyncio.to_thread` runs on this pool. A job that no thread has picked up yet is dropped when its
+    awaiting task is cancelled; a job that is already running goes on. Without this pool the outcome
+    of "cancelled right after handing a job over" depends on which of the two comes first."""
+
+    def submit(self, fn, /, *args, **kwargs):
+        job: concurrent.futures.Future = concurrent.futures.Future()
+
+        def start():
+            if not job.set_running_or_notify_cancel():
+                return  # cancelled before a thread picked it up: never runs
+            try:
+                job.set_result(fn(*args, **kwargs))
+            except BaseException as error:  # noqa: BLE001 - handed to the waiting side
+                job.set_exception(error)
+
+        threading.Timer(0.3, start).start()
+        return job
+
+
+async def restart_asked(env, *, within=5.0) -> list:
+    deadline = time.monotonic() + within
+    while not env.runner.calls and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    await asyncio.sleep(0.4)  # a second call would come within this time
+    return env.runner.calls
+
+
 async def test_cancelling_once_the_replace_worker_has_begun_leaves_the_restore_pending(ops_env, monkeypatch):
     """From the moment the worker began the database may be replaced: the state must not fall back to
-    "idle" (writes would go on against the state of the old database); the restart button stays usable."""
+    "idle" (writes would go on against the state of the old database); the restart button stays usable.
+
+    p157 (v0.3.12): through the app's middleware the cancellation reaches the route only after the replace
+    has ended, at its next wait: the one for the restart it has just handed to a thread. Whether that
+    restart then ran depended on whether a thread picked it up before the cancellation landed (CI, under
+    load: sometimes). Once the database is replaced the restart belongs to the restore (Spec 11.6): it is
+    asked for whether or not the browser still waits. The slow pool makes the cancellation always win
+    the race the old code lost only now and then."""
+    asyncio.get_running_loop().set_default_executor(SlowStartPool(max_workers=4))
     upload(ops_env, made_backup(ops_env, BACKUP_PASSWORD))
     held = Held(monkeypatch, fb, "replace_database")
     app = ops_env.client.app
@@ -323,7 +363,7 @@ async def test_cancelling_once_the_replace_worker_has_begun_leaves_the_restore_p
         await cancel_and_let_go(task, held)
     assert app.state.restore.phase == "restart_pending"
     assert await settled(ops_env) == []  # the worker ended the replace and removed the copy itself
-    assert ops_env.runner.calls == []
+    assert await restart_asked(ops_env) == [RESTART_CMD]
 
 
 def test_the_replace_gate_lets_exactly_one_side_win():
