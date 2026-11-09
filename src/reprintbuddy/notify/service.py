@@ -66,6 +66,17 @@ class _Target:
     service: str
 
 
+def _same_token(current: _Target | None, sent: _Target | None) -> bool:
+    """Is the token a call went out with still the stored one, for the same address? Other fields (the
+    service, the spelling of the address) may have been saved meanwhile without changing that."""
+    return (
+        current is not None
+        and sent is not None
+        and current.token == sent.token
+        and st.same_address(current.url, sent.url)
+    )
+
+
 def _token_rejected(session: Session) -> bool:
     return st.get_setting(session, "ha_token_rejected") is True
 
@@ -242,7 +253,8 @@ class Notifier:
             current = _target(session)
             switched_on = current is not None
             rejected = checked == "token" or any(outcome == "token" for _, outcome in results)
-            if rejected and current == target:
+            still_stored = _same_token(current, target)
+            if rejected and still_stored:
                 # Only the token that was refused: saved meanwhile, a new one is not stopped by the old
                 # one's answer. Rejected: keeping the stop only in memory - every restart (an update
                 # too) would cost another failed login in Home Assistant.
@@ -250,7 +262,7 @@ class Notifier:
         if not switched_on:
             self._set(problem=None)
             return False
-        if rejected and current != target:
+        if rejected and not still_stored:
             return False  # the refused token is gone: its answer says nothing about the new one
         if now is not None:
             self._take(results, checked, now)

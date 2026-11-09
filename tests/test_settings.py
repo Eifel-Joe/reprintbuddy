@@ -40,6 +40,7 @@ EXPECTED_DEFAULTS = {
     "ha_names": True,
     "ha_events": ["print_done", "print_failed", "paused", "below_min", "reorder", "trouble", "rights"],
     "ha_since": None,
+    "ha_token_rejected": False,
 }
 
 

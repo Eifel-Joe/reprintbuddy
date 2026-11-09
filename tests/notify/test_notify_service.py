@@ -524,3 +524,26 @@ async def test_a_rejection_of_a_token_replaced_meanwhile_stops_nothing(env, resp
     await env.settle()
     assert not _rejected(env)
     assert env.notifier.status.problem != "token"
+
+
+@pytest.mark.parametrize(
+    "change", [("ha_service", "notify.other_phone"), ("ha_url", "http://HA.test:8123/")], ids=["service", "spelling"]
+)
+async def test_a_rejection_of_the_same_token_stops_even_if_other_fields_were_saved(env, respx_mock, change):
+    """Review: only the token and the address (as `same_address` sees it) decide whether the refused
+    token is still the stored one."""
+    release = asyncio.Event()
+
+    async def hanging(request):
+        await release.wait()
+        return httpx.Response(401)
+
+    respx_mock.post(CALL).mock(side_effect=hanging)
+    env.pause()
+    env.notifier.after_tick(False)
+    await asyncio.sleep(0.05)
+    with env.db.begin() as s:
+        st.set_setting(s, change[0], change[1], commit=False)
+    release.set()
+    await env.settle()
+    assert _rejected(env)

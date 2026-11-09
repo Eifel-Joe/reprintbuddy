@@ -342,6 +342,21 @@ def validate(key: str, value: object) -> object:
     return _VALIDATORS[key](value)
 
 
+# What an earlier version stored under a rule since made stricter. Such a value still works where it is
+# read and is fixed the next time it is saved; it must not make a backup unrestorable (review of p165).
+_EARLIER_RULES: dict[str, Callable[[Any], object]] = {"bambuddy_url": _optional_url}
+
+
+def validate_stored(key: str, value: object) -> object:
+    """`validate` for a value already in a database: also what an earlier version allowed to be saved."""
+    try:
+        return validate(key, value)
+    except ValueError:
+        if key not in _EARLIER_RULES:
+            raise
+        return _EARLIER_RULES[key](value)
+
+
 def set_setting(session: Session, key: str, value: object, *, commit: bool = True) -> None:
     """Validate and store a setting.
 
