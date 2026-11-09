@@ -57,7 +57,7 @@ Invented example data. More pictures are on the [documentation pages](https://ei
   optional**). Reprintbuddy reads the filament stock through Bambuddy and never talks to
   Spoolman itself.
 - **Print files stored directly in Bambuddy's file manager**, uploaded and sliced
-  (`.gcode.3mf`). Linked external folders are not enough: Bambuddy keeps no checksum for
+  (`.3mf` or `.gcode.3mf`). Linked external folders are not enough: Bambuddy keeps no checksum for
   their files and does not re-read plates and filament when it rescans them, so a changed
   version would go unnoticed. New print files can also be uploaded from Reprintbuddy
   (optional, see *Uploading print files*), though not into an external folder.
@@ -202,7 +202,7 @@ DNS names, are accepted only after setup.
 ## Uploading print files
 
 Under *Articles → New article from print file*, the button *Upload print file* puts a sliced
-3MF file (`.gcode.3mf`, at most 200 MB) into the folder that is open, in Bambuddy's file
+3MF file (`.3mf` or `.gcode.3mf` with G-code inside, at most 200 MB) into the folder that is open, in Bambuddy's file
 manager; then you choose the plate and create the article as usual. Reprintbuddy checks the
 file before it sends anything, because it cannot delete a file in Bambuddy again: only a
 sliced 3MF, Bambuddy's rules for the name, and no file of the same name in that folder

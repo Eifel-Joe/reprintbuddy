@@ -5,7 +5,7 @@ Was du brauchst, bevor du Reprintbuddy installierst: ein passendes Bambuddy, Dru
 ## Bambuddy
 
 - **Bambuddy 1.3 oder neuer.** Bambuddy kann die Spulen selbst führen (eigene Spulenverwaltung) oder in Spoolman. **Spoolman ist optional.** Reprintbuddy liest den Filamentbestand über Bambuddy und spricht nie selbst mit Spoolman.
-- **Druckdateien direkt in Bambuddys Dateimanager**, hochgeladen und geslict (`.gcode.3mf`).
+- **Druckdateien direkt in Bambuddys Dateimanager**, hochgeladen und geslict (`.3mf` oder `.gcode.3mf`).
 
     !!! warning "Dateien aus eingebundenen externen Ordnern reichen nicht"
         Für Dateien aus einem Ordner, der von außen in Bambuddy eingebunden ist (einem externen Ordner), führt Bambuddy keine Prüfsumme, und beim erneuten Einlesen eines solchen Ordners liest es Platten und Filament nicht neu. Reprintbuddy würde eine neue Fassung einer solchen Datei nicht bemerken. Nimm Dateien, die direkt in Bambuddys eigenem Dateimanager liegen. Mehr unter [Grenzen](../help/limits.md).

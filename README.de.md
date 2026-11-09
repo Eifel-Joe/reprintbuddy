@@ -57,7 +57,7 @@ Erfundene Beispieldaten. Weitere Bilder stehen auf den [Doku-Seiten](https://eif
 - Bambuddy 1.3 oder neuer, mit eigener Spulenverwaltung oder mit Spoolman (**Spoolman ist
   optional**). Reprintbuddy liest den Filamentbestand über Bambuddy und spricht nie selbst
   mit Spoolman.
-- **Druckdateien direkt in Bambuddys Dateimanager**, hochgeladen und geslict (`.gcode.3mf`).
+- **Druckdateien direkt in Bambuddys Dateimanager**, hochgeladen und geslict (`.3mf` oder `.gcode.3mf`).
   Extern eingebundene Ordner reichen nicht: Für ihre Dateien führt Bambuddy keine Prüfsumme
   und liest Platten und Filament beim erneuten Einlesen nicht neu, eine geänderte Fassung
   bliebe unbemerkt. Neue Druckdateien lassen sich auch aus Reprintbuddy hochladen (optional,
@@ -213,7 +213,7 @@ Einrichtung akzeptiert.
 ## Druckdateien hochladen
 
 Unter *Artikel → Neuer Artikel aus Druckdatei* legt der Knopf *Druckdatei hochladen* eine
-geslicte 3MF-Datei (`.gcode.3mf`, höchstens 200 MB) in den gerade geöffneten Ordner in
+geslicte 3MF-Datei (`.3mf` oder `.gcode.3mf` mit G-Code darin, höchstens 200 MB) in den gerade geöffneten Ordner in
 Bambuddys Dateimanager; danach wählst du wie gewohnt die Platte und legst den Artikel an.
 Reprintbuddy prüft die Datei, bevor er etwas schickt, weil er eine Datei in Bambuddy nicht
 wieder löschen kann: nur eine geslicte 3MF, Bambuddys Regeln für den Namen und keine Datei

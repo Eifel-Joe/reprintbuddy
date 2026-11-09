@@ -4,7 +4,7 @@ An article is something you stock and sell, for example "Example article A". Eac
 
 ## Create an article from a print file
 
-You need a sliced print file in Bambuddy's file manager. Unsliced files cannot become an article: slice them first and put the sliced file (`.gcode.3mf`) into Bambuddy, or [upload it from Reprintbuddy](#upload-a-print-file).
+You need a sliced print file in Bambuddy's file manager. Unsliced files cannot become an article: slice them first and put the sliced file (`.3mf` or `.gcode.3mf`) into Bambuddy, or [upload it from Reprintbuddy](#upload-a-print-file).
 
 !!! warning "Use print files that lie directly in Bambuddy's file manager"
     Reprintbuddy works reliably only with print files that lie directly in Bambuddy's file manager. For files in a folder that is linked into Bambuddy from outside (an external folder), Bambuddy keeps no checksum and, when it reads the folder again, refreshes only the modification date, not the plates and the filament. A new version of such a file would go unnoticed. See [Limits](../help/limits.md).
@@ -31,7 +31,7 @@ The same form opens under **Edit settings** on the article page. An info button 
 
 | Field | Meaning | Default |
 |---|---|---|
-| **Name** | Free text, up to 200 characters. | The file name without `.gcode.3mf` |
+| **Name** | Free text, up to 200 characters. | The file name without its ending (`.gcode.3mf` or `.3mf`) |
 | **Article number** | Optional, up to 64 characters. Must be unique among all articles and sets. | empty |
 | **Label text** | Optional text for the [label](labels.md), for example the shelf compartment (up to 60 characters). | empty |
 | **Units per print** | How many units one print of this plate yields, 1 to 1000. Reprintbuddy uses it to work out how many prints a reprint needs. | 1 |
@@ -55,7 +55,7 @@ Instead of choosing a file that is already in Bambuddy, you can upload one. On *
 
 What Reprintbuddy checks before it sends anything (a file once uploaded cannot be deleted again from Reprintbuddy):
 
-- It is a sliced 3MF file (`.gcode.3mf`): a zip that contains G-code. Reprintbuddy reads only its table of contents and unpacks nothing.
+- It is a sliced 3MF file (`.3mf` or `.gcode.3mf`): a zip that contains G-code. Reprintbuddy reads only its table of contents and unpacks nothing.
 - It is at most 200 MB. This limit is fixed.
 - The name follows Bambuddy's rules: no `< > : " / \ | ? *`, no control characters, no space or dot at the end, at most 255 bytes.
 - No file of the same name is in the folder (upper and lower case do not matter). Then nothing is uploaded and the page offers **Create the article from the existing file**. Rename your file or use the existing one. A file is never overwritten or renamed automatically.

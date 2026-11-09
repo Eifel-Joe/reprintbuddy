@@ -5,7 +5,7 @@ What you need before you install Reprintbuddy: a Bambuddy that fits, print files
 ## Bambuddy
 
 - **Bambuddy 1.3 or newer.** Bambuddy can keep the spools itself (its own spool management) or in Spoolman. **Spoolman is optional.** Reprintbuddy reads the filament stock through Bambuddy and never talks to Spoolman itself.
-- **Print files stored directly in Bambuddy's file manager**, uploaded and sliced (`.gcode.3mf`).
+- **Print files stored directly in Bambuddy's file manager**, uploaded and sliced (`.3mf` or `.gcode.3mf`).
 
     !!! warning "Files in linked external folders are not enough"
         For files from a folder that is linked into Bambuddy from outside (an external folder), Bambuddy keeps no checksum, and when it rescans such a folder it does not re-read plates and filament. Reprintbuddy would not notice a new version of such a file. Use files that lie directly in Bambuddy's own file manager. More under [Limits](../help/limits.md).
