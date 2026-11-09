@@ -72,7 +72,7 @@ The first turns HTTPS off, the second sets the port, the third the listen addres
 
 - **Not on the internet.** See above: no port forwarding, no public reverse proxy; use a VPN.
 - **Keys, passwords and tokens.** API keys, the private key of an HTTPS certificate, the Home Assistant token and passwords are visible only while you type them. Once saved, the interface shows `********`. An empty field keeps the stored value, a new entry replaces it. Passwords are stored only as hashes.
-- **Home Assistant token.** It acts with all rights of its Home Assistant user, so create it for a user without admin rights. It goes only to the address it was entered with; for a new address, enter it again. Push messages to a phone pass through the push service of Google or Apple, and they name articles, spool sorts and parts as long as **Name things in messages** is on.
+- **Home Assistant token.** It acts with all rights of its Home Assistant user, so create it for a user without admin rights. It goes only to the address it was entered with, path included; for a new address, enter it again. Push messages to a phone pass through the push service of Google or Apple, and they name articles, spool sorts and parts as long as **Name things in messages** is on.
 - **Every change needs a session and a token.** A change is accepted only from a signed-in session and with a CSRF token.
 - **The database file** is readable only by the service user. Anyone who is root on the machine can read it. The same goes for the copies in `backups/` and for a full backup without a password, which hold the keys.
 

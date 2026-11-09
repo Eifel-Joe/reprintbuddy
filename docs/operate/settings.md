@@ -13,7 +13,7 @@ There is **no configuration file**. Every setting lives in the database. The onl
 !!! note "Keys, passwords and tokens"
     The Bambuddy API key, the private HTTPS key, the Home Assistant token and passwords are visible only while you type them. Once saved, the field shows `********` (or stays empty with that sign) and the card says "A value is stored." An **empty field keeps the stored value**; a **new entry replaces it**. Passwords are stored only as hashes.
 
-    A stored key or token belongs to one address and never travels to another: if you change the address of Bambuddy or of Home Assistant, enter the key or token again.
+    A stored key or token belongs to one address, path included, and never travels to another: if you change the address of Bambuddy or of Home Assistant, enter the key or token again.
 
 ## General
 
@@ -64,12 +64,12 @@ The card **Bambuddy connection** holds the address and the key of the Bambuddy a
 
 | Setting | What it does | Accepts |
 |---|---|---|
-| **Bambuddy address** | Address of Bambuddy with `http://` or `https://` and the port, for example `http://<bambuddy-host>:8000`. | An address in one piece, no blanks or line breaks |
+| **Bambuddy address** | Address of Bambuddy with `http://` or `https://` and the port, for example `http://<bambuddy-host>:8000`. | An address with `http://` or `https://`, host and port, without user name, query (`?`) or fragment (`#`) and without blanks or line breaks. Reprintbuddy appends the path of each call, which would land behind a `?` or `#`. |
 | **API key** | The key of the Bambuddy account. Shown only while you type it. | Visible characters without blanks |
 
 **Check and save** asks Bambuddy whom the key belongs to and which rights it really has. Changes are saved **only if the check succeeds**. The card then shows the owner of the key ("Saved key owner: …"); you never type the user name. A key that belongs to an administrator is saved with a warning, because it may do more than needed. Whether print files can be uploaded with this key is reported after every save.
 
-If you change the address, enter the key again: a stored key is never sent to a new address.
+If you change the address, enter the key again: a stored key is never sent to a new address. A different path counts as a different address (behind a proxy another path can be another service), and so does a different user part, query or fragment. Writing the same address differently does not: upper or lower case in scheme and host, a left-out default port and a trailing slash make no difference. An address saved by an earlier version that has a part the rule now refuses keeps working until you save it again.
 
 The card **Live channel** shows whether Bambuddy reports finished prints at once (**Connected**) or Reprintbuddy has to use the regular query (**Waiting**, **Connecting**, **Right missing**), or the card says **Off**. It is a display, not a setting.
 

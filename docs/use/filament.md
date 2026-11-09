@@ -48,7 +48,7 @@ An archived article's assignment is read-only. After you change an article's pri
 | **Use per day** | Grams used per day over the last 30 days, or "no history yet" until two different days are recorded. |
 | **Planned demand** | Only for reordered sorts: the grams for the prints in Reprintbuddy's queue and in progress, plus the prints still missing up to the target quantity of the articles. |
 
-The cards on top count spool sorts, total stock, spools and the reordered sorts **Without settings**. A note above the table says whether the stock is **Live from Bambuddy.** or how old it is. Below the table, a note lists filament slots that have no ticked spool sort yet; each entry leads to its assignment.
+The cards on top count spool sorts, total stock, spools and the reordered sorts **Without settings**. A note above the table says whether the stock is **Live from Bambuddy.** or how old it is. When the numbers are the last recorded ones, the day also stands under the cards for stock and spools and in the head of the columns **Stock** and **Spools**, as **As of …**, so that nobody takes them for live numbers. Below the table, a note lists filament slots that have no ticked spool sort yet; each entry leads to its assignment.
 
 ## Reorder settings of a spool sort
 

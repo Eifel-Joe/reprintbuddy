@@ -32,12 +32,21 @@ Reprintbuddy geht auf die vorige Version zurück **und** stellt die Datenbank au
 
 Ein Rückfall setzt die Datenbank auf den Stand vor dem Update zurück. Alles, was du in der Zwischenzeit gebucht hättest, ginge verloren. Deshalb wird während eines Updates jede Änderung abgelehnt mit „Ein Update läuft. Änderungen sind bis zum Ende gesperrt.“; auch die Automatik wartet. Weiter möglich sind **Nach Updates suchen**, der Update-Knopf selbst und das Abmelden. Seiten lesen geht wie immer.
 
+## Was die neueren Versionen mitbringen
+
+Findet die Prüfung eine neuere Version, zeigt die Update-Karte außerdem ein zugeklapptes Feld **Was ist neu bis …** (mit der neuesten Version). Klappe es auf, um die Versionshinweise jeder Version nach der installierten bis zur neuesten zu lesen, die neueste zuerst, jede mit ihrer Versionsnummer (dem Git-Tag) und dem Datum. Höchstens 10 Versionen stehen in der Liste; ein Hinweis von mehr als 20.000 Zeichen wird gekürzt und mit „… (gekürzt)“ markiert. Unter den Hinweisen führt der Link **Alle Versionshinweise auf GitHub** zur Seite aller Versionen.
+
+- Die Hinweise gibt es nur auf Englisch. In der deutschen Oberfläche sagt das eine Zeile: „Die Versionshinweise gibt es nur auf Englisch.“
+- Sie kommen von GitHub und erscheinen als einfacher formatierter Text: Absätze, Listen, fett, kursiv und Code. Links und Bilder aus dem Text zeigen nur ihre Worte; nichts aus dem Text wird ausgeführt oder nachgeladen.
+- Lassen sie sich nicht laden, sagt das Feld „Versionshinweise konnten nicht geladen werden.“ Die Prüfung und das Update hängen nicht von ihnen ab.
+- Reprintbuddy fragt sie einmal je Prüfung ab, bei `api.github.com`, ohne Anmeldung, ohne Cookie und ohne eine Adresse deiner Installation. GitHub sieht die IP-Adresse deines Servers und begrenzt solche Anfragen auf 60 je Stunde. Ein Seitenaufruf fragt nie; das Ergebnis liegt nur im Arbeitsspeicher.
+
 ## Die tägliche Prüfung und der Balken oben
 
 Reprintbuddy fragt beim Start und danach einmal täglich, ob es eine neuere Version gibt. Es ist dieselbe Prüfung wie der Knopf. Gibt es eine, erscheint oben auf jeder Seite ein schmaler Balken: „Version … ist verfügbar.“ mit dem Link **Update anzeigen**, der zur Update-Karte führt.
 
 - Schlägt eine Prüfung fehl, siehst du nichts; Reprintbuddy versucht es nach einer Stunde wieder.
-- Die Prüfung fragt das Repository auf GitHub, GitHub sieht also die Adresse deines Servers.
+- Die Prüfung fragt das Repository auf GitHub und, wenn sie eine neuere Version findet, auch GitHubs API nach den Versionshinweisen; GitHub sieht also die Adresse deines Servers.
 - Schalte sie mit **Automatisch nach neuen Versionen suchen** auf der Update-Karte ab. Dann gibt es weder die automatische Prüfung noch den Balken; der Knopf funktioniert weiter.
 - Ein Entwicklungsstand zeigt den Balken nie.
 
@@ -84,7 +93,7 @@ journalctl -u reprintbuddy-update
 
 ## Versionen und Release-Notes
 
-Versionen sind Git-Tags `vX.Y.Z`, und die Paketversion entspricht dem Tag. Das Update installiert das neueste Versions-Tag. Ändert eine Version die systemd-Units oder die sudoers-Regel, steht das in ihren Release-Notes, und du führst nach dem Update das Installationsskript noch einmal aus. Die Release-Notes stehen auf [GitHub](https://github.com/Eifel-Joe/reprintbuddy/releases).
+Versionen sind Git-Tags `vX.Y.Z`, und die Paketversion entspricht dem Tag. Das Update installiert das neueste Versions-Tag. Ändert eine Version die systemd-Units oder die sudoers-Regel, steht das in ihren Release-Notes, und du führst nach dem Update das Installationsskript noch einmal aus. Die Release-Notes stehen auf [GitHub](https://github.com/Eifel-Joe/reprintbuddy/releases) und, für die Versionen einer neueren Version, auf der Update-Karte (siehe [Was die neueren Versionen mitbringen](#was-die-neueren-versionen-mitbringen)).
 
 Die Karte zeigt die Version als Git-Tag und, wenn sie abweicht, daneben die Paketversion.
 

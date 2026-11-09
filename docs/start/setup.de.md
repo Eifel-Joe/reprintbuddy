@@ -89,7 +89,7 @@ Drücke **Weiter**.
 
 ## Schritt 4: Bambuddy anbinden
 
-Trage die **Adresse von Bambuddy** (mit `http://` oder `https://` am Anfang und dem Port, zum Beispiel `http://<bambuddy-host>:8000`) und den **API-Schlüssel** ein und drücke **Prüfen und speichern**.
+Trage die **Adresse von Bambuddy** (mit `http://` oder `https://` am Anfang und dem Port, zum Beispiel `http://<bambuddy-host>:8000`; ohne Benutzername, `?` und `#`) und den **API-Schlüssel** ein und drücke **Prüfen und speichern**.
 
 Reprintbuddy fragt Bambuddy, wem der Schlüssel gehört und was er wirklich darf. Gespeichert wird nur, wenn der Schlüssel alle Rechte hat, die Reprintbuddy braucht. Fehlt eines, wird nichts gespeichert. Die Seite zeigt den Besitzer des Schlüssels und jedes nötige Recht mit Haken (vorhanden) oder Kreuz (fehlt), und neben jedem fehlenden Recht, wo du es behebst:
 

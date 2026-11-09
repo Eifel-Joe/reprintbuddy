@@ -51,7 +51,7 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 
 ## Netzzugang, den der Rechner braucht
 
-Ausgehend zu den Debian-Paketquellen (`apt`), `github.com` und `raw.githubusercontent.com` (Installation und Updates), `pypi.org` und `files.pythonhosted.org` (Python-Pakete, bei der Installation und bei jedem Update) und zu deinem Bambuddy.
+Ausgehend zu den Debian-Paketquellen (`apt`), `github.com` und `raw.githubusercontent.com` (Installation und Updates), `api.github.com` (die Versionshinweise auf der Update-Karte), `pypi.org` und `files.pythonhosted.org` (Python-Pakete, bei der Installation und bei jedem Update) und zu deinem Bambuddy.
 
 ## Das Skript noch einmal ausführen
 

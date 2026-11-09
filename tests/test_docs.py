@@ -169,3 +169,23 @@ def test_pull_request_template_asks_about_the_documentation():
     asking = [line for line in boxes if "`docs/`" in line]
     assert len(asking) == 1, boxes
     assert "README" in asking[0] and " / " in asking[0]  # both languages
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["start/requirements.md", "start/requirements.de.md", "start/install.md", "start/install.de.md",
+     "operate/update-backup.md", "operate/update-backup.de.md"],
+)
+def test_pages_name_the_host_of_the_release_notes(name):
+    """The update check asks GitHub's API for the release notes (Spec 11.3a): every list of hosts names it."""
+    from reprintbuddy.ops import releasenotes
+
+    host = releasenotes.API.removeprefix("https://")
+    assert host in (DOCS / name).read_text(encoding="utf-8"), name
+
+
+@pytest.mark.parametrize("name", ["README.md", "README.de.md"])
+def test_readme_names_the_host_of_the_release_notes(name):
+    from reprintbuddy.ops import releasenotes
+
+    assert releasenotes.API.removeprefix("https://") in (ROOT / name).read_text(encoding="utf-8")

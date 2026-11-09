@@ -25,7 +25,7 @@ When Bambuddy reports a print as finished, Reprintbuddy books its pieces as **Pr
 Each row shows the article, when the print was reported finished, and the **Target**: the number of pieces the print should have made. A badge **Goes to assembly afterwards** appears for articles with hand work.
 
 1. Count the good pieces of the print.
-2. Enter the pieces that are not good in **Scrap**. The default is 0, the most you can enter is the target.
+2. Enter the pieces that are not good in **Scrap**. The default is 0, the most you can enter is the target. Empty means 0; anything that is not a whole number from 0 to the target is refused with a message that names this range.
 3. Press **Confirm**.
 
 The good pieces are the target minus the scrap. They become **Stock**, or **Awaiting assembly** if the article needs hand work. The scrap is written off, and Reprintbuddy puts a replacement print at the front of the queue, rounded up to whole prints. The replacement comes whatever the minimum stock says, and also if the automation is paused for that article.
@@ -36,6 +36,8 @@ To confirm several prints at once:
 - Press **All good** to confirm every row on the page as fully good.
 
 Prints that someone else confirmed in the meantime are skipped, and the message says how many.
+
+The check takes no note. Neither does the assembly below. Both book with one click, and the journal shows the booking without a note (old entries keep theirs).
 
 ### Only one article
 

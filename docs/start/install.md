@@ -51,7 +51,7 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 
 ## Network access the machine needs
 
-Outgoing access to the Debian package sources (`apt`), `github.com` and `raw.githubusercontent.com` (installation and updates), `pypi.org` and `files.pythonhosted.org` (Python packages, at installation and at every update) and to your Bambuddy.
+Outgoing access to the Debian package sources (`apt`), `github.com` and `raw.githubusercontent.com` (installation and updates), `api.github.com` (the release notes on the update card), `pypi.org` and `files.pythonhosted.org` (Python packages, at installation and at every update) and to your Bambuddy.
 
 ## Running the installer again
 

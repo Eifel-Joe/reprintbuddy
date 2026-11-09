@@ -74,7 +74,8 @@ Invented example data. More pictures are on the [documentation pages](https://ei
   export*).
   One CPU core, 1 GB RAM and 8 GB disk are enough. No Docker needed.
 - Outgoing network access from that machine to the Debian package sources (`apt`),
-  `github.com` and `raw.githubusercontent.com` (installation and updates),
+  `github.com` and `raw.githubusercontent.com` (installation and updates), `api.github.com` (the
+  release notes on the update card),
   `pypi.org` and `files.pythonhosted.org` (Python packages, at installation and at
   every update) and to your Bambuddy.
 - Optional: [Home Assistant](https://www.home-assistant.io/) with its phone app for push
@@ -236,21 +237,22 @@ Reprintbuddy calls `POST /api/services/notify/<service>` and, to check that Home
 again after a failed message, `GET /api/`; nothing else. "Accepted" means Home
 Assistant took the message; whether the phone got it, only Home Assistant knows. If a message
 does not go through, the overview shows "Home Assistant not reachable"; stock and printing go on
-as before.
+as before. If Home Assistant refuses the token (401), Reprintbuddy stops sending and checking at once, because every
+further try would count as a failed login there; saving the card again lifts the stop.
 
 ## Settings
 
 There is **no configuration file**. Every setting lives in the database and is
-changed under *Settings* in the web interface: language, Bambuddy connection,
-push messages,
-password, listen address, port, optional HTTPS certificate, restart, update and
-export. The only thing
+changed under *Settings* in the web interface: language, QR code address, Bambuddy connection,
+automation, labels, push messages, password, listen address, port, optional HTTPS certificate,
+restart, update check, update and backup, and export. The only thing
 given on the command line is the database path (`--db`).
 
 ## Update
 
-*Settings → Update*: press **Check for updates**; if a newer release exists, the card lists what it brings and you press
-**Update to …**. The check asks GitHub (the release notes come from GitHub's API without a login), so GitHub sees the address of your installation. *Available from the first release.* The update
+*Settings → Update and backup*: press **Check for updates**; if a newer release exists, the card lists what it brings and you press
+**Update to …**. Reprintbuddy also checks by itself at the start and once a day and then shows a bar at the top
+of every page; the switch **Check for new versions automatically** on the card turns that off. The check asks GitHub (the release notes come from GitHub's API without a login), so GitHub sees the address of your installation. The update
 
 1. backs up the database,
 2. switches to the new release tag,
@@ -361,7 +363,7 @@ systemctl start reprintbuddy
   stored only as hashes.
 - The Home Assistant token is treated like the API keys. It acts with all rights of its
   Home Assistant user, so create it for a user without admin rights. It only goes to the
-  address entered with it; for a new address, enter it again. Push messages to a phone pass
+  address entered with it, path included; for a new address, enter it again. Push messages to a phone pass
   through the push service of Google or Apple and name articles, spool sorts and parts as long
   as *Name things in messages* is on.
 - Every change needs a signed-in session and a CSRF token.

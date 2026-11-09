@@ -2,6 +2,10 @@
 
 Ist etwas nicht in Ordnung, sagt Reprintbuddy es im Klartext. Diese Seite listet die Warnungen, was sie bedeuten und was zu tun ist, und was du tust, wenn ein Update scheitert oder du ausgesperrt bist.
 
+## Meldungen oben auf der Seite
+
+Nach den meisten Aktionen zeigt die Seite oben eine Meldung, zum Beispiel dass etwas gespeichert oder gebucht wurde. Gute Nachrichten verschwinden nach etwa 8 Sekunden von selbst; sie bleiben stehen, solange der Mauszeiger oder der Tastaturfokus auf ihnen ist. Ärger (eine Warnung oder ein Fehler) bleibt, bis du ihn mit dem Knopf **Meldung schließen** wegmachst; der Fokus geht dann zum nächsten Element weiter, statt nach oben zu springen. Verlangt dein System weniger Bewegung, verschwindet eine Meldung ohne Ausblenden.
+
 ## Wo Warnungen erscheinen
 
 Die Warnungen stehen auf der *Übersicht* und auf der Seite *Warteschlange*, jeweils als Karte. Darunter steht **Letzte erfolgreiche Abfrage bei Bambuddy: …** (oder „Bambuddy wurde noch nicht erfolgreich abgefragt.“). Der Knopf **Jetzt bei Bambuddy abfragen** fragt Bambuddy sofort, statt auf die nächste reguläre Abfrage zu warten; die meisten Warnungen verschwinden von selbst bei der nächsten Abfrage, die gelingt.
@@ -20,6 +24,7 @@ Eine **rote** Karte heißt: Bambuddy antwortet nicht oder lehnt ab, eine Überga
 | Reprintbuddy kennt seinen Bambuddy-Benutzer nicht und kann eine unklare Übergabe deshalb nicht suchen. Bis sie geklärt ist, wird nichts Neues übergeben. Unter Einstellungen die Verbindung zu Bambuddy prüfen. | Der Name des Schlüsselbesitzers ist nicht gespeichert. | Drücke unter *Einstellungen → Bambuddy* **Prüfen und speichern**. |
 | Eine unklare Übergabe ist nicht eindeutig zuzuordnen: in Bambuddy kommen mehrere Einträge in Frage (Einträge `…`). Keiner wurde übernommen, der Artikel ist pausiert. In Bambuddy nachsehen und überzählige Einträge löschen; lief der Druck, über „Einbuchen ohne Druck“ buchen. | Mehrere Einträge in Bambuddys Warteschlange sehen aus wie der verlorene (gleicher Benutzer, gleiche Datei und Platte, nach dem Senden angelegt). Reprintbuddy rät nicht. | Lösche in Bambuddy die überzähligen Einträge (Reprintbuddy ändert nie Einträge in Bambuddy). Lief der Druck, buche die Stücke auf der Seite *Buchen* mit **Einbuchen ohne Druck**. Hebe dann die Pause des Artikels auf. |
 | Home Assistant nicht erreichbar – die letzte Push-Nachricht ging nicht durch: `Grund` | Die letzte Push-Nachricht wurde nicht angenommen. Der Grund sagt warum: Token abgelehnt (401), Dienst unbekannt oder Daten falsch (400), Absender gesperrt (403), Fehler in Home Assistant (5xx), auf eine andere Adresse umgeleitet, nicht erreichbar oder unklar (keine Antwort in der Zeit). | Prüfe Adresse, Token und Dienst unter *Einstellungen → Benachrichtigungen* und sende eine Testnachricht. Die Warnung verschwindet, wenn eine Nachricht angenommen wird, wenn Home Assistant bei einer regulären Abfrage wieder antwortet oder wenn die Nachrichten abgeschaltet sind. Bestand und Drucken laufen unverändert weiter. Siehe [Push-Nachrichten](../use/notifications.md). |
+| Home Assistant lehnt das Token ab – Reprintbuddy sendet nichts mehr, bis das Token unter Einstellungen → Benachrichtigungen neu eingetragen und gespeichert ist. | Eine reguläre Push-Nachricht bekam **Token abgelehnt (401)**. Jeder weitere Versuch würde in Home Assistant als Fehlanmeldung zählen, darum hat Reprintbuddy angehalten. | Trage unter *Einstellungen → Benachrichtigungen* ein richtiges Token ein und speichere. Der Halt gilt, bis die Karte gespeichert wird, auch über einen Neustart. Siehe [Push-Nachrichten](../use/notifications.md#sicherheit). |
 
 ## Gelbe Warnungen
 
@@ -56,7 +61,7 @@ Ein pausierter Artikel hat eine eigene Karte: der Name des Artikels, dann der Gr
 
 - **Bambuddy-Recht fehlt** (ein Hinweisfenster, oder nach **Später** eine Warnzeile oben): Dem gespeicherten Schlüssel fehlt ein Recht, das diese Version braucht. Siehe [Ersteinrichtung](../start/setup.md#fehlende-rechte-spater).
 - **Filament nicht zugeordnet** (am Artikel) oder „Diese Filament-Slots haben noch keine angekreuzte Spulensorte, ihr Bedarf wird nicht gezählt“ (auf der Filamentseite): Bei einem Filament-Slot des Artikels ist keine Spulensorte angekreuzt. Ordne sie am Artikel zu, siehe [Filament](../use/filament.md). Ein solcher Slot zählt nicht für Bestand und Bedarf.
-- **Bestand vom … (Bambuddy ist nicht erreichbar)**: Die Filamentzahlen sind die zuletzt bekannten, weil Bambuddy gerade nicht erreichbar ist.
+- **Bestand vom … (Bambuddy ist nicht erreichbar)**: Die Filamentzahlen sind die zuletzt bekannten, weil Bambuddy gerade nicht erreichbar ist. Der Tag steht noch einmal unter den Karten und im Kopf der Spalten, als **Stand vom …**.
 
 ## Ein Update ist gescheitert oder wurde unterbrochen
 

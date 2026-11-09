@@ -32,12 +32,21 @@ Reprintbuddy goes back to the previous version **and** restores the database fro
 
 A rollback puts the database back as it was before the update. Anything you booked in the meantime would be lost. So while an update runs, every change is refused with "An update is running. Changes are paused until it is finished."; the automation waits too. Still possible: **Check for updates**, the update button itself and signing out. Reading pages works as always.
 
+## What the newer versions bring
+
+When the check finds a newer release, the update card also shows a closed box **What's new up to …** (with the newest version). Open it to read the release notes of every version after the installed one, up to the newest, newest first, each with its tag and its date. At most 10 versions are listed; a note longer than 20,000 characters is cut and marked "… (cut)". Under the notes the link **All release notes on GitHub** leads to the page of all releases.
+
+- The notes are in English only. In the German interface a line says so: "The release notes are available in English only."
+- They come from GitHub and are shown as simple formatted text: paragraphs, lists, bold, italic and code. Links and pictures from the text show only their words; nothing from the text is run or loaded.
+- If they cannot be loaded, the box says "The release notes could not be loaded." The check and the update do not depend on them.
+- Reprintbuddy asks for them once per check, at `api.github.com`, without a login, a cookie or any address of your installation. GitHub sees the IP address of your server, and it limits such requests to 60 an hour. A page view never asks; the result is kept in memory only.
+
 ## The daily check and the bar at the top
 
 Reprintbuddy asks at the start and then once a day whether a newer release exists. It is the same check as the button. If there is one, a narrow bar appears at the top of every page: "Version … is available." with the link **Show update**, which leads to the update card.
 
 - If a check fails, you see nothing; Reprintbuddy tries again after an hour.
-- The check asks the repository on GitHub, so GitHub sees the address of your server.
+- The check asks the repository on GitHub, and when it finds a newer release also GitHub's API for the release notes, so GitHub sees the address of your server.
 - Switch it off with **Check for new versions automatically** on the update card. Then there is no automatic check and no bar; the button still works.
 - A development build never shows the bar.
 
@@ -84,7 +93,7 @@ journalctl -u reprintbuddy-update
 
 ## Versions and release notes
 
-Versions are git tags `vX.Y.Z`, and the package version equals the tag. The update installs the newest release tag. If a release changes the systemd units or the sudoers rule, its release notes say so, and you run the installer again after the update. The release notes are on [GitHub](https://github.com/Eifel-Joe/reprintbuddy/releases).
+Versions are git tags `vX.Y.Z`, and the package version equals the tag. The update installs the newest release tag. If a release changes the systemd units or the sudoers rule, its release notes say so, and you run the installer again after the update. The release notes are on [GitHub](https://github.com/Eifel-Joe/reprintbuddy/releases) and, for the versions a newer release brings, on the update card (see [What the newer versions bring](#what-the-newer-versions-bring)).
 
 The card shows the version as the Git tag and, if it differs, the package version next to it.
 

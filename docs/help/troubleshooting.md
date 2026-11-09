@@ -2,6 +2,10 @@
 
 When something is wrong, Reprintbuddy says so in plain words. This page lists the warnings, what they mean and what to do, and what to do when an update fails or you are locked out.
 
+## Messages at the top of a page
+
+After most actions the page shows a message at the top, for example that something was saved or booked. Good news goes away by itself after about 8 seconds, and it stays while the pointer or the keyboard focus is on it. Trouble (a warning or an error) stays until you dismiss it with the button **Dismiss message**; the focus then goes on to the next element instead of jumping to the top. If your system asks for reduced motion, a message is removed without fading.
+
 ## Where warnings appear
 
 The warnings are on the *Overview* and on the *Queue* page, each as a card. Under them stands **Last successful query of Bambuddy: …** (or "Bambuddy has not been queried successfully yet."). The button **Query Bambuddy now** asks Bambuddy at once instead of waiting for the next regular query; most warnings go away by themselves at the next query that succeeds.
@@ -20,6 +24,7 @@ A **red** card means that Bambuddy does not answer or refuses, that a hand-over 
 | Reprintbuddy does not know its Bambuddy user, so it cannot look for an unclear hand-over. Nothing new is handed over until it is clear. Check the connection to Bambuddy in the settings. | The name of the key's owner is not stored. | Under *Settings → Bambuddy* press **Check and save**. |
 | An unclear hand-over cannot be matched for certain: Bambuddy has several entries that could be it (entries `…`). None was taken over; the article is paused. Check Bambuddy and delete the extra entries; if the print ran, book it with stock-in without print. | Several entries in Bambuddy's queue look like the lost one (same user, file and plate, created after sending). Reprintbuddy refuses to guess. | In Bambuddy delete the extra entries (Reprintbuddy never changes entries in Bambuddy). If the print ran, book the pieces on the *Bookings* page with **Stock in without print**. Then lift the pause of the article. |
 | Home Assistant not reachable – the last push message did not go through: `reason` | The last push message was not accepted. The reason says why: token refused (401), service unknown or data wrong (400), sender blocked (403), error in Home Assistant (5xx), redirected to another address, not reachable, or unclear (no answer in time). | Check the address, the token and the service under *Settings → Notifications* and send a test message. The warning goes when a message is accepted, when Home Assistant answers again at a regular query, or when the messages are switched off. Stock and printing go on as before. See [Push messages](../use/notifications.md). |
+| Home Assistant refuses the token – Reprintbuddy sends nothing more until the token is entered again under Settings → Notifications and saved. | A regular push message got **token refused (401)**. Every further try would count as a failed login in Home Assistant, so Reprintbuddy stopped. | Enter a correct token under *Settings → Notifications* and save. The stop lasts until the card is saved, also over a restart. See [Push messages](../use/notifications.md#security). |
 
 ## Yellow warnings
 
@@ -56,7 +61,7 @@ A paused article has its own card: the name of the article, then the reason. Whi
 
 - **Bambuddy right missing** (a dialog, or a warning line at the top after **Later**): the stored key lacks a right that this version needs. See [First setup](../start/setup.md#missing-rights-later).
 - **Filament not assigned** (on the article), or "These filament slots have no ticked spool sort yet, so their demand is not counted" (on the filament page): a filament slot of the article has no spool sort ticked. Assign it on the article, see [Filament](../use/filament.md). Such a slot does not count for stock and demand.
-- **Stock as of …  (Bambuddy cannot be reached)**: the filament numbers are the last known ones, because Bambuddy cannot be reached right now.
+- **Stock as of …  (Bambuddy cannot be reached)**: the filament numbers are the last known ones, because Bambuddy cannot be reached right now. The day stands again under the cards and in the head of the columns, as **As of …**.
 
 ## An update failed or was interrupted
 

@@ -13,7 +13,7 @@ Es gibt **keine Konfigurationsdatei**. Jede Einstellung liegt in der Datenbank. 
 !!! note "Schlüssel, Passwörter und Token"
     Der API-Schlüssel von Bambuddy, der private HTTPS-Schlüssel, das Token von Home Assistant und Passwörter sind nur bei der Eingabe sichtbar. Nach dem Speichern zeigt das Feld `********` (oder bleibt mit diesem Zeichen leer), und die Karte sagt „Ein Wert ist gespeichert.“ Ein **leeres Feld lässt den gespeicherten Wert**; eine **neue Eingabe ersetzt ihn**. Passwörter werden nur als Hash gespeichert.
 
-    Ein gespeicherter Schlüssel oder ein gespeichertes Token gehört zu einer Adresse und geht nie an eine andere: Änderst du die Adresse von Bambuddy oder von Home Assistant, gib Schlüssel bzw. Token neu ein.
+    Ein gespeicherter Schlüssel oder ein gespeichertes Token gehört zu einer Adresse, samt Pfad, und geht nie an eine andere: Änderst du die Adresse von Bambuddy oder von Home Assistant, gib Schlüssel bzw. Token neu ein.
 
 ## Allgemein
 
@@ -64,12 +64,12 @@ Die Karte **Bambuddy-Verbindung** enthält die Adresse und den Schlüssel des Ba
 
 | Einstellung | Wirkung | Erlaubt |
 |---|---|---|
-| **Adresse von Bambuddy** | Adresse von Bambuddy mit `http://` oder `https://` und dem Port, zum Beispiel `http://<bambuddy-host>:8000`. | Eine Adresse in einem Stück, ohne Leerzeichen oder Zeilenumbrüche |
+| **Adresse von Bambuddy** | Adresse von Bambuddy mit `http://` oder `https://` und dem Port, zum Beispiel `http://<bambuddy-host>:8000`. | Eine Adresse mit `http://` oder `https://`, Rechner und Port, ohne Benutzerteil, Abfrage (`?`) oder Anker (`#`) und ohne Leerzeichen oder Zeilenumbrüche. Reprintbuddy hängt den Pfad jedes Aufrufs an, der hinter einem `?` oder `#` landen würde. |
 | **API-Schlüssel** | Der Schlüssel des Bambuddy-Kontos. Nur bei der Eingabe sichtbar. | Sichtbare Zeichen ohne Leerzeichen |
 
 **Prüfen und speichern** fragt Bambuddy, wem der Schlüssel gehört und welche Rechte er wirklich hat. Änderungen werden **nur gespeichert, wenn die Prüfung gelingt**. Die Karte zeigt dann den Besitzer des Schlüssels („Gespeicherter Besitzer des Schlüssels: …“); den Benutzernamen tippst du nie ein. Ein Schlüssel, der einem Administrator gehört, wird mit einer Warnung gespeichert, weil er mehr darf als nötig. Ob sich mit dem Schlüssel Druckdateien hochladen lassen, meldet die Seite nach jedem Speichern.
 
-Änderst du die Adresse, gib den Schlüssel neu ein: Ein gespeicherter Schlüssel wird nie an eine neue Adresse geschickt.
+Änderst du die Adresse, gib den Schlüssel neu ein: Ein gespeicherter Schlüssel wird nie an eine neue Adresse geschickt. Ein anderer Pfad zählt als andere Adresse (hinter einem Proxy kann ein anderer Pfad ein anderer Dienst sein), ebenso ein anderer Benutzerteil, eine andere Abfrage oder ein anderer Anker. Anders geschrieben ist dagegen dieselbe Adresse: Groß- oder Kleinschreibung bei Schema und Rechner, ein weggelassener Standardport und ein Schrägstrich am Ende ändern nichts. Eine Adresse, die eine frühere Version gespeichert hat und die einen jetzt abgelehnten Teil enthält, funktioniert weiter, bis du sie erneut speicherst.
 
 Die Karte **Live-Kanal** zeigt, ob Bambuddy fertige Drucke sofort meldet (**Verbunden**) oder ob Reprintbuddy auf die regelmäßige Abfrage zurückgreifen muss (**Wartet**, **Verbindet**, **Recht fehlt**), oder die Karte zeigt **Aus**. Sie ist eine Anzeige, keine Einstellung.
 

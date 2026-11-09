@@ -24,7 +24,7 @@ You need a running Home Assistant that Reprintbuddy can reach, with the Home Ass
 With the switch on, address, token and service are all required.
 
 !!! note "Test first, then save"
-    **Send test message** uses what is typed on the screen and saves nothing. Reprintbuddy never writes a token you typed back into the page, so after the test enter the token once more before you press **Save**. After saving, the field only shows that a token is stored; leave it empty to keep it. A stored token is kept only for the same address: if you change the address, enter the token again.
+    **Send test message** uses what is typed on the screen and saves nothing. Reprintbuddy never writes a token you typed back into the page, so after the test enter the token once more before you press **Save**. After saving, the field only shows that a token is stored; leave it empty to keep it. A stored token is kept only for the same address, path included (behind a proxy another path can be another service): if you change the address, enter the token again. If you save with the messages switched off and a new or emptied address, the stored token is dropped and the page says so ("The stored token was dropped because the address changed …"); to switch the messages on again, enter the token again.
 
 !!! tip "A first test without a phone"
     The service `notify.persistent_notification` shows the message only inside Home Assistant. It is good for trying the connection.
@@ -69,7 +69,7 @@ The card shows the time and result of the **Last message**, or "No message sent 
 | Result | Meaning |
 |---|---|
 | accepted by Home Assistant | Home Assistant took the message. Whether the phone got it, only Home Assistant knows. |
-| token refused (401) | The token is wrong or was revoked. Create a new one. |
+| token refused (401) | The token is wrong or was revoked. Create a new one. After a regular message got this answer, Reprintbuddy stops (see below). |
 | service unknown or data wrong (400) | The notification service does not exist. Check its name. |
 | sender blocked (403) | Home Assistant has banned the address of Reprintbuddy. |
 | error in Home Assistant (5xx) | Home Assistant itself failed. |
@@ -87,11 +87,11 @@ A print that could not be reported (events 1 and 2) is not reported later. A sta
 ## Security
 
 - The token is a sensitive value and acts with all the rights of its user. That is why a user of its own without admin rights is recommended. Reprintbuddy shows the token only while you type it and leaves it out of exports.
-- The token goes only to the saved address. If you change the address, you enter the token again.
+- The token goes only to the saved address, path included. If you change the address, you enter the token again; a new or emptied address drops the stored token.
 - Redirects are not followed.
 - Reprintbuddy calls only services of the domain `notify`. `notify.send_message` is not accepted, because it knows no link.
 - HTTPS certificates are checked, as with the connection to Bambuddy. There is no switch to turn this off.
 - Reprintbuddy calls `POST /api/services/notify/<service>` and, after a failed message, `GET /api/` to see whether Home Assistant answers again. Nothing else.
 
 !!! warning "Wrong tokens can lock Reprintbuddy out"
-    Every try with a wrong token counts as a failed login in Home Assistant, and if its IP ban is switched on, Home Assistant blocks the address of Reprintbuddy until you lift the ban there. If the result is **token refused (401)**, correct the token or switch the messages off at once. Reprintbuddy keeps trying at its next passes while messages fail.
+    Every try with a wrong token counts as a failed login in Home Assistant, and if its IP ban is switched on, Home Assistant blocks the address of Reprintbuddy until you lift the ban there. If a regular message gets **token refused (401)**, Reprintbuddy therefore stops at once: it sends nothing more and does not even check whether Home Assistant answers, until you save the card again. The overview shows the warning "Home Assistant refuses the token – Reprintbuddy sends nothing more until the token is entered again under Settings → Notifications and saved." The stop is kept over a restart and over an update. Correct the token under *Settings → Notifications* and save (saving with the messages switched off lifts the stop too). Prints that were finished during the stop are not reported afterwards. The answer **sender blocked (403)** does not stop Reprintbuddy: it stays an ordinary failure that is tried again at the next passes.

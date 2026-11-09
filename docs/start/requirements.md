@@ -23,7 +23,7 @@ Reprintbuddy needs Python 3.13 or newer. Debian 13 brings it; Debian 12 only has
 
 ## Network
 
-- **Outgoing:** from the Reprintbuddy system to the Debian package sources (`apt`), `github.com` and `raw.githubusercontent.com` (installation and updates), `pypi.org` and `files.pythonhosted.org` (Python packages, at installation and at every update), and to your Bambuddy.
+- **Outgoing:** from the Reprintbuddy system to the Debian package sources (`apt`), `github.com` and `raw.githubusercontent.com` (installation and updates), `api.github.com` (the release notes on the update card), `pypi.org` and `files.pythonhosted.org` (Python packages, at installation and at every update), and to your Bambuddy.
 - **Incoming:** the browsers you use must reach Reprintbuddy on its port (8080 by default). Do not expose it to the internet; for remote access use a VPN. See [Network and security](../operate/network.md).
 
 ## Optional: Home Assistant

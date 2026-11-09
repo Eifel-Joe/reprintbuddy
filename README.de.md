@@ -77,7 +77,8 @@ Erfundene Beispieldaten. Weitere Bilder stehen auf den [Doku-Seiten](https://eif
   Sicherung ziehen (*Sicherung und Export*).
   Ein CPU-Kern, 1 GB RAM und 8 GB Platte reichen. Docker ist nicht nötig.
 - Ausgehender Netzzugang dieses Rechners zu den Debian-Paketquellen (`apt`),
-  `github.com` und `raw.githubusercontent.com` (Installation und Updates),
+  `github.com` und `raw.githubusercontent.com` (Installation und Updates), `api.github.com` (die
+  Versionshinweise auf der Update-Karte),
   `pypi.org` und `files.pythonhosted.org` (Python-Pakete, bei der Installation und
   bei jedem Update) und zu deinem Bambuddy.
 - Wahlweise: [Home Assistant](https://www.home-assistant.io/) mit seiner Handy-App für
@@ -249,20 +250,22 @@ Reprintbuddy ruft `POST /api/services/notify/<Dienst>` auf und, um nach einer fe
 zu prüfen, ob Home Assistant wieder antwortet, `GET /api/`; sonst nichts. „Angenommen“ heißt:
 Home Assistant hat die Nachricht übernommen; ob das Handy sie bekommt, weiß nur Home Assistant. Geht
 eine Nachricht nicht durch, zeigt die Übersicht „Home Assistant nicht erreichbar“; Bestand und Drucke
-laufen weiter wie bisher.
+laufen weiter wie bisher. Lehnt Home Assistant das Token ab (401), hört Reprintbuddy sofort auf zu senden und zu prüfen,
+weil jeder weitere Versuch dort als Fehlanmeldung zählt; erneutes Speichern der Karte hebt den Halt auf.
 
 ## Einstellungen
 
 Es gibt **keine Konfigurationsdatei**. Jede Einstellung liegt in der Datenbank
-und wird in der Weboberfläche unter *Einstellungen* geändert: Sprache,
-Bambuddy-Verbindung, Push-Nachrichten, Passwort, Adresse, Port, optionales HTTPS-Zertifikat, Neustart,
-Update und Export.
+und wird in der Weboberfläche unter *Einstellungen* geändert: Sprache, Adresse für QR-Codes,
+Bambuddy-Verbindung, Automatik, Etiketten, Push-Nachrichten, Passwort, Adresse, Port, optionales
+HTTPS-Zertifikat, Neustart, Update-Prüfung, Update und Sicherung sowie Export.
 Nur der Pfad der Datenbank wird auf der Kommandozeile angegeben (`--db`).
 
 ## Update
 
-*Einstellungen → Update*: **Nach Updates suchen** drücken; gibt es eine neuere Version, zeigt die Karte, was sie mitbringt, dann
-**Auf … aktualisieren**. Die Prüfung fragt GitHub (die Versionshinweise kommen ohne Anmeldung über GitHubs API), dabei sieht GitHub die Adresse deiner Installation. *Verfügbar ab der ersten Version.* Das Update
+*Einstellungen → Update und Sicherung*: **Nach Updates suchen** drücken; gibt es eine neuere Version, zeigt die Karte, was sie mitbringt, dann
+**Auf … aktualisieren**. Reprintbuddy prüft auch von selbst beim Start und einmal täglich und zeigt dann oben auf jeder
+Seite einen Balken; der Schalter **Automatisch nach neuen Versionen suchen** auf der Karte schaltet das ab. Die Prüfung fragt GitHub (die Versionshinweise kommen ohne Anmeldung über GitHubs API), dabei sieht GitHub die Adresse deiner Installation. Das Update
 
 1. sichert die Datenbank,
 2. wechselt auf den neuen Release-Tag,
@@ -380,7 +383,7 @@ systemctl start reprintbuddy
   Passwörter werden nur als Hash gespeichert.
 - Das Token für Home Assistant wird wie die API-Schlüssel behandelt. Es handelt mit allen Rechten
   seines Benutzers in Home Assistant; deshalb für einen Benutzer ohne Admin-Recht anlegen. Es geht
-  nur an die Adresse, mit der es eingetragen wurde; für eine neue Adresse neu eingeben.
+  nur an die Adresse, mit der es eingetragen wurde, samt Pfad; für eine neue Adresse neu eingeben.
   Push-Nachrichten aufs Handy laufen über den Push-Dienst von Google bzw. Apple und nennen
   Artikel, Spulensorten und Zukaufteile beim Namen, solange *Namen in Nachrichten nennen* an ist.
 - Jede Änderung braucht eine angemeldete Sitzung und ein CSRF-Token.

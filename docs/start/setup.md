@@ -89,7 +89,7 @@ Press **Next**.
 
 ## Step 4: Connect Bambuddy
 
-Enter the **Bambuddy address** (starting with `http://` or `https://`, with the port, for example `http://<bambuddy-host>:8000`) and the **API key**, then press **Check and save**.
+Enter the **Bambuddy address** (starting with `http://` or `https://`, with the port, for example `http://<bambuddy-host>:8000`; no user name, `?` or `#` in it) and the **API key**, then press **Check and save**.
 
 Reprintbuddy asks Bambuddy whom the key belongs to and what it may really do. The key is saved only if it has every right Reprintbuddy needs. If one is missing, nothing is saved. The page shows the owner of the key and each required right with a check mark (granted) or a cross (missing), and next to each missing right where to fix it:
 

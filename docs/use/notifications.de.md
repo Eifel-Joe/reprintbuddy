@@ -24,7 +24,7 @@ Du brauchst ein laufendes Home Assistant, das Reprintbuddy erreichen kann, und d
 Bei eingeschaltetem Schalter sind Adresse, Token und Dienst Pflicht.
 
 !!! note "Erst testen, dann speichern"
-    **Testnachricht senden** nimmt, was auf dem Bildschirm steht, und speichert nichts. Reprintbuddy schreibt ein eingetipptes Token nie zurück in die Seite; gib das Token deshalb nach dem Test noch einmal ein, bevor du auf **Speichern** klickst. Nach dem Speichern zeigt das Feld nur, dass ein Token gespeichert ist; lass es leer, um es zu behalten. Ein gespeichertes Token bleibt nur für dieselbe Adresse erhalten: Änderst du die Adresse, gib das Token neu ein.
+    **Testnachricht senden** nimmt, was auf dem Bildschirm steht, und speichert nichts. Reprintbuddy schreibt ein eingetipptes Token nie zurück in die Seite; gib das Token deshalb nach dem Test noch einmal ein, bevor du auf **Speichern** klickst. Nach dem Speichern zeigt das Feld nur, dass ein Token gespeichert ist; lass es leer, um es zu behalten. Ein gespeichertes Token bleibt nur für dieselbe Adresse erhalten, samt Pfad (hinter einem Proxy kann ein anderer Pfad ein anderer Dienst sein): Änderst du die Adresse, gib das Token neu ein. Speicherst du bei ausgeschalteten Nachrichten mit einer neuen oder geleerten Adresse, wird das gespeicherte Token verworfen, und die Seite sagt es („Das gespeicherte Token ist verworfen, weil sich die Adresse geändert hat …“); zum Einschalten gib das Token neu ein.
 
 !!! tip "Ein erster Test ohne Handy"
     Der Dienst `notify.persistent_notification` zeigt die Nachricht nur in Home Assistant selbst. Er eignet sich, um die Verbindung auszuprobieren.
@@ -69,7 +69,7 @@ Der Abschnitt **Letzte Nachricht** in der Karte zeigt Zeit und Ergebnis der zule
 | Ergebnis | Bedeutung |
 |---|---|
 | von Home Assistant angenommen | Home Assistant hat die Nachricht übernommen. Ob das Handy sie bekommt, weiß nur Home Assistant. |
-| Token abgelehnt (401) | Das Token ist falsch oder wurde widerrufen. Erzeuge ein neues. |
+| Token abgelehnt (401) | Das Token ist falsch oder wurde widerrufen. Erzeuge ein neues. Hat eine reguläre Nachricht diese Antwort bekommen, hält Reprintbuddy an (siehe unten). |
 | Dienst unbekannt oder Daten falsch (400) | Den Benachrichtigungsdienst gibt es nicht. Prüfe seinen Namen. |
 | Absender gesperrt (403) | Home Assistant hat die Adresse von Reprintbuddy gesperrt. |
 | Fehler in Home Assistant (5xx) | Home Assistant selbst hat versagt. |
@@ -87,11 +87,11 @@ Ein Druck, der nicht gemeldet werden konnte (Ereignisse 1 und 2), wird später n
 ## Sicherheit
 
 - Das Token ist ein sensibles Datum und handelt mit allen Rechten seines Benutzers. Deshalb wird ein eigener Benutzer ohne Admin-Recht empfohlen. Reprintbuddy zeigt das Token nur, solange du es eintippst, und lässt es aus Exporten heraus.
-- Das Token geht nur an die gespeicherte Adresse. Änderst du die Adresse, gibst du das Token neu ein.
+- Das Token geht nur an die gespeicherte Adresse, samt Pfad. Änderst du die Adresse, gibst du das Token neu ein; eine neue oder geleerte Adresse verwirft das gespeicherte Token.
 - Umleitungen werden nicht verfolgt.
 - Reprintbuddy ruft nur Dienste der Domain `notify` auf. `notify.send_message` wird nicht angenommen, weil es keinen Link kennt.
 - HTTPS-Zertifikate werden geprüft, wie bei der Verbindung zu Bambuddy. Es gibt keinen Schalter, das abzuschalten.
 - Reprintbuddy ruft `POST /api/services/notify/<Dienst>` auf und nach einer fehlgeschlagenen Nachricht `GET /api/`, um zu sehen, ob Home Assistant wieder antwortet. Sonst nichts.
 
 !!! warning "Falsche Tokens können Reprintbuddy aussperren"
-    Jeder Versuch mit einem falschen Token zählt in Home Assistant als Fehlanmeldung, und ist dort die IP-Sperre eingeschaltet, sperrt Home Assistant die Adresse von Reprintbuddy, bis du die Sperre dort aufhebst. Lautet das Ergebnis **Token abgelehnt (401)**, korrigiere das Token oder schalte die Nachrichten sofort aus. Reprintbuddy versucht es bei den nächsten Durchläufen weiter, solange Nachrichten scheitern.
+    Jeder Versuch mit einem falschen Token zählt in Home Assistant als Fehlanmeldung, und ist dort die IP-Sperre eingeschaltet, sperrt Home Assistant die Adresse von Reprintbuddy, bis du die Sperre dort aufhebst. Bekommt eine reguläre Nachricht **Token abgelehnt (401)**, hält Reprintbuddy deshalb sofort an: Es sendet nichts mehr und prüft auch nicht, ob Home Assistant antwortet, bis du die Karte erneut speicherst. Die Übersicht zeigt die Warnung „Home Assistant lehnt das Token ab – Reprintbuddy sendet nichts mehr, bis das Token unter Einstellungen → Benachrichtigungen neu eingetragen und gespeichert ist.“ Der Halt bleibt über einen Neustart und über ein Update erhalten. Korrigiere das Token unter *Einstellungen → Benachrichtigungen* und speichere (Speichern bei ausgeschalteten Nachrichten hebt den Halt ebenfalls auf). Drucke, die während des Halts fertig wurden, werden nicht nachgemeldet. Die Antwort **Absender gesperrt (403)** hält Reprintbuddy nicht an: Sie bleibt ein gewöhnlicher Fehler, der bei den nächsten Durchläufen erneut versucht wird.
