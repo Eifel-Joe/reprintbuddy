@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal, Mapping, get_args
@@ -19,6 +19,15 @@ UpdateState = Literal["idle", "queued", "running", "succeeded", "failed", "rolle
 UPDATE_STEPS = (
     "start", "backup", "fetch", "checkout", "install", "verify", "migrate",
     "restart", "health", "rollback", "done",
+)
+# v0.3.14 p176: what went wrong, as a code the page turns into text in the language of the viewer
+# (`ops.update.reason.<code>`). `message` stays as it was: the English line for the log and for old
+# readers. Parameters: `detail` is a technical line of git, pip or the system and stays as it is.
+UPDATE_REASONS = (
+    "start_failed", "head_unreadable", "backup_failed", "fetch_failed", "no_newer", "unknown_target",
+    "checkout_failed", "snapshot_failed", "install_failed", "python_too_old", "verify_failed",
+    "migrate_failed", "restart_failed", "health_failed", "unexpected",
+    "interrupted_untouched", "interrupted_partial",
 )
 BUSY_STATES = frozenset({"queued", "running"})
 # An update older than this is taken for stuck (for example the container was restarted midway).
@@ -35,6 +44,8 @@ class UpdateStatus:
     finished_at: datetime | None = None
     message: str = ""
     backup: str | None = None
+    reason: str = ""
+    params: dict[str, str] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -46,6 +57,8 @@ class UpdateStatus:
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
             "message": self.message,
             "backup": self.backup,
+            "reason": self.reason,
+            "params": dict(self.params),
         }
 
     @classmethod
@@ -62,6 +75,11 @@ class UpdateStatus:
             value = data.get(key)
             return None if value is None else str(value)
 
+        reason = str(data.get("reason") or "")
+        raw_params = data.get("params")
+        params = (
+            {str(key): str(value) for key, value in raw_params.items()} if isinstance(raw_params, dict) else {}
+        )
         return cls(
             state=state,  # type: ignore[arg-type]
             step=str(data.get("step") or ""),
@@ -71,6 +89,8 @@ class UpdateStatus:
             finished_at=moment("finished_at"),
             message=str(data.get("message") or ""),
             backup=text("backup"),
+            reason=reason if reason in UPDATE_REASONS else "",
+            params=params,
         )
 
 
@@ -122,8 +142,10 @@ def mark_interrupted(data_dir: Path, now: datetime) -> UpdateStatus | None:
     step = current.step or "start"
     if step in _UNTOUCHED_STEPS:
         state, message = "failed", f"{step}: interrupted, nothing was changed"
+        reason = "interrupted_untouched"
     else:
         state = "rollback_failed"
+        reason = "interrupted_partial"
         message = f"{step}: interrupted, the installation may be incomplete"
         if current.backup:
             message += f" \u2013 backup: {current.backup}"
@@ -136,6 +158,7 @@ def mark_interrupted(data_dir: Path, now: datetime) -> UpdateStatus | None:
         finished_at=now,
         message=message,
         backup=current.backup,
+        reason=reason,
     )
     write_status(data_dir, final)
     return final

@@ -71,6 +71,7 @@ def test_write_leaves_no_tmp(tmp_path):
 def test_status_json_holds_no_secret_fields(tmp_path):
     assert set(UpdateStatus().to_json()) == {
         "state", "step", "from_tag", "to_tag", "started_at", "finished_at", "message", "backup",
+        "reason", "params",
     }
 
 
@@ -105,6 +106,7 @@ def test_interrupted_update_leaves_a_final_state(tmp_path, step, state):
     assert result is not None and result.state == state
     assert result.step == step
     assert f"{step}: interrupted" in result.message
+    assert result.reason == ("interrupted_untouched" if state == "failed" else "interrupted_partial")  # p176
     assert result.finished_at == NOW + timedelta(minutes=30)
     assert read_status(tmp_path) == result
     if state == "rollback_failed":
@@ -118,3 +120,20 @@ def test_interrupt_leaves_finished_states_alone(tmp_path):
     write_status(tmp_path, done)
     assert mark_interrupted(tmp_path, NOW) is None
     assert read_status(tmp_path) == done
+
+
+def test_reason_and_params_survive_the_file(tmp_path):  # v0.3.14 p176
+    status = UpdateStatus(state="failed", step="fetch", message="fetch: fatal: x", reason="fetch_failed", params={"detail": "fatal: x"})
+    write_status(tmp_path, status)
+    assert read_status(tmp_path) == status
+
+
+def test_a_file_without_reason_or_with_an_unknown_one_reads_as_before(tmp_path):
+    status_path(tmp_path).write_text(
+        '{"state": "failed", "step": "fetch", "message": "fetch: boom", "reason": "from_the_future", "params": ["x"]}',
+        encoding="utf-8",
+    )
+    read = read_status(tmp_path)
+    assert (read.state, read.message, read.reason, read.params) == ("failed", "fetch: boom", "", {})
+    status_path(tmp_path).write_text('{"state": "failed", "message": "fetch: boom"}', encoding="utf-8")
+    assert read_status(tmp_path).reason == ""

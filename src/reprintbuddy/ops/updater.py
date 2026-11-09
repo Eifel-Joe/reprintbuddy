@@ -48,7 +48,7 @@ _WRONG_PYTHON = re.compile(r"requires a different Python: (?P<found>[0-9][0-9.]*
 # (pip names the version spec of the package; only the plain ">=3.x" form is turned into words)
 
 
-def _too_old_python(result: CommandResult) -> str | None:
+def _too_old_python(result: CommandResult) -> tuple[str, dict[str, str]] | None:
     """pip's refusal because the environment's Python is older than the new version needs, in plain words.
 
     Root: a release has a Python floor (3.12 from v0.3.9 on, 3.13 from v0.3.12 on), and pip's own line
@@ -63,11 +63,12 @@ def _too_old_python(result: CommandResult) -> str | None:
     found = _WRONG_PYTHON.search("\n".join((result.stderr or "", result.stdout or "")))
     if found is None:
         return None
-    return (
+    text = (
         f"the new version needs Python {found['needed']} or newer, this installation runs Python {found['found']}; "
         "upgrade the system to a Debian release that has it, then run the install command again (it keeps "
         "your data), or set Reprintbuddy up again there and restore a backup"
     )
+    return text, {"needed": found["needed"], "found": found["found"]}
 
 
 def _reason(result: CommandResult, fallback: str) -> str:
@@ -121,7 +122,10 @@ def run_update(
         "backup": None,
     }
 
-    def put(state: str, step: str, message: str = "", *, finished: bool = False) -> UpdateStatus:
+    def put(
+        state: str, step: str, message: str = "", *, finished: bool = False,
+        reason: str = "", params: dict[str, str] | None = None,
+    ) -> UpdateStatus:
         status = UpdateStatus(
             state=state,  # type: ignore[arg-type]
             step=step,
@@ -131,6 +135,8 @@ def run_update(
             finished_at=now() if finished else None,
             message=message,
             backup=info["backup"],
+            reason=reason,
+            params=params or {},
         )
         try:
             write_status(data_dir, status)
@@ -141,12 +147,14 @@ def run_update(
         print(f"update: {step}: {state}" + (f" ({message})" if message else ""), flush=True)
         return status
 
-    def finish(state: str, step: str, message: str) -> UpdateStatus:
+    def finish(
+        state: str, step: str, message: str, reason: str = "", params: dict[str, str] | None = None
+    ) -> UpdateStatus:
         if info["backup"]:
             # After a failed rollback the message names this backup as the one to restore.
             protect = [Path(info["backup"])] if state == "rollback_failed" else []
             prune_backups(backup_dir, keep_backups, protect=protect)
-        return put(state, step, message, finished=True)
+        return put(state, step, message, finished=True, reason=reason, params=params)
 
     # --- before anything is changed: a failure leaves everything as it was -------------
     put("running", "backup")
@@ -155,13 +163,15 @@ def run_update(
     head = runner((*git, "rev-parse", "HEAD"))
     from_ref = head.stdout.strip() if head.ok else ""
     if not from_ref:
-        return finish("failed", "backup", "backup: " + _reason(head, "cannot read the installed commit"))
+        line = _reason(head, "cannot read the installed commit")
+        return finish("failed", "backup", "backup: " + line, "head_unreadable", {"detail": _reason(head, "")})
     try:
         backup = backup_database(
             db_path, backup_dir, label=info["from_tag"] or from_ref[:12], now=now()
         )
     except (OSError, sqlite3.Error) as error:
-        return finish("failed", "backup", f"backup: {str(error)[:MAX_REASON]}")
+        detail = str(error)[:MAX_REASON]
+        return finish("failed", "backup", f"backup: {detail}", "backup_failed", {"detail": detail})
     info["backup"] = str(backup)
 
     put("running", "fetch")
@@ -171,30 +181,32 @@ def run_update(
         (*git, "fetch", "--prune", "--prune-tags", "--force", "--tags", "origin"), timeout=300.0
     )
     if not fetched.ok:
-        return finish("failed", "fetch", "fetch: " + _reason(fetched, "git fetch failed"))
+        line = _reason(fetched, "git fetch failed")
+        return finish("failed", "fetch", "fetch: " + line, "fetch_failed", {"detail": _reason(fetched, "")})
     tags = local_tags(install_dir, runner)
     # The version the page offered (or the one asked for) is installed, not whatever is newest
     # by now; if it is gone, the update stops instead of installing something else.
     wanted = target or info["to_tag"]
     goal = wanted or newest_release(tags)
     if goal is None:
-        return finish("failed", "fetch", "fetch: no newer release")
+        return finish("failed", "fetch", "fetch: no newer release", "no_newer")
     if parse_release_tag(goal) is None or goal not in tags:
-        return finish("failed", "fetch", f"fetch: unknown target {goal}")
+        return finish("failed", "fetch", f"fetch: unknown target {goal}", "unknown_target", {"detail": goal})
     info["to_tag"] = goal
     if not is_newer(goal, info["from_tag"]):
-        return finish("failed", "fetch", "fetch: no newer release")
+        return finish("failed", "fetch", "fetch: no newer release", "no_newer")
 
     # --- from the checkout on, any failure is rolled back ------------------------------
     current = "checkout"
 
-    def forward() -> tuple[str, str] | None:
+    def forward() -> tuple[str, str, str, dict[str, str]] | None:
+        """None when everything went through, else (step, English line, reason code, parameters)."""
         nonlocal current
         current = "checkout"
         put("running", "checkout")
         done = runner((*git, "checkout", "--quiet", "--detach", goal))
         if not done.ok:
-            return "checkout", _reason(done, "git checkout failed")
+            return "checkout", _reason(done, "git checkout failed"), "checkout_failed", {"detail": _reason(done, "")}
 
         current = "install"
         put("running", "install")
@@ -207,11 +219,15 @@ def run_update(
                 snapshot_taken.append(True)
             except OSError as error:
                 shutil.rmtree(snapshot_dir, ignore_errors=True)
-                return "install", f"cannot back up the Python environment: {str(error)[:200]}"
+                detail = str(error)[:200]
+                return "install", f"cannot back up the Python environment: {detail}", "snapshot_failed", {"detail": detail}
         shutil.rmtree(install_dir / "build", ignore_errors=True)  # old build leftovers would bring back deleted modules
         done = runner((py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", d), timeout=900.0)
         if not done.ok:
-            return "install", _too_old_python(done) or _reason(done, "pip install failed")
+            too_old = _too_old_python(done)
+            if too_old is not None:
+                return "install", too_old[0], "python_too_old", too_old[1]
+            return "install", _reason(done, "pip install failed"), "install_failed", {"detail": _reason(done, "")}
 
         current = "verify"
         put("running", "verify")
@@ -219,24 +235,24 @@ def run_update(
         expected = "reprintbuddy " + goal[1:]
         if not done.ok or done.stdout.strip() != expected:
             seen = done.stdout.strip()[:80] or _reason(done, "no output")
-            return "verify", f"expected '{expected}', got '{seen}'"
+            return "verify", f"expected '{expected}', got '{seen}'", "verify_failed", {"expected": expected, "seen": seen}
 
         current = "migrate"
         put("running", "migrate")
         done = runner((py, "-m", "reprintbuddy", "migrate", "--db", str(db_path)), timeout=300.0)
         if not done.ok:
-            return "migrate", _reason(done, "the database migration failed")
+            return "migrate", _reason(done, "the database migration failed"), "migrate_failed", {"detail": _reason(done, "")}
 
         current = "restart"
         put("running", "restart")
         done = runner(RESTART_WAIT_CMD, timeout=120.0)
         if not done.ok:
-            return "restart", _reason(done, "the restart failed")
+            return "restart", _reason(done, "the restart failed"), "restart_failed", {"detail": _reason(done, "")}
 
         current = "health"
         put("running", "health")
         if not wait_healthy():
-            return "health", "the new version did not answer after the restart"
+            return "health", "the new version did not answer after the restart", "health_failed", {}
         return None
 
     def backward() -> bool:
@@ -276,20 +292,20 @@ def run_update(
     try:
         problem = forward()
     except Exception as error:  # noqa: BLE001 - whatever happened, the rollback must still run
-        problem = (current, f"unexpected error: {type(error).__name__}")
+        problem = (current, f"unexpected error: {type(error).__name__}", "unexpected", {"detail": type(error).__name__})
     if problem is None:
         shutil.rmtree(snapshot_dir, ignore_errors=True)
         return finish("succeeded", "done", "")
 
     cause = f"{problem[0]}: {problem[1]}"
-    put("running", "rollback", cause)
+    put("running", "rollback", cause, reason=problem[2], params=problem[3])
     try:
         restored = backward()
     except Exception:  # noqa: BLE001
         restored = False
     if restored:
-        return finish("rolled_back", "rollback", cause)
-    return finish("rollback_failed", "rollback", f"{cause} – backup: {backup}")
+        return finish("rolled_back", "rollback", cause, problem[2], problem[3])
+    return finish("rollback_failed", "rollback", f"{cause} – backup: {backup}", problem[2], problem[3])
 
 
 def interrupt_handler(db_path: Path, *, now: Callable[[], datetime]) -> Callable[[int, object], None]:
