@@ -51,8 +51,8 @@ def test_every_kind_belongs_to_a_known_area():
     [
         ("http://bambuddy.local:8000", "http://bambuddy.local:8000"),
         ("https://user:secret@bambuddy.local:8000/api?key=abc#x", "https://bambuddy.local:8000"),
-        ("http://10.0.0.5", "http://10.0.0.5"),
-        ("http://[fd00::1]:8123/ha", "http://[fd00::1]:8123"),
+        ("http://192.0.2.5", "http://192.0.2.5"),
+        ("http://[2001:db8::1]:8123/ha", "http://[2001:db8::1]:8123"),
         ("not an address", None),
         (None, None),
     ],
