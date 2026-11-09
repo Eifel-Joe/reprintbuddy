@@ -149,14 +149,41 @@ def test_serve_removes_tls_files_even_if_server_crashes(db, monkeypatch):
     assert paths and not any(os.path.exists(p) for p in paths)
 
 
+def test_dash_m_hands_the_arguments_to_main_and_its_code_to_the_shell(monkeypatch):
+    """p180 (v0.3.14): what `python -m reprintbuddy` does, in this process: no start-up time, no load."""
+    import runpy
+
+    seen = []
+    monkeypatch.setattr("reprintbuddy.cli.main", lambda argv=None: seen.append(sys.argv[1:]) or 3)
+    monkeypatch.setattr(sys, "argv", ["reprintbuddy", "migrate", "--db", "x.db"])
+    with pytest.raises(SystemExit) as ended:
+        runpy.run_module("reprintbuddy", run_name="__main__", alter_sys=True)
+    assert ended.value.code == 3
+    assert seen == [["migrate", "--db", "x.db"]]
+
+
 def test_python_dash_m_runs_main(db):
-    result = subprocess.run(
-        [sys.executable, "-m", "reprintbuddy", "migrate", "--db", str(db)],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert result.returncode == 0, result.stderr
+    """The same in a real process: the package starts as documented (README: `python -m reprintbuddy serve`).
+
+    p180 (v0.3.14): failed once while five full test suites ran at once, and its message kept only stderr.
+    Not reproduced in 48 runs with three at once (median 5 s, longest 10 s against a limit of 120 s); the
+    wiring itself is now checked in this process (above), and a failure here names code, time and output.
+    The wait is for the end of the process, not a fixed time; the limit only ends a hanging one.
+    """
+    import time
+
+    started = time.monotonic()
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "reprintbuddy", "migrate", "--db", str(db)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired as error:
+        pytest.fail(f"no end after {time.monotonic() - started:.0f} s; output so far: {error.stdout!r} {error.stderr!r}")
+    took = time.monotonic() - started
+    assert result.returncode == 0, f"code {result.returncode} after {took:.1f} s\n{result.stdout}\n{result.stderr}"
     assert db.exists()
 
 
