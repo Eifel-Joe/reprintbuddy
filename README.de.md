@@ -19,6 +19,8 @@
 
 [English: README.md](README.md)
 
+**Dokumentation:** <https://eifel-joe.github.io/reprintbuddy/> – Installation, Einrichtung und Bedienung, auf Deutsch und Englisch.
+
 Reprintbuddy führt den Lagerbestand von 3D-gedruckten Teilen. Was knapp wird,
 druckt es nach, indem es Druckaufträge in die Warteschlange von
 Bambuddy stellt. Fertige Drucke prüfst

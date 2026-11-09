@@ -43,3 +43,16 @@ jobs:
           fi
           bash -n install/install.sh
           shellcheck install/install.sh
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install MkDocs and its plugins
+        run: python -m pip install ".[docs]"
+      - name: Build the pages (a broken link or a page missing from the navigation fails)
+        run: mkdocs build --strict

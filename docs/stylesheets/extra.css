@@ -1,0 +1,16 @@
+/* The green of the Reprintbuddy interface (Spec 10.1): the header and links take it, nothing else changes. */
+:root > * {
+  --md-primary-fg-color: #00ae42;
+  --md-primary-fg-color--light: #00c64d;
+  --md-primary-fg-color--dark: #008a34;
+  --md-accent-fg-color: #00ae42;
+  --md-typeset-a-color: #008a34;
+}
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #1d1e20;
+  --md-default-bg-color: #161718;
+  --md-accent-fg-color: #4ade80;
+  --md-typeset-a-color: #4ade80;
+}
+.md-typeset img { border: 1px solid var(--md-default-fg-color--lightest); border-radius: 8px; }
+.md-typeset img[src$=".svg"] { border: 0; }

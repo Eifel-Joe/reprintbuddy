@@ -19,6 +19,8 @@
 
 [Deutsch: README.de.md](README.de.md)
 
+**Documentation:** <https://eifel-joe.github.io/reprintbuddy/> – installation, setup and use, in English and German.
+
 Reprintbuddy keeps the stock of 3D-printed items. It reprints what runs low by
 handing print jobs to Bambuddy's queue,
 lets you check finished prints, and tells you what to reorder. It runs as a
