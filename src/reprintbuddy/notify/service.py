@@ -36,6 +36,8 @@ from datetime import datetime
 from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy import settings as st
+from reprintbuddy.activity.writer import line as activity_line
+from reprintbuddy.activity.writer import write_transition
 from reprintbuddy.domain.engine import EngineStatus
 from reprintbuddy.models import utcnow
 from reprintbuddy.notify import events as ev
@@ -69,6 +71,19 @@ def _target(session: Session) -> _Target | None:
         str(st.get_setting(session, "ha_token")),
         str(st.get_setting(session, "ha_service")),
     )
+
+
+def log_message(session: Session, event: str, count: int, outcome: str, now: datetime) -> None:
+    """A sent message in the activity log (Spec 10.7, group 6): every accepted one; of a message that
+    fails again and again only the first failure. Never title or text. In the transaction of the marks;
+    a line that cannot be added is left out, the marks are written anyway."""
+    try:
+        with session.begin_nested():
+            entry = activity_line("message_sent", "system", {"event": event, "count": max(count, 1), "outcome": outcome})
+            accepted = outcome == "accepted"
+            write_transition(session, "ha.send", "accepted" if accepted else "failed", entry, now=now, repeat=accepted)
+    except Exception:  # noqa: BLE001 - the log must not stop the marks
+        log.exception("activity log: a message could not be logged")
 
 
 class Notifier:
@@ -210,6 +225,8 @@ class Notifier:
         with self.sm.begin() as session:
             for out, outcome in results:
                 ev.record(session, out, outcome, now or self.now())
+                if now is not None:
+                    log_message(session, out.kind, len(out.mark_ids), outcome, now)
             switched_on = _target(session) is not None
         if not switched_on:
             self._set(problem=None)

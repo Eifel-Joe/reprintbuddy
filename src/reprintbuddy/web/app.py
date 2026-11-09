@@ -221,6 +221,23 @@ def _install_activity_log(app: FastAPI, sessionmaker, db_path: Path) -> None:
     )
 
 
+def _log_bambuddy(app: FastAPI, poll: bool) -> None:
+    """After a regular poll: the connection to Bambuddy and its rights, as changes only (Spec 10.7,
+    group 5). Only queued here: the tick never waits for the log."""
+    if not poll:
+        return
+    activity: ActivityLog = app.state.activity
+    connection = activity_states.connection_state(app.state.ticker.status)
+    if connection is not None:
+        activity.transition("bambuddy.connection", connection, "bambuddy_connection", "bambuddy", {"state": connection})
+    rights = activity_states.rights_state(app.state.rights)
+    if rights is not None:
+        details: dict[str, object] = {"state": rights}
+        if rights == "missing" and app.state.rights.check is not None:
+            details["missing"] = sorted(app.state.rights.check.missing)
+        activity.transition("bambuddy.rights", rights, "bambuddy_rights", "bambuddy", details)
+
+
 def _log_start(app: FastAPI) -> None:
     """At every start: "Reprintbuddy started", and a restore the last process finished (Spec 10.7)."""
     activity: ActivityLog = app.state.activity
@@ -389,6 +406,7 @@ def create_app(
     )
     app.state.ticker.after_tick.append(app.state.notifier.after_tick)
     _install_activity_log(app, sessionmaker, db_path)
+    app.state.ticker.after_tick.append(lambda poll: _log_bambuddy(app, poll))
     app.state.run_engine = run_engine
     app.state.ticker_task = None  # the background loop while the app runs (see _lifespan)
     # Bambuddy's live channel (Spec 7.6): a message that may have changed the queue, and every
