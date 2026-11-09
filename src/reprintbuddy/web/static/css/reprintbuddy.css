@@ -1186,3 +1186,16 @@ td.target .target-form { display: inline-block; }
 .tile-target .target-form { flex: 0 1 auto; }
 /* The note of a suggestion on the filament page (p156): a line between the caption of a slot and its table. */
 .slot-group .filament-suggested { margin: 0; padding: 0.5rem 0.75rem; font-size: 0.85rem; border-bottom: 1px solid var(--line); }
+/* The tab "Log" of the settings page (Spec 10.7): one card over both columns, filters above it. */
+.settings-wide { grid-column: 1 / -1; min-width: 0; }
+.log-filters { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+.log-table td { vertical-align: top; }
+.log-filters .filters { align-items: center; }
+.filters-label { min-width: 5.5rem; color: var(--text-2); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+/* On a narrow screen the group moves under the time and who under the event, so the event keeps the room. */
+.log-area-inline, .log-actor-inline { display: none; }
+@media (max-width: 599px) {
+  .log-table .log-area, .log-table .log-actor { display: none; }
+  .log-area-inline, .log-actor-inline { display: inline; }
+  .log-filters .filters-label { min-width: 100%; }
+}

@@ -367,6 +367,11 @@ systemctl start reprintbuddy
   through the push service of Google or Apple and name articles, spool sorts and parts as long
   as *Name things in messages* is on.
 - Every change needs a signed-in session and a CSRF token.
+- *Settings → Log* shows what happened besides the bookings: sign-ins (also failed ones),
+  changed settings and master data, backup and update, the connection to Bambuddy and the
+  push messages, kept for 90 days. It never holds keys, tokens or passwords. For sign-ins it
+  keeps the address of the device as the server sees it; behind a reverse proxy on the same
+  system that is the address the proxy passes on, behind one on another system the proxy's.
 - The database file is readable only by the service user. Anyone who is root on
   the machine can read it.
 

@@ -465,3 +465,39 @@ class NotifyMark(Base):
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     notified_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     gone_since: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+
+
+class ActivityEntry(Base):
+    """One line of the activity log under Settings (Spec 10.7): what happened outside the journal.
+
+    `area` is the group of the page (login, settings, master data, …), `kind` the event, `actor` who
+    (user, automation, Bambuddy, system), `via` "cli" for a command on the server, `address` the
+    device of a sign-in event. `details` holds ids, field keys, fixed codes and cleaned values only,
+    never a secret (Spec 11.5a); the page builds its text from the language files.
+    """
+
+    __tablename__ = "activity"
+    __table_args__ = (
+        CheckConstraint("actor IN ('user', 'auto', 'bambuddy', 'system')", name="ck_activity_actor"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime, index=True, default=utcnow)
+    area: Mapped[str] = mapped_column(String, index=True)
+    kind: Mapped[str] = mapped_column(String)
+    actor: Mapped[str] = mapped_column(String)
+    via: Mapped[str | None] = mapped_column(String, default=None)
+    address: Mapped[str | None] = mapped_column(String, default=None)
+    details: Mapped[dict | None] = mapped_column(JSON, default=None)
+
+
+class ActivityMark(Base):
+    """The last logged state of something the activity log records only as a change (Spec 10.7):
+    the connection to Bambuddy, its rights, failing push messages, the newest version, the result
+    of the last update. In the database, so a restart logs no new change."""
+
+    __tablename__ = "activity_marks"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    state: Mapped[str] = mapped_column(String)
+    at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

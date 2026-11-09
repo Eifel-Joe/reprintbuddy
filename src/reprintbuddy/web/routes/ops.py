@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
+from reprintbuddy.activity.kinds import Actor
 from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.backup import backup_dir_for, update_backup_since
 from reprintbuddy.ops.export import export_bytes
@@ -319,10 +321,11 @@ async def update_guard(request: Request, call_next) -> Response:
 
 
 @router.get("/settings/export")
-def export(db: Session = Depends(get_db)):
+def export(request: Request, db: Session = Depends(get_db)):
     # A plain `def`: reading every table is blocking work and runs in the thread pool.
     now = _utc_now()
     body = export_bytes(db.connection(), now=now)
+    request.app.state.activity.record("export_downloaded", "user")
     name = f"reprintbuddy-export-{now:%Y%m%d-%H%M%S}.json"
     return Response(
         body,
@@ -342,6 +345,7 @@ async def restart(request: Request, db: Session = Depends(get_db)):
         # The reason (sudo output) goes to the log only, never onto the page.
         log.warning("restart failed: %s", (result.stderr or "").strip()[:300])
         return RedirectResponse("/settings?tab=general&ops=restart_failed#ops-restart", status_code=303)
+    request.app.state.activity.record("restart_requested", "user")
 
     new_url = None
     if ops.effective is not None:
@@ -349,6 +353,15 @@ async def restart(request: Request, db: Session = Depends(get_db)):
         if address_changed(saved, ops.effective):
             new_url = base_url(_display_host(request, saved), saved.port, saved.tls)
     return render(request, "restarting.html", new_url=new_url, active_nav="settings")
+
+
+def store_versions(state: Any, info: VersionInfo, *, actor: Actor) -> None:
+    """Keep a good result of the check for new versions, from the button or the automatic check (one
+    state), and log a newer version once (Spec 10.7, group 4)."""
+    state.version_info = info
+    state.installed_tag = info.installed
+    if info.update_available and info.newest:
+        state.activity.transition("update.available", info.newest, "version_found", actor, {"version": info.newest})
 
 
 def _back(code: str | None = None) -> RedirectResponse:
@@ -370,8 +383,7 @@ async def update_check(request: Request):
         return _back("check_failed")
     # p143: the notes of the newer versions in the same round (one request to GitHub, never raises).
     info = await in_thread(with_notes, info, ops.install_dir, ops.runner, ops.http_get)
-    app.state.version_info = info
-    app.state.installed_tag = info.installed
+    store_versions(app.state, info, actor="user")
     return _back()
 
 

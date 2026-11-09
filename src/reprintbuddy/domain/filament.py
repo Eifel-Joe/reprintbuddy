@@ -17,6 +17,7 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from reprintbuddy.activity.capture import quiet
 from reprintbuddy.bambuddy.client import BambuddyClient
 from reprintbuddy.bambuddy.types import Spool
 from reprintbuddy.domain import color, rules
@@ -193,6 +194,15 @@ def convert_legacy(
     open marks there become one). Each converted sort gets a journal row. Legacy sorts stay as
     hidden rows, so that old received marks and the daily rows of gone spools keep a sort to point at.
     """
+    # The journal has it ("filament_sorts_converted"); the moved settings and marks are not the
+    # user's changes and stay out of the activity log (Spec 10.7).
+    with quiet(session):
+        return _convert_legacy(session, spools, assigned, archived)
+
+
+def _convert_legacy(
+    session: Session, spools: Sequence[Spool], assigned: Mapping[int, int], archived: Sequence[Spool] = ()
+) -> int:
     pending = [
         sort
         for sort in session.scalars(

@@ -387,6 +387,12 @@ systemctl start reprintbuddy
   Push-Nachrichten aufs Handy laufen über den Push-Dienst von Google bzw. Apple und nennen
   Artikel, Spulensorten und Zukaufteile beim Namen, solange *Namen in Nachrichten nennen* an ist.
 - Jede Änderung braucht eine angemeldete Sitzung und ein CSRF-Token.
+- *Einstellungen → Protokoll* zeigt, was außer den Buchungen passiert ist: Anmeldungen (auch
+  fehlgeschlagene), geänderte Einstellungen und Stammdaten, Sicherung und Update, die Verbindung
+  zu Bambuddy und die Push-Nachrichten, aufbewahrt 90 Tage. Schlüssel, Tokens und Passwörter
+  stehen nie darin. Bei Anmeldungen steht die Adresse des Geräts, wie der Server sie sieht;
+  hinter einem Reverse-Proxy auf demselben System die Adresse, die der Proxy weitergibt, hinter
+  einem auf einem anderen System die des Proxys.
 - Die Datenbankdatei ist nur für den Dienstbenutzer lesbar. Wer auf dem Rechner
   Root ist, kann sie lesen.
 

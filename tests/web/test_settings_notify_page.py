@@ -95,7 +95,7 @@ def test_the_tab_shows_the_card_with_every_field_and_event(ready_client):
 def test_the_tab_sits_before_the_account(ready_client):
     page = ready_client.get("/settings").text
     links = re.findall(r'<a class="tab(?: active)?" href="/settings\?tab=([a-z]+)"', page)
-    assert links == ["general", "automation", "labels", "bambuddy", "notify", "account", "maintenance"]
+    assert links == ["general", "automation", "labels", "bambuddy", "notify", "account", "maintenance", "log"]
 
 
 # ---- saving -----------------------------------------------------------------------------------------

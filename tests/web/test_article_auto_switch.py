@@ -264,7 +264,8 @@ def test_switching_reports_the_article(db):
     install_change_feed(db, sent.append)
     with db.begin() as s:
         catalog.set_auto_enabled(s, a, True)
-    assert sent == [frozenset({"article", f"article:{a}", f"article-settings:{a}"})]
+    # "activity": the switch is a line of the activity log too (Spec 10.7).
+    assert sent == [frozenset({"article", f"article:{a}", f"article-settings:{a}", "activity"})]
 
 
 # ---- the column head over the switch of the list (p83) ---------------------------------------
