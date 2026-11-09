@@ -90,13 +90,12 @@ def _describe(lang: str, entry: ActivityEntry) -> tuple[str, list[str], str | No
             extras.append(translate(lang, "activity.owner", owner=details["owner"]))
     elif kind == "login_failed":
         count = int(details.get("count") or 1)
-        last = details.get("last")
         try:
-            last_text = format_local(datetime.fromisoformat(str(last)), lang) if last else ""
+            first_text = format_local(datetime.fromisoformat(str(details.get("first"))), lang)
         except ValueError:
-            last_text = ""
+            first_text = "–"
         if count > 1:
-            extras.append(translate(lang, "activity.failed_count", count=count, last=last_text))
+            extras.append(translate(lang, "activity.failed_count", count=count, first=first_text))
     elif kind == "backup_downloaded":
         extras.append(translate(lang, "activity.encrypted" if details.get("encrypted") else "activity.not_encrypted"))
     elif kind == "restore_rejected":
@@ -192,14 +191,14 @@ def context(request: Request, db: Session, lang: str) -> dict[str, object]:
     area_links += [
         {"label": translate(lang, f"activity.area.{name}"), "count": by_area.get(name, 0),
          "href": _href(name, actor), "active": area == name}
-        for name in AREAS if by_area.get(name) or area == name
+        for name in AREAS  # every group, also with 0 (Spec 10.7 "Filter-Knöpfe je Gruppe mit Anzahl")
     ]
     actor_links = [{"label": translate(lang, "activity.all_actors"), "count": sum(by_actor.values()),
                     "href": _href(area, None), "active": actor is None}]
     actor_links += [
         {"label": translate(lang, f"activity.actor.{name}"), "count": by_actor.get(name, 0),
          "href": _href(area, name), "active": actor == name}
-        for name in ACTORS if by_actor.get(name) or actor == name
+        for name in ACTORS
     ]
     return {
         "log_rows": rows(lang, entries[:PAGE_SIZE]),

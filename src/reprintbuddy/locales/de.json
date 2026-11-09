@@ -1213,7 +1213,7 @@
   "activity.change.uploaded": "hochgeladen",
   "activity.fields": "Geändert: {fields}",
   "activity.owner": "Besitzer des Schlüssels: {owner}",
-  "activity.failed_count": "{count} Versuche, der letzte um {last}",
+  "activity.failed_count": "{count} Versuche, der erste um {first}",
   "activity.via_cli": "Befehl auf dem Server",
   "activity.encrypted": "mit einem Passwort verschlüsselt",
   "activity.not_encrypted": "nicht verschlüsselt",

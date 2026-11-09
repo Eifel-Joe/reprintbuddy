@@ -81,6 +81,8 @@ def test_filters_by_group_and_by_who_with_counts(ready_client):
     assert len(login_only) == 2
     system_only = [text_of(row) for row in table_rows(ready_client.get(PAGE + "&actor=system").text)]
     assert len(system_only) == 1 and "Reprintbuddy started" in system_only[0]
+    # Every group has its button, also with nothing in it.
+    assert re.search(r'href="/settings\?tab=log&amp;area=labels"[^>]*>Labels <span class="count">0</span>', html)
     nothing = ready_client.get(PAGE + "&area=labels").text
     assert "Nothing logged for this filter." in nothing
     assert ready_client.get(PAGE + "&area=<script>&actor=x&page=-1").status_code == 200  # unknown: no filter
@@ -117,7 +119,7 @@ def test_in_german(ready_client):
         st.set_setting(s, "language", "de", commit=False)
         s.query(ActivityEntry).delete()
     add(ready_client, ActivityEntry(area="login", kind="login_failed", actor="user", address="192.0.2.7",
-                                    details={"count": 3, "last": "2026-11-09T08:09:00"}))
+                                    details={"count": 3, "first": "2026-11-09T08:01:00", "last": "2026-11-09T08:09:00"}))
     html = ready_client.get(PAGE).text
     assert "Protokoll" in html
     row = text_of(table_rows(html)[0])
