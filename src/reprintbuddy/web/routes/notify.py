@@ -1,15 +1,14 @@
 """The settings of the push messages through Home Assistant and the test message (Spec 10.6).
 
 The token follows the rule of the Bambuddy key (Spec 11.5a, 10.6 "Sicherheit"): it is shown only
-while it is typed; an empty field keeps the stored token, but only for the same address (scheme,
-host, port), so a stored token never travels to another address. The test message sends what is
+while it is typed; an empty field keeps the stored token, but only for the same address
+(`settings.same_address`, path included), so a stored token never travels to another address. The test message sends what is
 typed without saving it and shows a fixed text for the outcome, never Home Assistant's own answer.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
@@ -43,12 +42,6 @@ def _typed(form) -> tuple[dict[str, object], str]:
     return typed, str(form.get("ha_token", "")).strip()
 
 
-def _same_target(a: str, b: str) -> bool:
-    """Scheme, host, port and path: behind a proxy another path can be another service (final review
-    4). The Bambuddy key compares without the path (`routes/settings.py`); that is left as it is."""
-    return st.same_address(a, b) and urlsplit(a).path.rstrip("/") == urlsplit(b).path.rstrip("/")
-
-
 def _checked(
     db: Session, typed: dict[str, object], entered_token: str, *, required: bool
 ) -> tuple[str | None, str | None, str | None, list[str]] | str:
@@ -72,7 +65,7 @@ def _checked(
             token = st.validate("ha_token", entered_token)
         except ValueError:
             return "notify.invalid_token"
-    elif stored_token and url and _same_target(str(url), stored_url):
+    elif stored_token and url and st.same_address(str(url), stored_url):
         token = stored_token
     else:
         if required and stored_token and url:
@@ -93,6 +86,7 @@ async def save_notify(request: Request, db: Session = Depends(get_db)):
         return _page(request, db, result, SECTION, busy=await ops_ready(request), **typed)
     url, token, service, chosen = result
     was_on = bool(st.get_setting(db, "ha_enabled"))
+    had_token = st.get_setting(db, "ha_token") is not None
     with write_transaction(request) as tx:  # all or nothing
         st.set_setting(tx, "ha_enabled", enabled, commit=False)
         st.set_setting(tx, "ha_url", url, commit=False)
@@ -100,6 +94,8 @@ async def save_notify(request: Request, db: Session = Depends(get_db)):
         st.set_setting(tx, "ha_service", service, commit=False)
         st.set_setting(tx, "ha_names", bool(typed["ha_names"]), commit=False)
         st.set_setting(tx, "ha_events", chosen, commit=False)
+        # p152, Spec 10.6: saving the card (on or off) lifts the stop after a rejected token.
+        st.set_setting(tx, "ha_token_rejected", False, commit=False)
         if enabled and (not was_on or st.get_setting(tx, "ha_since") is None):
             # From now on (plan D1): prints finished before are never reported.
             st.set_setting(tx, "ha_since", datetime.now(UTC).isoformat(), commit=False)
@@ -107,6 +103,11 @@ async def save_notify(request: Request, db: Session = Depends(get_db)):
             # Switched off, nothing is followed; switched on again, everything starts anew.
             st.set_setting(tx, "ha_since", None, commit=False)
             events.forget_all(tx)
+    request.app.state.notifier.settings_saved()  # its warning goes with the stop
+    if had_token and token is None:
+        # p160: switched off, a new or emptied address drops the stored token (it never goes to another
+        # address, Spec 10.6). Said, not silent: switching on again needs it typed in.
+        flash(request, "notify.token_dropped", warning=True)
     return _saved(request, tab=SECTION_TAB[SECTION])
 
 

@@ -47,7 +47,8 @@
     {% else %}
     <p class="status">{{ t('notify.status_none') }}</p>
     {% endif %}
-    {% if notify_status and notify_status.problem %}{% set problem_key = 'notify.outcome.' ~ notify_status.problem %}<p class="alert" role="alert">{{ t('warning.ha_unreachable', reason=t(problem_key)) }}</p>{% endif %}
+    {% if notify_status and notify_status.problem == 'token' %}<p class="alert" role="alert">{{ t('warning.ha_token_rejected') }}</p>
+    {% elif notify_status and notify_status.problem %}{% set problem_key = 'notify.outcome.' ~ notify_status.problem %}<p class="alert" role="alert">{{ t('warning.ha_unreachable', reason=t(problem_key)) }}</p>{% endif %}
     <p class="muted">{{ t('notify.status_hint') }}</p>
   </section>
   {% endcall %}

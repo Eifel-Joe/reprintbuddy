@@ -63,6 +63,9 @@ DEFAULTS: dict[str, object] = {
     "ha_names": True,  # name articles, spool sorts and parts in the messages
     "ha_events": list(HA_EVENTS),
     "ha_since": None,  # when the messages were switched on (plan D1); set by Reprintbuddy, not shown
+    # Home Assistant refused the stored token (401): no automatic try until the card is saved again
+    # (Spec 10.6 "Token abgelehnt", p152); set by Reprintbuddy, not shown, kept over a restart.
+    "ha_token_rejected": False,
 }
 
 SENSITIVE: frozenset[str] = frozenset({"bambuddy_api_key", "tls_key", "ha_token"})
@@ -230,9 +233,11 @@ def _label_fields(value: Any) -> list[str]:
     return list(label_fields.clean(value))
 
 
-def _ha_url(value: Any) -> str | None:
-    """The address of Home Assistant (Spec 10.6): http or https, host, port and, behind a proxy, a path
-    in front. No credentials, query or fragment: Reprintbuddy appends the path of the call."""
+def _service_url(value: Any) -> str | None:
+    """The address of Bambuddy (Spec 11.3 c) or Home Assistant (Spec 10.6): http or https, host, port
+    and, behind a proxy, a path in front. No credentials, query or fragment: Reprintbuddy appends the
+    path of each call, which would land behind a `#` or `?` and go nowhere (p165; until v0.3.12 only
+    Home Assistant's address was checked like this). The QR address has its own, stricter rule."""
     if value is None:
         return None
     text = _optional_url(value)
@@ -302,7 +307,7 @@ _VALIDATORS: dict[str, Callable[[Any], object]] = {
     "label_printer_host": _label_printer_host,
     "label_roll": _label_roll,
     "label_fields": _label_fields,
-    "bambuddy_url": _optional_url,
+    "bambuddy_url": _service_url,
     "bambuddy_username": _optional_nonempty,
     "bambuddy_api_key": _api_key,
     "bambuddy_review_confirmed": _bool,
@@ -311,12 +316,13 @@ _VALIDATORS: dict[str, Callable[[Any], object]] = {
     "tls_cert": _optional_pem,
     "tls_key": _optional_pem,
     "ha_enabled": _bool,
-    "ha_url": _ha_url,
+    "ha_url": _service_url,
     "ha_token": _api_key,  # a long-lived access token: visible ASCII, like an API key
     "ha_service": _ha_service,
     "ha_names": _bool,
     "ha_events": _ha_events,
     "ha_since": _ha_since,
+    "ha_token_rejected": _bool,
 }
 
 
@@ -334,6 +340,21 @@ def validate(key: str, value: object) -> object:
     if key not in _VALIDATORS:
         raise KeyError(key)
     return _VALIDATORS[key](value)
+
+
+# What an earlier version stored under a rule since made stricter. Such a value still works where it is
+# read and is fixed the next time it is saved; it must not make a backup unrestorable (review of p165).
+_EARLIER_RULES: dict[str, Callable[[Any], object]] = {"bambuddy_url": _optional_url}
+
+
+def validate_stored(key: str, value: object) -> object:
+    """`validate` for a value already in a database: also what an earlier version allowed to be saved."""
+    try:
+        return validate(key, value)
+    except ValueError:
+        if key not in _EARLIER_RULES:
+            raise
+        return _EARLIER_RULES[key](value)
 
 
 def set_setting(session: Session, key: str, value: object, *, commit: bool = True) -> None:
@@ -413,20 +434,35 @@ def apply_check(session: Session, url: object, api_key: str, check: ConnectionCh
 
 
 def same_address(a: str | None, b: str | None) -> bool:
-    """Do two stored/entered addresses point at the same scheme, host and port?
+    """Do a stored and an entered address name the same place?
 
-    Used to decide whether a stored API key may be sent to an address: the key
-    belongs to one Bambuddy address and never travels to another.
+    Decides whether a stored secret (the Bambuddy key, the Home Assistant token, Spec 10.6
+    "Sicherheit", 11.5a) may be sent to an address: it belongs to one address and never travels to
+    another. Written differently is the same: case of scheme and host, a default port left out, a
+    trailing slash. Everything else counts, the path too (p159): behind a proxy that routes by path,
+    another path can be another service. Query, fragment and user part count as well - in doubt the
+    secret is typed again, never sent too far. Rejected: one comparison per secret (until v0.3.12 the
+    token compared the path and the key did not; two rules for one question drift apart).
     """
     if not a or not b:
         return False
 
-    def origin(url: str) -> tuple[str, str, int | None]:
+    def place(url: str) -> tuple[object, ...]:
         parts = urlsplit(url.strip())
-        default = {"http": 80, "https": 443}.get(parts.scheme)
-        return parts.scheme, (parts.hostname or "").lower(), parts.port or default
+        scheme = parts.scheme.lower()
+        default = {"http": 80, "https": 443}.get(scheme)
+        return (
+            scheme,
+            (parts.hostname or "").lower(),
+            parts.port or default,
+            parts.path.rstrip("/"),
+            parts.query,
+            parts.fragment,
+            parts.username,
+            parts.password,
+        )
 
     try:
-        return origin(a) == origin(b)
+        return place(a) == place(b)
     except ValueError:  # an invalid port or address is never "the same"
         return False

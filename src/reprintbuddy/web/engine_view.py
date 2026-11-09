@@ -73,7 +73,9 @@ def warnings_context(request: Request, session: Session) -> dict[str, object]:
     # Spec 10.2, 10.6: the last push message did not go through. Red like Bambuddy not answering;
     # it lives in the notifier, not in the engine's list (`collect_warnings` stays the engine's).
     problem = notify_view.problem(request)
-    if problem is not None:
+    if problem == "token":  # p152: nothing is tried any more, the person has to act (Spec 10.6)
+        shown.append(ShownWarning(translate(lang, "warning.ha_token_rejected"), "bad"))
+    elif problem is not None:
         reason = translate(lang, f"notify.outcome.{problem}")
         shown.append(ShownWarning(translate(lang, "warning.ha_unreachable", reason=reason), "bad"))
     return {"warnings": shown, "last_poll_at": status.last_poll_at}

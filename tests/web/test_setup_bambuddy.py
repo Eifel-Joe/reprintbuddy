@@ -308,6 +308,18 @@ def test_invalid_url_is_reported(admin_client):
     assert _saved(admin_client, "bambuddy_url") is None
 
 
+@pytest.mark.parametrize("address", [f"{URL}#x", f"{URL}?x=1", "http://user@bambuddy.test:8000"])
+def test_an_address_with_fragment_query_or_user_is_refused_before_any_call(admin_client, respx_mock, address):
+    """p165: the paths Reprintbuddy appends would land behind `#` or `?`; the key never leaves."""
+    route = respx_mock.route(host="bambuddy.test").respond(200, json={})
+    token = csrf_of(admin_client, CONNECT)
+    response = admin_client.post(CONNECT, data=_form(token, bambuddy_address=address))
+    assert response.status_code == 200
+    assert "without user name, query or fragment" in response.text
+    assert not route.called
+    assert _saved(admin_client, "bambuddy_url") is None
+
+
 def test_missing_fields_are_reported(admin_client):
     token = csrf_of(admin_client, CONNECT)
     response = admin_client.post(CONNECT, data=_form(token, bambuddy_token=""))

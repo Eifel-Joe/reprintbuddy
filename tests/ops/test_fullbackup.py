@@ -406,6 +406,32 @@ def test_missing_table_is_refused(tmp_path, work):
         read_back(created.path, work)
 
 
+@pytest.mark.parametrize(
+    "address", ["http://user:pw@bambuddy.test:8000", "http://bambuddy.test:", "http://bambuddy.test:8000/a@b"]
+)
+def test_a_bambuddy_address_saved_under_the_old_rule_still_restores(tmp_path, work, address):
+    """p165 made the field stricter; an address stored before (it worked) must not make a backup
+    unrestorable - the address is fixed the next time it is saved."""
+    path = make_db(tmp_path / "other" / "reprintbuddy.db")
+    con = sqlite3.connect(path)
+    con.execute("INSERT INTO settings (key, value) VALUES ('bambuddy_url', ?)", (json.dumps(address),))
+    con.commit()
+    con.close()
+    created = fb.create_backup(path, work_dir=work, password=None, now=NOW)
+    read_back(created.path, work)
+
+
+def test_a_bambuddy_address_no_rule_ever_took_is_still_refused(tmp_path, work):
+    path = make_db(tmp_path / "other" / "reprintbuddy.db")
+    con = sqlite3.connect(path)
+    con.execute("INSERT INTO settings (key, value) VALUES ('bambuddy_url', ?)", (json.dumps("ftp://h"),))
+    con.commit()
+    con.close()
+    created = fb.create_backup(path, work_dir=work, password=None, now=NOW)
+    with pytest.raises(fb.Incompatible):
+        read_back(created.path, work)
+
+
 def test_older_database_is_accepted_but_not_migrated(tmp_path, work):
     older = known_revisions()[-2]
     path = make_db(tmp_path / "old" / "reprintbuddy.db", revision=older)

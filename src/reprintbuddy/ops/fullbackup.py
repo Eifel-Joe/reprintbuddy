@@ -843,7 +843,7 @@ def _check_settings(path: Path) -> None:
         if key not in st.DEFAULTS:
             continue  # written by a version that knew more settings; nothing reads it
         try:
-            st.validate(key, value)
+            st.validate_stored(key, value)
         except (KeyError, ValueError) as error:
             raise Incompatible("a setting this version cannot use") from error
     cert, key = values.get("tls_cert"), values.get("tls_key")

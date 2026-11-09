@@ -40,6 +40,7 @@ EXPECTED_DEFAULTS = {
     "ha_names": True,
     "ha_events": ["print_done", "print_failed", "paused", "below_min", "reorder", "trouble", "rights"],
     "ha_since": None,
+    "ha_token_rejected": False,
 }
 
 
@@ -164,6 +165,17 @@ def test_validate_returns_normalised_value():
         ("http://h:8000", "http://other:8000", False),
         ("http://h:8000", None, False),
         (None, None, False),
+        # p159: the path belongs to the address - behind a proxy another path can be another service
+        ("http://h:8000/bb", "http://h:8000/bb/", True),
+        ("HTTP://H:80/bb", "http://h/bb", True),
+        ("http://h:8000", "http://h:8000/bb", False),
+        ("http://h:8000/bb", "http://h:8000/other", False),
+        ("http://h:8000/bb", "http://h:8000/bb/sub", False),
+        ("http://h:8000/bb", "http://h:8000/BB", False),  # paths are case-sensitive
+        # whatever else the address field lets through counts too: in doubt, type the key again
+        ("http://h:8000", "http://h:8000?x=1", False),
+        ("http://h:8000", "http://h:8000#x", False),
+        ("http://h:8000", "http://user@h:8000", False),
     ],
 )
 def test_same_address(a, b, same):
@@ -220,6 +232,23 @@ def test_url_with_a_bad_host_or_port_is_refused(bad):
 @pytest.mark.parametrize("good", ["http://h:1", "http://h:65535", "https://[::1]:8000", "http://h"])
 def test_url_with_a_good_port_is_accepted(good):
     assert st.validate("bambuddy_url", good) == good
+
+
+@pytest.mark.parametrize("key", ["bambuddy_url", "ha_url", "qr_base_url"])
+@pytest.mark.parametrize(
+    "bad",
+    ["http://h:8000#x", "http://h:8000/#", "http://h:8000?x=1", "http://h:8000/bb?", "http://user@h:8000",
+     "http://user:pw@h:8000", "http://h:8000/a\\b", "http://h:/bb"],
+)
+def test_an_address_with_query_fragment_or_user_is_refused(key, bad):
+    """p165: Reprintbuddy appends its paths; behind `#` or `?` they go nowhere, a user part has no place."""
+    with pytest.raises(ValueError):
+        st.validate(key, bad)
+
+
+@pytest.mark.parametrize("key", ["bambuddy_url", "ha_url", "qr_base_url"])
+def test_an_address_with_a_path_in_front_stays_allowed(key):
+    assert st.validate(key, "http://proxy.test:8000/bb/") == "http://proxy.test:8000/bb"
 
 
 def test_same_address_does_not_fail_on_bad_input():
