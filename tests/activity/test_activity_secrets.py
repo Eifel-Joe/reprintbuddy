@@ -77,12 +77,20 @@ def test_secrets_of_the_settings_pages_never_reach_log_page_or_export(ready_clie
     assert '"activity"' in export  # the log is part of the export (Spec 11.6)
 
 
-def test_an_address_never_shows_user_password_or_query(db):
+def test_an_address_never_shows_user_password_query_or_path(db):
+    """A value of an earlier version (saving refuses it today, p165) and an allowed address with a path in
+    front: neither user, password, query, fragment nor path reaches the log."""
+    import json
+
+    from reprintbuddy.models import Setting
+
     with db.begin() as s:
-        st.set_setting(s, "bambuddy_url", f"http://user:{MARK}@bambuddy.test:8000/p?key={MARK}#{MARK}", commit=False)
+        s.add(Setting(key="bambuddy_url", value=json.dumps(f"http://user:{MARK}@bambuddy.test:8000/p?key={MARK}#{MARK}")))
+    with db.begin() as s:
+        st.set_setting(s, "ha_url", f"http://ha.test:8123/{MARK}", commit=False)
     logged = everything_logged(db)
     assert MARK not in logged
-    assert "http://bambuddy.test:8000" in logged
+    assert "http://bambuddy.test:8000" in logged and "http://ha.test:8123" in logged
 
 
 def test_a_password_set_on_the_server_never_reaches_the_log(tmp_path, monkeypatch):

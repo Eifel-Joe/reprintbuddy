@@ -273,13 +273,24 @@ def test_the_label_settings_saved_on_the_page(ready_client):
     assert names["label_fields"] == {"setting": "label_fields", "change": "changed"}
 
 
-def test_the_automatic_check_for_versions_switched_on_the_page(ready_client):
-    before = len(lines_of(ready_client, "settings_changed"))
-    response = ready_client.post(
-        "/settings/update/auto", data={"csrf_token": csrf_of(ready_client, "/settings"), "enabled": "0"}
+def test_the_automatic_check_for_versions_switched_on_the_page(ops_env):
+    """The switch sits on the update card of a git installation and uses up a one-time token (p99)."""
+    from reprintbuddy.ops.runner import CommandResult
+
+    (ops_env.install_dir / ".git").mkdir(parents=True, exist_ok=True)
+    d = str(ops_env.install_dir)
+    ops_env.runner.on(("git", "-C", d, "describe"), CommandResult(0, "v0.1.0\n"))
+    ops_env.runner.on(("git", "-C", d, "ls-remote"), CommandResult(0, "abc\trefs/tags/v0.1.0\n"))
+    client = ops_env.client
+    page = "/settings?tab=maintenance"
+    before = len(lines_of(client, "settings_changed"))
+    response = client.post(
+        "/settings/update/auto",
+        data={"csrf_token": csrf_of(client, page), "form_token": form_token_of(client, page, "/settings/update/auto"),
+              "enabled": "0"},
     )
     assert response.status_code == 303
-    item = setting_names(new_settings_line(ready_client, before))["update_check"]
+    item = setting_names(new_settings_line(client, before))["update_check"]
     assert item["new"] is False
 
 

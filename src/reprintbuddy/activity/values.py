@@ -57,7 +57,9 @@ NAMES: dict[str, str] = {key: key for key in SETTINGS} | {
 CHANGES: tuple[str, ...] = ("changed", "removed", "uploaded")
 
 # Kept by Reprintbuddy for itself; no settings page shows them.
-INTERNAL: frozenset[str] = frozenset({"session_secret", "ha_since", "bambuddy_review_confirmed"})
+INTERNAL: frozenset[str] = frozenset(
+    {"session_secret", "ha_since", "bambuddy_review_confirmed", "ha_token_rejected"}  # the last: p152, set by the sender
+)
 
 # Columns of the edit forms (master data) -> the field the log names. Several columns can be one
 # field ("print target"); the texts are `activity.field.<field>`.

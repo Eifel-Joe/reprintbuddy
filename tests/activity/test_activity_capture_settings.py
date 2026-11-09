@@ -77,10 +77,19 @@ def test_sensitive_values_only_as_changed_or_removed(db):
 
 
 def test_an_address_only_with_scheme_host_and_port(db):
-    with db.begin() as s:
-        st.set_setting(s, "bambuddy_url", "http://user:pw@bambuddy.test:8000/x?key=SECRET#y", commit=False)
-    [line] = lines(db)
-    assert line.details["settings"] == [{"setting": "bambuddy_url", "old": None, "new": "http://bambuddy.test:8000"}]
+    """Saving refuses user, query and fragment today (p165), but a value of an earlier version stays in the
+    table until it is changed: the log shows it, old or new, with scheme, host and port only."""
+    import json
+
+    with db.begin() as s:  # an earlier version's value, as it stands in the table
+        s.add(Setting(key="bambuddy_url", value=json.dumps("http://user:pw@bambuddy.test:8000/x?key=SECRET#y")))
+    with db.begin() as s:  # allowed today: a path in front (behind a proxy)
+        st.set_setting(s, "bambuddy_url", "http://other.test:9000/bambuddy", commit=False)
+    first, second = lines(db)
+    assert first.details["settings"] == [{"setting": "bambuddy_url", "old": None, "new": "http://bambuddy.test:8000"}]
+    assert second.details["settings"] == [
+        {"setting": "bambuddy_url", "old": "http://bambuddy.test:8000", "new": "http://other.test:9000"}
+    ]
 
 
 def test_the_bambuddy_connection_names_the_owner_of_the_key(db):
