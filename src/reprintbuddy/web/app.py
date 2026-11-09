@@ -22,7 +22,7 @@ from starlette.templating import Jinja2Templates
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
 from reprintbuddy.activity import states as activity_states
-from reprintbuddy.activity.writer import ActivityLog, read_restored_marker
+from reprintbuddy.activity.writer import ActivityLog, read_restored_marker, restore_marks
 from reprintbuddy.bambuddy.client import BambuddyUnavailable
 from reprintbuddy.bambuddy.factory import make_http_factory
 from reprintbuddy.bambuddy.live import LiveListener
@@ -42,6 +42,7 @@ from reprintbuddy.ops.versions import VersionInfo, check_versions, is_git_instal
 from reprintbuddy.web import deps
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, BodyLimitMiddleware
+from reprintbuddy.web.securecookies import SecureCookiesOnHttps
 from reprintbuddy.web.subpath import SubPathWarning
 from reprintbuddy.web.flash import pop_flashes
 from reprintbuddy.web.formatting import decimal, fill_percent, local_date, local_day, local_dt, unit
@@ -249,6 +250,9 @@ def _log_start(app: FastAPI) -> None:
     restored = read_restored_marker(app.state.db_path.parent)
     if restored is not None:
         via = restored.pop("via", None)
+        marks = restored.pop("marks", None)
+        if marks is not None:  # p186: before anything is logged into the restored database
+            restore_marks(app.state.sessionmaker, marks)
         activity.record("restore_done", "user", restored, via=via if via == "cli" else None)
     activity.record("started", "system", {"version": __version__})
 
@@ -305,6 +309,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        app.state.stopping = True
         await app.state.notifier.stop()  # a message on its way is ended, nothing new starts
         background = list(tasks)
         check = app.state.rights.task  # a check of the key's rights started by a page
@@ -414,6 +419,7 @@ def create_app(
     app.state.ticker.after_tick.append(lambda poll: _log_bambuddy(app, poll))
     app.state.run_engine = run_engine
     app.state.ticker_task = None  # the background loop while the app runs (see _lifespan)
+    app.state.stopping = False  # set when the lifespan shuts down: a restore then asks for no restart
     # Bambuddy's live channel (Spec 7.6): a message that may have changed the queue, and every
     # connect, only flag the engine; the poll runs in the engine's own loop task.
     live_options: dict[str, Any] = {}
@@ -468,6 +474,8 @@ def create_app(
         same_site="lax",
         https_only=https,
     )
+    # Outside the session: a request that came over HTTPS (also through a trusted proxy) gets Secure cookies.
+    app.add_middleware(SecureCookiesOnHttps)
     # Every body is bounded before anything reads it (v0.3.9 T0, `web/bodylimit.py`); the uploads
     # have limits of their own and refuse a longer declaration with a page of their own.
     app.state.body_limits = {

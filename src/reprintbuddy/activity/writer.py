@@ -18,6 +18,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import sqlite3
 import threading
 from collections import deque
 from collections.abc import Callable
@@ -304,7 +305,8 @@ class ActivityLog:
 
 
 def read_restored_marker(data_dir: Path) -> dict[str, Any] | None:
-    """What a restore left for the next start (and remove it): the date and version of the backup."""
+    """What a restore left for the next start (and remove it): the date and version of the backup, and
+    the marks of the database it replaced (`marks`, None when there were none to read)."""
     path = data_dir / RESTORED_MARKER
     try:
         raw = path.read_text(encoding="utf-8")
@@ -320,14 +322,78 @@ def read_restored_marker(data_dir: Path) -> dict[str, Any] | None:
         return None
     if not isinstance(data, dict):
         return None
-    return {key: data.get(key) for key in ("created_at", "version", "via")}
+    marks = data.get("marks")
+    return {
+        **{key: data.get(key) for key in ("created_at", "version", "via")},
+        "marks": marks if isinstance(marks, dict) else None,
+    }
 
 
-def write_restored_marker(data_dir: Path, *, created_at: datetime, version: str, via: str | None) -> None:
+def write_restored_marker(
+    data_dir: Path,
+    *,
+    created_at: datetime,
+    version: str,
+    via: str | None,
+    marks: dict[str, dict[str, str | None]] | None = None,
+) -> None:
     """Left after a restore replaced the database; the next start logs it into the restored one."""
+    content: dict[str, Any] = {"created_at": created_at.isoformat(), "version": version, "via": via}
+    if marks is not None:
+        content["marks"] = marks
     try:
-        (data_dir / RESTORED_MARKER).write_text(
-            json.dumps({"created_at": created_at.isoformat(), "version": version, "via": via}), encoding="utf-8"
-        )
+        (data_dir / RESTORED_MARKER).write_text(json.dumps(content), encoding="utf-8")
     except OSError:
         log.warning("activity log: the restore marker could not be written")
+
+
+# p186 (v0.3.14). Root: which states the log has written (`activity_marks`) is kept in the database, so a
+# restore brought back the marks of the backup; the next start wrote a state again that the log had shown
+# long before (Bambuddy unreachable, a version found, the result of the last update). The marks belong to
+# what has happened, not to the data: the restore reads them from the database it replaces (`current_marks`)
+# and leaves them in the restore marker; the next start sets them into the restored database, after its
+# migration and before anything is logged (`restore_marks`).
+# Rejected: writing the marks into the restored file at once - an older backup may not have the table yet,
+# it gets it only from the migration at the next start.
+# Tests: tests/activity/test_activity_ops.py (p186), tests/ops/test_restorecmd.py (marks_of_the_log).
+
+
+def _iso(value: object) -> str | None:
+    try:
+        return datetime.fromisoformat(str(value)).isoformat()
+    except ValueError:
+        return None
+
+
+def current_marks(db_path: Path) -> dict[str, dict[str, str | None]] | None:
+    """The marks of the log in the database at `db_path`, read only; None when they cannot be read (no
+    database, or one of a version before the log)."""
+    try:
+        connection = sqlite3.connect(f"{Path(db_path).resolve().as_uri()}?mode=ro", uri=True, timeout=5)
+    except sqlite3.Error:
+        return None
+    try:
+        rows = connection.execute("SELECT key, state, at FROM activity_marks").fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        connection.close()
+    return {str(key): {"state": str(state), "at": _iso(at)} for key, state, at in rows}
+
+
+def restore_marks(maker: sessionmaker, marks: dict[str, Any]) -> None:
+    """Make the marks of the restored database those of the one it replaced (in one write transaction)."""
+    try:
+        with maker.begin() as session:
+            session.execute(delete(ActivityMark))
+            for key, mark in marks.items():
+                if not isinstance(key, str) or not isinstance(mark, dict) or not isinstance(mark.get("state"), str):
+                    continue
+                at = mark.get("at")
+                try:
+                    moment = datetime.fromisoformat(at) if isinstance(at, str) else utcnow()
+                except ValueError:
+                    moment = utcnow()
+                session.add(ActivityMark(key=key, state=mark["state"], at=_naive(moment)))
+    except Exception as error:  # noqa: BLE001 - the log must not stop the start
+        log.warning("activity log: the marks could not be carried over (%s)", type(error).__name__)

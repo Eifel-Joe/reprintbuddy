@@ -246,7 +246,8 @@ There is **no configuration file**. Every setting lives in the database and is
 changed under *Settings* in the web interface: language, QR code address, Bambuddy connection,
 automation, labels, push messages, password, listen address, port, optional HTTPS certificate,
 restart, update check, update and backup, and export. *Settings → Log* only shows what happened (who changed what, sign-ins, updates, messages), see the documentation pages. The only thing
-given on the command line is the database path (`--db`).
+given on the command line is the database path (`--db`). Times are shown in the time zone of the
+server (`timedatectl set-timezone …`, then restart).
 
 ## Update
 
@@ -294,7 +295,9 @@ HTTP and the proxy does TLS. If the proxy runs on the same system, set the liste
 to `127.0.0.1`. Give Reprintbuddy its own address or its own port on the proxy
 (`https://reprintbuddy.example.net/` or `https://example.net:8443/`). A sub-path
 (`https://example.net/reprintbuddy/`) does not work: links and redirects would point past the
-proxy. Reprintbuddy writes a warning to the system log when it is reached that way.
+proxy. Reprintbuddy writes a warning to the system log when it is reached that way. A request
+that came over HTTPS gets cookies marked "HTTPS only"; behind a proxy that holds when the proxy
+runs on the same system and sends `X-Forwarded-Proto: https` (from other addresses the header is ignored).
 
 Locked out by a certificate that stopped working (expired, wrong name)? On the system:
 

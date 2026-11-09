@@ -95,6 +95,9 @@ def make_engine(db_path: Path) -> Engine:
             # requests. Each transaction opens its own connection and closes it afterwards.
             poolclass=NullPool,
             connect_args={"check_same_thread": False},  # sessions are used from worker threads
+            # A failing statement's error (and so a logged traceback) would otherwise carry the
+            # values it tried to store, for example a key or a password hash, into the system log.
+            hide_parameters=True,
         )
         _configure(engine, foreign_keys=True, transactional_ddl=False)
         with engine.connect() as conn:  # connect once so the file exists
@@ -128,7 +131,11 @@ def upgrade(engine: Engine, script_location: Path | None = None, *, revision: st
     cfg = Config()
     cfg.set_main_option("script_location", str(script_location or _MIGRATIONS_DIR))
     migration_engine = create_engine(
-        engine.url, future=True, poolclass=NullPool, connect_args={"check_same_thread": False}
+        engine.url,
+        future=True,
+        poolclass=NullPool,
+        connect_args={"check_same_thread": False},
+        hide_parameters=True,  # as for the application engine (`make_engine`)
     )
     _configure(migration_engine, foreign_keys=False, transactional_ddl=True)
     try:

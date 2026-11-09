@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Callable, Iterable
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import Request
 from sqlalchemy.orm import Session
@@ -22,7 +22,7 @@ from reprintbuddy.labels.rolls import DEFAULT_ROLL, ROLLS, Roll, roll_by_key
 from reprintbuddy.labels.service import MAX_COPIES, Outcome
 from reprintbuddy.models import Article
 from reprintbuddy.web import netaddr, qr
-from reprintbuddy.web.formatting import LOCAL_ZONE, format_date
+from reprintbuddy.web.formatting import format_date, to_local
 from reprintbuddy.web.i18n import translate
 
 SAMPLE_ARTICLE_ID = 1  # the code on a sample label points at an article address like any other
@@ -34,7 +34,7 @@ def caption_for(lang: str) -> Callable[[str], str]:
 
 
 def today_text(lang: str) -> str:
-    return format_date(datetime.now(LOCAL_ZONE).date(), lang)
+    return format_date(to_local(datetime.now(UTC)).date(), lang)
 
 
 def target_text(lang: str, article: Article) -> str | None:

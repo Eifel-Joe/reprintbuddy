@@ -534,3 +534,23 @@ def test_when_even_the_way_back_fails_the_message_says_where_the_file_is(tmp_pat
     assert code == restorecmd.EXIT_REFUSED
     text = said.text()
     assert "could not be put back" in text and "damaged-" in text and "Nothing was changed" not in text
+
+
+def test_the_marks_of_the_log_of_the_replaced_database_are_carried_over(tmp_path, source, target):
+    """p186: the restore from the command line leaves the marks of the database it replaces for the next start,
+    so a state the log already wrote does not come back from an older backup."""
+    from reprintbuddy.activity.writer import read_restored_marker
+
+    for path, state in ((source, "ok"), (target, "unreachable")):
+        con = sqlite3.connect(path)
+        with con:
+            con.execute(
+                "INSERT INTO activity_marks (key, state, at) VALUES ('bambuddy.connection', ?, '2026-11-08 09:00:00')",
+                (state,),
+            )
+        con.close()
+    code, said, _ = run(backup_of(source, tmp_path), target)
+    assert code == 0, said.text()
+    marker = read_restored_marker(target.parent)
+    assert marker["via"] == "cli"
+    assert marker["marks"] == {"bambuddy.connection": {"state": "unreachable", "at": "2026-11-08T09:00:00"}}

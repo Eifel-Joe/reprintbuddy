@@ -235,3 +235,14 @@ async def test_stopping_the_loop_stops_a_running_check_at_once():
     assert time.monotonic() - began < 1
     assert await asyncio.to_thread(seen_stop.wait, 5)  # the check itself was told to stop
     assert s.stored == []
+
+
+async def test_a_failed_check_logs_no_credentials_of_the_remote_address(caplog):
+    # p166: the line now reaches the system log. git names the remote address in its error; an
+    # address with a user and a token in it must not be written there.
+    s = Setup(outcome=UpdateCheckError("fatal: unable to access 'https://someone:tok3n@example.org/r.git/': 403"))
+    with caplog.at_level(logging.INFO, logger=autocheck.__name__):
+        await s.build().run_once()
+    text = caplog.text
+    assert "tok3n" not in text and "someone" not in text
+    assert "https://***@example.org/r.git/" in text
