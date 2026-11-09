@@ -246,3 +246,19 @@ def test_an_address_changed_only_behind_host_and_port_says_changed(db):
     with db.begin() as s:
         st.set_setting(s, "bambuddy_url", "http://bambuddy.test:8000/proxy", commit=False)
     assert lines(db)[-1].details["settings"] == [{"setting": "bambuddy_url", "change": "changed"}]
+
+
+def test_a_database_without_the_log_table_keeps_its_change(tmp_path, caplog):
+    """A database of an older version, written before its migration: the change counts, its line is
+    missing (Spec 10.7 "die Änderung selbst gilt trotzdem")."""
+    from reprintbuddy.db import known_revisions, make_engine, make_sessionmaker, upgrade
+
+    engine = make_engine(tmp_path / "old.db")
+    upgrade(engine, revision=known_revisions()[-2])
+    maker = make_sessionmaker(engine)
+    with caplog.at_level(logging.WARNING):
+        with maker() as s:
+            st.set_setting(s, "queue_cap", 9)
+    with maker() as s:
+        assert st.get_setting(s, "queue_cap") == 9
+    engine.dispose()

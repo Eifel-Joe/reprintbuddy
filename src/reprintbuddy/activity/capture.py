@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import weakref
 from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -415,8 +416,26 @@ def _before_commit(session: Session) -> None:
         # The kind of error only: a traceback could carry the values of a statement (Spec 11.5a).
         log.error("activity log: a line could not be built (%s)", type(error).__name__)
         return
-    if entries:
+    if entries and _has_log_table(session):
         session.add_all(entries)
+
+
+# Engines whose database has the table of the log (checked once each; a migration adds it, never removes it).
+_WITH_TABLE: "weakref.WeakSet[object]" = weakref.WeakSet()  # weak: an id could be reused by another engine
+
+
+def _has_log_table(session: Session) -> bool:
+    """False for a database of an older version written before its migration: its change counts, the
+    line is left out (Spec 10.7 "die Änderung selbst gilt trotzdem")."""
+    bind = session.get_bind()
+    engine = getattr(bind, "engine", bind)
+    if engine in _WITH_TABLE:
+        return True
+    if inspect(session.connection()).has_table(ActivityEntry.__tablename__):
+        _WITH_TABLE.add(engine)
+        return True
+    log.warning("activity log: this database has no table for it yet; the line is left out")
+    return False
 
 
 def _after_commit(session: Session) -> None:
