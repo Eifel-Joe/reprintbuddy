@@ -12,7 +12,7 @@ Jeder Befehl nimmt `--db PFAD`, die Datenbankdatei. Vorgabe ist `/var/lib/reprin
 
 | Befehl | Wirkung |
 |---|---|
-| `reprintbuddy --version` | Gibt die installierte Version aus, zum Beispiel `reprintbuddy 0.3.12`. |
+| `reprintbuddy --version` | Gibt die installierte Version aus, zum Beispiel `reprintbuddy 0.3.13`. |
 | `reprintbuddy set-password --username <Name>` | Setzt das Passwort des Kontos. Fragt am Terminal zweimal nach dem neuen Passwort. |
 | `reprintbuddy set-port <Port>` | Setzt den Port, 1 bis 65535. |
 | `reprintbuddy set-host <Adresse>` | Setzt die Lauschadresse, zum Beispiel `0.0.0.0`. Wird abgelehnt, wenn dieser Rechner dort nicht lauschen kann. |
