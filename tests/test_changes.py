@@ -364,3 +364,15 @@ def test_notify_marks_report_nothing(db, published):
     with db.begin() as s:
         s.scalars(select(NotifyMark)).one().state = "sent"
     assert published == []
+
+
+def test_the_activity_log_reports_its_topic_and_its_marks_nothing(db, published):
+    """The page of the activity log follows live (Spec 10.7, 10.5); the marks of the logged states
+    are bookkeeping that no page shows."""
+    from reprintbuddy.models import ActivityEntry, ActivityMark
+
+    with db.begin() as s:
+        s.add(ActivityEntry(area="login", kind="login", actor="user"))
+    with db.begin() as s:
+        s.add(ActivityMark(key="bambuddy.connection", state="ok"))
+    assert published == [frozenset({"activity"})]

@@ -9,7 +9,7 @@ the migrations.
 
 Topics: `article`, `article:<id>`, `article-settings:<id>`, `part`, `part:<id>`,
 `part-settings:<id>`, `filament-settings:<sort id>`, `set`, `set:<id>`, `order`, `order:<id>`, `journal`, `settings`,
-`queue`, `inspection`, `filament`, `reorder`, `bambuddy`.
+`queue`, `inspection`, `filament`, `reorder`, `bambuddy`, `activity`.
 `…-settings:<id>` only when a column of the edit form changes, so a booking does not tell
 an open edit form that its article changed when only the stock did.
 
@@ -28,6 +28,8 @@ from sqlalchemy import event, inspect
 from sqlalchemy.orm import ORMExecuteState, Session, sessionmaker
 
 from reprintbuddy.models import (
+    ActivityEntry,
+    ActivityMark,
     Article,
     ArticleFilament,
     ArticleFilamentSort,
@@ -59,7 +61,8 @@ Publish = Callable[[frozenset[str]], None]
 Change = Literal["new", "dirty", "deleted"]
 
 # NotifyMark: what the push messages reported (Spec 10.6), bookkeeping that no page shows.
-IGNORED: frozenset[type] = frozenset({User, LoginSession, FormToken, NotifyMark})
+# ActivityMark: the last logged state of the activity log (Spec 10.7), the same kind of bookkeeping.
+IGNORED: frozenset[type] = frozenset({User, LoginSession, FormToken, NotifyMark, ActivityMark})
 
 # The kind of each table; a bulk statement is reported with its kind only.
 _KIND: dict[type, str] = {
@@ -82,6 +85,7 @@ _KIND: dict[type, str] = {
     FilamentSettings: "filament",
     FilamentSnapshot: "filament",
     ReorderMark: "reorder",
+    ActivityEntry: "activity",
 }
 
 CLASSIFIED: frozenset[type] = frozenset(_KIND) | IGNORED
