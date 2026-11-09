@@ -94,7 +94,7 @@
 
 {# One key figure card (kpis.Kpi): symbol in the colour of its tone, number, label. #}
 {% macro kpi(card) -%}
-<div class="kpi"><span class="kpi-icon tone-{{ card.tone }}">{{ icon(card.icon) }}</span><div><span class="kpi-value">{{ card.value }}</span><span class="kpi-label">{{ card.label }}</span></div></div>
+<div class="kpi"><span class="kpi-icon tone-{{ card.tone }}">{{ icon(card.icon) }}</span><div><span class="kpi-value">{{ card.value }}</span><span class="kpi-label">{{ card.label }}</span>{% if card.note %}<span class="kpi-note">{{ card.note }}</span>{% endif %}</div></div>
 {%- endmacro %}
 
 {# The row of key figure cards (kpis.state_cards); fine inside ui.region("summary", …). #}

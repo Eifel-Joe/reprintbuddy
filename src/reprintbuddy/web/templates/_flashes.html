@@ -1,0 +1,4 @@
+{# The messages for this page (`flashes`, a list of FlashMessage) in one box. static/js/flash.js
+   looks after the box: good news goes away by itself, trouble gets a button to dismiss it (p161).
+   The label of that button comes from here, the script has no texts. No box without messages. #}
+{% if flashes %}<div class="flashes" data-flashes data-label-close="{{ t('flash.close') }}">{% for message in flashes %}{% include "_flash_message.html" %}{% endfor %}</div>{% endif %}

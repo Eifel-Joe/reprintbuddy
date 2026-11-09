@@ -221,7 +221,7 @@ def _is_warning(tag):
 
 
 def _is_plain_notice(tag):
-    return 'class="notice"' in tag and 'role="status"' in tag
+    return 'class="flash"' in tag and 'role="status"' in tag  # since v0.3.13 the one message look (p161)
 
 
 def test_a_plain_save_stays_in_the_calm_look(ready_client, respx_mock):

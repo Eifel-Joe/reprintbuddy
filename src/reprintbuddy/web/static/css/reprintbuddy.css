@@ -287,6 +287,23 @@ input[type="file"] { margin-top: 0.5rem; color: var(--text-2); max-width: 100%; 
   border-radius: 8px;
 }
 
+/* The box of the messages for a page (flash.js, p161). Good news fades out at the end; trouble has a
+   button to dismiss it (added by the script, so without the script there is none). */
+.flashes { margin: 0; }
+.flash { transition: opacity 0.25s ease; }
+.flash-leaving { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .flash { transition: none; }
+}
+.alert.has-close { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
+.flashes > .alert { margin: 0 0 1rem; }
+.flash-close {
+  flex: 0 0 auto; min-width: 2.75rem; min-height: 2.75rem; margin: -0.7rem -0.9rem -0.7rem 0;
+  padding: 0; border: 0; background: none; color: var(--text-2); font: inherit; font-size: 1.4rem;
+  line-height: 1; cursor: pointer; border-radius: 8px;
+}
+.flash-close:hover { color: var(--text); }
+
 /* "This has changed in the meantime" with a reload button (live.js shows it, Spec 10.5). */
 .live-stale {
   padding: 0.7rem 0.9rem;
@@ -636,6 +653,9 @@ a.btn, button.btn { display: inline-flex; align-items: center; justify-content: 
    hyphen in the middle of an English key figure looked like a typing error); a German word is. */
 .kpi-label { color: var(--muted); font-size: 12px; margin-top: 2px; overflow-wrap: break-word; hyphens: manual; }
 html[lang="de"] .kpi-label { hyphens: auto; }
+/* Recorded numbers say from when they are (p63): a small line under the label, under the column head. */
+.kpi-note { color: var(--text-2); font-size: 11px; margin-top: 1px; overflow-wrap: break-word; }
+.col-note { display: block; font-size: 10px; font-weight: 400; letter-spacing: 0; text-transform: none; white-space: nowrap; }
 
 /* Symbol buttons at the end of a row: small picture, 44 px target. */
 .icon-btn {

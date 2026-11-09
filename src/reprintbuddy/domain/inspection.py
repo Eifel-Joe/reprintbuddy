@@ -99,19 +99,17 @@ def _current(session: Session, inspection_id: int) -> Inspection | None:
     return session.get(Inspection, inspection_id, populate_existing=True)
 
 
-def _book(
-    session: Session, row: Inspection, good: int, actor: Actor, note: str | None
-) -> ResolveResult:
+def _book(session: Session, row: Inspection, good: int, actor: Actor) -> ResolveResult:
     """Book `good` units as good and the rest as scrap; scrap is replaced at the queue start."""
     article = session.get(Article, row.article_id)
     scrap = row.units - good
     details = {"inspection_id": row.id, "dispatch_id": row.dispatch_id}
     shortages: list[PartShortage] = []
     if good > 0:
-        shortages = stock.inspect_good(session, row.article_id, good, actor, note, details=details)
+        shortages = stock.inspect_good(session, row.article_id, good, actor, details=details)
     replacement_id = None
     if scrap > 0:
-        stock.inspect_scrap(session, row.article_id, scrap, actor, note, details=details)
+        stock.inspect_scrap(session, row.article_id, scrap, actor, details=details)
         # The current units per print count, not the ones at hand-over (plan B5 decision 2);
         # a replacement is wanted whatever the automation or a pause says (Spec 7.5).
         # An article with an open inspection is never archived (archiving refuses while units
@@ -131,9 +129,7 @@ def _book(
     return ResolveResult(row.id, good, scrap, shortages, replacement_id)
 
 
-def resolve(
-    session: Session, inspection_id: int, good_units: int, actor: Actor, note: str | None = None
-) -> ResolveResult:
+def resolve(session: Session, inspection_id: int, good_units: int, actor: Actor) -> ResolveResult:
     """Confirm how many units of a finished print are good (Spec 8.2)."""
     row = _current(session, inspection_id)
     if row is None:
@@ -148,11 +144,11 @@ def resolve(
         raise ValidationError(
             "form.invalid_number", field="inspections.field.good", min=0, max=row.units
         )
-    return _book(session, row, good_units, actor, note)
+    return _book(session, row, good_units, actor)
 
 
 def resolve_scrap(
-    session: Session, inspection_id: int, scrap_units: int, actor: Actor, note: str | None = None
+    session: Session, inspection_id: int, scrap_units: int, actor: Actor
 ) -> ResolveResult:
     """Confirm a print by its scrap: good units = the units of the print minus `scrap_units`.
 
@@ -173,7 +169,7 @@ def resolve_scrap(
         raise ValidationError(
             "form.invalid_number", field="inspections.field.scrap", min=0, max=row.units
         )
-    return _book(session, row, row.units - scrap_units, actor, note)
+    return _book(session, row, row.units - scrap_units, actor)
 
 
 def resolve_all_good(
@@ -197,7 +193,7 @@ def resolve_all_good(
         if row is None or row.resolved_at is not None:
             skipped += 1
             continue
-        shortages += _book(session, row, row.units, actor, None).shortages
+        shortages += _book(session, row, row.units, actor).shortages
         resolved += 1
     return AllGoodResult(resolved, skipped, shortages)
 
@@ -257,8 +253,6 @@ def list_awaiting_assembly(session: Session, article_id: int | None = None) -> l
     return rows
 
 
-def assemble(
-    session: Session, article_id: int, n: int, actor: Actor, note: str | None = None
-) -> list[PartShortage]:
+def assemble(session: Session, article_id: int, n: int, actor: Actor) -> list[PartShortage]:
     """Books an assembly through the stock module; it checks the limits (decision 4)."""
-    return stock.assemble(session, article_id, n, actor, note)
+    return stock.assemble(session, article_id, n, actor)

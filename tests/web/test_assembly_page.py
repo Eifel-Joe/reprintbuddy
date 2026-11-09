@@ -86,6 +86,15 @@ def test_assemble_books(ready_client):  # Spec 8.3
     assert en("assembly.empty") in page
 
 
+def test_a_note_in_the_form_is_not_kept(ready_client):  # Spec 6.2: assembly books without a note (p93)
+    a = waiting(ready_client, 2, parts=(("Insert M4", 2, 5),))
+    response, _ = post(ready_client, a, qty="1", note="should not be saved")
+    assert response.status_code == 303
+    with sm_of(ready_client).begin() as s:
+        entries = list(s.scalars(select(JournalEntry).where(JournalEntry.kind == "assembly")))
+    assert len(entries) == 1 and entries[0].note is None
+
+
 def test_assemble_short_parts_flash(ready_client):  # Spec 8.3
     a = waiting(ready_client, 2, parts=(("Insert M4", 2, 3),))
     response, _ = post(ready_client, a, qty="2")
