@@ -1361,3 +1361,39 @@ async def test_p96_an_update_that_starts_while_the_threaded_question_is_out_stil
     assert env.fake.enqueued == [] and "enqueue" not in env.fake.calls
     assert statuses(env.sm) == ["returned"]
     assert env.engine.status.skipped_for_update is True
+
+
+# ---- after the tick: the push messages (Spec 10.6, plan v0.3.12 B D3) ------------------
+
+
+async def test_after_tick_listeners_hear_each_tick_with_its_kind(engine_env):
+    env = engine_env
+    heard = []
+    env.engine.after_tick.append(lambda poll: heard.append((poll, env.engine.held())))
+    await env.engine.tick(poll=True)
+    await env.engine.tick(poll=False)
+    # Called with the lock free: what they start never runs under the engine's lock.
+    assert heard == [(True, False), (False, False)]
+
+
+async def test_after_tick_is_not_called_for_a_tick_skipped_by_an_update(engine_env):
+    env = engine_env
+    heard = []
+    env.engine.after_tick.append(heard.append)
+    env.updating = True
+    await env.engine.tick(poll=True)
+    assert heard == []
+
+
+async def test_a_failing_listener_neither_stops_the_tick_nor_the_others(engine_env, caplog):
+    env = engine_env
+    heard = []
+
+    def broken(poll):
+        raise RuntimeError("listener broke")
+
+    env.engine.after_tick.extend([broken, heard.append])
+    result = await env.engine.tick(poll=False)
+    assert result.skipped is None
+    assert heard == [False]
+    assert "listener broke" in caplog.text

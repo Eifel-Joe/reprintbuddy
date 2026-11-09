@@ -131,6 +131,9 @@ class Engine:
         except Exception:
             log.warning("engine: the Bambuddy client could not be made", exc_info=True)
         self.hooks: dict[str, PollHook] = {}
+        # Called after every tick that ran, with `poll`, once the lock is free (Spec 10.6, plan
+        # v0.3.12 B D3): the push messages look at the result there and send in a task of their own.
+        self.after_tick: list[Callable[[bool], None]] = []
         self._lock = asyncio.Lock()
         self._wake = asyncio.Event()
         self._poll_requested = False
@@ -187,10 +190,23 @@ class Engine:
         return not self.update_started()
 
     async def tick(self, *, poll: bool) -> TickResult:
+        result: TickResult | None = None
         try:
-            return await self._tick(poll)
+            result = await self._tick(poll)
+            return result
         finally:
             self._announce()
+            if result is not None and result.skipped is None:
+                self._tell_after_tick(poll)
+
+    def _tell_after_tick(self, poll: bool) -> None:
+        """Synchronous, no `await` before or in it: no restore can start between the tick and the
+        listeners (a restore waits for the lock, then replaces the database in a thread)."""
+        for listener in list(self.after_tick):
+            try:
+                listener(poll)
+            except Exception:  # a listener never stops the tick or the others
+                log.exception("engine: an after-tick listener failed")
 
     async def _tick(self, poll: bool) -> TickResult:
         if await self._update_is_running():
