@@ -65,7 +65,7 @@ Stücke, die schon hier warten, bleiben buchbar, wenn du das Häkchen später ab
 
 ## Buchen
 
-Die Seite **Buchen** enthält die Bestandsänderungen, die zu keinem Druck und keiner Bestellung gehören. Jede Buchung hat ein **Datum** und eine optionale **Notiz** mit bis zu 500 Zeichen. Das Datum ist heute, wenn du es nicht änderst; ein früherer Tag geht, etwa für eine Inventur, die du gestern gezählt hast, ein späterer nicht. Die Zahlen ändert die Buchung in jedem Fall sofort; das Datum sagt, wann sie im Journal und im Verbrauch der Zukaufteile zählt. Unter den Formularen zeigt die Seite die letzten 20 Buchungen.
+Die Seite **Buchen** enthält die Bestandsänderungen, die zu keinem Druck und keiner Bestellung gehören. Jede Buchung hat ein **Datum** und eine optionale **Notiz** mit bis zu 500 Zeichen. Das Datum ist heute, wenn du es nicht änderst; ein früherer Tag geht, etwa für eine Lieferung, die gestern kam, ein späterer nicht. Die Zahlen ändert die Buchung in jedem Fall sofort; das Datum sagt, wann sie im Journal und im Verbrauch der Zukaufteile zählt. Eine Inventur setzt den eingegebenen Wert jetzt, egal mit welchem Datum: Wurde seit dem Zählen etwas gebucht, trag die Menge ein, die jetzt stimmt. Unter den Formularen zeigt die Seite die letzten 20 Buchungen.
 
 ![Die Seite Buchen mit ihren Formularen und den letzten Buchungen](../assets/images/de/bookings.png)
 

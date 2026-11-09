@@ -12,6 +12,8 @@ in an order that changes from run to run, and the restore of a backup compares t
 the database exactly (ops/fullbackup._structure), so a backup could be refused as "not a
 Reprintbuddy database". SQLite adds a NOT NULL column only with a constant default; the constant is
 never seen, every row gets its `at` right after, and the application always writes the column.
+The downgrade has to rebuild the table (SQLite drops a column that way); the application never
+downgrades, a database downgraded by hand may then differ in the order of its foreign keys.
 """
 import sqlalchemy as sa
 from alembic import op

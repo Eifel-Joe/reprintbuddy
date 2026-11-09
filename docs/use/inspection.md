@@ -65,7 +65,7 @@ Pieces that already wait here stay bookable if you later untick the box. Article
 
 ## Bookings
 
-The page **Bookings** holds the stock changes that belong to no print and no order. Each booking has a **Date** and takes an optional **Note** of up to 500 characters. The date is today unless you change it; an earlier day is allowed, for example for an inventory you counted yesterday, a later one is not. The booking changes the numbers at once either way; the date says when it counts in the journal and in the usage of bought parts. Below the forms the page shows the latest 20 bookings.
+The page **Bookings** holds the stock changes that belong to no print and no order. Each booking has a **Date** and takes an optional **Note** of up to 500 characters. The date is today unless you change it; an earlier day is allowed, for example for a delivery that came yesterday, a later one is not. The booking changes the numbers at once either way; the date says when it counts in the journal and in the usage of bought parts. An inventory sets the value you enter right now, whatever its date: if something was booked since you counted, enter the count that is true now. Below the forms the page shows the latest 20 bookings.
 
 ![The page Bookings with its forms and the latest bookings](../assets/images/en/bookings.png)
 
