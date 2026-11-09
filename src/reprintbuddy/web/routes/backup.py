@@ -83,16 +83,22 @@ class _ReplaceGate:
     p164 (v0.3.14): the same lock settles who asks for the restart once the database is replaced. A
     cancellation that arrives while the worker replaces leaves the route nothing to wait for; the worker
     `finish`es and learns that the request is gone, so it asks for the restart itself. If the worker
-    finished first, the route does it (`finished_before_abort`), also when it is cancelled just then.
+    finished first, `abort` says so ("finished") and the route does it, also when it is cancelled just then.
     Never both, never neither: the restart must happen once (Spec 11.6).
+
+    Review of v0.3.14 D, finding 3: a worker that fails after the route gave up has replaced nothing; the
+    restore state goes back to "idle" (writes go on), whichever of the two comes first. The gate sets the
+    phase of a given-up restore itself, under its lock, so the route and the worker cannot overwrite each
+    other's verdict.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, state: RestoreState) -> None:
+        self._state = state
         self._lock = threading.Lock()
         self._begun = False
         self._aborted = False
         self._finished = False
-        self._finished_at_abort = False
+        self._failed = False
 
     def begin(self) -> bool:
         with self._lock:
@@ -101,12 +107,19 @@ class _ReplaceGate:
             self._begun = True
             return True
 
-    def abort(self) -> bool:
-        """The route gives up; True when the worker had not begun (and now never will)."""
+    def abort(self) -> Literal["not_begun", "running", "finished", "failed"]:
+        """The route gives up. "not_begun": the worker never will (the route removes the candidate);
+        "running": the worker replaces and asks for the restart itself when done; "finished": the route asks
+        for it; "failed": nothing was replaced. The restore state is set to fit."""
         with self._lock:
             self._aborted = True
-            self._finished_at_abort = self._finished
-            return not self._begun
+            if not self._begun or self._failed:
+                self._state.phase = "idle"
+                return "failed" if self._failed else "not_begun"
+            # The worker may have replaced the database, or still does: the old process holds state of the
+            # old one. Writes stay paused and sign-in and the restart button work (as after a failed restart).
+            self._state.phase = "restart_pending"
+            return "finished" if self._finished else "running"
 
     def finish(self) -> bool:
         """The worker has replaced the database; True when the route gave up before (the worker restarts)."""
@@ -114,10 +127,12 @@ class _ReplaceGate:
             self._finished = True
             return self._aborted
 
-    def finished_before_abort(self) -> bool:
-        """After `abort`: the worker finished while the request was still there, so the route restarts."""
+    def fail(self) -> None:
+        """The worker failed before the database was replaced."""
         with self._lock:
-            return self._finished_at_abort
+            self._failed = True
+            if self._aborted:
+                self._state.phase = "idle"  # nobody waits for the error: nothing was replaced
 
 
 _restarts: set[asyncio.Task] = set()  # strong references: a task nobody awaits any more is not collected
@@ -501,16 +516,17 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         state.phase = "idle"
         _remove(candidate)
         raise
-    gate = _ReplaceGate()
+    gate = _ReplaceGate(state)
 
     def replace() -> None:
         if not gate.begin():  # the request was cancelled before this thread got going: replace nothing
             return
-        marks = current_marks(app.state.db_path)  # p186: the log's marks belong to what has happened
         try:
+            marks = current_marks(app.state.db_path)  # p186: the log's marks belong to what has happened
             fb.replace_database(candidate, app.state.db_path, now=_now(), protect=_protected(request))
         except BaseException:
             _remove(candidate)  # nothing was replaced: the decrypted copy does not wait for the next start
+            gate.fail()
             raise
         try:
             # The restored database is migrated at the next start; that start logs the restore into it.
@@ -522,7 +538,10 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         finally:
             # p164: the database is replaced. Was the request cancelled meanwhile, nobody else asks for the
             # restart (see `_ReplaceGate`); the old process must not go on with the state of the old database.
-            if gate.finish():
+            # Review v0.3.14 D, finding 2: uvicorn cancels a running request only when it stops. A restart
+            # asked for then would bring the service back against `systemctl stop`; the next start uses the
+            # restored database and logs the restore anyway.
+            if gate.finish() and not app.state.stopping:
                 _restart_from_worker(app.state.ops.runner)
 
     try:
@@ -537,17 +556,13 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         _discard(request)
         return _refused(request, "failed")
     except BaseException:  # cancelled (shutdown, a closed browser) while waiting for the tick or replacing
-        if gate.abort():  # the worker has not begun and now never will
-            state.phase = "idle"
+        outcome = gate.abort()  # sets the restore state to fit (see `_ReplaceGate`)
+        if outcome == "not_begun":  # the worker has not begun and now never will
             _remove(candidate)
-        else:
-            # The worker may have replaced the database, or still does: the old process holds state of the
-            # old one. Writes stay paused and sign-in and the restart button work (as after a failed restart).
-            state.phase = "restart_pending"
-            if gate.finished_before_abort():
-                # p164: the worker finished while the request was still there, so it left the restart to the
-                # route; the cancellation must not drop it. A worker still replacing restarts by itself.
-                _start_restart(app.state.ops.runner)
+        elif outcome == "finished" and not app.state.stopping:
+            # p164: the worker finished while the request was still there, so it left the restart to the
+            # route; the cancellation must not drop it. A worker still replacing restarts by itself.
+            _start_restart(app.state.ops.runner)
         raise
     # The old process holds state of the old database in memory (engine, rights): writes
     # and the engine stay paused until it is gone. Signing in and the restart button work,

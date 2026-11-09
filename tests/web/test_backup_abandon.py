@@ -367,12 +367,12 @@ async def test_cancelling_once_the_replace_worker_has_begun_leaves_the_restore_p
 
 
 def test_the_replace_gate_lets_exactly_one_side_win():
-    from reprintbuddy.web.routes.backup import _ReplaceGate
+    from reprintbuddy.web.routes.backup import RestoreState, _ReplaceGate
 
-    worker_first = _ReplaceGate()
-    assert worker_first.begin() is True and worker_first.abort() is False
-    route_first = _ReplaceGate()
-    assert route_first.abort() is True and route_first.begin() is False
+    worker_first = _ReplaceGate(RestoreState(phase="running"))
+    assert worker_first.begin() is True and worker_first.abort() == "running"
+    route_first = _ReplaceGate(RestoreState(phase="running"))
+    assert route_first.abort() == "not_begun" and route_first.begin() is False
 
 
 async def test_a_failing_replace_worker_leaves_no_copy_and_asks_to_try_again(ops_env, monkeypatch):
@@ -577,19 +577,95 @@ async def test_a_cancellation_just_after_the_replace_still_restarts(ops_env, mon
 
 
 def test_the_replace_gate_tells_who_asks_for_the_restart():
-    from reprintbuddy.web.routes.backup import _ReplaceGate
+    from reprintbuddy.web.routes.backup import RestoreState, _ReplaceGate
 
-    route_gave_up_first = _ReplaceGate()
+    state = RestoreState(phase="running")
+    route_gave_up_first = _ReplaceGate(state)
     assert route_gave_up_first.begin() is True
-    assert route_gave_up_first.abort() is False
+    assert route_gave_up_first.abort() == "running"  # the worker still replaces
+    assert state.phase == "restart_pending"
     assert route_gave_up_first.finish() is True  # the worker asks for the restart
-    assert route_gave_up_first.finished_before_abort() is False
 
-    worker_finished_first = _ReplaceGate()
+    state = RestoreState(phase="running")
+    worker_finished_first = _ReplaceGate(state)
     assert worker_finished_first.begin() is True
     assert worker_finished_first.finish() is False  # the request is still there: the route asks
-    assert worker_finished_first.abort() is False
-    assert worker_finished_first.finished_before_abort() is True  # ... also when it is cancelled now
+    assert worker_finished_first.abort() == "finished"  # ... also when it is cancelled now
+    assert state.phase == "restart_pending"
+
+
+def test_a_replace_that_failed_after_the_route_gave_up_gives_the_state_back():
+    """Review v0.3.14 D, finding 3: nothing was replaced, so writes must not stay paused."""
+    from reprintbuddy.web.routes.backup import RestoreState, _ReplaceGate
+
+    state = RestoreState(phase="running")
+    gave_up_first = _ReplaceGate(state)
+    gave_up_first.begin()
+    assert gave_up_first.abort() == "running" and state.phase == "restart_pending"
+    gave_up_first.fail()
+    assert state.phase == "idle"
+
+    state = RestoreState(phase="running")
+    failed_first = _ReplaceGate(state)
+    failed_first.begin()
+    failed_first.fail()
+    assert state.phase == "running"  # the route still waits and sees the error itself
+    assert failed_first.abort() == "failed" and state.phase == "idle"
+
+
+async def test_a_replace_that_fails_after_a_cancellation_leaves_the_restore_idle(ops_env, monkeypatch):
+    async def confirmed(request, db, login):
+        return True
+
+    monkeypatch.setattr(backup_routes, "password_confirmed", confirmed)
+    upload(ops_env, made_backup(ops_env, BACKUP_PASSWORD))
+    entered, release = threading.Event(), threading.Event()
+
+    def held_then_full_disk(*args, **kwargs):
+        entered.set()
+        assert release.wait(20)
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(fb, "replace_database", held_then_full_disk)
+    app = ops_env.client.app
+    with app.state.sessionmaker() as db:
+        task = asyncio.create_task(backup_routes.restore_confirm(staged_restore_request(ops_env, upload_token(ops_env)), db=db))
+        await wait_for(entered)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        release.set()
+    deadline = time.monotonic() + 10
+    while app.state.restore.phase != "idle" and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    assert app.state.restore.phase == "idle"
+    assert await restart_asked(ops_env, within=0.5) == []
+    assert await settled(ops_env) == []
+
+
+async def test_a_worker_that_finishes_while_the_service_stops_does_not_restart_it(ops_env, monkeypatch):
+    """Review v0.3.14 D, finding 2: uvicorn cancels open requests only when it stops (after the grace time).
+    A restart asked for then would bring the service back against `systemctl stop`; the next start uses the
+    restored database anyway."""
+
+    async def confirmed(request, db, login):
+        return True
+
+    monkeypatch.setattr(backup_routes, "password_confirmed", confirmed)
+    upload(ops_env, made_backup(ops_env, BACKUP_PASSWORD))
+    held = Held(monkeypatch, fb, "replace_database")
+    app = ops_env.client.app
+    with app.state.sessionmaker() as db:
+        task = asyncio.create_task(backup_routes.restore_confirm(staged_restore_request(ops_env, upload_token(ops_env)), db=db))
+        await wait_for(held.entered)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        app.state.stopping = True  # the lifespan has begun to shut down
+        held.release.set()
+        await wait_for(held.done)
+    assert await restart_asked(ops_env, within=1.0) == []
+    assert (ops_env.db_path.parent / "activity-restored.json").is_file()  # the next start logs the restore
 
 
 async def test_a_failing_restore_note_after_the_replace_still_restarts(ops_env, monkeypatch):

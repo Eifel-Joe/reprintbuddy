@@ -309,6 +309,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        app.state.stopping = True
         await app.state.notifier.stop()  # a message on its way is ended, nothing new starts
         background = list(tasks)
         check = app.state.rights.task  # a check of the key's rights started by a page
@@ -418,6 +419,7 @@ def create_app(
     app.state.ticker.after_tick.append(lambda poll: _log_bambuddy(app, poll))
     app.state.run_engine = run_engine
     app.state.ticker_task = None  # the background loop while the app runs (see _lifespan)
+    app.state.stopping = False  # set when the lifespan shuts down: a restore then asks for no restart
     # Bambuddy's live channel (Spec 7.6): a message that may have changed the queue, and every
     # connect, only flag the engine; the poll runs in the engine's own loop task.
     live_options: dict[str, Any] = {}
