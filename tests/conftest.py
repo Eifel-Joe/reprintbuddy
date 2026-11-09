@@ -75,6 +75,19 @@ def auth_me(username="reprintbuddy", permissions=REQUIRED, groups=("Reprintbuddy
     return body
 
 
+def landed(response):
+    """What a good check in set-up step 4 leads to (p179): the page that shows the result has a link
+    "Continue", and where it leads is what the redirect said before. Anything else comes back as it is."""
+    from types import SimpleNamespace
+
+    if response.status_code != 200:
+        return response
+    found = re.search(r'<a class="btn" href="([^"]+)"[^>]*>\s*Continue\s*</a>', response.text)
+    if not found:
+        return response
+    return SimpleNamespace(status_code=200, headers={"location": found.group(1)}, text=response.text)
+
+
 def mock_auth_me(respx_mock, url="http://bambuddy.test:8000", status=200, **kwargs):
     """Make Bambuddy's /auth/me answer; returns the route."""
     route = respx_mock.get(f"{url}/api/v1/auth/me")

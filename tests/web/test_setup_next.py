@@ -2,7 +2,7 @@
 the setup the person lands where they were going. Only local paths are ever followed."""
 
 import pytest
-from conftest import csrf_of, finish_bambuddy_setup, mock_auth_me
+from conftest import csrf_of, finish_bambuddy_setup, landed, mock_auth_me
 from starlette.requests import Request
 
 from reprintbuddy.web import deps
@@ -17,7 +17,8 @@ BACKSLASH, CR, LF, TAB, NUL = chr(92), chr(13), chr(10), chr(9), chr(0)
 def connect(client, respx_mock, **me):
     mock_auth_me(respx_mock, **me)
     token = csrf_of(client, CONNECT)
-    return client.post(CONNECT, data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": KEY})
+    # p179: a good check ends on the page that shows the result; "Continue" leads where the redirect led before.
+    return landed(client.post(CONNECT, data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": KEY}))
 
 
 def walk_setup(client):
@@ -45,7 +46,7 @@ def test_a_page_opened_before_the_setup_is_where_the_setup_ends(admin_client, re
     assert first.status_code == 303 and first.headers["location"] == "/setup/bambuddy"
     walk_setup(admin_client)
     done = connect(admin_client, respx_mock)
-    assert done.status_code == 303
+    assert done.status_code == 200
     assert done.headers["location"] == "/a/5"
 
 

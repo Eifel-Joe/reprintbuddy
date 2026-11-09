@@ -5,7 +5,7 @@
 {% if check and check.owner %}
 <div class="result" role="status">
   <p><strong>{{ t('bambuddy.result.owner', owner=check.owner) }}</strong></p>
-  {% if check.reason == 'missing_permissions' %}
+  {% if check.reason == 'missing_permissions' or check.ok %}
   <p>{{ t('bambuddy.result.rights') }}</p>
   <ul class="perms">
     {% for code in required_permissions %}
@@ -18,7 +18,7 @@
     </li>
     {% endfor %}
   </ul>
-  <p class="muted">{{ t('bambuddy.result.fix') }}</p>
+  {% if not check.ok %}<p class="muted">{{ t('bambuddy.result.fix') }}</p>{% endif %}
   {% if show_optional is not defined or show_optional %}
   <p>{{ t('bambuddy.result.optional') }}</p>
   <ul class="perms">

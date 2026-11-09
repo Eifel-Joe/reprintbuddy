@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 from reprintbuddy import auth as accounts
 from reprintbuddy import settings as st
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.flash import flash
 from reprintbuddy.web.bambuddy_check import (
     permission_context,
     result_context,
@@ -117,13 +116,18 @@ async def bambuddy_key_guide(request: Request, db: Session = Depends(get_db)):
     return render(request, "setup_bambuddy_key.html", guide_only=st.bambuddy_configured(db), **permission_context())
 
 
-def _connect_page(request: Request, error: str | None = None, address: str = "", check=None):
+def _connect_page(
+    request: Request, error: str | None = None, address: str = "", check=None,
+    connected: bool = False, continue_url: str = "/",
+):
     # The API key is never put back into the form.
     return render(
         request,
         "setup_bambuddy_connect.html",
         error=error,
         bambuddy_address=address,
+        connected=connected,
+        continue_url=continue_url,
         **result_context(check),
     )
 
@@ -163,10 +167,10 @@ async def bambuddy_connect_submit(request: Request, db: Session = Depends(get_db
     request.app.state.live_listener.wake(reconnect=True)  # p97: the channel tries with the new key at once
     take_verdict(request, check)  # this start has checked the new key
     page = take_remembered_page(request)  # the page opened before the setup (a scanned QR code)
-    # The optional right (Spec 11.3 c, 5.1a): saved either way, the person learns whether uploading works.
-    flash(request, "bambuddy.upload_right_ok" if check.can_upload else "bambuddy.upload_right_missing")
-    if check.owner_is_admin:
-        # Saved, but the person is told; the warning is read on the settings, the page is dropped.
-        flash(request, "bambuddy.admin_warning", warning=True)
-        return RedirectResponse("/settings?tab=bambuddy", status_code=303)
-    return RedirectResponse(page, status_code=303)
+    # p179 (Spec 11.3 c): the person sees what was found, not only when it failed: the owner, every
+    # required right with a tick and whether uploading works (the optional right, Spec 5.1a). The page
+    # leads on with "Continue"; an administrator's key is saved, warned about, and goes on to the settings.
+    return _connect_page(
+        request, address=address_input, check=check, connected=True,
+        continue_url="/settings?tab=bambuddy" if check.owner_is_admin else page,
+    )

@@ -51,15 +51,13 @@ def test_a_failed_check_with_the_upload_right_ticks_it(admin_client, respx_mock)
 
 def test_setup_saves_without_the_upload_right_and_says_uploading_is_off(admin_client, respx_mock):
     response = _connect(admin_client, respx_mock, list(REQUIRED))
-    assert response.status_code == 303  # saved: the right is not required
-    page = admin_client.get(response.headers["location"]).text
-    assert en("bambuddy.upload_right_missing") in page
+    assert response.status_code == 200  # saved: the right is not required; the result page says it
+    assert en("bambuddy.upload_right_missing") in response.text
 
 
 def test_setup_with_the_upload_right_says_uploading_is_on(admin_client, respx_mock):
     response = _connect(admin_client, respx_mock, [*REQUIRED, "library:upload"])
-    page = admin_client.get(response.headers["location"]).text
-    assert en("bambuddy.upload_right_ok") in page
+    assert en("bambuddy.upload_right_ok") in response.text
 
 
 def _settings_check(client, respx_mock, permissions):

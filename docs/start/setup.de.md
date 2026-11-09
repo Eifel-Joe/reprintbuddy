@@ -98,7 +98,7 @@ Reprintbuddy fragt Bambuddy, wem der Schlüssel gehört und was er wirklich darf
 
 Unter der Liste, abgesetzt, zeigt die Seite, ob das wahlweise Recht zum Hochladen von Druckdateien da ist.
 
-Gelingt die Prüfung, speichert Reprintbuddy Adresse und Schlüssel, übernimmt den Namen des Besitzers aus Bambuddys Antwort, öffnet die Oberfläche und sagt in einer Zeile, ob sich mit diesem Schlüssel Druckdateien hochladen lassen. Fehlt dem Schlüssel das Recht zum Hochladen, geht alles andere.
+Gelingt die Prüfung, speichert Reprintbuddy Adresse und Schlüssel und übernimmt den Namen des Besitzers aus Bambuddys Antwort. Die Seite zeigt dann, was Bambuddy gemeldet hat: den Besitzer des Schlüssels und jedes Pflichtrecht mit einem Haken, dazu in einer Zeile, ob sich mit diesem Schlüssel Druckdateien hochladen lassen. Fehlt dem Schlüssel das Recht zum Hochladen, geht alles andere. Mit **Weiter** öffnest du die Oberfläche (die Seite, die du vor der Einrichtung öffnen wolltest, falls es eine gab).
 
 Ein Schlüssel, der einem Administrator gehört, wird angenommen, mit der Warnung, dass er mehr darf, als Reprintbuddy braucht. Sicherer ist der Benutzer `reprintbuddy` aus Schritt 2.
 

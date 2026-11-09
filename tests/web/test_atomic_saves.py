@@ -117,7 +117,7 @@ def test_setup_bambuddy_save_is_a_single_commit(admin_client, respx_mock):
     token = csrf_of(admin_client, "/setup/bambuddy/connect")
     commits = Commits(admin_client.app.state.engine)
     response = admin_client.post("/setup/bambuddy/connect", data=connect_form(token))
-    assert response.status_code == 303
+    assert response.status_code == 200  # the page with the result (p179)
     assert commits.count == 1
 
 

@@ -98,7 +98,7 @@ Reprintbuddy asks Bambuddy whom the key belongs to and what it may really do. Th
 
 Below the list, apart from it, the page shows whether the optional right to upload print files is there.
 
-When the check succeeds, Reprintbuddy saves the address and the key, takes the owner's name from Bambuddy's answer, opens the interface, and says in one line whether print files can be uploaded with this key. If the key lacks the right to upload, everything else works.
+When the check succeeds, Reprintbuddy saves the address and the key and takes the owner's name from Bambuddy's answer. The page then shows what Bambuddy reported: the owner of the key and every required right with a check mark, and in one line whether print files can be uploaded with this key. If the key lacks the right to upload, everything else works. Press **Continue** to open the interface (the page you wanted to open before the setup, if there was one).
 
 A key that belongs to an administrator is accepted, with the warning that it may do more than Reprintbuddy needs. It is safer to use the user `reprintbuddy` from step 2.
 

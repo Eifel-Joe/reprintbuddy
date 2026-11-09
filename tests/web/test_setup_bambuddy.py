@@ -4,7 +4,7 @@ import re
 
 import httpx
 import pytest
-from conftest import REQUIRED, csrf_of, mock_auth_me
+from conftest import REQUIRED, csrf_of, landed, mock_auth_me
 
 from reprintbuddy import settings as st
 
@@ -157,9 +157,9 @@ def test_autocomplete_attributes(admin_client):
 def test_connect_saves_owner(admin_client, respx_mock):
     mock_auth_me(respx_mock)
     token = csrf_of(admin_client, CONNECT)
-    response = admin_client.post(CONNECT, data=_form(token))
-    assert response.status_code == 303
-    assert response.headers["location"] == "/"
+    response = landed(admin_client.post(CONNECT, data=_form(token)))
+    assert response.status_code == 200  # the page with the result (p179)
+    assert response.headers["location"] == "/"  # where "Continue" leads
     assert _saved(admin_client, "bambuddy_url") == URL
     assert _saved(admin_client, "bambuddy_username") == "reprintbuddy"  # from Bambuddy's answer
     assert _saved(admin_client, "bambuddy_api_key") == KEY
@@ -167,12 +167,12 @@ def test_connect_saves_owner(admin_client, respx_mock):
     assert admin_client.get("/").status_code == 200
 
 
-def test_connect_with_an_administrator_key_warns_on_the_next_page(admin_client, respx_mock):
+def test_connect_with_an_administrator_key_warns_on_the_result_page(admin_client, respx_mock):
     mock_auth_me(respx_mock, is_admin=True)
     token = csrf_of(admin_client, CONNECT)
-    response = admin_client.post(CONNECT, data=_form(token))
-    assert response.status_code == 303 and response.headers["location"] == "/settings?tab=bambuddy"
-    page = admin_client.get("/settings?tab=bambuddy").text
+    response = landed(admin_client.post(CONNECT, data=_form(token)))
+    assert response.status_code == 200 and response.headers["location"] == "/settings?tab=bambuddy"
+    page = response.text
     text = "The key belongs to an administrator"
     tag = page[page.rindex("<p", 0, page.index(text)) : page.index(text)]
     assert 'class="alert"' in tag and 'role="alert"' in tag
@@ -192,7 +192,7 @@ def test_connect_saves_in_a_single_commit(admin_client, respx_mock):
     token = csrf_of(admin_client, CONNECT)
     commits = []
     event.listen(admin_client.app.state.engine, "commit", lambda *a: commits.append(1))
-    assert admin_client.post(CONNECT, data=_form(token)).status_code == 303
+    assert admin_client.post(CONNECT, data=_form(token)).status_code == 200
     assert len(commits) == 1
 
 
@@ -232,19 +232,17 @@ def test_connect_admin_owner_warns(admin_client, respx_mock):
     mock_auth_me(respx_mock, username="boss", is_admin=True, groups=("Administrators",))
     token = csrf_of(admin_client, CONNECT)
     response = admin_client.post(CONNECT, data=_form(token))
-    assert response.status_code == 303  # saved nevertheless
+    assert response.status_code == 200  # saved nevertheless, the result page warns
     assert _saved(admin_client, "bambuddy_username") == "boss"
-    page = admin_client.get(response.headers["location"])
-    assert page.status_code == 200
-    assert "administrator" in page.text and "more than" in page.text
+    assert "administrator" in response.text and "more than" in response.text
 
 
 def test_connect_without_a_warning_for_the_normal_owner(admin_client, respx_mock):
     mock_auth_me(respx_mock)
     token = csrf_of(admin_client, CONNECT)
     response = admin_client.post(CONNECT, data=_form(token))
-    page = admin_client.get(response.headers["location"])
-    assert "more than" not in page.text
+    assert response.status_code == 200
+    assert "more than" not in response.text
 
 
 def test_url_trailing_slash_is_normalised(admin_client, respx_mock):
@@ -331,7 +329,7 @@ def test_key_is_stripped_before_it_is_used_and_saved(admin_client, respx_mock):
     route = mock_auth_me(respx_mock)
     token = csrf_of(admin_client, CONNECT)
     response = admin_client.post(CONNECT, data=_form(token, bambuddy_token="  " + KEY + " \r\n"))
-    assert response.status_code == 303
+    assert response.status_code == 200
     assert route.calls.last.request.headers["x-api-key"] == KEY
     assert _saved(admin_client, "bambuddy_api_key") == KEY
 
@@ -556,7 +554,7 @@ def test_the_key_creation_rights_are_not_checked(admin_client, respx_mock):
     mock_auth_me(respx_mock)  # exactly the six required rights, no api_keys:*, no settings:read
     token = csrf_of(admin_client, CONNECT)
     response = admin_client.post(CONNECT, data=_form(token))
-    assert response.status_code == 303
+    assert response.status_code == 200
     assert _saved(admin_client, "bambuddy_api_key") == KEY
 
 
@@ -580,7 +578,7 @@ def test_connect_wakes_the_live_channel(admin_client, respx_mock):  # p97
     recorder = admin_client.app.state.live_listener = _WakeRecorder()
     mock_auth_me(respx_mock)
     token = csrf_of(admin_client, CONNECT)
-    assert admin_client.post(CONNECT, data=_form(token)).status_code == 303
+    assert admin_client.post(CONNECT, data=_form(token)).status_code == 200
     assert recorder.wakes == [True]
 
 
