@@ -48,7 +48,7 @@ def test_nav_links(ready_client):
     page = ready_client.get("/").text
     for href in ("/articles", "/sets", "/orders", "/bookings", "/parts"):
         assert f'href="{href}"' in page, href
-    assert translate("en", "overview.empty") in page  # the overview stays the placeholder
+    assert translate("en", "overview.no_articles") in page  # the overview of a fresh database (Spec 10.2)
 
 
 @pytest.mark.parametrize("lang", ["en", "de"])

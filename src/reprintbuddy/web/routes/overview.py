@@ -41,7 +41,7 @@ async def overview(request: Request):
     lang = current_language(request)
     status = request.app.state.ticker.status
     rows = catalog.list_articles(db)
-    queued = sum(entry.prints for entry in workqueue.list_entries(db))
+    queued = sum(workqueue.queued_prints(db).values())  # held entries included, as in the coverage
     open_prints = sum(workqueue.in_progress_prints(db).values())
     connection, connection_tone = overview_view.connection_state(status)
     return render(

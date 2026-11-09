@@ -16,7 +16,46 @@
 
 {# Pauses and warnings (Spec 7.7, 10.2). #}
 {% call ui.region("warnings", "bambuddy queue article settings notify") %}{% include "_warnings.html" %}{% endcall %}
-<div class="card">
-  <p class="muted">{{ t('overview.empty') }}</p>
+
+{# The four key figures (Spec 10.2), each a link to its page; always all four. #}
+{% call ui.region("summary", "article queue inspection bambuddy filament reorder part journal") %}{{ ui.kpi_row(cards) }}{% endcall %}
+
+{# All articles (Spec 10.2): numbers of Spec 6.1, fill level towards the target, state of Spec 10.1.
+   At phone width each row is a card; `data-label` names the number there. #}
+{% call ui.region("list", "article queue inspection") %}
+{% if not rows %}
+<div class="card empty-start"><p class="muted">{{ t('overview.no_articles') }}</p><a class="btn" href="/articles/new">{{ ui.icon('plus') }}{{ t('articles.new') }}</a></div>
+{% else %}
+<div class="card table-wrap table-card">
+  <table class="overview-table">
+    <thead>
+      <tr>
+        <th>{{ t('articles.col.name') }}</th>
+        <th class="num">{{ t('articles.col.available') }}</th>
+        <th class="num">{{ t('overview.col.reserved') }}</th>
+        <th class="num">{{ t('overview.col.min_target') }}</th>
+        <th class="num">{{ t('overview.col.in_progress') }}</th>
+        <th class="num">{{ t('overview.col.to_check') }}</th>
+        <th class="fill-col">{{ t('overview.col.fill') }}</th>
+        <th>{{ t('list.col.status') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in rows %}
+      <tr class="overview-row">
+        <td class="ov-name"><a href="/articles/{{ row.id }}">{{ row.name }}</a>{% if row.sku %}<br><span class="muted">{{ row.sku }}</span>{% endif %}</td>
+        <td class="num{% if row.available < 0 %} neg{% endif %}" data-label="{{ t('articles.col.available') }}">{{ row.available }}</td>
+        <td class="num" data-label="{{ t('overview.col.reserved') }}">{{ row.reserved }}</td>
+        <td class="num" data-label="{{ t('overview.col.min_target') }}">{{ row.min_stock }} / {{ row.target }}</td>
+        <td class="num" data-label="{{ t('overview.col.in_progress') }}">{{ row.in_progress_units }}</td>
+        <td class="num" data-label="{{ t('overview.col.to_check') }}">{{ row.provisional + row.awaiting_assembly }}</td>
+        <td class="fill-col" data-label="{{ t('overview.col.fill') }}">{{ ui.bar(fill_percent(row.available, row.target), row.status) }}</td>
+        <td class="ov-status"><span class="badges">{{ ui.badge('article', row.status) }}{% if row.paused %} {{ ui.badge('article', 'paused') }}{% endif %}</span>{% if row.in_progress_prints %}<br><span class="muted">{{ t('overview.reprint_running', n=row.in_progress_prints) }}</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
 </div>
+{% endif %}
+{% endcall %}
 {% endblock %}
