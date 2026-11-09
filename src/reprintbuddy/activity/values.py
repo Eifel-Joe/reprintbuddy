@@ -53,6 +53,9 @@ NAMES: dict[str, str] = {key: key for key in SETTINGS} | {
     "ha_token": "ha_access_token",
 }
 
+# What the log says of a value it does not show (secrets, the certificate, lists, texts).
+CHANGES: tuple[str, ...] = ("changed", "removed", "uploaded")
+
 # Kept by Reprintbuddy for itself; no settings page shows them.
 INTERNAL: frozenset[str] = frozenset({"session_secret", "ha_since", "bambuddy_review_confirmed"})
 

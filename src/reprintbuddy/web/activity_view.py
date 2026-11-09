@@ -22,10 +22,10 @@ PAGE_SIZE = 100
 TAB = "log"
 
 # Only these codes have texts; anything else (an older or newer version wrote it) shows as unknown.
-_UPDATE_RESULTS = frozenset({"done", "failed", "rolled_back", "rollback_failed", "interrupted"})
-_UPLOAD_RESULTS = frozenset({"uploaded", "rejected", "unclear"})
-_LABEL_RESULTS = frozenset({"printed", "partial", "not_ready", "failed"})
-_CONNECTION = frozenset({"ok", "unreachable", "refused", "missing"})
+UPDATE_RESULTS = frozenset({"done", "failed", "rolled_back", "rollback_failed", "interrupted"})
+UPLOAD_RESULTS = frozenset({"uploaded", "rejected", "unclear"})
+LABEL_RESULTS = frozenset({"printed", "partial", "not_ready", "failed"})
+CONNECTION_STATES = frozenset({"ok", "unreachable", "refused", "missing"})
 
 
 @dataclass
@@ -110,17 +110,17 @@ def _describe(lang: str, entry: ActivityEntry) -> tuple[str, list[str], str | No
         extras.append(f"{details.get('from') or '–'} → {details.get('to') or '–'}")
         if kind == "update_result":
             result = details.get("result")
-            extras.append(_t(lang, f"activity.update.{result}") if result in _UPDATE_RESULTS else translate(lang, "activity.unknown"))
+            extras.append(_t(lang, f"activity.update.{result}") if result in UPDATE_RESULTS else translate(lang, "activity.unknown"))
     elif kind in ("bambuddy_connection", "bambuddy_rights"):
         state = details.get("state")
-        extras.append(_t(lang, f"activity.state.{state}") if state in _CONNECTION else translate(lang, "activity.unknown"))
+        extras.append(_t(lang, f"activity.state.{state}") if state in CONNECTION_STATES else translate(lang, "activity.unknown"))
         if details.get("missing"):
             extras.append(", ".join(str(right) for right in details["missing"]))
     elif kind == "upload":
         result = details.get("result")
         extras.append(translate(lang, "activity.file_in", name=details.get("name") or "–",
                                 folder=details.get("folder") or translate(lang, "activity.top_level")))
-        extras.append(_t(lang, f"activity.upload.{result}") if result in _UPLOAD_RESULTS else translate(lang, "activity.unknown"))
+        extras.append(_t(lang, f"activity.upload.{result}") if result in UPLOAD_RESULTS else translate(lang, "activity.unknown"))
     elif kind in ("message_sent", "message_test"):
         if kind == "message_sent":
             event = _t(lang, f"notify.event.{details.get('event')}")
@@ -130,7 +130,7 @@ def _describe(lang: str, entry: ActivityEntry) -> tuple[str, list[str], str | No
         result = details.get("result")
         extras.append(translate(lang, "activity.labels_printed", printed=details.get("printed", 0),
                                 requested=details.get("requested", 0)))
-        extras.append(_t(lang, f"activity.label.{result}") if result in _LABEL_RESULTS else translate(lang, "activity.unknown"))
+        extras.append(_t(lang, f"activity.label.{result}") if result in LABEL_RESULTS else translate(lang, "activity.unknown"))
     return _t(lang, f"activity.kind.{kind}", **params), extras, link
 
 
