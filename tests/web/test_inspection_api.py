@@ -298,3 +298,20 @@ def test_api_list_with_an_empty_article_is_the_whole_list(ready_client):
     finished(ready_client, "Template A")
     finished(ready_client, "Template B")
     assert len(ready_client.get(LIST_URL, params={"article": ""}).json()["inspections"]) == 2
+
+
+@pytest.mark.parametrize("body", [
+    {"good_units": "1"}, {"good_units": True}, {"good_units": 1.0}, {"good_units": None},
+    {"good_units": -1}, {"good_units": 2}, {"good_units": 10**30},
+    {"good_units": "x", "scrap_units": 0},  # the old field next to a valid scrap: still refused
+])
+def test_api_good_units_error_names_the_range_of_the_print(ready_client, body):  # v0.3.14 p181
+    """The old field of the interface says "0 to the target number of the print" like the scrap field and
+    the page, never "0 to 1000" (that was the fixed limit of the route)."""
+    a, i = finished(ready_client, units=1)
+    response = api_post(ready_client, i, body)
+    assert response.status_code == 422
+    message = response.json()["message"]
+    assert message == en("form.invalid_number", field=en("inspections.field.good"), min=0, max=1)
+    assert "1000" not in message
+    assert open_count(ready_client) == 1
