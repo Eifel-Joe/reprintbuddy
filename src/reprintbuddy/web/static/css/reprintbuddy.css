@@ -287,6 +287,23 @@ input[type="file"] { margin-top: 0.5rem; color: var(--text-2); max-width: 100%; 
   border-radius: 8px;
 }
 
+/* The box of the messages for a page (flash.js, p161). Good news fades out at the end; trouble has a
+   button to dismiss it (added by the script, so without the script there is none). */
+.flashes { margin: 0; }
+.flash { transition: opacity 0.25s ease; }
+.flash-leaving { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .flash { transition: none; }
+}
+.alert.has-close { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
+.flashes > .alert { margin: 0 0 1rem; }
+.flash-close {
+  flex: 0 0 auto; min-width: 2.75rem; min-height: 2.75rem; margin: -0.7rem -0.9rem -0.7rem 0;
+  padding: 0; border: 0; background: none; color: var(--text-2); font: inherit; font-size: 1.4rem;
+  line-height: 1; cursor: pointer; border-radius: 8px;
+}
+.flash-close:hover { color: var(--text); }
+
 /* "This has changed in the meantime" with a reload button (live.js shows it, Spec 10.5). */
 .live-stale {
   padding: 0.7rem 0.9rem;

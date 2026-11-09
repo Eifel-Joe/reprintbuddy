@@ -24,8 +24,6 @@ from reprintbuddy.web.i18n import translate, translate_count
 
 UID_KEY = "uid"
 SID_KEY = "sid"
-FLASH_KEY = "flash"
-FLASH_WARNING_KEY = "flash_warning"  # the message above is a warning, not good news
 RIGHTS_LATER_KEY = "rights_later"  # in the session: the missing rights "Later" was pressed for
 SETUP_NEXT_KEY = "setup_next"  # in the session: the page opened before the Bambuddy step was done (p114)
 RIGHTS_SUCCESS_KEY = "rights_success"  # in the session: "Check again" in the dialog found every right
@@ -116,12 +114,6 @@ def render(request: Request, name: str, status_code: int = 200, **context: objec
     context["open_bambuddy_url"] = st.get_setting(session, "bambuddy_url")
     context.setdefault("active_nav", None)
     context["min_password_length"] = auth.MIN_PASSWORD_LENGTH
-    if asked:
-        context.setdefault("notice", None)
-        context.setdefault("notice_warning", False)
-    else:
-        context.setdefault("notice", request.session.pop(FLASH_KEY, None))
-        context.setdefault("notice_warning", bool(request.session.pop(FLASH_WARNING_KEY, False)))
     context["csrf_token"] = csrf_token(request)
     # The state the gate took before the data was read: a page is never newer than its state.
     live_state = getattr(request.state, "live_state", None)
@@ -225,16 +217,6 @@ def take_verdict(request: Request, check: ConnectionCheck) -> None:
     request.session.pop(RIGHTS_SUCCESS_KEY, None)
     if check.ok:
         request.session.pop(RIGHTS_LATER_KEY, None)
-
-
-def flash(request: Request, key: str, *, warning: bool = False) -> None:
-    """Remember a message (a translation key) for the next page shown; `warning` for anything
-    that is not good news, which is shown in the look of an error."""
-    request.session[FLASH_KEY] = key
-    if warning:
-        request.session[FLASH_WARNING_KEY] = True
-    else:
-        request.session.pop(FLASH_WARNING_KEY, None)
 
 
 MAX_NEXT_LENGTH = 2048

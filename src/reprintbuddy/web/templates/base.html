@@ -96,7 +96,7 @@
       </form>
     </div>
     {% endif %}
-    {% if not dialog_open %}{% for message in pending %}{% include "_flash_message.html" %}{% endfor %}{% endif %}
+    {% if not dialog_open %}{% with flashes=pending %}{% include "_flashes.html" %}{% endwith %}{% endif %}
     {% block content %}{% endblock %}
   </main>
 </div>
@@ -110,6 +110,7 @@
 <script src="/static/js/info.js?v={{ app_version }}" defer></script>
 <script src="/static/js/thumbs.js?v={{ app_version }}" defer></script>
 <script src="/static/js/spinbox.js?v={{ app_version }}" defer></script>
+<script src="/static/js/flash.js?v={{ app_version }}" defer></script>
 {# Scripts of one page only (the queue's drag script). #}
 {% block scripts %}{% endblock %}
 {% endblock %}

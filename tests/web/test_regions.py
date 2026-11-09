@@ -95,7 +95,7 @@ def test_region_request_keeps_the_messages(ready_client):  # Review Focus 3: two
 
 
 def queue_both_kinds_of_message(client):
-    """One message in the queued list (flash.py) and one single notice (deps.flash).
+    """Two messages in the queue of flash.py (the one queue since v0.3.13: the settings page uses it too).
 
     The tokens are fetched first: every page shown afterwards would use the messages up.
     """
