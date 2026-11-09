@@ -71,18 +71,18 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 ## Installation
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.11/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.12/install/install.sh)"
 ```
 
 Run it as root on that system. Fresh Debian systems often come without curl; the first part installs it.
-The tag in the address (`v0.3.11`) is the version that gets installed; installer and code are guaranteed to belong
+The tag in the address (`v0.3.12`) is the version that gets installed; installer and code are guaranteed to belong
 together. To skip the language question, add the language:
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.11/install/install.sh)" _ --language de
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.12/install/install.sh)" _ --language de
 ```
 
-To install another version, put its tag into the address, for example `v0.3.11` for `<tag>`:
+To install another version, put its tag into the address, for example `v0.3.12` for `<tag>`:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
