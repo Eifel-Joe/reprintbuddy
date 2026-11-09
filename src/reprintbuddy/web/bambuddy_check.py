@@ -53,7 +53,7 @@ def permission_context() -> dict[str, object]:
     """The fixed tables the templates need (labels, where a right can be set)."""
     return {
         "required_permissions": REQUIRED_PERMISSIONS,
-        "optional_permissions": OPTIONAL_PERMISSIONS,  # not required: only for uploading (Spec 5.1a)
+        "optional_permissions": OPTIONAL_PERMISSIONS,  # not required: uploading (Spec 5.1a), live channel (p170)
         "key_creation_permissions": tuple(KEY_CREATION_LABELS),
         "editor_labels": {**EDITOR_LABELS, **KEY_CREATION_LABELS},
         "key_right_for": KEY_RIGHT_FOR,

@@ -31,15 +31,14 @@ Reprintbuddy braucht in Bambuddy eine eigene Gruppe, weil keine Systemgruppe pas
 
 Bambuddy hängt an die Beschriftung von *Print Without Review* einen Hinweis an („else jobs wait for someone to start them“); es ist dasselbe Recht.
 
-Ein weiteres Recht ist empfohlen, aber nicht nötig:
+Zwei weitere Rechte sind empfohlen, aber nicht nötig:
 
 | Beschriftung in Bambuddy | Interner Name | Wofür |
 |---|---|---|
 | Upload Library | `library:upload` | nur zum Hochladen von Druckdateien aus Reprintbuddy |
+| Connect Websocket | `websocket:connect` | damit Bambuddy Änderungen sofort meldet; ohne es fragt Reprintbuddy nur im eingestellten Abstand ab |
 
-Ohne dieses Recht geht alles andere; nur das Hochladen nicht.
-
-Außerdem empfohlen, aber nicht verlangt: das Gruppenrecht `websocket:connect`. Mit ihm meldet Bambuddy fertige Drucke sofort über den Live-Kanal; ohne es läuft alles über die regelmäßige Abfrage, und unter *Einstellungen → Bambuddy* steht bei der Karte **Live-Kanal** „Recht fehlt“. Siehe [Automatik](../use/automation.md).
+Ohne *Upload Library* geht alles andere; nur das Hochladen nicht. Ohne *Connect Websocket* läuft alles über die regelmäßige Abfrage, und unter *Einstellungen → Bambuddy* steht bei der Karte **Live-Kanal** „Recht fehlt“ (siehe [Automatik](../use/automation.md)). Am Schlüssel genügt *Read Status* („Status lesen“) für den Live-Kanal; mehr ist nicht einzustellen.
 
 Zum Erzeugen des Schlüssels im nächsten Schritt braucht die Gruppe zusätzlich diese drei Rechte. Reprintbuddy prüft sie nicht, und du kannst sie wieder entfernen, sobald der Schlüssel existiert:
 
@@ -98,7 +97,7 @@ Reprintbuddy fragt Bambuddy, wem der Schlüssel gehört und was er wirklich darf
 
 Unter der Liste, abgesetzt, zeigt die Seite, ob das wahlweise Recht zum Hochladen von Druckdateien da ist.
 
-Gelingt die Prüfung, speichert Reprintbuddy Adresse und Schlüssel und übernimmt den Namen des Besitzers aus Bambuddys Antwort. Die Seite zeigt dann, was Bambuddy gemeldet hat: den Besitzer des Schlüssels und jedes Pflichtrecht mit einem Haken, dazu in einer Zeile, ob sich mit diesem Schlüssel Druckdateien hochladen lassen. Fehlt dem Schlüssel das Recht zum Hochladen, geht alles andere. Mit **Weiter** öffnest du die Oberfläche (die Seite, die du vor der Einrichtung öffnen wolltest, falls es eine gab).
+Gelingt die Prüfung, speichert Reprintbuddy Adresse und Schlüssel und übernimmt den Namen des Besitzers aus Bambuddys Antwort. Die Seite zeigt dann, was Bambuddy gemeldet hat: den Besitzer des Schlüssels und jedes Pflichtrecht mit einem Haken, dazu in je einer Zeile, ob sich mit diesem Schlüssel Druckdateien hochladen lassen und ob Bambuddy Änderungen sofort melden kann. Fehlt dem Schlüssel eines dieser beiden Rechte, geht alles andere. Eine fehlgeschlagene Prüfung führt die beiden empfohlenen Rechte getrennt von den nötigen auf, ebenfalls mit Haken oder Kreuz; sie entscheiden nie darüber, ob der Schlüssel gespeichert wird, und ein fehlendes öffnet nach einem Update nie den Hinweis. Mit **Weiter** öffnest du die Oberfläche (die Seite, die du vor der Einrichtung öffnen wolltest, falls es eine gab).
 
 Ein Schlüssel, der einem Administrator gehört, wird angenommen, mit der Warnung, dass er mehr darf, als Reprintbuddy braucht. Sicherer ist der Benutzer `reprintbuddy` aus Schritt 2.
 

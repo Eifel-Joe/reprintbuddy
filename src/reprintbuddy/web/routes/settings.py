@@ -217,6 +217,7 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     take_verdict(request, check)  # a fixed key clears the notice at once
     # The optional right (Spec 11.3 c, 5.1a): saved either way, the person learns whether uploading works.
     flash(request, "bambuddy.upload_right_ok" if check.can_upload else "bambuddy.upload_right_missing")
+    flash(request, "bambuddy.live_right_ok" if check.can_live else "bambuddy.live_right_missing")
     if check.owner_is_admin:
         return _saved(request, "bambuddy.admin_warning", warning=True, tab=SECTION_TAB["bambuddy"])
     return _saved(request, tab=SECTION_TAB["bambuddy"])

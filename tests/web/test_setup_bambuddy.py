@@ -386,6 +386,7 @@ EDITOR = {
     "inventory:read": "Read Inventory",
     "filaments:read": "Read Filaments",
     "library:upload": "Upload Library",  # optional, for uploading print files (Spec 5.1a)
+    "websocket:connect": "Connect Websocket",  # optional, for the live channel (p170)
 }
 KEY_CREATION = {
     "api_keys:read": "Read Api Keys",

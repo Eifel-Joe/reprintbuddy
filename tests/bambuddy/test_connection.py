@@ -219,7 +219,7 @@ def test_upload_right_is_optional_with_bambuddys_label():
     )
 
     assert UPLOAD_PERMISSION == "library:upload"
-    assert OPTIONAL_PERMISSIONS == ("library:upload",)
+    assert OPTIONAL_PERMISSIONS == ("library:upload", "websocket:connect")  # the second one: p170
     assert UPLOAD_PERMISSION not in REQUIRED_PERMISSIONS
     assert EDITOR_LABELS[UPLOAD_PERMISSION] == "Upload Library"  # groups.py `_permission_label`
     assert KEY_RIGHT_FOR[UPLOAD_PERMISSION] == "library"  # auth.py: LIBRARY_UPLOAD -> can_manage_library
