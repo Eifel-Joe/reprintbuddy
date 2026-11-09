@@ -245,7 +245,7 @@ further try would count as a failed login there; saving the card again lifts the
 There is **no configuration file**. Every setting lives in the database and is
 changed under *Settings* in the web interface: language, QR code address, Bambuddy connection,
 automation, labels, push messages, password, listen address, port, optional HTTPS certificate,
-restart, update check, update and backup, and export. The only thing
+restart, update check, update and backup, and export. *Settings → Log* only shows what happened (who changed what, sign-ins, updates, messages), see the documentation pages. The only thing
 given on the command line is the database path (`--db`).
 
 ## Update
@@ -271,7 +271,7 @@ does not start, restore the backup named on the page (see *Backup and export*) a
 The page shows the Git tag and, if it differs, the package version next to it.
 
 Backups are kept in `/var/lib/reprintbuddy/backups/` (the last 5; a backup named by a failed rollback is never deleted). To start an update by hand:
-`systemctl start reprintbuddy-update.service`; its log is `journalctl -u reprintbuddy-update`.
+`systemctl start reprintbuddy-update.service`; its system log is `journalctl -u reprintbuddy-update`.
 
 Versions are git tags `vX.Y.Z`, and the package version equals the tag. If a release changes the
 systemd units or the sudoers rule, its release notes say so; then run the installer again.
@@ -294,7 +294,7 @@ HTTP and the proxy does TLS. If the proxy runs on the same system, set the liste
 to `127.0.0.1`. Give Reprintbuddy its own address or its own port on the proxy
 (`https://reprintbuddy.example.net/` or `https://example.net:8443/`). A sub-path
 (`https://example.net/reprintbuddy/`) does not work: links and redirects would point past the
-proxy. Reprintbuddy writes a warning to the log when it is reached that way.
+proxy. Reprintbuddy writes a warning to the system log when it is reached that way.
 
 Locked out by a certificate that stopped working (expired, wrong name)? On the system:
 

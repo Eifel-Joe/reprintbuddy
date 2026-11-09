@@ -6,7 +6,7 @@ Der Befehl `reprintbuddy` ist der Weg zurück, wenn die Weboberfläche nicht err
 
 Das Installationsskript legt den Befehl unter `/usr/local/bin/reprintbuddy` ab. Führe ihn auf dem Rechner aus, auf dem Reprintbuddy läuft, als root. Er läuft dann als Dienstbenutzer `reprintbuddy` (aus dem Ordner `/`), damit die Datenbankdateien ihren Besitzer behalten. Befehle, die nach einem Passwort fragen (`set-password`, `restore-backup`), behalten dein Terminal; die anderen laufen ohne.
 
-Jeder Befehl nimmt `--db PFAD`, die Datenbankdatei. Vorgabe ist `/var/lib/reprintbuddy/reprintbuddy.db`, die Datenbank des installierten Dienstes; du lässt es also weg. Es ist das Einzige, was nicht in der Datenbank selbst liegt, siehe [Einstellungen](settings.md).
+Jeder Befehl nimmt `--db PFAD`, die Datenbankdatei. Vorgabe ist `/var/lib/reprintbuddy/reprintbuddy.db`, die Datenbank des installierten Dienstes; du lässt es also weg. Es ist das Einzige, was nicht in der Datenbank selbst liegt, siehe [Einstellungen](settings.md). Was ein Befehl ändert (zum Beispiel ein neues Passwort oder ein neuer Port), steht im [Protokoll](log.md) als vom **Benutzer** gemacht, mit dem Zusatz „Befehl auf dem Server“.
 
 ## Befehle für dich
 

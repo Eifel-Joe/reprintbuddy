@@ -41,7 +41,7 @@ Du kannst Reprintbuddy auch hinter einem Reverse-Proxy betreiben, den du schon h
 
 - Läuft der Proxy auf **demselben System**, setze die Lauschadresse auf `127.0.0.1`, damit Reprintbuddy nicht am Proxy vorbei erreichbar ist.
 - Gib Reprintbuddy auf dem Proxy **eine eigene Adresse oder einen eigenen Port**, zum Beispiel `https://reprintbuddy.example.net/` oder `https://example.net:8443/`.
-- Ein **Unterpfad** wie `https://example.net/reprintbuddy/` funktioniert **nicht**: Links und Weiterleitungen würden am Proxy vorbeizeigen. Reprintbuddy schreibt eine Warnung ins Protokoll, einmal, wenn es so erreicht wird (ein Root-Pfad oder ein Header `X-Forwarded-Prefix`). Das Protokoll liest du mit `journalctl -u reprintbuddy`.
+- Ein **Unterpfad** wie `https://example.net/reprintbuddy/` funktioniert **nicht**: Links und Weiterleitungen würden am Proxy vorbeizeigen. Reprintbuddy schreibt eine Warnung ins Systemprotokoll, einmal, wenn es so erreicht wird (ein Root-Pfad oder ein Header `X-Forwarded-Prefix`). Das Systemprotokoll liest du mit `journalctl -u reprintbuddy`.
 - Die Seiten aktualisieren sich über einen Datenstrom unter `/live` (Server-Sent Events). Der Proxy muss ihn ohne Pufferung weiterreichen; Reprintbuddy sendet den Header `X-Accel-Buffering: no`, den nginx beachtet.
 - Trage die Adresse des Proxys unter *Einstellungen → Allgemein → QR-Codes* ein, damit die QR-Codes sie tragen.
 

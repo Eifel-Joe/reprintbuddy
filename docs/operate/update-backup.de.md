@@ -19,7 +19,7 @@ Das Update macht der Reihe nach:
 5. startet den Dienst neu und
 6. prüft, ob die neue Version antwortet (es wartet bis zu 90 Sekunden).
 
-Die Karte nennt den Schritt, in dem es gerade ist: **Datenbank wird gesichert**, **Versionen werden geholt**, **Wechsel auf die neue Version**, **Pakete werden installiert**, **Installierte Version wird geprüft**, **Datenbank wird migriert**, **Neustart**, **Warten, bis die neue Version antwortet**. Ist es fertig, steht dort „Update abgeschlossen“.
+Die Karte nennt den Schritt, in dem es gerade ist: **Datenbank wird gesichert**, **Versionen werden geholt**, **Wechsel auf die neue Version**, **Pakete werden installiert**, **Installierte Version wird geprüft**, **Datenbank wird migriert**, **Neustart**, **Warten, bis die neue Version antwortet**. Ist es fertig, steht dort „Update abgeschlossen“. Start und Ergebnis jedes Updates stehen außerdem im [Protokoll](log.md) (*Einstellungen → Protokoll*): „Update gestartet“ mit alter und neuer Version, und je Update einmal das Ergebnis. Wird ein Update zurückgerollt, wird auch die Datenbank zurückgespielt; Protokollzeilen aus der Zeit des Updates gehen dabei verloren, das Ergebnis wird danach eingetragen.
 
 !!! note "Updates brauchen das Installationsskript"
     Die Knöpfe funktionieren nur bei einer Installation mit dem Installationsskript. Sonst steht auf der Karte „Updates aus der Oberfläche brauchen eine Installation mit dem Installationsskript.“ Das Update ersetzt das Programm, nicht die systemd-Units und nicht die sudoers-Regel; siehe [Versionen und Release-Notes](#versionen-und-release-notes).
@@ -55,11 +55,11 @@ Reprintbuddy fragt beim Start und danach einmal täglich, ob es eine neuere Vers
 | Die Karte sagt | Was passiert ist | Was zu tun ist |
 |---|---|---|
 | **Update fehlgeschlagen, nichts wurde geändert** | Das Update brach ab, bevor etwas umgestellt wurde, zum Beispiel weil die Versionen nicht geholt werden konnten. | Die auf der Karte genannte Ursache beheben (ist der Server online?) und es erneut versuchen. |
-| **Update fehlgeschlagen, vorige Version wiederhergestellt** | Ein späterer Schritt ist fehlgeschlagen. Die vorige Version und die Datenbank sind zurück. | Schritt und Grund auf der Karte lesen, später erneut versuchen. Das Protokoll hat die Einzelheiten. |
+| **Update fehlgeschlagen, vorige Version wiederhergestellt** | Ein späterer Schritt ist fehlgeschlagen. Die vorige Version und die Datenbank sind zurück. | Schritt und Grund auf der Karte lesen, später erneut versuchen. Das Ergebnis steht im [Protokoll](log.md); das Systemprotokoll hat die Einzelheiten (`journalctl -u reprintbuddy-update`). |
 | **Update fehlgeschlagen, vorige Version ließ sich nicht wiederherstellen** | Auch der Rückfall ist fehlgeschlagen. Die Karte nennt die Sicherung. | Siehe unten. |
 | **Update wurde unterbrochen** | Der Update-Helfer ist mittendrin ohne Endzustand stehen geblieben, zum Beispiel weil das System während des Updates neu gestartet ist. | Siehe unten. |
 | **Update wurde nicht gestartet. Bitte erneut starten.** (oder: bitte zuerst nach Updates suchen) | Der Helfer hat gar nicht begonnen; nichts wurde geändert. | **Nach Updates suchen** drücken, dann den Update-Knopf. |
-| **Das Update wurde gestartet, konnte seinen Zustand aber nicht speichern, und die neue Version läuft nicht.** | Der Helfer lief, konnte aber seine Zustandsdatei nicht schreiben. | Das Protokoll lesen: `journalctl -u reprintbuddy-update` |
+| **Das Update wurde gestartet, konnte seinen Zustand aber nicht speichern, und die neue Version läuft nicht.** | Der Helfer lief, konnte aber seine Zustandsdatei nicht schreiben. | Das Systemprotokoll lesen: `journalctl -u reprintbuddy-update` |
 
 systemd beendet ein Update, das länger als 30 Minuten läuft. Die Karte meldet dann einen Fehlschlag, in dessen Meldung „interrupted“ steht.
 
@@ -85,7 +85,7 @@ Auf dem System, als root:
 systemctl start reprintbuddy-update.service
 ```
 
-Es tut dasselbe wie der Knopf und geht auf die neueste Version. Der Fortschritt erscheint auf der Update-Karte; das Protokoll ist:
+Es tut dasselbe wie der Knopf und geht auf die neueste Version. Der Fortschritt erscheint auf der Update-Karte; das Systemprotokoll dazu ist:
 
 ```bash
 journalctl -u reprintbuddy-update
@@ -118,7 +118,7 @@ Die Karte **Vollständige Sicherung** lädt die ganze Datenbank als eine `.zip`-
 !!! warning "Ohne Passwort kein Schutz"
     Ohne Passwort kommt jeder, der die Datei hat, an die Schlüssel und kann sich anmelden. Eine unverschlüsselte Sicherung so sicher aufbewahren wie den Server selbst.
 
-Die Datei enthält ein immer lesbares `manifest.json` (welche Version sie erstellt hat, wann, ob sie verschlüsselt ist) und die Datenbank.
+Die Datei enthält ein immer lesbares `manifest.json` (welche Version sie erstellt hat, wann, ob sie verschlüsselt ist) und die Datenbank. Das [Protokoll](log.md) liegt in der Datenbank und damit in der Sicherung.
 
 ## Wiederherstellen
 
@@ -129,7 +129,7 @@ Die Karte **Wiederherstellen** ersetzt alle Daten durch eine vollständige Siche
 3. Gib das **Passwort der Sicherung** (nur wenn sie verschlüsselt ist) und dein **Anmelde-Passwort** ein und drücke **Wiederherstellen und neu starten**. **Abbrechen** verwirft die Datei. Eine geprüfte Datei wartet eine Stunde.
 4. Reprintbuddy sichert die laufende Datenbank wie vor einem Update, ersetzt sie und startet neu. Änderungen sind gesperrt, bis es wieder da ist.
 
-Danach gelten Benutzername und Passwort **aus der Sicherung**, und alle melden sich neu an. Lauschadresse, Port und HTTPS kommen ebenfalls aus der Sicherung; haben sie sich geändert, nennt die Seite die neue Adresse.
+Danach gelten Benutzername und Passwort **aus der Sicherung**, und alle melden sich neu an. Das [Protokoll](log.md) der Sicherung gilt ebenfalls, mit einer neuen Zeile über die Wiederherstellung (mit Datum und Version der Sicherung); Zeilen, die nach dem Stand der Sicherung entstanden sind, sind nicht mehr zu sehen. Auch eine abgelehnte oder abgebrochene Wiederherstellung wird protokolliert. Lauschadresse, Port und HTTPS kommen ebenfalls aus der Sicherung; haben sie sich geändert, nennt die Seite die neue Adresse.
 
 - Eine Sicherung aus einer **älteren** Version wird so eingespielt und beim Start migriert.
 - Eine Sicherung aus einer **neueren** Version wird abgelehnt („Erst aktualisieren, dann wiederherstellen“).

@@ -6,7 +6,7 @@ The command `reprintbuddy` is the way back in when the web interface is out of r
 
 The installer puts the command at `/usr/local/bin/reprintbuddy`. Run it on the machine that runs Reprintbuddy, as root. It then runs as the service user `reprintbuddy` (from the folder `/`), so the database files keep their owner. Commands that ask for a password (`set-password`, `restore-backup`) keep your terminal; the others run without one.
 
-Every command takes `--db PATH`, the database file. The default is `/var/lib/reprintbuddy/reprintbuddy.db`, the database of the installed service, so you leave it out. It is the only thing that does not live in the database itself, see [Settings](settings.md).
+Every command takes `--db PATH`, the database file. The default is `/var/lib/reprintbuddy/reprintbuddy.db`, the database of the installed service, so you leave it out. It is the only thing that does not live in the database itself, see [Settings](settings.md). What a command changes (for example a new password or port) is written to the [Log](log.md) as done by the **User**, with the note "command on the server".
 
 ## Commands for you
 

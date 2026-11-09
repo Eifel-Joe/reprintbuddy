@@ -60,6 +60,7 @@ import httpx
 import uvicorn
 from PIL import Image, ImageDraw
 from sqlalchemy import select
+from sqlalchemy.orm import sessionmaker
 from websockets.sync.client import connect as ws_connect
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,6 +68,7 @@ ROOT = Path(__file__).resolve().parents[1]
 from reprintbuddy import __version__  # noqa: E402
 from reprintbuddy import models  # noqa: E402
 from reprintbuddy import settings as st  # noqa: E402
+from reprintbuddy.activity import capture as activity_capture  # noqa: E402
 from reprintbuddy.bambuddy.fake import FakeBambuddy  # noqa: E402
 from reprintbuddy.bambuddy.types import FilamentRequirement  # noqa: E402
 from reprintbuddy.domain import catalog, filament, orders, pauses, reorder, stock, workqueue  # noqa: E402
@@ -96,7 +98,7 @@ ALL_NAMES = (
     "article-filaments", "article-detail", "queue", "inspection", "assembly", "label-preview",
     "reorder", "filament-page", "orders", "parts", "sets", "bookings", "journal",
     "settings-bambuddy", "settings-automation", "settings-notifications", "settings-labels",
-    "settings-update", "articles-mobile",
+    "settings-log", "settings-update", "articles-mobile",
 )
 
 
@@ -324,7 +326,16 @@ class Server:
         )
         self.app.state.bambuddy_factory = lambda: self.fake
         self.app.state.ticker.now = CLOCK
-        self.sm = self.app.state.sessionmaker
+        # What the scenario writes is written "by the user", as if it had been done in the interface: the
+        # log page shows the person, not "System" (what a session without an actor counts as).
+        real = self.app.state.sessionmaker
+
+        class UserSession(real.class_):  # type: ignore[name-defined, misc]
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.info[activity_capture.ACTOR] = "user"  # its own dict: the capture keeps its state in it
+
+        self.sm = sessionmaker(**{**real.kw, "class_": UserSession})
         with self.sm() as session:
             st.set_setting(session, "language", language)  # the language of the set-up pages too
         with socket.socket() as probe:
@@ -1001,6 +1012,7 @@ def take_pages(shot: Shooter, scn: Scenario) -> None:
     shot.page("settings-automation", "/settings?tab=automation")
     shot.page("settings-notifications", "/settings?tab=notify", cap=1400)
     shot.page("settings-labels", "/settings?tab=labels")
+    shot.page("settings-log", "/settings?tab=log", before=lambda b: keep_rows(b, 14))
     shot.mobile(
         "articles-mobile", "/articles?layout=tiles", cap=1250,  # two tiles: none is cut at the lower edge
         before=lambda b: b.evaluate("document.querySelectorAll('.tiles .tile').forEach((r,i)=>{if(i>=2)r.remove()})"),

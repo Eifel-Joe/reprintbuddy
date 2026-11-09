@@ -19,7 +19,7 @@ The update does these things, in this order:
 5. restarts the service and
 6. checks that the new version answers (it waits up to 90 seconds).
 
-The card names the step it is in: **Backing up the database**, **Fetching releases**, **Switching to the new version**, **Installing packages**, **Checking the installed version**, **Migrating the database**, **Restarting**, **Waiting for the new version to answer**. When it is finished it says "Update finished".
+The card names the step it is in: **Backing up the database**, **Fetching releases**, **Switching to the new version**, **Installing packages**, **Checking the installed version**, **Migrating the database**, **Restarting**, **Waiting for the new version to answer**. When it is finished it says "Update finished". Start and result of every update are also written to the [Log](log.md) (*Settings → Log*): "Update started" with the old and the new version, and once per update its result. If an update is rolled back, the database is restored too, so log lines from the time of the update are lost; the result is entered after that.
 
 !!! note "Updates need the installer"
     The buttons work only for an installation made with the install script. Otherwise the card says "Updates from this page need an installation made with the install script." The update replaces the program, not the systemd units or the sudoers rule; see [Versions and release notes](#versions-and-release-notes).
@@ -55,11 +55,11 @@ Reprintbuddy asks at the start and then once a day whether a newer release exist
 | The card says | What happened | What to do |
 |---|---|---|
 | **Update failed, nothing was changed** | The update stopped before anything was switched, for example the releases could not be fetched. | Fix the cause named on the card (is the server online?) and try again. |
-| **Update failed, previous version restored** | A later step failed. The previous version and the database are back. | Read the step and the reason on the card, then try again later. The log has the details. |
+| **Update failed, previous version restored** | A later step failed. The previous version and the database are back. | Read the step and the reason on the card, then try again later. The result is in the [Log](log.md); the system log has the details (`journalctl -u reprintbuddy-update`). |
 | **Update failed and the previous version could not be restored** | The rollback failed too. The card names the backup. | See below. |
 | **Update was interrupted** | The update helper stopped midway without a final state, for example because the system restarted during the update. | See below. |
 | **The update did not start. Please start it again.** (or: please check for updates first) | The helper never began; nothing was changed. | Press **Check for updates**, then the update button. |
-| **The update was started but could not save its state, and the new version is not running.** | The helper ran but could not write its state file. | Read the log: `journalctl -u reprintbuddy-update` |
+| **The update was started but could not save its state, and the new version is not running.** | The helper ran but could not write its state file. | Read the system log: `journalctl -u reprintbuddy-update` |
 
 systemd stops an update that runs longer than 30 minutes. The card then reports a failure whose message says "interrupted".
 
@@ -85,7 +85,7 @@ On the system, as root:
 systemctl start reprintbuddy-update.service
 ```
 
-It does the same as the button and goes to the newest release. The progress shows on the update card; the log is:
+It does the same as the button and goes to the newest release. The progress shows on the update card; its system log is:
 
 ```bash
 journalctl -u reprintbuddy-update
@@ -118,7 +118,7 @@ The card **Full backup** downloads the whole database as one `.zip` file named `
 !!! warning "No password, no protection"
     Without a password, anyone who has the file gets the keys and can sign in. Keep an unencrypted backup as safe as the server itself.
 
-The file contains a readable `manifest.json` (which version made it, when, whether it is encrypted) and the database.
+The file contains a readable `manifest.json` (which version made it, when, whether it is encrypted) and the database. The [Log](log.md) is part of the database and so of the backup.
 
 ## Restore
 
@@ -129,7 +129,7 @@ The card **Restore** replaces all data with a full backup.
 3. Enter the **Password of the backup** (only if it is encrypted) and your **Sign-in password**, then press **Restore and restart**. **Cancel** drops the file. A checked file waits for one hour.
 4. Reprintbuddy backs up the running database as before an update, replaces it and restarts. Changes are paused until it is back.
 
-Afterwards the user name and password **of the backup** apply, and everybody signs in again. Listen address, port and HTTPS come from the backup too; if they changed, the page names the new address.
+Afterwards the user name and password **of the backup** apply, and everybody signs in again. The [Log](log.md) of the backup applies too, with one new line about the restore (with the date and version of the backup); log lines made after the backup was taken are no longer visible. A refused or cancelled restore is logged as well. Listen address, port and HTTPS come from the backup too; if they changed, the page names the new address.
 
 - A backup from an **older** version is restored as it is and migrated at the start.
 - A backup from a **newer** version is refused ("Update first, then restore").

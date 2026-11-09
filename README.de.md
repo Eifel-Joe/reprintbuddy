@@ -258,7 +258,7 @@ weil jeder weitere Versuch dort als Fehlanmeldung zählt; erneutes Speichern der
 Es gibt **keine Konfigurationsdatei**. Jede Einstellung liegt in der Datenbank
 und wird in der Weboberfläche unter *Einstellungen* geändert: Sprache, Adresse für QR-Codes,
 Bambuddy-Verbindung, Automatik, Etiketten, Push-Nachrichten, Passwort, Adresse, Port, optionales
-HTTPS-Zertifikat, Neustart, Update-Prüfung, Update und Sicherung sowie Export.
+HTTPS-Zertifikat, Neustart, Update-Prüfung, Update und Sicherung sowie Export. *Einstellungen → Protokoll* zeigt nur, was passiert ist (wer was geändert hat, Anmeldungen, Updates, Nachrichten), siehe die Doku-Seiten.
 Nur der Pfad der Datenbank wird auf der Kommandozeile angegeben (`--db`).
 
 ## Update
@@ -286,7 +286,7 @@ unterscheidet, daneben die Paketversion.
 
 Die Sicherungen liegen in `/var/lib/reprintbuddy/backups/` (die letzten 5; eine von einem gescheiterten Rückfall
 genannte Sicherung wird nie gelöscht). Ein Update von Hand
-startest du mit `systemctl start reprintbuddy-update.service`; das Protokoll steht in
+startest du mit `systemctl start reprintbuddy-update.service`; das Systemprotokoll steht in
 `journalctl -u reprintbuddy-update`.
 
 Versionen sind Git-Tags `vX.Y.Z`, die Paketversion entspricht dem Tag. Ändert eine Version die
@@ -312,7 +312,7 @@ HTTP, der Proxy macht TLS. Läuft der Proxy auf demselben System, stelle die Lau
 `127.0.0.1`. Gib Reprintbuddy am Proxy eine eigene Adresse oder einen eigenen Port
 (`https://reprintbuddy.example.net/` oder `https://example.net:8443/`). Ein Unterpfad
 (`https://example.net/reprintbuddy/`) geht nicht: Links und Weiterleitungen würden am Proxy
-vorbeizeigen. Wird Reprintbuddy so erreicht, schreibt es eine Warnung ins Protokoll.
+vorbeizeigen. Wird Reprintbuddy so erreicht, schreibt es eine Warnung ins Systemprotokoll.
 
 Ausgesperrt durch ein Zertifikat, das nicht mehr taugt (abgelaufen, falscher Name)? Auf dem System:
 

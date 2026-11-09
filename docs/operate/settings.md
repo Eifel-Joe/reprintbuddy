@@ -6,7 +6,7 @@ There is **no configuration file**. Every setting lives in the database. The onl
 
 ## How saving works
 
-- The page has seven tabs: **General**, **Automation**, **Labels**, **Bambuddy**, **Notifications**, **Account** and **Update and backup**.
+- The page has eight tabs: **General**, **Automation**, **Labels**, **Bambuddy**, **Notifications**, **Account**, **Update and backup** and **Log**. The last one has no settings: it shows what happened, see [Log](log.md).
 - Each card has its own button (**Save**, on the Bambuddy tab **Check and save**, for the password **Change password**). It saves that card only. A value that is not allowed is refused with a message, and nothing of that card is saved.
 - Only the **Server** card needs a restart: listen address, port and HTTPS take effect after Reprintbuddy has been restarted. The page says so, and the **Restart** card on the *General* tab shows "Saved changes take effect after a restart." until you restart. Everything else takes effect at once.
 
@@ -111,5 +111,6 @@ This tab holds the update, the full backup, the restore and the export. They are
 ## Related pages
 
 - [Update and backup](update-backup.md): update, full backup, restore, export.
+- [Log](log.md): who changed what, sign-ins, updates, messages.
 - [Network and security](network.md): HTTPS, reverse proxy, locked out.
 - [Command line](cli.md): password, port, listen address from the system.

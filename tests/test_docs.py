@@ -189,3 +189,11 @@ def test_readme_names_the_host_of_the_release_notes(name):
     from reprintbuddy.ops import releasenotes
 
     assert releasenotes.API.removeprefix("https://") in (ROOT / name).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("name", ["operate/log.md", "operate/log.de.md"])
+def test_log_page_names_the_retention_of_the_code(name):
+    """Spec 10.7: the log keeps its lines for as long as the code says; the page must say the same."""
+    from reprintbuddy.activity import writer
+
+    assert f"{writer.KEEP.days} " in (DOCS / name).read_text(encoding="utf-8"), name

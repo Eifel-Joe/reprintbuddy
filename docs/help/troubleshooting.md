@@ -65,7 +65,7 @@ A paused article has its own card: the name of the article, then the reason. Whi
 
 ## An update failed or was interrupted
 
-Under *Settings → Update and backup* the update card names the state and the step that failed. Details are in the log of the update: `journalctl -u reprintbuddy-update`.
+Under *Settings → Update and backup* the update card names the state and the step that failed. The [Log](../operate/log.md) (*Settings → Log*) shows the result of every update. Details are in the system log of the update: `journalctl -u reprintbuddy-update`.
 
 - **Update failed, nothing was changed** and **Update failed, previous version restored:** the running version is as before, and the database was restored if needed. Fix the cause named on the page (often the network: GitHub, PyPI) and start the update again.
 - **Update was interrupted** or **Update failed and the previous version could not be restored:** run the installer again as root (the command from [Installation](../start/install.md); if it stops because it does not match the installed version, use the tag it names). It repairs packages, units and the service and keeps the database. If Reprintbuddy still does not start, restore the backup named on the page and run the installer again. Restoring is described under [Update and backup](../operate/update-backup.md); without a working interface use the command `reprintbuddy restore-backup` ([Command line](../operate/cli.md)).

@@ -6,7 +6,7 @@ Es gibt **keine Konfigurationsdatei**. Jede Einstellung liegt in der Datenbank. 
 
 ## So wird gespeichert
 
-- Die Seite hat sieben Reiter: **Allgemein**, **Automatik**, **Etiketten**, **Bambuddy**, **Benachrichtigungen**, **Konto** und **Update und Sicherung**.
+- Die Seite hat acht Reiter: **Allgemein**, **Automatik**, **Etiketten**, **Bambuddy**, **Benachrichtigungen**, **Konto**, **Update und Sicherung** und **Protokoll**. Der letzte hat keine Einstellungen: Er zeigt, was passiert ist, siehe [Protokoll](log.md).
 - Jede Karte hat einen eigenen Knopf (**Speichern**, im Reiter Bambuddy **Prüfen und speichern**, beim Passwort **Passwort ändern**). Er speichert nur diese Karte. Ein nicht erlaubter Wert wird mit einer Meldung abgelehnt, und von dieser Karte wird nichts gespeichert.
 - Nur die Karte **Server** braucht einen Neustart: Lauschadresse, Port und HTTPS wirken erst nach einem Neustart von Reprintbuddy. Die Seite sagt das, und die Karte **Neustart** im Reiter *Allgemein* zeigt „Gespeicherte Änderungen werden nach einem Neustart wirksam.“, bis du neu startest. Alles andere wirkt sofort.
 
@@ -111,5 +111,6 @@ Dieser Reiter enthält das Update, die vollständige Sicherung, das Wiederherste
 ## Weiterführende Seiten
 
 - [Update und Sicherung](update-backup.md): Update, vollständige Sicherung, Wiederherstellen, Export.
+- [Protokoll](log.md): wer was geändert hat, Anmeldungen, Updates, Nachrichten.
 - [Netz und Sicherheit](network.md): HTTPS, Reverse-Proxy, ausgesperrt.
 - [Kommandozeile](cli.md): Passwort, Port, Lauschadresse vom System aus.

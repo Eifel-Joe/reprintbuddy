@@ -65,7 +65,7 @@ Ein pausierter Artikel hat eine eigene Karte: der Name des Artikels, dann der Gr
 
 ## Ein Update ist gescheitert oder wurde unterbrochen
 
-Unter *Einstellungen → Update und Sicherung* nennt die Karte Update den Zustand und den Schritt, der gescheitert ist. Einzelheiten stehen im Protokoll des Updates: `journalctl -u reprintbuddy-update`.
+Unter *Einstellungen → Update und Sicherung* nennt die Karte Update den Zustand und den Schritt, der gescheitert ist. Das [Protokoll](../operate/log.md) (*Einstellungen → Protokoll*) zeigt das Ergebnis jedes Updates. Einzelheiten stehen im Systemprotokoll des Updates: `journalctl -u reprintbuddy-update`.
 
 - **Update fehlgeschlagen, nichts wurde geändert** und **Update fehlgeschlagen, vorige Version wiederhergestellt:** Die laufende Version ist wie vorher, und die Datenbank wurde bei Bedarf wiederhergestellt. Behebe die Ursache, die die Seite nennt (oft das Netz: GitHub, PyPI), und starte das Update erneut.
 - **Update wurde unterbrochen** oder **Update fehlgeschlagen, vorige Version ließ sich nicht wiederherstellen:** Führe das Installationsskript noch einmal als root aus (der Befehl von [Installation](../start/install.md); bricht es ab, weil es nicht zur installierten Version passt, nimm den Tag, den es nennt). Es repariert Pakete, Units und den Dienst und behält die Datenbank. Startet Reprintbuddy danach immer noch nicht, stelle die Sicherung wieder her, die die Seite nennt, und führe das Installationsskript noch einmal aus. Das Wiederherstellen steht unter [Update und Sicherung](../operate/update-backup.md); ohne laufende Oberfläche nimm den Befehl `reprintbuddy restore-backup` ([Kommandozeile](../operate/cli.md)).

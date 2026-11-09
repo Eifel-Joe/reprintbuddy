@@ -89,6 +89,7 @@ plugins:
             Operation: Betrieb
             Settings: Einstellungen
             Update and backup: Update und Sicherung
+            Log: Protokoll
             Network and security: Netz und Sicherheit
             Command line: Kommandozeile
             Help: Hilfe
@@ -124,6 +125,7 @@ nav:
   - Operation:
     - Settings: operate/settings.md
     - Update and backup: operate/update-backup.md
+    - Log: operate/log.md
     - Network and security: operate/network.md
     - Command line: operate/cli.md
   - Help:
