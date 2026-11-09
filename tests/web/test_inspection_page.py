@@ -184,16 +184,31 @@ def test_confirm_invalid_numbers(ready_client, scrap):  # Review Focus 3
     response, _ = confirm(ready_client, i, scrap=scrap)
     assert response.status_code == 200
     assert 'class="alert"' in response.text
-    field = en("inspections.field.scrap")
-    if scrap == "2":
-        expected = en("form.invalid_number", field=field, min=0, max=1)
-    else:
-        expected = en("form.invalid_number", field=field, min=0, max=1000)
+    # One text for every wrong value (p93): from 0 to the target number of the print, never a second range.
+    expected = en("form.invalid_number", field=en("inspections.field.scrap"), min=0, max=1)
     assert html.escape(expected) in response.text
+    assert "1000" not in response.text
     assert f'name="scrap"' in response.text and f'value="{html.escape(scrap)}"' in response.text  # typed value stays
     assert count(ready_client, Article, a, "stock") == 0
     assert count(ready_client, Article, a, "provisional") == 1
     assert open_count(ready_client) == 1
+
+
+def test_a_note_in_the_form_is_not_kept(ready_client):  # Spec 6.2: inspection books without a note (p93)
+    a, i = finished(ready_client, units=2)
+    response, _ = confirm(ready_client, i, scrap="1", note="should not be saved")
+    assert response.status_code == 303
+    with sm_of(ready_client).begin() as s:
+        entries = list(s.scalars(select(JournalEntry).where(JournalEntry.kind.like("inspection_%"))))
+    assert entries and all(e.note is None for e in entries)
+
+
+def test_all_good_keeps_no_note_either(ready_client):
+    a, i = finished(ready_client, units=2)
+    response, data = all_good(ready_client, [i])
+    assert response.status_code == 303
+    with sm_of(ready_client).begin() as s:
+        assert [e.note for e in s.scalars(select(JournalEntry).where(JournalEntry.kind == "inspection_good"))] == [None]
 
 
 def test_empty_scrap_is_the_default_zero(ready_client):

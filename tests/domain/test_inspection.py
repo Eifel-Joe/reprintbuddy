@@ -107,7 +107,7 @@ def test_resolve_all_good_no_assembly(db):  # Spec 8.2, 6.2
         ids = (a.id, insert.id, row.id, dispatch.id)
         assert counters(s, a.id) == (1, 0, 0)
     with db.begin() as s:
-        result = inspection.resolve(s, ids[2], 1, "user", note="looks fine")
+        result = inspection.resolve(s, ids[2], 1, "user")
         assert result == inspection.ResolveResult(
             inspection_id=ids[2], good=1, scrap=0, shortages=[], replacement_entry_id=None
         )
@@ -119,7 +119,7 @@ def test_resolve_all_good_no_assembly(db):  # Spec 8.2, 6.2
         assert queue(s) == []
         good = journal(s, "inspection_good")
         assert len(good) == 1
-        assert good[0].note == "looks fine" and good[0].actor == "user"
+        assert good[0].note is None and good[0].actor == "user"  # no note on a check (Spec 6.2, p93)
         assert good[0].details["inspection_id"] == ids[2]
         assert good[0].details["dispatch_id"] == ids[3]
         assert journal(s, "inspection_scrap") == []
