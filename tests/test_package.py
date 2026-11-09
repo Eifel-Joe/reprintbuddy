@@ -64,20 +64,27 @@ def test_respx_floor_supports_the_httpx_floor():
     assert _floor(_requirement("respx", project["optional-dependencies"]["dev"])) >= (0, 22)
 
 
-def test_python_3_12_is_the_floor_everywhere():
-    """v0.3.9 p101: below 3.12 sqlite3 lacks `SQLITE_DBCONFIG_DEFENSIVE`, the setting that keeps a crafted
-    backup from writing into its own schema. The package, the CI matrix and the code agree on 3.12."""
+def test_python_3_13_is_the_floor_everywhere():
+    """v0.3.12 p163: Debian 13 (Python 3.13) is the oldest system the installer accepts. The package, the
+    installer (`require_python` and the floor of `venv_usable`) and the CI matrix (3.13 and the next one, 3.14)
+    name the same floor, so that they cannot drift apart again. (v0.3.9 p101 had set 3.12: below it sqlite3
+    lacks `SQLITE_DBCONFIG_DEFENSIVE`; 3.13 has it too.)"""
     import re
     import tomllib
     from pathlib import Path
 
     root = Path(reprintbuddy.__file__).parents[2]
     project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert project["requires-python"] == ">=3.12"
+    assert project["requires-python"] == ">=3.13"
     workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     versions = re.search(r"python:\s*\[([^\]]*)\]", workflow).group(1)
-    assert [v.strip().strip("\"'") for v in versions.split(",")] == ["3.12", "3.13"]
-    assert "3.11" not in workflow
+    assert [v.strip().strip("\"'") for v in versions.split(",")] == ["3.13", "3.14"]
+    assert "3.12" not in workflow and "3.11" not in workflow
+    script = (root / "install" / "install.sh").read_text(encoding="utf-8")
+    assert "sys.version_info >= (3, 13)" in script  # require_python
+    assert '"${minor}" -ge 13' in script  # venv_usable
+    for old in ("(3, 12)", "-ge 12", "Python 3.12 or newer"):
+        assert old not in script, old
 
 
 def test_no_code_is_left_that_only_serves_python_3_11():

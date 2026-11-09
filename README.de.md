@@ -55,7 +55,7 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
   eigene Benutzer macht Reprintbuddys Aufträge in Bambuddy erkennbar. Die Einrichtung
   führt dich Schritt für Schritt durch.
 - Ein Rechner, eine VM oder ein Container (z. B. Proxmox-LXC, unprivilegiert genügt) mit
-  **Debian 13** oder neuer. Reprintbuddy braucht Python 3.12 oder neuer; Debian 12 hat nur
+  **Debian 13** oder neuer. Reprintbuddy braucht Python 3.13 oder neuer; Debian 12 hat nur
   Python 3.11, deshalb bricht das Installationsskript dort ab. **Auf einem Debian-12-System:** das
   System auf Debian 13 aktualisieren (das Debian-Release-Upgrade), danach den Installationsbefehl
   erneut ausführen. Er erkennt, dass die Python-Umgebung nicht mehr zum System-Python passt, baut sie neu und behält die

@@ -53,7 +53,7 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
   listed under *First run*, and an **API key** of that user. The dedicated user makes
   Reprintbuddy's own jobs recognisable in Bambuddy. The setup guides you through it.
 - A computer, a VM or a container (for example a Proxmox LXC, unprivileged is fine) with **Debian 13** or
-  newer. Reprintbuddy needs Python 3.12 or newer; Debian 12 only has Python 3.11, so the installer
+  newer. Reprintbuddy needs Python 3.13 or newer; Debian 12 only has Python 3.11, so the installer
   refuses to run there. **On a Debian 12 system:** upgrade the system to Debian 13 (the Debian release
   upgrade), then run the installation command again. It notices that the Python environment no longer
   fits the system's Python, builds it anew and keeps the installed version, the database and all settings. An installation made on
