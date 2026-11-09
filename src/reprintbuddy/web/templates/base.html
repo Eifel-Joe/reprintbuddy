@@ -44,6 +44,15 @@
   </form>
 {% endmacro %}
 
+{# Two links to the outside at the foot of the menu: the code and the documentation (p188). The names are
+   the title and the label of the link, as the symbols alone say nothing; each opens in a new tab. #}
+{% macro nav_about() %}
+  <div class="nav-about">
+    <a href="{{ repo_url }}" target="_blank" rel="noopener noreferrer" title="{{ t('nav.repo') }}" aria-label="{{ t('nav.repo') }}">{{ ui.icon('github') }}</a>
+    <a href="{{ docs_url }}" target="_blank" rel="noopener noreferrer" title="{{ t('nav.docs') }}" aria-label="{{ t('nav.docs') }}">{{ ui.icon('book-open') }}</a>
+  </div>
+{% endmacro %}
+
 {# Version and the button that folds the menu. Without JavaScript the button is a link that sets
    the cookie and comes back; sidebar.js takes over the click. Not in the phone menu. #}
 {% macro nav_version(collapsible) %}
@@ -70,12 +79,12 @@
   <details class="mobile-menu">
     <summary><span class="brand">{{ brand() }}</span><span class="menu-button">{{ ui.icon('menu') }}</span><span class="sr-only">{{ t('nav.menu') }}</span></summary>
     <nav class="sidebar-nav">{{ nav_links(active_nav) }}</nav>
-    <div class="sidebar-footer">{{ nav_footer() }}{{ nav_version(false) }}</div>
+    <div class="sidebar-footer">{{ nav_footer() }}{{ nav_about() }}{{ nav_version(false) }}</div>
   </details>
   <aside class="sidebar">
     <div class="brand">{{ brand() }}</div>
     <nav class="sidebar-nav">{{ nav_links(active_nav) }}</nav>
-    <div class="sidebar-footer">{{ nav_footer() }}{{ nav_version(true) }}</div>
+    <div class="sidebar-footer">{{ nav_footer() }}{{ nav_about() }}{{ nav_version(true) }}</div>
   </aside>
   <main class="content">
     {# Shown by live.js instead of reloading while a form of the page is changed: a new version

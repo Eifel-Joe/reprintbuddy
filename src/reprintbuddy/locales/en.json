@@ -696,6 +696,8 @@
   "nav.collapse": "Fold menu",
   "nav.expand": "Unfold menu",
   "nav.menu": "Menu",
+  "nav.repo": "Source code on GitHub",
+  "nav.docs": "Documentation",
   "list.col.actions": "Actions",
   "reorder.already_marked": "Already marked as ordered.",
   "reorder.already_received": "This was already marked as received.",

@@ -696,6 +696,8 @@
   "nav.collapse": "Menü einklappen",
   "nav.expand": "Menü ausklappen",
   "nav.menu": "Menü",
+  "nav.repo": "Quellcode auf GitHub",
+  "nav.docs": "Dokumentation",
   "list.col.actions": "Aktionen",
   "reorder.already_marked": "Schon als bestellt markiert.",
   "reorder.already_received": "Schon als eingetroffen markiert.",
