@@ -137,3 +137,43 @@ def test_the_new_version_once_and_the_start_of_an_update_with_its_result(ops_env
         ("update_started", "user", {"from": "v0.1.0", "to": "v0.2.0"}),
         ("update_result", "system", {"from": "v0.1.0", "to": "v0.2.0", "result": "done"}),
     ]
+
+
+# --- p186 (v0.3.14): the marks of the log after restoring an older backup ------------------------------------
+
+
+def set_mark(env, key: str, state: str) -> None:
+    from reprintbuddy.models import ActivityMark
+
+    with env.client.app.state.sessionmaker.begin() as s:
+        mark = s.get(ActivityMark, key)
+        if mark is None:
+            s.add(ActivityMark(key=key, state=state))
+        else:
+            mark.state = state
+
+
+def test_an_older_backup_does_not_bring_back_states_the_log_already_has(ops_env):
+    """p186. Which states the log has written (Bambuddy unreachable, a new version, the last update) is kept in
+    the database. Restored from a backup, those marks were the backup's: the next start wrote a state again that
+    the log had shown long before. The restore now carries the marks of the database it replaces over."""
+    set_mark(ops_env, "bambuddy.connection", "ok")
+    set_mark(ops_env, "update.available", "v0.1.0")
+    content = backup_tests.made_backup(ops_env)  # the older backup: connection ok, v0.1.0 found
+    set_mark(ops_env, "bambuddy.connection", "unreachable")  # what happened since, and is in the log
+    set_mark(ops_env, "update.available", "v0.2.0")
+    backup_tests.upload(ops_env, content)
+    assert backup_tests.confirm(ops_env).status_code == 200
+    from conftest import make_client
+
+    restarted = make_client(ops_env.db_path)
+    with restarted:
+        log = restarted.app.state.activity
+        log.drain()  # restore_done, started
+        log.transition("bambuddy.connection", "unreachable", "bambuddy_connection", "bambuddy", {"state": "unreachable"})
+        log.transition("update.available", "v0.2.0", "version_found", "system", {"version": "v0.2.0"})
+        log.drain()
+    with restarted.app.state.sessionmaker() as s:
+        kinds = [row.kind for row in s.scalars(select(ActivityEntry).order_by(ActivityEntry.id))]
+    assert "bambuddy_connection" not in kinds and "version_found" not in kinds
+    assert kinds[-2:] == ["restore_done", "started"]

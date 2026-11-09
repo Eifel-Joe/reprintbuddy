@@ -22,7 +22,7 @@ from starlette.templating import Jinja2Templates
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
 from reprintbuddy.activity import states as activity_states
-from reprintbuddy.activity.writer import ActivityLog, read_restored_marker
+from reprintbuddy.activity.writer import ActivityLog, read_restored_marker, restore_marks
 from reprintbuddy.bambuddy.client import BambuddyUnavailable
 from reprintbuddy.bambuddy.factory import make_http_factory
 from reprintbuddy.bambuddy.live import LiveListener
@@ -249,6 +249,9 @@ def _log_start(app: FastAPI) -> None:
     restored = read_restored_marker(app.state.db_path.parent)
     if restored is not None:
         via = restored.pop("via", None)
+        marks = restored.pop("marks", None)
+        if marks is not None:  # p186: before anything is logged into the restored database
+            restore_marks(app.state.sessionmaker, marks)
         activity.record("restore_done", "user", restored, via=via if via == "cli" else None)
     activity.record("started", "system", {"version": __version__})
 
