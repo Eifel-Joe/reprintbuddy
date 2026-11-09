@@ -9,6 +9,7 @@ typed without saving it and shows a fixed text for the outcome, never Home Assis
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
@@ -42,6 +43,12 @@ def _typed(form) -> tuple[dict[str, object], str]:
     return typed, str(form.get("ha_token", "")).strip()
 
 
+def _same_target(a: str, b: str) -> bool:
+    """Scheme, host, port and path: behind a proxy another path can be another service (final review
+    4). The Bambuddy key compares without the path (`routes/settings.py`); that is left as it is."""
+    return st.same_address(a, b) and urlsplit(a).path.rstrip("/") == urlsplit(b).path.rstrip("/")
+
+
 def _checked(
     db: Session, typed: dict[str, object], entered_token: str, *, required: bool
 ) -> tuple[str | None, str | None, str | None, list[str]] | str:
@@ -65,7 +72,7 @@ def _checked(
             token = st.validate("ha_token", entered_token)
         except ValueError:
             return "notify.invalid_token"
-    elif stored_token and url and st.same_address(str(url), stored_url):
+    elif stored_token and url and _same_target(str(url), stored_url):
         token = stored_token
     else:
         if required and stored_token and url:
