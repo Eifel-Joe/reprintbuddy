@@ -38,6 +38,11 @@ from reprintbuddy.web.app import create_app
 # for them without end when stopping and systemd kills the service only after 90 s.
 SHUTDOWN_GRACE_SECONDS = 3
 
+# Uvicorn takes the client's address and scheme (`X-Forwarded-For`, `X-Forwarded-Proto`) only from a proxy
+# on the same machine (Spec 11.4). Named here, not left to uvicorn's default, which an environment variable
+# (`FORWARDED_ALLOW_IPS`) could widen: the scheme decides whether cookies are Secure (p177, `web/securecookies.py`).
+TRUSTED_PROXIES = ["127.0.0.1", "::1"]
+
 
 def _error(message: str) -> int:
     print(f"reprintbuddy: {message}", file=sys.stderr)
@@ -93,9 +98,18 @@ def _serve(args: argparse.Namespace) -> int:
                 ssl_certfile=cert_file,
                 ssl_keyfile=key_file,
                 timeout_graceful_shutdown=SHUTDOWN_GRACE_SECONDS,
+                proxy_headers=True,
+                forwarded_allow_ips=TRUSTED_PROXIES,
             )
     else:
-        uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=SHUTDOWN_GRACE_SECONDS)
+        uvicorn.run(
+            app,
+            host=host,
+            port=port,
+            timeout_graceful_shutdown=SHUTDOWN_GRACE_SECONDS,
+            proxy_headers=True,
+            forwarded_allow_ips=TRUSTED_PROXIES,
+        )
     return 0
 
 

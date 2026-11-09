@@ -42,6 +42,7 @@ from reprintbuddy.ops.versions import VersionInfo, check_versions, is_git_instal
 from reprintbuddy.web import deps
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, BodyLimitMiddleware
+from reprintbuddy.web.securecookies import SecureCookiesOnHttps
 from reprintbuddy.web.subpath import SubPathWarning
 from reprintbuddy.web.flash import pop_flashes
 from reprintbuddy.web.formatting import decimal, fill_percent, local_date, local_day, local_dt, unit
@@ -471,6 +472,8 @@ def create_app(
         same_site="lax",
         https_only=https,
     )
+    # Outside the session: a request that came over HTTPS (also through a trusted proxy) gets Secure cookies.
+    app.add_middleware(SecureCookiesOnHttps)
     # Every body is bounded before anything reads it (v0.3.9 T0, `web/bodylimit.py`); the uploads
     # have limits of their own and refuse a longer declaration with a page of their own.
     app.state.body_limits = {
