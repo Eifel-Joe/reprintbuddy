@@ -455,6 +455,7 @@ def test_all_settings_posts_require_csrf(ready_client):
     )
     assert paths == [
         "/settings/automation",
+        "/settings/automation/main",  # v0.3.14 p167: the main switch on the overview
         "/settings/backup",
         "/settings/bambuddy",
         "/settings/labels",
