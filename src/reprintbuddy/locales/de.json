@@ -621,7 +621,7 @@
   "articles.choose_file_again": "Druckdatei neu wählen",
   "articles.relinked": "Druckdatei neu gewählt: {name}.",
   "articles.change_file": "Druckdatei ändern",
-  "articles.relinked_regroup": "Material oder Farbe haben sich in der neuen Datei geändert (Slots: {slots}). Kreuze die Spulensorten über „Spulensorten ankreuzen“ neu an.",
+  "articles.relinked_regroup": "Material oder Farbe haben sich in der neuen Datei geändert (Slots: {slots}). Kreuze die Spulensorten dieser Slots neu an.",
   "queue.article_archived": "{name} ist archiviert und kann nicht eingereiht werden.",
   "queue.entry_not_found": "Diesen Eintrag in der Warteschlange gibt es nicht.",
   "queue.field.prints": "Drucke",

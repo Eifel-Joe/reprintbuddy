@@ -967,7 +967,9 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
     response = await run_form_action(
         request,
         work=work,
-        success_url=f"/articles/{article_id}",
+        # p153: slots to tick again (the note below says which) are ticked on the filament page; a repeat
+        # of the form did no work (`changed` stays False) and goes to the article as always
+        success_url=lambda: f"/articles/{article_id}/filaments{LATER}" if again and changed else f"/articles/{article_id}",
         flash_key="articles.flash_restored" if archived else "articles.relinked",
         on_error=lambda text, status, exc: _plates_page(
             request, db, file_id, file_base=f"{base}/file", back_base=base, relink_id=article_id,
