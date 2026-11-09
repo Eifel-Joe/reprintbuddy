@@ -172,8 +172,7 @@ def _install_auto_check(app: FastAPI) -> None:
             return bool(st.get_setting(session, "update_check"))
 
     def store(info: VersionInfo) -> None:
-        app.state.version_info = info
-        app.state.installed_tag = info.installed
+        ops_routes.store_versions(app.state, info, actor="system")
 
     async def wait(delay: float) -> None:
         with contextlib.suppress(TimeoutError):
