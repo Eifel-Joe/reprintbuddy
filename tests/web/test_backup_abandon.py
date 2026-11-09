@@ -26,9 +26,11 @@ import time
 import httpx
 import pytest
 from conftest import PASSWORD, csrf_of
+from starlette.requests import Request
 
 from reprintbuddy.ops import backupcrypto as bc
 from reprintbuddy.ops import fullbackup as fb
+from reprintbuddy.web.routes import backup as backup_routes
 
 from test_ops_full_backup import MAINTENANCE, confirm, download, made_backup, upload, work_files
 
@@ -351,3 +353,79 @@ async def test_a_failing_replace_worker_leaves_no_copy_and_asks_to_try_again(ops
     assert response.status_code == 200 and "file is not the cause" in response.text
     assert await settled(ops_env) == []
 
+
+# --- p149 (v0.3.12): a cancellation that reaches the route at once, without the app's middleware -------------
+#
+# Through the app's middleware the cancellation of a download arrives only after the worker has ended (see the
+# module docstring); a server or a middleware stack without that layer delivers it at once. These tests call the
+# route function itself, so `run_in_threadpool` raises `CancelledError` while the worker still runs.
+
+
+def bare_request(env, path: str, body: bytes, content_type: str) -> Request:
+    """A request for the route function alone: no middleware, no session middleware, no CSRF check."""
+    sent = False
+
+    async def receive():
+        nonlocal sent
+        if sent:
+            await asyncio.Event().wait()  # the body is read; the client says nothing more
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": path,
+        "headers": [(b"content-type", content_type.encode()), (b"content-length", str(len(body)).encode())],
+        "query_string": b"",
+        "app": env.client.app,
+        "session": {},
+    }
+    return Request(scope, receive)
+
+
+async def cancel_bare(coro, held: Held):
+    """Cancel the route while the worker is held: the cancellation arrives at once; then the worker goes on."""
+    task = asyncio.create_task(coro)
+    await wait_for(held.entered)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    held.release.set()
+    await wait_for(held.done)
+
+
+@pytest.mark.parametrize("where", ["create_backup", "_write_member"])
+@pytest.mark.parametrize("password", ["", BACKUP_PASSWORD])
+async def test_a_download_cancelled_without_middleware_leaves_no_backup_file(ops_env, monkeypatch, where, password):
+    async def confirmed(request, db, login):
+        return True
+
+    monkeypatch.setattr(backup_routes, "password_confirmed", confirmed)
+    held = Held(monkeypatch, fb, where)
+    body = f"backup_password={password}&backup_password_repeat={password}&login_password=x".encode()
+    request = bare_request(ops_env, "/settings/backup", body, "application/x-www-form-urlencoded")
+    await cancel_bare(backup_routes.download_backup(request, db=None), held)
+    assert await settled(ops_env) == []
+
+
+@pytest.mark.parametrize("where", ["save_upload", "read_manifest"])
+async def test_an_upload_cancelled_without_middleware_leaves_no_uploaded_file(ops_env, monkeypatch, where):
+    """While saving, today's code is saved by accident (closing the upload breaks the worker's read); while
+    reading the manifest the file is complete and nothing removed it."""
+
+    async def no_check(request):
+        return None
+
+    monkeypatch.setattr(backup_routes, "verify_csrf", no_check)
+    content = made_backup(ops_env)  # unencrypted: it holds every secret
+    held = Held(monkeypatch, fb, where)
+    boundary = "p149boundary"
+    body = (
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"backup_file\"; filename=\"b.zip\"\r\n"
+        "Content-Type: application/zip\r\n\r\n"
+    ).encode() + content + f"\r\n--{boundary}--\r\n".encode()
+    request = bare_request(ops_env, "/settings/restore/upload", body, f"multipart/form-data; boundary={boundary}")
+    await cancel_bare(backup_routes.restore_upload(request), held)
+    assert await settled(ops_env) == []
+    assert [n for n in work_files(ops_env) if n.startswith("upload-")] == []

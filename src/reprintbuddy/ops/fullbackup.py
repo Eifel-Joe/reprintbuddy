@@ -309,20 +309,41 @@ def _packed_and_sealed(source: Path, sealer: bc.Sealer) -> Iterable[bytes]:
     yield sealer.finish()
 
 
+def _watched(blocks: Iterable[bytes], abandoned: threading.Event | None) -> Iterable[bytes]:
+    """The blocks, with a look at the flag before each one (see `create_backup`)."""
+    for block in blocks:
+        _check_abandoned(abandoned)
+        yield block
+
+
 def create_backup(
-    db_path: Path, *, work_dir: Path, password: str | None, now: datetime
+    db_path: Path,
+    *,
+    work_dir: Path,
+    password: str | None,
+    now: datetime,
+    abandoned: threading.Event | None = None,
+    target: Path | None = None,
 ) -> CreatedBackup:
     """Write a full backup into `work_dir` and return where it is and how to name it.
 
     The database is read, packed and sealed block by block and written straight into the file: the
     memory needed is a few blocks, not a multiple of the database (v0.3.9 p102). The file is the same
-    as before: the same manifest, the same members, the same bytes for the same salt and nonce."""
+    as before: the same manifest, the same members, the same bytes for the same salt and nonce.
+
+    `target` (default `backup-<token>.zip` in `work_dir`) and `abandoned` (v0.3.12 p149): the file holds
+    every secret. A cancelled request does not stop its worker thread, which would write the file to the
+    end where nobody deletes it. The caller names the file and sets the flag when nobody waits any more,
+    then removes the file; the thread looks at the flag before it begins, after the key derivation, before
+    every block and at the end, and removes what it wrote. Whichever of the two meets the file last deletes
+    it (as in `extract_database`). Tests: tests/ops/test_fullbackup_abandon.py, test_backup_abandon.py."""
+    _check_abandoned(abandoned)
     if not db_path.is_file():
         raise FileNotFoundError(str(db_path))  # sqlite3.connect would create an empty one
     ensure_work_dir(work_dir)
     token = secrets.token_hex(8)
     snapshot = work_dir / f"snapshot-{token}.db"
-    path = work_dir / f"backup-{token}.zip"
+    path = target if target is not None else work_dir / f"backup-{token}.zip"
     blocks: Iterable[bytes] | None = None
     try:
         _snapshot(db_path, snapshot)
@@ -343,6 +364,7 @@ def create_backup(
         if password:
             salt, nonce = bc.new_salt(), bc.new_nonce()
             key, check = bc.derive_key(password, salt, KDF)
+            _check_abandoned(abandoned)  # the key derivation takes seconds
             manifest["encryption"] = {
                 "cipher": CIPHER,
                 "kdf": KDF_NAME,
@@ -372,7 +394,8 @@ def create_backup(
         try:
             with private_file(path) as handle, zipfile.ZipFile(handle, "w") as archive:
                 _write_member(archive, manifest_info, [raw])
-                _write_member(archive, member_info, blocks)
+                _write_member(archive, member_info, _watched(blocks, abandoned))
+            _check_abandoned(abandoned)  # written to the end, but nobody waits for it
         except BaseException:
             with contextlib.suppress(OSError):
                 path.unlink()
@@ -1005,16 +1028,28 @@ def replace_database(
     return before
 
 
-def save_upload(source: IO[bytes], target: Path, *, limit: int = MAX_UPLOAD_BYTES) -> int:
-    """Copy an uploaded file into the work folder, at most `limit` bytes."""
+def save_upload(
+    source: IO[bytes],
+    target: Path,
+    *,
+    limit: int = MAX_UPLOAD_BYTES,
+    abandoned: threading.Event | None = None,
+) -> int:
+    """Copy an uploaded file into the work folder, at most `limit` bytes.
+
+    `abandoned` (v0.3.12 p149, sister of `create_backup`): an unencrypted backup holds every secret; the
+    thread looks at the flag before it begins, before every block and at the end, and removes the file."""
+    _check_abandoned(abandoned)
     total = 0
     try:
         with private_file(target) as handle:
             while chunk := source.read(_CHUNK):
+                _check_abandoned(abandoned)
                 total += len(chunk)
                 if total > limit:
                     raise TooLarge("upload too large")
                 handle.write(chunk)
+        _check_abandoned(abandoned)
     except BaseException:
         with contextlib.suppress(OSError):
             target.unlink()
