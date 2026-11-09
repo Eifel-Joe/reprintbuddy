@@ -56,6 +56,10 @@ from reprintbuddy.web.i18n import translate
 
 router = APIRouter()
 
+# p153: appended to the address of the filament page when a person is led there right after creating
+# an article or changing its print file; the page then offers "Later" instead of "Cancel".
+LATER = "?later=1"
+
 
 class NotSliced(Exception):
     """The chosen print file is not sliced: it cannot become an article (Task 11)."""
@@ -542,7 +546,7 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
             article = catalog.create_article(
                 tx, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail, data=data
             )
-            article_id, article_name = article.id, article.name
+            article_id, article_name, has_slots = article.id, article.name, bool(requirements)
     except FormTokenUsed:
         return duplicate_redirect(request, "/articles")
     except (DomainError, FormTokenInvalid) as exc:
@@ -553,7 +557,14 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
             printers=printers, parts=parts, values=values,
             error=error, field_errors=field_errors, status=error_status(exc),
         )
-    return saved_redirect(request, f"/articles/{article_id}", "articles.created", name=article_name)
+    # p153: a new article has no spool sorts ticked yet, and it is easy to forget (the article would
+    # show "not assigned" for good): the filament page comes first, its save leads to the article.
+    # A plate without filament slots has nothing to assign. A new article is never archived.
+    if not has_slots:
+        return saved_redirect(request, f"/articles/{article_id}", "articles.created", name=article_name)
+    flash(request, "articles.created", name=article_name)
+    flash(request, "articles.created_filament")
+    return RedirectResponse(f"/articles/{article_id}/filaments{LATER}", status_code=303)
 
 
 # ---- detail, thumbnail, settings -------------------------------------------------------------

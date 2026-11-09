@@ -214,6 +214,7 @@
   "articles.new": "New article from print file",
   "articles.create": "Create article",
   "articles.created": "Article {name} created.",
+  "articles.created_filament": "Now assign the filament: tick, for each slot, the spool sorts the article may use. “Later” continues without an assignment.",
   "articles.col.name": "Name / article number",
   "articles.col.stock": "Stock",
   "articles.col.reserved": "Reserved",

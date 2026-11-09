@@ -122,7 +122,8 @@ def test_create_article(bb_client):  # Spec 5.1
     response = bb_client.post(FORM, data=fields(bb_client, sku="A-100"))
     created = articles(bb_client)
     assert len(created) == 1
-    assert response.status_code == 303 and response.headers["location"] == f"/articles/{created[0].id}"
+    # p153: with filament slots the filament page comes first (the article page follows its save)
+    assert response.status_code == 303 and response.headers["location"] == f"/articles/{created[0].id}/filaments?later=1"
     art = created[0]
     assert (art.file_name, art.plate_id, art.file_fingerprint, art.sku) == ("Template A.gcode.3mf", 1, "v1", "A-100")
     assert art.thumbnail == b"\x89PNG\r\n\x1a\n1:1"
@@ -130,6 +131,26 @@ def test_create_article(bb_client):  # Spec 5.1
         rows = s.scalars(select(ArticleFilament)).all()
         assert [(r.slot, r.grams, r.material, r.color_hex) for r in rows] == [(1, 42.5, "PLA", "#000000")]
         assert s.scalars(select(JournalEntry)).all() == []  # creating is no booking
+
+
+def test_create_leads_to_the_filament_page_with_both_notices(bb_client):  # p153
+    response = bb_client.post(FORM, data=fields(bb_client))
+    page = bb_client.get(response.headers["location"])
+    assert page.status_code == 200
+    assert en("articles.created", name="Template A") in page.text
+    assert en("articles.created_filament") in page.text
+    assert en("filament.title") in page.text
+    assert en("articles.created", name="Template A") not in bb_client.get(response.headers["location"]).text  # shown once
+
+
+def test_create_of_a_plate_without_filament_slots_goes_to_the_article_page(bb_client, fake_bambuddy):  # p153
+    fake_bambuddy.set_requirements(1, 1, [])
+    response = bb_client.post(FORM, data=fields(bb_client))
+    created = articles(bb_client)
+    assert len(created) == 1
+    assert response.status_code == 303 and response.headers["location"] == f"/articles/{created[0].id}"
+    page = bb_client.get(response.headers["location"]).text
+    assert en("articles.created", name="Template A") in page and en("articles.created_filament") not in page
 
 
 def test_create_uses_fresh_bambuddy_data_not_hidden_fields(bb_client, fake_bambuddy):

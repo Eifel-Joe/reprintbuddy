@@ -66,7 +66,7 @@ def create_article(client) -> int:
     )
     location = response.headers["location"]
     assert location.startswith("/articles/"), location
-    return int(location.rsplit("/", 1)[1])
+    return int(location.split("/")[2].split("?")[0])  # p153: the filament page of the new article comes first
 
 
 def edit_article(client, article_id, **fields):

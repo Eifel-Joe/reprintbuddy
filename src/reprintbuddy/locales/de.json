@@ -214,6 +214,7 @@
   "articles.new": "Neuer Artikel aus Druckdatei",
   "articles.create": "Artikel anlegen",
   "articles.created": "Artikel {name} angelegt.",
+  "articles.created_filament": "Ordne jetzt das Filament zu: Kreuze je Slot die Spulensorten an, die der Artikel nutzen darf. Mit „Später“ geht es ohne Zuordnung weiter.",
   "articles.col.name": "Name / Artikelnummer",
   "articles.col.stock": "Bestand",
   "articles.col.reserved": "Reserviert",
