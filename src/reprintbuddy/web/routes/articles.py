@@ -1119,13 +1119,27 @@ async def article_confirm_file(request: Request, article_id: int, db: Session = 
         return refused("articles.file_missing")
     file, _plate, requirements, thumbnail = read
 
+    # Confirming is a way of choosing the file again (Spec 5.1): a slot that is another material or
+    # colour in the changed file loses its group, and the person ticks it again on the filament page
+    # (p153; the same rule and the same way as `relink_restore`).
+    again: list[int] = []
+    changed = False
+
     def work(tx):
+        nonlocal changed
+        again.extend(catalog.slots_losing_group(tx, article_id, requirements))  # before the change
         catalog.confirm_article_file(
             tx, article_id, file=file, requirements=requirements, thumbnail=thumbnail, actor="user"
         )
+        changed = True
         return {"name": name}
 
-    return await run_form_action(
-        request, work=work, success_url=f"/articles/{article_id}", flash_key="articles.file_confirmed",
+    response = await run_form_action(
+        request, work=work,
+        success_url=lambda: f"/articles/{article_id}/filaments{LATER}" if again and changed else f"/articles/{article_id}",
+        flash_key="articles.file_confirmed",
         on_error=lambda text, status, exc: _detail_refused(request, db, article_id, text, status),
     )
+    if again and changed:
+        flash(request, "articles.relinked_regroup", warning=True, slots=", ".join(map(str, again)))
+    return response
