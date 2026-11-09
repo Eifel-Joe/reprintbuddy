@@ -156,3 +156,26 @@ def test_the_settings_say_what_counts_without_an_entry(db_path, lan):
     assert f"http://{LAN}:8080" in page
     assert en("settings.qr_address_hint") in page
     assert "special case" in en("settings.qr_address_hint").lower()
+
+
+# ---- the same start of an address without a request: the links of the push messages (Spec 10.6) ----
+
+
+def test_background_base_is_the_servers_own_address(db_path, lan):
+    client = running(db_path, port=8443, tls=True)
+    with sm_of(client)() as s:
+        assert qr.background_base(client.app, s) == f"https://{LAN}:8443"
+
+
+def test_background_base_takes_the_entered_address(db_path, lan):
+    client = running(db_path)
+    with sm_of(client).begin() as s:
+        st.set_setting(s, "qr_base_url", "https://shop.example.org/rb", commit=False)
+    with sm_of(client)() as s:
+        assert qr.background_base(client.app, s) == "https://shop.example.org/rb"
+
+
+def test_background_base_is_none_without_any_address(db_path):
+    client = running(db_path)  # no network address: no link rather than a wrong one
+    with sm_of(client)() as s:
+        assert qr.background_base(client.app, s) is None

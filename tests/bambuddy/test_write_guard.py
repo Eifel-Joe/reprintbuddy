@@ -66,10 +66,16 @@ HTTPX_IMPORTERS = {
     "bambuddy/factory.py",
     "web/app.py",
     "web/rights.py",
+    "notify/homeassistant.py",  # v0.3.12: push messages, never Bambuddy (`check_home_assistant`)
 }
 
 # The one module that sends (checked with `check_source`, not with `check_holder`).
 CLIENT_MODULE = "bambuddy/client.py"
+
+# The second module that sends: push messages to Home Assistant (Spec 10.6). It is not a holder of
+# the Bambuddy client; `check_home_assistant` watches that it can reach nothing else.
+HOME_ASSISTANT_MODULE = "notify/homeassistant.py"
+HOME_ASSISTANT_PATHS = {"/api/services/notify/", "/api/"}
 
 # Modules that import websockets: the live channel only.
 WEBSOCKETS_IMPORTERS = {"bambuddy/live.py"}
@@ -459,7 +465,52 @@ def _holders() -> set[str]:
         for path in (SRC / "web").rglob("*.py")
         if HOLDER_MARK in path.read_text(encoding="utf-8")
     }
-    return (held | _importers("httpx") | HTTPX_IMPORTERS) - {CLIENT_MODULE}
+    return (held | _importers("httpx") | HTTPX_IMPORTERS) - {CLIENT_MODULE, HOME_ASSISTANT_MODULE}
+
+
+def check_home_assistant(text: str) -> list[str]:
+    """Every way the Home Assistant module could reach Bambuddy or anything but its two calls: one
+    HTTP call (`.request`) in the whole module, no import from the Bambuddy package, and no path
+    of Home Assistant's API besides the notify services and the check `/api/`."""
+    problems = []
+    calls = 0
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("reprintbuddy.bambuddy"):
+            problems.append(f"imports {node.module} (line {node.lineno})")
+        if isinstance(node, ast.Import) and any(a.name.startswith("reprintbuddy.bambuddy") for a in node.names):
+            problems.append(f"imports the Bambuddy package (line {node.lineno})")
+        if isinstance(node, ast.Call) and _name(node.func) in GUARDED:
+            if _name(node.func) == "request" and isinstance(node.func, ast.Attribute):
+                calls += 1
+            else:
+                problems.append(f"call of {_name(node.func)} (line {node.lineno})")
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value.startswith("/api")
+            and node.value not in HOME_ASSISTANT_PATHS
+        ):
+            problems.append(f"path {node.value!r} (line {node.lineno})")
+    if calls != 1:
+        problems.append(f"{calls} HTTP calls instead of one")
+    return problems
+
+
+def test_the_home_assistant_module_reaches_nothing_but_its_two_calls():
+    assert check_home_assistant((SRC / HOME_ASSISTANT_MODULE).read_text(encoding="utf-8")) == []
+
+
+@pytest.mark.parametrize(
+    "bypass",
+    [
+        "from reprintbuddy.bambuddy.client import HttpBambuddyClient\n",
+        "async def f(http):\n    await http.post('/api/services/lock/unlock')\n",
+        "async def f(http):\n    await http.request('POST', '/api/states/x')\n",
+    ],
+)
+def test_the_home_assistant_watch_catches_each_bypass(bypass):
+    text = (SRC / HOME_ASSISTANT_MODULE).read_text(encoding="utf-8") + "\n" + bypass
+    assert check_home_assistant(text) != []
 
 
 # ---- the real client -------------------------------------------------------------------

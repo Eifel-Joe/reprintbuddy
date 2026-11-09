@@ -447,6 +447,8 @@ def test_all_settings_posts_require_csrf(ready_client):
         "/settings/labels",
         "/settings/labels/test",
         "/settings/language",
+        "/settings/notify",
+        "/settings/notify/test",
         "/settings/password",
         "/settings/qr",
         "/settings/restart",

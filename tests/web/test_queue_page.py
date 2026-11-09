@@ -127,7 +127,7 @@ def test_queue_regions(bb_client):
     page = bb_client.get("/queue").text
     expected = {
         "summary": "queue article bambuddy",
-        "warnings": "bambuddy queue article settings",
+        "warnings": "bambuddy queue article settings notify",
         "entries": "queue article",
         "manual": "queue article",
         "in-progress": "queue",
@@ -678,7 +678,7 @@ def test_overview_shows_warnings(ready_client):
     page = ready_client.get("/").text
     part = region(page, "warnings")
     assert esc(en("warning.queue_stopped")) in part
-    assert 'data-live-region="warnings" data-live-topics="bambuddy queue article settings"' in page
+    assert 'data-live-region="warnings" data-live-topics="bambuddy queue article settings notify"' in page
     assert en("overview.empty") in page
 
 

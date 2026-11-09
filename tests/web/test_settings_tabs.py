@@ -28,6 +28,7 @@ def test_the_tab_table_has_the_agreed_shape():
         ("automation", "list-ordered", "settings.tab.automation"),
         ("labels", "printer", "settings.tab.labels"),
         ("bambuddy", "link", "settings.tab.bambuddy"),
+        ("notify", "bell", "settings.tab.notify"),  # v0.3.12, Spec 10.6
         ("account", "user", "settings.tab.account"),
         ("maintenance", "download", "settings.tab.maintenance"),
     ]
@@ -39,16 +40,18 @@ def test_the_tab_table_has_the_agreed_shape():
         "password": "account",
         "automation": "automation",
         "labels": "labels",
+        "notify": "notify",
     }
 
 
-def test_six_tabs_general_active_with_its_cards(ready_client):
+def test_seven_tabs_general_active_with_its_cards(ready_client):
     page = ready_client.get("/settings").text
     assert tab_links(page) == [
         (" active", "/settings?tab=general"),
         ("", "/settings?tab=automation"),
         ("", "/settings?tab=labels"),
         ("", "/settings?tab=bambuddy"),
+        ("", "/settings?tab=notify"),
         ("", "/settings?tab=account"),
         ("", "/settings?tab=maintenance"),
     ]

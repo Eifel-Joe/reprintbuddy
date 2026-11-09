@@ -56,6 +56,22 @@ def base_address(request: Request, db: Session) -> str:
     return str(entered) if entered else automatic_base(request)
 
 
+def background_base(app, db: Session) -> str | None:
+    """The same start of an address as in the codes, for a link made without a request (the push
+    messages, Spec 10.6 "Inhalt"): the entered address, else this server's own address in the network
+    with the port it runs on. None when neither is known: the message then has no link."""
+    entered = st.get_setting(db, "qr_base_url")
+    if entered:
+        return str(entered)
+    effective = getattr(getattr(app.state, "ops", None), "effective", None)
+    if effective is None:
+        return None
+    host = netaddr.usable(effective.host) or netaddr.machine_address()
+    if host is None:
+        return None
+    return base_url(host, effective.port, effective.tls)
+
+
 def article_address(base: str, article_id: int) -> str:
     """The address inside the code of an article; `base` has no trailing slash."""
     return f"{base.rstrip('/')}/a/{article_id}"

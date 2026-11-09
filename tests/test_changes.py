@@ -22,6 +22,7 @@ from reprintbuddy.models import (
     Base,
     FilamentSettings,
     Inspection,
+    NotifyMark,
     Part,
     ReorderMark,
 )
@@ -353,3 +354,13 @@ def test_a_ticked_spool_sort_reports_the_article_and_the_filament_page(db, publi
     with db.begin() as s:
         s.delete(s.get(ArticleFilamentSort, (a, 1, sort_id)))
     assert published == [expected]
+
+
+def test_notify_marks_report_nothing(db, published):
+    """The marks of the push messages are bookkeeping that no page shows (Spec 10.6): writing them
+    at every tick must not make open pages fetch their regions again."""
+    with db.begin() as s:
+        s.add(NotifyMark(kind="paused", ref="1", state="due"))
+    with db.begin() as s:
+        s.scalars(select(NotifyMark)).one().state = "sent"
+    assert published == []

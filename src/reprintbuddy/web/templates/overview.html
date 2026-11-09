@@ -4,7 +4,7 @@
 {% block content %}
 {% call ui.page_head("layout-dashboard", t('overview.title'), t('overview.subtitle')) %}{{ ui.poll_button("/") }}{% endcall %}
 {# Pauses and warnings (Spec 7.7, 10.2) until B7 builds the overview around them. #}
-{% call ui.region("warnings", "bambuddy queue article settings") %}{% include "_warnings.html" %}{% endcall %}
+{% call ui.region("warnings", "bambuddy queue article settings notify") %}{% include "_warnings.html" %}{% endcall %}
 <div class="card">
   <p class="muted">{{ t('overview.empty') }}</p>
 </div>

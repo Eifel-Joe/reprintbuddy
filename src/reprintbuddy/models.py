@@ -14,6 +14,7 @@ from sqlalchemy import (
     Index,
     LargeBinary,
     String,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -437,3 +438,30 @@ class ReorderMark(Base):
         DateTime, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
     )
     received_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+
+
+class NotifyMark(Base):
+    """What a push message has reported (Spec 10.6 "Keine Flut"), one row per occasion and thing.
+
+    `kind` is the event (`settings.HA_EVENTS`), `ref` the print, article, spool sort, part or warning.
+    `state`: `watch` seen but not due yet (a trouble needs two regular queries), `due` to be sent,
+    `sent` reported. A state that has settled loses its row, so it reports again when it comes back.
+    `streak` counts the regular queries in a row that saw a trouble; `gone_since` is when a reorder
+    suggestion was last missing while the stock was known (it settles after 7 days).
+    """
+
+    __tablename__ = "notify_marks"
+    __table_args__ = (
+        CheckConstraint("state IN ('watch', 'due', 'sent')", name="ck_notify_marks_state"),
+        CheckConstraint("streak >= 0", name="ck_notify_marks_streak"),
+        UniqueConstraint("kind", "ref", name="uq_notify_marks_kind_ref"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String)
+    ref: Mapped[str] = mapped_column(String)
+    state: Mapped[str] = mapped_column(String)
+    streak: Mapped[int] = mapped_column(default=0)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    gone_since: Mapped[datetime | None] = mapped_column(DateTime, default=None)

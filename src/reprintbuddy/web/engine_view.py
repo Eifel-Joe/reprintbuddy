@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy import settings as st
 from reprintbuddy.domain.engine import EngineWarning, collect_warnings, warning_text
+from reprintbuddy.i18n import translate
+from reprintbuddy.web import notify_view
 
 # Red: Bambuddy does not answer or refuses, or a hand-over is unclear (the answer is not
 # known). Everything else is yellow: a state the user chose or that waits for the user.
@@ -68,4 +70,10 @@ def warnings_context(request: Request, session: Session) -> dict[str, object]:
     status = request.app.state.ticker.status
     lang = str(st.get_setting(session, "language"))
     shown = [_shown(lang, warning) for warning in collect_warnings(session, status)]
+    # Spec 10.2, 10.6: the last push message did not go through. Red like Bambuddy not answering;
+    # it lives in the notifier, not in the engine's list (`collect_warnings` stays the engine's).
+    problem = notify_view.problem(request)
+    if problem is not None:
+        reason = translate(lang, f"notify.outcome.{problem}")
+        shown.append(ShownWarning(translate(lang, "warning.ha_unreachable", reason=reason), "bad"))
     return {"warnings": shown, "last_poll_at": status.last_poll_at}

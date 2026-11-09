@@ -28,12 +28,15 @@ from reprintbuddy.changes import install_change_feed
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.domain import filament, status
 from reprintbuddy.domain.engine import Engine
+from reprintbuddy.notify.events import Rights
+from reprintbuddy.notify.service import Notifier
 from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.autocheck import AutoCheck
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.running import update_just_started, update_running
 from reprintbuddy.ops.versions import VersionInfo, check_versions, is_git_install
 from reprintbuddy.web import deps
+from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, BodyLimitMiddleware
 from reprintbuddy.web.subpath import SubPathWarning
 from reprintbuddy.web.flash import pop_flashes
@@ -56,6 +59,7 @@ from reprintbuddy.web.routes import orders as orders_routes
 from reprintbuddy.web.routes import ops as ops_routes
 from reprintbuddy.web.routes import overview as overview_routes
 from reprintbuddy.web.routes import rights as rights_routes
+from reprintbuddy.web.routes import notify as notify_routes
 from reprintbuddy.web.routes import filament as filament_routes
 from reprintbuddy.web.routes import reorder as reorder_routes
 from reprintbuddy.web.routes import parts as parts_routes
@@ -237,11 +241,19 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await app.state.notifier.stop()  # a message on its way is ended, nothing new starts
         background = list(tasks)
         check = app.state.rights.task  # a check of the key's rights started by a page
         if check is not None:
             background.append(check)
         await stop_background(background)
+
+
+def notify_rights(monitor) -> Rights:
+    """The check of the Bambuddy key at start (Spec 11.3) as the push messages read it (event 7)."""
+    if monitor.status == "missing" and monitor.check is not None:
+        return Rights("missing", tuple(monitor.check.missing))
+    return Rights("ok" if monitor.status == "ok" else "unknown", ())
 
 
 def shared_tls_client_factory() -> Callable[[], httpx.AsyncClient]:
@@ -323,6 +335,17 @@ def create_app(
         publish=live.publish,
     )
     app.state.ticker.add_poll_hook("filament", filament.poll_hook)  # the daily record and receipt check (B6)
+    # Push messages through Home Assistant (Spec 10.6): after every tick, in a task of their own.
+    app.state.notifier = Notifier(
+        sessionmaker,
+        http_factory=app.state.http_client_factory,
+        engine_status=lambda: app.state.ticker.status,
+        rights=lambda: notify_rights(app.state.rights),
+        update_started=app.state.ticker.update_started,
+        base=lambda session: qr_view.background_base(app, session),
+        publish=live.publish,
+    )
+    app.state.ticker.after_tick.append(app.state.notifier.after_tick)
     app.state.run_engine = run_engine
     app.state.ticker_task = None  # the background loop while the app runs (see _lifespan)
     # Bambuddy's live channel (Spec 7.6): a message that may have changed the queue, and every
@@ -420,6 +443,7 @@ def create_app(
     app.include_router(inspection_routes.router)
     app.include_router(qr_routes.router)
     app.include_router(labels_routes.router)
+    app.include_router(notify_routes.router)
     app.include_router(ops_routes.router)
     app.include_router(backup_routes.router)
     app.include_router(live_routes.router)
