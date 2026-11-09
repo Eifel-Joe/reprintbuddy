@@ -504,3 +504,111 @@ async def test_an_upload_cancelled_while_it_is_closed_leaves_no_uploaded_file(op
     with pytest.raises(asyncio.CancelledError):
         await task
     assert [n for n in work_files(ops_env) if n.startswith("upload-")] == []
+
+
+# --- p164 (v0.3.14): a cancellation that arrives while the database is being replaced ---------------------------
+
+
+def staged_restore_request(env, token: str) -> Request:
+    """The confirmation of the staged upload `token`, for the route function alone (no middleware)."""
+    from datetime import UTC, datetime
+
+    body = f"backup_password={BACKUP_PASSWORD}&upload_token={token}&login_password=x".encode()
+    request = bare_request(env, "/settings/restore", body, "application/x-www-form-urlencoded")
+    request.scope["session"] = {backup_routes.SESSION_KEY: {"token": token, "at": datetime.now(UTC).isoformat()}}
+    return request
+
+
+async def test_a_cancellation_while_replacing_still_restarts_once_the_replace_is_done(ops_env, monkeypatch):
+    """p164. Without the app's middleware `run_in_threadpool` raises the cancellation at once while the worker
+    goes on replacing; the route can only leave the restore pending. The worker, once the database is replaced,
+    finds the request gone and asks for the restart itself (Spec 11.6: the restore restarts)."""
+
+    async def confirmed(request, db, login):
+        return True
+
+    monkeypatch.setattr(backup_routes, "password_confirmed", confirmed)
+    upload(ops_env, made_backup(ops_env, BACKUP_PASSWORD))
+    held = Held(monkeypatch, fb, "replace_database")
+    app = ops_env.client.app
+    with app.state.sessionmaker() as db:
+        request = staged_restore_request(ops_env, upload_token(ops_env))
+        await cancel_bare(backup_routes.restore_confirm(request, db=db), held)
+    assert app.state.restore.phase == "restart_pending"
+    assert await restart_asked(ops_env) == [RESTART_CMD]
+    assert await settled(ops_env) == []
+
+
+async def test_a_cancellation_just_after_the_replace_still_restarts(ops_env, monkeypatch):
+    """p164, the other order: the worker has finished (and found the request still there) when the cancellation
+    lands on the route. Then the route hands the restart over before it gives up."""
+
+    async def confirmed(request, db, login):
+        return True
+
+    monkeypatch.setattr(backup_routes, "password_confirmed", confirmed)
+    upload(ops_env, made_backup(ops_env, BACKUP_PASSWORD))
+    finished = threading.Event()
+    real_replace = fb.replace_database
+
+    def replace_then_report(*args, **kwargs):
+        try:
+            return real_replace(*args, **kwargs)
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(fb, "replace_database", replace_then_report)
+    real_run = backup_routes.run_in_threadpool
+
+    async def run_and_be_cancelled(fn, *args, **kwargs):
+        result = await real_run(fn, *args, **kwargs)
+        if finished.is_set() and fn.__name__ == "replace":
+            raise asyncio.CancelledError  # the cancellation lands just as the finished worker returns
+        return result
+
+    monkeypatch.setattr(backup_routes, "run_in_threadpool", run_and_be_cancelled)
+    app = ops_env.client.app
+    with app.state.sessionmaker() as db:
+        request = staged_restore_request(ops_env, upload_token(ops_env))
+        with pytest.raises(asyncio.CancelledError):
+            await backup_routes.restore_confirm(request, db=db)
+    assert app.state.restore.phase == "restart_pending"
+    assert await restart_asked(ops_env) == [RESTART_CMD]
+
+
+def test_the_replace_gate_tells_who_asks_for_the_restart():
+    from reprintbuddy.web.routes.backup import _ReplaceGate
+
+    route_gave_up_first = _ReplaceGate()
+    assert route_gave_up_first.begin() is True
+    assert route_gave_up_first.abort() is False
+    assert route_gave_up_first.finish() is True  # the worker asks for the restart
+    assert route_gave_up_first.finished_before_abort() is False
+
+    worker_finished_first = _ReplaceGate()
+    assert worker_finished_first.begin() is True
+    assert worker_finished_first.finish() is False  # the request is still there: the route asks
+    assert worker_finished_first.abort() is False
+    assert worker_finished_first.finished_before_abort() is True  # ... also when it is cancelled now
+
+
+async def test_a_failing_restore_note_after_the_replace_still_restarts(ops_env, monkeypatch):
+    """p164, sister path: the note for the activity log is written after the database was replaced. If it fails,
+    the restore has still happened; the route must not call it failed (state "idle", no restart)."""
+
+    def fail(*args, **kwargs):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    upload(ops_env, made_backup(ops_env, BACKUP_PASSWORD))
+    monkeypatch.setattr(backup_routes, "write_restored_marker", fail)
+    async with async_client(ops_env) as ac:
+        data = {
+            "csrf_token": await token_of(ac),
+            "backup_password": BACKUP_PASSWORD,
+            "upload_token": upload_token(ops_env),
+            "login_password": PASSWORD,
+        }
+        response = await ac.post("/settings/restore", data=data)
+    assert response.status_code == 200 and "file is not the cause" not in response.text
+    assert ops_env.client.app.state.restore.phase == "restart_pending"
+    assert await restart_asked(ops_env) == [RESTART_CMD]

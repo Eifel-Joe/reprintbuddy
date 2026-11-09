@@ -78,12 +78,21 @@ class _ReplaceGate:
     A cancelled request cannot stop a worker that was handed to a thread, and a thread may start just
     as the cancellation arrives. Either the worker `begin`s (then the database may be replaced and the
     route must not call the restore undone) or the route `abort`s first (then the worker replaces
-    nothing and the route may remove the candidate). Under the lock exactly one of the two succeeds."""
+    nothing and the route may remove the candidate). Under the lock exactly one of the two succeeds.
+
+    p164 (v0.3.14): the same lock settles who asks for the restart once the database is replaced. A
+    cancellation that arrives while the worker replaces leaves the route nothing to wait for; the worker
+    `finish`es and learns that the request is gone, so it asks for the restart itself. If the worker
+    finished first, the route does it (`finished_before_abort`), also when it is cancelled just then.
+    Never both, never neither: the restart must happen once (Spec 11.6).
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._begun = False
         self._aborted = False
+        self._finished = False
+        self._finished_at_abort = False
 
     def begin(self) -> bool:
         with self._lock:
@@ -93,11 +102,22 @@ class _ReplaceGate:
             return True
 
     def abort(self) -> bool:
+        """The route gives up; True when the worker had not begun (and now never will)."""
         with self._lock:
-            if self._begun:
-                return False
             self._aborted = True
-            return True
+            self._finished_at_abort = self._finished
+            return not self._begun
+
+    def finish(self) -> bool:
+        """The worker has replaced the database; True when the route gave up before (the worker restarts)."""
+        with self._lock:
+            self._finished = True
+            return self._aborted
+
+    def finished_before_abort(self) -> bool:
+        """After `abort`: the worker finished while the request was still there, so the route restarts."""
+        with self._lock:
+            return self._finished_at_abort
 
 
 _restarts: set[asyncio.Task] = set()  # strong references: a task nobody awaits any more is not collected
@@ -130,10 +150,29 @@ async def _restart_after_restore(runner):
     running on the state of the old database until someone presses the restart button.
     Test: tests/web/test_backup_abandon.py::test_cancelling_once_the_replace_worker_has_begun_leaves_the_restore_pending
     """
+    return await asyncio.shield(_start_restart(runner))
+
+
+def _start_restart(runner) -> asyncio.Task:
+    """The restart as a task of its own, kept alive and logged by itself (nobody may wait for it)."""
     task = asyncio.ensure_future(in_thread(request_restart, runner))  # sudo may take seconds
     _restarts.add(task)
     task.add_done_callback(_restart_finished)
-    return await asyncio.shield(task)
+    return task
+
+
+def _restart_from_worker(runner) -> None:
+    """The restart, asked for by the replace worker when nobody waits for the request any more (p164).
+
+    Called in the worker's thread: it blocks for the sudo call (up to 15 s) there, not in the event loop.
+    """
+    try:
+        result = request_restart(runner)
+    except Exception as error:  # noqa: BLE001 - nobody waits: the log is the only place left
+        log.warning("restart after restore failed: %s", type(error).__name__)
+        return
+    if not result.ok:
+        log.warning("restart after restore failed: %s", (result.stderr or "").strip()[:300])
 
 
 def _now() -> datetime:
@@ -472,8 +511,16 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         except BaseException:
             _remove(candidate)  # nothing was replaced: the decrypted copy does not wait for the next start
             raise
-        # The restored database is migrated at the next start; that start logs the restore into it.
-        write_restored_marker(data_dir, created_at=manifest.created_at, version=manifest.app_version, via=None)
+        try:
+            # The restored database is migrated at the next start; that start logs the restore into it.
+            write_restored_marker(data_dir, created_at=manifest.created_at, version=manifest.app_version, via=None)
+        except Exception as error:  # noqa: BLE001 - p164: the restore has happened; only its log entry is lost
+            log.warning("restore note for the activity log not written: %s", type(error).__name__)
+        finally:
+            # p164: the database is replaced. Was the request cancelled meanwhile, nobody else asks for the
+            # restart (see `_ReplaceGate`); the old process must not go on with the state of the old database.
+            if gate.finish():
+                _restart_from_worker(app.state.ops.runner)
 
     try:
         async with app.state.ticker.hold():
@@ -494,6 +541,10 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
             # The worker may have replaced the database, or still does: the old process holds state of the
             # old one. Writes stay paused and sign-in and the restart button work (as after a failed restart).
             state.phase = "restart_pending"
+            if gate.finished_before_abort():
+                # p164: the worker finished while the request was still there, so it left the restart to the
+                # route; the cancellation must not drop it. A worker still replacing restarts by itself.
+                _start_restart(app.state.ops.runner)
         raise
     # The old process holds state of the old database in memory (engine, rights): writes
     # and the engine stay paused until it is gone. Signing in and the restart button work,
