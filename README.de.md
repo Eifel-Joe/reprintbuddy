@@ -42,6 +42,16 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 - Es bringt keine eigenen Artikel mit: Artikel, Sets, Zukaufteile und Regeln
   legst du in der Weboberfläche an.
 
+## Bildschirmfotos
+
+Erfundene Beispieldaten. Weitere Bilder stehen auf den [Doku-Seiten](https://eifel-joe.github.io/reprintbuddy/).
+
+![Artikel: Bestand, verfügbarer Bestand und Soll je Artikel](docs/assets/images/de/articles-list.png)
+
+![Zu prüfen: fertige Drucke, die auf Prüfung warten](docs/assets/images/de/inspection.png)
+
+![Bestellvorschläge: Vorschläge für Filament und Zukaufteile](docs/assets/images/de/reorder.png)
+
 ## Voraussetzungen
 
 - Bambuddy 1.3 oder neuer, mit eigener Spulenverwaltung oder mit Spoolman (**Spoolman ist

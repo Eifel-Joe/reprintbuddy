@@ -41,6 +41,16 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 - It contains no articles of its own: you create articles, sets, parts and
   rules in the web interface.
 
+## Screenshots
+
+Invented example data. More pictures are on the [documentation pages](https://eifel-joe.github.io/reprintbuddy/).
+
+![Articles: stock, available stock and target per article](docs/assets/images/en/articles-list.png)
+
+![To check: finished prints waiting for a look](docs/assets/images/en/inspection.png)
+
+![Reorder: suggestions for filament and bought-in parts](docs/assets/images/en/reorder.png)
+
 ## Requirements
 
 - Bambuddy 1.3 or newer, with its own spool management or with Spoolman (**Spoolman is
