@@ -29,7 +29,7 @@ from reprintbuddy.domain.workqueue import Origin
 from reprintbuddy.labels import fields as label_fields, status as label_status
 from reprintbuddy.models import Article, Dispatch
 from reprintbuddy.ops import fullbackup
-from reprintbuddy.ops.status import UPDATE_STEPS, UpdateState
+from reprintbuddy.ops.status import UPDATE_REASONS, UPDATE_STEPS, UpdateState
 from reprintbuddy.web.routes import ops as ops_routes, settings as settings_routes
 from reprintbuddy import settings as st
 from reprintbuddy.notify import homeassistant as ha
@@ -55,6 +55,7 @@ FAMILIES = {
     "labels.problem.": 'f"labels.problem.{problem.key}"',  # what the printer reports before a print
     "ops.msg.": 'f"ops.msg.{code}"',  # message codes of the maintenance actions
     "ops.restore.": 'f"ops.restore.{error.code}"',
+    "ops.update.reason.": 'f"ops.update.reason.{status.reason}"',
     "ops.update.state.": 'f"ops.update.state.{view.update.state}"',
     "ops.update.step.": 'f"ops.update.step.{view.update.step}"',
     "pause.reason.": 'f"pause.reason.{reason}"',
@@ -178,6 +179,7 @@ DERIVED = {
     "labels.problem.": lambda text: _found(r'Problem\(\s*"(\w+)"', inspect.getsource(label_status)),
     "ops.msg.": lambda text: set(ops_routes.OPS_MESSAGES),
     "ops.restore.": lambda text: {fullbackup.PasswordNeeded.code, fullbackup.WrongPassword.code},
+    "ops.update.reason.": lambda text: set(UPDATE_REASONS),
     "ops.update.state.": lambda text: _update_states_shown(),
     "ops.update.step.": lambda text: set(UPDATE_STEPS),
     "pause.reason.": lambda text: set(PAUSE_REASONS),

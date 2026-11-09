@@ -27,8 +27,6 @@ from reprintbuddy.web.routes.bookings import WARNING_KEYS, _active_article, _sho
 
 router = APIRouter()
 
-# The most good units of one print the JSON interface accepts as `good_units`; the domain holds the real limit.
-MAX_GOOD = 1000
 # An id in a form: ASCII digits only, at most 18 of them like every id in an address.
 _ID = re.compile(r"[0-9]{1,18}", re.ASCII)
 # A whole number in a form: ASCII digits, at most 18, a leading minus allowed (the domain refuses it then).
@@ -168,14 +166,14 @@ def _api_error(request: Request, exc: DomainError) -> JSONResponse:
     )
 
 
-def _counts(raw: bytes) -> tuple[int | None, int | str | None]:
+def _counts(raw: bytes) -> tuple[int | str | None, int | str | None]:
     """`(good_units, scrap_units)` of a JSON body; one of them or both, whole numbers, nothing else.
 
     `scrap_units` is the input of the list (Spec 8.2: good = units of the print minus scrap);
     `good_units` stays for the displays that already send it. No `bool` (`true` is an int in
     Python), no `1.0`, no text: a display that sends the wrong type is told so instead of being
     guessed at. The range, and that both add up to the units, is checked against the print.
-    A `scrap_units` of the wrong type is handed on as text for that check (the same text as the page).
+    A count of the wrong type is handed on as text for that check (the same text as the page).
     """
     try:
         body = json.loads(raw)
@@ -186,18 +184,17 @@ def _counts(raw: bytes) -> tuple[int | None, int | str | None]:
     if "good_units" not in body and "scrap_units" not in body:
         raise ValidationError("inspections.invalid_body")
     counts: list[int | None] = []
-    for key, field in (("good_units", "inspections.field.good"), ("scrap_units", "inspections.field.scrap")):
+    for key in ("good_units", "scrap_units"):
         if key not in body:
             counts.append(None)
             continue
         value = body[key]
         if isinstance(value, bool) or not isinstance(value, int):
-            if key == "scrap_units":
-                # Handed on as text, the domain refuses it with the range of the print: the same
-                # text as on the page (p93). `None` stays "not sent" only when the key is missing.
-                counts.append(str(value))
-                continue
-            raise ValidationError("form.invalid_number", field=field, min=0, max=MAX_GOOD)
+            # Handed on as text, the domain refuses it with the range of the print: the same text as on
+            # the page (p93; `good_units` too since v0.3.14 p181, it said "0 to 1000" before).
+            # `None` stays "not sent" only when the key is missing.
+            counts.append(str(value))
+            continue
         counts.append(value)
     return counts[0], counts[1]
 
@@ -247,6 +244,11 @@ async def api_resolve(inspection_id: int, request: Request):
                     select(Inspection.units, Inspection.resolved_at).where(Inspection.id == inspection_id)
                 ).first()
                 still_open = found is not None and found.resolved_at is None
+                if still_open and good is not None and not isinstance(good, int):
+                    # The old field next to the scrap: a wrong type is refused, not ignored.
+                    raise ValidationError(
+                        "form.invalid_number", field="inspections.field.good", min=0, max=found.units
+                    )
                 if (
                     still_open and good is not None
                     and isinstance(scrap, int) and good + scrap != found.units

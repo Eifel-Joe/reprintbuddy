@@ -5,17 +5,21 @@ for existing files under a test folder instead of the real root.
 """
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
+import reprintbuddy
+
 ROOT = Path(__file__).resolve().parents[2]
 INSTALL_SH = ROOT / "install" / "install.sh"
 CLI_SH = ROOT / "install" / "reprintbuddy-cli.sh"
 REPO = "https://example.invalid/reprintbuddy.git"
 RUNUSER = "+ setsid --wait runuser -u reprintbuddy -- env HOME=/var/lib/reprintbuddy"
+PINNED = "v" + reprintbuddy.__version__  # the release the script belongs to and installs (v0.3.14 p168)
 
 
 @pytest.fixture
@@ -104,7 +108,7 @@ def test_dry_run_fresh(bash, tmp_path):
         "useradd --system",
         "chmod 700 /var/lib/reprintbuddy",
         "git clone https://example.invalid/reprintbuddy.git /opt/reprintbuddy",
-        "checkout --quiet --detach vX.Y.Z",
+        "checkout --quiet --detach " + PINNED,
         "python3 -m venv /opt/reprintbuddy/.venv",
         "rm -rf /opt/reprintbuddy/build",
         "-m pip install --no-cache-dir --upgrade /opt/reprintbuddy",
@@ -468,7 +472,7 @@ def test_rerun_after_an_aborted_first_install_switches_to_the_release(bash, tmp_
     out = lines(run(bash, tmp_path, "--repo", REPO))
     assert "Unfinished installation found" in out
     assert "git -C /opt/reprintbuddy fetch --prune --prune-tags --force --tags origin" in out
-    assert "checkout --quiet --detach vX.Y.Z" in out
+    assert "checkout --quiet --detach " + PINNED in out
     assert "git clone" not in out
     assert "Existing installation found, keeping version." not in out
     for line in out.splitlines():
@@ -482,3 +486,92 @@ def test_script_and_python_use_the_same_release_tag_rule():
     number = "(0|[1-9][0-9]*)"
     assert rf"'^v{number}\.{number}\.{number}$'" in INSTALL_SH.read_text(encoding="utf-8")
     assert RELEASE_TAG.pattern == rf"^v{number}\.{number}\.{number}$"
+
+
+# --- v0.3.14 p168: the script installs the release it belongs to (the tag in its address) --------------
+
+
+def test_the_release_in_the_script_is_the_version_of_this_code():
+    """The script is fetched from a tag and installs that tag. It cannot see its own address, so the tag is
+    written into it and set together with the package version (this test fails until it is)."""
+    found = re.findall(r'^RELEASE_TAG="([^"]*)"$', INSTALL_SH.read_text(encoding="utf-8"), re.MULTILINE)
+    assert found == [PINNED]
+
+
+def test_dry_run_checks_out_the_release_of_the_script_not_the_newest(bash, tmp_path):
+    os_release(tmp_path)
+    out = lines(run(bash, tmp_path, "--repo", REPO))
+    assert "checkout --quiet --detach " + PINNED in out
+    assert "vX.Y.Z" not in out
+
+
+@pytest.fixture
+def tagged_repo(tmp_path):
+    """A repository with an older release, the one of the script and a much newer one."""
+    git = shutil.which("git")
+    if not git:
+        pytest.skip("git is not installed")
+    repo = tmp_path / "repo"
+
+    def g(*args):
+        subprocess.run(
+            [git, "-C", repo.as_posix(), "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
+            check=True, capture_output=True,
+        )
+
+    repo.mkdir()
+    subprocess.run([git, "init", "-q", repo.as_posix()], check=True, capture_output=True)
+    for tag in ("v0.0.1", PINNED, "v99.0.0"):
+        (repo / "version.txt").write_text(tag, encoding="utf-8")
+        g("add", "version.txt")
+        g("commit", "-q", "-m", tag)
+        g("tag", tag)
+    return repo
+
+
+SHIM = """#!/bin/bash
+# Stands in for `setsid --wait runuser -u reprintbuddy -- env HOME=... git -C /opt/reprintbuddy ...`:
+# drops the five words in front and runs the rest on the test repository.
+shift 5
+args=()
+for a in "$@"; do args+=("${a//\\/opt\\/reprintbuddy/$FAKE_INSTALL}"); done
+exec "${args[@]}"
+"""
+
+
+def _call_checkout(bash, tmp_path, repo, release):
+    """`checkout_release` of the script on a real repository: the functions are loaded without `main`, and
+    the stand-in for `setsid ... runuser` runs git on the test repository instead of /opt/reprintbuddy."""
+    text = INSTALL_SH.read_text(encoding="utf-8").replace("\r\n", "\n").rstrip()
+    assert text.endswith('main "$@"')
+    text = text.removesuffix('main "$@"').replace(f'RELEASE_TAG="{PINNED}"', f'RELEASE_TAG="{release}"')
+    functions = tmp_path / "functions.sh"
+    functions.write_text(text, encoding="utf-8", newline="\n")
+    shims = tmp_path / "shims"
+    shims.mkdir()
+    (shims / "setsid").write_text(SHIM, encoding="utf-8", newline="\n")
+    (shims / "setsid").chmod(0o755)
+    env = dict(os.environ, FAKE_INSTALL=repo.as_posix(), PATH=f"{shims.as_posix()}{os.pathsep}{os.environ['PATH']}")
+    command = f'source "{functions.as_posix()}"; checkout_release && git -C "{repo.as_posix()}" describe --tags'
+    return subprocess.run(
+        [bash, "-c", command], capture_output=True, text=True, encoding="utf-8", env=env,
+        stdin=subprocess.DEVNULL, timeout=60,
+    )
+
+
+def test_checkout_takes_the_release_of_the_script_even_when_a_newer_one_exists(bash, tmp_path, tagged_repo):
+    done = _call_checkout(bash, tmp_path, tagged_repo, PINNED)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == PINNED
+
+
+def test_checkout_stops_when_the_release_of_the_script_is_not_in_the_repository(bash, tmp_path, tagged_repo):
+    done = _call_checkout(bash, tmp_path, tagged_repo, "v9.9.9")
+    assert done.returncode == 1
+    assert "v9.9.9" in done.stderr and "not found" in done.stderr
+
+
+def test_checkout_refuses_a_release_that_is_no_version_tag(bash, tmp_path, tagged_repo):
+    done = _call_checkout(bash, tmp_path, tagged_repo, "--force")
+    assert done.returncode == 1
+    assert "not a version tag" in done.stderr

@@ -59,9 +59,9 @@ Invented example data. More pictures are on the [documentation pages](https://ei
   optional**). Reprintbuddy reads the filament stock through Bambuddy and never talks to
   Spoolman itself.
 - **Print files stored directly in Bambuddy's file manager**, uploaded and sliced
-  (`.gcode.3mf`). Linked external folders are not enough: Bambuddy keeps no checksum for
+  (`.3mf` or `.gcode.3mf`). Linked external folders are not enough: Bambuddy keeps no checksum for
   their files and does not re-read plates and filament when it rescans them, so a changed
-  version would go unnoticed. New print files can also be uploaded from Reprintbuddy
+  version would go unnoticed (such a file can still be chosen; the choice shows a warning). New print files can also be uploaded from Reprintbuddy
   (optional, see *Uploading print files*), though not into an external folder.
 - A **dedicated Bambuddy user** `reprintbuddy` in its **own Bambuddy group** with the rights
   listed under *First run*, and an **API key** of that user. The dedicated user makes
@@ -90,15 +90,17 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 ```
 
 Run it as root on that system. Fresh Debian systems often come without curl; the first part installs it.
-The installer puts the newest release in place. The tag in the address (`v0.3.13`) is the version of the installer
-script itself, and it belongs to that release. To skip the language question, add the language:
+The installer puts the release in place whose tag is in the address (`v0.3.13` here): script and release are one
+version. To skip the language question, add the language:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.13/install/install.sh)" _ --language de
 ```
 
-The script must come from the tag of the release that gets installed. If it does not, it stops with a message that
-names the right tag when its system files differ from that release's; run it again with that tag in place of `<tag>`:
+To install another version, put its tag in the address in place of `<tag>` (from v0.3.14 on; the scripts of earlier
+tags put the newest release in place). The address of a tag is all it takes: there is no option for the version.
+If Reprintbuddy is already installed, the installer keeps that version and only repairs the rest; when the system
+files of the script differ from those of the installed version, it stops with a message that names the tag to use:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
@@ -109,7 +111,7 @@ What the installer does:
 - installs the packages it needs (`python3`, `python3-venv`, `git`, `curl`, `sudo`,
   `ca-certificates`),
 - creates the system user `reprintbuddy`,
-- puts Reprintbuddy into `/opt/reprintbuddy` on the newest release tag, with its Python
+- puts Reprintbuddy into `/opt/reprintbuddy` on the release tag of the script, with its Python
   environment in `/opt/reprintbuddy/.venv`,
 - creates `/var/lib/reprintbuddy` (mode 700) with the database, the backups and the update state,
 - installs the systemd units `reprintbuddy.service` and `reprintbuddy-update.service`,
@@ -204,7 +206,7 @@ DNS names, are accepted only after setup.
 ## Uploading print files
 
 Under *Articles → New article from print file*, the button *Upload print file* puts a sliced
-3MF file (`.gcode.3mf`, at most 200 MB) into the folder that is open, in Bambuddy's file
+3MF file (`.3mf` or `.gcode.3mf` with G-code inside, at most 200 MB) into the folder that is open, in Bambuddy's file
 manager; then you choose the plate and create the article as usual. Reprintbuddy checks the
 file before it sends anything, because it cannot delete a file in Bambuddy again: only a
 sliced 3MF, Bambuddy's rules for the name, and no file of the same name in that folder
@@ -411,6 +413,18 @@ user name is no obstacle.
 
 Restart the service afterwards (`set-port` and `set-host` need it to take effect).
 `set-host` sets the listen address (for example `0.0.0.0`) if a wrong one locked you out.
+
+## Planned
+
+Ideas for later versions. This is a list of directions, not a promise: there are no dates, and nothing here is certain.
+
+- more label printers, and label sheets (such as Avery) for ordinary printers,
+- a connection to Shopify,
+- receiving orders by email,
+- a display at the shelf (a device of its own) to confirm finished prints and to change the quantity,
+- more ways to send messages: email and a general webhook,
+- several users,
+- pre-releases to choose from in the updater.
 
 ## Contributing
 

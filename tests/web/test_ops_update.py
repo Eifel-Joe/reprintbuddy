@@ -218,6 +218,98 @@ def test_state_is_shown_with_message_and_backup(ops_env):
     assert "/var/lib/reprintbuddy/backups/x.db" in page
 
 
+def _set_language(env, lang):
+    from conftest import sm_of
+
+    with sm_of(env.client).begin() as session:
+        st.set_setting(session, "language", lang, commit=False)
+
+
+def _failed(**kwargs):
+    return UpdateStatus(state="failed", step="fetch", started_at=now(), finished_at=now(), **kwargs)
+
+
+@pytest.mark.parametrize(
+    "lang, expected",
+    [
+        ("en", "The releases could not be fetched: fatal: no network"),
+        ("de", "Die Versionen konnten nicht geholt werden: fatal: no network"),
+    ],
+)
+def test_the_reason_of_a_failed_update_is_in_the_language_of_the_page(ops_env, lang, expected):  # v0.3.14 p176
+    """The helper writes a code next to its English line; the card shows the code in the viewer's language
+    (it showed the English line in the German page)."""
+    git_env(ops_env)
+    _set_language(ops_env, lang)
+    write_status(
+        data_dir(ops_env),
+        _failed(message="fetch: fatal: no network", reason="fetch_failed", params={"detail": "fatal: no network"}),
+    )
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    assert expected in page
+    assert "fetch: fatal: no network" not in page  # not twice, and not the English line
+
+
+def test_every_reason_has_a_text_in_both_languages_that_the_card_can_fill(ops_env):
+    from string import Formatter
+
+    from reprintbuddy.ops.status import UPDATE_REASONS
+
+    git_env(ops_env)
+    locales = i18n.load_locales()
+    for lang in ("en", "de"):
+        _set_language(ops_env, lang)
+        for reason in UPDATE_REASONS:
+            key = f"ops.update.reason.{reason}"
+            names = {n for _, n, _, _ in Formatter().parse(locales[lang][key]) if n}
+            params = {name: f"value-{name}" for name in names}
+            write_status(data_dir(ops_env), _failed(message="the english line", reason=reason, params=params))
+            page = ops_env.client.get("/settings?tab=maintenance").text
+            assert "the english line" not in page, (lang, reason)
+            for value in params.values():
+                assert value in page, (lang, reason, value)
+
+
+@pytest.mark.parametrize("lang, label", [("en", "Backup:"), ("de", "Sicherung:")])
+def test_the_backup_of_a_failed_rollback_is_labelled(ops_env, lang, label):  # review of p176
+    """The English line said "– backup: <path>"; with the reason from the language files the path needs its label."""
+    git_env(ops_env)
+    _set_language(ops_env, lang)
+    write_status(
+        data_dir(ops_env),
+        UpdateStatus(
+            state="rollback_failed", step="rollback", started_at=now(), finished_at=now(),
+            message="health: x – backup: /var/lib/reprintbuddy/backups/x.db", reason="health_failed",
+            backup="/var/lib/reprintbuddy/backups/x.db",
+        ),
+    )
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    assert f"{label} /var/lib/reprintbuddy/backups/x.db" in page
+
+
+def test_a_reason_whose_values_are_missing_falls_back_to_the_english_line(ops_env):
+    git_env(ops_env)
+    _set_language(ops_env, "de")
+    write_status(data_dir(ops_env), _failed(message="fetch: fatal: x", reason="fetch_failed", params={}))
+    assert "fetch: fatal: x" in ops_env.client.get("/settings?tab=maintenance").text
+
+
+def test_a_state_file_without_reason_shows_the_line_as_before(ops_env):
+    git_env(ops_env)
+    _set_language(ops_env, "de")
+    write_status(data_dir(ops_env), _failed(message="fetch: fatal: x"))
+    assert "fetch: fatal: x" in ops_env.client.get("/settings?tab=maintenance").text
+
+
+def test_a_failed_start_of_the_helper_names_its_reason(ops_env):  # p176: written by the route, not the helper
+    git_env(ops_env)
+    check(ops_env)
+    ops_env.runner.on(START_UPDATE_CMD, CommandResult(1, "", "sudo: a password is required\nmore"))
+    post(ops_env, "/settings/update")
+    status = read_status(data_dir(ops_env))
+    assert (status.reason, status.params) == ("start_failed", {"detail": "sudo: a password is required"})
+
+
 def test_update_posts_require_csrf(ops_env):
     git_env(ops_env)
     csrf_of(ops_env.client, "/settings")

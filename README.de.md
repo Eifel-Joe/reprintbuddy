@@ -59,10 +59,10 @@ Erfundene Beispieldaten. Weitere Bilder stehen auf den [Doku-Seiten](https://eif
 - Bambuddy 1.3 oder neuer, mit eigener Spulenverwaltung oder mit Spoolman (**Spoolman ist
   optional**). Reprintbuddy liest den Filamentbestand über Bambuddy und spricht nie selbst
   mit Spoolman.
-- **Druckdateien direkt in Bambuddys Dateimanager**, hochgeladen und geslict (`.gcode.3mf`).
+- **Druckdateien direkt in Bambuddys Dateimanager**, hochgeladen und geslict (`.3mf` oder `.gcode.3mf`).
   Extern eingebundene Ordner reichen nicht: Für ihre Dateien führt Bambuddy keine Prüfsumme
   und liest Platten und Filament beim erneuten Einlesen nicht neu, eine geänderte Fassung
-  bliebe unbemerkt. Neue Druckdateien lassen sich auch aus Reprintbuddy hochladen (optional,
+  bliebe unbemerkt (so eine Datei lässt sich trotzdem wählen; die Auswahl zeigt eine Warnung). Neue Druckdateien lassen sich auch aus Reprintbuddy hochladen (optional,
   siehe *Druckdateien hochladen*), aber nicht in einen externen Ordner.
 - Ein **eigener Bambuddy-Benutzer** `reprintbuddy` in einer **eigenen Bambuddy-Gruppe** mit den
   Rechten, die unter *Erster Aufruf* stehen, und ein **API-Schlüssel** dieses Benutzers. Der
@@ -93,17 +93,18 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 ```
 
 Als root auf diesem System ausführen. Frische Debian-Systeme bringen oft kein curl mit; der erste Teil installiert es.
-Das Skript legt das neueste Release auf. Der Tag in der Adresse (`v0.3.13`) ist die Version des Installationsskripts
-selbst, und sie gehört zu diesem Release.
+Das Skript legt das Release auf, dessen Tag in der Adresse steht (hier `v0.3.13`): Skript und Release sind eine
+Version.
 Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.13/install/install.sh)" _ --language de
 ```
 
-Das Skript muss vom Tag des Releases stammen, das installiert wird. Tut es das nicht, bricht es ab, wenn sich seine
-Systemdateien von denen des Releases unterscheiden, und nennt den richtigen Tag; führe es dann mit diesem Tag anstelle
-von `<tag>` noch einmal aus:
+Willst du eine andere Version installieren, setzt du ihren Tag anstelle von `<tag>` in die Adresse (ab v0.3.14; die
+Skripte früherer Tags legen das neueste Release auf). Mehr braucht es nicht: eine Option für die Version gibt es nicht.
+Ist Reprintbuddy schon installiert, behält das Skript diese Version und bessert nur den Rest aus; unterscheiden sich
+die Systemdateien des Skripts von denen der installierten Version, bricht es ab und nennt den Tag, den du nehmen musst:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
@@ -114,7 +115,7 @@ Das Skript
 - installiert die nötigen Pakete (`python3`, `python3-venv`, `git`, `curl`, `sudo`,
   `ca-certificates`),
 - legt den Systembenutzer `reprintbuddy` an,
-- legt Reprintbuddy auf dem neuesten Release-Tag nach `/opt/reprintbuddy` und die
+- legt Reprintbuddy auf dem Release-Tag des Skripts nach `/opt/reprintbuddy` und die
   Python-Umgebung nach `/opt/reprintbuddy/.venv`,
 - legt `/var/lib/reprintbuddy` (Rechte 700) mit Datenbank, Sicherungen und Update-Stand an,
 - richtet die systemd-Einheiten `reprintbuddy.service` und `reprintbuddy-update.service` ein,
@@ -215,7 +216,7 @@ Einrichtung akzeptiert.
 ## Druckdateien hochladen
 
 Unter *Artikel → Neuer Artikel aus Druckdatei* legt der Knopf *Druckdatei hochladen* eine
-geslicte 3MF-Datei (`.gcode.3mf`, höchstens 200 MB) in den gerade geöffneten Ordner in
+geslicte 3MF-Datei (`.3mf` oder `.gcode.3mf` mit G-Code darin, höchstens 200 MB) in den gerade geöffneten Ordner in
 Bambuddys Dateimanager; danach wählst du wie gewohnt die Platte und legst den Artikel an.
 Reprintbuddy prüft die Datei, bevor er etwas schickt, weil er eine Datei in Bambuddy nicht
 wieder löschen kann: nur eine geslicte 3MF, Bambuddys Regeln für den Namen und keine Datei
@@ -433,6 +434,18 @@ ein vergessener Benutzername ist also kein Hindernis.
 
 Danach den Dienst neu starten (`set-port` und `set-host` wirken erst dann).
 `set-host` setzt die Lauschadresse (zum Beispiel `0.0.0.0`), falls dich eine falsche ausgesperrt hat.
+
+## Geplant
+
+Ideen für spätere Versionen. Das ist eine Liste von Richtungen, kein Versprechen: Es gibt keine Termine, und nichts davon ist sicher.
+
+- weitere Etikettendrucker und Etikettenbögen (etwa von Avery) für gewöhnliche Drucker,
+- eine Anbindung an Shopify,
+- Bestelleingang per E-Mail,
+- eine Anzeige am Regal (ein eigenes Gerät), um fertige Drucke zu bestätigen und die Stückzahl zu ändern,
+- weitere Wege für Nachrichten: E-Mail und ein allgemeiner Webhook,
+- mehrere Benutzer,
+- Vorabversionen, die sich im Updater wählen lassen.
 
 ## Mitmachen
 

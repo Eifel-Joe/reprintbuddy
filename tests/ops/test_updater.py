@@ -137,6 +137,7 @@ def test_no_newer_release(update_env):
     result = e.update()
     assert result.state == "failed"
     assert "no newer release" in result.message
+    assert (result.reason, result.params) == ("no_newer", {})  # p176
     assert not e.called("git", "-C", e.d, "checkout")
     assert RESTART_WAIT_CMD not in e.runner.calls
 
@@ -147,6 +148,7 @@ def test_unknown_target(update_env, target):
     result = e.update(target=target)
     assert result.state == "failed"
     assert f"unknown target {target}" in result.message
+    assert (result.reason, result.params) == ("unknown_target", {"detail": target})  # p176
     assert not e.called("git", "-C", e.d, "checkout")
 
 
@@ -161,6 +163,7 @@ def test_fetch_fails_nothing_changed(update_env):
     result = e.update()
     assert result.state == "failed" and result.step == "fetch"
     assert result.message == "fetch: fatal: no network"
+    assert (result.reason, result.params) == ("fetch_failed", {"detail": "fatal: no network"})  # p176
     assert not e.called("git", "-C", e.d, "checkout")
     assert RESTART_WAIT_CMD not in e.runner.calls
     assert e.queue_cap() == 7
@@ -192,6 +195,7 @@ def test_pip_fails_rolls_back(update_env):
     assert STOP_CMD in e.runner.calls and START_CMD in e.runner.calls
     assert result.state == "rolled_back"
     assert result.message.startswith("install:")
+    assert (result.reason, result.params) == ("install_failed", {"detail": "ERROR: no network"})  # p176
 
 
 def test_pip_offline_in_the_rollback_too_is_still_a_rollback(update_env):
@@ -218,6 +222,8 @@ def test_version_mismatch_rolls_back(update_env):
     result = e.update()
     assert result.state == "rolled_back"
     assert result.message.startswith("verify:")
+    assert result.reason == "verify_failed"  # p176
+    assert result.params == {"expected": "reprintbuddy 0.2.0", "seen": "reprintbuddy 0.1.9"}
 
 
 def test_migrate_fails_restores_db(update_env):
@@ -232,6 +238,7 @@ def test_migrate_fails_restores_db(update_env):
     result = e.update()
     assert e.queue_cap() == 7
     assert result.state == "rolled_back" and result.message.startswith("migrate:")
+    assert (result.reason, result.params) == ("migrate_failed", {"detail": "migration failed"})  # p176
 
 
 def test_unhealthy_after_restart_rolls_back(update_env):
@@ -240,6 +247,7 @@ def test_unhealthy_after_restart_rolls_back(update_env):
     result = e.update()
     assert result.state == "rolled_back"
     assert result.message.startswith("health:")
+    assert (result.reason, result.params) == ("health_failed", {})  # p176
     assert e.runner.calls.count(RESTART_WAIT_CMD) == 1  # the update's own restart
     assert e.runner.calls[-1] == START_CMD or START_CMD in e.runner.calls
 
@@ -249,6 +257,7 @@ def test_restart_command_failure_rolls_back(update_env):
     e.runner.on(RESTART_WAIT_CMD, CommandResult(1, "", "sudo: a password is required"))
     result = e.update()
     assert result.state == "rolled_back" and result.message.startswith("restart:")
+    assert (result.reason, result.params) == ("restart_failed", {"detail": "sudo: a password is required"})  # p176
 
 
 def test_rollback_fails(update_env):
@@ -258,6 +267,7 @@ def test_rollback_fails(update_env):
     assert result.state == "rollback_failed"
     assert result.backup and result.backup in result.message
     assert " – backup: " in result.message
+    assert result.reason == "health_failed"  # p176: the cause stays named when the rollback fails too
 
 
 def test_the_database_is_restored_while_the_service_is_stopped(update_env):
@@ -432,6 +442,7 @@ def test_a_failed_snapshot_stops_before_pip_touches_anything(update_env, monkeyp
     result = e.update()
     assert result.state == "rolled_back"
     assert result.message.startswith("install: cannot back up the Python environment")
+    assert (result.reason, result.params) == ("snapshot_failed", {"detail": "no space left on device"})  # p176
     forward_pip = [c for c in e.runner.calls if c[:3] == (e.py, "-m", "pip")]
     assert len(forward_pip) == 1  # only the rollback's own reinstall; the update never ran pip
 
@@ -512,6 +523,7 @@ def test_an_environment_with_an_older_python_than_the_new_version_needs_rolls_ba
     assert result.message.startswith("install:")
     for word in ("Python 3.13", f"Python {found}", "install command"):
         assert word in result.message, result.message
+    assert (result.reason, result.params) == ("python_too_old", {"needed": "3.13", "found": found})  # p176
     assert "ERROR" not in result.message  # pip's line is not shown raw
 
 
@@ -634,3 +646,4 @@ def test_a_status_file_that_cannot_be_written_does_not_stop_the_update(update_en
 
     monkeypatch.setattr(module, "write_status", broken)
     assert e.update().state == "succeeded"
+

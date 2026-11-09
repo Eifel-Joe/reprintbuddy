@@ -4,10 +4,10 @@ Ein Artikel ist etwas, das du auf Lager hast und verkaufst, zum Beispiel „Exam
 
 ## Artikel aus einer Druckdatei anlegen
 
-Du brauchst eine geslicte Druckdatei in Bambuddys Dateimanager. Ungeslicte Dateien können kein Artikel werden: erst slicen und die geslicte Datei (`.gcode.3mf`) in Bambuddy ablegen, oder [aus Reprintbuddy hochladen](#druckdatei-hochladen).
+Du brauchst eine geslicte Druckdatei in Bambuddys Dateimanager. Ungeslicte Dateien können kein Artikel werden: erst slicen und die geslicte Datei (`.3mf` oder `.gcode.3mf`) in Bambuddy ablegen, oder [aus Reprintbuddy hochladen](#druckdatei-hochladen).
 
 !!! warning "Druckdateien direkt in Bambuddys Dateimanager verwenden"
-    Reprintbuddy arbeitet zuverlässig nur mit Druckdateien, die direkt in Bambuddys Dateimanager liegen. Für Dateien in einem Ordner, der von außen in Bambuddy eingebunden ist (externer Ordner), führt Bambuddy keine Prüfsumme und frischt beim erneuten Einlesen des Ordners nur das Änderungsdatum auf, nicht die Platten und das Filament. Eine neue Fassung so einer Datei bliebe unbemerkt. Siehe [Grenzen](../help/limits.md).
+    Reprintbuddy arbeitet zuverlässig nur mit Druckdateien, die direkt in Bambuddys Dateimanager liegen. Für Dateien in einem Ordner, der von außen in Bambuddy eingebunden ist (externer Ordner), führt Bambuddy keine Prüfsumme und frischt beim erneuten Einlesen des Ordners nur das Änderungsdatum auf, nicht die Platten und das Filament. Eine neue Fassung so einer Datei bliebe unbemerkt. Du kannst so eine Datei trotzdem wählen; die Seiten der Auswahl zeigen dann eine Warnung. Siehe [Grenzen](../help/limits.md).
 
 1. Öffne *Artikel* und klicke auf **Neuer Artikel aus Druckdatei**.
 2. Durchsuche unter **Druckdatei wählen** Bambuddys Ordner. Der Pfad über der Liste (er beginnt mit **Alle Dateien**) führt dich wieder nach oben. Du kannst zwischen **Kacheln** und **Liste** umschalten. Gezeigt werden nur geslicte Dateien; ein Hinweis zählt die ausgeblendeten ungeslicten Dateien des Ordners.
@@ -31,7 +31,7 @@ Dasselbe Formular öffnet sich auf der Artikelseite unter **Einstellungen änder
 
 | Feld | Bedeutung | Vorgabe |
 |---|---|---|
-| **Name** | Freier Text, bis 200 Zeichen. | Der Dateiname ohne `.gcode.3mf` |
+| **Name** | Freier Text, bis 200 Zeichen. | Der Dateiname ohne Endung (`.gcode.3mf` oder `.3mf`) |
 | **Artikelnummer** | Freiwillig, bis 64 Zeichen. Muss unter allen Artikeln und Sets eindeutig sein. | leer |
 | **Etikettentext** | Freiwilliger Text für das [Etikett](labels.md), zum Beispiel das Regalfach (bis 60 Zeichen). | leer |
 | **Stück je Druck** | Wie viele Einheiten ein Druck dieser Platte liefert, 1 bis 1000. Danach rechnet Reprintbuddy aus, wie viele Drucke ein Nachdruck braucht. | 1 |
@@ -55,7 +55,7 @@ Statt eine Datei zu wählen, die schon in Bambuddy liegt, kannst du eine hochlad
 
 Das prüft Reprintbuddy, bevor es etwas sendet (eine hochgeladene Datei lässt sich aus Reprintbuddy nicht wieder löschen):
 
-- Es ist eine geslicte 3MF-Datei (`.gcode.3mf`): eine Zip-Datei, die G-Code enthält. Reprintbuddy liest nur ihr Inhaltsverzeichnis und entpackt nichts.
+- Es ist eine geslicte 3MF-Datei (`.3mf` oder `.gcode.3mf`): eine Zip-Datei, die G-Code enthält. Reprintbuddy liest nur ihr Inhaltsverzeichnis und entpackt nichts.
 - Sie ist höchstens 200 MB groß. Diese Grenze ist fest.
 - Der Name entspricht Bambuddys Regeln: kein `< > : " / \ | ? *`, keine Steuerzeichen, kein Leerzeichen oder Punkt am Ende, höchstens 255 Byte.
 - Im Ordner liegt keine Datei gleichen Namens (Groß- und Kleinschreibung zählt nicht). Dann wird nichts hochgeladen, und die Seite bietet **Artikel aus der vorhandenen Datei anlegen** an. Benenne deine Datei um oder nimm die vorhandene. Überschrieben oder automatisch umbenannt wird nie.

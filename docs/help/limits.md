@@ -13,7 +13,7 @@ How Reprintbuddy notices a changed print file: it compares the checksum that Bam
 
 - A new version of the file under the same name goes **unnoticed**: no warning, no pause. The article keeps printing, with whatever the new file contains. The plates and the filament shown in Reprintbuddy can be out of date as well.
 - Only a file that is renamed or gone is still noticed.
-- Reprintbuddy does not stop you from choosing such a file, and it does not warn you about it.
+- Reprintbuddy does not stop you from choosing such a file, but it warns you: the folder list and the plate page show a note while you choose, also when you change the print file of an article.
 - You cannot upload into an external folder: the **Upload print file** button is missing there, and an attempt is refused before anything is sent to Bambuddy.
 
 To be safe, keep your print files in Bambuddy's own file manager. If an article uses a file from an external folder, upload or move the file into Bambuddy's file manager and choose it for the article with **Change print file** (see [Articles](../use/articles.md)).

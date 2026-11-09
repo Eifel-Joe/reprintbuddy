@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from string import Formatter
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -34,6 +35,7 @@ from reprintbuddy.ops.runner import CommandResult, in_thread
 from reprintbuddy.ops.service import request_restart, start_update_unit
 from reprintbuddy.ops.status import (
     BUSY_STATES,
+    UPDATE_REASONS,
     UPDATE_STEPS,
     UpdateStatus,
     is_busy,
@@ -52,6 +54,7 @@ from reprintbuddy.web.deps import get_db, render
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
 from reprintbuddy.web.forms import duplicate_redirect
+from reprintbuddy.web.i18n import translate
 
 log = logging.getLogger("reprintbuddy.ops")
 router = APIRouter()
@@ -113,6 +116,8 @@ class OpsView:
     state_params: dict[str, str] = field(default_factory=dict)  # values for the text of `state_key`
     state_key: str | None = None  # translation key for the update state
     step_key: str | None = None  # translation key for the running step
+    reason_key: str | None = None  # translation key for why the update failed (p176), if the state file names one
+    reason_params: dict[str, str] = field(default_factory=dict)
 
 
 def _display_host(request: Request, effective: EffectiveServer) -> str:
@@ -205,7 +210,25 @@ def ops_view(request: Request, session: Session, busy: bool | None = None) -> Op
         view.state_key = f"ops.update.state.{view.update.state}"
     if (view.busy or view.interrupted) and view.update.step in UPDATE_STEPS:
         view.step_key = f"ops.update.step.{view.update.step}"
+    view.reason_key, view.reason_params = _reason_text(view.update)
     return view
+
+
+def _reason_text(status: UpdateStatus) -> tuple[str | None, dict[str, str]]:
+    """The text of why an update failed, in the language of the viewer (v0.3.14 p176).
+
+    The helper writes a code and its values next to the English line (`UpdateStatus.reason`, `params`).
+    A state file without a code (written by an older version, or by hand), with a code this version does
+    not know or with values the text needs and the file does not have gives (None, {}); the card then shows
+    the English line as before. `detail` is a technical line of git, pip or the system and stays as it is.
+    """
+    if status.reason not in UPDATE_REASONS:
+        return None, {}
+    key = f"ops.update.reason.{status.reason}"
+    needed = {name for _, name, _, _ in Formatter().parse(translate("en", key)) if name}
+    if not needed <= set(status.params):
+        return None, {}
+    return key, {name: status.params[name] for name in needed}
 
 
 def _queued_left_behind(view: OpsView, db_path) -> None:
@@ -485,6 +508,8 @@ async def _start_update(request: Request):
                 started_at=now,
                 finished_at=_utc_now(),
                 message=f"start: {reason}",
+                reason="start_failed",
+                params={"detail": reason},
             ),
         )
         return _back("start_failed")

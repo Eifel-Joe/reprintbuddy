@@ -29,6 +29,8 @@
   {{ ui.layout_toggle(layout_links) }}
   {{ to_articles(upload_href) }}
 </div>
+{#- p169: the files of a folder linked from outside can be chosen, with this warning. -#}
+{% if external %}<p class="notice" role="status">{{ ui.icon('triangle-alert') }}{{ t('articles.external_hint') }}</p>{% endif %}
 {% if subfolders or files %}
 {% call ui.collection(layout) %}
 <div class="card table-wrap table-card">

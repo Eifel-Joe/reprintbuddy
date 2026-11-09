@@ -4,6 +4,8 @@
 {% block content %}
 {% call ui.page_head("package", file.filename, t('articles.choose_plate')) %}{% endcall %}
 {% if error %}<div class="card"><p class="alert" role="alert">{{ error }}</p></div>{% endif %}
+{#- p169: a file from a folder linked from outside can be chosen, with this warning. -#}
+{% if external %}<p class="notice" role="status">{{ ui.icon('triangle-alert') }}{{ t('articles.external_hint') }}</p>{% endif %}
 <div class="plate-grid">
   {% for plate in plates %}
   <div class="card plate">

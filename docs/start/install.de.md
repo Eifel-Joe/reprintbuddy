@@ -14,13 +14,13 @@ Als root auf diesem System ausführen:
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v{{ version }}/install/install.sh)"
 ```
 
-Frische Debian-Systeme haben oft kein curl; der erste Teil installiert es. Das Skript legt das **neueste Release** auf. Der Tag in der Adresse (`v{{ version }}`) ist die Version des Installationsskripts selbst, und sie gehört zu diesem Release. Das Skript fragt nach der Sprache der Oberfläche (Englisch oder Deutsch). Um die Frage zu überspringen, hängst du die Sprache an:
+Frische Debian-Systeme haben oft kein curl; der erste Teil installiert es. Das Skript legt das **Release auf, dessen Tag in der Adresse steht** (hier `v{{ version }}`): Skript und Release sind eine Version. Das Skript fragt nach der Sprache der Oberfläche (Englisch oder Deutsch). Um die Frage zu überspringen, hängst du die Sprache an:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v{{ version }}/install/install.sh)" _ --language de
 ```
 
-Das Skript muss vom Tag des Releases stammen, das installiert wird. Tut es das nicht, bricht es ab, wenn sich seine Systemdateien von denen des Releases unterscheiden, und nennt den richtigen Tag; dann führst du es mit diesem Tag anstelle von `<tag>` noch einmal aus:
+Willst du eine andere Version installieren, setzt du ihren Tag anstelle von `<tag>` in die Adresse (ab v0.3.14; die Skripte früherer Tags legen das neueste Release auf). Mehr braucht es nicht: eine Option für die Version gibt es nicht. Ist Reprintbuddy schon installiert, behält das Skript diese Version und bessert nur den Rest aus; unterscheiden sich die Systemdateien des Skripts von denen der installierten Version, bricht es ab und nennt den Tag, den du nehmen musst:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
@@ -30,7 +30,7 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 
 - installiert die Pakete, die es braucht (`python3`, `python3-venv`, `git`, `curl`, `sudo`, `ca-certificates`),
 - legt den Systembenutzer `reprintbuddy` an,
-- legt Reprintbuddy auf dem neuesten Release-Tag nach `/opt/reprintbuddy`, mit der Python-Umgebung in `/opt/reprintbuddy/.venv`,
+- legt Reprintbuddy auf dem Release-Tag des Skripts nach `/opt/reprintbuddy`, mit der Python-Umgebung in `/opt/reprintbuddy/.venv`,
 - legt `/var/lib/reprintbuddy` (Modus 700) an, mit Datenbank, Sicherungen und Update-Zustand,
 - installiert die systemd-Units `reprintbuddy.service` und `reprintbuddy-update.service`,
 - installiert eine sudoers-Regel in `/etc/sudoers.d/reprintbuddy`, mit der der Dienstbenutzer genau diese Befehle als root ausführen darf und sonst nichts (die letzten beiden gehören zum Zurückrollen eines fehlgeschlagenen Updates, das die Datenbank zurückspielt, während der Dienst steht):

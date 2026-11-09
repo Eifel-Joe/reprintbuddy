@@ -26,6 +26,18 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 
 The menu on the left (a button on a phone) leads to every page. At its foot are **Open Bambuddy** (if Bambuddy is connected) and **Log out**, then two symbols: the GitHub mark opens the source code, the open book opens this documentation, each in a new tab. Under them stands the version; on a computer the button that folds the menu to symbols is next to it. The German interface links to the German pages.
 
+## Planned
+
+Ideas for later versions. This is a list of directions, not a promise: there are no dates, and nothing here is certain.
+
+- more label printers, and label sheets (such as Avery) for ordinary printers,
+- a connection to Shopify,
+- receiving orders by email,
+- a display at the shelf (a device of its own) to confirm finished prints and to change the quantity,
+- more ways to send messages: email and a general webhook,
+- several users,
+- pre-releases to choose from in the updater.
+
 ## Where to go next
 
 | I want to … | Page |

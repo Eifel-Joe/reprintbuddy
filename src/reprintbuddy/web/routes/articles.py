@@ -396,6 +396,7 @@ async def _browse(request: Request, folder: str | None, base: str, file_base: st
         layout=layout,
         layout_links=listing.layout_links(request, layout),
         upload_href=upload_href,
+        external=is_external_folder(folders, folder_id),  # p169: the files here are chosen with a warning
     )
 
 
@@ -426,6 +427,9 @@ async def _plates_page(
     try:
         file = await client.get_file(file_id)
         plates = await client.list_plates(file_id) if file is not None and file.sliced else []
+        # p169: a file from a folder linked from outside (or below one) is chosen with a warning; the
+        # folder is read fresh, as the block on uploading does.
+        external = file is not None and file.sliced and is_external_folder(await client.list_folders(), file.folder_id)
     except BAMBUDDY_ERRORS:
         return _problem(request, "articles.bambuddy_error", relink=relink_id is not None)
     if file is None:
@@ -443,6 +447,7 @@ async def _plates_page(
         file_base=file_base,
         relink_id=relink_id,
         relink_archived=relink_archived,
+        external=external,
         error=error,
         back=f"{back_base}?folder={file.folder_id}" if file.folder_id is not None else back_base,
     )
