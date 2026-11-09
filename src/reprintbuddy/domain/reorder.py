@@ -98,11 +98,14 @@ def part_demand(session: Session) -> dict[int, int]:
 
 
 def part_consumption(session: Session, part_id: int, today: date) -> float:
-    """Units per day from the assembly bookings of the last 30 days (Spec 9.2).
+    """Units per day from the bookings of the last 30 days that took the part off (Spec 9.2, 6.6).
 
     Divided by the days since the oldest row of the whole journal, at most 30 and at least 1;
-    0.0 for an empty journal. Only `part_consumed` rows with the cause "assembly" count. Rows count
-    by their booking date, not by when they were saved (p172).
+    0.0 for an empty journal. Every `part_consumed` row counts, whatever booking wrote it:
+    assembly, "inspection good" of an article without hand work, stock in without a print with
+    "deduct parts" ticked (p174: before, only assembly counted, so the parts of articles without
+    hand work had a usage of 0 and their suggestions came too late). Rows count by their booking
+    date, not by when they were saved (p172).
     """
     oldest = session.scalar(select(func.min(JournalEntry.booked_at)))
     if oldest is None:
@@ -115,7 +118,7 @@ def part_consumption(session: Session, part_id: int, today: date) -> float:
             JournalEntry.booked_at >= since,
         )
     )
-    used = sum(r.qty for r in rows if (r.details or {}).get("cause") == "assembly")
+    used = sum(r.qty for r in rows)
     days = max(1, min(WINDOW_DAYS, (today - oldest.date()).days))
     return used / days
 

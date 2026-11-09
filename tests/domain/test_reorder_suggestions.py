@@ -87,14 +87,32 @@ def test_part_no_suggestion_when_enough(db):
         assert reorder.suggestions(s, sorts=None, today=TODAY) == []
 
 
-def test_part_consumption_from_assembly(db):
+def test_part_consumption_from_every_booking_that_takes_parts_off(db):
+    """Spec 9.2 (p174): usage = the parts taken off by assembly, by "inspection good" of an article
+    without hand work and by stock in without a print with "deduct parts" ticked (Spec 6.6)."""
     with db.begin() as s:
         part = make_part(s)
+        other = make_part(s, name="Other part")
         old = datetime.combine(TODAY - timedelta(days=10), datetime.min.time())
         journal(s, "inventory", None, 0, old)
         journal(s, "part_consumed", part.id, 30, old + timedelta(days=5), cause="assembly")
         journal(s, "part_consumed", part.id, 20, old + timedelta(days=6), cause="inspection_good")
-        assert reorder.part_consumption(s, part.id, TODAY) == 3.0
+        journal(s, "part_consumed", part.id, 10, old + timedelta(days=7), cause="stock_in")
+        journal(s, "part_consumed", other.id, 99, old + timedelta(days=7), cause="assembly")  # another part
+        journal(s, "part_receipt", part.id, 500, old + timedelta(days=8))  # a receipt is no usage
+        assert reorder.part_consumption(s, part.id, TODAY) == 6.0  # 60 over 10 days
+
+
+def test_parts_of_an_article_without_hand_work_count_from_inspection(db):  # p174, end to end
+    with db.begin() as s:
+        part = make_part(s, stock=100)
+        a = make_article(s, needs_assembly=False, provisional=5)
+        s.add(ArticlePart(article_id=a.id, part_id=part.id, qty_per_unit=2))
+        s.flush()
+        stock.inspect_good(s, a.id, 5, "user")
+        stock.stock_in(s, a.id, 1, "user", consume_parts=True)
+        stock.stock_in(s, a.id, 1, "user", consume_parts=False)  # unticked: no parts, no usage
+        assert reorder.part_consumption(s, part.id, utcnow().date()) == 12.0  # (10 + 2) over 1 day
 
 
 def test_part_consumption_empty_journal(db):
