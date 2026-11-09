@@ -279,7 +279,7 @@ Installationsskript erneut ausführen.
 
 ## Neustart
 
-*Einstellungen → Neustart* startet Reprintbuddy neu. Adresse, Port und HTTPS wirken erst nach
+*Einstellungen → Allgemein → Neustart* startet Reprintbuddy neu. Adresse, Port und HTTPS wirken erst nach
 einem Neustart; die Einstellungsseite sagt, wenn eine gespeicherte Änderung noch wartet. Nach
 einer Änderung von Adresse oder Port nennt die Neustart-Seite die neue Adresse. Auf dem System:
 `systemctl restart reprintbuddy`.

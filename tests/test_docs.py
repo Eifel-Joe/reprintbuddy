@@ -151,3 +151,21 @@ def test_pages_workflow_builds_strict_and_the_ci_checks_it():
     assert "mkdocs build --strict" in pages and "deploy-pages" in pages
     assert "mkdocs build --strict" in ci
     assert "site/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("name", ["CONTRIBUTING.md", "CONTRIBUTING.de.md"])
+def test_contributing_asks_for_the_documentation_in_the_same_pull_request(name):
+    """Spec 11.8: README and the pages under docs/ come in the same PR when installation, setup or use changes."""
+    text = (ROOT / name).read_text(encoding="utf-8")
+    assert "`docs/`" in text and "README" in text
+    assert "mkdocs build --strict" in text
+    assert 'pip install -e ".[docs]"' in text
+    assert "tools/docs_screenshots.py" in text
+
+
+def test_pull_request_template_asks_about_the_documentation():
+    text = (ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    boxes = [line for line in text.splitlines() if line.startswith("- [ ]")]
+    asking = [line for line in boxes if "`docs/`" in line]
+    assert len(asking) == 1, boxes
+    assert "README" in asking[0] and " / " in asking[0]  # both languages

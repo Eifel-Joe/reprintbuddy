@@ -265,7 +265,7 @@ systemd units or the sudoers rule, its release notes say so; then run the instal
 
 ## Restart
 
-*Settings → Restart* restarts Reprintbuddy. Address, port and HTTPS take effect only after a
+*Settings → General → Restart* restarts Reprintbuddy. Address, port and HTTPS take effect only after a
 restart; the settings page says when a saved change is still waiting. After a change of
 address or port the restart page names the new address. On the system:
 `systemctl restart reprintbuddy`.
