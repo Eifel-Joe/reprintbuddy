@@ -45,7 +45,7 @@ class FailureBrake:
     every further login attempt is delayed by `delay` seconds.
 
     It is global, not per address: behind a proxy all requests share one address,
-    and a home-network service has one account to protect anyway.
+    and a service on a local network has one account to protect anyway.
     """
 
     def __init__(

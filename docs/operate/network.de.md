@@ -1,10 +1,10 @@
 # Netz und Sicherheit
 
-Reprintbuddy ist für dein Heimnetz gedacht. Diese Seite sagt, wie es erreicht werden soll, wie du Adresse, Port und HTTPS einstellst, wie du es hinter einem Reverse-Proxy betreibst, was du tust, wenn du dich aussperrst, und wie deine Schlüssel und Daten geschützt sind.
+Reprintbuddy ist für dein lokales Netzwerk (LAN) gedacht. Diese Seite sagt, wie es erreicht werden soll, wie du Adresse, Port und HTTPS einstellst, wie du es hinter einem Reverse-Proxy betreibst, was du tust, wenn du dich aussperrst, und wie deine Schlüssel und Daten geschützt sind.
 
-## Heimnetz und VPN
+## Lokales Netzwerk und VPN
 
-Einfaches HTTP genügt im Heimnetz und über ein VPN. Mehr braucht Reprintbuddy nicht.
+Einfaches HTTP genügt im lokalen Netzwerk (LAN) und über ein VPN. Mehr braucht Reprintbuddy nicht.
 
 !!! warning "Reprintbuddy nie direkt ins Internet stellen"
     Keine Portfreigabe, kein öffentlicher Reverse-Proxy. Für den Zugriff von außen nimm ein VPN in dein Netz, zum Beispiel das VPN deines Routers, WireGuard oder Tailscale. Über das VPN verhält es sich wie in deinem eigenen Netz.

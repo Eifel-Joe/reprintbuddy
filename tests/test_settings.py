@@ -317,7 +317,7 @@ def test_apply_check_overwrites_an_older_owner(session):
         ("https://example.com/stock/", "https://example.com/stock"),  # behind a reverse proxy path
         ("http://203.0.113.5:8080", "http://203.0.113.5:8080"),
         ("http://[::1]:8080", "http://[::1]:8080"),
-        ("http://lager-pi", "http://lager-pi"),  # a name without a dot: a home network
+        ("http://lager-pi", "http://lager-pi"),  # a name without a dot: a local network
         ("https://lager.example.com/a..b", "https://lager.example.com/a..b"),  # inside a name, no segment
         (None, None),
     ],

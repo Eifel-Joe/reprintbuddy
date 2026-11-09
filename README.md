@@ -24,7 +24,7 @@
 Reprintbuddy keeps the stock of 3D-printed items. It reprints what runs low by
 handing print jobs to Bambuddy's queue,
 lets you check finished prints, and tells you what to reorder. It runs as a
-small web application on your home network, reachable from outside only through a VPN.
+small web application on your local network (LAN), reachable from outside only through a VPN.
 
 > **Status:** under development, not ready for real use yet.
 
@@ -285,7 +285,7 @@ address or port the restart page names the new address. On the system:
 
 ## HTTPS
 
-HTTP is fine inside your home network or over a VPN. For HTTPS, upload a certificate and its private key
+HTTP is fine inside your local network (LAN) or over a VPN. For HTTPS, upload a certificate and its private key
 (without a password) under *Settings*; Reprintbuddy checks that they belong together before it
 saves them, then restart. To go back to HTTP, tick *Remove certificate and private key*.
 

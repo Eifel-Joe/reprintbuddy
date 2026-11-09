@@ -2,7 +2,7 @@
 
 **Dein Regal bleibt voll. Bambuddy druckt.**
 
-Reprintbuddy führt den Lagerbestand von 3D-gedruckten Teilen. Was knapp wird, druckt es nach, indem es Druckaufträge in die Warteschlange von Bambuddy stellt. Fertige Drucke prüfst du in Reprintbuddy, und es zeigt dir, was nachzubestellen ist. Es läuft als kleine Webanwendung im Heimnetz und ist von außen nur über ein VPN erreichbar.
+Reprintbuddy führt den Lagerbestand von 3D-gedruckten Teilen. Was knapp wird, druckt es nach, indem es Druckaufträge in die Warteschlange von Bambuddy stellt. Fertige Drucke prüfst du in Reprintbuddy, und es zeigt dir, was nachzubestellen ist. Es läuft als kleine Webanwendung im lokalen Netzwerk (LAN) und ist von außen nur über ein VPN erreichbar.
 
 !!! note "Stand"
     In Entwicklung, noch nicht einsatzbereit.

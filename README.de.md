@@ -25,7 +25,7 @@ Reprintbuddy führt den Lagerbestand von 3D-gedruckten Teilen. Was knapp wird,
 druckt es nach, indem es Druckaufträge in die Warteschlange von
 Bambuddy stellt. Fertige Drucke prüfst
 du in Reprintbuddy, und es zeigt dir, was nachzubestellen ist. Es läuft als
-kleine Webanwendung im Heimnetz und ist von außen nur über ein VPN erreichbar.
+kleine Webanwendung im lokalen Netzwerk (LAN) und ist von außen nur über ein VPN erreichbar.
 
 > **Stand:** in Entwicklung, noch nicht einsatzbereit.
 
@@ -302,7 +302,7 @@ einer Änderung von Adresse oder Port nennt die Neustart-Seite die neue Adresse.
 
 ## HTTPS
 
-HTTP genügt im Heimnetz oder über ein VPN. Für HTTPS lädst du unter *Einstellungen* ein Zertifikat und seinen
+HTTP genügt im lokalen Netzwerk (LAN) oder über ein VPN. Für HTTPS lädst du unter *Einstellungen* ein Zertifikat und seinen
 privaten Schlüssel (ohne Passwort) hoch; Reprintbuddy prüft vor dem Speichern, ob beide
 zusammengehören, danach neu starten. Zurück zu HTTP geht über das Häkchen *Zertifikat und
 privaten Schlüssel entfernen*.
