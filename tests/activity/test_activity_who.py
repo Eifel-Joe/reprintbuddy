@@ -35,7 +35,7 @@ def test_a_setting_saved_on_the_page_is_the_user(ready_client):
     line = [line for line in lines_of(sm_of(admin_client)) if line.kind == "settings_changed"][-1]
     assert line.actor == "user"
     assert line.via is None
-    assert line.details == {"settings": [{"key": "language", "old": "en", "new": "de"}]}
+    assert line.details == {"settings": [{"setting": "language", "old": "en", "new": "de"}]}
 
 
 def test_a_command_on_the_server_is_the_user_with_a_note(tmp_path, monkeypatch):
@@ -51,7 +51,7 @@ def test_a_command_on_the_server_is_the_user_with_a_note(tmp_path, monkeypatch):
         ("settings_changed", "user", "cli"),
         ("account_created", "user", "cli"),
     ]
-    assert lines[0].details == {"settings": [{"key": "port", "old": 8080, "new": 8090}]}
+    assert lines[0].details == {"settings": [{"setting": "port", "old": 8080, "new": 8090}]}
     engine.dispose()
 
 

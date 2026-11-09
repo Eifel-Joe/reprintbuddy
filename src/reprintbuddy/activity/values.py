@@ -43,6 +43,16 @@ SETTINGS: dict[str, ValueKind] = {
     "ha_events": "list",
 }
 
+# The name a setting has in the log and its texts (`activity.setting.<name>`). The storage key of a
+# secret never appears in the log, not even as a name: the export proves it is free of them by looking
+# for those keys (tests/ops/test_export.py).
+NAMES: dict[str, str] = {key: key for key in SETTINGS} | {
+    "bambuddy_api_key": "bambuddy_key",
+    "tls_cert": "https_certificate",
+    "tls_key": "https_key",
+    "ha_token": "ha_access_token",
+}
+
 # Kept by Reprintbuddy for itself; no settings page shows them.
 INTERNAL: frozenset[str] = frozenset({"session_secret", "ha_since", "bambuddy_review_confirmed"})
 
@@ -107,11 +117,11 @@ def _plain(kind: ValueKind, value: object) -> object:
 
 def shown_change(key: str, old: object, new: object) -> dict[str, object]:
     """What the log keeps of the change of setting `key` from `old` to `new`."""
-    kind = SETTINGS[key]
+    kind, name = SETTINGS[key], NAMES[key]
     if kind == "secret":
-        return {"key": key, "change": "removed" if new is None else "changed"}
+        return {"setting": name, "change": "removed" if new is None else "changed"}
     if kind == "certificate":
-        return {"key": key, "change": "removed" if new is None else "uploaded"}
+        return {"setting": name, "change": "removed" if new is None else "uploaded"}
     if kind in ("list", "text"):
-        return {"key": key, "change": "changed"}
-    return {"key": key, "old": _plain(kind, old), "new": _plain(kind, new)}
+        return {"setting": name, "change": "changed"}
+    return {"setting": name, "old": _plain(kind, old), "new": _plain(kind, new)}

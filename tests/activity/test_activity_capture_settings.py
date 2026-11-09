@@ -32,8 +32,8 @@ def test_one_line_per_saving_with_old_and_new(db):
     assert (line.area, line.kind, line.actor) == ("settings", "settings_changed", "system")
     assert line.details == {
         "settings": [
-            {"key": "poll_minutes", "old": 15, "new": 10},
-            {"key": "automation", "old": False, "new": True},
+            {"setting": "poll_minutes", "old": 15, "new": 10},
+            {"setting": "automation", "old": False, "new": True},
         ]
     }
     assert line.address is None
@@ -47,8 +47,8 @@ def test_a_second_saving_compares_with_the_stored_value(db):
     with db.begin() as s:
         st.set_setting(s, "poll_minutes", 20, commit=False)
     assert [line.details["settings"] for line in lines(db)] == [
-        [{"key": "poll_minutes", "old": 15, "new": 10}],
-        [{"key": "poll_minutes", "old": 10, "new": 20}],
+        [{"setting": "poll_minutes", "old": 15, "new": 10}],
+        [{"setting": "poll_minutes", "old": 10, "new": 20}],
     ]
 
 
@@ -56,7 +56,7 @@ def test_set_setting_with_its_own_commit_is_logged(db):
     with db() as s:
         st.set_setting(s, "language", "de")
     [line] = lines(db)
-    assert line.details == {"settings": [{"key": "language", "old": "en", "new": "de"}]}
+    assert line.details == {"settings": [{"setting": "language", "old": "en", "new": "de"}]}
 
 
 def test_sensitive_values_only_as_changed_or_removed(db):
@@ -68,11 +68,11 @@ def test_sensitive_values_only_as_changed_or_removed(db):
         st.set_setting(s, "ha_token", None, commit=False)
     first, second = lines(db)
     assert first.details["settings"] == [
-        {"key": "tls_cert", "change": "uploaded"},
-        {"key": "tls_key", "change": "changed"},
-        {"key": "ha_token", "change": "changed"},
+        {"setting": "https_certificate", "change": "uploaded"},
+        {"setting": "https_key", "change": "changed"},
+        {"setting": "ha_access_token", "change": "changed"},
     ]
-    assert second.details["settings"] == [{"key": "ha_token", "change": "removed"}]
+    assert second.details["settings"] == [{"setting": "ha_access_token", "change": "removed"}]
     assert "SECRET" not in repr([line.details for line in lines(db)])
 
 
@@ -80,7 +80,7 @@ def test_an_address_only_with_scheme_host_and_port(db):
     with db.begin() as s:
         st.set_setting(s, "bambuddy_url", "http://user:pw@bambuddy.test:8000/x?key=SECRET#y", commit=False)
     [line] = lines(db)
-    assert line.details["settings"] == [{"key": "bambuddy_url", "old": None, "new": "http://bambuddy.test:8000"}]
+    assert line.details["settings"] == [{"setting": "bambuddy_url", "old": None, "new": "http://bambuddy.test:8000"}]
 
 
 def test_the_bambuddy_connection_names_the_owner_of_the_key(db):
@@ -91,8 +91,8 @@ def test_the_bambuddy_connection_names_the_owner_of_the_key(db):
         st.set_setting(s, "bambuddy_review_confirmed", True, commit=False)  # internal
     [line] = lines(db)
     assert line.details["owner"] == "reprintbuddy"
-    assert [change["key"] for change in line.details["settings"]] == [
-        "bambuddy_url", "bambuddy_username", "bambuddy_api_key",
+    assert [change["setting"] for change in line.details["settings"]] == [
+        "bambuddy_url", "bambuddy_username", "bambuddy_key",
     ]
     assert "KEY-SECRET" not in repr(line.details)
 
@@ -110,7 +110,7 @@ def test_the_queue_switch_is_shown_as_on_the_page(db):
     with db.begin() as s:
         st.set_setting(s, "queue_running", False, commit=False)
     [line] = lines(db)
-    assert line.details["settings"] == [{"key": "queue_running", "old": False, "new": True}]
+    assert line.details["settings"] == [{"setting": "queue_running", "old": False, "new": True}]
 
 
 def test_a_rolled_back_change_leaves_no_line(db):
@@ -122,7 +122,7 @@ def test_a_rolled_back_change_leaves_no_line(db):
     with db.begin() as s:
         st.set_setting(s, "queue_cap", 5, commit=False)
     [line] = lines(db)
-    assert line.details["settings"] == [{"key": "queue_cap", "old": 10, "new": 5}]
+    assert line.details["settings"] == [{"setting": "queue_cap", "old": 10, "new": 5}]
 
 
 def test_a_line_that_cannot_be_built_is_missing_and_the_change_stays(db, monkeypatch, caplog):
@@ -179,7 +179,7 @@ def test_a_command_on_the_server_is_the_user_with_a_note(db):
         st.set_setting(s, "port", 8081, commit=False)
     [line] = lines(db)
     assert (line.actor, line.via) == ("user", "cli")
-    assert line.details["settings"] == [{"key": "port", "old": 8080, "new": 8081}]
+    assert line.details["settings"] == [{"setting": "port", "old": 8080, "new": 8081}]
 
 
 def test_writing_a_setting_row_directly_is_covered_too(db):
@@ -187,4 +187,4 @@ def test_writing_a_setting_row_directly_is_covered_too(db):
     with db.begin() as s:
         s.add(Setting(key="queue_cap", value="3"))
     [line] = lines(db)
-    assert line.details["settings"] == [{"key": "queue_cap", "old": 10, "new": 3}]
+    assert line.details["settings"] == [{"setting": "queue_cap", "old": 10, "new": 3}]

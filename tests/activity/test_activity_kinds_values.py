@@ -34,7 +34,7 @@ def test_every_area_kind_and_actor_has_a_text_in_both_languages():
         [f"activity.area.{area}" for area in kinds.AREAS]
         + [f"activity.kind.{kind}" for kind in kinds.KINDS]
         + [f"activity.actor.{actor}" for actor in kinds.ACTORS]
-        + [f"activity.setting.{key}" for key in values.SETTINGS]
+        + [f"activity.setting.{name}" for name in values.NAMES.values()]
         + [f"activity.field.{field}" for field in set(values.FIELDS.values())]
     )
     for lang in ("en", "de"):
@@ -63,22 +63,22 @@ def test_an_address_keeps_scheme_host_and_port(raw, clean):
 
 def test_shown_change_by_kind_of_value():
     show = values.shown_change
-    assert show("poll_minutes", 15, 10) == {"key": "poll_minutes", "old": 15, "new": 10}
-    assert show("automation", True, False) == {"key": "automation", "old": True, "new": False}
+    assert show("poll_minutes", 15, 10) == {"setting": "poll_minutes", "old": 15, "new": 10}
+    assert show("automation", True, False) == {"setting": "automation", "old": True, "new": False}
     # The page asks "stop the queue", the database stores "queue running": shown as on the page.
-    assert show("queue_running", True, False) == {"key": "queue_running", "old": False, "new": True}
-    assert show("language", "en", "de") == {"key": "language", "old": "en", "new": "de"}
+    assert show("queue_running", True, False) == {"setting": "queue_running", "old": False, "new": True}
+    assert show("language", "en", "de") == {"setting": "language", "old": "en", "new": "de"}
     assert show("bambuddy_url", None, "http://u:p@b.local:8000/x?k=1") == {
-        "key": "bambuddy_url", "old": None, "new": "http://b.local:8000"
+        "setting": "bambuddy_url", "old": None, "new": "http://b.local:8000"
     }
-    assert show("bambuddy_api_key", "old-key", "new-key") == {"key": "bambuddy_api_key", "change": "changed"}
-    assert show("ha_token", "tok", None) == {"key": "ha_token", "change": "removed"}
-    assert show("tls_cert", None, "-----BEGIN CERTIFICATE-----") == {"key": "tls_cert", "change": "uploaded"}
-    assert show("tls_cert", "pem", None) == {"key": "tls_cert", "change": "removed"}
-    assert show("ha_events", ["a"], ["a", "b"]) == {"key": "ha_events", "change": "changed"}
-    assert show("label_roll", "62x29", "62x100") == {"key": "label_roll", "change": "changed"}
+    assert show("bambuddy_api_key", "old-key", "new-key") == {"setting": "bambuddy_key", "change": "changed"}
+    assert show("ha_token", "tok", None) == {"setting": "ha_access_token", "change": "removed"}
+    assert show("tls_cert", None, "-----BEGIN CERTIFICATE-----") == {"setting": "https_certificate", "change": "uploaded"}
+    assert show("tls_cert", "pem", None) == {"setting": "https_certificate", "change": "removed"}
+    assert show("ha_events", ["a"], ["a", "b"]) == {"setting": "ha_events", "change": "changed"}
+    assert show("label_roll", "62x29", "62x100") == {"setting": "label_roll", "change": "changed"}
     assert show("label_printer_host", None, "printer.local") == {
-        "key": "label_printer_host", "old": None, "new": "printer.local"
+        "setting": "label_printer_host", "old": None, "new": "printer.local"
     }
 
 
