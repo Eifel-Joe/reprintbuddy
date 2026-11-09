@@ -58,6 +58,16 @@ def test_kpi_row(ready_client):
     assert '<span class="kpi-label">&lt;i&gt;</span>' in html
 
 
+def test_kpi_with_href_is_a_link(ready_client):
+    """The overview's cards lead to their page (Spec 10.2); a card without `href` stays a div."""
+    cards = [Kpi("printer", "accent", 3, "Planned", href="/queue"), Kpi("x", "bad", 1, "Plain")]
+    html = render(ready_client, "{{ ui.kpi_row(cards) }}", cards=cards)
+    assert '<a class="kpi kpi-link" href="/queue">' in html
+    assert html.count("<a ") == 1
+    assert html.count('<div class="kpi">') == 1
+    assert '<span class="kpi-value">3</span>' in html
+
+
 def test_icon_button_is_a_link_with_title_and_label(ready_client):
     html = render(ready_client, '{{ ui.icon_button("pencil", "Edit <it>", "/a?x=1&y=2") }}')
     assert html.startswith('<a class="icon-btn"')

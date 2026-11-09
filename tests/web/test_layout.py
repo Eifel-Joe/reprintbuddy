@@ -36,7 +36,7 @@ def test_overview_english(ready_client):
     assert response.status_code == 200
     assert _nav_labels(response.text)[:12] == NAV_EN
     assert "Overview" in response.text
-    assert "Nothing here yet" in response.text
+    assert "No articles yet" in response.text
 
 
 def test_overview_german(ready_client):

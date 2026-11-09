@@ -305,6 +305,15 @@ def test_count_suggestions_counts_part_under_min_stock(db):
         assert reorder.count_suggestions(s, None, NOW) == 1
 
 
+def test_count_without_writing_uses_the_record_and_writes_nothing(db):
+    """While writes are paused (restore, update) the overview counts without writing (v0.3.14 p167)."""
+    with db.begin() as s:
+        make_part(s, stock=18, min_stock=20, pack_size=50, safety_value=0, safety_unit="qty")
+    with db() as s:
+        assert reorder.count_suggestions(s, None, NOW, write=False) == 1
+        assert not s.new and not s.dirty and not s.deleted
+
+
 # ---- p64: the key figure is the number the reorder page shows --------------------------------
 
 

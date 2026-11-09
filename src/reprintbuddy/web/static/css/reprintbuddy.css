@@ -791,6 +791,8 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 .warning-link { display: inline-flex; align-items: center; min-height: 2.75rem; color: var(--info); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 @media (max-width: 899px) { .warning-actions { flex: 1 1 100%; margin-left: 28px; } }
 .last-poll { margin: 0; color: var(--muted); font-size: 12.5px; }
+/* Nothing to say (the overview has the last query in its head line): no empty gap. */
+.warnings.is-empty { display: none; }
 
 /* A part of the queue page: title with symbol, a grey hint or a button to the right. */
 .queue-section { margin: 0 0 1.5rem; }
@@ -1211,4 +1213,49 @@ td.target .target-form { display: inline-block; }
   .log-table .log-area, .log-table .log-actor { display: none; }
   .log-area-inline, .log-actor-inline { display: inline; }
   .log-filters .filters-label { min-width: 100%; }
+}
+
+/* ---- overview (Spec 10.2) ------------------------------------------------ */
+/* A key figure card that leads to its page. */
+a.kpi-link { color: inherit; text-decoration: none; }
+a.kpi-link:hover { border-color: var(--accent); }
+a.kpi-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Head line: connection, last query, main switch in one row; the switch to the right. */
+.status-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 28px; padding: 4px 16px; margin: 0 0 1rem; }
+.status-item { display: inline-flex; align-items: center; gap: 10px; min-height: 2.75rem; }
+.status-label { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+.status-value { font-size: 13.5px; }
+.status-switch { margin-left: auto; }
+/* A fresh database: the hint and the way to the first article. */
+.empty-start { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.empty-start p { margin: 0; }
+.overview-table th.fill-col, .overview-table td.fill-col { width: 14%; min-width: 6rem; }
+.overview-table .ov-name { min-width: 9rem; overflow-wrap: anywhere; }
+.overview-table .ov-status { white-space: nowrap; }
+
+@media (max-width: 599px) {
+  /* One column: the head line as rows of label and value. */
+  .status-line { flex-direction: column; align-items: stretch; gap: 0; padding: 0 14px; }
+  .status-item { border-bottom: 1px solid var(--line); }
+  .status-item:last-child { border-bottom: 0; }
+  .status-label { margin-right: auto; }
+  .status-switch { margin-left: 0; }
+  /* Each article becomes a card: name and state on top, the numbers with their names below. */
+  .overview-card { background: none; border: 0; }
+  .overview-table, .overview-table tbody, .overview-table tr, .overview-table td { display: block; }
+  .overview-table thead { display: none; }
+  .overview-table tbody { display: flex; flex-direction: column; gap: 8px; }
+  .overview-table .overview-row {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px;
+    padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .overview-table td, .overview-table td.num { padding: 0; border: 0; text-align: left; white-space: normal; }
+  .overview-table .overview-row .ov-name, .overview-table .overview-row .ov-status,
+  .overview-table .overview-row .fill-col { grid-column: 1 / -1; width: auto; min-width: 0; }
+  .overview-table .overview-row .ov-name { grid-row: 1; }
+  .overview-table .overview-row .ov-status { grid-row: 2; }
+  .overview-row td[data-label]::before {
+    content: attr(data-label); display: block; color: var(--muted);
+    font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  }
 }

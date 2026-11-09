@@ -679,7 +679,7 @@ def test_overview_shows_warnings(ready_client):
     part = region(page, "warnings")
     assert esc(en("warning.queue_stopped")) in part
     assert 'data-live-region="warnings" data-live-topics="bambuddy queue article settings notify"' in page
-    assert en("overview.empty") in page
+    assert en("overview.no_articles") in page
 
 
 # ---- language ----------------------------------------------------------------------------

@@ -78,6 +78,7 @@ plugins:
             Installation: Installation
             First setup: Ersteinrichtung
             Use: Benutzen
+            Overview: Übersicht
             Articles: Artikel
             Filament: Filament
             Automation: Automatik
@@ -114,6 +115,7 @@ nav:
     - Installation: start/install.md
     - First setup: start/setup.md
   - Use:
+    - Overview: use/overview.md
     - Articles: use/articles.md
     - Filament: use/filament.md
     - Automation: use/automation.md
