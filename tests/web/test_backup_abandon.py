@@ -267,8 +267,16 @@ async def test_cancelling_while_waiting_for_a_running_tick_gives_the_restore_sta
     the decrypted copy nor a restore state stuck on "running" (found in the review of v0.3.11)."""
     upload(ops_env, made_backup(ops_env, BACKUP_PASSWORD))
     app = ops_env.client.app
-    lock = app.state.ticker._lock
-    await lock.acquire()  # a tick is running
+    ticker = app.state.ticker
+    tick_ends = asyncio.Event()
+
+    async def a_running_tick():
+        async with ticker.hold():  # the same lock a tick takes
+            await tick_ends.wait()
+
+    running_tick = asyncio.create_task(a_running_tick())
+    await asyncio.sleep(0)
+    assert ticker.held()
     try:
         async with async_client(ops_env) as ac:
             data = {
@@ -279,15 +287,17 @@ async def test_cancelling_while_waiting_for_a_running_tick_gives_the_restore_sta
             }
             task = asyncio.create_task(ac.post("/settings/restore", data=data))
             deadline = time.monotonic() + 20
-            while not (app.state.restore.phase == "running" and lock._waiters):
+            while not (app.state.restore.phase == "running" and ticker.waiting()):
                 assert time.monotonic() < deadline
                 await asyncio.sleep(0.02)
             assert [n for n in secret_files(ops_env) if n.startswith("candidate-")] != []  # the copy is there
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
+            assert ticker.waiting() == 0
     finally:
-        lock.release()
+        tick_ends.set()
+        await running_tick
     assert app.state.restore.phase == "idle"
     assert await settled(ops_env) == []
     assert ops_env.runner.calls == []
@@ -340,3 +350,4 @@ async def test_a_failing_replace_worker_leaves_no_copy_and_asks_to_try_again(ops
         response = await ac.post("/settings/restore", data=data)
     assert response.status_code == 200 and "file is not the cause" in response.text
     assert await settled(ops_env) == []
+

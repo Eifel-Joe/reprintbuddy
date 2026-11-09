@@ -9,6 +9,7 @@ import threading
 import contextlib
 import time
 
+import pytest
 from sqlalchemy import select
 
 from factories import make_article, make_dispatch, make_entry
@@ -1266,7 +1267,7 @@ def test_hold_lets_a_waiting_tick_give_up(engine_env):
             # The tick asks (in a worker thread, p96) whether an update runs, then waits for the lock.
             assert await asyncio.to_thread(first_check_done.wait, 5)
             for _ in range(5000):  # until somebody waits at the lock: no guess at how long that takes
-                if env.engine._lock._waiters:
+                if env.engine.waiting():
                     break
                 await asyncio.sleep(0.001)
             else:
@@ -1361,3 +1362,45 @@ async def test_p96_an_update_that_starts_while_the_threaded_question_is_out_stil
     assert env.fake.enqueued == [] and "enqueue" not in env.fake.calls
     assert statuses(env.sm) == ["returned"]
     assert env.engine.status.skipped_for_update is True
+
+
+# ---- p150 (v0.3.12): who waits at the tick lock, without asyncio's private fields ------------------------------
+
+
+def test_waiting_counts_callers_at_the_lock_and_forgets_cancelled_ones(engine_env):
+    env = engine_env
+    env.engine.update_running = lambda: False
+
+    async def until(count: int):
+        for _ in range(5000):
+            if env.engine.waiting() == count:
+                return
+            await asyncio.sleep(0.001)
+        raise AssertionError(f"waiting() never became {count}, it is {env.engine.waiting()}")
+
+    async def held_for(release: asyncio.Event):
+        async with env.engine.hold():
+            await release.wait()
+
+    async def scenario():
+        assert env.engine.waiting() == 0
+        release = asyncio.Event()
+        first = asyncio.create_task(held_for(release))
+        await asyncio.sleep(0)  # the lock was free: taken without waiting
+        assert env.engine.held()
+        assert env.engine.waiting() == 0
+        tick = asyncio.create_task(env.engine.tick(poll=False))
+        await until(1)
+        second = asyncio.create_task(held_for(asyncio.Event()))
+        await until(2)
+        second.cancel()  # a restore cancelled while it waits
+        with pytest.raises(asyncio.CancelledError):
+            await second
+        await until(1)
+        release.set()
+        await first
+        await tick
+        assert env.engine.waiting() == 0
+        assert not env.engine.held()
+
+    asyncio.run(scenario())
