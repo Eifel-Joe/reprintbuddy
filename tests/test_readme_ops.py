@@ -311,3 +311,22 @@ def test_readme_says_which_rights_can_be_added_later_and_which_need_a_new_key(na
     text = " ".join(read(name).split())  # the sentences are wrapped
     assert group_later in text
     assert key_later in text
+
+
+@pytest.mark.parametrize("name", [*READMES, "docs/start/install.md", "docs/start/install.de.md"])
+def test_install_texts_do_not_say_the_script_installs_the_newest_release(name):
+    """v0.3.14 p168: the script installs the release of its own tag (RELEASE_TAG in install.sh). The texts
+    said "the newest release" and that the tag in the address only named the script."""
+    text = read(name)
+    for old in (
+        "puts the newest release in place",
+        "puts the **newest release** in place",
+        "legt das neueste Release auf",
+        "legt das **neueste Release** auf",
+        "on the newest release tag",
+        "auf dem neuesten Release-Tag",
+        "is the version of the installer",
+        "ist die Version des Installationsskripts",
+    ):
+        assert old not in text, (name, old)
+

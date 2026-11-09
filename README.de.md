@@ -91,17 +91,18 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 ```
 
 Als root auf diesem System ausführen. Frische Debian-Systeme bringen oft kein curl mit; der erste Teil installiert es.
-Das Skript legt das neueste Release auf. Der Tag in der Adresse (`v0.3.13`) ist die Version des Installationsskripts
-selbst, und sie gehört zu diesem Release.
+Das Skript legt das Release auf, dessen Tag in der Adresse steht (hier `v0.3.13`): Skript und Release sind eine
+Version.
 Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.3.13/install/install.sh)" _ --language de
 ```
 
-Das Skript muss vom Tag des Releases stammen, das installiert wird. Tut es das nicht, bricht es ab, wenn sich seine
-Systemdateien von denen des Releases unterscheiden, und nennt den richtigen Tag; führe es dann mit diesem Tag anstelle
-von `<tag>` noch einmal aus:
+Willst du eine andere Version installieren, setzt du ihren Tag anstelle von `<tag>` in die Adresse (ab v0.3.14; die
+Skripte früherer Tags legen das neueste Release auf). Mehr braucht es nicht: eine Option für die Version gibt es nicht.
+Ist Reprintbuddy schon installiert, behält das Skript diese Version und bessert nur den Rest aus; unterscheiden sich
+die Systemdateien des Skripts von denen der installierten Version, bricht es ab und nennt den Tag, den du nehmen musst:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
@@ -112,7 +113,7 @@ Das Skript
 - installiert die nötigen Pakete (`python3`, `python3-venv`, `git`, `curl`, `sudo`,
   `ca-certificates`),
 - legt den Systembenutzer `reprintbuddy` an,
-- legt Reprintbuddy auf dem neuesten Release-Tag nach `/opt/reprintbuddy` und die
+- legt Reprintbuddy auf dem Release-Tag des Skripts nach `/opt/reprintbuddy` und die
   Python-Umgebung nach `/opt/reprintbuddy/.venv`,
 - legt `/var/lib/reprintbuddy` (Rechte 700) mit Datenbank, Sicherungen und Update-Stand an,
 - richtet die systemd-Einheiten `reprintbuddy.service` und `reprintbuddy-update.service` ein,

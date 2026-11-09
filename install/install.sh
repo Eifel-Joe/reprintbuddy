@@ -3,12 +3,19 @@
 #
 #   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/main/install/install.sh)"
 #
-# Run as root on the system that is to run Reprintbuddy. Safe to run again: the installed version and the
-# database stay as they are; packages, user, permissions, units and the service are
+# Run as root on the system that is to run Reprintbuddy. The tag in the address is the version that gets
+# installed (RELEASE_TAG below, set together with the package version). Safe to run again: the installed
+# version and the database stay as they are; packages, user, permissions, units and the service are
 # repaired. Versions change only through the update on the settings page.
 #
 # Options: --language en|de   --repo URL   --dry-run   -h|--help
 set -Eeuo pipefail
+
+# The release this script belongs to: the tag in its address, and the one it installs (v0.3.14 p168).
+# A script cannot see its own address, so the tag is written into it. It is set with every version and
+# must equal the package version (tests/install/test_install_script.py checks that); the files of the
+# system that the script embeds below belong to this release and to no other.
+RELEASE_TAG="v0.3.13"
 
 # Replaced when the repository is published; the script refuses to run with the placeholder.
 REPO_URL_DEFAULT="https://github.com/Eifel-Joe/reprintbuddy.git"
@@ -246,38 +253,36 @@ prepare_dirs() {
     run chown -R "${APP_USER}:${APP_USER}" "${INSTALL_DIR}"
 }
 
-latest_release_tag() {
-    # `tail -n 1` instead of `head -n 1`: head can end early and kill the pipe under pipefail.
-    capture_as_service_user git -C "${INSTALL_DIR}" tag --list 'v*' |
-        grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' | sort -V | tail -n 1
-}
-
-checkout_newest_release() {
-    local tag="vX.Y.Z"
-    if [ "${DRY_RUN}" -ne 1 ]; then
-        tag="$(latest_release_tag || true)"
-        [ -n "${tag}" ] || die 1 "No release found in the repository."
+# The release of this script, not the newest one: the address of a tag installs that version (p168).
+# The repository's other tags are not looked at; the update on the settings page is what moves on.
+checkout_release() {
+    # Same rule as the tags of the update (ops/versions.py RELEASE_TAG); also keeps a stray value from being read as an option.
+    printf '%s\n' "${RELEASE_TAG}" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' ||
+        die 1 "The release ${RELEASE_TAG} of this script is not a version tag."
+    if [ "${DRY_RUN}" -ne 1 ] &&
+        ! capture_as_service_user git -C "${INSTALL_DIR}" rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null; then
+        die 1 "The release ${RELEASE_TAG} was not found in the repository."
     fi
-    as_service_user git -C "${INSTALL_DIR}" checkout --quiet --detach "${tag}"
+    as_service_user git -C "${INSTALL_DIR}" checkout --quiet --detach "${RELEASE_TAG}"
 }
 
 fetch_code() {
     if [ -e "${DESTDIR}${INSTALL_DIR}/.git" ]; then
-        # A first run that stopped after the clone (for example "No release found" before the
-        # first tag existed) leaves the default branch checked out and no database behind.
+        # A first run that stopped after the clone (for example "was not found" before the
+        # tag existed) leaves the default branch checked out and no database behind.
         # Nothing is installed yet then, so move to the release instead of keeping that state.
         if [ ! -e "${DESTDIR}${DB_FILE}" ] &&
             ! capture_as_service_user git -C "${INSTALL_DIR}" describe --tags --exact-match HEAD >/dev/null 2>&1; then
-            say "Unfinished installation found, switching to the newest release."
+            say "Unfinished installation found, switching to release ${RELEASE_TAG}."
             as_service_user git -C "${INSTALL_DIR}" fetch --prune --prune-tags --force --tags origin
-            checkout_newest_release
+            checkout_release
             return 0
         fi
         say "Existing installation found, keeping version."
         return 0
     fi
     as_service_user git clone "${REPO_URL}" "${INSTALL_DIR}"
-    checkout_newest_release
+    checkout_release
 }
 
 # Does the installed environment still fit? It was built with one Python and holds its packages under that

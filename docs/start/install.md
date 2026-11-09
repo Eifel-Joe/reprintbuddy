@@ -14,13 +14,13 @@ Run it as root on that system:
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v{{ version }}/install/install.sh)"
 ```
 
-Fresh Debian systems often come without curl; the first part installs it. The installer puts the **newest release** in place. The tag in the address (`v{{ version }}`) is the version of the installer script itself, and it belongs to that release. The installer asks for the language of the interface (English or German). To skip the question, add the language:
+Fresh Debian systems often come without curl; the first part installs it. The installer puts the **release whose tag is in the address** in place (`v{{ version }}` here): script and release are one version. The installer asks for the language of the interface (English or German). To skip the question, add the language:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v{{ version }}/install/install.sh)" _ --language de
 ```
 
-The script must come from the tag of the release that gets installed. If it does not, it stops with a message that names the right tag when its system files differ from that release's, and you run it again with that tag in place of `<tag>`:
+To install another version, put its tag in the address in place of `<tag>` (from v0.3.14 on; the scripts of earlier tags put the newest release in place). The address of a tag is all it takes: there is no option for the version. If Reprintbuddy is already installed, the installer keeps that version and only repairs the rest; when the system files of the script differ from those of the installed version, it stops with a message that names the tag to use:
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
@@ -30,7 +30,7 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 
 - installs the packages it needs (`python3`, `python3-venv`, `git`, `curl`, `sudo`, `ca-certificates`),
 - creates the system user `reprintbuddy`,
-- puts Reprintbuddy into `/opt/reprintbuddy` on the newest release tag, with its Python environment in `/opt/reprintbuddy/.venv`,
+- puts Reprintbuddy into `/opt/reprintbuddy` on the release tag of the script, with its Python environment in `/opt/reprintbuddy/.venv`,
 - creates `/var/lib/reprintbuddy` (mode 700) with the database, the backups and the update state,
 - installs the systemd units `reprintbuddy.service` and `reprintbuddy-update.service`,
 - installs a sudoers rule in `/etc/sudoers.d/reprintbuddy` that lets the service user run exactly these commands as root, and nothing else (the last two are for the rollback of a failed update, which restores the database while the service is stopped):
