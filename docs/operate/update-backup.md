@@ -4,7 +4,7 @@ Reprintbuddy updates itself from the web interface and brings its own complete b
 
 ## Update from the interface
 
-![The Update and backup tab with the installed version, the newest release and the full backup](../assets/images/en/settings-update.png)
+![The Update and backup tab with the installed version, the newest release, its release notes opened, the bar at the top and the full backup](../assets/images/en/settings-update.png)
 
 1. Open *Settings → Update and backup* and press **Check for updates**. The card shows "Installed version: …" and "Newest release: …".
 2. If a newer release exists, a button **Update to …** (with the version) appears. Press it. If there is none, the card says "Reprintbuddy is up to date."

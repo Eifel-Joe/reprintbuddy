@@ -4,7 +4,7 @@ Reprintbuddy aktualisiert sich aus der Weboberfläche und bringt eine eigene vol
 
 ## Update aus der Oberfläche
 
-![Der Reiter Update und Sicherung mit installierter Version, neuester Version und vollständiger Sicherung](../assets/images/de/settings-update.png)
+![Der Reiter Update und Sicherung mit installierter Version, neuester Version mit aufgeklappten Versionshinweisen, dem Balken oben und der vollständigen Sicherung](../assets/images/de/settings-update.png)
 
 1. Öffne *Einstellungen → Update und Sicherung* und drücke **Nach Updates suchen**. Die Karte zeigt „Installierte Version: …“ und „Neueste Version: …“.
 2. Gibt es eine neuere Version, erscheint ein Knopf **Auf … aktualisieren** (mit der Version). Drücke ihn. Gibt es keine, steht auf der Karte „Reprintbuddy ist aktuell.“

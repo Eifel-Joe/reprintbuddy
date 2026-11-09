@@ -268,16 +268,44 @@ class Mock:
         return httpx.AsyncClient(transport=httpx.MockTransport(self.handler))
 
 
+def next_version() -> str:
+    """The version after the installed one: the card "Update" shows it as the newer release."""
+    major, minor, patch = (int(part) for part in __version__.split("."))
+    return f"{major}.{minor}.{patch + 1}"
+
+
 def release_runner(args, *, cwd=None, timeout=120.0) -> CommandResult:
-    """Stands in for git and systemd on the card "Update": the installed version is the newest one."""
+    """Stands in for git and systemd on the card "Update": a newer release (the next patch version) exists
+    on a repository that is invented (`example/reprintbuddy`)."""
     joined = " ".join(str(a) for a in args)
     if "describe" in joined:
         return CommandResult(0, f"v{__version__}\n")
     if "ls-remote" in joined:
-        return CommandResult(0, f"0123abc\trefs/tags/v0.3.11\n0123abd\trefs/tags/v{__version__}\n")
+        tags = [("0123abc", "0.3.11"), ("0123abd", __version__), ("0123abe", next_version())]
+        return CommandResult(0, "".join(f"{sha}\trefs/tags/v{tag}\n" for sha, tag in tags))
+    if "get-url" in joined:
+        return CommandResult(0, "https://github.com/example/reprintbuddy.git\n")
     if "ActiveState" in joined:
         return CommandResult(0, "inactive\n")
     return CommandResult(0)
+
+
+def release_notes_answer(url, headers) -> tuple[int, bytes]:
+    """What GitHub's API would answer for the invented repository: one invented release, no network."""
+    lines = [
+        "## Changes",
+        "",
+        "- Messages at the top of a page go away by themselves.",
+        "- The stock numbers say from when they are.",
+        "- A stored token never goes to another address.",
+    ]
+    releases = [
+        {
+            "tag_name": f"v{next_version()}", "published_at": "2026-11-08T09:00:00Z", "draft": False, "prerelease": False,
+            "body": "\n".join(lines),
+        },
+    ]
+    return 200, json.dumps(releases).encode()
 
 
 class Server:
@@ -291,7 +319,7 @@ class Server:
         self.app = create_app(
             workdir / "reprintbuddy.db",
             http_client_factory=self.mock.factory,
-            ops=OpsContext(install_dir=install, runner=release_runner),
+            ops=OpsContext(install_dir=install, runner=release_runner, http_get=release_notes_answer),
             run_engine=False,
         )
         self.app.state.bambuddy_factory = lambda: self.fake
@@ -948,6 +976,7 @@ def take_pages(shot: Shooter, scn: Scenario) -> None:
 
     def check_for_updates(b: Browser) -> None:
         b.submit("form[action='/settings/update/check'] button[type=submit]")
+        b.evaluate("(()=>{const n=document.getElementById('ops-notes');if(n)n.open=true})()")  # the notes are closed at first
 
     shot.page("overview", "/")
     shot.page("articles-list", "/articles?layout=tiles")
@@ -972,11 +1001,12 @@ def take_pages(shot: Shooter, scn: Scenario) -> None:
     shot.page("settings-automation", "/settings?tab=automation")
     shot.page("settings-notifications", "/settings?tab=notify", cap=1400)
     shot.page("settings-labels", "/settings?tab=labels")
-    shot.page("settings-update", "/settings?tab=maintenance", before=check_for_updates)
     shot.mobile(
         "articles-mobile", "/articles?layout=tiles", cap=1250,  # two tiles: none is cut at the lower edge
         before=lambda b: b.evaluate("document.querySelectorAll('.tiles .tile').forEach((r,i)=>{if(i>=2)r.remove()})"),
     )
+    # last: a found update puts a bar at the top of every page after it
+    shot.page("settings-update", "/settings?tab=maintenance", before=check_for_updates, cap=1300)
 
 
 def run_language(lang: str, out: Path, only: set[str]) -> dict[str, int]:
