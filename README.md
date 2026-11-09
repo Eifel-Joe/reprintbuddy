@@ -252,7 +252,7 @@ given on the command line is the database path (`--db`).
 
 *Settings → Update and backup*: press **Check for updates**; if a newer release exists, the card lists what it brings and you press
 **Update to …**. Reprintbuddy also checks by itself at the start and once a day and then shows a bar at the top
-of every page; the switch **Check for new versions automatically** on the card turns that off. The check asks GitHub (the release notes come from GitHub's API without a login), so GitHub sees the address of your installation. The update
+of every page; the switch **Check for new versions automatically** on the card turns that off. The check asks GitHub (the release notes come from GitHub's API without a login), so GitHub sees the IP address of your server. The update
 
 1. backs up the database,
 2. switches to the new release tag,

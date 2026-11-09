@@ -265,7 +265,7 @@ Nur der Pfad der Datenbank wird auf der Kommandozeile angegeben (`--db`).
 
 *Einstellungen → Update und Sicherung*: **Nach Updates suchen** drücken; gibt es eine neuere Version, zeigt die Karte, was sie mitbringt, dann
 **Auf … aktualisieren**. Reprintbuddy prüft auch von selbst beim Start und einmal täglich und zeigt dann oben auf jeder
-Seite einen Balken; der Schalter **Automatisch nach neuen Versionen suchen** auf der Karte schaltet das ab. Die Prüfung fragt GitHub (die Versionshinweise kommen ohne Anmeldung über GitHubs API), dabei sieht GitHub die Adresse deiner Installation. Das Update
+Seite einen Balken; der Schalter **Automatisch nach neuen Versionen suchen** auf der Karte schaltet das ab. Die Prüfung fragt GitHub (die Versionshinweise kommen ohne Anmeldung über GitHubs API), dabei sieht GitHub die IP-Adresse deines Servers. Das Update
 
 1. sichert die Datenbank,
 2. wechselt auf den neuen Release-Tag,
