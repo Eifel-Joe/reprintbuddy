@@ -40,6 +40,7 @@ from reprintbuddy.models import (
     Inspection,
     JournalEntry,
     LoginSession,
+    NotifyMark,
     Order,
     OrderLine,
     Part,
@@ -57,7 +58,8 @@ log = logging.getLogger(__name__)
 Publish = Callable[[frozenset[str]], None]
 Change = Literal["new", "dirty", "deleted"]
 
-IGNORED: frozenset[type] = frozenset({User, LoginSession, FormToken})
+# NotifyMark: what the push messages reported (Spec 10.6), bookkeeping that no page shows.
+IGNORED: frozenset[type] = frozenset({User, LoginSession, FormToken, NotifyMark})
 
 # The kind of each table; a bulk statement is reported with its kind only.
 _KIND: dict[type, str] = {
