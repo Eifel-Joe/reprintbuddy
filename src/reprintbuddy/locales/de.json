@@ -37,7 +37,7 @@
   "bambuddy.submit": "Prüfen und speichern",
   "bambuddy.fields_required": "Bitte Adresse und API-Schlüssel ausfüllen.",
   "bambuddy.url_blank": "Die Adresse darf keine Leerzeichen oder Zeilenumbrüche enthalten. Bitte in einem Stück eingeben, zum Beispiel http://host:8000.",
-  "bambuddy.invalid_url": "Die Adresse muss mit http:// oder https:// beginnen und einen gültigen Rechner und Port (1 bis 65535) haben.",
+  "bambuddy.invalid_url": "Die Adresse muss mit http:// oder https:// beginnen und einen gültigen Rechner und Port (1 bis 65535) haben, ohne Benutzername, Abfrage (?) oder Anker (#).",
   "bambuddy.reason.unauthorized": "Bambuddy hat den API-Schlüssel nicht akzeptiert.",
   "bambuddy.reason.forbidden": "Der API-Schlüssel hat nicht die Rechte, die Reprintbuddy braucht („Status lesen“, „Warteschlange verwalten“).",
   "bambuddy.reason.unreachable": "Bambuddy ist unter dieser Adresse nicht erreichbar. Prüfe die Adresse und ob Bambuddy läuft.",

@@ -37,7 +37,7 @@
   "bambuddy.submit": "Check and save",
   "bambuddy.fields_required": "Please fill in the address and the API key.",
   "bambuddy.url_blank": "The address must not contain blanks or line breaks. Enter it in one piece, for example http://host:8000.",
-  "bambuddy.invalid_url": "The address must start with http:// or https:// and have a valid host and port (1 to 65535).",
+  "bambuddy.invalid_url": "The address must start with http:// or https:// and have a valid host and port (1 to 65535), without user name, query or fragment.",
   "bambuddy.reason.unauthorized": "The API key was not accepted by Bambuddy.",
   "bambuddy.reason.forbidden": "The API key does not have the rights Reprintbuddy needs (\"Read Status\", \"Manage Queue\").",
   "bambuddy.reason.unreachable": "Could not reach Bambuddy at this address. Check the address and that Bambuddy is running.",

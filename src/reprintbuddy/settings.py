@@ -230,9 +230,11 @@ def _label_fields(value: Any) -> list[str]:
     return list(label_fields.clean(value))
 
 
-def _ha_url(value: Any) -> str | None:
-    """The address of Home Assistant (Spec 10.6): http or https, host, port and, behind a proxy, a path
-    in front. No credentials, query or fragment: Reprintbuddy appends the path of the call."""
+def _service_url(value: Any) -> str | None:
+    """The address of Bambuddy (Spec 11.3 c) or Home Assistant (Spec 10.6): http or https, host, port
+    and, behind a proxy, a path in front. No credentials, query or fragment: Reprintbuddy appends the
+    path of each call, which would land behind a `#` or `?` and go nowhere (p165; until v0.3.12 only
+    Home Assistant's address was checked like this). The QR address has its own, stricter rule."""
     if value is None:
         return None
     text = _optional_url(value)
@@ -302,7 +304,7 @@ _VALIDATORS: dict[str, Callable[[Any], object]] = {
     "label_printer_host": _label_printer_host,
     "label_roll": _label_roll,
     "label_fields": _label_fields,
-    "bambuddy_url": _optional_url,
+    "bambuddy_url": _service_url,
     "bambuddy_username": _optional_nonempty,
     "bambuddy_api_key": _api_key,
     "bambuddy_review_confirmed": _bool,
@@ -311,7 +313,7 @@ _VALIDATORS: dict[str, Callable[[Any], object]] = {
     "tls_cert": _optional_pem,
     "tls_key": _optional_pem,
     "ha_enabled": _bool,
-    "ha_url": _ha_url,
+    "ha_url": _service_url,
     "ha_token": _api_key,  # a long-lived access token: visible ASCII, like an API key
     "ha_service": _ha_service,
     "ha_names": _bool,

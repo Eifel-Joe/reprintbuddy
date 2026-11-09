@@ -233,6 +233,23 @@ def test_url_with_a_good_port_is_accepted(good):
     assert st.validate("bambuddy_url", good) == good
 
 
+@pytest.mark.parametrize("key", ["bambuddy_url", "ha_url", "qr_base_url"])
+@pytest.mark.parametrize(
+    "bad",
+    ["http://h:8000#x", "http://h:8000/#", "http://h:8000?x=1", "http://h:8000/bb?", "http://user@h:8000",
+     "http://user:pw@h:8000", "http://h:8000/a\\b", "http://h:/bb"],
+)
+def test_an_address_with_query_fragment_or_user_is_refused(key, bad):
+    """p165: Reprintbuddy appends its paths; behind `#` or `?` they go nowhere, a user part has no place."""
+    with pytest.raises(ValueError):
+        st.validate(key, bad)
+
+
+@pytest.mark.parametrize("key", ["bambuddy_url", "ha_url", "qr_base_url"])
+def test_an_address_with_a_path_in_front_stays_allowed(key):
+    assert st.validate(key, "http://proxy.test:8000/bb/") == "http://proxy.test:8000/bb"
+
+
 def test_same_address_does_not_fail_on_bad_input():
     assert st.same_address("http://h:99999", "http://h:80") is False
     assert st.same_address("http://h:80", "http://h:abc") is False
