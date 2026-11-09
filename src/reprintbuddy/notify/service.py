@@ -239,6 +239,11 @@ class Notifier:
             except Exception:  # a page that misses it catches up on reconnect
                 log.warning("push messages: publishing the status failed", exc_info=True)
 
+    async def send_test(self, url: str, token: str, service: str, message: ha.Message) -> str:
+        """The test message of the settings page (Spec 10.6): with what is typed, nothing stored, no
+        status touched. Here and not in the route, so that the web layer holds no HTTP client."""
+        return await ha.send(self.http_factory, url, token, service, message)
+
     async def stop(self) -> None:
         """At shutdown: no new task, and a running one is ended and awaited."""
         self._stopped = True

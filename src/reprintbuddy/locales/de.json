@@ -937,6 +937,7 @@
   "notify.enabled_hint": "An: Nachrichten an Home Assistant senden. Aus: Reprintbuddy spricht Home Assistant nie an.",
   "notify.url": "Adresse von Home Assistant",
   "notify.url_hint": "Mit http:// oder https:// und Port, z. B. http://homeassistant.local:8123.",
+  "notify.url_placeholder": "http://homeassistant.local:8123",
   "notify.token": "Langlebiges Zugriffstoken",
   "notify.token_hint": "In Home Assistant unter Profil → Sicherheit anlegen. Es ist nur bei der Eingabe sichtbar.",
   "notify.service": "Benachrichtigungsdienst",

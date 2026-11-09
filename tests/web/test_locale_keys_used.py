@@ -31,6 +31,9 @@ from reprintbuddy.models import Article, Dispatch
 from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.status import UPDATE_STEPS, UpdateState
 from reprintbuddy.web.routes import ops as ops_routes, settings as settings_routes
+from reprintbuddy import settings as st
+from reprintbuddy.notify import homeassistant as ha
+from reprintbuddy.web.engine_view import BAD_WARNINGS
 
 PACKAGE = Path(reprintbuddy.__file__).parent
 LOCALES = PACKAGE / "locales"
@@ -60,6 +63,12 @@ FAMILIES = {
     "stock.limit.": 'f"stock.limit.{field}"',
     "upload.error.": 'f"upload.error.{error.code}"',  # why a print file is not sent (Spec 5.1a)
     "warning.": 'f"warning.{key}"',  # warnings of the engine
+    # push messages (Spec 10.6): titles and counts per kind, tick boxes, outcomes, reasons, troubles
+    "notify.": 'f"notify.{kind}.title"',
+    "notify.event.": "'notify.event.' ~ key",
+    "notify.outcome.": "'notify.outcome.' ~",
+    "notify.reason.": 'f"notify.reason.{a.pause_reason or \'other\'}"',
+    "notify.trouble.": 'f"notify.trouble.{m.ref}"',
 }
 
 # prefix -> why the endings cannot be taken from the code (these families let every key through, as
@@ -166,6 +175,12 @@ DERIVED = {
     "stock.limit.": lambda text: _article_counters(),
     "upload.error.": lambda text: _found(r'PrintFileError\(\s*"(\w+)"', inspect.getsource(printfile)),
     "warning.": lambda text: _found(r'\badd\(\s*"(\w+)"', inspect.getsource(engine.collect_warnings)),
+    "notify.": lambda text: {f"{kind}.title" for kind in st.HA_EVENTS}
+    | {f"{kind}.{form}.{n}" for kind in st.HA_EVENTS for form in ("named", "count") for n in ("one", "other")},
+    "notify.event.": lambda text: set(st.HA_EVENTS),
+    "notify.outcome.": lambda text: set(ha.OUTCOMES),
+    "notify.reason.": lambda text: set(PAUSE_REASONS) | {"other"},
+    "notify.trouble.": lambda text: {key.removeprefix("warning.") for key in BAD_WARNINGS},
 }
 
 

@@ -137,7 +137,7 @@ async def send_test_message(request: Request, db: Session = Depends(get_db)):
         f"{qr_view.base_address(request, db).rstrip('/')}/",
     )
     release_connection(db)  # nothing may hold the database while Home Assistant takes its time
-    outcome = await ha.send(request.app.state.http_client_factory, str(url), str(token), str(service), message)
+    outcome = await request.app.state.notifier.send_test(str(url), str(token), str(service), message)
     # A typed token is never written back into the page (Spec 11.5a): saving needs it once more.
     return _page(
         request, db, None, SECTION, busy=busy, notify_test=outcome, notify_retype=bool(entered_token), **typed

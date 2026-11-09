@@ -18,7 +18,7 @@
     <input type="hidden" name="form_token" value="{{ form_token() }}">
     {% call ui.setting_row(t('notify.enabled'), t('notify.enabled_hint'), "ha_enabled") %}{{ ui.switch("ha_enabled", ha_enabled, t('notify.enabled'), "ha_enabled") }}{% endcall %}
     {% call ui.setting_row(t('notify.url'), t('notify.url_hint'), "ha_url", stack=true) %}
-      <input id="ha_url" name="ha_url" type="text" value="{{ ha_url }}" placeholder="http://homeassistant.local:8123" autocomplete="off" spellcheck="false" maxlength="500" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
+      <input id="ha_url" name="ha_url" type="text" value="{{ ha_url }}" placeholder="{{ t('notify.url_placeholder') }}" autocomplete="off" spellcheck="false" maxlength="500" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
     {% endcall %}
     {% call ui.setting_row(t('notify.token'), ui.with_stored(t('notify.token_hint'), t('settings.secret_stored')) if ha_token_mask else t('notify.token_hint'), "ha_token", stack=true) %}
       <input id="ha_token" name="ha_token" type="password" value="" autocomplete="new-password" maxlength="2000" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"{% if ha_token_mask %} placeholder="{{ ha_token_mask }}"{% endif %}>
