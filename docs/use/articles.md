@@ -7,7 +7,7 @@ An article is something you stock and sell, for example "Example article A". Eac
 You need a sliced print file in Bambuddy's file manager. Unsliced files cannot become an article: slice them first and put the sliced file (`.3mf` or `.gcode.3mf`) into Bambuddy, or [upload it from Reprintbuddy](#upload-a-print-file).
 
 !!! warning "Use print files that lie directly in Bambuddy's file manager"
-    Reprintbuddy works reliably only with print files that lie directly in Bambuddy's file manager. For files in a folder that is linked into Bambuddy from outside (an external folder), Bambuddy keeps no checksum and, when it reads the folder again, refreshes only the modification date, not the plates and the filament. A new version of such a file would go unnoticed. See [Limits](../help/limits.md).
+    Reprintbuddy works reliably only with print files that lie directly in Bambuddy's file manager. For files in a folder that is linked into Bambuddy from outside (an external folder), Bambuddy keeps no checksum and, when it reads the folder again, refreshes only the modification date, not the plates and the filament. A new version of such a file would go unnoticed. You can still choose such a file; the pages of the choice then show a warning. See [Limits](../help/limits.md).
 
 1. Open *Articles* and click **New article from print file**.
 2. On **Choose a print file**, browse Bambuddy's folders. The path above the list (starting with **All files**) takes you back up. Switch between **Tiles** and **List** as you like. Only sliced files are shown; a note counts the hidden unsliced files of the folder.

@@ -270,6 +270,23 @@ def test_every_reason_has_a_text_in_both_languages_that_the_card_can_fill(ops_en
                 assert value in page, (lang, reason, value)
 
 
+@pytest.mark.parametrize("lang, label", [("en", "Backup:"), ("de", "Sicherung:")])
+def test_the_backup_of_a_failed_rollback_is_labelled(ops_env, lang, label):  # review of p176
+    """The English line said "– backup: <path>"; with the reason from the language files the path needs its label."""
+    git_env(ops_env)
+    _set_language(ops_env, lang)
+    write_status(
+        data_dir(ops_env),
+        UpdateStatus(
+            state="rollback_failed", step="rollback", started_at=now(), finished_at=now(),
+            message="health: x – backup: /var/lib/reprintbuddy/backups/x.db", reason="health_failed",
+            backup="/var/lib/reprintbuddy/backups/x.db",
+        ),
+    )
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    assert f"{label} /var/lib/reprintbuddy/backups/x.db" in page
+
+
 def test_a_reason_whose_values_are_missing_falls_back_to_the_english_line(ops_env):
     git_env(ops_env)
     _set_language(ops_env, "de")

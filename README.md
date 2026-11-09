@@ -59,7 +59,7 @@ Invented example data. More pictures are on the [documentation pages](https://ei
 - **Print files stored directly in Bambuddy's file manager**, uploaded and sliced
   (`.3mf` or `.gcode.3mf`). Linked external folders are not enough: Bambuddy keeps no checksum for
   their files and does not re-read plates and filament when it rescans them, so a changed
-  version would go unnoticed. New print files can also be uploaded from Reprintbuddy
+  version would go unnoticed (such a file can still be chosen; the choice shows a warning). New print files can also be uploaded from Reprintbuddy
   (optional, see *Uploading print files*), though not into an external folder.
 - A **dedicated Bambuddy user** `reprintbuddy` in its **own Bambuddy group** with the rights
   listed under *First run*, and an **API key** of that user. The dedicated user makes

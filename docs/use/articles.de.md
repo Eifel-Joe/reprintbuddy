@@ -7,7 +7,7 @@ Ein Artikel ist etwas, das du auf Lager hast und verkaufst, zum Beispiel „Exam
 Du brauchst eine geslicte Druckdatei in Bambuddys Dateimanager. Ungeslicte Dateien können kein Artikel werden: erst slicen und die geslicte Datei (`.3mf` oder `.gcode.3mf`) in Bambuddy ablegen, oder [aus Reprintbuddy hochladen](#druckdatei-hochladen).
 
 !!! warning "Druckdateien direkt in Bambuddys Dateimanager verwenden"
-    Reprintbuddy arbeitet zuverlässig nur mit Druckdateien, die direkt in Bambuddys Dateimanager liegen. Für Dateien in einem Ordner, der von außen in Bambuddy eingebunden ist (externer Ordner), führt Bambuddy keine Prüfsumme und frischt beim erneuten Einlesen des Ordners nur das Änderungsdatum auf, nicht die Platten und das Filament. Eine neue Fassung so einer Datei bliebe unbemerkt. Siehe [Grenzen](../help/limits.md).
+    Reprintbuddy arbeitet zuverlässig nur mit Druckdateien, die direkt in Bambuddys Dateimanager liegen. Für Dateien in einem Ordner, der von außen in Bambuddy eingebunden ist (externer Ordner), führt Bambuddy keine Prüfsumme und frischt beim erneuten Einlesen des Ordners nur das Änderungsdatum auf, nicht die Platten und das Filament. Eine neue Fassung so einer Datei bliebe unbemerkt. Du kannst so eine Datei trotzdem wählen; die Seiten der Auswahl zeigen dann eine Warnung. Siehe [Grenzen](../help/limits.md).
 
 1. Öffne *Artikel* und klicke auf **Neuer Artikel aus Druckdatei**.
 2. Durchsuche unter **Druckdatei wählen** Bambuddys Ordner. Der Pfad über der Liste (er beginnt mit **Alle Dateien**) führt dich wieder nach oben. Du kannst zwischen **Kacheln** und **Liste** umschalten. Gezeigt werden nur geslicte Dateien; ein Hinweis zählt die ausgeblendeten ungeslicten Dateien des Ordners.

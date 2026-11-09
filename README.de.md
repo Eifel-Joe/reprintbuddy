@@ -60,7 +60,7 @@ Erfundene Beispieldaten. Weitere Bilder stehen auf den [Doku-Seiten](https://eif
 - **Druckdateien direkt in Bambuddys Dateimanager**, hochgeladen und geslict (`.3mf` oder `.gcode.3mf`).
   Extern eingebundene Ordner reichen nicht: Für ihre Dateien führt Bambuddy keine Prüfsumme
   und liest Platten und Filament beim erneuten Einlesen nicht neu, eine geänderte Fassung
-  bliebe unbemerkt. Neue Druckdateien lassen sich auch aus Reprintbuddy hochladen (optional,
+  bliebe unbemerkt (so eine Datei lässt sich trotzdem wählen; die Auswahl zeigt eine Warnung). Neue Druckdateien lassen sich auch aus Reprintbuddy hochladen (optional,
   siehe *Druckdateien hochladen*), aber nicht in einen externen Ordner.
 - Ein **eigener Bambuddy-Benutzer** `reprintbuddy` in einer **eigenen Bambuddy-Gruppe** mit den
   Rechten, die unter *Erster Aufruf* stehen, und ein **API-Schlüssel** dieses Benutzers. Der

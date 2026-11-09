@@ -13,7 +13,7 @@ So bemerkt Reprintbuddy eine geänderte Druckdatei: Es vergleicht die Prüfsumme
 
 - Eine neue Fassung der Datei unter demselben Namen bleibt **unbemerkt**: keine Warnung, keine Pause. Der Artikel druckt weiter, mit dem, was die neue Datei enthält. Auch die Platten und das Filament, die Reprintbuddy anzeigt, können veraltet sein.
 - Bemerkt wird nur noch, wenn die Datei umbenannt wird oder verschwindet.
-- Reprintbuddy hält dich nicht davon ab, eine solche Datei zu wählen, und warnt auch nicht davor.
+- Reprintbuddy hält dich nicht davon ab, eine solche Datei zu wählen, warnt aber davor: Die Ordnerliste und die Plattenseite zeigen beim Wählen einen Hinweis, auch wenn du die Druckdatei eines Artikels änderst.
 - In einen externen Ordner kannst du nicht hochladen: Der Knopf **Druckdatei hochladen** fehlt dort, und ein Versuch wird abgelehnt, bevor etwas an Bambuddy geht.
 
 Am sichersten hältst du deine Druckdateien in Bambuddys eigenem Dateimanager. Nutzt ein Artikel eine Datei aus einem externen Ordner, lade die Datei in Bambuddys Dateimanager hoch oder verschiebe sie dorthin und wähle sie mit **Druckdatei ändern** für den Artikel (siehe [Artikel](../use/articles.md)).

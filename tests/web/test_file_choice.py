@@ -13,8 +13,8 @@ from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.client import BambuddyRejected
 from reprintbuddy.web.i18n import translate
 
-NOT_SLICED_EN = "Not sliced – slice it first and put the sliced file (.gcode.3mf) into Bambuddy."
-NOT_SLICED_DE = "Nicht geslict – erst slicen und die geslicte Datei (.gcode.3mf) in Bambuddy ablegen."
+NOT_SLICED_EN = "Not sliced – slice it first and put the sliced file (.3mf or .gcode.3mf) into Bambuddy."
+NOT_SLICED_DE = "Nicht geslict – erst slicen und die geslicte Datei (.3mf oder .gcode.3mf) in Bambuddy ablegen."
 THUMB = "/articles/new/file/{id}/thumbnail"
 
 
