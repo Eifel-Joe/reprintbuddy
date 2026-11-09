@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
+from reprintbuddy.activity.writer import write_restored_marker
 from reprintbuddy.auth import MIN_PASSWORD_LENGTH
 from reprintbuddy.db import known_revisions
 from reprintbuddy.ops import fullbackup as fb
@@ -139,6 +140,17 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+# The fixed reasons a refused restore is logged with (Spec 10.7, group 4); anything else is "failed".
+RESTORE_REASONS = frozenset({"foreign", "too_new", "too_large", "damaged", "incompatible", "failed", "busy"})
+
+
+def _refused(request: Request, code: str) -> RedirectResponse:
+    """Back to the card with the message of `code`, and the refusal in the activity log."""
+    reason = code if code in RESTORE_REASONS else "failed"
+    request.app.state.activity.record("restore_rejected", "user", {"reason": reason})
+    return _back(f"restore_{code}", "ops-restore")
+
+
 def _back(code: str | None, anchor: str) -> RedirectResponse:
     query = f"&ops={code}" if code else ""
     return RedirectResponse(f"/settings?tab=maintenance{query}#{anchor}", status_code=303)
@@ -214,6 +226,7 @@ async def download_backup(request: Request, db: Session = Depends(get_db)) -> Re
         abandoned.set()
         _remove(target)
         raise
+    request.app.state.activity.record("backup_downloaded", "user", {"encrypted": bool(password)})
     return RemovedAfterSending(
         created.path,
         media_type="application/zip",
@@ -289,7 +302,7 @@ async def restore_upload(request: Request) -> Response:
     # No `await` from here to the cleanup: its candidate is never deleted under it.
     if request.app.state.restore.active:
         await upload.close()
-        return _back("restore_busy", "ops-restore")
+        return _refused(request, "busy")
 
     _discard(request)  # the earlier upload of this browser; other browsers keep theirs
     work = fb.ensure_work_dir(_work_dir(request))
@@ -307,11 +320,11 @@ async def restore_upload(request: Request) -> Response:
         await run_in_threadpool(fb.read_manifest, target)
     except fb.BackupError as error:
         _remove(target)
-        return _back(f"restore_{error.code}", "ops-restore")
+        return _refused(request, error.code)
     except OSError as error:
         _remove(target)
         log.warning("restore upload failed: %s", type(error).__name__)
-        return _back("restore_failed", "ops-restore")
+        return _refused(request, "failed")
     except BaseException:  # cancelled (a closed browser, a shutdown): the flag first, then the file
         abandoned.set()
         _remove(target)
@@ -359,6 +372,7 @@ async def restore_page(request: Request) -> Response:
 @router.post("/settings/restore/cancel", dependencies=[Depends(verify_csrf)])
 async def restore_cancel(request: Request) -> Response:
     _discard(request)
+    request.app.state.activity.record("restore_cancelled", "user")
     return _back(None, "ops-restore")
 
 
@@ -401,7 +415,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
     except fb.BackupError as error:
         _remove(candidate)
         _discard(request)
-        return _back(f"restore_{error.code}", "ops-restore")
+        return _refused(request, error.code)
     except Exception as error:  # noqa: BLE001 - a full disk in a migration, say: nothing was changed
         _remove(candidate)
         log.warning("restore check failed: %s", type(error).__name__)
@@ -409,7 +423,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
             # The machine failed, not the file (p141): the upload stays, the page asks to try again.
             return _confirm_page(request, manifest, "ops.restore.retry", "retry")
         _discard(request)
-        return _back("restore_failed", "ops-restore")
+        return _refused(request, "failed")
     except BaseException:  # cancelled (a closed browser, a shutdown): the flag first, then the file
         abandoned.set()
         _remove(candidate)
@@ -422,7 +436,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
     data_dir = app.state.db_path.parent
     if state.active or app.state.update_starting:  # a click on "Update" whose sudo is still on its way
         _remove(candidate)
-        return _back("restore_busy", "ops-restore")
+        return _refused(request, "busy")
     state.phase = "running"
     try:
         update_busy = await running.update_running_async(data_dir, app.state.ops.runner, _now())
@@ -433,7 +447,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
     if update_busy:
         state.phase = "idle"
         _remove(candidate)
-        return _back("restore_busy", "ops-restore")
+        return _refused(request, "busy")
     # A write that passed the guard just before this line may still be under way; it would
     # land in the restored database with what it read from the old one. This request is one.
     deadline = time.monotonic() + app.state.restore_write_wait
@@ -442,7 +456,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
             if time.monotonic() > deadline:
                 state.phase = "idle"
                 _remove(candidate)
-                return _back("restore_busy", "ops-restore")
+                return _refused(request, "busy")
             await asyncio.sleep(0.02)
     except BaseException:  # cancelled while waiting (shutdown, …): nothing is replaced yet
         state.phase = "idle"
@@ -458,6 +472,8 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         except BaseException:
             _remove(candidate)  # nothing was replaced: the decrypted copy does not wait for the next start
             raise
+        # The restored database is migrated at the next start; that start logs the restore into it.
+        write_restored_marker(data_dir, created_at=manifest.created_at, version=manifest.app_version, via=None)
 
     try:
         async with app.state.ticker.hold():
@@ -469,7 +485,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         if fb.is_environmental(error):
             return _confirm_page(request, manifest, "ops.restore.retry", "retry")  # p141: the upload stays
         _discard(request)
-        return _back("restore_failed", "ops-restore")
+        return _refused(request, "failed")
     except BaseException:  # cancelled (shutdown, a closed browser) while waiting for the tick or replacing
         if gate.abort():  # the worker has not begun and now never will
             state.phase = "idle"

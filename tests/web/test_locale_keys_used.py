@@ -34,6 +34,9 @@ from reprintbuddy.web.routes import ops as ops_routes, settings as settings_rout
 from reprintbuddy import settings as st
 from reprintbuddy.notify import homeassistant as ha
 from reprintbuddy.web.engine_view import BAD_WARNINGS
+from reprintbuddy.activity import kinds as activity_kinds, values as activity_values
+from reprintbuddy.web import activity_view
+from reprintbuddy.web.routes import backup as backup_routes
 
 PACKAGE = Path(reprintbuddy.__file__).parent
 LOCALES = PACKAGE / "locales"
@@ -69,6 +72,19 @@ FAMILIES = {
     "notify.outcome.": "'notify.outcome.' ~",
     "notify.reason.": 'f"notify.reason.{a.pause_reason or \'other\'}"',
     "notify.trouble.": 'f"notify.trouble.{m.ref}"',
+    # the activity log (Spec 10.7): groups, actors, events, settings, fields, fixed words and codes
+    "activity.area.": 'f"activity.area.{entry.area}"',
+    "activity.actor.": 'f"activity.actor.{entry.actor}"',
+    "activity.kind.": 'f"activity.kind.{kind}"',
+    "activity.setting.": "f\"activity.setting.{change.get('setting')}\"",
+    "activity.field.": 'f"activity.field.{name}"',
+    "activity.change.": "'activity.change.' +",
+    "activity.language.": 'f"activity.language.{value}"',
+    "activity.reason.": "f\"activity.reason.{details.get('reason')}\"",
+    "activity.update.": 'f"activity.update.{result}"',
+    "activity.state.": 'f"activity.state.{state}"',
+    "activity.upload.": 'f"activity.upload.{result}"',
+    "activity.label.": 'f"activity.label.{result}"',
 }
 
 # prefix -> why the endings cannot be taken from the code (these families let every key through, as
@@ -181,6 +197,18 @@ DERIVED = {
     "notify.outcome.": lambda text: set(ha.OUTCOMES),
     "notify.reason.": lambda text: set(PAUSE_REASONS) | {"other"},
     "notify.trouble.": lambda text: {key.removeprefix("warning.") for key in BAD_WARNINGS},
+    "activity.area.": lambda text: set(activity_kinds.AREAS),
+    "activity.actor.": lambda text: set(activity_kinds.ACTORS),
+    "activity.kind.": lambda text: set(activity_kinds.KINDS),
+    "activity.setting.": lambda text: set(activity_values.NAMES.values()),
+    "activity.field.": lambda text: set(activity_values.FIELDS.values()),
+    "activity.change.": lambda text: set(activity_values.CHANGES),
+    "activity.language.": lambda text: set(st.LANGUAGES),
+    "activity.reason.": lambda text: set(backup_routes.RESTORE_REASONS),
+    "activity.update.": lambda text: set(activity_view.UPDATE_RESULTS),
+    "activity.state.": lambda text: set(activity_view.CONNECTION_STATES),
+    "activity.upload.": lambda text: set(activity_view.UPLOAD_RESULTS),
+    "activity.label.": lambda text: set(activity_view.LABEL_RESULTS),
 }
 
 

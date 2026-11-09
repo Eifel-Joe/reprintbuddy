@@ -110,7 +110,8 @@ def test_removing_the_parts_of_an_article_reports_its_settings(db, published):
     published.clear()
     with db.begin() as s:
         catalog.update_article(s, a, ArticleInput(name="Template A", parts={}))
-    assert published == [frozenset({"article", f"article:{a}", f"article-settings:{a}"})]
+    # "activity": the change is a line of the activity log too (Spec 10.7), which follows live.
+    assert published == [frozenset({"article", f"article:{a}", f"article-settings:{a}", "activity"})]
 
 
 def test_order_creation_reports_order_articles_and_journal(db, published):
@@ -310,7 +311,7 @@ def test_filament_sorts_and_reorder_marks_report_their_kind(db, published):
     published.clear()
     with db.begin() as s:
         s.add(ReorderMark(item_type="filament", item_id=1, qty=1))
-    assert published == [frozenset({"reorder"})]
+    assert published == [frozenset({"reorder", "activity"})]  # "marked as ordered" in the activity log
 
 
 def test_filament_settings_report_their_own_topic(db, published):
@@ -333,7 +334,7 @@ def test_saving_filament_settings_reports_only_a_real_change(db, published):
     published.clear()
     with db.begin() as s:
         s.get(FilamentSettings, sort_id).supplier = "Example Supplier"
-    assert published == [frozenset({"filament", f"filament-settings:{sort_id}"})]
+    assert published == [frozenset({"filament", f"filament-settings:{sort_id}", "activity"})]
     published.clear()
     with db.begin() as s:
         s.get(FilamentSettings, sort_id).supplier = "Example Supplier"  # same value
@@ -348,7 +349,7 @@ def test_a_ticked_spool_sort_reports_the_article_and_the_filament_page(db, publi
     published.clear()
     with db.begin() as s:
         s.add(ArticleFilamentSort(article_id=a, slot=1, sort_id=sort_id, reordered=True))
-    expected = frozenset({"article", f"article:{a}", f"article-settings:{a}", "filament"})
+    expected = frozenset({"article", f"article:{a}", f"article-settings:{a}", "filament", "activity"})
     assert published == [expected]
     published.clear()
     with db.begin() as s:
@@ -364,3 +365,15 @@ def test_notify_marks_report_nothing(db, published):
     with db.begin() as s:
         s.scalars(select(NotifyMark)).one().state = "sent"
     assert published == []
+
+
+def test_the_activity_log_reports_its_topic_and_its_marks_nothing(db, published):
+    """The page of the activity log follows live (Spec 10.7, 10.5); the marks of the logged states
+    are bookkeeping that no page shows."""
+    from reprintbuddy.models import ActivityEntry, ActivityMark
+
+    with db.begin() as s:
+        s.add(ActivityEntry(area="login", kind="login", actor="user"))
+    with db.begin() as s:
+        s.add(ActivityMark(key="bambuddy.connection", state="ok"))
+    assert published == [frozenset({"activity"})]

@@ -339,24 +339,31 @@ async def _upload(request: Request, db: Session, folder_raw: str | None, folder_
             key = "upload.same_name" if existing.sliced else "upload.same_name_unsliced"
             return again(key, 409, name=existing.filename, existing_id=existing.id if existing.sliced else None)
         sent_at = _now()
+        # The log names the file and its folder (top level: none), never Bambuddy's text (Spec 10.7).
+        logged = {"name": name, "folder": crumbs[-1].name if crumbs else None}
+        activity = request.app.state.activity
         try:
             result = await client.upload_file(folder_id, name, upload_file.file)
         except BambuddyRejected as error:
+            activity.record("upload", "user", {**logged, "result": "rejected"})
             key = _refusal_key(error)
             detail = (error.detail or "").strip()[:MAX_DETAIL] or f"HTTP {error.status}"  # a proxy may send none
             return again(key, 409 if key != "upload.rejected" else 400, detail=detail)
         except BambuddyUnavailable:
             found = await _find_own(client, folder_id, name, size, sent_at, username if isinstance(username, str) else None)
             if found is None:
+                activity.record("upload", "user", {**logged, "result": "unclear"})
                 log.warning("upload: answer unclear and the file was not found")
                 # No form: a second click could send a copy that cannot be removed (review v0.3.9).
                 return _page(request, state="unclear", status=502, folder_id=folder_id, error="upload.unclear",
                              target=target)
+            activity.record("upload", "user", {**logged, "result": "uploaded"})
             flash(request, "upload.found_after_unclear")
             if not found.sliced:
                 return again("upload.bambuddy_not_sliced", 409, name=found.filename)
             return RedirectResponse(target.next(found.id), status_code=303)
 
+    activity.record("upload", "user", {**logged, "result": "uploaded"})
     if not result.sliced:
         return again("upload.bambuddy_not_sliced", 409, name=result.filename)
     if result.duplicate_of is not None:

@@ -167,4 +167,10 @@ class WriteSessionMaker(sessionmaker):
 
 
 def make_sessionmaker(engine: Engine) -> sessionmaker[Session]:
-    return WriteSessionMaker(engine, expire_on_commit=False)
+    """Every sessionmaker logs changes to settings, the account and master data (Spec 10.7): the
+    app's, the automation's and the one of the commands on the server alike."""
+    from reprintbuddy.activity.capture import install_capture
+
+    maker = WriteSessionMaker(engine, expire_on_commit=False)
+    install_capture(maker)
+    return maker

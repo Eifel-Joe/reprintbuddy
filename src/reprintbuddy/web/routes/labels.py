@@ -140,7 +140,7 @@ async def trial_print(request: Request, db: Session = Depends(get_db)):
     rendered = await run_in_threadpool(
         labels_view.draw, lang, labels_view.sample_data(lang), checked_fields, address, roll
     )
-    await _print(request, db, lang, str(checked_host), roll, rendered.image, 1)
+    await _print(request, db, lang, str(checked_host), roll, rendered.image, 1, kind="label_test", details={})
     return _page(request, db, None, "labels", busy=await ops_ready(request), **typed)
 
 
@@ -199,15 +199,27 @@ async def print_article_label(request: Request, article_id: int, db: Session = D
     address = labels_view.label_address(request, db, article.id)
     data = labels_view.article_data(article, lang)
     rendered = await run_in_threadpool(labels_view.draw, lang, data, saved.fields, address, saved.roll)
-    await _print(request, db, lang, saved.host, saved.roll, rendered.image, copies)
+    await _print(
+        request, db, lang, saved.host, saved.roll, rendered.image, copies,
+        kind="label_printed", details={"id": article.id, "name": article.name},
+    )
     return RedirectResponse(back, status_code=303)
 
 
-async def _print(request: Request, db: Session, lang: str, host: str, roll, image, copies: int) -> None:
-    """Print in a worker thread and flash what happened."""
+async def _print(
+    request: Request, db: Session, lang: str, host: str, roll, image, copies: int, *, kind: str, details: dict
+) -> None:
+    """Print in a worker thread, flash what happened and log it (Spec 10.7, group 7)."""
     release_connection(db)  # nothing may hold the database while the printer takes its time
     outcome = await run_in_threadpool(
         service.print_labels, host, roll, image, copies, refuse=labels_view.own_addresses(request)
     )
     key, params, warning = labels_view.outcome_message(lang, outcome, roll)
     flash(request, key, warning=warning, **params)
+    result = (
+        "printed" if outcome.ok else "not_ready" if outcome.problem is not None
+        else "partial" if outcome.printed else "failed"
+    )
+    request.app.state.activity.record(
+        kind, "user", {**details, "printed": outcome.printed, "requested": outcome.requested, "result": result}
+    )

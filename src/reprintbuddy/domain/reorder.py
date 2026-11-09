@@ -14,6 +14,7 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from reprintbuddy.activity.capture import acting
 from reprintbuddy.bambuddy.types import Spool
 from reprintbuddy.domain import filament, rules, workqueue
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
@@ -340,6 +341,12 @@ def close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: d
     only with a spool list: new spools of the sort (created after the mark, not archived, with a
     creation time) must add up to at least `qty x pack_grams` of net weight.
     """
+    # Reprintbuddy closes them by its rule, also when a page asks (Spec 9.4, 10.7: "Automatik").
+    with acting(session, "auto"):
+        return _close_arrived_marks(session, spools, now)
+
+
+def _close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: datetime) -> int:
     closed = 0
     live = None if spools is None else [s for s in spools if not s.archived]
     sort_of = {} if live is None else filament.resolve_sorts(session, live)

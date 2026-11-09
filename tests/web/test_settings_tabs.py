@@ -31,6 +31,7 @@ def test_the_tab_table_has_the_agreed_shape():
         ("notify", "bell", "settings.tab.notify"),  # v0.3.12, Spec 10.6
         ("account", "user", "settings.tab.account"),
         ("maintenance", "download", "settings.tab.maintenance"),
+        ("log", "history", "settings.tab.log"),  # v0.3.13, Spec 10.7
     ]
     assert SECTION_TAB == {
         "language": "general",
@@ -44,7 +45,7 @@ def test_the_tab_table_has_the_agreed_shape():
     }
 
 
-def test_seven_tabs_general_active_with_its_cards(ready_client):
+def test_eight_tabs_general_active_with_its_cards(ready_client):
     page = ready_client.get("/settings").text
     assert tab_links(page) == [
         (" active", "/settings?tab=general"),
@@ -54,6 +55,7 @@ def test_seven_tabs_general_active_with_its_cards(ready_client):
         ("", "/settings?tab=notify"),
         ("", "/settings?tab=account"),
         ("", "/settings?tab=maintenance"),
+        ("", "/settings?tab=log"),
     ]
     assert 'aria-current="page"' in page
     assert card_forms(page) == ["settings-language", "settings-qr", "settings-server"]
