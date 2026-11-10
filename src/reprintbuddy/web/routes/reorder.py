@@ -5,9 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import catalog, reorder
+from reprintbuddy.domain import reorder
 from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
-from reprintbuddy.models import utcnow
+from reprintbuddy.models import ReorderMark, utcnow
 from reprintbuddy.web import kpis
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
@@ -27,8 +27,8 @@ def _number(value: float) -> str:
 
 
 def _supplier_options(sug: reorder.Suggestion, lang: str) -> list[dict[str, object]]:
-    """The lines of a part with several suppliers, default first (Spec 9.3); one supplier keeps
-    the single detail line, as before."""
+    """The lines of a part or spool sort with several suppliers, default first (Spec 9.3); one
+    supplier keeps the single detail line, as before."""
     if len(sug.options) < 2:
         return []
     unit = unit_label(sug.unit, lang)
@@ -40,10 +40,26 @@ def _supplier_options(sug: reorder.Suggestion, lang: str) -> list[dict[str, obje
             "text": translate(
                 lang, "reorder.suggest_part", packs=option.packs, size=_number(option.pack_size),
                 total=_number(option.packs * option.pack_size), unit=unit,
+            ) if sug.item_type == "part" else translate(
+                lang, "reorder.suggest_filament", packs=option.packs, size=_number(option.pack_size), unit=unit,
             ),
         }
         for option in sug.options
     ]
+
+
+def _under_way_row(m: reorder.MarkRow, lang: str) -> dict[str, object]:
+    """An open order as the list "on its way" and the confirmation of taking it back show it."""
+    return {
+        "id": m.id, "label": m.label, "packs": m.packs, "size": _number(m.pack_size),
+        "unit": m.unit, "day": format_date(to_local(m.marked_at).date(), lang),
+        "supplier": m.supplier or (
+            translate(lang, "parts.supplier_unnamed", n=m.supplier_position + 1)
+            if m.supplier_position is not None else None
+        ),
+        # p211: a partial delivery shows what has arrived; only the rest counts as on its way
+        "arrived": _number(m.arrived) if m.arrived > 0 else None,
+    }
 
 
 async def _page(
@@ -81,31 +97,18 @@ async def _page(
             "per_day": sug.per_day if sug.has_history else None,  # p59: no "0.0 g/day" without history
             "packs_value": typed["packs"] if mine else sug.packs, "lead_days": sug.lead_days,
             "options": options, "chosen": chosen, "typed": mine,
-            # what the page shows of the part's suppliers; a mark from an outdated page is refused
-            "suppliers_key": catalog.suppliers_key(catalog.part_suppliers(db, sug.item_id))
-            if sug.item_type == "part" else None,
+            # what the page shows of the suppliers; a mark from an outdated page is refused
+            "suppliers_key": reorder.suppliers_key(db, sug.item_type, sug.item_id),
             "safety": _number(sug.safety), "packs": sug.packs, "size": _number(sug.pack_size),
             "total": _number(total),
             "suggestion": translate(lang, "reorder.suggest_part", packs=sug.packs, size=_number(sug.pack_size), total=_number(total), unit=unit_label(sug.unit, lang))
             if sug.item_type == "part"
             else translate(lang, "reorder.suggest_filament", packs=sug.packs, size=_number(sug.pack_size), unit=unit_label(sug.unit, lang)), "unit": sug.unit,
-            # a part's only supplier without a name is "Supplier 1" when there is a link to name (Spec 5.3)
-            "supplier": sug.supplier or (unnamed if sug.item_type == "part" and sug.order_url else None),
+            # an only supplier without a name is "Supplier 1" when there is a link to name (Spec 5.3, 9.3)
+            "supplier": sug.supplier or (unnamed if sug.order_url else None),
             "order_url": sug.order_url,
         })
-    under_way = [
-        {
-            "id": m.id, "label": m.label, "packs": m.packs, "size": _number(m.pack_size),
-            "unit": m.unit, "day": format_date(to_local(m.marked_at).date(), lang),
-            "supplier": m.supplier or (
-                translate(lang, "parts.supplier_unnamed", n=m.supplier_position + 1)
-                if m.supplier_position is not None else None
-            ),
-            # p211: a partial delivery shows what has arrived; only the rest counts as on its way
-            "arrived": _number(m.arrived) if m.arrived > 0 else None,
-        }
-        for m in reorder.open_marks(db, spools)
-    ]
+    under_way = [_under_way_row(m, lang) for m in reorder.open_marks(db, spools)]
     # The key figures count the tiles and the marks the page shows.
     cards = kpis.reorder_cards(
         lambda key: translate(lang, key),
@@ -127,8 +130,8 @@ async def reorder_page(request: Request, db: Session = Depends(get_db)):
     return await _page(request, db)
 
 
-async def _act(request: Request, db: Session, work, flash_key: str, typed_keys: bool = False):
-    form = await request.form()
+async def _act(request: Request, db: Session, work, flash_key: str, typed_keys: bool = False, form=None):
+    form = await request.form() if form is None else form
     try:
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
             item = work(tx, form)
@@ -163,6 +166,34 @@ async def reorder_mark(request: Request, db: Session = Depends(get_db)):
         return next((m.label for m in reorder.open_marks(tx) if m.id == mark.id), "")
 
     return await _act(request, db, work, "reorder.marked", typed_keys=True)
+
+
+@router.post("/reorder/marks/{mark_id:int}/withdraw", dependencies=[Depends(verify_csrf)])
+async def reorder_withdraw(request: Request, mark_id: int, db: Session = Depends(get_db)):
+    """Take an order back (Spec 9.4, p280), in two steps without JavaScript like cancelling an order:
+    the first post shows a confirmation (nothing changes, the one-time token stays unused), the
+    second one carries `confirm`. Only the user takes back; filament is never booked (Spec 9.1)."""
+    form = await request.form()
+    if form.get("confirm") != "yes":
+        lang = current_language(request)
+        mark = db.get(ReorderMark, mark_id)
+        row = next((m for m in reorder.open_marks(db) if m.id == mark_id), None)
+        if mark is None or row is None:
+            closed = mark is not None and mark.received_at is not None
+            key = ("reorder.already_withdrawn" if mark.withdrawn else "reorder.already_received") if closed else (
+                "reorder.mark_not_found"
+            )
+            return await _page(request, db, error=translate(lang, key))
+        return render(
+            request, "reorder_withdraw.html", active_nav="reorder", mark=_under_way_row(row, lang),
+            form_token_value=str(form.get("form_token", "")),
+        )
+    spools = await page_spools(request)  # what has arrived of a filament order, before the transaction
+
+    def work(tx, _form):
+        return reorder.withdraw_mark(tx, mark_id, spools).label
+
+    return await _act(request, db, work, "reorder.withdrawn", form=form)
 
 
 @router.post("/reorder/marks/{mark_id:int}/received", dependencies=[Depends(verify_csrf)])
