@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import unicodedata
+from collections.abc import MutableMapping
 from urllib.parse import quote, unquote, urlsplit
 
 from fastapi import Request
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy import auth, links
 from reprintbuddy.bambuddy.client import BambuddyClient
-from reprintbuddy.bambuddy.connection import ConnectionCheck
+from reprintbuddy.bambuddy.connection import OPTIONAL_PERMISSIONS, ConnectionCheck
 from reprintbuddy import settings as st
 from reprintbuddy.activity import capture as activity_capture
 from reprintbuddy.models import User
@@ -28,6 +29,8 @@ SID_KEY = "sid"
 RIGHTS_LATER_KEY = "rights_later"  # in the session: the missing rights "Later" was pressed for
 SETUP_NEXT_KEY = "setup_next"  # in the session: the page opened before the Bambuddy step was done (p114)
 RIGHTS_SUCCESS_KEY = "rights_success"  # in the session: "Check again" in the dialog found every right
+CONNECTION_RESULT_KEY = "bambuddy_result"  # in the session: what a good check found, for the page after the redirect (p191, p192)
+SETUP_DONE_PATH = "/setup/bambuddy/done"  # the page that shows it after the setup; it keeps `SETUP_NEXT_KEY` for a reload
 
 # Reachable by everyone, whatever the state of the installation.
 _OPEN_EXACT = {"/healthz", "/favicon.ico"}
@@ -307,10 +310,48 @@ def remember_page(request: Request) -> None:
         request.session[SETUP_NEXT_KEY] = target
 
 
+def remembered_page(request: Request) -> str | None:
+    """The page `remember_page` kept, left in place, checked again as a local path; None if there
+    is none (or it does not pass). The cookie is signed, but the value is checked where it is used."""
+    return _plain_local_path(request.session.get(SETUP_NEXT_KEY))
+
+
 def take_remembered_page(request: Request) -> str:
-    """The page `remember_page` kept, once (it is removed), checked again as a local path; "/" if
-    there is none. The cookie is signed, but the value is checked where it is used all the same."""
-    return _plain_local_path(request.session.pop(SETUP_NEXT_KEY, None)) or "/"
+    """The page `remember_page` kept, once (it is removed); "/" if there is none."""
+    page = remembered_page(request)
+    request.session.pop(SETUP_NEXT_KEY, None)
+    return page or "/"
+
+
+def store_connection_result(session: MutableMapping[str, object], check: ConnectionCheck) -> None:
+    """Keep what a good check found until the page after the redirect has shown it (p191, p192).
+
+    Only what that page prints: the key owner, whether the owner is an administrator, and which of
+    the recommended rights the key has. The required rights are all there (the check was good), and
+    the key itself, the address and the rest of the rights stay out: the session is a cookie."""
+    session[CONNECTION_RESULT_KEY] = {
+        "owner": check.owner or "",
+        "admin": check.owner_is_admin,
+        "granted": sorted(code for code in OPTIONAL_PERMISSIONS if code in check.granted),
+    }
+
+
+def take_connection_result(session: MutableMapping[str, object]) -> ConnectionCheck | None:
+    """The check `store_connection_result` kept, once (it is removed); None if there is none or
+    the entry is not what was stored."""
+    entry = session.pop(CONNECTION_RESULT_KEY, None)
+    if not isinstance(entry, dict):
+        return None
+    owner, admin, granted = entry.get("owner"), entry.get("admin"), entry.get("granted")
+    if not (isinstance(owner, str) and owner and isinstance(admin, bool) and isinstance(granted, list)):
+        return None
+    return ConnectionCheck(
+        True,
+        "ok",
+        owner=owner,
+        owner_is_admin=admin,
+        granted=frozenset(code for code in granted if code in OPTIONAL_PERMISSIONS),
+    )
 
 
 def local_next(form) -> str:
@@ -454,8 +495,10 @@ def _decide(request: Request) -> Response | None:
         if not st.bambuddy_configured(session) and not in_bambuddy_setup and path != "/logout":
             remember_page(request)
             return RedirectResponse("/setup/bambuddy", status_code=303)
-        if st.bambuddy_configured(session) and SETUP_NEXT_KEY in request.session:
-            request.session.pop(SETUP_NEXT_KEY, None)  # a page kept for a setup that was finished elsewhere
+        # A page kept for a setup that was finished elsewhere. The result page of the setup itself keeps it
+        # for a reload; the next page of any kind (also "Continue") uses it up.
+        if st.bambuddy_configured(session) and SETUP_NEXT_KEY in request.session and path != SETUP_DONE_PATH:
+            request.session.pop(SETUP_NEXT_KEY, None)
         # Signed in and set up: a page of the interface. The first one after a start also
         # checks what the stored key may do (Spec 11.3, "Rights after an update").
         request.state.rights_due = st.bambuddy_configured(session) and not in_bambuddy_setup

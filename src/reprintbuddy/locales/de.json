@@ -426,7 +426,6 @@
   "bambuddy.result.missing": "fehlt",
   "bambuddy.result.fix": "Ein fehlendes Recht der Gruppe „Reprintbuddy“ wird dort ergänzt, ein neuer Schlüssel ist nicht nötig. Fehlt ein Recht am Schlüssel selbst (z. B. „Status lesen“), ist ein neuer Schlüssel nötig, weil Bambuddys Oberfläche die Rechte eines vorhandenen Schlüssels nicht ändern lässt.",
   "bambuddy.admin_note": "Der Schlüssel gehört einem Administrator und darf mehr als Reprintbuddy braucht. Sicherer ist der Benutzer „reprintbuddy“ aus der Anleitung.",
-  "bambuddy.admin_warning": "Gespeichert. Der Schlüssel gehört einem Administrator und darf mehr als Reprintbuddy braucht. Sicherer ist der Benutzer „reprintbuddy“ aus der Anleitung.",
   "settings.bambuddy_owner": "Gespeicherter Besitzer des Schlüssels: {owner}",
   "ops.restart.title": "Neustart",
   "ops.restart.button": "Reprintbuddy neu starten",

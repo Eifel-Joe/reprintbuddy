@@ -532,7 +532,7 @@ def test_setup_with_full_rights_marks_the_key_as_checked(admin_client, respx_moc
         "/setup/bambuddy/connect",
         data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": "bb_SETUPKEY_123456"},
     )
-    assert response.status_code == 200  # the page with the result (p179)
+    assert response.status_code == 303  # on to the page with the result (p179, p192)
     assert admin_client.app.state.rights.status == "ok"
 
 

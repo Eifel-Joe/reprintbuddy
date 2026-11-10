@@ -17,11 +17,15 @@ from reprintbuddy.web.bambuddy_check import (
     validate_key,
 )
 from reprintbuddy.web.deps import (
+    SETUP_DONE_PATH,
     SETUP_NEXT_KEY,
     current_language,
     get_db,
+    remembered_page,
     render,
     start_session,
+    store_connection_result,
+    take_connection_result,
     take_remembered_page,
     take_verdict,
 )
@@ -166,11 +170,27 @@ async def bambuddy_connect_submit(request: Request, db: Session = Depends(get_db
     st.apply_check(db, url, api_key, check)  # one transaction
     request.app.state.live_listener.wake(reconnect=True)  # p97: the channel tries with the new key at once
     take_verdict(request, check)  # this start has checked the new key
-    page = take_remembered_page(request)  # the page opened before the setup (a scanned QR code)
-    # p179 (Spec 11.3 c): the person sees what was found, not only when it failed: the owner, every
-    # required right with a tick and whether uploading works (the optional right, Spec 5.1a). The page
-    # leads on with "Continue"; an administrator's key is saved, warned about, and goes on to the settings.
+    # p191/p192 (Spec 11.3 c): saved, then on to a page of its own that shows what was found once; a reload of
+    # that page must not repeat the POST or lose the page opened before the setup (a scanned QR code), which
+    # stays in the session for it (the gate uses it up with the next page).
+    store_connection_result(request.session, check)
+    return RedirectResponse(SETUP_DONE_PATH, status_code=303)
+
+
+@router.get(SETUP_DONE_PATH)
+async def bambuddy_connected(request: Request, db: Session = Depends(get_db)):
+    """What a good check found: the owner, every required right with a tick and whether uploading and the
+    live channel work (the optional rights, Spec 5.1a), then the way on. Shown once; a reload leaves for the
+    page opened before the setup, or for the settings."""
+    if not st.bambuddy_configured(db):
+        return RedirectResponse(BASE, status_code=303)
+    check = take_connection_result(request.session)
+    if check is None:
+        if remembered_page(request) is not None:
+            return RedirectResponse(take_remembered_page(request), status_code=303)
+        return RedirectResponse("/settings?tab=bambuddy", status_code=303)
+    # An administrator's key is saved, warned about, and goes on to the settings.
     return _connect_page(
-        request, address=address_input, check=check, connected=True,
-        continue_url="/settings?tab=bambuddy" if check.owner_is_admin else page,
+        request, check=check, connected=True,
+        continue_url="/settings?tab=bambuddy" if check.owner_is_admin else remembered_page(request) or "/",
     )

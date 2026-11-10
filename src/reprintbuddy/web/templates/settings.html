@@ -103,9 +103,10 @@
   {% call ui.card_head("link", t('settings.bambuddy')) %}<button class="btn" type="submit" form="settings-bambuddy">{{ t('bambuddy.submit') }}</button>{% endcall %}
   <p class="muted">{{ t('settings.bambuddy_hint') }}</p>
   {% if error and error_section == 'bambuddy' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
-  {% if bambuddy_owner %}<p class="status">{{ t('settings.bambuddy_owner', owner=bambuddy_owner) }}</p>{% endif %}
-  {# What the check found: the one just made, or else the one of the start (a missing right). The guides are open. #}
+  {% if bambuddy_owner and not connection_result %}<p class="status">{{ t('settings.bambuddy_owner', owner=bambuddy_owner) }}</p>{% endif %}
+  {# What the check found: a refused one, the good one just made (after the redirect, once: p191), or else the one of the start (a missing right). The guides are open. #}
   {% if error_section == 'bambuddy' %}{% with guide_link=True %}{% include "_bambuddy_result.html" %}{% endwith %}
+  {% elif connection_result %}{% with check=connection_result %}{% include "_bambuddy_connected.html" %}{% endwith %}
   {% elif rights_notice %}{% with check=rights_notice, guide_link=True, show_optional=False %}{% include "_bambuddy_result.html" %}{% endwith %}{% endif %}
   <form id="settings-bambuddy" method="post" action="/settings/bambuddy" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
