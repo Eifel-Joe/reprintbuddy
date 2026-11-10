@@ -9,7 +9,8 @@ table `part_suppliers`; every existing part gets exactly one supplier, its defau
 it had (Spec 5.3: "Beim Update … sein einziger Lieferant und Standard"). The safety margin stays at
 the part. A mark "ordered" keeps the pack size and the supplier name of the moment it was set
 (Spec 9.4: the amount on its way does not follow a later change of the supplier), so
-`reorder_marks` gets both, filled for the existing part marks from their part.
+`reorder_marks` gets both, filled for the existing part marks from their part; and the supplier's
+position, so a supplier without a name is still "Supplier n" on the list "on its way" (Spec 5.3).
 
 `reorder_marks` gets its columns with a plain ALTER TABLE, not a batch rebuild (see 0013: a rebuild
 may change the order of foreign keys, and the restore compares the structure exactly). `parts`
@@ -57,10 +58,12 @@ def upgrade() -> None:
 
     op.add_column("reorder_marks", sa.Column("pack_size", sa.Integer(), nullable=True))
     op.add_column("reorder_marks", sa.Column("supplier_name", sa.String(), nullable=True))
+    op.add_column("reorder_marks", sa.Column("supplier_position", sa.Integer(), nullable=True))
     op.execute(
         "UPDATE reorder_marks SET"
         " pack_size = (SELECT pack_size FROM parts WHERE parts.id = reorder_marks.item_id),"
-        " supplier_name = (SELECT supplier FROM parts WHERE parts.id = reorder_marks.item_id)"
+        " supplier_name = (SELECT supplier FROM parts WHERE parts.id = reorder_marks.item_id),"
+        " supplier_position = 0"
         " WHERE item_type = 'part'"
     )
 
@@ -93,6 +96,7 @@ def downgrade() -> None:
             " WHERE s.part_id = parts.id AND s.is_default = 1)"
         )
     with op.batch_alter_table("reorder_marks") as batch:
+        batch.drop_column("supplier_position")
         batch.drop_column("supplier_name")
         batch.drop_column("pack_size")
     op.drop_index("uq_part_suppliers_default", table_name="part_suppliers")

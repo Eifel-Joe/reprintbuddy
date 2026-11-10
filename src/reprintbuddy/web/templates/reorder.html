@@ -37,6 +37,7 @@
       <input type="hidden" name="form_token" value="{{ form_token() }}">
       <input type="hidden" name="item_type" value="{{ r.item_type }}">
       <input type="hidden" name="item_id" value="{{ r.item_id }}">
+      {% if r.suppliers_key %}<input type="hidden" name="suppliers_key" value="{{ r.suppliers_key }}">{% endif %}
       {% if r.options %}
       {#- Marked with the chosen supplier, the default first (Spec 9.4); reorder.js puts its quantity
           into the packs field while nobody has typed there. -#}
@@ -47,7 +48,7 @@
       {% endcall %}
       {% endif %}
       {% call ui.field("packs-" ~ r.item_type ~ "-" ~ r.item_id, t('reorder.pack_label'), t('info.reorder_packs')) %}
-        <input type="number" id="packs-{{ r.item_type }}-{{ r.item_id }}" name="packs" value="{{ r.packs_value }}" min="1" max="1000" inputmode="numeric" required>
+        <input type="number" id="packs-{{ r.item_type }}-{{ r.item_id }}" name="packs" value="{{ r.packs_value }}"{% if r.typed %} data-typed{% endif %} min="1" max="1000" inputmode="numeric" required>
       {% endcall %}
       <button class="btn" type="submit">{{ t('reorder.mark') }}</button>
     </form>

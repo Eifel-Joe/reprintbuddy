@@ -103,10 +103,10 @@ def test_part_marks_keep_pack_size_and_supplier_of_their_time(old_db):
     upgrade(old_db, revision=REVISION)
     with old_db.connect() as conn:
         rows = conn.execute(text(
-            "SELECT id, qty, pack_size, supplier_name FROM reorder_marks ORDER BY id"
+            "SELECT id, qty, pack_size, supplier_name, supplier_position FROM reorder_marks ORDER BY id"
         )).all()
     assert [tuple(r) for r in rows] == [
-        (1, 3, 50, "Example Supplier"), (2, 1, 1, None), (3, 2, None, None),
+        (1, 3, 50, "Example Supplier", 0), (2, 1, 1, None, 0), (3, 2, None, None, None),
     ]
 
 
@@ -162,7 +162,7 @@ def test_downgrade_brings_the_default_supplier_back_to_the_part(old_db):
         )).all()
         assert [tuple(r) for r in rows] == [(1, 10, 1, 1, "Second", None), (2, 1, 1, 0, None, None)]
         marks = {c["name"] for c in inspect(old_db).get_columns("reorder_marks")}
-        assert not marks & {"pack_size", "supplier_name"}
+        assert not marks & {"pack_size", "supplier_name", "supplier_position"}
 
 
 def test_an_upgraded_database_has_the_structure_of_a_new_one(old_db, tmp_path):

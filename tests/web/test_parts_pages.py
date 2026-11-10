@@ -330,3 +330,9 @@ def test_eleven_suppliers_are_refused_not_cut_off(ready_client):
     assert response.status_code == 200
     assert en("parts.suppliers_count", max=10) in response.text
     assert parts_in_db(ready_client) == []
+
+
+
+def test_the_supplier_name_field_is_labelled_name(ready_client):  # review R8, Spec 5.3
+    page = ready_client.get("/parts/new").text
+    assert re.search(r'<label for="supplier-0-name">Name</label>', page)

@@ -136,7 +136,7 @@ def _numbered(number: int | None, parse):
 
 def _parse_supplier(row: dict[str, str], number: int | None, is_default: bool) -> SupplierInput:
     return _numbered(number, lambda: SupplierInput(
-        name=parse_text(row["supplier"], field="parts.field.supplier", max_len=200),
+        name=parse_text(row["supplier"], field="parts.field.supplier_name", max_len=200),
         order_url=parse_text(row["order_url"], field="parts.field.order_url", max_len=2000),
         pack_size=parse_int(row["pack_size"], field="parts.field.pack_size", min=1, max=MAX_QTY),
         min_order_packs=parse_int(row["min_order_packs"], field="parts.field.min_order_packs", min=1, max=1000),

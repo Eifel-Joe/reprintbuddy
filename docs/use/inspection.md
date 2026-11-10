@@ -133,7 +133,7 @@ A part has one to ten suppliers, for example when one shop cannot deliver and an
 
 | Field | Meaning |
 |---|---|
-| **Supplier** | The name as text, optional. Without a name it is called **Supplier 1**, **Supplier 2** and so on. While you type, the field suggests names you have used before. |
+| **Name** | The supplier's name as text, optional. Without a name it is called **Supplier 1**, **Supplier 2** and so on. While you type, the field suggests names you have used before. |
 | **Order link** | The order page; the link must start with `http://` or `https://`. |
 | **Order unit (pieces per pack)** | How many pieces come in one pack from this supplier. |
 | **Minimum order quantity (packs)** | The fewest packs one order from this supplier may have. |

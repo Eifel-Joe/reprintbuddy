@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import reorder
+from reprintbuddy.domain import catalog, reorder
 from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
 from reprintbuddy.models import utcnow
 from reprintbuddy.web import kpis
@@ -69,6 +69,7 @@ async def _page(
         chosen = typed["supplier_id"] if mine and typed["supplier_id"] else next(
             (str(o["id"]) for o in options if o["is_default"]), ""
         )
+        unnamed = translate(lang, "parts.supplier_unnamed", n=1)
         rows.append({
             "item_type": sug.item_type, "item_id": sug.item_id, "label": sug.label,
             "swatch": swatch if swatch and COLOR.fullmatch(swatch) else None,
@@ -76,18 +77,27 @@ async def _page(
             "on_way": _number(sug.on_way) if sug.on_way > 0 else None,  # p171: it counts, so it shows
             "per_day": sug.per_day if sug.has_history else None,  # p59: no "0.0 g/day" without history
             "packs_value": typed["packs"] if mine else sug.packs, "lead_days": sug.lead_days,
-            "options": options, "chosen": chosen,
+            "options": options, "chosen": chosen, "typed": mine,
+            # what the page shows of the part's suppliers; a mark from an outdated page is refused
+            "suppliers_key": catalog.suppliers_key(catalog.part_suppliers(db, sug.item_id))
+            if sug.item_type == "part" else None,
             "safety": _number(sug.safety), "packs": sug.packs, "size": _number(sug.pack_size),
             "total": _number(total),
             "suggestion": translate(lang, "reorder.suggest_part", packs=sug.packs, size=_number(sug.pack_size), total=_number(total), unit=unit_label(sug.unit, lang))
             if sug.item_type == "part"
-            else translate(lang, "reorder.suggest_filament", packs=sug.packs, size=_number(sug.pack_size), unit=unit_label(sug.unit, lang)), "unit": sug.unit, "supplier": sug.supplier,
+            else translate(lang, "reorder.suggest_filament", packs=sug.packs, size=_number(sug.pack_size), unit=unit_label(sug.unit, lang)), "unit": sug.unit,
+            # a part's only supplier without a name is "Supplier 1" when there is a link to name (Spec 5.3)
+            "supplier": sug.supplier or (unnamed if sug.item_type == "part" and sug.order_url else None),
             "order_url": sug.order_url,
         })
     under_way = [
         {
             "id": m.id, "label": m.label, "packs": m.packs, "size": _number(m.pack_size),
-            "unit": m.unit, "day": format_date(to_local(m.marked_at).date(), lang), "supplier": m.supplier,
+            "unit": m.unit, "day": format_date(to_local(m.marked_at).date(), lang),
+            "supplier": m.supplier or (
+                translate(lang, "parts.supplier_unnamed", n=m.supplier_position + 1)
+                if m.supplier_position is not None else None
+            ),
         }
         for m in reorder.open_marks(db)
     ]
@@ -141,7 +151,10 @@ async def reorder_mark(request: Request, db: Session = Depends(get_db)):
         supplier_id = bounded_int(raw_supplier) if raw_supplier else None  # empty: the default (Spec 9.4)
         if raw_supplier and supplier_id is None:
             raise NotFoundError("reorder.supplier_not_found")
-        mark = reorder.mark_ordered(tx, str(form.get("item_type", "")), item_id, packs, supplier_id)
+        mark = reorder.mark_ordered(
+            tx, str(form.get("item_type", "")), item_id, packs, supplier_id,
+            suppliers_seen=str(form.get("suppliers_key", "")).strip() or None,
+        )
         return next((m.label for m in reorder.open_marks(tx) if m.id == mark.id), "")
 
     return await _act(request, db, work, "reorder.marked", typed_keys=True)

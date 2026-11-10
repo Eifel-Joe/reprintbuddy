@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.activity.capture import acting
 from reprintbuddy.bambuddy.types import Spool
-from reprintbuddy.domain import filament, rules, workqueue
+from reprintbuddy.domain import catalog, filament, rules, workqueue
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.models import (
     Article,
@@ -376,12 +376,15 @@ def _open_mark_for(session: Session, item_type: str, item_id: int) -> ReorderMar
 
 
 def mark_ordered(
-    session: Session, item_type: str, item_id: int, packs: int, supplier_id: int | None = None
+    session: Session, item_type: str, item_id: int, packs: int, supplier_id: int | None = None,
+    suppliers_seen: str | None = None,
 ) -> ReorderMark:
     """Mark a part or filament sort as ordered, `packs` in order units. No journal row.
 
     A part is marked with one of its suppliers (`None`: the default); the mark keeps that
-    supplier's pack size and name (Spec 9.4). Filament has no suppliers to choose.
+    supplier's pack size, name and position (Spec 9.4). `suppliers_seen` is the key of the
+    suppliers the page showed (`catalog.suppliers_key`); when they changed since, nothing is
+    marked. Filament has no suppliers to choose.
     """
     if isinstance(packs, bool) or not isinstance(packs, int) or not 1 <= packs <= MAX_PACKS:
         raise ValidationError("reorder.invalid_packs")
@@ -395,6 +398,8 @@ def mark_ordered(
             )
             if supplier is None or supplier.part_id != item_id:
                 raise NotFoundError("reorder.supplier_not_found")
+            if suppliers_seen and suppliers_seen != catalog.suppliers_key(catalog.part_suppliers(session, item_id)):
+                raise ConflictError("reorder.suppliers_changed")
     elif item_type == "filament":
         if supplier_id is not None:
             raise NotFoundError("reorder.supplier_not_found")
@@ -410,6 +415,7 @@ def mark_ordered(
         item_type=item_type, item_id=item_id, qty=packs,
         pack_size=supplier.pack_size if supplier is not None else None,
         supplier_name=supplier.name if supplier is not None else None,
+        supplier_position=supplier.position if supplier is not None else None,
     )
     session.add(mark)
     session.flush()
@@ -437,6 +443,7 @@ class MarkRow:
     unit: str
     marked_at: datetime
     supplier: str | None = None  # parts: the supplier's name when marked (Spec 9.4)
+    supplier_position: int | None = None  # parts: its position then ("Supplier n" without a name)
 
 
 def open_marks(session: Session) -> list[MarkRow]:
@@ -460,7 +467,7 @@ def open_marks(session: Session) -> list[MarkRow]:
         rows.append(
             MarkRow(
                 mark.id, mark.item_type, mark.item_id, label, mark.qty, size, unit, mark.marked_at,
-                mark.supplier_name,
+                mark.supplier_name, mark.supplier_position,
             )
         )
     return rows
@@ -505,6 +512,7 @@ def _close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: 
             sort = session.get(FilamentSort, mark.item_id)
             if settings is None or sort is None:
                 continue
+            ordered = ordered_amount(session, mark)  # the one place that turns a mark into an amount
             grams = sum(
                 s.label_g
                 for s in live
@@ -512,7 +520,7 @@ def _close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: 
                 and _naive_utc(s.created_at) > mark.marked_at
                 and sort_of[s.id] == sort.id
             )
-            if grams >= mark.qty * settings.pack_grams:
+            if grams >= ordered:
                 mark.received_at = now
                 closed += 1
     session.flush()

@@ -226,3 +226,32 @@ def test_suppliers_of_all_parts_at_once(db):
     with db.begin() as s:
         found = catalog.suppliers_by_part(s)
         assert [r.position for r in found[a]] == [0, 1] and [r.position for r in found[b]] == [0]
+
+
+def test_the_default_moves_to_an_earlier_existing_supplier(db):  # review R3
+    """The unique index allows one default per part at any moment; UPDATEs run in key order, so
+    making row 0 the default while row 1 still is would break a single flush."""
+    with db.begin() as s:
+        part_id = catalog.create_part(
+            s, insert_m4(suppliers=[first_supplier(is_default=False), second_supplier(is_default=True)]), 0, "user"
+        ).id
+    with db.begin() as s:
+        catalog.update_part(s, part_id, insert_m4(suppliers=[first_supplier(), second_supplier()]))
+    with db.begin() as s:
+        assert [(r.position, r.is_default) for r in catalog.part_suppliers(s, part_id)] == [(0, True), (1, False)]
+
+
+def test_the_name_field_is_called_name(db):  # review R8, Spec 5.3 "Name"
+    with pytest.raises(ValidationError) as info:
+        with db.begin() as s:
+            catalog.create_part(s, insert_m4(suppliers=[first_supplier(), second_supplier(name="x" * 201)]), 0, "user")
+    assert info.value.params["field"] == "parts.field.supplier_name"
+
+
+def test_the_fingerprint_of_the_suppliers_changes_with_them(db):  # review R1
+    with db.begin() as s:
+        part_id = catalog.create_part(s, insert_m4(suppliers=[first_supplier(), second_supplier()]), 0, "user").id
+        before = catalog.suppliers_key(catalog.part_suppliers(s, part_id))
+        assert before == catalog.suppliers_key(catalog.part_suppliers(s, part_id))
+        catalog.update_part(s, part_id, insert_m4(suppliers=[first_supplier(), second_supplier(name="Other")]))
+        assert catalog.suppliers_key(catalog.part_suppliers(s, part_id)) != before

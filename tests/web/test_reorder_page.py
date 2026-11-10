@@ -569,3 +569,53 @@ def test_the_supplier_choice_in_german_and_its_script(bb_client):
     assert "Standard" in tile
     assert f'<script src="/static/js/reorder.js?v={__version__}" defer></script>' in html
     assert bb_client.get(f"/static/js/reorder.js?v={__version__}").status_code == 200
+
+
+
+def test_a_page_shown_before_the_suppliers_changed_marks_nothing(bb_client):  # review R1
+    """Saving the suppliers compares by position: removing B moves C into B's row. A page that
+    still shows B must not mark C under B's name."""
+    from reprintbuddy.domain import catalog
+
+    part_id = add_part(bb_client)
+    b = add_second_supplier(bb_client, part_id)
+    page = bb_client.get("/reorder").text
+    key = re.search(r'name="suppliers_key" value="([^"]+)"', part_tile(page)).group(1)
+    with sm_of(bb_client).begin() as s:
+        catalog.part_suppliers(s, part_id)[1].name = "Example Supplier C"
+    token = form_token_of(bb_client, "/reorder", "/reorder/mark")
+    response = bb_client.post("/reorder/mark", data={
+        "csrf_token": csrf_of(bb_client, "/reorder"), "form_token": token, "item_type": "part",
+        "item_id": str(part_id), "packs": "1", "supplier_id": str(b), "suppliers_key": key,
+    })
+    assert response.status_code == 200 and marks(bb_client) == []
+    assert html_escape(translate("en", "reorder.suppliers_changed")) in response.text
+
+
+def test_an_unnamed_supplier_is_named_by_its_number(bb_client):  # review R2, Spec 5.3
+    part_id = add_part(bb_client, supplier=None)
+    tile = part_tile(bb_client.get("/reorder").text)
+    assert "Supplier 1" in tile  # the single line names it when there is a link
+    b = add_second_supplier(bb_client, part_id, name=None)
+    mark_form(bb_client, "part", part_id, "1")
+    with sm_of(bb_client).begin() as s:
+        s.query(ReorderMark).delete()
+    token = form_token_of(bb_client, "/reorder", "/reorder/mark")
+    bb_client.post("/reorder/mark", data={
+        "csrf_token": csrf_of(bb_client, "/reorder"), "form_token": token, "item_type": "part",
+        "item_id": str(part_id), "packs": "1", "supplier_id": str(b),
+    })
+    under_way = bb_client.get("/reorder").text.split("On its way", 1)[1]
+    assert "Supplier 2" in under_way
+
+
+def test_a_number_typed_before_an_error_is_kept_by_the_script(bb_client):  # review R6
+    part_id = add_part(bb_client)
+    b = add_second_supplier(bb_client, part_id)
+    token = form_token_of(bb_client, "/reorder", "/reorder/mark")
+    response = bb_client.post("/reorder/mark", data={
+        "csrf_token": csrf_of(bb_client, "/reorder"), "form_token": token, "item_type": "part",
+        "item_id": str(part_id), "packs": "0", "supplier_id": str(b),
+    })
+    assert re.search(r'name="packs"[^>]*value="0"[^>]*data-typed', part_tile(response.text))
+    assert "data-typed" not in part_tile(bb_client.get("/reorder").text)

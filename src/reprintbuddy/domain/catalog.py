@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
@@ -495,7 +497,7 @@ def _check_supplier(data: SupplierInput, number: int | None) -> SupplierInput:
         if url is not None and not url.lower().startswith(("http://", "https://")):
             raise ValidationError("parts.invalid_url")
         return SupplierInput(
-            name=_text(data.name, "parts.field.supplier", MAX_NAME),
+            name=_text(data.name, "parts.field.supplier_name", MAX_NAME),
             order_url=url,
             pack_size=_int_in(data.pack_size, "parts.field.pack_size", 1, MAX_QTY),
             min_order_packs=_int_in(data.min_order_packs, "parts.field.min_order_packs", 1, 1000),
@@ -571,6 +573,20 @@ def part_suppliers(session: Session, part_id: int) -> list[PartSupplier]:
             select(PartSupplier).where(PartSupplier.part_id == part_id).order_by(PartSupplier.position)
         )
     )
+
+
+def suppliers_key(rows: Sequence[PartSupplier]) -> str:
+    """A short fingerprint of a part's suppliers as a page shows them.
+
+    Saving compares the rows by position, so removing a supplier moves the next one into its row
+    and its id. A reorder page shown before such a change sends the key of what it showed; a mark
+    with a key that no longer matches is refused rather than booked on the wrong supplier.
+    """
+    seen = [
+        (r.id, r.position, r.name, r.order_url, r.pack_size, r.min_order_packs, r.lead_time_days, bool(r.is_default))
+        for r in rows
+    ]
+    return hashlib.sha256(json.dumps(seen).encode("utf-8")).hexdigest()[:16]
 
 
 def default_supplier(session: Session, part_id: int) -> PartSupplier | None:

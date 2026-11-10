@@ -133,7 +133,7 @@ Ein Teil hat einen bis zehn Lieferanten, etwa wenn ein Händler mal nicht liefer
 
 | Feld | Bedeutung |
 |---|---|
-| **Lieferant** | Der Name als Text, freiwillig. Ohne Namen heißt er **Lieferant 1**, **Lieferant 2** und so weiter. Beim Tippen schlägt das Feld Namen vor, die du schon verwendet hast. |
+| **Name** | Der Name des Lieferanten als Text, freiwillig. Ohne Namen heißt er **Lieferant 1**, **Lieferant 2** und so weiter. Beim Tippen schlägt das Feld Namen vor, die du schon verwendet hast. |
 | **Bestell-Link** | Die Bestellseite; der Link muss mit `http://` oder `https://` beginnen. |
 | **Bestelleinheit (Stück je Packung)** | So viele Stück kommen bei diesem Lieferanten in einer Packung. |
 | **Mindestbestellmenge (Packungen)** | So viele Packungen muss eine Bestellung bei ihm mindestens haben. |

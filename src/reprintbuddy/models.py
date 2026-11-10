@@ -471,6 +471,7 @@ class ReorderMark(Base):
     # its way stays as ordered, whatever happens to the supplier later). None for filament.
     pack_size: Mapped[int | None] = mapped_column(default=None)
     supplier_name: Mapped[str | None] = mapped_column(String, default=None)
+    supplier_position: Mapped[int | None] = mapped_column(default=None)  # "Supplier n" is position + 1
 
 
 class NotifyMark(Base):

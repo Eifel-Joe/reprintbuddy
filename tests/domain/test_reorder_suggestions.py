@@ -729,3 +729,25 @@ def test_still_one_open_mark_per_part(db):
         reorder.mark_ordered(s, "part", part.id, 1)
         with pytest.raises(ConflictError):
             reorder.mark_ordered(s, "part", part.id, 1, supplier_id=b.id)
+
+
+
+def test_a_mark_keeps_the_position_of_its_supplier(db):  # review R2: "Supplier 2" without a name
+    with db.begin() as s:
+        part = part_with_demand(s)
+        b = add_supplier(s, part, name=None)
+        mark = reorder.mark_ordered(s, "part", part.id, 1, supplier_id=b.id)
+        assert (mark.supplier_name, mark.supplier_position) == (None, 1)
+        (row,) = reorder.open_marks(s)
+        assert (row.supplier, row.supplier_position) == (None, 1)
+
+
+def test_closing_a_filament_mark_counts_through_ordered_amount(db, monkeypatch):  # review R4
+    with db.begin() as s:
+        sort = filament_setup(s)
+        reorder.mark_ordered(s, "filament", sort.id, 2)
+        seen = []
+        real = reorder.ordered_amount
+        monkeypatch.setattr(reorder, "ordered_amount", lambda session, mark: seen.append(mark.id) or real(session, mark))
+        reorder.close_arrived_marks(s, [], NOW)
+        assert seen

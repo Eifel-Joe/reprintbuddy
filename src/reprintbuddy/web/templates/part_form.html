@@ -28,7 +28,7 @@
     <button class="btn-link supplier-remove" type="submit" name="suppliers_remove" value="{{ index }}" formnovalidate data-supplier-remove{% if count <= 1 %} disabled{% endif %}>{{ ui.icon('x') }}<span>{{ t('parts.supplier_remove') }}</span></button>
   </div>
   <div class="row">
-    {% call ui.field("supplier-" ~ index ~ "-name", t('parts.field.supplier')) %}
+    {% call ui.field("supplier-" ~ index ~ "-name", t('parts.field.supplier_name')) %}
       <input id="supplier-{{ index }}-name" name="supplier" value="{{ row.supplier }}" maxlength="200" list="supplier-names" autocomplete="off">
     {% endcall %}
     {% call ui.field("supplier-" ~ index ~ "-order_url", t('parts.field.order_url')) %}

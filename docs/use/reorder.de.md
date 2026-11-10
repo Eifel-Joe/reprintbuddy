@@ -20,7 +20,7 @@ Jeder Vorschlag ist eine Kachel mit dem Filament oder Zukaufteil, um das es geht
 
 Unter den Zahlen steht der Vorschlag, zum Beispiel `1 × 50 (50 Stk.)`, dann der Lieferant und **Öffnen**, ein Link auf die Bestellseite, der in einem neuen Fenster aufgeht. Lieferant und Link stammen aus den Einstellungen des Zukaufteils oder des Filaments.
 
-Hat ein Zukaufteil mehrere Lieferanten, steht statt dieser Zeile eine Zeile je Lieferant, der Standard-Lieferant zuerst und mit **Standard** gekennzeichnet. Jede Zeile nennt die Menge, die bei diesem Lieferanten passt, in seiner Bestelleinheit, mit seiner Mindestbestellmenge und seiner Lieferzeit, und seinen Link. So siehst du auf einen Blick, wie viel du bei wem bestellen müsstest.
+Hat ein Zukaufteil mehrere Lieferanten, steht statt dieser Zeile eine Zeile je Lieferant, der Standard-Lieferant zuerst und mit **Standard** gekennzeichnet. Jede Zeile nennt die Menge, die bei diesem Lieferanten passt, in seiner Bestelleinheit und gerechnet mit seiner Mindestbestellmenge und seiner Lieferzeit, dazu seinen Link. So siehst du auf einen Blick, wie viel du bei wem bestellen müsstest.
 
 ## Wann ein Vorschlag erscheint
 
@@ -64,7 +64,7 @@ Wenn du bestellt hast:
 2. Prüfe die Zahl bei **Bestelleinheiten**. Sie ist mit der vorgeschlagenen Menge vorbelegt; du kannst 1 bis 1000 eintragen. Gemeint sind Packungen des gewählten Lieferanten.
 3. Klicke auf **als bestellt markieren**.
 
-Der Posten wandert in die Liste **Unterwegs**, mit der Menge, bei Zukaufteilen dem Lieferanten, und dem Datum unter **Bestellt am**. Die Menge unterwegs ist Packungen mal Bestelleinheit des Lieferanten beim Markieren. Änderst oder entfernst du den Lieferanten danach am Teil, bleibt sie, wie sie bestellt wurde. Je Teil ist höchstens eine Bestellung unterwegs. Bis er eingetroffen ist, macht Reprintbuddy dafür keinen neuen Vorschlag. So lange zählt die bestellte Menge als unterwegs: Sie zählt wie Bestand überall, wo der Posten zählt, bei Filament auch im Vorschlag einer anderen Spulensorte, in deren Slots er angekreuzt ist. Eine solche Kachel zeigt die Zeile **Unterwegs**. Der Vorschlag endet von selbst, wenn die Ware auftaucht:
+Der Posten wandert in die Liste **Unterwegs**, mit der Menge, bei Zukaufteilen dem Lieferanten (einer ohne Namen als **Lieferant 2** usw.), und dem Datum unter **Bestellt am**. Die Menge unterwegs ist Packungen mal Bestelleinheit des Lieferanten beim Markieren. Änderst oder entfernst du den Lieferanten danach am Teil, bleibt sie, wie sie bestellt wurde. Je Teil ist höchstens eine Bestellung unterwegs. Wurden die Lieferanten des Teils auf einem anderen Gerät geändert, nachdem die Seite geladen war, wird nichts markiert: Lade die Seite neu und wähle noch einmal. Bis er eingetroffen ist, macht Reprintbuddy dafür keinen neuen Vorschlag. So lange zählt die bestellte Menge als unterwegs: Sie zählt wie Bestand überall, wo der Posten zählt, bei Filament auch im Vorschlag einer anderen Spulensorte, in deren Slots er angekreuzt ist. Eine solche Kachel zeigt die Zeile **Unterwegs**. Der Vorschlag endet von selbst, wenn die Ware auftaucht:
 
 - Bei einem Zukaufteil mit der ersten Buchung **Zukaufteil-Eingang** nach deiner Markierung. Den Eingang buchst du auf der Seite Buchen, siehe [Zu prüfen und Montage](inspection.md#buchen).
 - Bei Filament, sobald Bambuddys Spulenliste neue Spulen dieser Sorte zeigt, die nach deiner Markierung angelegt wurden und zusammen mindestens die bestellte Menge wiegen.
