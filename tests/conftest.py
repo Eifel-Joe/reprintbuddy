@@ -1,3 +1,4 @@
+import logging
 import re
 import socket
 from pathlib import Path
@@ -138,6 +139,31 @@ def make_client(db_path, **create_kwargs) -> TestClient:
     app.state.login_failure_delay = 0  # tests do not wait; some tests set these themselves
     app.state.login_brake.delay = 0
     return TestClient(app, follow_redirects=False)
+
+
+@pytest.fixture(autouse=True)
+def fresh_process_logging():
+    """p166 `configure_logging()` sets up the whole process; the `serve` tests of test_cli.py call it in-process.
+
+    Cause: its handler on the root logger and the levels of the root and `reprintbuddy` loggers stayed
+    for every later test, so a test expecting a DEBUG line of Reprintbuddy failed whenever test_cli.py ran
+    before it (v0.3.15 merge: notify/test_notify_homeassistant.py after test_cli.py; on GitHub the
+    alphabetical order hid it). Fix: after each test only that handler goes (found by its name) and the
+    two levels come back. Rejected: restoring the whole handler list of the root logger, which would
+    also put back pytest's own capture handlers of the setup phase.
+    Test: tests/test_logging_isolation.py.
+    """
+    from reprintbuddy.logsetup import _HANDLER_NAME
+
+    root = logging.getLogger()
+    ours = logging.getLogger("reprintbuddy")
+    before = (root.level, ours.level, {id(h) for h in root.handlers})
+    yield
+    for handler in list(root.handlers):
+        if handler.get_name() == _HANDLER_NAME and id(handler) not in before[2]:
+            root.removeHandler(handler)
+    root.setLevel(before[0])
+    ours.setLevel(before[1])
 
 
 @pytest.fixture(autouse=True)
