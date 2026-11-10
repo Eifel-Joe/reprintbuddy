@@ -345,3 +345,109 @@ def test_journal_shows_the_value_of_that_day_of_an_inventory_dated_back(ready_cl
     html = ready_client.get("/journal").text
     assert en("journal.then", before=12, after=10) in html
     assert "Stock 10 → 8" in html
+
+
+# ---- p260: an inventory dated back holds for the end of that day (Spec 6.2) -----------------------
+
+from datetime import time  # noqa: E402
+
+from reprintbuddy.localtime import end_of_local_day  # noqa: E402
+
+
+def test_an_inventory_dated_back_holds_for_the_end_of_that_day(ready_client):
+    a = article(ready_client, stock=5)
+    yesterday = local_today() - timedelta(days=1)
+    response, _ = post(ready_client, "inventory", article_id=a, field="stock", counted="5",
+                       booked_on=f"{yesterday:%Y-%m-%d}")
+    assert response.status_code == 303
+    (row,) = journal(ready_client)
+    assert to_local(row.booked_at).date() == yesterday
+    assert to_local(row.booked_at).time() == time(23, 59, 59, 999999)
+
+
+def test_a_sale_in_the_evening_before_the_count_is_held_in_it(ready_client):
+    """The example of p260: counted 10 last night, typed in this morning. The sale at 18:00 lies
+    before the count; the stock stays 10, not 9."""
+    a = article(ready_client, stock=11)
+    yesterday = local_today() - timedelta(days=1)
+    evening = end_of_local_day(yesterday) - timedelta(hours=6)  # 18:00 of yesterday
+    with sm_of(ready_client).begin() as s:
+        stock.sell_unreserved(s, a, 1, "user", booked_at=evening)  # 11 -> 10
+    response, _ = post(ready_client, "inventory", article_id=a, field="stock", counted="10",
+                       booked_on=f"{yesterday:%Y-%m-%d}")
+    assert response.status_code == 303
+    assert number(ready_client, Article, a, "stock") == 10
+    assert journal(ready_client)[-1].qty == 0
+
+
+def test_a_part_inventory_dated_back_holds_for_the_end_of_that_day(ready_client):  # sister path
+    p = part(ready_client, stock=5)
+    yesterday = local_today() - timedelta(days=1)
+    post(ready_client, "part-inventory", part_id=p, counted="4", booked_on=f"{yesterday:%Y-%m-%d}")
+    (row,) = journal(ready_client)
+    assert to_local(row.booked_at).time() == time(23, 59, 59, 999999)
+
+
+def test_other_bookings_dated_back_keep_the_clock_time(ready_client):
+    a = article(ready_client, stock=5)
+    yesterday = local_today() - timedelta(days=1)
+    post(ready_client, "sale", article_id=a, qty="1", booked_on=f"{yesterday:%Y-%m-%d}")
+    (row,) = journal(ready_client)
+    assert to_local(row.booked_at).time() != time(23, 59, 59, 999999)
+    assert abs((row.at - row.booked_at) - timedelta(days=1)) < timedelta(hours=2)  # same clock time
+
+
+def test_a_booking_of_the_counted_day_is_refused_after_a_count_dated_back(ready_client):  # p260 + p261
+    a = article(ready_client, stock=10)
+    yesterday = f"{local_today() - timedelta(days=1):%Y-%m-%d}"
+    post(ready_client, "inventory", article_id=a, field="stock", counted="10", booked_on=yesterday)
+    response, _ = post(ready_client, "sale", article_id=a, qty="2", booked_on=yesterday)
+    assert response.status_code == 200
+    assert en("bookings.counted_later", item="Template A", at=yesterday) in response.text
+    assert number(ready_client, Article, a, "stock") == 10
+
+
+@pytest.mark.parametrize("action", ["sale", "stock-in", "part-receipt"])
+def test_each_dated_booking_before_a_count_is_refused_with_its_day(ready_client, action):  # p261
+    a, p = article(ready_client, stock=5), part(ready_client, stock=5)
+    post(ready_client, "inventory", article_id=a, field="stock", counted="5")
+    post(ready_client, "part-inventory", part_id=p, counted="5")
+    fields = {"article_id": a, "part_id": p, "qty": "1"}
+    response, _ = post(ready_client, action, booked_on=f"{local_today() - timedelta(days=2):%Y-%m-%d}", **fields)
+    assert response.status_code == 200, action
+    item = "Insert M4" if action == "part-receipt" else "Template A"
+    assert en("bookings.counted_later", item=item, at=f"{local_today():%Y-%m-%d}") in response.text
+    assert len(journal(ready_client)) == 2  # the two counts only
+
+
+def test_a_sale_dated_to_a_summer_day_stays_on_its_day_in_the_zone_of_the_server(ready_client, monkeypatch):
+    """Review finding: the clock time of an earlier day took the offset of today. Typed in winter at
+    23:30 and dated to a summer day, the sale landed on the next day (in a zone with summer time)."""
+    from datetime import UTC, date, datetime
+
+    from reprintbuddy import localtime
+    from reprintbuddy.web.routes import bookings
+
+    monkeypatch.setattr(localtime, "LOCAL_ZONE", localtime.SERVER_ZONE)
+    winter_evening = datetime.combine(date(2026, 11, 10), time(23, 30)).astimezone().astimezone(UTC)
+    monkeypatch.setattr(bookings, "utcnow", lambda: winter_evening.replace(tzinfo=None))
+    a = article(ready_client, stock=5)
+    response, _ = post(ready_client, "sale", article_id=a, qty="1", booked_on="2026-10-24")
+    assert response.status_code == 303
+    (row,) = journal(ready_client)
+    assert localtime.to_local(row.booked_at).replace(tzinfo=None) == datetime(2026, 10, 24, 23, 30)
+
+
+def test_a_stock_in_deducting_parts_is_refused_when_a_part_was_counted_later(ready_client):  # p261
+    a, p = article(ready_client, stock=0), part(ready_client, stock=10)
+    with sm_of(ready_client).begin() as s:
+        s.add(ArticlePart(article_id=a, part_id=p, qty_per_unit=1))
+    post(ready_client, "part-inventory", part_id=p, counted="10")
+    two_days_ago = f"{local_today() - timedelta(days=2):%Y-%m-%d}"
+    response, _ = post(ready_client, "stock-in", article_id=a, qty="2", consume_parts="1", booked_on=two_days_ago)
+    assert response.status_code == 200
+    assert en("bookings.counted_later", item="Insert M4", at=f"{local_today():%Y-%m-%d}") in response.text
+    assert (number(ready_client, Article, a, "stock"), number(ready_client, Part, p, "stock")) == (0, 10)
+    response, _ = post(ready_client, "stock-in", article_id=a, qty="2", booked_on=two_days_ago)  # unticked
+    assert response.status_code == 303
+    assert (number(ready_client, Article, a, "stock"), number(ready_client, Part, p, "stock")) == (2, 10)

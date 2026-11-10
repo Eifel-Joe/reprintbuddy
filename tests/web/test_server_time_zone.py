@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from reprintbuddy import localtime
 from reprintbuddy.web import formatting
 
 pytestmark = pytest.mark.usefixtures("server_zone")
@@ -20,11 +21,11 @@ pytestmark = pytest.mark.usefixtures("server_zone")
 
 @pytest.fixture
 def server_zone(monkeypatch):
-    monkeypatch.setattr(formatting, "LOCAL_ZONE", formatting.SERVER_ZONE)
+    monkeypatch.setattr(localtime, "LOCAL_ZONE", localtime.SERVER_ZONE)
 
 
 def test_the_default_is_the_zone_of_the_server():
-    assert formatting.SERVER_ZONE is None  # `astimezone(None)`: the zone the machine is set to
+    assert localtime.SERVER_ZONE is None  # `astimezone(None)`: the zone the machine is set to
 
 
 def test_a_stored_time_is_shown_in_the_zone_of_the_server():

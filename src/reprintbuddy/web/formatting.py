@@ -3,27 +3,20 @@
 p183 (v0.3.14): they were shown fixed in Europe/Berlin, wherever Reprintbuddy ran. Now the zone the machine
 is set to (`timedatectl set-timezone`, or `TZ` for the service) decides, with its own summer time.
 Rejected for now: a setting under Settings - the zone of the server is what the machine already knows.
+The zone and `to_local` live in `reprintbuddy.localtime` (p260), the one source for pages and domain.
 Tests: tests/web/test_server_time_zone.py; the other tests pin a zone (`conftest.fixed_display_zone`).
 """
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, tzinfo
+from datetime import date, datetime
 
 from jinja2 import pass_context
 
-SERVER_ZONE: tzinfo | None = None  # `astimezone(None)`: the local zone of the machine, at that moment
-LOCAL_ZONE: tzinfo | None = SERVER_ZONE  # the zone times are shown in; tests pin one
+from reprintbuddy.localtime import to_local
 
 _FORMATS = {"de": "%d.%m.%Y %H:%M"}
 _DEFAULT_FORMAT = "%Y-%m-%d %H:%M"
-
-
-def to_local(dt: datetime) -> datetime:
-    """A naive datetime means UTC; the result is in the zone of the server (`LOCAL_ZONE`)."""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    return dt.astimezone(LOCAL_ZONE)
 
 
 def format_local(dt: datetime, lang: str) -> str:
