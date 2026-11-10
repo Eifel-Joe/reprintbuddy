@@ -326,7 +326,7 @@
   "bookings.title": "Buchen",
   "bookings.book": "Buchen",
   "bookings.inventory": "Inventur / Korrektur (Artikel)",
-  "bookings.inventory_hint": "Setzt den Wert auf die gezählte Menge; die Differenz wird gebucht. Mit einem früheren Datum gilt die Zählung für jenen Tag, Buchungen danach bleiben. Auch für den Anfangsbestand.",
+  "bookings.inventory_hint": "Setzt den Wert auf die gezählte Menge; die Differenz wird gebucht. Mit einem früheren Datum gilt die Zählung für das Ende jenes Tages, Buchungen danach bleiben. Auch für den Anfangsbestand.",
   "bookings.inventory_field": "Wert",
   "bookings.part_inventory": "Inventur / Korrektur (Zukaufteil)",
   "bookings.part_receipt": "Zukaufteil-Eingang",

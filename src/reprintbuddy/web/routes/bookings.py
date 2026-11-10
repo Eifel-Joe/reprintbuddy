@@ -18,7 +18,7 @@ from reprintbuddy.models import Article, Part, utcnow
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.flash import flash
-from reprintbuddy.web.formatting import format_date, to_local
+from reprintbuddy.web.formatting import format_date, local_day_end, to_local
 from reprintbuddy.web.forms import duplicate_redirect, error_status, error_text, parse_bool, parse_int, parse_text
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
 from reprintbuddy.web.journal_view import journal_rows
@@ -78,11 +78,15 @@ def _local_today() -> date:
     return to_local(utcnow()).date()
 
 
-def _booked_at(form) -> datetime | None:
+def _booked_at(form, *, day_end: bool = False) -> datetime | None:
     """The date of a hand booking (Spec 6.2, p172): today by default, earlier days allowed, no
     future day. None books it when it is saved: today, or a form without the field (a page loaded
     before this version). An earlier day counts at the same clock time on that day, so the journal
-    keeps an order within the day; `at` keeps the real saving time."""
+    keeps an order within the day; `at` keeps the real saving time.
+
+    `day_end` (inventory, p260): an earlier day counts at its end - a count dated back is usually
+    the count of that evening, so every booking of that day lies in it. Before, it counted at the
+    clock time of typing it in, and a sale later that day was played forward after the count."""
     if "booked_on" not in form:
         return None
     try:
@@ -96,6 +100,8 @@ def _booked_at(form) -> datetime | None:
         raise ValidationError("bookings.date_future")
     if day == now.date():
         return None
+    if day_end:
+        return local_day_end(day)
     return datetime.combine(day, now.timetz()).astimezone(UTC).replace(tzinfo=None)
 
 
@@ -164,7 +170,7 @@ def _inventory_done(request: Request, item: str, p: dict, diff: int) -> tuple[st
 async def book_inventory(request: Request, db: Session = Depends(get_db)):
     def prepare(form):
         return {"article_id": _article_id(form), "field": str(form.get("field", "")),
-                "counted": _counted(form), "note": _note(form), "booked_at": _booked_at(form)}
+                "counted": _counted(form), "note": _note(form), "booked_at": _booked_at(form, day_end=True)}
 
     def book(tx, p):
         _active_article(tx, p["article_id"])
@@ -180,7 +186,7 @@ async def book_inventory(request: Request, db: Session = Depends(get_db)):
 async def book_part_inventory(request: Request, db: Session = Depends(get_db)):
     def prepare(form):
         return {"part_id": _part_id(form), "counted": _counted(form), "note": _note(form),
-                "booked_at": _booked_at(form)}
+                "booked_at": _booked_at(form, day_end=True)}
 
     def book(tx, p):
         _active_part(tx, p["part_id"])
