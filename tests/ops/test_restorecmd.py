@@ -582,3 +582,37 @@ def test_the_marks_of_the_push_messages_of_the_replaced_database_are_carried_ove
             "gone_since": None,
         }
     ]
+
+
+def test_marks_only_in_the_wal_of_a_crashed_service_are_carried_over_too(tmp_path, source, target):
+    """p221: after a crash the database in place may have its last writes only in the -wal file, without -shm.
+    The marks of the log and of the push messages written there must reach the restore marker all the same.
+    (Root checked for v0.3.15: `_readable` opens the database with write rights before the marks are read, which
+    recovers the -wal into the database; the read-only read that follows finds no leftovers.)"""
+    import shutil
+
+    from reprintbuddy.activity.writer import read_restored_marker
+
+    con = sqlite3.connect(target)
+    con.execute("PRAGMA wal_autocheckpoint=0")
+    with con:
+        con.execute(
+            "INSERT INTO activity_marks (key, state, at)"
+            " VALUES ('bambuddy.connection', 'unreachable', '2026-11-08 09:00:00')"
+        )
+        con.execute(
+            "INSERT INTO notify_marks (kind, ref, state, streak, first_seen_at)"
+            " VALUES ('below_min', '4', 'sent', 0, '2026-11-08 08:00:00')"
+        )
+    crashed = tmp_path / "crashed" / "reprintbuddy.db"
+    crashed.parent.mkdir()
+    for suffix in ("", "-wal"):  # as a killed process leaves it: the writes only in the -wal, no -shm
+        shutil.copy(f"{target}{suffix}", f"{crashed}{suffix}")
+    con.close()
+    assert Path(f"{crashed}-wal").stat().st_size > 0 and not Path(f"{crashed}-shm").exists()
+
+    code, said, _ = run(backup_of(source, tmp_path), crashed)
+    assert code == 0, said.text()
+    marker = read_restored_marker(crashed.parent)
+    assert marker["marks"] == {"bambuddy.connection": {"state": "unreachable", "at": "2026-11-08T09:00:00"}}
+    assert [(m["kind"], m["ref"], m["state"]) for m in marker["notify_marks"]] == [("below_min", "4", "sent")]
