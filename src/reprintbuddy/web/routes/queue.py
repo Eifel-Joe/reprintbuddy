@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable
+from reprintbuddy.bambuddy.types import QUEUE_STATUSES
 from reprintbuddy.domain import dispatch, workqueue
 from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.models import Article, Dispatch, WorkQueueEntry
@@ -129,6 +130,8 @@ def _bambuddy_view(request: Request, db: Session, fresh: bool | None) -> dict[st
     ]
     return {
         "bambuddy_rows": rows,
+        "bambuddy_foreign_ahead": dispatch.foreign_ahead(rows),
+        "bambuddy_states": QUEUE_STATUSES,
         "bambuddy_known": items is not None,
         "bambuddy_fresh": fresh,
         "bambuddy_at": status.bambuddy_queue_at,

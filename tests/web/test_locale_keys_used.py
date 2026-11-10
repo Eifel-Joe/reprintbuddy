@@ -22,6 +22,7 @@ import pytest
 
 import reprintbuddy
 from reprintbuddy.bambuddy import connection, live
+from reprintbuddy.bambuddy.types import QUEUE_STATUSES
 from reprintbuddy.domain import engine, printfile, status as domain_status
 from reprintbuddy.domain.pauses import PAUSE_REASONS
 from reprintbuddy.domain.stock import KINDS, Actor
@@ -60,6 +61,7 @@ FAMILIES = {
     "ops.update.step.": 'f"ops.update.step.{view.update.step}"',
     "pause.reason.": 'f"pause.reason.{reason}"',
     "permission.": "'permission.' ~ code",  # one explanation per Bambuddy right
+    "queue.bambuddy_state.": "'queue.bambuddy_state.' ~",  # state of an entry in Bambuddy's queue (p65)
     "queue.origin.": "'queue.origin.' ~",
     "settings.channel.": "'settings.channel.' ~",  # state of the live channel
     "settings.invalid_": 'f"settings.invalid_{name}"',  # one error per automation field
@@ -186,6 +188,7 @@ DERIVED = {
     "permission.": lambda text: set(connection.EDITOR_LABELS)
     | set(connection.KEY_CREATION_LABELS)
     | set(connection.REQUIRED_PERMISSIONS),
+    "queue.bambuddy_state.": lambda text: set(QUEUE_STATUSES),
     "queue.origin.": lambda text: set(get_args(Origin)),
     "settings.channel.": lambda text: {*_channel_states(), *(f"badge.{state}" for state in _channel_states())},
     "settings.invalid_": lambda text: _automation_fields(),

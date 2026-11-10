@@ -223,6 +223,20 @@ def test_next_insert_position():
     assert dispatch.next_insert_position(printing, {5}) == (True, None)
 
 
+def test_foreign_ahead():  # v0.3.16 p65
+    def rows(*entries):
+        return [(queue_item(i, position, status), own) for i, position, status, own in entries]
+
+    assert not dispatch.foreign_ahead([])
+    assert not dispatch.foreign_ahead(rows((1, 1, "pending", True), (2, 0, "printing", True)))
+    assert dispatch.foreign_ahead(rows((1, 0, "printing", False)))  # a foreign print runs
+    assert dispatch.foreign_ahead(rows((1, 1, "pending", False)))  # no own entry waits: new ones go behind
+    assert dispatch.foreign_ahead(rows((1, 1, "pending", False), (2, 2, "pending", True)))
+    assert not dispatch.foreign_ahead(rows((1, 1, "pending", True), (2, 2, "pending", False)))
+    assert dispatch.foreign_ahead(rows((1, None, "pending", False), (2, 2, "pending", True)))  # no place: unknown, say it
+    assert not dispatch.foreign_ahead(rows((1, 0, "completed", False)))
+
+
 async def test_insert_next_keeps_own_order(db, fake_bambuddy):
     f1 = fake_bambuddy.add_foreign_item("Other 1")
     f2 = fake_bambuddy.add_foreign_item("Other 2")

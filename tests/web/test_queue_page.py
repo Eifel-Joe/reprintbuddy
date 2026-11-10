@@ -4,6 +4,7 @@ Reprintbuddy's own queue (drag handle, row menu that works without JavaScript), 
 prints in progress, a read-only view of Bambuddy's queue and the warnings, all as live regions.
 """
 
+import dataclasses
 import re
 from datetime import datetime
 from pathlib import Path
@@ -532,6 +533,78 @@ def test_bambuddy_queue_view_only(bb_client, fake_bambuddy):
     assert "<form" not in part
     assert 'href="http://bambuddy.test:8000"' in part and en("queue.open_in_bambuddy") in part
     assert en("queue.bambuddy_title") in part
+
+
+def _bambuddy_line(part, label):
+    return next(line for line in re.findall(r"<tr>.*?</tr>", part, re.S) if label in line)
+
+
+def test_a_running_print_of_bambuddy_shows_its_state_not_position_zero(bb_client, fake_bambuddy):  # p65
+    """Bambuddy gives a running print the position 0; the page names the state ("running") there and
+    shows a position only for the entries that wait."""
+    fake_bambuddy.add_foreign_item("Running print", status="printing")
+    waiting = fake_bambuddy.add_foreign_item("Waiting print")
+    part = region(bb_client.get("/queue").text, "bambuddy")
+    running_line = _bambuddy_line(part, "Running print")
+    assert '<td class="num">0</td>' not in running_line
+    assert 'class="queue-pos-state"' in running_line and en("queue.bambuddy_state.printing") in running_line
+    waiting_line = _bambuddy_line(part, "Waiting print")
+    assert f'<td class="num">{waiting.position}</td>' in waiting_line
+    assert 'class="queue-pos-state"' not in waiting_line
+    assert en("queue.bambuddy_state.pending") in waiting_line
+
+
+def test_the_state_of_a_bambuddy_print_is_in_the_language_of_the_page(bb_client, fake_bambuddy):  # p65
+    fake_bambuddy.add_foreign_item("Running print", status="printing")
+    with sm_of(bb_client).begin() as s:
+        st.set_setting(s, "language", "de", commit=False)
+    line = _bambuddy_line(region(bb_client.get("/queue").text, "bambuddy"), "Running print")
+    assert de("queue.bambuddy_state.printing") in line and "printing" not in line
+    assert de("queue.bambuddy_state.printing") != en("queue.bambuddy_state.printing")
+
+
+def test_an_unknown_state_of_bambuddy_is_shown_as_it_came(bb_client, fake_bambuddy):  # p65
+    item = fake_bambuddy.add_foreign_item("Odd print")
+    odd = dataclasses.replace(item, status="paused", position=0)
+
+    async def list_queue():
+        return [odd]
+
+    fake_bambuddy.list_queue = list_queue
+    line = _bambuddy_line(region(bb_client.get("/queue").text, "bambuddy"), "Odd print")
+    assert "paused" in line and '<td class="num">0</td>' not in line
+
+
+def test_foreign_prints_ahead_get_a_hint(bb_client, fake_bambuddy):  # p65
+    """A print of Bambuddy that Reprintbuddy did not make and that runs or comes first: one short hint."""
+    a = article(bb_client)
+    fake_bambuddy.add_foreign_item("Running print", status="printing")
+    own = fake_bambuddy.add_foreign_item("Own print", created_by="reprintbuddy")
+    with sm_of(bb_client).begin() as s:
+        make_dispatch(s, a, status="queued", bambuddy_item_id=own.id)
+    assert esc(en("queue.foreign_ahead")) in region(bb_client.get("/queue").text, "bambuddy")
+
+
+def test_foreign_pending_print_before_an_own_one_gets_the_hint(bb_client, fake_bambuddy):  # p65
+    fake_bambuddy.add_foreign_item("Foreign waiting")
+    fake_bambuddy.add_foreign_item("Own print", created_by="reprintbuddy")
+    assert esc(en("queue.foreign_ahead")) in region(bb_client.get("/queue").text, "bambuddy")
+
+
+def test_no_hint_for_foreign_prints_behind_every_own_one(bb_client, fake_bambuddy):  # p65
+    fake_bambuddy.add_foreign_item("Own print", created_by="reprintbuddy")
+    fake_bambuddy.add_foreign_item("Foreign waiting")
+    assert esc(en("queue.foreign_ahead")) not in region(bb_client.get("/queue").text, "bambuddy")
+
+
+def test_no_hint_when_only_own_prints_are_there(bb_client, fake_bambuddy):  # p65
+    fake_bambuddy.add_foreign_item("Own print", created_by="reprintbuddy")
+    fake_bambuddy.add_foreign_item("Own print 2", status="printing", created_by="reprintbuddy")
+    assert esc(en("queue.foreign_ahead")) not in region(bb_client.get("/queue").text, "bambuddy")
+
+
+def test_no_hint_for_an_empty_bambuddy_queue(bb_client):  # p65
+    assert esc(en("queue.foreign_ahead")) not in region(bb_client.get("/queue").text, "bambuddy")
 
 
 def test_bambuddy_queue_marks_own_by_creator(bb_client, fake_bambuddy):

@@ -151,6 +151,27 @@ def next_insert_position(
     return False, max(positions) + 1
 
 
+def foreign_ahead(rows: Sequence[tuple[QueueItem, bool]]) -> bool:
+    """Is a print in Bambuddy's queue that Reprintbuddy did not make, and that runs or comes first?
+
+    `rows` are the queue entries with the answer "own" (Spec 7.6: an id Reprintbuddy knows, or the
+    user of the key). A foreign print runs now, or it waits and no own waiting entry lies behind it
+    (with no own entry waiting at all, every foreign waiting print counts: the next own print goes
+    behind it). A foreign waiting print behind every own one does not (v0.3.16 p65).
+    """
+    waiting_own = [item for item, own in rows if own and item.status == "pending"]
+    last_own = max((i.position for i in waiting_own if i.position is not None), default=None)
+    for item, own in rows:
+        if own:
+            continue
+        if item.status == "printing":
+            return True
+        if item.status == "pending":
+            if not waiting_own or item.position is None or last_own is None or item.position < last_own:
+                return True
+    return False
+
+
 def own_item_ids(session: Session) -> set[int]:
     """Bambuddy queue ids of all open prints."""
     return set(
