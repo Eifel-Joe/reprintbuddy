@@ -35,7 +35,7 @@ async def page_spools(request: Request):
     """The spools for a page that shows the stock: None (the page shows the record) while writes are paused,
     since live spools enter new sorts, and when the last query found Bambuddy unreachable, so the page does
     not wait for its timeout to show the record anyway."""
-    if not may_write(request):
+    if not may_write(request) or request.app.state.ticker.status.reachable is False:
         return None
     return await spools_or_none(request)
 

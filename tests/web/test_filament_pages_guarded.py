@@ -84,6 +84,29 @@ def test_the_pages_still_write_when_writes_are_allowed(probed, fake_bambuddy):
         assert any(sort.material == "PETG" for sort in s.query(FilamentSort))
 
 
+@pytest.mark.parametrize("path", PAGES)
+def test_no_spool_query_while_bambuddy_is_known_to_be_down(bb_client, fake_bambuddy, path):
+    """p231. The last query found Bambuddy unreachable: the page shows the record at once."""
+    ids = seeded(bb_client, fake_bambuddy)
+    status = bb_client.app.state.ticker.status
+    status.configured, status.reachable = True, False
+    fake_bambuddy.calls.clear()
+    page = bb_client.get(path.format(**ids))
+    assert page.status_code == 200
+    assert "list_spools" not in fake_bambuddy.calls
+    if path != "/reorder":
+        assert "640" in page.text
+
+
+@pytest.mark.parametrize("path", PAGES)
+def test_the_spools_are_asked_for_while_bambuddy_answers(bb_client, fake_bambuddy, path):
+    """The counter-check: with the last query fine (or none yet), the page shows the live stock."""
+    ids = seeded(bb_client, fake_bambuddy)
+    fake_bambuddy.calls.clear()
+    assert bb_client.get(path.format(**ids)).status_code == 200
+    assert "list_spools" in fake_bambuddy.calls
+
+
 def test_the_slot_of_the_mapping_page_is_there(bb_client, fake_bambuddy):
     """The article of `seeded` has the slot the mapping page lists (guards the fixtures above)."""
     ids = seeded(bb_client, fake_bambuddy)
