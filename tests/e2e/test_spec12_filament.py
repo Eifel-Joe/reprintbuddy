@@ -21,7 +21,7 @@ def add_template_a(client):
 def settings_form(client, sort_id, safety):
     data = {
         "csrf_token": csrf_of(client, f"/filament/{sort_id}"), "lead_time_days": "0", "safety_value": str(safety),
-        "safety_unit": "grams", "pack_grams": "1000", "min_order_packs": "1",
+        "safety_unit": "grams", "pack_size": "1000", "min_order_packs": "1",
         "supplier": "Example Supplier", "order_url": "https://shop.example/pla-black",
     }
     return client.post(f"/filament/{sort_id}", data=data, follow_redirects=False)

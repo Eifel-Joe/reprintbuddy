@@ -719,6 +719,7 @@ def test_take_back_asks_first_and_then_closes_the_order(bb_client):
     assert html_escape(translate("en", "reorder.withdraw_confirm", item="Insert M4")) in page
     assert f'name="form_token" value="{token}"' in page and 'name="confirm" value="yes"' in page
     assert 'href="/reorder"' in page  # keep it: back without closing
+    assert 'data-live-watch="reorder"' in page and 'class="live-stale"' in page  # review: a closed order shows
     done = bb_client.post(f"/reorder/marks/{mark.id}/withdraw", data={
         "csrf_token": csrf_of(bb_client, "/reorder"), "form_token": token, "confirm": "yes",
     }, follow_redirects=False)
