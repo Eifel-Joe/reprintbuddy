@@ -51,7 +51,7 @@ Wähle ein Ereignis ab, um seine Nachrichten abzustellen. Hakst du es später wi
 - Die übrigen Ereignisse beschreiben einen Zustand. Jedes meldet sich einmal je Gegenstand, um den es geht, etwa einen Artikel, eine Spulensorte oder ein Zukaufteil. Eine neue Nachricht kommt erst, wenn sich der Anlass erledigt hat und dann wiederkommt. Erledigt heißt: die Pause ist aufgehoben; der Artikel ist nicht mehr rot; der Vorschlag wurde als bestellt markiert und ist eingetroffen, oder er ist bei bekanntem Bestand seit 7 Tagen weg; die Störung war bei einer Abfrage nicht mehr da; das Recht ist wieder vorhanden.
 - Was in einem Durchlauf der Automatik zusammenkommt, geht als eine Nachricht je Ereignisart, zum Beispiel "2 Drucke warten auf Prüfung: A, B".
 - Es gibt keine Entwarnung, keine Ruhezeiten und keine Tageszusammenfassung.
-- Ein Neustart schickt nichts doppelt.
+- Ein Neustart schickt nichts doppelt. Auch das [Wiederherstellen](../operate/update-backup.md#wiederherstellen) einer älteren Sicherung nicht: Was vor dem Wiederherstellen gemeldet wurde, gilt als gemeldet.
 
 ### Namen in Nachrichten
 

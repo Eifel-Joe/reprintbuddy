@@ -129,7 +129,7 @@ The card **Restore** replaces all data with a full backup.
 3. Enter the **Password of the backup** (only if it is encrypted) and your **Sign-in password**, then press **Restore and restart**. **Cancel** drops the file. A checked file waits for one hour.
 4. Reprintbuddy backs up the running database as before an update, replaces it and restarts. Changes are paused until it is back.
 
-Afterwards the user name and password **of the backup** apply, and everybody signs in again. The [Log](log.md) of the backup applies too, with one new line about the restore (with the date and version of the backup); log lines made after the backup was taken are no longer visible. A refused or cancelled restore is logged as well. Listen address, port and HTTPS come from the backup too; if they changed, the page names the new address.
+Afterwards the user name and password **of the backup** apply, and everybody signs in again. The [Log](log.md) of the backup applies too, with one new line about the restore (with the date and version of the backup); log lines made after the backup was taken are no longer visible. Push messages that were already sent are not sent again just because the backup is older. A refused or cancelled restore is logged as well. Listen address, port and HTTPS come from the backup too; if they changed, the page names the new address.
 
 - A backup from an **older** version is restored as it is and migrated at the start.
 - A backup from a **newer** version is refused ("Update first, then restore").
