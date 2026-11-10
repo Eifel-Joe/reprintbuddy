@@ -11,7 +11,7 @@ from reprintbuddy.models import utcnow
 from reprintbuddy.web import kpis
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
-from reprintbuddy.web.filament_view import COLOR, spools_or_none
+from reprintbuddy.web.filament_view import COLOR, may_write, page_spools
 from reprintbuddy.web.formatting import format_date, to_local, unit_label
 from reprintbuddy.web.forms import (
     bounded_int, duplicate_redirect, error_status, error_text, saved_redirect,
@@ -30,14 +30,17 @@ async def _page(
     request: Request, db: Session, *, error: str | None = None, status: int = 200,
     typed: tuple[str, str, str] | None = None,
 ):
-    spools = await spools_or_none(request)  # before any write transaction, never inside one
+    spools = await page_spools(request)  # before any write transaction, never inside one
     lang = current_language(request)
     now = utcnow()
-    with write_transaction(request) as tx:
-        # Entering new spool sorts and closing arrived marks are the page's writes; a part receipt
-        # booked while Bambuddy was down still ends "on its way" (controller ruling R7). The key
-        # figure of the overview counts with the same function (p64).
-        state = reorder.current(tx, spools, now)
+    if not may_write(request):  # p230: a restore or an update runs, the page reads the record only
+        state = reorder.current(db, None, now, write=False)
+    else:
+        with write_transaction(request) as tx:
+            # Entering new spool sorts and closing arrived marks are the page's writes; a part receipt
+            # booked while Bambuddy was down still ends "on its way" (controller ruling R7). The key
+            # figure of the overview counts with the same function (p64).
+            state = reorder.current(tx, spools, now)
     sorts, day = state.sorts, state.day
     rows = []
     for sug in state.suggestions:

@@ -265,9 +265,14 @@ class Current:
     suggestions: list[Suggestion]
 
 
-def current(session: Session, spools: Sequence[Spool] | None, now: datetime) -> Current:
+def current(session: Session, spools: Sequence[Spool] | None, now: datetime, *, write: bool = True) -> Current:
     """Stock (live with `spools`, else the record), close arrived marks, then the suggestions.
-    It writes (new sorts, closed marks): call it in a write transaction."""
+    It writes (new sorts, closed marks): call it in a write transaction. With `write=False` it writes
+    nothing, for the time writes are paused (p230): the stock comes from the record and arrived marks
+    stay open until the next page that may write."""
+    if not write:
+        sorts, day = filament.known_sorts(session, None)
+        return Current(sorts, day, suggestions(session, sorts=sorts, today=now.date()))
     sorts, day = filament.known_sorts(session, spools)
     close_arrived_marks(session, spools, now)
     return Current(sorts, day, suggestions(session, sorts=sorts, today=now.date()))
