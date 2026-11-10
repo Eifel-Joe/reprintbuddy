@@ -140,6 +140,12 @@ def next_insert_position(
 
     Behind the last own waiting entry, so own prints keep their order; to the top when
     no own entry waits. Returns `(insert_at_top, insert_position)`.
+
+    Positions are compared over all printers, not per printer: Bambuddy keeps one sequence over
+    every pending entry, pinned or "any <model>" (`backend/app/services/queue_position.py`,
+    `max_queue_position`; `api/routes/print_queue.py`, `add_to_queue`: "Positions are one sequence
+    across every pending item (#3200)"; read in v1.3.1b1-daily.20261104 and on `main`, file last
+    changed 2026-09-30). Checked in v0.3.17 (p320), no per-printer numbering.
     """
     own = [i for i in queue if i.id in own_item_ids and i.status == "pending"]
     if not own:

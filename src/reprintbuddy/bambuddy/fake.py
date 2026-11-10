@@ -259,6 +259,8 @@ class FakeBambuddy:
         return [i for i in self._items.values() if i.status == "pending"]
 
     def _highest(self) -> int:
+        # One sequence over all pending entries, whatever printer they are pinned to: Bambuddy's
+        # `max_queue_position` (`services/queue_position.py`, #3200).
         return max((i.position or 0 for i in self._pending()), default=0)
 
     def _put(self, item: QueueItem) -> None:

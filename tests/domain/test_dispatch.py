@@ -1,6 +1,7 @@
 """Handing prints over to Bambuddy one by one (Spec 7.3, 7.7, plan B4 decisions 1-5)."""
 
 import asyncio
+import dataclasses
 import pytest
 from sqlalchemy import func, select
 
@@ -235,6 +236,41 @@ def test_foreign_ahead():  # v0.3.16 p65
     assert not dispatch.foreign_ahead(rows((1, 1, "pending", True), (2, 2, "pending", False)))
     assert dispatch.foreign_ahead(rows((1, None, "pending", False), (2, 2, "pending", True)))  # no place: unknown, say it
     assert not dispatch.foreign_ahead(rows((1, 0, "completed", False)))
+
+
+def test_positions_compare_across_printers():  # v0.3.17 p320
+    """Bambuddy numbers pending items in one sequence over all printers (#3200), so the
+    printer an entry is pinned to does not matter for the comparison."""
+    def on(item, printer_id):
+        return dataclasses.replace(item, printer_id=printer_id)
+
+    queue = [on(queue_item(1, 1), 1), on(queue_item(2, 2), 2), on(queue_item(3, 3), None)]
+    assert dispatch.next_insert_position(queue, {1, 3}) == (False, 4)
+    assert dispatch.next_insert_position(queue, {2}) == (False, 3)
+    # a foreign entry on another printer, in front of the last own one, still counts
+    assert dispatch.foreign_ahead([(queue[0], False), (queue[1], True)])
+    assert not dispatch.foreign_ahead([(queue[0], True), (queue[1], False)])
+
+
+async def test_fake_positions_one_sequence_over_printers(fake_bambuddy):  # v0.3.17 p320
+    """The stand-in numbers as Bambuddy does (`services/queue_position.py`, #3200): one
+    sequence over every pending item, never one per printer."""
+    def request(printer_id, model, position=None):
+        return EnqueueRequest(
+            library_file_id=1, plate_id=1, target_model=model, printer_id=printer_id,
+            insert_at_top=False, insert_position=position,
+        )
+
+    first = await fake_bambuddy.enqueue(request(1, None))
+    second = await fake_bambuddy.enqueue(request(2, None))
+    third = await fake_bambuddy.enqueue(request(None, "A1"))
+    assert [i.position for i in (first, second, third)] == [1, 2, 3]
+    inserted = await fake_bambuddy.enqueue(request(2, None, position=2))
+    assert inserted.position == 2
+    queue = await fake_bambuddy.list_queue()
+    assert [(i.id, i.position) for i in queue] == [
+        (first.id, 1), (inserted.id, 2), (second.id, 3), (third.id, 4)
+    ]
 
 
 async def test_insert_next_keeps_own_order(db, fake_bambuddy):
