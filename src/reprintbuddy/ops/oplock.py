@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -85,23 +86,42 @@ class OpLock:
             return
         try:
             with contextlib.suppress(OSError):
+                # Review C 4: no text stays that names an update; a probe that meets another probe
+                # reads the file and must not take an old "update" for a running one.
+                os.ftruncate(fd, 0)
+            with contextlib.suppress(OSError):
                 _unlock(fd)
         finally:
             os.close(fd)
 
 
-def acquire(data_dir: Path, what: str) -> OpLock:
-    """Take the lock for `what` ("update" or "restore"); `Held` if anybody has it."""
+def acquire(data_dir: Path, what: str, *, tries: int = 1) -> OpLock:
+    """Take the lock for `what` ("update" or "restore"); `Held` if anybody has it. `OSError` if the
+    file cannot be opened.
+
+    `tries` > 1 tries again every 50 ms (the commands): a `holder` probe takes the lock for an
+    instant. The page takes it in the event loop and tries once; the user can press again.
+    """
     fd = os.open(data_dir / LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+    locked = False
     try:
-        if not _try_lock(fd):
+        for attempt in range(max(tries, 1)):
+            if attempt:
+                time.sleep(0.05)
+            locked = _try_lock(fd)
+            if locked:
+                break
+        if not locked:
             raise Held(_what(fd))
         text = json.dumps({"what": what, "pid": os.getpid(), "since": datetime.now(UTC).isoformat()})
         os.ftruncate(fd, 0)
         os.lseek(fd, 0, os.SEEK_SET)
         os.write(fd, text.encode("utf-8"))
     except BaseException:
-        os.close(fd)  # closing also drops a lock taken just before a failed write
+        if locked:  # Windows frees a lock of a closed handle only "after a while"
+            with contextlib.suppress(OSError):
+                _unlock(fd)
+        os.close(fd)
         raise
     return OpLock(fd)
 
@@ -116,6 +136,8 @@ def holder(data_dir: Path) -> str | None:
         fd = os.open(data_dir / LOCK_NAME, os.O_RDWR)
     except FileNotFoundError:
         return None
+    except OSError:  # review C 5: e.g. made by root; asking must not fail the engine or a page
+        return "unknown"
     try:
         if _try_lock(fd):
             _unlock(fd)

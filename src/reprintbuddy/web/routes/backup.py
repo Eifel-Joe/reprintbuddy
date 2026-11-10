@@ -68,8 +68,8 @@ class RestoreState:
     of the process does.
     """
 
-    def __init__(self) -> None:
-        self._phase: Literal["idle", "running", "restart_pending"] = "idle"
+    def __init__(self, phase: Literal["idle", "running", "restart_pending"] = "idle") -> None:
+        self._phase = phase
         self._lock: oplock.OpLock | None = None
 
     @property
@@ -521,38 +521,44 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         _remove(candidate)
         return _refused(request, "busy")
     state.phase = "running"
-    if not state.take_lock(data_dir):  # p91: an update typed by hand on the command line
-        state.phase = "idle"
-        _remove(candidate)
-        return _refused(request, "busy")
+    # Review C 2 (p270): from here on, with no `await` in between, a push message on its way may
+    # still write its outcome; `settle` below waits for it, every other way out closes the window.
+    app.state.notifier.begin_settle()
     try:
-        update_busy = await running.update_running_async(data_dir, app.state.ops.runner, _now())
-    except BaseException:  # cancelled (shutdown) or failing: nothing is replaced
-        state.phase = "idle"
-        _remove(candidate)
-        raise
-    if update_busy:
-        state.phase = "idle"
-        _remove(candidate)
-        return _refused(request, "busy")
-    # A write that passed the guard just before this line may still be under way; it would
-    # land in the restored database with what it read from the old one. This request is one.
-    deadline = time.monotonic() + app.state.restore_write_wait
-    try:
-        while app.state.writes_in_flight > 1:
-            if time.monotonic() > deadline:
-                state.phase = "idle"
-                _remove(candidate)
-                return _refused(request, "busy")
-            await asyncio.sleep(0.02)
-        # p270: a push message on its way gets its outcome written before the marks are copied, so the
-        # restored database does not send it once more. Bounded: past it the restore goes ahead.
-        if not await app.state.notifier.settle(app.state.restore_notify_wait):
-            log.info("restore: a push message was still on its way; it may be sent once more")
-    except BaseException:  # cancelled while waiting (shutdown, …): nothing is replaced yet
-        state.phase = "idle"
-        _remove(candidate)
-        raise
+        if not state.take_lock(data_dir):  # p91: an update typed by hand on the command line
+            state.phase = "idle"
+            _remove(candidate)
+            return _refused(request, "busy")
+        try:
+            update_busy = await running.update_running_async(data_dir, app.state.ops.runner, _now())
+        except BaseException:  # cancelled (shutdown) or failing: nothing is replaced
+            state.phase = "idle"
+            _remove(candidate)
+            raise
+        if update_busy:
+            state.phase = "idle"
+            _remove(candidate)
+            return _refused(request, "busy")
+        # A write that passed the guard just before this line may still be under way; it would
+        # land in the restored database with what it read from the old one. This request is one.
+        deadline = time.monotonic() + app.state.restore_write_wait
+        try:
+            while app.state.writes_in_flight > 1:
+                if time.monotonic() > deadline:
+                    state.phase = "idle"
+                    _remove(candidate)
+                    return _refused(request, "busy")
+                await asyncio.sleep(0.02)
+            # p270: a push message on its way gets its outcome written before the marks are copied, so the
+            # restored database does not send it once more. Bounded: past it the restore goes ahead.
+            if not await app.state.notifier.settle(app.state.restore_notify_wait):
+                log.info("restore: a push message was still on its way; it may be sent once more")
+        except BaseException:  # cancelled while waiting (shutdown, …): nothing is replaced yet
+            state.phase = "idle"
+            _remove(candidate)
+            raise
+    finally:
+        app.state.notifier.end_settle()
     gate = _ReplaceGate(state)
 
     def replace() -> None:

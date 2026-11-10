@@ -221,6 +221,8 @@ class Notifier:
                     # write safely while a restore may be replacing the database.
                     if out.kind in ev.ONCE_PER_PRINT and not self._store([(out, "sending")], None, None):
                         return
+                    if self.update_started():
+                        return  # review C 6: a state is not marked before its call; nothing new starts
                     self._open_call = True
                     try:
                         outcome = await ha.send(
@@ -232,6 +234,8 @@ class Notifier:
                     if not stored or outcome == "token":
                         return  # p152: after a rejected token not one more call, not even in this round
                 if check:
+                    if self.update_started():
+                        return
                     self._open_call = True
                     try:
                         checked = await ha.ping(self.http_factory, target.url, target.token)
@@ -320,6 +324,7 @@ class Notifier:
         either written before this returns True or not at all.
         """
         if not self._open_call:
+            self._settling = False
             return True
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
@@ -332,6 +337,16 @@ class Notifier:
             return True
         finally:
             self._settling = False
+
+    def begin_settle(self) -> None:
+        """The restore has begun (review C 2): from this step on, without an `await` in between, the
+        outcome of a call on its way may still be written, also while the restore asks systemd or
+        waits for writes before it reaches `settle`. `settle` or `end_settle` closes it again."""
+        self._settling = True
+
+    def end_settle(self) -> None:
+        """The restore was refused or has stopped waiting: a late outcome is not written."""
+        self._settling = False
 
     def _take(self, results: list[tuple[ev.Outgoing, str]], checked: str | None, now: datetime) -> None:
         problem = self.status.problem

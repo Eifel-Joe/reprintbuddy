@@ -659,7 +659,7 @@ def test_an_update_refuses_while_a_restore_holds_the_lock(update_env, capsys):
         result = update_env.update()
     finally:
         held.release()
-    assert result.state == "succeeded"  # the status of the last update, untouched
+    assert result.state == "running"  # review C 3: the command exits 3, not 0 - nothing was done
     assert update_env.runner.calls == []
     assert read_status(update_env.data).state == "succeeded"
     assert "a restore is running" in capsys.readouterr().out
@@ -680,3 +680,16 @@ def test_an_update_holds_the_lock_while_it_runs_and_lets_it_go(update_env):
     assert update_env.update().state == "succeeded"
     assert seen and set(seen) == {"update"}
     assert oplock.holder(update_env.data) is None
+
+
+def test_an_update_whose_lock_file_cannot_be_opened_is_refused_cleanly(update_env, monkeypatch, capsys):
+    """Review C 5: no traceback; nothing done."""
+    from reprintbuddy.ops import updater
+
+    def denied(*args, **kwargs):
+        raise PermissionError("maintenance.lock")
+
+    monkeypatch.setattr(updater, "acquire", denied)
+    result = update_env.update()
+    assert result.state == "running" and update_env.runner.calls == []
+    assert "lock" in capsys.readouterr().out

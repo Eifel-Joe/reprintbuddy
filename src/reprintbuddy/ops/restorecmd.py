@@ -216,7 +216,11 @@ def restore_backup(
         # data folder: nothing can run there.
         if db_path.parent.is_dir():
             try:
-                lock = oplock.acquire(db_path.parent, "restore")
+                lock = oplock.acquire(db_path.parent, "restore", tries=10)
+            except OSError as error:
+                complain(f"reprintbuddy: cannot take the lock {db_path.parent / oplock.LOCK_NAME} ({error}).")
+                complain("Nothing was changed.")
+                return EXIT_NOT_DONE
             except oplock.Held as held:
                 complain(
                     "reprintbuddy: "

@@ -648,3 +648,14 @@ def test_it_holds_the_lock_while_it_replaces_and_lets_it_go(tmp_path, source, ta
     code, _, _ = run(backup_of(source, tmp_path), target)
     assert code == restorecmd.EXIT_OK and seen == ["restore"]
     assert oplock.holder(target.parent) is None
+
+
+def test_a_lock_file_that_cannot_be_opened_is_a_clean_refusal(tmp_path, source, target, monkeypatch):
+    """Review C 5: no traceback; nothing changed."""
+    def denied(*args, **kwargs):
+        raise PermissionError("maintenance.lock")
+
+    monkeypatch.setattr(restorecmd.oplock, "acquire", denied)
+    code, said, _ = run(backup_of(source, tmp_path), target)
+    assert code == restorecmd.EXIT_NOT_DONE and cap_of(target) == 3
+    assert "maintenance.lock" in said.text() and "Nothing was changed." in said.text()

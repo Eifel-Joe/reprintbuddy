@@ -68,3 +68,35 @@ def test_the_lock_of_a_killed_process_is_gone(tmp_path):
         time.sleep(0.05)
     assert oplock.holder(tmp_path) is None
     oplock.acquire(tmp_path, "restore").release()
+
+
+def test_a_released_lock_leaves_no_text_that_names_an_update(tmp_path):
+    """Review C 4: a probe meeting another probe reads the file; old text must not say "update"."""
+    oplock.acquire(tmp_path, "update").release()
+    assert (tmp_path / oplock.LOCK_NAME).read_text() == ""
+
+
+def test_a_lock_file_that_cannot_be_opened_counts_as_unknown(tmp_path, monkeypatch):
+    """Review C 5: asking must not raise into the engine or a page."""
+    (tmp_path / oplock.LOCK_NAME).write_text("")
+    real = oplock.os.open
+
+    def denied(path, flags, *args):
+        if str(path).endswith(oplock.LOCK_NAME):
+            raise PermissionError(path)
+        return real(path, flags, *args)
+
+    monkeypatch.setattr(oplock.os, "open", denied)
+    assert oplock.holder(tmp_path) == "unknown"
+
+
+def test_acquire_tries_again_for_a_moment(tmp_path, monkeypatch):
+    """Review C 4: a probe of `holder` holds the lock for an instant; a taker then is not refused."""
+    real = oplock._try_lock
+    answers = [False, False]
+
+    def busy_twice(fd):
+        return answers.pop(0) if answers else real(fd)
+
+    monkeypatch.setattr(oplock, "_try_lock", busy_twice)
+    oplock.acquire(tmp_path, "update", tries=5).release()
