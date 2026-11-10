@@ -18,6 +18,7 @@ from reprintbuddy.activity.capture import acting, note_withdrawn
 from reprintbuddy.bambuddy.types import Spool
 from reprintbuddy.domain import catalog, filament, rules, suppliers, workqueue
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
+from reprintbuddy.localtime import local_date
 from reprintbuddy.models import (
     Article,
     ArticleFilament,
@@ -227,17 +228,6 @@ def _spools_seen(session: Session, spools: Sequence[Spool] | None) -> list[_NewS
     return [_NewSpool(r.spool_filament_id, r.label_g, r.spool_created_at) for r in rows]
 
 
-def _local_date(value: datetime) -> date:
-    """The day of a stored (naive UTC) time in the zone Reprintbuddy shows times in (p183).
-
-    TODO(merge): switch to reprintbuddy.localtime (part B of 0.3.16 brings it for p260); until then
-    the zone is read late from the web layer, the one place that keeps it.
-    """
-    from reprintbuddy.web.formatting import to_local
-
-    return to_local(value).date()
-
-
 def _part_receipts(session: Session, mark: ReorderMark) -> list[tuple[datetime, int]]:
     """Receipts of the part that belong to the mark, oldest first: (saved at, quantity).
 
@@ -255,8 +245,8 @@ def _part_receipts(session: Session, mark: ReorderMark) -> list[tuple[datetime, 
         )
         .order_by(JournalEntry.at, JournalEntry.id)
     )
-    day = _local_date(mark.marked_at)
-    return [(at, qty) for at, booked_at, qty in rows if _local_date(booked_at) >= day]
+    day = local_date(mark.marked_at)
+    return [(at, qty) for at, booked_at, qty in rows if local_date(booked_at) >= day]
 
 
 def _arrived(session: Session, mark: ReorderMark, seen: Sequence[_NewSpool]) -> float:
