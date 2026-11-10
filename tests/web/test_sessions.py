@@ -194,3 +194,38 @@ def test_session_helpers_directly(ready_client):
         auth.end_all_sessions(s)
         assert s.scalar(select(func.count()).select_from(LoginSession)) == 0
         assert before >= 1
+
+
+def test_last_seen_is_not_touched_while_writing_rests(ready_client):
+    """p271: during an update a row written now could be dropped by a rollback; the login stays valid."""
+    digest = auth.session_id_hash(sid_of(ready_client))
+    stale = now() - timedelta(minutes=5)
+    with ready_client.app.state.sessionmaker() as s:
+        s.get(LoginSession, digest).last_seen_at = stale
+        s.commit()
+    ready_client.app.state.update_starting = True
+    try:
+        assert is_logged_in(ready_client)
+    finally:
+        ready_client.app.state.update_starting = False
+    (row,) = rows(ready_client)
+    assert row.last_seen_at == stale
+    assert is_logged_in(ready_client)
+    (row,) = rows(ready_client)
+    assert row.last_seen_at > stale  # refreshed again once writing is allowed
+
+
+def test_an_idle_session_is_refused_but_not_removed_while_writing_rests(ready_client):
+    """Sister path of p271: removing the expired row is a write too."""
+    digest = auth.session_id_hash(sid_of(ready_client))
+    with ready_client.app.state.sessionmaker() as s:
+        s.get(LoginSession, digest).last_seen_at = now() - auth.SESSION_MAX_IDLE - timedelta(days=1)
+        s.commit()
+    ready_client.app.state.update_starting = True
+    try:
+        assert not is_logged_in(ready_client)
+    finally:
+        ready_client.app.state.update_starting = False
+    assert len(rows(ready_client)) == 1
+    assert not is_logged_in(ready_client)
+    assert rows(ready_client) == []
