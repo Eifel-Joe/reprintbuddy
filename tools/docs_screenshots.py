@@ -644,12 +644,20 @@ def build_catalog(server: Server, scn: Scenario) -> None:
             ("Screw M4×8", 480, 200, 500, 5, "https://supplier.example/screw-m4x8"),
             ("Rubber foot", 90, 50, 100, 10, "https://supplier.example/rubber-foot"),
         ):
+            suppliers = [catalog.SupplierInput(
+                name="Example Supplier", order_url=url, pack_size=pack_size, min_order_packs=1,
+                lead_time_days=lead, is_default=True,
+            )]
+            if name == "Insert M4":  # a second supplier with other packs (Spec 5.3), shown on the reorder page
+                suppliers.append(catalog.SupplierInput(
+                    name="Example Supplier B", order_url="https://supplier-b.example/insert-m4", pack_size=25,
+                    min_order_packs=2, lead_time_days=2,
+                ))
             part = catalog.create_part(
                 s,
                 catalog.PartInput(
-                    name=name, unit="pcs", min_stock=minimum, pack_size=pack_size, min_order_packs=1,
-                    lead_time_days=lead, safety_value=5, safety_unit="days", supplier="Example Supplier",
-                    order_url=url,
+                    name=name, unit="pcs", min_stock=minimum, safety_value=5, safety_unit="days",
+                    suppliers=suppliers,
                 ),
                 stock_n, "user",
             )

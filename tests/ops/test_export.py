@@ -140,3 +140,23 @@ def test_to_jsonable():
     assert to_jsonable(Decimal("1.50")) == "1.50"
     assert to_jsonable(b"\x00\x01") == "AAE="
     assert to_jsonable(5) == 5
+
+
+def test_export_holds_the_suppliers_of_a_part_and_the_mark_of_its_time(env):  # Spec 5.3, 9.4, 11.6
+    from reprintbuddy.domain import catalog, reorder
+
+    engine, maker = env
+    with maker.begin() as s:
+        part = catalog.create_part(s, catalog.PartInput(name="Insert M4", suppliers=[
+            catalog.SupplierInput(name="Example Supplier", pack_size=50, is_default=True),
+            catalog.SupplierInput(name="Example Supplier B", pack_size=10, lead_time_days=2),
+        ]), 0, "user")
+        second = catalog.part_suppliers(s, part.id)[1].id
+        reorder.mark_ordered(s, "part", part.id, 2, supplier_id=second)
+    with engine.connect() as conn:
+        tables = export_data(conn, now=NOW)["tables"]
+    assert [(r["name"], r["pack_size"], r["is_default"]) for r in tables["part_suppliers"]] == [
+        ("Example Supplier", 50, True), ("Example Supplier B", 10, False),
+    ]
+    (mark,) = tables["reorder_marks"]
+    assert (mark["qty"], mark["pack_size"], mark["supplier_name"]) == (2, 10, "Example Supplier B")
