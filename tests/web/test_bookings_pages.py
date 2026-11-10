@@ -349,29 +349,9 @@ def test_journal_shows_the_value_of_that_day_of_an_inventory_dated_back(ready_cl
 
 # ---- p260: an inventory dated back holds for the end of that day (Spec 6.2) -----------------------
 
-from datetime import date, datetime, time  # noqa: E402
+from datetime import time  # noqa: E402
 
-from reprintbuddy.web import formatting  # noqa: E402
-
-
-@pytest.mark.parametrize(
-    ("day", "utc"),
-    [
-        (date(2026, 1, 15), datetime(2026, 1, 15, 22, 59, 59, 999999)),  # winter, UTC+1
-        (date(2026, 7, 15), datetime(2026, 7, 15, 21, 59, 59, 999999)),  # summer, UTC+2
-        (date(2026, 3, 29), datetime(2026, 3, 29, 21, 59, 59, 999999)),  # clocks go forward that day
-        (date(2026, 10, 25), datetime(2026, 10, 25, 22, 59, 59, 999999)),  # clocks go back that day
-    ],
-)
-def test_the_end_of_a_day_is_taken_in_the_zone_of_the_display(day, utc):
-    assert formatting.local_day_end(day) == utc  # naive UTC, like every stored time
-    assert to_local(utc).date() == day and to_local(utc).time() == time(23, 59, 59, 999999)
-
-
-def test_the_end_of_a_day_in_the_zone_of_the_server(monkeypatch):
-    monkeypatch.setattr(formatting, "LOCAL_ZONE", formatting.SERVER_ZONE)
-    end = formatting.local_day_end(date(2026, 7, 15))
-    assert to_local(end).replace(tzinfo=None) == datetime(2026, 7, 15, 23, 59, 59, 999999)
+from reprintbuddy.localtime import end_of_local_day  # noqa: E402
 
 
 def test_an_inventory_dated_back_holds_for_the_end_of_that_day(ready_client):
@@ -390,7 +370,7 @@ def test_a_sale_in_the_evening_before_the_count_is_held_in_it(ready_client):
     before the count; the stock stays 10, not 9."""
     a = article(ready_client, stock=11)
     yesterday = local_today() - timedelta(days=1)
-    evening = formatting.local_day_end(yesterday) - timedelta(hours=6)  # 18:00 of yesterday
+    evening = end_of_local_day(yesterday) - timedelta(hours=6)  # 18:00 of yesterday
     with sm_of(ready_client).begin() as s:
         stock.sell_unreserved(s, a, 1, "user", booked_at=evening)  # 11 -> 10
     response, _ = post(ready_client, "inventory", article_id=a, field="stock", counted="10",

@@ -3,40 +3,20 @@
 p183 (v0.3.14): they were shown fixed in Europe/Berlin, wherever Reprintbuddy ran. Now the zone the machine
 is set to (`timedatectl set-timezone`, or `TZ` for the service) decides, with its own summer time.
 Rejected for now: a setting under Settings - the zone of the server is what the machine already knows.
+The zone and `to_local` live in `reprintbuddy.localtime` (p260), the one source for pages and domain.
 Tests: tests/web/test_server_time_zone.py; the other tests pin a zone (`conftest.fixed_display_zone`).
 """
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, time, tzinfo
+from datetime import date, datetime
 
 from jinja2 import pass_context
 
-SERVER_ZONE: tzinfo | None = None  # `astimezone(None)`: the local zone of the machine, at that moment
-LOCAL_ZONE: tzinfo | None = SERVER_ZONE  # the zone times are shown in; tests pin one
+from reprintbuddy.localtime import to_local
 
 _FORMATS = {"de": "%d.%m.%Y %H:%M"}
 _DEFAULT_FORMAT = "%Y-%m-%d %H:%M"
-
-
-def to_local(dt: datetime) -> datetime:
-    """A naive datetime means UTC; the result is in the zone of the server (`LOCAL_ZONE`)."""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    return dt.astimezone(LOCAL_ZONE)
-
-
-def local_day_end(day: date) -> datetime:
-    """The last moment of `day` in the zone of the display, as naive UTC like every stored time.
-
-    p260: an inventory dated back holds for the end of that day (Spec 6.2), not for the clock time it
-    is typed in at; a sale in the evening of that day lies before the count. The zone is the one
-    that decides "today" for the date field. Taken through the zone itself (not today's offset), so
-    a day with a change of summer time ends at its own 23:59:59. Tests: tests/web/test_bookings_pages.py.
-    """
-    end = datetime.combine(day, time.max)
-    local = end.astimezone() if LOCAL_ZONE is None else end.replace(tzinfo=LOCAL_ZONE)
-    return local.astimezone(UTC).replace(tzinfo=None)
 
 
 def format_local(dt: datetime, lang: str) -> str:

@@ -14,11 +14,12 @@ from sqlalchemy.orm import Session
 from reprintbuddy.domain import catalog, stock
 from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
+from reprintbuddy.localtime import end_of_local_day
 from reprintbuddy.models import Article, Part, utcnow
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.flash import flash
-from reprintbuddy.web.formatting import format_date, local_day_end, to_local
+from reprintbuddy.web.formatting import format_date, to_local
 from reprintbuddy.web.forms import duplicate_redirect, error_status, error_text, parse_bool, parse_int, parse_text
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
 from reprintbuddy.web.journal_view import journal_rows
@@ -101,7 +102,7 @@ def _booked_at(form, *, day_end: bool = False) -> datetime | None:
     if day == now.date():
         return None
     if day_end:
-        return local_day_end(day)
+        return end_of_local_day(day)
     return datetime.combine(day, now.timetz()).astimezone(UTC).replace(tzinfo=None)
 
 
