@@ -961,6 +961,25 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .part-row .icon-btn > span:not([data-parts-name]) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .parts-list > .btn { display: inline-flex; gap: 0.4rem; align-items: center; justify-content: center; min-height: 2.75rem; }
 
+/* ---- suppliers of a part (templates/part_form.html) ----------------------- */
+
+/* One block per supplier, a thin rule between them like the rows above; the fields keep the
+   rows of the form (two per row on a wide screen, one below the other on a phone). */
+.suppliers { min-width: 0; margin: 0 0 1rem; padding: 0; border: 0; }
+.suppliers > legend { padding: 0; margin: 0.25rem 0 0; color: var(--text); font-size: 0.95rem; font-weight: 600; }
+.suppliers > .hint { margin: 0.1rem 0 0.5rem; }
+.supplier-rows { display: grid; margin-bottom: 0.75rem; }
+.supplier { min-width: 0; margin: 0; padding: 10px 0 0; border: 0; border-top: 1px solid var(--surface-2); }
+.supplier:first-child { border-top: 0; }
+.supplier > legend { float: left; padding: 0; margin: 0; color: var(--text); font-size: 0.9rem; font-weight: 600; line-height: 2.75rem; }
+.supplier-head { display: flex; gap: 1rem; align-items: center; justify-content: flex-end; min-height: 2.75rem; }
+.supplier-head label.check { align-items: center; margin: 0; }
+.supplier-head label.check input { margin: 0; }
+.supplier-remove { display: inline-flex; gap: 0.3rem; align-items: center; min-height: 2.75rem; margin-left: 0; padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+.supplier-remove:disabled { opacity: 0.4; cursor: default; }
+.supplier > .row { clear: both; }
+.suppliers > .btn { display: inline-flex; gap: 0.4rem; align-items: center; justify-content: center; min-height: 2.75rem; }
+
 /* ---- info buttons (templates/_ui.html: info, field, check_row) ------------ */
 
 /* Positioned boxes that keep what is taken out of the flow inside the card (the visually hidden

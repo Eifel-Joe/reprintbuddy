@@ -73,7 +73,10 @@ def error_text(lang: str, err: DomainError | FormTokenInvalid) -> str:
     params = dict(err.params)
     if isinstance(params.get("field"), str):
         params["field"] = translate(lang, params["field"])
-    return translate(lang, err.key, **params)
+    text = translate(lang, err.key, **params)
+    if isinstance(params.get("supplier"), int):  # an error in one of several suppliers of a part (Spec 5.3)
+        return translate(lang, "parts.supplier_error", n=params["supplier"], error=text)
+    return text
 
 
 def error_status(err: object) -> int:

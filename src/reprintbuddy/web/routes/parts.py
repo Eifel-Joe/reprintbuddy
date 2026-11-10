@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import catalog
-from reprintbuddy.domain.catalog import PartInput
-from reprintbuddy.domain.errors import DomainError
+from reprintbuddy.domain.catalog import MAX_SUPPLIERS, PartInput, SupplierInput
+from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.domain.status import STATES, PartStatus, part_status, summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Part
@@ -37,46 +37,134 @@ from reprintbuddy.web.formtoken import (
 
 router = APIRouter()
 
-TEXT_FIELDS = ("name", "unit", "supplier", "order_url", "safety_unit")
-NUMBER_FIELDS = ("initial_stock", "min_stock", "pack_size", "min_order_packs", "lead_time_days", "safety_value")
+TEXT_FIELDS = ("name", "unit", "safety_unit")
+NUMBER_FIELDS = ("initial_stock", "min_stock", "safety_value")
+# Each supplier sends these once, in the order of the form (Spec 5.3); the default is the index
+# in `supplier_default`. With a single supplier it is the default without choosing.
+SUPPLIER_FIELDS = ("supplier", "order_url", "pack_size", "min_order_packs", "lead_time_days")
+BLANK_SUPPLIER = {"supplier": "", "order_url": "", "pack_size": "1", "min_order_packs": "1", "lead_time_days": "0"}
 
 DEFAULTS = {
-    "name": "", "unit": "pcs", "initial_stock": "0", "min_stock": "0", "pack_size": "1",
-    "min_order_packs": "1", "lead_time_days": "0", "safety_value": "0", "safety_unit": "days",
-    "supplier": "", "order_url": "",
+    "name": "", "unit": "pcs", "initial_stock": "0", "min_stock": "0", "safety_value": "0",
+    "safety_unit": "days",
 }
 
 
-def _values_of(part: Part) -> dict[str, str]:
+def _defaults() -> dict[str, object]:
+    return {**DEFAULTS, "supplier_rows": [dict(BLANK_SUPPLIER)], "supplier_default": "0"}
+
+
+def _values_of(db: Session, part: Part) -> dict[str, object]:
+    rows = catalog.part_suppliers(db, part.id)
     return {
         "name": part.name, "unit": part.unit, "min_stock": str(part.min_stock),
-        "pack_size": str(part.pack_size), "min_order_packs": str(part.min_order_packs),
-        "lead_time_days": str(part.lead_time_days), "safety_value": str(part.safety_value),
-        "safety_unit": part.safety_unit, "supplier": part.supplier or "",
-        "order_url": part.order_url or "",
+        "safety_value": str(part.safety_value), "safety_unit": part.safety_unit,
+        "supplier_rows": [
+            {
+                "supplier": row.name or "", "order_url": row.order_url or "", "pack_size": str(row.pack_size),
+                "min_order_packs": str(row.min_order_packs), "lead_time_days": str(row.lead_time_days),
+            }
+            for row in rows
+        ],
+        "supplier_default": next((str(i) for i, row in enumerate(rows) if row.is_default), ""),
     }
 
 
-def _typed(form) -> dict[str, str]:
-    return {k: str(form.get(k, "")) for k in (*TEXT_FIELDS, *NUMBER_FIELDS)}
+def _supplier_rows(form) -> list[dict[str, str]]:
+    """The suppliers as typed, one dict per supplier; a missing value is empty."""
+    columns = {key: [str(value) for value in form.getlist(key)] for key in SUPPLIER_FIELDS}
+    count = max(len(values) for values in columns.values())
+    return [
+        {key: columns[key][i] if i < len(columns[key]) else "" for key in SUPPLIER_FIELDS} for i in range(count)
+    ]
+
+
+def _default_index(form, rows: list[dict[str, str]]) -> str:
+    """The chosen default as an index; a single supplier is the default (Spec 5.3)."""
+    raw = str(form.get("supplier_default", "")).strip()
+    if raw.isdigit() and int(raw) < len(rows):
+        return raw
+    return "0" if len(rows) == 1 else ""
+
+
+def _typed(form) -> dict[str, object]:
+    values: dict[str, object] = {k: str(form.get(k, "")) for k in (*TEXT_FIELDS, *NUMBER_FIELDS)}
+    rows = _supplier_rows(form)
+    values["supplier_rows"] = rows
+    values["supplier_default"] = _default_index(form, rows)
+    return values
+
+
+def _change_rows(form, values: dict[str, object]) -> bool:
+    """'Add supplier' and 'remove' sent without JavaScript: change the rows, save nothing.
+
+    The form comes back with the change, as the parts of an article do (routes/articles.py);
+    part_suppliers.js does the same in place. The last supplier stays, the eleventh is not added.
+    """
+    rows = values["supplier_rows"]
+    assert isinstance(rows, list)
+    if form.get("suppliers_add") is not None:
+        if len(rows) < MAX_SUPPLIERS:
+            rows.append(dict(BLANK_SUPPLIER))
+        values["focus"] = "add"
+        return True
+    raw = form.get("suppliers_remove")
+    if raw is None:
+        return False
+    text = str(raw).strip()
+    if text.isdigit() and int(text) < len(rows) and len(rows) > 1:
+        index = int(text)
+        rows.pop(index)
+        default = str(values.get("supplier_default", ""))
+        if default.isdigit():
+            chosen = int(default)
+            # the removed default leaves none chosen: saving then asks for one (Spec 5.3)
+            values["supplier_default"] = "" if chosen == index else str(chosen - 1 if chosen > index else chosen)
+    values["focus"] = "add"
+    return True
+
+
+def _numbered(number: int | None, parse):
+    """Run `parse`; with several suppliers an error names the supplier (1 for the first)."""
+    try:
+        return parse()
+    except ValidationError as error:
+        if number is not None:
+            error.params["supplier"] = number
+        raise
+
+
+def _parse_supplier(row: dict[str, str], number: int | None, is_default: bool) -> SupplierInput:
+    return _numbered(number, lambda: SupplierInput(
+        name=parse_text(row["supplier"], field="parts.field.supplier", max_len=200),
+        order_url=parse_text(row["order_url"], field="parts.field.order_url", max_len=2000),
+        pack_size=parse_int(row["pack_size"], field="parts.field.pack_size", min=1, max=MAX_QTY),
+        min_order_packs=parse_int(row["min_order_packs"], field="parts.field.min_order_packs", min=1, max=1000),
+        lead_time_days=parse_int(row["lead_time_days"], field="parts.field.lead_time_days", min=0, max=365),
+        is_default=is_default,
+    ))
 
 
 def _parse(form) -> PartInput:
+    rows = _supplier_rows(form)
+    default = _default_index(form, rows)
+    several = len(rows) > 1
     return PartInput(
         name=parse_text(form.get("name"), field="parts.field.name", max_len=200, required=True),
         unit=canonical_unit(parse_text(form.get("unit"), field="parts.field.unit", max_len=20, required=True)),
         min_stock=parse_int(form.get("min_stock"), field="parts.field.min_stock", min=0, max=MAX_QTY),
-        pack_size=parse_int(form.get("pack_size"), field="parts.field.pack_size", min=1, max=MAX_QTY),
-        min_order_packs=parse_int(form.get("min_order_packs"), field="parts.field.min_order_packs", min=1, max=1000),
-        lead_time_days=parse_int(form.get("lead_time_days"), field="parts.field.lead_time_days", min=0, max=365),
         safety_value=parse_int(form.get("safety_value"), field="parts.field.safety_value", min=0, max=MAX_QTY),
         safety_unit=str(form.get("safety_unit", "days")),
-        supplier=parse_text(form.get("supplier"), field="parts.field.supplier", max_len=200),
-        order_url=parse_text(form.get("order_url"), field="parts.field.order_url", max_len=2000),
+        suppliers=[
+            _parse_supplier(row, i + 1 if several else None, str(i) == default) for i, row in enumerate(rows)
+        ],
     )
 
 
-def _form_page(request: Request, *, part: Part | None, values: dict[str, str], error: str | None = None, status: int = 200):
+def _form_page(
+    request: Request, db: Session, *, part: Part | None, values: dict[str, object], error: str | None = None,
+    status: int = 200,
+):
     return render(
         request,
         "part_form.html",
@@ -85,6 +173,8 @@ def _form_page(request: Request, *, part: Part | None, values: dict[str, str], e
         part=part,
         values=values,
         error=error,
+        supplier_names=catalog.supplier_names(db),
+        max_suppliers=MAX_SUPPLIERS,
     )
 
 
@@ -143,14 +233,16 @@ async def parts_list(
 
 
 @router.get("/parts/new")
-async def parts_new(request: Request):
-    return _form_page(request, part=None, values=dict(DEFAULTS))
+async def parts_new(request: Request, db: Session = Depends(get_db)):
+    return _form_page(request, db, part=None, values=_defaults())
 
 
 @router.post("/parts/new", dependencies=[Depends(verify_csrf)])
-async def parts_create(request: Request):
+async def parts_create(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     values = _typed(form)
+    if _change_rows(form, values):
+        return _form_page(request, db, part=None, values=values)
     try:
         data = _parse(form)
         initial = parse_int(
@@ -162,7 +254,7 @@ async def parts_create(request: Request):
         return duplicate_redirect(request, "/parts")
     except (DomainError, FormTokenInvalid) as exc:
         return _form_page(
-            request, part=None, values=values,
+            request, db, part=None, values=values,
             error=error_text(current_language(request), exc), status=error_status(exc),
         )
     return saved_redirect(request, "/parts", "parts.created", name=data.name)
@@ -178,7 +270,7 @@ def _get_part(db: Session, part_id: int) -> Part:
 @router.get("/parts/{part_id:int}/edit")
 async def parts_edit(request: Request, part_id: int, db: Session = Depends(get_db)):
     part = _get_part(db, part_id)
-    return _form_page(request, part=part, values=_values_of(part))
+    return _form_page(request, db, part=part, values=_values_of(db, part))
 
 
 @router.post("/parts/{part_id:int}/edit", dependencies=[Depends(verify_csrf)])
@@ -186,13 +278,15 @@ async def parts_update(request: Request, part_id: int, db: Session = Depends(get
     part = _get_part(db, part_id)
     form = await request.form()
     values = _typed(form)
+    if _change_rows(form, values):
+        return _form_page(request, db, part=part, values=values)
     try:
         data = _parse(form)
         with write_transaction(request) as tx:
             catalog.update_part(tx, part_id, data)
     except DomainError as exc:
         return _form_page(
-            request, part=part, values=values,
+            request, db, part=part, values=values,
             error=error_text(current_language(request), exc), status=error_status(exc),
         )
     return saved_redirect(request, "/parts", "parts.updated", name=data.name)
@@ -212,7 +306,7 @@ def _archive_action(action, flash_key: str):
             success_url="/parts",  # back to the list; an archived part leaves it, that is right
             flash_key=flash_key,
             on_error=lambda text, status, exc: _form_page(
-                request, part=part, values=_values_of(part), error=text, status=status
+                request, db, part=part, values=_values_of(db, part), error=text, status=status
             ),
         )
 

@@ -1,7 +1,10 @@
+import re
+
 from sqlalchemy import func, select
 
 from conftest import csrf_of, form_token_of, sm_of
 from reprintbuddy import settings as st
+from reprintbuddy.domain import catalog
 from reprintbuddy.domain.errors import ValidationError
 from reprintbuddy.models import FormToken, Part
 from reprintbuddy.web.forms import error_text
@@ -33,6 +36,32 @@ def part_fields(client, **over):
 def parts_in_db(client):
     with sm_of(client).begin() as s:
         return list(s.scalars(select(Part)))
+
+
+def suppliers_in_db(client, part_id):
+    with sm_of(client).begin() as s:
+        return [
+            (r.position, r.name, r.order_url, r.pack_size, r.min_order_packs, r.lead_time_days, r.is_default)
+            for r in catalog.part_suppliers(s, part_id)
+        ]
+
+
+def two_suppliers(client, **over):
+    """The form with two suppliers: each supplier field is sent once per supplier, in order."""
+    fields = part_fields(client)
+    fields.update({
+        "supplier": ["Example Supplier", "Example Supplier B"],
+        "order_url": ["https://shop.example/insert-m4", ""],
+        "pack_size": ["50", "10"], "min_order_packs": ["1", "2"], "lead_time_days": ["5", "1"],
+        "supplier_default": "0",
+    })
+    fields.update(over)
+    return fields
+
+
+def blocks(page):
+    """The supplier blocks of a form page: their name fields (not the one of the <template>)."""
+    return re.findall(r'<input id="supplier-\d+-name"[^>]*name="supplier"[^>]*>', page)
 
 
 def test_parts_list_empty(ready_client):
@@ -108,7 +137,8 @@ def test_edit_part_keeps_stock(ready_client):
     )
     assert response.status_code == 303
     changed = parts_in_db(ready_client)[0]
-    assert (changed.name, changed.pack_size, changed.stock, changed.safety_unit) == ("Insert M4 long", 100, 50, "days")
+    assert (changed.name, changed.stock, changed.safety_unit) == ("Insert M4 long", 50, "days")
+    assert suppliers_in_db(ready_client, changed.id) == [(0, None, None, 100, 1, 5, True)]
 
 
 def test_edit_part_invalid_and_unknown(ready_client):
@@ -156,3 +186,120 @@ def test_parts_german(ready_client):
 
 def test_nav_parts_active(ready_client):
     assert 'class="nav-link active" href="/parts"' in ready_client.get("/parts").text
+
+
+# ---- several suppliers (Spec 5.3) ----------------------------------------------------------
+
+
+def test_create_a_part_with_two_suppliers_and_the_second_as_default(ready_client):
+    response = ready_client.post("/parts/new", data=two_suppliers(ready_client, supplier_default="1"))
+    assert response.status_code == 303
+    part = parts_in_db(ready_client)[0]
+    assert suppliers_in_db(ready_client, part.id) == [
+        (0, "Example Supplier", "https://shop.example/insert-m4", 50, 1, 5, False),
+        (1, "Example Supplier B", None, 10, 2, 1, True),
+    ]
+
+
+def test_a_single_supplier_is_the_default_without_choosing(ready_client):
+    fields = part_fields(ready_client)
+    fields.pop("supplier_default", None)
+    assert ready_client.post("/parts/new", data=fields).status_code == 303
+    assert suppliers_in_db(ready_client, parts_in_db(ready_client)[0].id)[0][-1] is True
+
+
+def test_two_suppliers_without_a_default_are_refused(ready_client):
+    fields = two_suppliers(ready_client)
+    del fields["supplier_default"]
+    response = ready_client.post("/parts/new", data=fields)
+    assert response.status_code == 200
+    assert en("parts.supplier_default") in response.text
+    assert len(blocks(response.text)) == 2 and 'value="Example Supplier B"' in response.text  # input stays
+    assert parts_in_db(ready_client) == []
+
+
+def test_an_error_names_the_supplier(ready_client):
+    response = ready_client.post("/parts/new", data=two_suppliers(ready_client, pack_size=["50", "0"]))
+    assert response.status_code == 200
+    inner = error_text("en", ValidationError("form.invalid_number", field="parts.field.pack_size", min=1, max=1_000_000))
+    assert en("parts.supplier_error", n=2, error=inner) in response.text
+    assert parts_in_db(ready_client) == []
+
+
+def test_adding_a_supplier_without_javascript_saves_nothing(ready_client):
+    fields = part_fields(ready_client)
+    fields["suppliers_add"] = "1"
+    response = ready_client.post("/parts/new", data=fields)
+    assert response.status_code == 200
+    assert len(blocks(response.text)) == 2
+    assert 'value="Example Supplier"' in response.text  # what was typed stays
+    assert parts_in_db(ready_client) == []
+    fields.pop("suppliers_add")
+    assert ready_client.post("/parts/new", data=fields).status_code == 303  # the token still works
+
+
+def test_removing_a_supplier_without_javascript(ready_client):
+    response = ready_client.post("/parts/new", data=two_suppliers(ready_client, suppliers_remove="0", supplier_default="1"))
+    assert response.status_code == 200
+    assert len(blocks(response.text)) == 1
+    assert 'value="Example Supplier B"' in response.text and 'value="Example Supplier"' not in response.text
+    assert re.search(r'name="supplier_default" value="0"[^>]*checked', response.text)  # B stays the default
+    assert parts_in_db(ready_client) == []
+
+
+def test_removing_the_default_leaves_none_chosen(ready_client):
+    page = ready_client.post("/parts/new", data=two_suppliers(ready_client, suppliers_remove="0")).text
+    assert len(blocks(page)) == 1
+    assert not re.search(r'name="supplier_default"[^>]*checked', page)
+
+
+def test_the_last_supplier_cannot_be_removed(ready_client):
+    fields = part_fields(ready_client)
+    page = ready_client.get("/parts/new").text
+    assert len(blocks(page)) == 1
+    assert re.search(r'<button[^>]*name="suppliers_remove"[^>]*disabled', page)
+    fields["suppliers_remove"] = "0"
+    assert len(blocks(ready_client.post("/parts/new", data=fields).text)) == 1
+
+
+def test_at_most_ten_suppliers(ready_client):
+    ten = {key: [value] * 10 for key, value in (
+        ("supplier", "Example Supplier"), ("order_url", ""), ("pack_size", "1"),
+        ("min_order_packs", "1"), ("lead_time_days", "0"),
+    )}
+    page = ready_client.post("/parts/new", data=part_fields(ready_client, suppliers_add="1", supplier_default="0", **ten)).text
+    assert len(blocks(page)) == 10
+    assert re.search(r'<button[^>]*name="suppliers_add"[^>]*disabled', page)
+
+
+def test_the_edit_form_shows_every_supplier_and_the_default(ready_client):
+    ready_client.post("/parts/new", data=two_suppliers(ready_client, supplier_default="1"))
+    part = parts_in_db(ready_client)[0]
+    page = ready_client.get(f"/parts/{part.id}/edit").text
+    assert len(blocks(page)) == 2
+    assert re.search(r'name="supplier_default" value="1"[^>]*checked', page)
+    assert 'value="https://shop.example/insert-m4"' in page
+
+
+def test_saving_the_edit_form_with_one_supplier_less(ready_client):
+    ready_client.post("/parts/new", data=two_suppliers(ready_client))
+    part = parts_in_db(ready_client)[0]
+    fields = part_fields(ready_client, csrf_token=csrf_of(ready_client, f"/parts/{part.id}/edit"), supplier_default="0")
+    del fields["form_token"], fields["initial_stock"]
+    assert ready_client.post(f"/parts/{part.id}/edit", data=fields).status_code == 303
+    assert suppliers_in_db(ready_client, part.id) == [(0, "Example Supplier", "https://shop.example/insert-m4", 50, 1, 5, True)]
+
+
+def test_names_in_use_are_offered_while_typing(ready_client):
+    ready_client.post("/parts/new", data=two_suppliers(ready_client))
+    page = ready_client.get("/parts/new").text
+    datalist = re.search(r'<datalist id="supplier-names">(.*?)</datalist>', page, re.S).group(1)
+    assert re.findall(r'<option value="([^"]+)">', datalist) == ["Example Supplier", "Example Supplier B"]
+    assert re.search(r'<input[^>]*name="supplier"[^>]*list="supplier-names"', page)
+
+
+def test_supplier_fields_in_german(ready_client):
+    set_language(ready_client, "de")
+    page = ready_client.get("/parts/new").text
+    for word in ("Lieferanten", "Lieferant 1", "Standard", "Lieferant hinzufügen", "Entfernen"):
+        assert word in page, word

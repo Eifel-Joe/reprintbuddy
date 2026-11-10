@@ -488,8 +488,8 @@ class PartInput:
     suppliers: list[SupplierInput] = field(default_factory=_one_default)
 
 
-def _check_supplier(data: SupplierInput, number: int) -> SupplierInput:
-    """One supplier's fields; an error names the supplier by its number (1 for the first)."""
+def _check_supplier(data: SupplierInput, number: int | None) -> SupplierInput:
+    """One supplier's fields; with several, an error names the supplier by its number (1 first)."""
     try:
         url = _text(data.order_url, "parts.field.order_url", 2000)
         if url is not None and not url.lower().startswith(("http://", "https://")):
@@ -503,7 +503,8 @@ def _check_supplier(data: SupplierInput, number: int) -> SupplierInput:
             is_default=bool(data.is_default),
         )
     except ValidationError as error:
-        error.params["supplier"] = number
+        if number is not None:
+            error.params["supplier"] = number
         raise
 
 
@@ -513,7 +514,10 @@ def _check_part_input(data: PartInput) -> PartInput:
         raise ValidationError("parts.invalid_safety_unit")
     if not 1 <= len(data.suppliers) <= MAX_SUPPLIERS:
         raise ValidationError("parts.suppliers_count", max=MAX_SUPPLIERS)
-    suppliers = [_check_supplier(item, number) for number, item in enumerate(data.suppliers, start=1)]
+    several = len(data.suppliers) > 1
+    suppliers = [
+        _check_supplier(item, number if several else None) for number, item in enumerate(data.suppliers, start=1)
+    ]
     if sum(item.is_default for item in suppliers) != 1:
         raise ValidationError("parts.supplier_default")
     return replace(
