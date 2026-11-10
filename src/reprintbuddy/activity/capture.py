@@ -38,6 +38,7 @@ from reprintbuddy.models import (
     ArticleFilamentSort,
     ArticlePart,
     FilamentSettings,
+    FilamentSupplier,
     FilamentSort,
     Part,
     PartSupplier,
@@ -64,8 +65,9 @@ ARTICLE_COLUMNS: tuple[str, ...] = (
 )
 PART_COLUMNS: tuple[str, ...] = ("name", "unit", "min_stock", "safety_value", "safety_unit")
 SET_COLUMNS: tuple[str, ...] = ("name", "sku")
-FILAMENT_COLUMNS: tuple[str, ...] = (
-    "lead_time_days", "safety_value", "safety_unit", "pack_grams", "min_order_packs", "supplier", "order_url",
+FILAMENT_COLUMNS: tuple[str, ...] = ("safety_value", "safety_unit")  # the rest per supplier (0016)
+SUPPLIER_COLUMNS: tuple[str, ...] = (
+    "position", "name", "order_url", "pack_size", "min_order_packs", "lead_time_days", "is_default",
 )
 
 
@@ -91,6 +93,8 @@ class _Data:
     filament: dict[int, str] = field(default_factory=dict)  # sort id -> actor
     ordered: list[tuple[int, str]] = field(default_factory=list)  # mark id, actor
     received: list[tuple[int, str]] = field(default_factory=list)
+    withdrawn: list[tuple[int, str]] = field(default_factory=list)  # p280: taken back
+    arrived: dict[int, float] = field(default_factory=dict)  # mark id -> what had arrived when taken back
     positions: dict[int, int] = field(default_factory=dict)  # position id -> set id
     meta: dict[str, Any] = field(default_factory=dict)  # via and address of the request
 
@@ -180,14 +184,28 @@ def _collect_setting(data: _Data, obj: Setting, change: str, actor: str) -> None
         data.settings[key] = [old, new, actor]
 
 
-def _differs_from_defaults(obj: FilamentSettings) -> bool:
-    """A first saving that keeps every default changes nothing (Spec 10.7: "wirklich etwas unterscheidet")."""
-    columns = FilamentSettings.__table__.c
-    for name in FILAMENT_COLUMNS:
-        default = columns[name].default.arg if columns[name].default is not None else None
+def _differs_from_defaults(obj: FilamentSettings | FilamentSupplier) -> bool:
+    """A first saving that keeps every default changes nothing (Spec 10.7: "wirklich etwas
+    unterscheidet"): the settings and one supplier as the form starts them."""
+    if isinstance(obj, FilamentSupplier):
+        names, defaults = SUPPLIER_COLUMNS, {"position": 0, "is_default": True}
+    else:
+        names, defaults = FILAMENT_COLUMNS, {}
+    columns = type(obj).__table__.c
+    for name in names:
+        if name in defaults:
+            default = defaults[name]
+        else:
+            default = columns[name].default.arg if columns[name].default is not None else None
         if getattr(obj, name) != default:
             return True
     return False
+
+
+def note_withdrawn(session: Session, mark_id: int, arrived: float) -> None:
+    """What had arrived of a mark when it was taken back, for its log line (Spec 10.7, p280)."""
+    if not session.info.get(_QUIET):
+        _data(session).arrived[mark_id] = arrived
 
 
 def _collect_row(session: Session, data: _Data, obj: object, change: str, actor: str) -> None:
@@ -269,13 +287,22 @@ def _collect_row(session: Session, data: _Data, obj: object, change: str, actor:
             change == "dirty" and any(_history(obj, name)[0] for name in FILAMENT_COLUMNS)
         ):
             data.filament.setdefault(obj.spool_filament_id, actor)
+    elif isinstance(obj, FilamentSupplier):
+        # The suppliers are part of the order settings of the sort (Spec 9.3, 10.7); saving
+        # compares by position, so only a real change writes a row.
+        if (
+            (change == "new" and _differs_from_defaults(obj))
+            or change == "deleted"
+            or (change == "dirty" and any(_history(obj, name)[0] for name in SUPPLIER_COLUMNS))
+        ):
+            data.filament.setdefault(obj.sort_id, actor)
     elif isinstance(obj, ReorderMark):
         if change == "new":
             data.ordered.append((obj.id, actor))
         elif change == "dirty":
             changed, before = _history(obj, "received_at")
             if changed and before is None and obj.received_at is not None:
-                data.received.append((obj.id, actor))
+                (data.withdrawn if obj.withdrawn else data.received).append((obj.id, actor))
 
 
 def _after_flush(session: Session, _flush_context: object) -> None:
@@ -406,7 +433,23 @@ def _build(session: Session, data: _Data) -> list[ActivityEntry]:
             if item is not None:
                 item_type, item_id, name = item
                 entries.append(_entry(data, kind, actor, {"type": item_type, "id": item_id, "name": name}))
+    for mark_id, actor in data.withdrawn:
+        entries.append(_entry(data, "reorder_withdrawn", actor, _withdrawn_details(session, data, mark_id)))
     return entries
+
+
+def _withdrawn_details(session: Session, data: _Data, mark_id: int) -> dict[str, Any]:
+    """Spec 10.7 (p280): the ordered amount, the supplier and what had arrived; ids and numbers only,
+    the page writes the words. The unit is the part's ("pcs") or "g" for filament."""
+    mark = session.get(ReorderMark, mark_id)
+    item_type, item_id, name = _mark_name(session, mark_id) or (mark.item_type, mark.item_id, None)
+    part = session.get(Part, item_id) if item_type == "part" else None
+    arrived = data.arrived.get(mark_id, 0)
+    return {
+        "type": item_type, "id": item_id, "name": name, "packs": mark.qty, "size": mark.pack_size,
+        "unit": part.unit if part is not None else "g", "supplier": mark.supplier_name,
+        "supplier_position": mark.supplier_position, "arrived": int(arrived) if arrived == int(arrived) else arrived,
+    }
 
 
 def _before_commit(session: Session) -> None:

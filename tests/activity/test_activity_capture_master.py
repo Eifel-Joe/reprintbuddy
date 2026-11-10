@@ -18,6 +18,7 @@ from reprintbuddy.bambuddy.types import Plate
 from reprintbuddy.domain import catalog, filament, reorder, stock
 from reprintbuddy.domain.catalog import ArticleInput, PartInput, PositionInput, SetInput
 from reprintbuddy.domain.filament import FilamentSettingsInput
+from reprintbuddy.domain.suppliers import SupplierInput
 from reprintbuddy.domain.pauses import pause_article
 from reprintbuddy.models import ActivityEntry, ArticlePart
 
@@ -183,11 +184,78 @@ def test_order_settings_of_a_spool_sort(db):
         sort = make_sort(s)
         label = sort.label
     last = mark(db)
+    five = FilamentSettingsInput(suppliers=[SupplierInput(pack_size=1000, lead_time_days=5, is_default=True)])
     with db.begin() as s:
-        filament.save_settings(s, sort.id, FilamentSettingsInput(lead_time_days=5))
+        filament.save_settings(s, sort.id, five)
     with db.begin() as s:
-        filament.save_settings(s, sort.id, FilamentSettingsInput(lead_time_days=5))  # unchanged
+        filament.save_settings(s, sort.id, five)  # unchanged
     assert since(db, last) == [("filament_settings_changed", {"id": sort.id, "name": label}, "system")]
+
+
+def test_a_first_saving_with_every_default_changes_nothing(db):
+    """Spec 10.7 "wirklich etwas unterscheidet": one unnamed supplier of 1000 g, as the form starts."""
+    with db.begin() as s:
+        sort = make_sort(s)
+    last = mark(db)
+    with db.begin() as s:
+        filament.save_settings(s, sort.id, FilamentSettingsInput())
+    assert since(db, last) == []
+
+
+def test_the_suppliers_of_a_spool_sort_are_its_order_settings(db):
+    """Spec 9.3, 10.7: a supplier added, changed or removed is "order settings changed"."""
+    with db.begin() as s:
+        sort = make_sort(s)
+        label = sort.label
+        make_filament_settings(s, sort.id)
+    changed = [("filament_settings_changed", {"id": sort.id, "name": label}, "system")]
+
+    def save(*suppliers):
+        last = mark(db)
+        with db.begin() as s:
+            filament.save_settings(s, sort.id, FilamentSettingsInput(suppliers=list(suppliers)))
+        return since(db, last)
+
+    default = SupplierInput(pack_size=1000, is_default=True)
+    assert save(default, SupplierInput(name="Roll Shop", pack_size=500)) == changed  # added
+    assert save(default, SupplierInput(name="Roll Shop", pack_size=500)) == []  # the same again
+    assert save(default, SupplierInput(name="Roll Shop", pack_size=750)) == changed  # changed
+    assert save(default) == changed  # removed
+
+
+def test_an_order_taken_back_has_its_amount_supplier_and_what_arrived(db):
+    """Spec 10.7 (p280): "Bestellung zurückgenommen" with the ordered amount, the supplier and,
+    after a partial delivery, what has arrived; no "arrived" line for it."""
+    with db.begin() as s:
+        p = make_part(s, name="Insert", pack_size=50, supplier="Example Supplier")
+        m = reorder.mark_ordered(s, "part", p.id, 4)
+        m.marked_at = datetime(2026, 11, 1, 8, 0)
+    with db.begin() as s:
+        stock.receive_part(s, p.id, 100, actor="user")
+    last = mark(db)
+    with db.begin() as s:
+        s.info[capture.ACTOR] = "user"
+        reorder.withdraw_mark(s, m.id)
+    assert since(db, last) == [("reorder_withdrawn", {
+        "type": "part", "id": p.id, "name": "Insert", "packs": 4, "size": 50, "unit": "pcs",
+        "supplier": "Example Supplier", "supplier_position": 0, "arrived": 100,
+    }, "user")]
+
+
+def test_a_filament_order_taken_back_names_its_roll_size(db):
+    with db.begin() as s:
+        sort = make_sort(s)
+        label = sort.label
+        make_filament_settings(s, sort.id, pack_grams=750)
+        m = reorder.mark_ordered(s, "filament", sort.id, 2)
+    last = mark(db)
+    with db.begin() as s:
+        s.info[capture.ACTOR] = "user"
+        reorder.withdraw_mark(s, m.id, [])
+    assert since(db, last) == [("reorder_withdrawn", {
+        "type": "filament", "id": sort.id, "name": label, "packs": 2, "size": 750, "unit": "g",
+        "supplier": None, "supplier_position": 0, "arrived": 0,
+    }, "user")]
 
 
 def test_marked_as_ordered_and_as_arrived_by_hand(db):

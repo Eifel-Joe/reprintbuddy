@@ -326,6 +326,24 @@ def test_an_ordered_and_received_suggestion_settles_at_once(db):
     assert kinds(send_round(db, ctx(poll=True, now=NOW + timedelta(days=10)))) == ["reorder"]
 
 
+def test_an_order_taken_back_settles_nothing(db):
+    """Spec 10.6 (p280): a mark taken back is closed, but nothing arrived; the suggestion that comes
+    back is the same occasion and sends no new message."""
+    with db.begin() as s:
+        part = make_part(s, name="Insert M4", stock=0, min_stock=10)
+        part_id = part.id
+    send_round(db, ctx(poll=True))
+    with db.begin() as s:
+        s.add(ReorderMark(item_type="part", item_id=part_id, qty=1, marked_at=NOW, received_at=None))
+    assert send_round(db, ctx(poll=True, now=NOW + timedelta(days=1))) == []
+    with db.begin() as s:
+        taken_back = s.scalars(select(ReorderMark)).one()
+        taken_back.received_at, taken_back.withdrawn = NOW + timedelta(days=2), True
+    assert send_round(db, ctx(poll=True, now=NOW + timedelta(days=2))) == []  # back again: no message
+    with db() as s:
+        assert s.scalars(select(NotifyMark).where(NotifyMark.ref == f"part:{part_id}")).one().gone_since is None
+
+
 def test_filament_with_unknown_stock_settles_nothing(db):
     with db.begin() as s:
         sort = make_sort(s)

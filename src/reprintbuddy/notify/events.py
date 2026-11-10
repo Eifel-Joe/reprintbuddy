@@ -226,12 +226,14 @@ def _detect_reorder(session: Session, cfg: _Config, ctx: Context) -> None:
     current = {f"{s.item_type}:{s.item_id}" for s in found}
     received: dict[str, datetime] = {}
     open_marks: set[str] = set()
-    for item_type, item_id, received_at in session.execute(
-        select(ReorderMark.item_type, ReorderMark.item_id, ReorderMark.received_at)
+    for item_type, item_id, received_at, withdrawn in session.execute(
+        select(ReorderMark.item_type, ReorderMark.item_id, ReorderMark.received_at, ReorderMark.withdrawn)
     ):
         ref = f"{item_type}:{item_id}"
         if received_at is None:
             open_marks.add(ref)
+        elif withdrawn:
+            continue  # Spec 10.6 (p280): an order taken back settles nothing, nothing arrived
         elif ref not in received or received_at > received[ref]:
             received[ref] = received_at
     for mark in _of_kind(cfg, "reorder"):
