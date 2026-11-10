@@ -1,7 +1,7 @@
 """p210: an inventory dated back counts the difference against the stock of that time (Spec 6.2).
 
 Example of the spec proposal: counted 10 yesterday, 2 sold this morning (stock now 8). The
-inventory with yesterday's date finds 12 then, books -2 and leaves 6 now; the sale stays.
+inventory with yesterday's date finds 12 then, books -2 and leaves 8 now; the sale stays.
 """
 
 from datetime import timedelta
@@ -121,3 +121,47 @@ def test_part_inventory_dated_back_is_rejected_when_a_later_inventory_exists(db)
             stock.count_part(s, p, 3, "user", booked_at=utcnow() - timedelta(days=1))
         assert exc.value.key == "bookings.later_inventory"
         assert s.get(Part, p).stock == 7
+
+
+# ---- review: later bookings are replayed forward from the count -------------------------------
+
+
+def _with_article_using(s, part_id, per_unit=1):
+    from reprintbuddy.models import ArticlePart
+
+    a = make_article(s, stock=0)
+    s.add(ArticlePart(article_id=a.id, part_id=part_id, qty_per_unit=per_unit))
+    s.flush()
+    return a.id
+
+
+def test_a_later_use_capped_at_zero_takes_its_full_amount_after_a_higher_count(db):  # Spec 8.3
+    yesterday = utcnow() - timedelta(days=1)
+    with db.begin() as s:
+        p = make_part(s, stock=0).id
+        a = _with_article_using(s, p)
+        stock.stock_in(s, a, 5, "user", consume_parts=True)  # needs 5, had 0: capped at 0
+        assert stock.count_part(s, p, 10, "user", booked_at=yesterday) == 10
+        assert s.get(Part, p).stock == 5  # 10 then, the 5 used today take it to 5
+
+
+def test_a_later_use_is_capped_at_zero_after_a_lower_count(db):  # Spec 8.3
+    yesterday = utcnow() - timedelta(days=1)
+    with db.begin() as s:
+        p = make_part(s, stock=0).id
+        stock.receive_part(s, p, 10, "user", booked_at=yesterday - timedelta(hours=1))
+        a = _with_article_using(s, p)
+        stock.stock_in(s, a, 8, "user", consume_parts=True)  # today: 10 -> 2
+        assert stock.count_part(s, p, 3, "user", booked_at=yesterday) == -7
+        assert s.get(Part, p).stock == 0  # 3 then; the use of 8 is capped at 0, not refused
+
+
+def test_a_count_that_makes_a_later_booking_go_below_zero_is_refused(db):  # Spec 6.4
+    yesterday = utcnow() - timedelta(days=1)
+    with db.begin() as s:
+        a = make_article(s, stock=5).id
+        stock.sell_unreserved(s, a, 3, "user")
+        stock.stock_in(s, a, 3, "user", consume_parts=False)  # today 5 again
+        with pytest.raises(StockLimitError):
+            stock.count_article(s, a, "stock", 0, "user", booked_at=yesterday)  # the sale of 3 from 0
+        assert s.get(Article, a).stock == 5
