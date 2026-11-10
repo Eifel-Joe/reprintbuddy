@@ -546,6 +546,7 @@
   "ops.update.step.health": "Warten, bis die neue Version antwortet",
   "ops.update.step.rollback": "Vorige Version wird wiederhergestellt",
   "ops.update.step.done": "Fertig",
+  "ops.update.empty_value": "(leer)",
   "ops.update.reason.start_failed": "Der Update-Helfer konnte nicht gestartet werden: {detail}",
   "ops.update.reason.head_unreadable": "Die installierte Version konnte nicht gelesen werden: {detail}",
   "ops.update.reason.backup_failed": "Die Datenbank konnte nicht gesichert werden: {detail}",

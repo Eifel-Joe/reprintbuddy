@@ -268,6 +268,28 @@ def test_an_empty_technical_line_leaves_no_colon_at_the_end_of_the_reason(ops_en
     assert re.search(re.escape(expected) + r"\s*(?:\n|<)", page), page[page.find(expected):][:80]
 
 
+@pytest.mark.parametrize(
+    "lang, reason, params, expected",
+    [
+        ("en", "unknown_target", {"detail": ""}, "The version (empty) is not available (any more)."),
+        ("de", "unknown_target", {"detail": " "}, "Die Version (leer) gibt es nicht (mehr)."),
+        ("en", "verify_failed", {"expected": "reprintbuddy 1.2.3", "seen": ""}, "expected reprintbuddy 1.2.3, found (empty)."),
+        ("de", "verify_failed", {"expected": "", "seen": "x"}, "erwartet (leer), gefunden x."),
+        ("de", "verify_failed", {"expected": "", "seen": "\n"}, "erwartet (leer), gefunden (leer)."),
+        ("en", "python_too_old", {"needed": "", "found": "3.11"}, "needs Python (empty) or newer, this installation runs Python 3.11."),
+        ("de", "python_too_old", {"needed": "3.13", "found": ""}, "läuft mit Python (leer)."),
+    ],
+)
+def test_an_empty_value_in_the_middle_of_a_reason_leaves_no_gap(ops_env, lang, reason, params, expected):  # p250
+    """A value in the middle of a text ("found {seen}.") that is empty left "found ." or a double space;
+    it shows a word for "empty" there. Only the technical line at the end after a colon is left out (p200)."""
+    git_env(ops_env)
+    _set_language(ops_env, lang)
+    write_status(data_dir(ops_env), _failed(message="x", reason=reason, params=params))
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    assert expected in page, page[page.find("alert"):][:600]
+
+
 def test_every_reason_has_a_text_in_both_languages_that_the_card_can_fill(ops_env):
     from string import Formatter
 
