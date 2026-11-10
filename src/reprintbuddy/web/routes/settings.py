@@ -21,7 +21,7 @@ from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops.tls import validate_tls_pair
 from reprintbuddy.web import activity_view
-from reprintbuddy.web import labels_view, notify_view
+from reprintbuddy.web import labels_view, notify_view, regions
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
@@ -118,8 +118,9 @@ def _page(
     notify_context = notify_view.settings_context(request, db) if current_tab == "notify" else {}
     log_context = activity_view.context(request, db, str(st.get_setting(db, "language"))) if current_tab == "log" else {}
     # What the good check before the redirect found, once (p191). A refused entry shows its own message and
-    # check instead, and another tab leaves it for the Bambuddy tab.
-    connection_result = take_connection_result(request.session) if current_tab == "bambuddy" and error is None else None
+    # check instead, another tab leaves it for the Bambuddy tab, and a region fetch (another browser tab, Spec 10.5.3)
+    # uses nothing up.
+    connection_result = take_connection_result(request.session) if current_tab == "bambuddy" and error is None and not regions.requested(request) else None
     return render(
         request,
         "settings.html",

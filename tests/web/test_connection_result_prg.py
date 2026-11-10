@@ -216,3 +216,47 @@ def test_a_damaged_entry_is_ignored():
         session = {deps.CONNECTION_RESULT_KEY: junk}
         assert deps.take_connection_result(session) is None
         assert deps.CONNECTION_RESULT_KEY not in session
+
+
+# ---- review findings ----
+
+
+def test_a_live_region_fetch_of_another_tab_does_not_use_up_the_result(ready_client, respx_mock):
+    """Region mode uses nothing up (Spec 10.5.3): the other tab's fetch must not take what the redirect shows."""
+    response = _settings_post(ready_client, respx_mock)
+    fetched = ready_client.get(SETTINGS, headers={"X-Live-Regions": "channel"})
+    assert fetched.status_code == 200
+    page = ready_client.get(response.headers["location"])
+    assert en("bambuddy.result.rights") in page.text
+
+
+def test_a_region_fetch_does_not_use_up_the_remembered_page_either(admin_client, respx_mock):
+    admin_client.get("/a/5", headers=PAGE)
+    _setup_post(admin_client, respx_mock)
+    admin_client.get("/settings?tab=bambuddy", headers={"X-Live-Regions": "channel"})
+    assert deps.SETUP_NEXT_KEY in _session(admin_client)
+    assert _continue_target(admin_client.get(DONE, headers=PAGE).text) == "/a/5"
+
+
+def test_a_reload_after_an_administrator_key_goes_where_continue_went(admin_client, respx_mock):
+    admin_client.get("/a/5", headers=PAGE)
+    _setup_post(admin_client, respx_mock, is_admin=True)
+    assert _continue_target(admin_client.get(DONE, headers=PAGE).text) == SETTINGS
+    assert admin_client.get(DONE, headers=PAGE).headers["location"] == SETTINGS  # not the page of the scan
+
+
+def test_a_very_long_owner_name_does_not_fill_the_cookie(admin_client, respx_mock):
+    _setup_post(admin_client, respx_mock, username="x" * 5000)
+    assert len(admin_client.cookies.get("reprintbuddy_session")) < 3000
+    assert admin_client.get(DONE).status_code == 200
+
+
+def test_settings_german(ready_client, respx_mock):
+    from reprintbuddy import settings as st
+
+    with ready_client.app.state.sessionmaker() as s:
+        st.set_setting(s, "language", "de")
+    response = _settings_post(ready_client, respx_mock)
+    page = ready_client.get(response.headers["location"]).text
+    assert translate("de", "bambuddy.result.owner", owner="reprintbuddy") in page
+    assert translate("de", "bambuddy.upload_right_missing") in page

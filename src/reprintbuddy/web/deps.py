@@ -29,6 +29,7 @@ SID_KEY = "sid"
 RIGHTS_LATER_KEY = "rights_later"  # in the session: the missing rights "Later" was pressed for
 SETUP_NEXT_KEY = "setup_next"  # in the session: the page opened before the Bambuddy step was done (p114)
 RIGHTS_SUCCESS_KEY = "rights_success"  # in the session: "Check again" in the dialog found every right
+MAX_OWNER_LENGTH = 200
 CONNECTION_RESULT_KEY = "bambuddy_result"  # in the session: what a good check found, for the page after the redirect (p191, p192)
 SETUP_DONE_PATH = "/setup/bambuddy/done"  # the page that shows it after the setup; it keeps `SETUP_NEXT_KEY` for a reload
 
@@ -330,7 +331,7 @@ def store_connection_result(session: MutableMapping[str, object], check: Connect
     the recommended rights the key has. The required rights are all there (the check was good), and
     the key itself, the address and the rest of the rights stay out: the session is a cookie."""
     session[CONNECTION_RESULT_KEY] = {
-        "owner": check.owner or "",
+        "owner": (check.owner or "")[:MAX_OWNER_LENGTH],  # a name from outside must not fill the cookie
         "admin": check.owner_is_admin,
         "granted": sorted(code for code in OPTIONAL_PERMISSIONS if code in check.granted),
     }
@@ -497,7 +498,13 @@ def _decide(request: Request) -> Response | None:
             return RedirectResponse("/setup/bambuddy", status_code=303)
         # A page kept for a setup that was finished elsewhere. The result page of the setup itself keeps it
         # for a reload; the next page of any kind (also "Continue") uses it up.
-        if st.bambuddy_configured(session) and SETUP_NEXT_KEY in request.session and path != SETUP_DONE_PATH:
+        # (Not in region mode: another tab's background fetch must not use it up, Spec 10.5.3.)
+        if (
+            st.bambuddy_configured(session)
+            and SETUP_NEXT_KEY in request.session
+            and path != SETUP_DONE_PATH
+            and not regions.requested(request)
+        ):
             request.session.pop(SETUP_NEXT_KEY, None)
         # Signed in and set up: a page of the interface. The first one after a start also
         # checks what the stored key may do (Spec 11.3, "Rights after an update").

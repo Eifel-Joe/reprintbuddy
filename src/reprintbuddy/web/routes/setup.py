@@ -189,8 +189,9 @@ async def bambuddy_connected(request: Request, db: Session = Depends(get_db)):
         if remembered_page(request) is not None:
             return RedirectResponse(take_remembered_page(request), status_code=303)
         return RedirectResponse("/settings?tab=bambuddy", status_code=303)
-    # An administrator's key is saved, warned about, and goes on to the settings.
-    return _connect_page(
-        request, check=check, connected=True,
-        continue_url="/settings?tab=bambuddy" if check.owner_is_admin else remembered_page(request) or "/",
-    )
+    # An administrator's key is saved, warned about, and goes on to the settings instead of the remembered page:
+    # that page is dropped here, so a reload leads to the settings too.
+    if check.owner_is_admin:
+        take_remembered_page(request)
+        return _connect_page(request, check=check, connected=True, continue_url="/settings?tab=bambuddy")
+    return _connect_page(request, check=check, connected=True, continue_url=remembered_page(request) or "/")
