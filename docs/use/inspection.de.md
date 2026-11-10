@@ -61,7 +61,7 @@ Die Stücke gehen von **Wartet auf Montage** in den **Bestand**, und die [Zukauf
 !!! note "Zu wenige Teile in den Büchern"
     Ist der Buchbestand eines Teils zu klein, wird die Buchung trotzdem angenommen, denn du hast die Teile ja in der Hand. Der Bestand des Teils wird auf 0 gesetzt, und eine Warnung nennt das Teil, wie viele im Bestand waren und wie viele nötig gewesen wären. Zähle die Teile danach mit einer Inventur-Buchung.
 
-Stücke, die schon hier warten, bleiben buchbar, wenn du das Häkchen später abwählst. Artikel ohne Handarbeit überspringen diese Seite. Ihre Zukaufteile werden abgezogen, wenn du die Prüfung mit guten Stücken bestätigst.
+Stücke, die schon hier warten, bleiben buchbar, wenn du das Häkchen später abwählst. Artikel ohne Handarbeit überspringen diese Seite. Deren Zukaufteile werden abgezogen, wenn du die Prüfung mit guten Stücken bestätigst.
 
 ## Buchen
 
