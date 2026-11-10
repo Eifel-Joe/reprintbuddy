@@ -20,7 +20,7 @@ Each suggestion is a tile with the filament or part it is about and its figures:
 
 Below the figures stands the suggestion, for example `1 × 50 (50 pcs)`, then the supplier and **Open**, a link to the order page that opens in a new window. Supplier and link come from the settings of the part or the filament.
 
-When a part has several suppliers, this line becomes one line per supplier, the default supplier first and marked **Default**. Each line gives the quantity that fits at that supplier, in its order unit and worked out with its minimum order quantity and its lead time, and its link. So you see at a glance how much you would have to order where.
+When a part or a spool sort has several suppliers, this line becomes one line per supplier, the default supplier first and marked **Default**. Each line gives the quantity that fits at that supplier, in its order unit and worked out with its minimum order quantity and its lead time, and its link. So you see at a glance how much you would have to order where.
 
 ## When a suggestion appears
 
@@ -33,7 +33,7 @@ In words: take what you have, subtract what the planned prints will use and what
 - **Stock.** For a part, its stock. For filament, the remaining weight of all spool sorts ticked in the slots where it is **Reordered** (see [Filament](filament.md)). What is **on its way** counts like stock: for filament, what you marked as ordered of any spool sort ticked there.
 - **Demand.** For filament, the grams of the prints in Reprintbuddy's queue and in progress, plus the prints still missing to reach the target quantity of the articles. For a part, the quantity per piece times the pieces that wait for assembly, are queued or in progress, or are still missing to the target quantity of the articles that need the part.
 - **Usage per day.** Measured over the last 30 days. For filament it comes from the daily record of the remaining weight of each spool; only decreases count, so a new spool adds nothing. With less than two days of record the page says "no history yet". For a part it comes from the bookings that take the part off its stock: assembly, the check **good** of an article without hand work, and **Stock in without print** with **Deduct parts** ticked. They count by their booking date, divided by the days since the first journal entry, at most 30.
-- **Lead time.** Days from ordering to arrival, from the settings. For a part, whether a suggestion appears depends on the lead time of its default supplier.
+- **Lead time.** Days from ordering to arrival, from the settings. Whether a suggestion appears depends on the lead time of the default supplier.
 - **Lower limit.** For filament, the safety stock. For a part, the larger of its safety margin and its minimum stock; the two do not add up. A safety margin in days is the usage of that many days.
 
 A part below its minimum stock therefore gets a suggestion even without any demand: ordering when the stock is already gone would be too late.
@@ -44,14 +44,14 @@ A part below its minimum stock therefore gets a suggestion even without any dema
 
 The suggested quantity is the smallest number of whole order units that closes the shortfall, but at least the minimum order quantity. If the minimum order quantity is 2 packs of 50, the suggestion is 100 pieces even when 7 are missing. You see the quantity in order units and, for parts, in pieces.
 
-With several suppliers Reprintbuddy works out this quantity for each supplier on its own, with its lead time, order unit and minimum order quantity. When 16 pieces are missing, for example, the default supplier with packs of 50 shows `1 × 50 (50 pcs)` and a second one with packs of 10 shows `2 × 10 (20 pcs)`.
+With several suppliers Reprintbuddy works out this quantity for each supplier on its own, with its lead time, order unit and minimum order quantity. When 16 pieces are missing, for example, the default supplier with packs of 50 shows `1 × 50 (50 pcs)` and a second one with packs of 10 shows `2 × 10 (20 pcs)`. For filament it works the same in rolls: with 1900 g missing, a supplier of 1000 g rolls shows `2 × 1000 g` and one of 500 g rolls `4 × 500 g`.
 
 ### What you must enter
 
 Suggestions need the order settings, because Reprintbuddy cannot guess your supplier's lead time:
 
 - For a part: **Minimum stock** and **Safety margin** on the part, and per supplier **Order unit (pieces per pack)**, **Minimum order quantity (packs)**, **Lead time (days)**, name and **Order link**, see [To check and assembly](inspection.md#suppliers).
-- For filament: the reorder settings of the spool sort on the Filament page, see [Filament](filament.md). Only spool sorts that are marked **Reordered** in at least one article get suggestions.
+- For filament: the reorder settings of the spool sort on the Filament page, with the safety stock and per supplier the same fields as for a part, the order unit in grams per spool; see [Filament](filament.md#reorder-settings-of-a-spool-sort). Only spool sorts that are marked **Reordered** in at least one article and have reorder settings get suggestions.
 
 !!! note "Without the spool list"
     Filament suggestions need the filament stock. If Bambuddy cannot be reached, the page shows the last recorded stock with its date; each filament tile says **As of …** at its stock. With no record at all, filament suggestions are left out and only parts are shown.
@@ -60,17 +60,27 @@ Suggestions need the order settings, because Reprintbuddy cannot guess your supp
 
 When you have ordered:
 
-1. When the part has several suppliers, choose under **Supplier** where you ordered. The default is chosen to begin with. When you change the supplier, the field **Order units** takes its suggested quantity, as long as you have not typed a number there yourself.
+1. When the part or spool sort has several suppliers, choose under **Supplier** where you ordered. The default is chosen to begin with. When you change the supplier, the field **Order units** takes its suggested quantity, as long as you have not typed a number there yourself.
 2. Check the number in **Order units**. It starts with the suggested quantity; you can enter 1 to 1000. It counts packs of the chosen supplier.
 3. Press **mark as ordered**.
 
-The item moves to the list **On its way**, showing the quantity, for a part the supplier (one without a name as **Supplier 2** and so on), and the date under **Ordered on**. For a part the ordered quantity is the packs times the supplier's order unit at the time you marked it; if you change or remove the supplier on the part later, it stays as ordered. A part has at most one order on its way. If the suppliers of the part were changed on another device after the page was shown, nothing is marked: reload the page and choose again. Reprintbuddy makes no new suggestion for it until it has arrived. Until then the ordered quantity, less what has already arrived of it, counts as on its way: it counts like stock wherever the item counts, for filament also in the suggestion of another spool sort whose slots tick it. Such a tile shows the line **On its way**. What has arrived:
+The item moves to the list **On its way**, showing the quantity, the supplier (one without a name as **Supplier 2** and so on), and the date under **Ordered on**. The ordered quantity is the packs times the supplier's order unit at the time you marked it; if you change or remove the supplier later, it stays as ordered. A part or spool sort has at most one order on its way. If its suppliers were changed on another device after the page was shown, nothing is marked: reload the page and choose again. Reprintbuddy makes no new suggestion for it until it has arrived. Until then the ordered quantity, less what has already arrived of it, counts as on its way: it counts like stock wherever the item counts, for filament also in the suggestion of another spool sort whose slots tick it. Such a tile shows the line **On its way**. What has arrived:
 
-- A part: the **Goods receipt of a part** bookings after you marked it. Book the receipt on the Bookings page, see [To check and assembly](inspection.md#bookings).
+- A part: the **Goods receipt of a part** bookings entered after you marked it whose date is not before the day you marked it. A receipt dated earlier belongs to an older delivery and does not count. Book the receipt on the Bookings page, see [To check and assembly](inspection.md#bookings).
 - Filament: the nominal weight of new spools of that sort in Bambuddy's spool list, created after your mark (a new roll already in use counts in full). Filament is never booked in Reprintbuddy: Bambuddy keeps it, Reprintbuddy only reads the spool list. If Bambuddy cannot be reached, it takes the last recorded list.
 
 A partial delivery shows in the list **On its way** as **… of it arrived**, and only the rest counts as on its way. The suggestion ends by itself when what has arrived reaches the ordered quantity.
 
-You can also press **arrived** in the list yourself, for example for a delivery that you do not book.
+You can also press **arrived** in the list yourself, for example for a delivery that you do not book. For filament this only ends the mark; nothing is booked.
+
+## Take an order back
+
+When the shop cancels an order, press **take back** (the cross) next to it in the list **On its way**. Reprintbuddy asks once and shows the order with what has arrived of it; **Take back** confirms, **Keep the order** leaves everything as it is.
+
+- What has not arrived yet no longer counts as on its way. If there is still a need, the suggestion comes back at once, and you can mark it as ordered again, also with another supplier.
+- What has already arrived stays as it is: booked receipts of a part stay in its stock, new spools stay in Bambuddy. Taking back also works after a partial delivery.
+- Nothing is booked. The [log](../operate/log.md) shows **Order taken back** with the ordered quantity, the supplier and what had arrived; it does not show **arrived** for this order.
+- Only you take an order back, never the automation. Taking back cannot be undone; mark the item as ordered again instead.
+- A push message about the suggestion that comes back is not sent again: the occasion counts as settled only when an order has arrived, see [Push messages](notifications.md).
 
 Push messages can tell you about new suggestions, see [Push messages](notifications.md).
