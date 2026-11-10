@@ -436,3 +436,18 @@ def test_a_sale_dated_to_a_summer_day_stays_on_its_day_in_the_zone_of_the_server
     assert response.status_code == 303
     (row,) = journal(ready_client)
     assert localtime.to_local(row.booked_at).replace(tzinfo=None) == datetime(2026, 10, 24, 23, 30)
+
+
+def test_a_stock_in_deducting_parts_is_refused_when_a_part_was_counted_later(ready_client):  # p261
+    a, p = article(ready_client, stock=0), part(ready_client, stock=10)
+    with sm_of(ready_client).begin() as s:
+        s.add(ArticlePart(article_id=a, part_id=p, qty_per_unit=1))
+    post(ready_client, "part-inventory", part_id=p, counted="10")
+    two_days_ago = f"{local_today() - timedelta(days=2):%Y-%m-%d}"
+    response, _ = post(ready_client, "stock-in", article_id=a, qty="2", consume_parts="1", booked_on=two_days_ago)
+    assert response.status_code == 200
+    assert en("bookings.counted_later", item="Insert M4", at=f"{local_today():%Y-%m-%d}") in response.text
+    assert (number(ready_client, Article, a, "stock"), number(ready_client, Part, p, "stock")) == (0, 10)
+    response, _ = post(ready_client, "stock-in", article_id=a, qty="2", booked_on=two_days_ago)  # unticked
+    assert response.status_code == 303
+    assert (number(ready_client, Article, a, "stock"), number(ready_client, Part, p, "stock")) == (2, 10)

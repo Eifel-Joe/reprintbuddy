@@ -344,7 +344,7 @@
   "journal.saved_at": "gespeichert {at}",
   "bookings.inventory_done": "{item}: gezählt {counted}, Differenz {diff}.",
   "bookings.inventory_done_then": "{item}: gezählt {counted} am {day}, Stand damals {then}, Differenz {diff}. Buchungen danach bleiben.",
-  "bookings.counted_later": "Abgelehnt: Der Bestand von {item} wurde am {at} gezählt; diese Zählung enthält die Buchung schon. War die Buchung danach, wähle dieses Datum oder später.",
+  "bookings.counted_later": "Abgelehnt: Der Bestand von {item} wurde am {at} gezählt; diese Zählung enthält die Buchung schon. War die Buchung danach, wähle einen späteren Tag oder heute.",
   "bookings.later_inventory": "Abgelehnt: Nach diesem Datum gibt es schon eine Inventur dieses Werts (am {at}). Sie hat den Wert neu gesetzt; eine frühere Zählung ändert daran nichts mehr.",
   "journal.then": "am Buchungstag {before} → {after}",
   "bookings.part_receipt_done": "{item}: {qty} eingegangen.",

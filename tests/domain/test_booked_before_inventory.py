@@ -109,3 +109,12 @@ def test_a_booking_of_today_after_a_count_of_today_works(db):
         stock.count_article(s, a, "stock", 10, "user")
         stock.sell_unreserved(s, a, 1, "user")
         assert s.get(Article, a).stock == 9
+
+
+def test_a_second_count_dated_to_the_same_day_replaces_the_first(db):  # review: p260 + p261
+    with db.begin() as s:
+        a = make_article(s, stock=10).id
+        day_end = days_ago(1)
+        stock.count_article(s, a, "stock", 8, "user", booked_at=day_end)
+        assert stock.count_article(s, a, "stock", 9, "user", booked_at=day_end) == 1  # against the first count
+        assert s.get(Article, a).stock == 9
