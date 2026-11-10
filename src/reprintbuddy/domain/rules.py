@@ -31,10 +31,10 @@ def _position_available(position: PositionStock) -> int:
     options = position.option_available
     if not options:
         return 0  # all articles archived (Spec 5.5)
-    if len(options) == 1:
-        return options[0] // position.qty  # may stay negative
-    # A choice: every order picks one of the articles, so the options add up.
-    return sum(max(0, a // position.qty) for a in options)
+    # A choice counts the option with the smallest stock (Spec 5.4, v0.3.16 p173): the set is as often
+    # deliverable as it can be made with every one of the options, so they are not added up. One option
+    # is the same case; a negative (oversold) option stays negative.
+    return min(a // position.qty for a in options)
 
 
 def set_available(positions: Sequence[PositionStock]) -> int:

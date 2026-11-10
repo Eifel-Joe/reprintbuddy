@@ -29,9 +29,21 @@ def test_set_with_choice(db):  # Spec 5.4 choice
         )
     with db.begin() as s:
         row = catalog.list_sets(s)[0]
-        assert row.available == 8
+        assert row.available == 3  # the smallest option (3), not the sum (8); v0.3.16 p173
+        assert row.status == "deliverable"
         assert [p.is_choice for p in row.positions] == [False, True]
         assert row.positions[1].article_names == ["Template B", "Template C"]
+
+
+def test_set_with_an_empty_option_is_not_deliverable(db):  # v0.3.16 p173
+    with db.begin() as s:
+        a = make_article(s, name="Template A", stock=10).id
+        b = make_article(s, name="Template B", stock=4).id
+        c = make_article(s, name="Template C", stock=0).id
+        catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a]), PositionInput(1, [b, c])]))
+    with db.begin() as s:
+        row = catalog.list_sets(s)[0]
+        assert (row.available, row.status) == (0, "not_deliverable")
 
 
 def test_set_negative_shown(db):

@@ -326,7 +326,7 @@ def test_set_with_archived_option(db):
         c = make_article(s, name="Template C", stock=5).id
         catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a]), PositionInput(1, [b, c])]))
     with db.begin() as s:
-        assert catalog.list_sets(s)[0].available == 8
+        assert catalog.list_sets(s)[0].available == 3  # the smallest option of the choice (p173)
         archive_article(s, c)
     with db.begin() as s:
         row = catalog.list_sets(s)[0]

@@ -30,17 +30,22 @@ def test_set_minimum():  # Spec 5.4
     assert set_available([PositionStock(1, (3,)), PositionStock(2, (5,))]) == 2
 
 
-def test_set_choice_sums():
-    assert set_available([PositionStock(1, (3, 5))]) == 8
-    assert set_available([PositionStock(1, (3, 5)), PositionStock(1, (4,))]) == 4
+def test_set_choice_takes_the_smallest_option():  # Spec 5.4, v0.3.16 p173: the options are not added up
+    assert set_available([PositionStock(1, (3, 5))]) == 3
+    assert set_available([PositionStock(1, (3, 5)), PositionStock(1, (4,))]) == 3
+    assert set_available([PositionStock(1, (5, 3))]) == 3  # the order of the options does not matter
+    assert set_available([PositionStock(2, (7, 9))]) == 3  # 7 // 2
+    assert set_available([PositionStock(1, (3, 0))]) == 0  # one option empty: the set is not deliverable
 
 
 def test_set_negative():
     assert set_available([PositionStock(1, (-1,))]) == -1
 
 
-def test_set_choice_ignores_negative():
-    assert set_available([PositionStock(1, (-2, 3))]) == 3
+def test_set_choice_with_a_negative_option():
+    """An option that is oversold pulls the position down like a fixed one (it was ignored while the options were added)."""
+    assert set_available([PositionStock(1, (-2, 3))]) == -2
+    assert set_available([PositionStock(1, (-2, 3)), PositionStock(1, (4,))]) == -2
 
 
 def test_set_empty():
