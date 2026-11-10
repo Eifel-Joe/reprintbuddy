@@ -448,7 +448,10 @@ def test_a_booking_without_a_date_is_dated_when_it_is_saved(db):
 def test_each_hand_booking_can_be_dated_back_and_keeps_when_it_was_saved(db):
     earlier = utcnow() - timedelta(days=3)
     with db.begin() as s:
-        for name, book in _hand_bookings(s):
+        # the counts last: a count dated back holds until the end of its day, so a sale or receipt
+        # dated to the same day after it is refused (p261, p301)
+        bookings = sorted(_hand_bookings(s), key=lambda b: "inventory" in b[0])
+        for name, book in bookings:
             book(earlier)
             row = journal(s)[-1]
             assert row.booked_at == earlier and row.at > earlier, name
