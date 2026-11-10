@@ -12,7 +12,7 @@ from sqlalchemy import select, update
 
 from reprintbuddy import auth
 from reprintbuddy.changes import CLASSIFIED, install_change_feed
-from reprintbuddy.domain import catalog, orders, stock
+from reprintbuddy.domain import catalog, filament, orders, stock
 from reprintbuddy.domain.catalog import ArticleInput, PositionInput, SetInput
 from reprintbuddy.domain.errors import StockLimitError
 from reprintbuddy.models import (
@@ -333,12 +333,29 @@ def test_saving_filament_settings_reports_only_a_real_change(db, published):
         s.add(FilamentSettings(spool_filament_id=sort_id))
     published.clear()
     with db.begin() as s:
-        s.get(FilamentSettings, sort_id).supplier = "Example Supplier"
+        s.get(FilamentSettings, sort_id).safety_value = 300
     assert published == [frozenset({"filament", f"filament-settings:{sort_id}", "activity"})]
     published.clear()
     with db.begin() as s:
-        s.get(FilamentSettings, sort_id).supplier = "Example Supplier"  # same value
+        s.get(FilamentSettings, sort_id).safety_value = 300  # same value
     assert published == []
+
+
+def test_a_supplier_of_a_spool_sort_reports_its_settings_form(db, published):
+    """Spec 9.3 (p281): the suppliers are part of the sort's order settings; an open form hears of
+    their change; the reorder page follows "filament" for its lines per supplier."""
+    from reprintbuddy.domain.filament import FilamentSettingsInput
+    from reprintbuddy.domain.suppliers import SupplierInput
+
+    with db.begin() as s:
+        sort_id = make_sort(s).id
+        filament.save_settings(s, sort_id, FilamentSettingsInput())
+    published.clear()
+    with db.begin() as s:
+        filament.save_settings(s, sort_id, FilamentSettingsInput(suppliers=[
+            SupplierInput(pack_size=1000, is_default=True), SupplierInput(name="Roll Shop", pack_size=500),
+        ]))
+    assert published == [frozenset({"filament", f"filament-settings:{sort_id}", "activity"})]
 
 
 def test_a_ticked_spool_sort_reports_the_article_and_the_filament_page(db, published):
