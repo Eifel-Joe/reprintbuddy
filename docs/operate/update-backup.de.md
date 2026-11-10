@@ -91,7 +91,7 @@ Es tut dasselbe wie der Knopf und geht auf die neueste Version. Der Fortschritt 
 journalctl -u reprintbuddy-update
 ```
 
-Ein Update und ein Wiederherstellen laufen nie gleichzeitig, egal wie sie gestartet wurden: Was als Zweites kommt, wird abgelehnt. Das gilt auch für `reprintbuddy update`, direkt auf der Kommandozeile eingegeben, und für [`reprintbuddy restore-backup`](#wiederherstellen-auf-der-kommandozeile). Beide sperren dazu die Datei `maintenance.lock` im Datenordner. Das System gibt die Sperre frei, sobald der Vorgang endet, auch nach einem Absturz oder Stromausfall; es bleibt also keine Sperre hängen. Lass die Datei, wo sie ist.
+Ein Update und ein Wiederherstellen laufen nie gleichzeitig, egal wie sie gestartet wurden: Was als Zweites kommt, wird abgelehnt. Das gilt auch für `reprintbuddy update`, direkt auf der Kommandozeile eingegeben, und für [`reprintbuddy restore-backup`](#wiederherstellen-auf-der-kommandozeile). Beide sperren dazu die Datei `maintenance.lock` im Datenordner. Das System gibt die Sperre frei, sobald der Vorgang endet, auch nach einem Absturz oder Stromausfall; es bleibt also keine Sperre hängen. Lass die Datei, wo sie ist. Daran erkennt ein Update auch, dass keins läuft: Ist ein früheres Update abgestürzt, beginnt das nächste sofort, statt als „läuft schon“ abgelehnt zu werden.
 
 ## Versionen und Release-Notes
 

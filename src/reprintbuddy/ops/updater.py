@@ -107,12 +107,16 @@ def run_update(
     started = now()
 
     previous = read_status(data_dir)
-    if previous.state == "running" and is_busy(previous, started):
-        print("update: another update is running, nothing done", flush=True)
-        return previous
     # p91: one lock with the restore, also for an update typed by hand on the command line.
     # Refused: the status file stays as it is; the result says "running" so the command exits 3, not 0
     # (review C 3: after a successful update the old status would have made a refusal look like one).
+    # p311: the lock is asked first, and it alone says whether an update runs. Root cause: the state file
+    # was read first, and after a crash (a kill, a power cut) it said "running" for 30 minutes
+    # (`STALE_AFTER`), so every new update was refused that long. The kernel frees the lock with its
+    # process, so a free lock proves that the "running" in the file is a leftover. Limit: an update helper
+    # older than v0.3.16 runs without the lock; an update typed by hand from the moment such a helper has
+    # installed this version until it ends does not see it (only on a jump from v0.3.15 or older). Rejected: asking systemd as the page does - the
+    # helper started by the unit is that unit, "active" would refuse every update the page starts.
     try:
         lock = acquire(data_dir, "update", tries=10)
     except Held as held:
@@ -122,6 +126,8 @@ def run_update(
     except OSError as error:
         print(f"update: cannot take the lock {data_dir / LOCK_NAME} ({error}), nothing done", flush=True)
         return replace(previous, state="running")
+    if previous.state == "running" and is_busy(previous, started):
+        print("update: an earlier update did not finish (its process ended); starting anew", flush=True)
     try:
         return _run_update(db_path, install_dir, runner, wait_healthy, now, target, keep_backups, previous, started)
     finally:

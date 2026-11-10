@@ -316,13 +316,39 @@ def test_rollback_checkout_failure_is_reported(update_env):
     assert result.state == "rollback_failed"
 
 
-def test_refuses_when_running(update_env):
+def test_refuses_when_running(update_env, capsys):
+    """An update that runs holds the lock (p91); since p311 the lock, not the state file, says so."""
+    from reprintbuddy.ops import oplock
+
     e = update_env
     running = UpdateStatus(state="running", step="install", started_at=NOW - timedelta(minutes=1))
     write_status(e.data, running)
-    result = e.update()
+    held = oplock.acquire(e.data, "update")
+    try:
+        result = e.update()
+    finally:
+        held.release()
     assert result == running
     assert e.runner.calls == []
+    assert read_status(e.data) == running
+    assert "another update is running" in capsys.readouterr().out
+
+
+def test_a_crashed_update_does_not_block_the_next_one(update_env, capsys):
+    """p311: an update that crashed (killed, power cut) leaves "running" in the state file, but its lock
+    went with its process. The next update believed the file for 30 minutes; now the free lock counts."""
+    e = update_env
+    write_status(e.data, UpdateStatus(state="running", step="install", started_at=NOW - timedelta(minutes=1)))
+    assert e.update().state == "succeeded"
+    assert "an earlier update did not finish" in capsys.readouterr().out
+
+
+def test_a_crashed_queued_start_does_not_block_either(update_env):
+    """Sister path: "queued" from the page whose helper died before it wrote anything is taken over.
+    This held before p311 too (only "running" was refused); it pins that the lock-first order keeps it."""
+    e = update_env
+    write_status(e.data, UpdateStatus(state="queued", step="start", started_at=NOW - timedelta(seconds=5)))
+    assert e.update().state == "succeeded"
 
 
 def test_stale_running_state_does_not_block(update_env):

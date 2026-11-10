@@ -91,7 +91,7 @@ It does the same as the button and goes to the newest release. The progress show
 journalctl -u reprintbuddy-update
 ```
 
-An update and a restore never run at the same time, however they were started: the one that comes second is refused. This also holds for `reprintbuddy update` typed directly on the command line and for [`reprintbuddy restore-backup`](#restore-on-the-command-line). Both take a lock on the file `maintenance.lock` in the data folder. The system releases it when the process ends, also after a crash or a power cut, so no lock stays behind; leave the file where it is.
+An update and a restore never run at the same time, however they were started: the one that comes second is refused. This also holds for `reprintbuddy update` typed directly on the command line and for [`reprintbuddy restore-backup`](#restore-on-the-command-line). Both take a lock on the file `maintenance.lock` in the data folder. The system releases it when the process ends, also after a crash or a power cut, so no lock stays behind; leave the file where it is. That is also how an update knows that none is running: if an earlier update crashed, the next one starts right away instead of being refused as "already running".
 
 ## Versions and release notes
 

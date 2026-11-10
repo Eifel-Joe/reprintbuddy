@@ -938,3 +938,85 @@ def test_p145_other_backups_do_not_count(ops_env, label, age):
     unit_state(ops_env, "inactive")
     page = maintenance(ops_env)
     assert "The update did not start. Please start it again." in page
+
+
+# --- p310: the start of an update waits a little for a push message on its way --------------------------------------
+
+
+def notify_spy(env, monkeypatch, answer=True):
+    """Record what the update start asks of the notifier, and when the helper's unit is started."""
+    app = env.client.app
+    order = []
+
+    async def settle(timeout):
+        order.append(("settle", timeout, app.state.update_starting))
+        return answer
+
+    monkeypatch.setattr(app.state.notifier, "settle", settle)
+    monkeypatch.setattr(app.state.notifier, "begin_settle", lambda: order.append(("begin", app.state.update_starting)))
+    monkeypatch.setattr(app.state.notifier, "end_settle", lambda: order.append(("end",)))
+
+    def started(_call):
+        order.append(("start",))
+        return CommandResult(0)
+
+    env.runner.on(START_UPDATE_CMD, started)
+    return order
+
+
+def test_the_update_waits_for_a_push_message_on_its_way_before_the_helper_starts(ops_env, monkeypatch):
+    """p310: Home Assistant accepts while the update begins: its "sent" is written before the helper backs
+    the database up and restarts the service, so the new version does not send it once more."""
+    git_env(ops_env)
+    check(ops_env)
+    order = notify_spy(ops_env, monkeypatch)
+    response = post(ops_env, "/settings/update")
+    assert response.headers["location"] == "/settings?tab=maintenance#ops-update"
+    wait = ops_env.client.app.state.update_notify_wait
+    # `settle` closes the window itself when it returns (p270); `end` is for the ways out before it
+    assert order == [("begin", True), ("settle", wait, True), ("start",), ("end",)]
+    assert read_status(data_dir(ops_env)).state == "queued"
+
+
+def test_the_update_goes_on_when_a_push_message_is_still_on_its_way(ops_env, monkeypatch):
+    """Bounded like the restore's wait (p270): past it the update starts (the message may come once more)."""
+    git_env(ops_env)
+    check(ops_env)
+    order = notify_spy(ops_env, monkeypatch, answer=False)
+    post(ops_env, "/settings/update")
+    assert ("start",) in order
+    assert read_status(data_dir(ops_env)).state == "queued"
+
+
+@pytest.mark.parametrize("prepare, refusal", [("not_git", "not_git"), ("no_check", "no_update"), ("busy", "busy")])
+def test_a_refused_update_does_not_wait_and_closes_the_window(ops_env, monkeypatch, prepare, refusal):
+    if prepare != "not_git":
+        git_env(ops_env)
+    if prepare == "busy":
+        check(ops_env)
+        write_status(data_dir(ops_env), UpdateStatus(state="running", step="install", started_at=now()))
+    order = notify_spy(ops_env, monkeypatch)
+    response = post(ops_env, "/settings/update")
+    assert response.headers["location"] == f"/settings?tab=maintenance&ops={refusal}#ops-update"
+    assert not [step for step in order if step[0] in ("settle", "start")]
+    assert order.count(("end",)) == (order.count(("begin", True)))  # what was opened is closed
+
+
+def test_the_real_notifier_has_the_window_open_while_the_update_waits(ops_env, monkeypatch):
+    """The route and the notifier together: the window is open while the start waits, closed after it."""
+    git_env(ops_env)
+    check(ops_env)
+    app = ops_env.client.app
+    notifier = app.state.notifier
+    seen = []
+    real_settle = notifier.settle
+
+    async def settle(timeout):
+        seen.append(("while waiting", notifier._settling))
+        return await real_settle(timeout)
+
+    monkeypatch.setattr(notifier, "settle", settle)
+    post(ops_env, "/settings/update")
+    assert seen == [("while waiting", True)]
+    assert notifier._settling is False
+    assert START_UPDATE_CMD in ops_env.runner.calls

@@ -469,9 +469,14 @@ async def update_start(request: Request):
     if app.state.restore.active or app.state.update_starting:
         return _back("busy")
     app.state.update_starting = True
+    # p310: in the same step as the gate, with no `await` in between, a push message on its way may
+    # still write its outcome (as for the restore, p270); `_start_update` waits for it before the
+    # helper starts, every way out closes the window again.
+    app.state.notifier.begin_settle()
     try:
         return await _start_update(request)
     finally:
+        app.state.notifier.end_settle()
         app.state.update_starting = False
 
 
@@ -486,6 +491,13 @@ async def _start_update(request: Request):
     info: VersionInfo | None = getattr(app.state, "version_info", None)
     if info is None or not info.update_available:
         return _back("no_update")
+    # p310: Home Assistant could accept a message while the update began; the notifier then refused to
+    # write "sent" (an update had started), and the new version sent it once more after its restart.
+    # The helper's backup and restart come only after the outcome of that call is written. Bounded:
+    # past it the update goes ahead and the message may come once more. Rejected: letting the notifier
+    # write while the helper runs - the helper migrates the database, writes must have stopped by then.
+    if not await app.state.notifier.settle(app.state.update_notify_wait):
+        log.info("update: a push message was still on its way; it may be sent once more")
     # From the last look at the restore to "queued" there is no `await`. `started_at` is taken here,
     # not before the questions above: the grace in which "queued" counts as running starts now.
     if app.state.restore.active:
