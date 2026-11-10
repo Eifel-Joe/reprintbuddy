@@ -112,3 +112,27 @@ def test_the_slot_of_the_mapping_page_is_there(bb_client, fake_bambuddy):
     ids = seeded(bb_client, fake_bambuddy)
     with sm_of(bb_client)() as s:
         assert s.query(ArticleFilament).filter_by(article_id=ids["article"]).count() == 1
+
+
+@pytest.mark.parametrize("path", (*PAGES, "/"))
+def test_a_restore_that_begins_while_the_spools_are_asked_for_stops_the_write(probed, fake_bambuddy, monkeypatch, path):
+    """Review v0.3.15 D, finding 3: writes are paused while the page waits for Bambuddy's spools (a restore
+    began meanwhile). The page must look again after the wait and write nothing. The overview checked only
+    before the wait (since v0.3.14)."""
+    ids = seeded(probed, fake_bambuddy)
+    status = probed.app.state.ticker.status
+    status.configured, status.reachable = True, True
+    paused = {"now": False}
+    monkeypatch.setattr(probed.app.state.activity, "may_write", lambda: not paused["now"])
+    asked = fake_bambuddy.list_spools
+
+    async def restore_begins_meanwhile():
+        spools = await asked()
+        paused["now"] = True
+        return spools
+
+    monkeypatch.setattr(fake_bambuddy, "list_spools", restore_begins_meanwhile)
+    before = data_version(probed)
+    assert probed.get(path.format(**ids)).status_code == 200
+    assert paused["now"], "the page did not ask for the spools"
+    assert data_version(probed) == before
