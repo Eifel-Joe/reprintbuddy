@@ -109,7 +109,7 @@ Shipping and cancelling always apply to the whole order, never to single items.
 
 A set is a bundle of articles sold together, with a name and an optional article number. It has no stock of its own: it is available as often as all of its positions are available at the same time.
 
-A position holds a quantity and one or more articles. With one article the position is fixed. With several articles you choose one when you take the order. For the availability a choice position counts the article with the smallest stock: the set counts as deliverable only as often as it can be made with every one of the articles, and the stocks of the articles are not added up. An article that is oversold pulls the number down like a fixed one. A set is **deliverable** when at least one set can be made from the available pieces, otherwise **not deliverable**.
+A position holds a quantity and one or more articles. With one article the position is fixed. With several articles you choose one when you take the order. For the availability a choice position counts the article with the smallest stock: the set counts as deliverable only as often as it can be made with every one of the articles, and the stocks of the articles are not added up. If an article is in several positions, the choice that needs most of it counts. An article that is oversold pulls the number down like a fixed one. A set is **deliverable** when at least one set can be made from the available pieces, otherwise **not deliverable**.
 
 Under **Sets** press **New set**, enter a name and an article number, and fill the positions: a **Quantity** and the **Articles** (hold Ctrl or Cmd to select several). Rows without an article are ignored; **More rows** adds rows. A set needs at least one position.
 

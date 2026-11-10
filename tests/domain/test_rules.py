@@ -38,6 +38,28 @@ def test_set_choice_takes_the_smallest_option():  # Spec 5.4, v0.3.16 p173: the 
     assert set_available([PositionStock(1, (3, 0))]) == 0  # one option empty: the set is not deliverable
 
 
+def test_set_choice_option_shared_with_a_fixed_position():  # review of p173
+    """The article that is fixed in one position and an option in another needs both quantities when the
+    customer picks it: the worst choice counts."""
+    fixed = PositionStock(1, (5,), (1,))
+    choice = PositionStock(1, (5, 10), (1, 2))
+    assert set_available([fixed, choice]) == 2  # picking article 1 needs two of it per set: 5 // 2
+    assert set_available([PositionStock(1, (5,), (1,)), PositionStock(1, (9, 10), (2, 3))]) == 5  # nothing shared
+
+
+def test_set_choice_options_shared_between_two_choice_positions():  # review of p173
+    first = PositionStock(1, (4, 10), (1, 2))
+    second = PositionStock(1, (4, 10), (1, 3))
+    assert set_available([first, second]) == 2  # article 1 picked in both positions: 4 // 2
+
+
+def test_set_shared_option_with_a_negative_stock_counts_the_worst_choice():  # review of p173
+    first = PositionStock(1, (-2, 3), (1, 2))
+    second = PositionStock(1, (-2, 3), (1, 2))
+    assert set_available([first, second]) == -2  # picked once, article 1 is short by 2
+    assert set_available([PositionStock(1, (-1,), (7,)), PositionStock(1, (-1, 4), (7, 8))]) == -1
+
+
 def test_set_negative():
     assert set_available([PositionStock(1, (-1,))]) == -1
 
