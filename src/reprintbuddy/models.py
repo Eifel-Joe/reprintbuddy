@@ -413,21 +413,45 @@ class FilamentSort(Base):
 
 
 class FilamentSettings(Base):
+    """The order settings of a spool sort (Spec 9.3), optional: the safety margin here, the rest per
+    supplier (`FilamentSupplier`, since 0016). Saved once, a sort has at least one supplier."""
+
     __tablename__ = "filament_settings"
     __table_args__ = (
         CheckConstraint("safety_unit IN ('days', 'grams')", name="ck_filament_settings_unit"),
-        CheckConstraint("pack_grams >= 1", name="ck_filament_settings_pack_grams"),
-        CheckConstraint("min_order_packs >= 1", name="ck_filament_settings_min_order_packs"),
     )
 
     spool_filament_id: Mapped[int] = mapped_column(ForeignKey("filament_sorts.id"), primary_key=True)
-    lead_time_days: Mapped[int] = _int(0)
     safety_value: Mapped[int] = _int(0)
     safety_unit: Mapped[str] = mapped_column(String, default="days", server_default="days")
-    pack_grams: Mapped[int] = _int(1000)
-    min_order_packs: Mapped[int] = _int(1)
-    supplier: Mapped[str | None] = mapped_column(String, default=None)
+
+
+class FilamentSupplier(Base):
+    """One supplier of a spool sort (Spec 9.3): 1 to 10 per sort with settings, exactly one the
+    default. The same columns as `PartSupplier`; `pack_size` is the grams of one roll. It only
+    serves the reorder suggestion: filament is never booked in Reprintbuddy (Spec 9.1)."""
+
+    __tablename__ = "filament_suppliers"
+    __table_args__ = (
+        CheckConstraint("position >= 0", name="ck_filament_suppliers_position"),
+        CheckConstraint("pack_size >= 1", name="ck_filament_suppliers_pack_size"),
+        CheckConstraint("min_order_packs >= 1", name="ck_filament_suppliers_min_order_packs"),
+        CheckConstraint("lead_time_days >= 0", name="ck_filament_suppliers_lead_time_days"),
+        UniqueConstraint("sort_id", "position", name="uq_filament_suppliers_position"),
+        Index(
+            "uq_filament_suppliers_default", "sort_id", unique=True, sqlite_where=text("is_default = 1"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sort_id: Mapped[int] = mapped_column(ForeignKey("filament_settings.spool_filament_id"))
+    position: Mapped[int]
+    name: Mapped[str | None] = mapped_column(String, default=None)
     order_url: Mapped[str | None] = mapped_column(String, default=None)
+    pack_size: Mapped[int] = _int(1000)
+    min_order_packs: Mapped[int] = _int(1)
+    lead_time_days: Mapped[int] = _int(0)
+    is_default: Mapped[bool] = _flag()
 
 
 class FilamentSnapshot(Base):
@@ -467,11 +491,15 @@ class ReorderMark(Base):
         DateTime, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
     )
     received_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
-    # Parts only: the pack size and the supplier name when it was marked (Spec 9.4: the amount on
-    # its way stays as ordered, whatever happens to the supplier later). None for filament.
+    # The pack size and the supplier name when it was marked (Spec 9.4: the amount on its way stays
+    # as ordered, whatever happens to the supplier later); parts since 0015, filament since 0016.
     pack_size: Mapped[int | None] = mapped_column(default=None)
     supplier_name: Mapped[str | None] = mapped_column(String, default=None)
     supplier_position: Mapped[int | None] = mapped_column(default=None)  # "Supplier n" is position + 1
+    # Closed by "take back" (Spec 9.4, p280), not by arrival: `received_at` is then the time it was
+    # taken back. Every "is it open" stays `received_at IS NULL`; only what means "arrived" (push
+    # messages settling, the activity log) looks at this flag.
+    withdrawn: Mapped[bool] = _flag()
 
 
 class NotifyMark(Base):

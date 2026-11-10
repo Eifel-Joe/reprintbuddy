@@ -6,27 +6,28 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import filament, reorder
+from reprintbuddy.domain import filament, reorder, suppliers
 from reprintbuddy.domain.errors import DomainError
-from reprintbuddy.domain.filament import FilamentSettingsInput
+from reprintbuddy.domain.filament import DEFAULT_ROLL_GRAMS, FilamentSettingsInput
 from reprintbuddy.models import FilamentSettings, FilamentSort, utcnow
-from reprintbuddy.web import kpis
+from reprintbuddy.web import kpis, supplier_form
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, db_session, get_db, render
 from reprintbuddy.web.formatting import format_date
-from reprintbuddy.web.forms import error_status, error_text, parse_int, parse_text, saved_redirect
+from reprintbuddy.web.forms import error_status, error_text, parse_int, saved_redirect
 from reprintbuddy.web.filament_view import COLOR, may_write, page_spools
 from reprintbuddy.web.formtoken import write_transaction
 from reprintbuddy.web.i18n import translate
 
 router = APIRouter()
 
-TEXT_FIELDS = ("supplier", "order_url", "safety_unit")
-NUMBER_FIELDS = ("lead_time_days", "safety_value", "pack_grams", "min_order_packs")
-DEFAULTS = {
-    "lead_time_days": "0", "safety_value": "0", "safety_unit": "days", "pack_grams": "1000",
-    "min_order_packs": "1", "supplier": "", "order_url": "",
-}
+# The safety margin stays at the sort; roll size, minimum order, lead time, shop and link sit at
+# each supplier (Spec 9.3, p281), in the same block as a part's suppliers (web/supplier_form.py).
+DEFAULTS = {"safety_value": "0", "safety_unit": "days"}
+
+
+def _defaults() -> dict[str, object]:
+    return {**DEFAULTS, "supplier_rows": [supplier_form.blank(DEFAULT_ROLL_GRAMS)], "supplier_default": "0"}
 
 
 @router.get("/filament")
@@ -83,11 +84,13 @@ async def filament_list(request: Request):
     )
 
 
-def _settings_page(request: Request, sort: FilamentSort, values: dict[str, str],
+def _settings_page(request: Request, sort: FilamentSort, values: dict[str, object],
                    error: str | None = None, status: int = 200):
     return render(
         request, "filament_settings.html", status_code=status, active_nav="filament",
         sort_id=sort.id, label=sort.label, values=values, error=error,
+        supplier_names=suppliers.names_in_use(db_session(request)), max_suppliers=suppliers.MAX_SUPPLIERS,
+        supplier_texts=supplier_form.FILAMENT_TEXTS, supplier_blank=supplier_form.blank(DEFAULT_ROLL_GRAMS),
     )
 
 
@@ -102,11 +105,9 @@ def _get_sort(db: Session, sort_id: int) -> FilamentSort:
 async def filament_settings(request: Request, sort_id: int, db: Session = Depends(get_db)):
     sort = _get_sort(db, sort_id)
     row = filament.get_settings(db, sort_id)
-    values = dict(DEFAULTS) if row is None else {
-        "lead_time_days": str(row.lead_time_days), "safety_value": str(row.safety_value),
-        "safety_unit": row.safety_unit, "pack_grams": str(row.pack_grams),
-        "min_order_packs": str(row.min_order_packs), "supplier": row.supplier or "",
-        "order_url": row.order_url or "",
+    values = _defaults() if row is None else {
+        "safety_value": str(row.safety_value), "safety_unit": row.safety_unit,
+        **supplier_form.values_of(filament.sort_suppliers(db, sort_id)),
     }
     return _settings_page(request, sort, values)
 
@@ -115,16 +116,15 @@ async def filament_settings(request: Request, sort_id: int, db: Session = Depend
 async def filament_settings_save(request: Request, sort_id: int, db: Session = Depends(get_db)):
     sort = _get_sort(db, sort_id)
     form = await request.form()
-    values = {k: str(form.get(k, "")) for k in (*TEXT_FIELDS, *NUMBER_FIELDS)}
+    values: dict[str, object] = {k: str(form.get(k, "")) for k in DEFAULTS}
+    values.update(supplier_form.typed(form))
+    if supplier_form.change_rows(form, values, DEFAULT_ROLL_GRAMS):
+        return _settings_page(request, sort, values)
     try:
         data = FilamentSettingsInput(
-            lead_time_days=parse_int(form.get("lead_time_days"), field="filament.field.lead_time_days", min=0, max=365),
             safety_value=parse_int(form.get("safety_value"), field="filament.field.safety_value", min=0, max=1_000_000),
             safety_unit=str(form.get("safety_unit", "days")),
-            pack_grams=parse_int(form.get("pack_grams"), field="filament.field.pack_grams", min=1, max=100_000),
-            min_order_packs=parse_int(form.get("min_order_packs"), field="filament.field.min_order_packs", min=1, max=1000),
-            supplier=parse_text(form.get("supplier"), field="filament.field.supplier", max_len=200),
-            order_url=parse_text(form.get("order_url"), field="filament.field.order_url", max_len=2000),
+            suppliers=supplier_form.parse(form, suppliers.FILAMENT_LABELS),
         )
         with write_transaction(request) as tx:
             filament.save_settings(tx, sort_id, data)

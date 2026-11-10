@@ -52,18 +52,29 @@ Die Karten oben zählen Spulensorten, Gesamtbestand, Spulen und die nachgekaufte
 
 ## Bestelleinstellungen einer Spulensorte
 
-Klicke auf eine Spulensorte (oder auf das Symbol **einstellen** oder **Einstellungen ändern**), um ihre **Bestelleinstellungen** zu öffnen. Sie zählen nur für Sorten, die in irgendeinem Artikel nachgekauft werden, und sie speisen die [Bestellvorschläge](reorder.md).
+Klicke auf eine Spulensorte (oder auf das Symbol **einstellen** oder **Einstellungen ändern**), um ihre **Bestelleinstellungen** zu öffnen. Sie zählen nur für Sorten, die in irgendeinem Artikel nachgekauft werden, und sie speisen die [Bestellvorschläge](reorder.md). Sie dienen nur den Vorschlägen: Reprintbuddy bucht nie Filament, den Bestand führt Bambuddy.
+
+Oben stehen die Felder der Sorte selbst:
 
 | Feld | Bedeutung | Vorgabe |
 |---|---|---|
-| **Lieferzeit (Tage)** | Tage von der Bestellung bis zum Eintreffen, 0 bis 365. | 0 |
-| **Bestelleinheit (Gramm je Spule)** | Gramm, die eine Spule hat; in dieser Einheit wird die Sorte gekauft, 1 bis 100.000. Vorschläge rechnen immer in ganzen Spulen und runden auf. | 1000 |
 | **Sicherheitspolster** und **Einheit des Sicherheitspolsters** | Die Reserve, die nach der Lieferzeit noch übrig sein soll, 0 bis 1.000.000, in **Tagen** Verbrauch oder in **Gramm**. | 0 Tage |
-| **Mindestbestellmenge (Spulen)** | So viele Spulen muss eine Bestellung mindestens haben, 1 bis 1000. | 1 |
-| **Lieferant** | Freier Text, bis 200 Zeichen. | leer |
-| **Bestell-Link** | Adresse, die mit `http://` oder `https://` beginnen muss, bis 2000 Zeichen. | leer |
 
-Ein Vorschlag erscheint, wenn der Bestand minus geplanter Bedarf minus Verbrauch in der Lieferzeit unter das Sicherheitspolster fällt. Eine nachgekaufte Sorte ohne Einstellungen rechnet mit den Vorgaben oben.
+Darunter, unter **Lieferanten**, ein Block je Lieferant, 1 bis 10, wie bei einem [Zukaufteil](inspection.md#lieferanten). Ein Lieferant ist **Standard**: Seine Lieferzeit entscheidet, ob ein Vorschlag erscheint; der Vorschlag nennt dann die Menge für jeden Lieferanten.
+
+| Feld | Bedeutung | Vorgabe |
+|---|---|---|
+| **Name** | Freier Text, bis 200 Zeichen; darf leer bleiben, der Block heißt dann **Lieferant 1**, **Lieferant 2** usw. Beim Tippen werden Namen vorgeschlagen, die bei Spulensorten und Zukaufteilen schon vorkommen. | leer |
+| **Bestell-Link** | Adresse, die mit `http://` oder `https://` beginnen muss, bis 2000 Zeichen. | leer |
+| **Bestelleinheit (Gramm je Spule)** | Gramm, die eine Spule hat; in dieser Einheit verkauft dieser Lieferant die Sorte, 1 bis 100.000. Vorschläge rechnen immer in ganzen Spulen und runden auf. | 1000 |
+| **Mindestbestellmenge (Spulen)** | So viele Spulen muss eine Bestellung mindestens haben, 1 bis 1000. | 1 |
+| **Lieferzeit (Tage)** | Tage von der Bestellung bis zum Eintreffen, 0 bis 365. | 0 |
+
+**Lieferant hinzufügen** fügt einen Block an, das Kreuz entfernt einen; der letzte bleibt. Entfernst du den Standard, wähle vor dem Speichern einen anderen. Gespeichert wird alles zusammen mit **Speichern**.
+
+Ein Vorschlag erscheint, wenn der Bestand minus geplanter Bedarf minus Verbrauch in der Lieferzeit des Standard-Lieferanten unter das Sicherheitspolster fällt. Eine nachgekaufte Sorte ohne Bestelleinstellungen bekommt keinen Vorschlag; die Kennzahlen zählen sie unter **Ohne Einstellungen**.
+
+Beim Update von einer Version vor 0.3.16 werden die bisherigen Einstellungen jeder Sorte ihr einziger Lieferant und Standard; die Vorschläge bleiben gleich. Eine Bestellung, die schon unterwegs ist, behält ihre Rollengröße.
 
 ## Wenn Bambuddy nicht erreichbar ist
 

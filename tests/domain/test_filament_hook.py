@@ -40,7 +40,8 @@ async def test_hook_converts_the_legacy_sorts(db, fake_bambuddy):
 
     with db() as s:
         target = filament.resolve_sorts(s, [spool])[spool.id]
-        assert s.get(FilamentSettings, target).lead_time_days == 4
+        assert s.get(FilamentSettings, target) is not None
+        assert filament.default_supplier(s, target).lead_time_days == 4  # at the supplier since 0016
         assert s.get(FilamentSettings, old) is None
         assert s.query(JournalEntry).filter_by(kind="filament_sorts_converted").count() == 1
 

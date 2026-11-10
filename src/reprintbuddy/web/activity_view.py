@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy.activity.kinds import ACTORS, AREAS
 from reprintbuddy.i18n import load_locales, translate
 from reprintbuddy.models import ActivityEntry
-from reprintbuddy.web.formatting import format_local
+from reprintbuddy.web.formatting import format_local, unit_label
 
 PAGE_SIZE = 100
 TAB = "log"
@@ -64,6 +64,21 @@ def _setting_line(lang: str, change: dict[str, Any]) -> str:
     if "change" in change:
         return f"{label}: {_t(lang, 'activity.change.' + str(change['change']))}"
     return f"{label}: {_value(lang, change.get('old'))} → {_value(lang, change.get('new'))}"
+
+
+def _withdrawn_lines(lang: str, details: dict[str, Any]) -> list[str]:
+    """An order taken back (Spec 10.7, p280): the ordered amount, the supplier, what had arrived."""
+    unit = unit_label(str(details.get("unit") or ""), lang)
+    lines = [translate(lang, "activity.withdrawn_ordered", packs=details.get("packs") or "–",
+                       size=details.get("size") or "–", unit=unit)]
+    supplier = details.get("supplier")
+    if not supplier and isinstance(details.get("supplier_position"), int):
+        supplier = translate(lang, "parts.supplier_unnamed", n=details["supplier_position"] + 1)
+    if supplier:
+        lines.append(translate(lang, "activity.withdrawn_supplier", supplier=supplier))
+    if details.get("arrived"):
+        lines.append(translate(lang, "activity.withdrawn_arrived", amount=details["arrived"], unit=unit))
+    return lines
 
 
 def _describe(lang: str, entry: ActivityEntry) -> tuple[str, list[str], str | None]:
@@ -126,6 +141,8 @@ def _describe(lang: str, entry: ActivityEntry) -> tuple[str, list[str], str | No
             event = _t(lang, f"notify.event.{details.get('event')}")
             extras.append(translate(lang, "activity.message_of", event=event, count=details.get("count") or 1))
         extras.append(_t(lang, f"notify.outcome.{details.get('outcome')}"))
+    elif kind == "reorder_withdrawn":
+        extras += _withdrawn_lines(lang, details)
     elif kind in ("label_printed", "label_test"):
         result = details.get("result")
         extras.append(translate(lang, "activity.labels_printed", printed=details.get("printed", 0),

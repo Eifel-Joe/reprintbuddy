@@ -35,6 +35,7 @@ LOGGED = {
     "/parts/{part_id:int}/restore": "test_a_part_created_changed_archived_and_restored",
     "/reorder/mark": "test_a_reorder_marked_and_received_by_hand",
     "/reorder/marks/{mark_id:int}/received": "test_a_reorder_marked_and_received_by_hand",
+    "/reorder/marks/{mark_id:int}/withdraw": "test_a_reorder_taken_back_after_the_question",
     "/sets/new": "test_a_set_created_changed_archived_and_restored",
     "/sets/{set_id:int}/archive": "test_a_set_created_changed_archived_and_restored",
     "/sets/{set_id:int}/edit": "test_a_set_created_changed_archived_and_restored",

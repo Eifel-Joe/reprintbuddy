@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% block title %}{{ t('reorder.withdraw_title') }}{% endblock %}
+{% block content %}
+{#- The question before an order is taken back (Spec 9.4, p280), like the one before cancelling an
+    order: nothing has changed yet; "take back" posts again with `confirm`, "keep" goes back. -#}
+{% call ui.page_head("shopping-bag", t('reorder.withdraw_title'), mark.label) %}{% endcall %}
+<section class="card section">
+  <p>{{ t('reorder.withdraw_confirm', item=mark.label) }}</p>
+  <p class="muted">{{ mark.label }}: {{ mark.packs }} × {{ mark.size }} {{ mark.unit|unit }}{% if mark.supplier %} · {{ mark.supplier }}{% endif %} · {{ t('reorder.col.ordered') }} {{ mark.day }}{% if mark.arrived %}<br>{{ t('reorder.arrived_so_far', amount=mark.arrived, unit=mark.unit|unit) }}{% endif %}</p>
+  {#- An answer to a POST: no region is fetched, but the form notices when an order changes
+      (e.g. a receipt closes it meanwhile); the server refuses a closed one anyway. -#}
+  <form method="post" action="/reorder/marks/{{ mark.id }}/withdraw" data-live-watch="reorder">
+    {{ ui.live_stale() }}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token_value }}">
+    <input type="hidden" name="confirm" value="yes">
+    <button class="btn" type="submit">{{ t('reorder.withdraw_yes') }}</button>
+    <a class="btn-link" href="/reorder">{{ t('reorder.withdraw_keep') }}</a>
+  </form>
+</section>
+{% endblock %}

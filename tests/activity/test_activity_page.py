@@ -124,3 +124,27 @@ def test_in_german(ready_client):
     assert "Protokoll" in html
     row = text_of(table_rows(html)[0])
     assert "Anmeldung fehlgeschlagen" in row and "3 Versuche" in row and "Benutzer" in row
+
+
+def test_an_order_taken_back_shows_amount_supplier_and_what_arrived(ready_client):
+    """Spec 10.7 (p280): "Bestellung zurückgenommen" with ordered amount, supplier and what arrived."""
+    with sm_of(ready_client).begin() as s:
+        st.set_setting(s, "language", "de", commit=False)
+    with sm_of(ready_client).begin() as s:  # after the line of the language change
+        s.query(ActivityEntry).delete()
+    add(
+        ready_client,
+        ActivityEntry(area="master", kind="reorder_withdrawn", actor="user", at=datetime(2026, 11, 9, 8, 0),
+                      details={"type": "part", "id": 1, "name": "Insert M4", "packs": 4, "size": 50, "unit": "pcs",
+                               "supplier": "Example Supplier", "supplier_position": 0, "arrived": 100}),
+        ActivityEntry(area="master", kind="reorder_withdrawn", actor="user", at=datetime(2026, 11, 9, 9, 0),
+                      details={"type": "filament", "id": 2, "name": "Brand A PLA Black", "packs": 2, "size": 500,
+                               "unit": "g", "supplier": None, "supplier_position": 1, "arrived": 0}),
+    )
+    rows = [text_of(row) for row in table_rows(ready_client.get(PAGE).text)]
+    assert "Bestellung zurückgenommen: Brand A PLA Black" in rows[0]
+    assert "Bestellt: 2 × 500 g" in rows[0] and "Lieferant: Lieferant 2" in rows[0]
+    assert "eingetroffen" not in rows[0]  # nothing arrived: no line for it
+    assert "Bestellung zurückgenommen: Insert M4" in rows[1]
+    assert "Bestellt: 4 × 50 Stk." in rows[1] and "Lieferant: Example Supplier" in rows[1]
+    assert "Davon eingetroffen: 100 Stk." in rows[1]

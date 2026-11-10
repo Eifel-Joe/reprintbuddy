@@ -41,6 +41,7 @@ KINDS: dict[str, str] = {
     "filament_settings_changed": "master",
     "reorder_ordered": "master",
     "reorder_received": "master",
+    "reorder_withdrawn": "master",
     # 4. backup and update
     "backup_downloaded": "ops",
     "export_downloaded": "ops",

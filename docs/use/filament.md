@@ -52,18 +52,29 @@ The cards on top count spool sorts, total stock, spools and the reordered sorts 
 
 ## Reorder settings of a spool sort
 
-Click a spool sort (or the icon **Configure** or **Edit settings**) to open its **Reorder settings**. They matter only for sorts that are reordered in some article, and they feed the [Reorder suggestions](reorder.md).
+Click a spool sort (or the icon **Configure** or **Edit settings**) to open its **Reorder settings**. They matter only for sorts that are reordered in some article, and they feed the [Reorder suggestions](reorder.md). They serve the suggestions only: Reprintbuddy never books filament, Bambuddy keeps the stock.
+
+On top stand the fields of the sort itself:
 
 | Field | Meaning | Default |
 |---|---|---|
-| **Lead time (days)** | Days from ordering to arrival, 0 to 365. | 0 |
-| **Order unit (grams per spool)** | Grams on one spool, the unit in which the sort is bought, 1 to 100,000. Suggestions always count whole spools and round up. | 1000 |
 | **Safety stock** and **Unit of the safety stock** | The reserve that should still be left after the lead time, 0 to 1,000,000, in **Days** of use or in **Grams**. | 0 days |
-| **Minimum order quantity (spools)** | The fewest spools one order may have, 1 to 1000. | 1 |
-| **Supplier** | Free text, up to 200 characters. | empty |
-| **Order link** | Address that must start with `http://` or `https://`, up to 2000 characters. | empty |
 
-A suggestion appears when the stock minus the planned demand minus the use during the lead time falls below the safety stock. A sort that is reordered but has no settings yet uses the defaults above.
+Below, under **Suppliers**, one block per supplier, 1 to 10, the same as for a [purchased part](inspection.md#suppliers). One supplier is the **Default**: its lead time decides whether a suggestion appears; the suggestion then names the quantity for every supplier.
+
+| Field | Meaning | Default |
+|---|---|---|
+| **Name** | Free text, up to 200 characters; may stay empty, the block is then called **Supplier 1**, **Supplier 2** and so on. While you type, names already used at spool sorts and purchased parts are offered. | empty |
+| **Order link** | Address that must start with `http://` or `https://`, up to 2000 characters. | empty |
+| **Order unit (grams per spool)** | Grams on one spool, the unit in which this supplier sells the sort, 1 to 100,000. Suggestions always count whole spools and round up. | 1000 |
+| **Minimum order quantity (spools)** | The fewest spools one order may have, 1 to 1000. | 1 |
+| **Lead time (days)** | Days from ordering to arrival, 0 to 365. | 0 |
+
+**Add supplier** adds a block, the cross removes one; the last one stays. If you remove the default, choose another one before you save. Everything is saved together with **Save**.
+
+A suggestion appears when the stock minus the planned demand minus the use during the default supplier's lead time falls below the safety stock. A sort that is reordered but has no reorder settings yet gets no suggestion; the cards count it under **Without settings**.
+
+When you update from a version before 0.3.16, the settings each sort had become its only supplier and the default; suggestions stay the same. An order already on its way keeps the roll size it had.
 
 ## When Bambuddy cannot be reached
 

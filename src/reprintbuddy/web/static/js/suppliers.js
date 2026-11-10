@@ -1,4 +1,5 @@
-/* The suppliers of a purchased part (Spec 5.3), templates/part_form.html.
+/* The suppliers of a purchased part (Spec 5.3) or of a spool sort's order settings (Spec 9.3),
+   templates/_suppliers.html.
 
    Adds and removes supplier blocks in place and numbers them again: the title "Supplier n", the
    ids the labels point to, the value of the "default" choice and of the remove button. Without

@@ -23,7 +23,7 @@
       <span>{{ t('reorder.col.safety') }} <strong>{{ r.safety }} {{ r.unit|unit }}</strong></span>
     </div>
     {% if r.options %}
-    {#- A part with several suppliers: each with its own quantity, the default first (Spec 9.3). -#}
+    {#- A part or spool sort with several suppliers: each with its own quantity, the default first (Spec 9.3). -#}
     <ul class="reorder-suppliers">
       {% for o in r.options %}
       <li class="reorder-supplier"><span class="reorder-supplier-name">{{ o.label }}</span>: {{ o.text }}{% if o.order_url %} · <a href="{{ o.order_url }}" target="_blank" rel="noopener noreferrer">{{ t('reorder.open_link') }}</a>{% endif %}{% if o.is_default %} <span class="badge tone-neutral">{{ t('parts.is_default') }}</span>{% endif %}</li>
@@ -74,6 +74,8 @@
         <td class="nowrap">{{ m.day }}</td>
         <td class="actions-col">{% call ui.row_actions() -%}
           {{ ui.icon_post('check', t('reorder.received'), '/reorder/marks/' ~ m.id ~ '/received', subject=m.label) }}
+          {#- The shop cancelled: take it back after a question (Spec 9.4, p280). -#}
+          {{ ui.icon_post('x', t('reorder.withdraw'), '/reorder/marks/' ~ m.id ~ '/withdraw', subject=m.label) }}
         {%- endcall %}</td>
       </tr>
     {% endfor %}

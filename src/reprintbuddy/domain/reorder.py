@@ -14,9 +14,9 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.activity.capture import acting
+from reprintbuddy.activity.capture import acting, note_withdrawn
 from reprintbuddy.bambuddy.types import Spool
-from reprintbuddy.domain import catalog, filament, rules, workqueue
+from reprintbuddy.domain import catalog, filament, rules, suppliers, workqueue
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.models import (
     Article,
@@ -25,6 +25,7 @@ from reprintbuddy.models import (
     FilamentSettings,
     FilamentSnapshot,
     FilamentSort,
+    FilamentSupplier,
     JournalEntry,
     Part,
     PartSupplier,
@@ -160,35 +161,44 @@ class Suggestion:
     order_url: str | None
     has_history: bool = True  # False: no usage recorded yet, the tile says so instead of "0.0 g/day" (p59)
     on_way: float = 0.0  # ordered and not arrived yet (Spec 9.4, p171); counts like stock, shown apart
-    # Parts: every supplier with its own quantity, the default first (Spec 9.3); the fields above
-    # (packs, pack size, lead time, supplier, link) are the default's. Filament: none.
+    # Every supplier with its own quantity, the default first (Spec 9.3); the fields above (packs,
+    # pack size, lead time, supplier, link) are the default's.
     options: tuple[SupplierOption, ...] = ()
 
 
 def ordered_amount(session: Session, mark: ReorderMark) -> float:
     """The amount a mark ordered, in the item's unit: packs x the pack size (Spec 9.4).
 
-    A part counts with the pack size kept at the mark: the supplier's as it was when marked, so a
-    later change or removal of the supplier changes nothing (Spec 9.4). A part mark without one
-    (none is written so since 0015, which filled the older ones) falls back to the default supplier.
-    Filament counts with the pack size of its settings, the default unit without settings.
+    It counts with the pack size kept at the mark: the supplier's as it was when marked, so a later
+    change or removal of the supplier changes nothing (Spec 9.4; parts since 0015, filament since
+    0016, which filled the older marks). A mark without one falls back to the default supplier, a
+    filament mark without settings to the default unit, as "on its way" shows it (open_marks).
     """
-    if mark.item_type == "part":
-        size = mark.pack_size
-        if size is None:
-            default = _default_supplier(session, mark.item_id)
-            size = default.pack_size if default is not None else 0
-    else:
-        settings = session.get(FilamentSettings, mark.item_id)
-        # without settings a mark counts in the default unit, as "on its way" shows it (open_marks)
-        size = settings.pack_grams if settings is not None else filament.FilamentSettingsInput.pack_grams
+    size = mark.pack_size
+    if size is None:
+        default = _default_supplier(session, mark.item_type, mark.item_id)
+        if default is not None:
+            size = default.pack_size
+        else:
+            size = filament.DEFAULT_ROLL_GRAMS if mark.item_type == "filament" else 0
     return mark.qty * size
 
 
-def _default_supplier(session: Session, part_id: int) -> PartSupplier | None:
-    return session.scalar(
-        select(PartSupplier).where(PartSupplier.part_id == part_id, PartSupplier.is_default.is_(True))
-    )
+def _default_supplier(session: Session, item_type: str, item_id: int) -> PartSupplier | FilamentSupplier | None:
+    if item_type == "part":
+        return catalog.default_supplier(session, item_id)
+    return filament.default_supplier(session, item_id)
+
+
+def _suppliers_of(session: Session, item_type: str, item_id: int) -> list[PartSupplier] | list[FilamentSupplier]:
+    if item_type == "part":
+        return catalog.part_suppliers(session, item_id)
+    return filament.sort_suppliers(session, item_id)
+
+
+def suppliers_key(session: Session, item_type: str, item_id: int) -> str:
+    """The fingerprint of an item's suppliers as the reorder page shows them (`suppliers.key`)."""
+    return suppliers.key(_suppliers_of(session, item_type, item_id))
 
 
 
@@ -217,10 +227,27 @@ def _spools_seen(session: Session, spools: Sequence[Spool] | None) -> list[_NewS
     return [_NewSpool(r.spool_filament_id, r.label_g, r.spool_created_at) for r in rows]
 
 
+def _local_date(value: datetime) -> date:
+    """The day of a stored (naive UTC) time in the zone Reprintbuddy shows times in (p183).
+
+    TODO(merge): switch to reprintbuddy.localtime (part B of 0.3.16 brings it for p260); until then
+    the zone is read late from the web layer, the one place that keeps it.
+    """
+    from reprintbuddy.web.formatting import to_local
+
+    return to_local(value).date()
+
+
 def _part_receipts(session: Session, mark: ReorderMark) -> list[tuple[datetime, int]]:
-    """Receipts of the part entered after the mark, oldest first: (saved at, quantity)."""
+    """Receipts of the part that belong to the mark, oldest first: (saved at, quantity).
+
+    A receipt belongs to it when it was saved after the mark and its date is not before the day of
+    the mark (Spec 9.4, p262). Before, the saving time alone decided: a receipt entered today but
+    dated last week counted for yesterday's order. The day, not the hour: a receipt dated back has
+    no real time of its own (it keeps the clock time of the saving).
+    """
     rows = session.execute(
-        select(JournalEntry.at, JournalEntry.qty)
+        select(JournalEntry.at, JournalEntry.booked_at, JournalEntry.qty)
         .where(
             JournalEntry.kind == "part_receipt",
             JournalEntry.part_id == mark.item_id,
@@ -228,7 +255,8 @@ def _part_receipts(session: Session, mark: ReorderMark) -> list[tuple[datetime, 
         )
         .order_by(JournalEntry.at, JournalEntry.id)
     )
-    return [(at, qty) for at, qty in rows]
+    day = _local_date(mark.marked_at)
+    return [(at, qty) for at, booked_at, qty in rows if _local_date(booked_at) >= day]
 
 
 def _arrived(session: Session, mark: ReorderMark, seen: Sequence[_NewSpool]) -> float:
@@ -314,19 +342,19 @@ def suggestions(
             .where(FilamentSort.id.in_(list(groups)))
             .order_by(FilamentSort.label, FilamentSort.id)
         )
+        by_sort = _suppliers_by_owner(session, FilamentSupplier, FilamentSupplier.sort_id)
         for settings, sort in rows:
-            if ("filament", sort.id) in marked:
-                continue
+            offers = by_sort.get(sort.id)
+            if ("filament", sort.id) in marked or not offers:
+                continue  # saved settings have a supplier (Spec 9.3); without one there is nothing to order
             members = groups[sort.id].members
             per_day, days = filament.consumption(session, members, today)
             have = sum(sorts[m].stock_g for m in members if m in sorts)
-            sug = _suggest(
-                "filament", sort.id, sort.label, "g", stock=have, demand=demand.get(sort.id, 0.0),
-                coming=sum(coming.get(("filament", m), 0.0) for m in members),
-                per_day=per_day, lead_days=settings.lead_time_days,
+            sug = _with_options(
+                "filament", sort.id, sort.label, "g", offers, stock=have, demand=demand.get(sort.id, 0.0),
+                coming=sum(coming.get(("filament", m), 0.0) for m in members), per_day=per_day,
                 safety=rules.safety_amount(settings.safety_value, settings.safety_unit, per_day),
-                pack=settings.pack_grams, min_packs=settings.min_order_packs,
-                supplier=settings.supplier, order_url=settings.order_url, has_history=days > 0,
+                has_history=days > 0,
             )
             if sug is not None:
                 result.append(sug)
@@ -334,58 +362,70 @@ def suggestions(
     return result
 
 
-def _suppliers_by_part(session: Session) -> dict[int, list[PartSupplier]]:
-    """Each part's suppliers, the default first, then in the order of the form (Spec 9.3)."""
-    found: dict[int, list[PartSupplier]] = defaultdict(list)
-    rows = session.scalars(
-        select(PartSupplier).order_by(PartSupplier.part_id, PartSupplier.is_default.desc(), PartSupplier.position)
-    )
-    for row in rows:
-        found[row.part_id].append(row)
+def _suppliers_by_owner(session: Session, model, owner) -> dict[int, list]:
+    """Each part's or spool sort's suppliers, the default first, then in the order of the form
+    (Spec 9.3)."""
+    found: dict[int, list] = defaultdict(list)
+    for row in session.scalars(select(model).order_by(owner, model.is_default.desc(), model.position)):
+        found[getattr(row, owner.key)].append(row)
     return found
+
+
+def _with_options(
+    kind: Literal["filament", "part"], item_id: int, label: str, unit: str,
+    offers: Sequence[PartSupplier] | Sequence[FilamentSupplier], *, stock: float, demand: float,
+    coming: float, per_day: float, safety: float, has_history: bool,
+) -> Suggestion | None:
+    """The default supplier (first of `offers`) decides with its lead time whether a suggestion
+    appears; then every supplier gets its quantity by the same rule with its own lead time, pack
+    size and minimum order, the default first (Spec 9.3; parts and filament alike)."""
+    default = offers[0]
+    sug = _suggest(
+        kind, item_id, label, unit, stock=stock, demand=demand, per_day=per_day,
+        lead_days=default.lead_time_days, safety=safety, pack=default.pack_size,
+        min_packs=default.min_order_packs, supplier=default.name, order_url=default.order_url,
+        has_history=has_history, coming=coming,
+    )
+    if sug is None:
+        return None
+    have = stock + coming
+    options = tuple(
+        SupplierOption(
+            row.id, row.position, row.name, row.order_url,
+            rules.suggest_packs(
+                stock=have, demand=demand, per_day=per_day, lead_days=row.lead_time_days,
+                safety=safety, pack=row.pack_size, min_packs=row.min_order_packs,
+            ),
+            row.pack_size, row.lead_time_days, row.is_default,
+        )
+        for row in offers
+    )
+    return replace(sug, options=options)
 
 
 def _part_suggestions(
     session: Session, marked: set[tuple[str, int]], coming: Mapping[tuple[str, int], float], today: date
 ) -> list[Suggestion]:
-    """Parts: the default supplier decides with its lead time whether a suggestion appears; then
-    every supplier gets its quantity by the same rule with its own lead time, pack size and minimum
-    order, the default first (Spec 9.3)."""
+    """Every active part without an open mark, with a line per supplier (Spec 9.3)."""
     result: list[Suggestion] = []
     part_needs = part_demand(session)
     part_history = session.scalar(select(func.min(JournalEntry.booked_at))) is not None
-    suppliers = _suppliers_by_part(session)
+    by_part = _suppliers_by_owner(session, PartSupplier, PartSupplier.part_id)
     for part in session.scalars(
         select(Part).where(Part.archived_at.is_(None)).order_by(Part.name, Part.id)
     ):
-        rows = suppliers.get(part.id)
-        if ("part", part.id) in marked or not rows:
+        offers = by_part.get(part.id)
+        if ("part", part.id) in marked or not offers:
             continue  # every part has a supplier (Spec 5.3, migration 0015); without one there is nothing to order
-        default = rows[0]
         per_day = part_consumption(session, part.id, today)
         safety = rules.reorder_floor(rules.safety_amount(part.safety_value, part.safety_unit, per_day), part.min_stock)
-        stock_now, demand = part.stock, part_needs.get(part.id, 0)
-        have = stock_now + coming.get(("part", part.id), 0.0)  # 0 here, a part with an open mark is skipped
-        sug = _suggest(
-            "part", part.id, part.name, part.unit, stock=stock_now, demand=demand, per_day=per_day,
-            lead_days=default.lead_time_days, safety=safety, pack=default.pack_size,
-            min_packs=default.min_order_packs, supplier=default.name, order_url=default.order_url,
-            has_history=part_history, coming=have - stock_now,
+        sug = _with_options(
+            "part", part.id, part.name, part.unit, offers, stock=part.stock, demand=part_needs.get(part.id, 0),
+            coming=coming.get(("part", part.id), 0.0),  # 0 here, a part with an open mark is skipped
+            per_day=per_day, safety=safety, has_history=part_history,
         )
-        if sug is None:
-            continue
-        options = tuple(
-            SupplierOption(
-                row.id, row.position, row.name, row.order_url,
-                rules.suggest_packs(
-                    stock=have, demand=demand, per_day=per_day, lead_days=row.lead_time_days,
-                    safety=safety, pack=row.pack_size, min_packs=row.min_order_packs,
-                ),
-                row.pack_size, row.lead_time_days, row.is_default,
-            )
-            for row in rows
-        )
-        result.append(replace(sug, options=options))
+        if sug is not None:
+            result.append(sug)
     return result
 
 
@@ -443,57 +483,83 @@ def mark_ordered(
     session: Session, item_type: str, item_id: int, packs: int, supplier_id: int | None = None,
     suppliers_seen: str | None = None,
 ) -> ReorderMark:
-    """Mark a part or filament sort as ordered, `packs` in order units. No journal row.
+    """Mark a part or filament sort as ordered, `packs` in order units. No journal row: an order
+    is no booking, and filament is never booked (Spec 9.1, 9.4).
 
-    A part is marked with one of its suppliers (`None`: the default); the mark keeps that
-    supplier's pack size, name and position (Spec 9.4). `suppliers_seen` is the key of the
-    suppliers the page showed (`catalog.suppliers_key`); when they changed since, nothing is
-    marked. Filament has no suppliers to choose.
+    It is marked with one of its suppliers (`None`: the default); the mark keeps that supplier's
+    pack size, name and position (Spec 9.4). `suppliers_seen` is the key of the suppliers the page
+    showed (`suppliers_key`); when they changed since, nothing is marked.
     """
     if isinstance(packs, bool) or not isinstance(packs, int) or not 1 <= packs <= MAX_PACKS:
         raise ValidationError("reorder.invalid_packs")
-    supplier: PartSupplier | None = None
     if item_type == "part":
         part = session.get(Part, item_id)
         known = part is not None and part.archived_at is None
-        if known:
-            supplier = (
-                _default_supplier(session, item_id) if supplier_id is None else session.get(PartSupplier, supplier_id)
-            )
-            if supplier is None or supplier.part_id != item_id:
-                raise NotFoundError("reorder.supplier_not_found")
-            if suppliers_seen and suppliers_seen != catalog.suppliers_key(catalog.part_suppliers(session, item_id)):
-                raise ConflictError("reorder.suppliers_changed")
     elif item_type == "filament":
-        if supplier_id is not None:
-            raise NotFoundError("reorder.supplier_not_found")
         sort = session.get(FilamentSort, item_id)  # a legacy sort of 0006 is no spool sort to order
         known = sort is not None and not sort.legacy and session.get(FilamentSettings, item_id) is not None
     else:
         known = False
     if not known:
         raise NotFoundError("reorder.item_not_found")
+    supplier = _default_supplier(session, item_type, item_id) if supplier_id is None else _supplier_by_id(
+        session, item_type, supplier_id
+    )
+    owner = None if supplier is None else (supplier.part_id if item_type == "part" else supplier.sort_id)
+    if owner != item_id:
+        raise NotFoundError("reorder.supplier_not_found")
+    if suppliers_seen and suppliers_seen != suppliers_key(session, item_type, item_id):
+        raise ConflictError("reorder.suppliers_changed")
     if _open_mark_for(session, item_type, item_id) is not None:
         raise ConflictError("reorder.already_marked")
     mark = ReorderMark(
-        item_type=item_type, item_id=item_id, qty=packs,
-        pack_size=supplier.pack_size if supplier is not None else None,
-        supplier_name=supplier.name if supplier is not None else None,
-        supplier_position=supplier.position if supplier is not None else None,
+        item_type=item_type, item_id=item_id, qty=packs, pack_size=supplier.pack_size,
+        supplier_name=supplier.name, supplier_position=supplier.position,
     )
     session.add(mark)
     session.flush()
     return mark
 
 
-def mark_received(session: Session, mark_id: int) -> None:
+def _supplier_by_id(session: Session, item_type: str, supplier_id: int) -> PartSupplier | FilamentSupplier | None:
+    return session.get(PartSupplier if item_type == "part" else FilamentSupplier, supplier_id)
+
+
+def _open_mark(session: Session, mark_id: int) -> ReorderMark:
     mark = session.get(ReorderMark, mark_id)
     if mark is None:
         raise NotFoundError("reorder.mark_not_found")
     if mark.received_at is not None:
-        raise ConflictError("reorder.already_received")
+        raise ConflictError("reorder.already_withdrawn" if mark.withdrawn else "reorder.already_received")
+    return mark
+
+
+def mark_received(session: Session, mark_id: int) -> None:
+    """The user says the order has arrived. For filament this only closes the mark: nothing is
+    booked, Bambuddy keeps the spools (Spec 9.1)."""
+    mark = _open_mark(session, mark_id)
     mark.received_at = utcnow()
     session.flush()
+
+
+def withdraw_mark(session: Session, mark_id: int, spools: Sequence[Spool] | None = None) -> MarkRow:
+    """Take an open order back, e.g. when the shop cancelled it (Spec 9.4, p280); only the user
+    does this, never the automation. Returns the mark as it was, with what had arrived of it.
+
+    The mark closes as taken back (`withdrawn`, closed at now): what is still missing no longer
+    counts as on its way, a suggestion comes back when it is needed. What has arrived stays as it
+    is: receipts of a part stay in its stock, new spools stay in Bambuddy. No journal row, for parts
+    neither: an order is no booking, and filament is never booked (Spec 9.1). `spools`: Bambuddy's
+    list for what has arrived of a filament order; None takes the latest record. The log line
+    names the amount, the supplier and what had arrived (Spec 10.7).
+    """
+    mark = _open_mark(session, mark_id)
+    row = _mark_row(session, mark, _spools_seen(session, spools))
+    mark.received_at = utcnow()
+    mark.withdrawn = True
+    note_withdrawn(session, mark.id, row.arrived)
+    session.flush()
+    return row
 
 
 @dataclass(frozen=True)
@@ -507,8 +573,8 @@ class MarkRow:
     unit: str
     marked_at: datetime
     arrived: float = 0.0  # what of it has arrived so far (p211), in `unit`
-    supplier: str | None = None  # parts: the supplier's name when marked (Spec 9.4)
-    supplier_position: int | None = None  # parts: its position then ("Supplier n" without a name)
+    supplier: str | None = None  # the supplier's name when marked (Spec 9.4)
+    supplier_position: int | None = None  # its position then ("Supplier n" without a name)
 
 
 def open_marks(session: Session, spools: Sequence[Spool] | None = None) -> list[MarkRow]:
@@ -522,23 +588,25 @@ def open_marks(session: Session, spools: Sequence[Spool] | None = None) -> list[
         .order_by(ReorderMark.marked_at, ReorderMark.id)
     )
     for mark in marks:
-        if mark.item_type == "part":
-            part = session.get(Part, mark.item_id)
-            if part.archived_at is not None:
-                continue  # archived parts leave every list (Spec 5.5); the mark stays for a restore (p60)
-            label, unit = part.name, part.unit
-        else:
-            sort = session.get(FilamentSort, mark.item_id)
-            label, unit = sort.label, "g"
-        size = ordered_amount(session, mark) / mark.qty
-        rows.append(
-            MarkRow(
-                mark.id, mark.item_type, mark.item_id, label, mark.qty, size, unit, mark.marked_at,
-                arrived=_arrived(session, mark, seen),
-                supplier=mark.supplier_name, supplier_position=mark.supplier_position,
-            )
-        )
+        if mark.item_type == "part" and session.get(Part, mark.item_id).archived_at is not None:
+            continue  # archived parts leave every list (Spec 5.5); the mark stays for a restore (p60)
+        rows.append(_mark_row(session, mark, seen))
     return rows
+
+
+def _mark_row(session: Session, mark: ReorderMark, seen: Sequence[_NewSpool]) -> MarkRow:
+    if mark.item_type == "part":
+        part = session.get(Part, mark.item_id)
+        label, unit = part.name, part.unit
+    else:
+        sort = session.get(FilamentSort, mark.item_id)
+        label, unit = sort.label, "g"
+    size = ordered_amount(session, mark) / mark.qty
+    return MarkRow(
+        mark.id, mark.item_type, mark.item_id, label, mark.qty, size, unit, mark.marked_at,
+        arrived=_arrived(session, mark, seen),
+        supplier=mark.supplier_name, supplier_position=mark.supplier_position,
+    )
 
 
 def _naive_utc(value: datetime) -> datetime:
@@ -553,7 +621,7 @@ def close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: d
     A part mark closes when the `part_receipt` rows after the mark reach the ordered amount (p211;
     before, the first receipt closed it). A filament mark closes only with a spool list: new spools
     of the sort (created after the mark, not archived, with a creation time) must add up to at
-    least `qty x pack_grams` of net weight.
+    least the ordered amount (`ordered_amount`) of net weight.
     """
     # Reprintbuddy closes them by its rule, also when a page asks (Spec 9.4, 10.7: "Automatik").
     with acting(session, "auto"):

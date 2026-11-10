@@ -402,7 +402,8 @@ CARD = re.compile(r'class="card[ "]')
 
 def test_info_buttons_are_only_used_in_templates_that_sit_in_a_card():
     """The popup is framed by `.card`: every template that uses the macros has a card itself or is
-    included only by templates that have one (a pragmatic check of the text, not of the DOM)."""
+    included (or imported, for a file of macros such as _suppliers.html) only by templates that have
+    one (a pragmatic check of the text, not of the DOM)."""
     templates = {p.name: p.read_text(encoding="utf-8") for p in (STATIC.parent / "templates").glob("*.html")}
     users = [name for name, text in templates.items() if name != "_ui.html" and MACROS.search(text)]
     assert {"_article_fields.html", "_article_parts.html", "part_form.html", "bookings.html", "settings.html"} <= set(users)
@@ -411,7 +412,7 @@ def test_info_buttons_are_only_used_in_templates_that_sit_in_a_card():
             continue
         includers = [
             other for other, text in templates.items()
-            if re.search(rf'{{% include "{re.escape(name)}" %}}', text)
+            if re.search(rf'{{% (?:include "{re.escape(name)}" %}}|import "{re.escape(name)}" as )', text)
         ]
         assert includers, f"{name} uses info buttons outside of a card"
         for other in includers:

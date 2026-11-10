@@ -147,7 +147,7 @@ def test_the_order_settings_of_a_spool_sort(ready_client):
         f"/filament/{sort_id}",
         data={
             "csrf_token": csrf_of(ready_client, f"/filament/{sort_id}"),
-            "lead_time_days": "5", "safety_value": "300", "safety_unit": "grams", "pack_grams": "1000",
+            "lead_time_days": "5", "safety_value": "300", "safety_unit": "grams", "pack_size": "1000",
             "min_order_packs": "1", "supplier": "Example Supplier", "order_url": "https://shop.example/pla-black",
         },
     )
@@ -232,6 +232,32 @@ def test_a_reorder_marked_and_received_by_hand(bb_client):
         mark_id = s.scalars(select(ReorderMark)).one().id
     assert form_post(bb_client, f"/reorder/marks/{mark_id}/received", "/reorder").status_code == 303
     assert the_line(bb_client, "reorder_received").details == ref
+
+
+def test_a_reorder_taken_back_after_the_question(bb_client):
+    """Spec 9.4, 10.7 (p280): the question writes nothing; the confirmation writes "taken back"."""
+    with sm_of(bb_client).begin() as s:
+        part = make_part(
+            s, name="Insert", stock=10, pack_size=50, min_order_packs=1, lead_time_days=0, safety_value=20,
+            safety_unit="qty", supplier="Example Supplier", order_url="https://shop.example/insert",
+        )
+        art = make_article(s, name="Bracket", needs_assembly=True, stock=0, min_stock=3, buffer=0)
+        s.add(ArticlePart(article_id=art.id, part_id=part.id, qty_per_unit=2))
+        part_id = part.id
+    assert form_post(bb_client, "/reorder/mark", "/reorder", item_type="part", item_id=str(part_id), packs="1").status_code == 303
+    with sm_of(bb_client)() as s:
+        mark_id = s.scalars(select(ReorderMark)).one().id
+    action = f"/reorder/marks/{mark_id}/withdraw"
+    token = form_token_of(bb_client, "/reorder", action)
+    asked = bb_client.post(action, data={"csrf_token": csrf_of(bb_client, "/reorder"), "form_token": token})
+    assert asked.status_code == 200 and lines_of(bb_client, "reorder_withdrawn") == []
+    done = bb_client.post(action, data={"csrf_token": csrf_of(bb_client, "/reorder"), "form_token": token, "confirm": "yes"})
+    assert done.status_code == 303
+    assert the_line(bb_client, "reorder_withdrawn").details == {
+        "type": "part", "id": part_id, "name": "Insert", "packs": 1, "size": 50, "unit": "pcs",
+        "supplier": "Example Supplier", "supplier_position": 0, "arrived": 0,
+    }
+    assert lines_of(bb_client, "reorder_received") == []
 
 
 # ---- settings --------------------------------------------------------------------------------------

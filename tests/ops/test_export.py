@@ -160,3 +160,30 @@ def test_export_holds_the_suppliers_of_a_part_and_the_mark_of_its_time(env):  # 
     ]
     (mark,) = tables["reorder_marks"]
     assert (mark["qty"], mark["pack_size"], mark["supplier_name"]) == (2, 10, "Example Supplier B")
+
+
+def test_export_holds_the_suppliers_of_a_spool_sort_and_an_order_taken_back(env):  # Spec 9.3, 9.4, 11.6
+    from reprintbuddy.domain import filament, reorder
+    from reprintbuddy.domain.suppliers import SupplierInput
+    from reprintbuddy.models import FilamentSort
+
+    engine, maker = env
+    with maker.begin() as s:
+        sort = FilamentSort(sort_key="brand a|pla||#000000", brand="Brand A", material="PLA",
+                            color_hex="#000000", label="Brand A PLA Black")
+        s.add(sort)
+        s.flush()
+        filament.save_settings(s, sort.id, filament.FilamentSettingsInput(suppliers=[
+            SupplierInput(name="Example Shop", pack_size=1000, is_default=True),
+            SupplierInput(name="Roll Shop", pack_size=500, lead_time_days=1),
+        ]))
+        second = filament.sort_suppliers(s, sort.id)[1].id
+        mark = reorder.mark_ordered(s, "filament", sort.id, 2, supplier_id=second)
+        reorder.withdraw_mark(s, mark.id, [])
+    with engine.connect() as conn:
+        tables = export_data(conn, now=NOW)["tables"]
+    assert [(r["name"], r["pack_size"], r["is_default"]) for r in tables["filament_suppliers"]] == [
+        ("Example Shop", 1000, True), ("Roll Shop", 500, False),
+    ]
+    (row,) = tables["reorder_marks"]
+    assert (row["qty"], row["pack_size"], row["supplier_name"], row["withdrawn"]) == (2, 500, "Roll Shop", True)

@@ -658,12 +658,46 @@ def test_a_part_with_one_supplier_suggests_as_before(db):
         assert (sug.packs, sug.pack_size, sug.order_url) == (1, 50, "https://shop.example/insert-m4")
 
 
-def test_a_filament_suggestion_has_no_supplier_options(db):
+def add_roll_supplier(s, sort, position=1, **fields):
+    """A second supplier of a spool sort (Spec 9.3, p281): 500 g rolls, a day's delivery."""
+    from reprintbuddy.models import FilamentSupplier
+
+    values = dict(name="Roll Shop", order_url="https://rolls.example/pla", pack_size=500,
+                  min_order_packs=1, lead_time_days=1, is_default=False)
+    values.update(fields)
+    row = FilamentSupplier(sort_id=sort.id, position=position, **values)
+    s.add(row)
+    s.flush()
+    return row
+
+
+def test_a_filament_suggestion_lists_every_supplier_default_first(db):
+    """Spec 9.3: as for parts, each supplier of the sort with its own quantity, the default first.
+    Stock 100 g, demand 170 g, safety 2000 g: 2070 g short → 3 × 1000 g or 5 × 500 g."""
     with db.begin() as s:
-        sort = filament_setup(s)
+        sort = filament_setup(s, supplier="Example Shop", lead_time_days=3)
+        add_roll_supplier(s, sort)
         with_demand(s, sort)
         (sug,) = reorder.suggestions(s, sorts=sorts_of((sort, 100.0)), today=TODAY)
-        assert sug.options == ()
+        assert [(o.name, o.packs, o.pack_size, o.lead_days, o.is_default) for o in sug.options] == [
+            ("Example Shop", 3, 1000, 3, True), ("Roll Shop", 5, 500, 1, False),
+        ]
+        assert (sug.packs, sug.pack_size, sug.lead_days, sug.supplier) == (3, 1000, 3, "Example Shop")
+
+
+def test_only_the_default_filament_supplier_decides(db):
+    """A second supplier with a long lead time alone makes no suggestion (Spec 9.3)."""
+    with db.begin() as s:
+        sort = filament_setup(s, safety_value=0, lead_time_days=0)
+        add_roll_supplier(s, sort, lead_time_days=30)
+        with_demand(s, sort)
+        make_snapshot(s, TODAY - timedelta(days=10), 1, sort.id, 1300.0)
+        make_snapshot(s, TODAY - timedelta(days=1), 1, sort.id, 400.0)  # 100 g a day
+        assert reorder.suggestions(s, sorts=sorts_of((sort, 400.0)), today=TODAY) == []  # 400 - 170 >= 0
+        filament.default_supplier(s, sort.id).lead_time_days = 30
+        s.flush()
+        (sug,) = reorder.suggestions(s, sorts=sorts_of((sort, 400.0)), today=TODAY)
+        assert len(sug.options) == 2
 
 
 def test_mark_with_a_supplier_keeps_its_pack_and_name(db):
@@ -712,14 +746,62 @@ def test_a_supplier_of_another_part_is_not_found(db):
         assert s.query(ReorderMark).count() == 0
 
 
-def test_a_filament_mark_takes_no_supplier(db):
+def test_a_filament_mark_without_a_supplier_takes_the_default(db):
+    with db.begin() as s:
+        sort = filament_setup(s, supplier="Example Shop")
+        add_roll_supplier(s, sort)
+        mark = reorder.mark_ordered(s, "filament", sort.id, 2)
+        assert (mark.pack_size, mark.supplier_name, mark.supplier_position) == (1000, "Example Shop", 0)
+        assert reorder.ordered_amount(s, mark) == 2000
+
+
+def test_a_filament_mark_with_a_supplier_keeps_its_roll_size(db):
+    """Spec 9.4, p281: the amount on its way stays as ordered, also for filament."""
     with db.begin() as s:
         sort = filament_setup(s)
-        mark = reorder.mark_ordered(s, "filament", sort.id, 2)
-        assert (mark.pack_size, mark.supplier_name) == (None, None)
-        assert reorder.ordered_amount(s, mark) == 2000
-        with pytest.raises(NotFoundError):
-            reorder.mark_ordered(s, "filament", sort.id, 1, supplier_id=1)
+        b = add_roll_supplier(s, sort)
+        reorder.mark_ordered(s, "filament", sort.id, 2, supplier_id=b.id)
+        assert reorder.on_way(s, []) == {("filament", sort.id): 1000.0}
+        (row,) = reorder.open_marks(s, [])
+        assert (row.packs, row.pack_size, row.supplier, row.supplier_position) == (2, 500, "Roll Shop", 1)
+        b.pack_size = 750
+        s.flush()
+        assert reorder.on_way(s, []) == {("filament", sort.id): 1000.0}
+        s.delete(b)
+        s.flush()
+        assert reorder.on_way(s, []) == {("filament", sort.id): 1000.0}
+
+
+def test_a_filament_mark_refuses_a_foreign_supplier_and_an_outdated_page(db):
+    with db.begin() as s:
+        sort = filament_setup(s)
+        other = filament_setup(s, make_sort(s, brand="Brand B"))
+        foreign = add_roll_supplier(s, other)
+        with pytest.raises(NotFoundError) as info:
+            reorder.mark_ordered(s, "filament", sort.id, 1, supplier_id=foreign.id)
+        assert info.value.key == "reorder.supplier_not_found"
+        seen = reorder.suppliers_key(s, "filament", sort.id)
+        add_roll_supplier(s, sort)
+        with pytest.raises(ConflictError) as changed:
+            reorder.mark_ordered(s, "filament", sort.id, 1, suppliers_seen=seen)
+        assert changed.value.key == "reorder.suppliers_changed"
+        assert s.query(ReorderMark).count() == 0
+
+
+def test_a_filament_mark_closes_by_new_spools_of_any_shop(db):
+    """What has arrived is the nominal weight of new spools of the sort, whoever sold them; nothing
+    is booked for filament (Spec 9.1, 9.4)."""
+    fake = FakeBambuddy()
+    with db.begin() as s:
+        sort = filament_setup(s)
+        b = add_roll_supplier(s, sort)
+        mark = reorder.mark_ordered(s, "filament", sort.id, 2, supplier_id=b.id)  # 2 x 500 g
+        after = mark.marked_at + timedelta(hours=1)
+        spools = [fake.add_spool("PLA", brand="Brand A", created_at=after, label_g=1000)]
+        filament.sync_sorts(s, spools)
+        before = s.query(JournalEntry).count()
+        assert reorder.close_arrived_marks(s, spools, NOW) == 1
+        assert s.query(JournalEntry).count() == before
 
 
 def test_still_one_open_mark_per_part(db):
@@ -829,4 +911,48 @@ def test_a_part_mark_stays_open_until_the_ordered_amount_is_in(db):
         assert row.arrived == 20
         stock.receive_part(s, part.id, 30, "user")
         assert reorder.close_arrived_marks(s, None, NOW) == 1
+        assert reorder.on_way(s, None) == {}
+
+
+# ---- p262: a receipt counts from the day of the mark on (Spec 9.4) ------------------------------
+# The tests pin the display zone to Europe/Berlin (conftest), UTC+1 in November.
+
+
+def _marked_part(s, marked_at):
+    part = part_with_demand(s)
+    mark = reorder.mark_ordered(s, "part", part.id, 1)  # 50
+    mark.marked_at = marked_at
+    s.flush()
+    return part, mark
+
+
+def test_a_receipt_dated_before_the_day_of_the_mark_does_not_count(db):
+    """Booked after the mark, but dated the day before: it is no delivery of this order."""
+    with db.begin() as s:
+        part, _mark = _marked_part(s, datetime(2026, 11, 6, 10, 0))
+        stock.receive_part(s, part.id, 50, "user", booked_at=datetime(2026, 11, 5, 10, 0))
+        assert reorder.on_way(s, None) == {("part", part.id): 50.0}
+        assert reorder.open_marks(s)[0].arrived == 0
+        assert reorder.close_arrived_marks(s, None, NOW) == 0
+
+
+def test_a_receipt_dated_on_the_day_of_the_mark_counts_whatever_the_hour(db):
+    """The day decides, not the hour: a dated receipt has no real time of its own."""
+    with db.begin() as s:
+        part, mark = _marked_part(s, datetime(2026, 11, 6, 10, 0))
+        stock.receive_part(s, part.id, 20, "user", booked_at=datetime(2026, 11, 6, 8, 0))
+        assert reorder.on_way(s, None) == {("part", part.id): 30.0}
+        stock.receive_part(s, part.id, 30, "user")  # today
+        assert reorder.close_arrived_marks(s, None, NOW) == 1
+        assert mark.received_at is not None
+
+
+def test_the_day_is_the_one_of_the_display_zone(db):
+    """Marked 00:30 on 7 Nov in Berlin (23:30 UTC on the 6th); a receipt dated 23:30 on 6 Nov in
+    Berlin (22:30 UTC) lies a day before, though both are the 6th in UTC."""
+    with db.begin() as s:
+        part, _mark = _marked_part(s, datetime(2026, 11, 6, 23, 30))
+        stock.receive_part(s, part.id, 50, "user", booked_at=datetime(2026, 11, 6, 22, 30))
+        assert reorder.on_way(s, None) == {("part", part.id): 50.0}
+        stock.receive_part(s, part.id, 50, "user", booked_at=datetime(2026, 11, 6, 23, 10))  # 00:10 on the 7th
         assert reorder.on_way(s, None) == {}

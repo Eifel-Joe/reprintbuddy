@@ -36,6 +36,7 @@ from reprintbuddy.models import (
     ArticlePart,
     Dispatch,
     FilamentSettings,
+    FilamentSupplier,
     FilamentSnapshot,
     FilamentSort,
     FormToken,
@@ -85,6 +86,7 @@ _KIND: dict[type, str] = {
     Inspection: "inspection",
     FilamentSort: "filament",
     FilamentSettings: "filament",
+    FilamentSupplier: "filament",
     FilamentSnapshot: "filament",
     ReorderMark: "reorder",
     ActivityEntry: "activity",
@@ -156,6 +158,10 @@ def topics_of(obj: object, change: Change) -> set[str]:
         # The settings form of a sort watches only its own settings; the heartbeat writes
         # day rows of other tables, which must not tell an open form that it changed.
         return {"filament", f"filament-settings:{obj.spool_filament_id}"}
+    if cls is FilamentSupplier:
+        # The suppliers are part of the sort's order settings (Spec 9.3); the reorder page
+        # follows "filament" for its lines per supplier.
+        return {"filament", f"filament-settings:{obj.sort_id}"}
     if cls is ProductSet:
         return {"set", f"set:{obj.id}"}
     if cls is SetPosition:

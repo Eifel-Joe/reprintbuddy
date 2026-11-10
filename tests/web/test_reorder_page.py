@@ -641,3 +641,131 @@ def test_a_partial_part_receipt_keeps_the_mark_open_and_shows_what_arrived(bb_cl
     assert translate("en", "reorder.arrived_so_far", amount="20", unit=unit_label(unit, "en")) in html
     with sm_of(bb_client).begin() as s:
         assert s.query(ReorderMark).one().received_at is None
+
+
+
+# ---- p281: a spool sort with several suppliers (Spec 9.3, 9.4) -----------------------------------
+
+
+def add_roll_supplier(client, sort_id, **fields):
+    from reprintbuddy.models import FilamentSupplier
+
+    values = dict(name="Roll Shop", order_url="https://rolls.example/pla", pack_size=500,
+                  min_order_packs=1, lead_time_days=1, position=1)
+    values.update(fields)
+    with sm_of(client).begin() as s:
+        row = FilamentSupplier(sort_id=sort_id, **values)
+        s.add(row)
+        s.flush()
+        return row.id
+
+
+def filament_tile(html):
+    return re.search(r'<div class="tile">((?:(?!<div class="tile">).)*?PLA Black.*?)</form>\s*</div>', html, re.S).group(1)
+
+
+def test_a_sort_with_two_suppliers_lists_each_with_its_quantity_default_first(bb_client, fake_bambuddy):
+    sort_id = add_filament(bb_client, fake_bambuddy)
+    b = add_roll_supplier(bb_client, sort_id)
+    tile = filament_tile(bb_client.get("/reorder").text)
+    lines = re.findall(r'<li class="reorder-supplier">(.*?)</li>', tile, re.S)
+    assert len(lines) == 2
+    assert "Example Supplier" in lines[0] and translate("en", "parts.is_default") in lines[0]
+    assert "2 × 1000 g" in lines[0] and 'href="https://shop.example/pla-black"' in lines[0]
+    assert "Roll Shop" in lines[1] and "4 × 500 g" in lines[1]  # 1900 g short: 4 rolls of 500 g
+    select = re.search(r'<select[^>]*name="supplier_id"[^>]*>(.*?)</select>', tile, re.S).group(1)
+    assert [value for value, _ in re.findall(r'<option value="(\d+)"([^>]*)>', select)][1] == str(b)
+    assert re.search(r'name="suppliers_key" value="[0-9a-f]{16}"', tile)
+
+
+def test_mark_a_sort_with_its_second_supplier(bb_client, fake_bambuddy):
+    sort_id = add_filament(bb_client, fake_bambuddy)
+    b = add_roll_supplier(bb_client, sort_id)
+    token = form_token_of(bb_client, "/reorder", "/reorder/mark")
+    key = re.search(r'name="suppliers_key" value="([0-9a-f]+)"', filament_tile(bb_client.get("/reorder").text)).group(1)
+    response = bb_client.post("/reorder/mark", data={
+        "csrf_token": csrf_of(bb_client, "/reorder"), "form_token": token, "item_type": "filament",
+        "item_id": str(sort_id), "packs": "4", "supplier_id": str(b), "suppliers_key": key,
+    })
+    assert response.status_code == 303
+    (mark,) = marks(bb_client)
+    assert (mark.qty, mark.pack_size, mark.supplier_name) == (4, 500, "Roll Shop")
+    under_way = bb_client.get("/reorder").text.split("On its way", 1)[1]
+    assert "PLA Black: 4 × 500 g" in under_way and "Roll Shop" in under_way
+
+
+# ---- p280: taking an order back (Spec 9.4) ---------------------------------------------------------
+
+
+def withdraw(client, mark_id, confirm=False):
+    token = form_token_of(client, "/reorder", f"/reorder/marks/{mark_id}/withdraw")
+    data = {"csrf_token": csrf_of(client, "/reorder"), "form_token": token}
+    if confirm:
+        data["confirm"] = "yes"
+    return client.post(f"/reorder/marks/{mark_id}/withdraw", data=data, follow_redirects=False), token
+
+
+def test_take_back_asks_first_and_then_closes_the_order(bb_client):
+    pid = add_part(bb_client)
+    mark_form(bb_client, "part", pid, "1")
+    (mark,) = marks(bb_client)
+    html = bb_client.get("/reorder").text
+    under_way = html.split("On its way", 1)[1]
+    assert re.search(rf'action="/reorder/marks/{mark.id}/withdraw"', under_way)
+    assert f'aria-label="{translate("en", "reorder.withdraw").capitalize()}: Insert M4"' in under_way
+    asked, token = withdraw(bb_client, mark.id)
+    assert asked.status_code == 200 and marks(bb_client)[0].received_at is None  # nothing closed yet
+    page = asked.text
+    assert html_escape(translate("en", "reorder.withdraw_confirm", item="Insert M4")) in page
+    assert f'name="form_token" value="{token}"' in page and 'name="confirm" value="yes"' in page
+    assert 'href="/reorder"' in page  # keep it: back without closing
+    assert 'data-live-watch="reorder"' in page and 'class="live-stale"' in page  # review: a closed order shows
+    done = bb_client.post(f"/reorder/marks/{mark.id}/withdraw", data={
+        "csrf_token": csrf_of(bb_client, "/reorder"), "form_token": token, "confirm": "yes",
+    }, follow_redirects=False)
+    assert done.status_code == 303 and done.headers["location"] == "/reorder"
+    (closed,) = marks(bb_client)
+    assert closed.withdrawn is True and closed.received_at is not None
+    after = bb_client.get("/reorder").text
+    assert "On its way" not in after and 'action="/reorder/mark"' in after  # the suggestion is back
+    assert html_escape(translate("en", "reorder.withdrawn", item="Insert M4")) in after
+
+
+def test_take_back_twice_says_it_is_taken_back(bb_client):
+    pid = add_part(bb_client)
+    mark_form(bb_client, "part", pid, "1")
+    (mark,) = marks(bb_client)
+    withdraw(bb_client, mark.id, confirm=True)
+    token = form_token_of(bb_client, "/reorder", "/reorder/mark")  # any fresh token of the page
+    again = bb_client.post(f"/reorder/marks/{mark.id}/withdraw", data={
+        "csrf_token": csrf_of(bb_client, "/reorder"), "form_token": token, "confirm": "yes",
+    }, follow_redirects=False)
+    assert again.status_code == 200 and html_escape(translate("en", "reorder.already_withdrawn")) in again.text
+
+
+def test_the_confirmation_of_a_closed_order_says_so(bb_client):
+    """Asked on a page shown before the order arrived: no confirmation, the message instead."""
+    pid = add_part(bb_client)
+    mark_form(bb_client, "part", pid, "1")
+    (mark,) = marks(bb_client)
+    token = form_token_of(bb_client, "/reorder", f"/reorder/marks/{mark.id}/withdraw")
+    with sm_of(bb_client).begin() as s:
+        s.get(ReorderMark, mark.id).received_at = utcnow()
+    asked = bb_client.post(f"/reorder/marks/{mark.id}/withdraw", data={
+        "csrf_token": csrf_of(bb_client, "/reorder"), "form_token": token,
+    }, follow_redirects=False)
+    assert asked.status_code == 200 and 'name="confirm"' not in asked.text
+    assert html_escape(translate("en", "reorder.already_received")) in asked.text
+
+
+def test_the_confirmation_in_german_names_the_rest(bb_client, fake_bambuddy):
+    sort_id = add_filament(bb_client, fake_bambuddy)
+    with sm_of(bb_client).begin() as s:
+        st.set_setting(s, "language", "de", commit=False)
+    mark_form(bb_client, "filament", sort_id, "2")
+    (mark,) = marks(bb_client)
+    asked, _token = withdraw(bb_client, mark.id)
+    page = asked.text
+    assert "Bestellung zurücknehmen" in page and "PLA Black" in page
+    assert "nicht mehr als unterwegs" in page
+    assert "gebucht" not in page  # filament is never booked (Spec 9.1)

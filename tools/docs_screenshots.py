@@ -744,10 +744,17 @@ def build_catalog(server: Server, scn: Scenario) -> None:
             (pla_white, 7, 1000, 2), (petg_black, 10, 1000, 1), (pla_black, 7, 1000, 1),
             (pla_red, 7, 1000, 1), (petg_blue, 10, 1000, 1),
         ):
+            suppliers = [catalog.SupplierInput(
+                name="Example Supplier", order_url="https://supplier.example/filament", pack_size=pack_g,
+                min_order_packs=min_packs, lead_time_days=lead, is_default=True,
+            )]
+            if sort_id == petg_black:  # a second supplier with smaller rolls (Spec 9.3), shown on the reorder page
+                suppliers.append(catalog.SupplierInput(
+                    name="Example Supplier B", order_url="https://supplier-b.example/filament", pack_size=500,
+                    min_order_packs=1, lead_time_days=3,
+                ))
             filament.save_settings(s, sort_id, filament.FilamentSettingsInput(
-                lead_time_days=lead, safety_value=7, safety_unit="days", pack_grams=pack_g,
-                min_order_packs=min_packs, supplier="Example Supplier",
-                order_url="https://supplier.example/filament",
+                safety_value=7, safety_unit="days", suppliers=suppliers,
             ))
 
 
