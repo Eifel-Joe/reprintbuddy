@@ -205,3 +205,21 @@ def test_a_backup_of_the_previous_version_restores_with_its_suppliers(old_db, tm
         assert con.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:
         con.close()
+
+
+def test_the_rebuilt_parts_table_reads_the_same_every_time(tmp_path):
+    """The restore rebuilds a backup from the migrations and compares the SQL text with a new
+    database (test_fullbackup: test_restored_schema_is_built_from_the_migrations). Alembic's batch
+    rebuild takes the CHECKs of a table from a set, so their order changed from run to run; the
+    rebuild of `parts` is written out instead."""
+    texts = set()
+    for i in range(8):
+        engine = make_engine(tmp_path / f"run{i}.db")
+        upgrade(engine)
+        engine.dispose()
+        con = sqlite3.connect(tmp_path / f"run{i}.db")
+        try:
+            texts.add(con.execute("SELECT sql FROM sqlite_master WHERE name = 'parts'").fetchone()[0])
+        finally:
+            con.close()
+    assert len(texts) == 1, texts

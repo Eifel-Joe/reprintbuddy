@@ -17,7 +17,8 @@ may change the order of foreign keys, and the restore compares the structure exa
 has to be rebuilt to lose its columns; it has no foreign keys of its own, and the keys of the
 tables pointing at it name it, not its position, so an upgraded database has the structure of a
 new one (tests/test_migration_0015_part_suppliers.py checks it, and a restore of a backup made
-before this revision). The two CHECKs of the moved columns go with them.
+before this revision). The two CHECKs of the moved columns go with them. The rebuild is written
+out rather than done with `batch_alter_table`, whose order of CHECKs is not stable (see below).
 """
 import sqlalchemy as sa
 from alembic import op
@@ -67,11 +68,32 @@ def upgrade() -> None:
         " WHERE item_type = 'part'"
     )
 
-    with op.batch_alter_table("parts") as batch:
-        batch.drop_constraint("ck_parts_pack_size", type_="check")
-        batch.drop_constraint("ck_parts_min_order_packs", type_="check")
-        for column in ("pack_size", "min_order_packs", "lead_time_days", "supplier", "order_url"):
-            batch.drop_column(column)
+    # The same steps as Alembic's batch rebuild, written out: batch takes the CHECKs of the table
+    # from a set, so their order in the stored SQL changed from run to run, and the restore compares
+    # that text with a new database (test_fullbackup: test_restored_schema_is_built_from_the_migrations).
+    op.execute(PARTS_TABLE)
+    op.execute(
+        f"INSERT INTO _alembic_tmp_parts ({PARTS_COLUMNS}) SELECT {PARTS_COLUMNS} FROM parts"
+    )
+    op.execute("DROP TABLE parts")
+    op.execute("ALTER TABLE _alembic_tmp_parts RENAME TO parts")
+
+
+PARTS_COLUMNS = "id, name, archived_at, unit, stock, min_stock, safety_value, safety_unit"
+# `parts` without the moved columns, in the form SQLAlchemy writes it (models.Part).
+PARTS_TABLE = """CREATE TABLE _alembic_tmp_parts (
+	id INTEGER NOT NULL,
+	name VARCHAR NOT NULL,
+	archived_at DATETIME,
+	unit VARCHAR DEFAULT 'pcs' NOT NULL,
+	stock INTEGER DEFAULT '0' NOT NULL,
+	min_stock INTEGER DEFAULT '0' NOT NULL,
+	safety_value INTEGER DEFAULT '0' NOT NULL,
+	safety_unit VARCHAR DEFAULT 'days' NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT ck_parts_stock CHECK (stock >= 0),
+	CONSTRAINT ck_parts_safety_unit CHECK (safety_unit IN ('days', 'qty'))
+)"""
 
 
 def downgrade() -> None:
