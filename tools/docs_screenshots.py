@@ -1038,7 +1038,7 @@ def take_pages(shot: Shooter, scn: Scenario) -> None:
     shot.page("reorder", "/reorder")
     shot.page("filament-page", "/filament")
     # the sort with two suppliers (Spec 9.3): the block of suppliers of the reorder settings
-    shot.page("filament-settings", f"/filament/{scn.sorts['petg_black']}", cap=1100)
+    shot.page("filament-settings", f"/filament/{scn.sorts['petg_black']}")
     shot.page("orders", "/orders")
     shot.page("parts", "/parts")
     shot.page("sets", "/sets")
