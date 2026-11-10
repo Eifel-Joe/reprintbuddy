@@ -8,7 +8,7 @@ holds at its moment, as before. Rows dated back are told by the two times of the
 "today" has the same time for when it was saved and when it counts.
 """
 
-from datetime import time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -114,3 +114,46 @@ def test_an_old_count_of_awaiting_assembly_does_not_block_a_sale(db):  # sister:
         )
         stock.sell_unreserved(s, a, 1, "user", booked_at=at_local_time(day(2), time(15, 0)))
         assert s.get(Article, a).stock == 4
+
+
+def test_an_old_count_just_after_midnight_holds_until_late_that_day(db):  # review: the lower bound
+    with db.begin() as s:
+        a = make_article(s, stock=10).id
+        old_count(s, a, 3, time(0, 30), 10)
+        counted_that_day(lambda: stock.sell_unreserved(s, a, 1, "user", booked_at=at_local_time(day(3), time(23, 30))))
+
+
+def test_a_count_of_0_3_16_stays_at_its_end_of_day_when_the_zone_changes(db, monkeypatch):  # review finding 1
+    """A count dated back with 0.3.16 is stored at the end of its day in the zone of then. After a change
+    of the zone (UTC to Berlin) it falls on 00:59 of the next day there; it must not hold until the end
+    of that next day."""
+    from reprintbuddy import localtime
+
+    berlin = localtime.LOCAL_ZONE
+    with db.begin() as s:
+        a = make_article(s, stock=10).id
+        monkeypatch.setattr(localtime, "LOCAL_ZONE", UTC)
+        counted_on = day(3)
+        stock.count_article(s, a, "stock", 10, "user", booked_at=localtime.end_of_local_day(counted_on))
+        monkeypatch.setattr(localtime, "LOCAL_ZONE", berlin)
+        next_morning = at_local_time(counted_on + timedelta(days=1), time(9, 0))
+        stock.sell_unreserved(s, a, 1, "user", booked_at=next_morning)
+        assert s.get(Article, a).stock == 9
+
+
+def test_an_old_count_typed_late_in_winter_for_a_summer_day_keeps_its_day(db):  # review finding 2
+    """0.3.14 and 0.3.15 put the clock time of typing on the chosen day with the offset of the day of
+    typing. Typed on 5 November at 23:30 (UTC+1) for 1 July (UTC+2) it was stored at 22:30 UTC, which
+    is 2 July 00:30 in summer time. It holds until the end of 1 July, the day that was picked."""
+    with db.begin() as s:
+        a = make_article(s, stock=10).id
+        stock.count_article(s, a, "stock", 10, "user", booked_at=datetime(2026, 7, 1, 22, 30))
+        entry = s.scalars(select(JournalEntry).where(JournalEntry.kind == "inventory")).one()
+        entry.at = datetime(2026, 11, 5, 22, 30)
+        s.flush()
+        params = counted_that_day(lambda: stock.sell_unreserved(
+            s, a, 1, "user", booked_at=at_local_time(date(2026, 7, 1), time(23, 45))
+        ))
+        assert local_date(params["at"]) == date(2026, 7, 1)  # the message names the day that was picked
+        stock.sell_unreserved(s, a, 1, "user", booked_at=at_local_time(date(2026, 7, 2), time(9, 0)))
+        assert s.get(Article, a).stock == 9

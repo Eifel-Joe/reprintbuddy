@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain.errors import NotFoundError, StockLimitError, ValidationError
-from reprintbuddy.localtime import end_of_local_day, local_date
+from reprintbuddy.localtime import end_of_local_day, to_local
 from reprintbuddy.models import Article, ArticlePart, JournalEntry, Part, utcnow
 
 Actor = Literal["user", "auto"]
@@ -494,10 +494,18 @@ def _holds_until(row: JournalEntry) -> datetime:
     Rejected alternative: move the old rows to the end of their day - a booking of that day after
     the count would then lie in it, and today's stock would have to change by it without knowing
     when the count was really made. Tests: tests/domain/test_old_backdated_inventory.py.
+
+    Review findings: a row of 0.3.16 or later already sits at the end of its day (`time.max`, the
+    only time with 999999 microseconds a clock time hits once in a million); rounded again, a later
+    change of the server zone moved it onto the next day and blocked that whole day. And the old rows
+    took the offset of the day of typing (fixed offset of the machine zone, see `at_local_time`): a
+    count typed at 23:30 in winter for a summer day lies on the next day in summer time; that offset,
+    added back, gives the day that was picked.
     """
-    if row.booked_at == row.at:
+    if row.booked_at == row.at or row.booked_at.microsecond == 999_999:
         return row.booked_at
-    return end_of_local_day(local_date(row.booked_at))
+    picked = (row.booked_at + to_local(row.at).utcoffset()).date()
+    return end_of_local_day(picked)
 
 
 def _inventories_after(
@@ -543,7 +551,8 @@ def _refuse_if_counted_later(session: Session, target: Article | Part, booked_at
     """
     later = _inventories_after(session, _own_rows(target), "stock", booked_at)
     if later:
-        raise ValidationError("bookings.counted_later", item=target.name, at=later[0].booked_at)
+        # the day the count holds for: for an old row stored across summer time the day that was picked
+        raise ValidationError("bookings.counted_later", item=target.name, at=_holds_until(later[0]))
 
 
 def _count(

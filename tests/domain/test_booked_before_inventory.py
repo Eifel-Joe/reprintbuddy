@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from factories import make_article, make_part
 from reprintbuddy.domain import stock
 from reprintbuddy.domain.errors import ValidationError
+from reprintbuddy.localtime import local_date
 from reprintbuddy.models import Article, ArticlePart, JournalEntry, Part, utcnow
 
 
@@ -39,7 +40,8 @@ def test_a_sale_dated_before_a_count_is_refused(db):
         stock.count_article(s, a, "stock", 10, "user", booked_at=days_ago(1))
         params = refused(lambda: stock.sell_unreserved(s, a, 2, "user", booked_at=days_ago(3)), s)
         assert params["item"] == "Template A"
-        assert params["at"] == s.scalars(select(JournalEntry.booked_at).where(JournalEntry.kind == "inventory")).one()
+        counted = s.scalars(select(JournalEntry.booked_at).where(JournalEntry.kind == "inventory")).one()
+        assert local_date(params["at"]) == local_date(counted)  # the message names the day of the count
         assert s.get(Article, a).stock == 10
 
 
