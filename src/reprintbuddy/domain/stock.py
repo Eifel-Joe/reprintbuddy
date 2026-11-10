@@ -330,6 +330,11 @@ def _simple(
     article = _article(session, article_id)
     changes = _plan_article(article, {f: sign * n for f, sign in deltas.items()})
     plans = _plan_parts(session, article, n) if parts_cause else []
+    if booked_at is not None:
+        if "stock" in changes:
+            _refuse_if_counted_later(session, article, booked_at)
+        for plan in plans:
+            _refuse_if_counted_later(session, plan.part, booked_at)
     _apply(article, changes)
     write_journal(
         session,
@@ -477,6 +482,40 @@ def _replay(
     return then, value
 
 
+def _inventories_after(
+    session: Session, target_rows: tuple, field: str, booked_at: datetime
+) -> list[JournalEntry]:
+    """The inventories of `field` dated after `booked_at`, oldest first."""
+    rows = session.scalars(
+        select(JournalEntry)
+        .where(*target_rows, JournalEntry.kind == "inventory", JournalEntry.booked_at > booked_at)
+        .order_by(JournalEntry.booked_at, JournalEntry.id)
+    )
+    return [r for r in rows if (r.details or {}).get("field", "stock") == field]
+
+
+def _own_rows(target: Article | Part) -> tuple:
+    if isinstance(target, Part):
+        return (JournalEntry.part_id == target.id,)
+    return (JournalEntry.article_id == target.id, JournalEntry.part_id.is_(None))
+
+
+def _refuse_if_counted_later(session: Session, target: Article | Part, booked_at: datetime) -> None:
+    """A booking dated back that changes the stock of `target` is refused when that stock was
+    counted after its date (Spec 6.2, p261): the count already holds it.
+
+    Root of p261: the booking changed today's value although the later count had set it anew, so
+    a sale forgotten three days ago took 2 off the 10 counted yesterday. Rejected alternative:
+    book it as held in the count without a change - a row with a quantity that changes nothing,
+    and with parts taken off a stock in, one part of a booking would count and another not.
+    Only the stock is checked: the dated bookings (sale, stock in, receipt of parts, the parts a
+    stock in takes off) change nothing else. Tests: tests/domain/test_booked_before_inventory.py.
+    """
+    later = _inventories_after(session, _own_rows(target), "stock", booked_at)
+    if later:
+        raise ValidationError("bookings.counted_later", item=target.name, at=later[0].booked_at)
+
+
 def _count(
     session: Session,
     target: Article | Part,
@@ -537,6 +576,8 @@ def receive_part(
     n = _qty(n)
     booked_at = _booked(booked_at)
     part = _part(session, part_id)
+    if booked_at is not None:
+        _refuse_if_counted_later(session, part, booked_at)
     changes = {"stock": [part.stock, part.stock + n]}
     _apply(part, changes)
     write_journal(

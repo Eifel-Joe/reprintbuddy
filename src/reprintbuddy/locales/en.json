@@ -344,6 +344,7 @@
   "journal.saved_at": "saved {at}",
   "bookings.inventory_done": "{item}: counted {counted}, difference {diff}.",
   "bookings.inventory_done_then": "{item}: counted {counted} on {day}, value then {then}, difference {diff}. Bookings after it stay.",
+  "bookings.counted_later": "Rejected: the stock of {item} was counted on {at}; that count already holds this booking. If the booking came after it, choose that date or later.",
   "bookings.later_inventory": "Rejected: there is already an inventory of this value after this date (on {at}). It set the value anew; an earlier count no longer changes it.",
   "journal.then": "on the booking day {before} → {after}",
   "bookings.part_receipt_done": "{item}: {qty} received.",

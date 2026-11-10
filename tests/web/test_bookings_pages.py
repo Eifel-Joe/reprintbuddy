@@ -415,3 +415,26 @@ def test_other_bookings_dated_back_keep_the_clock_time(ready_client):
     (row,) = journal(ready_client)
     assert to_local(row.booked_at).time() != time(23, 59, 59, 999999)
     assert abs((row.at - row.booked_at) - timedelta(days=1)) < timedelta(hours=2)  # same clock time
+
+
+def test_a_booking_of_the_counted_day_is_refused_after_a_count_dated_back(ready_client):  # p260 + p261
+    a = article(ready_client, stock=10)
+    yesterday = f"{local_today() - timedelta(days=1):%Y-%m-%d}"
+    post(ready_client, "inventory", article_id=a, field="stock", counted="10", booked_on=yesterday)
+    response, _ = post(ready_client, "sale", article_id=a, qty="2", booked_on=yesterday)
+    assert response.status_code == 200
+    assert en("bookings.counted_later", item="Template A", at=yesterday) in response.text
+    assert number(ready_client, Article, a, "stock") == 10
+
+
+@pytest.mark.parametrize("action", ["sale", "stock-in", "part-receipt"])
+def test_each_dated_booking_before_a_count_is_refused_with_its_day(ready_client, action):  # p261
+    a, p = article(ready_client, stock=5), part(ready_client, stock=5)
+    post(ready_client, "inventory", article_id=a, field="stock", counted="5")
+    post(ready_client, "part-inventory", part_id=p, counted="5")
+    fields = {"article_id": a, "part_id": p, "qty": "1"}
+    response, _ = post(ready_client, action, booked_on=f"{local_today() - timedelta(days=2):%Y-%m-%d}", **fields)
+    assert response.status_code == 200, action
+    item = "Insert M4" if action == "part-receipt" else "Template A"
+    assert en("bookings.counted_later", item=item, at=f"{local_today():%Y-%m-%d}") in response.text
+    assert len(journal(ready_client)) == 2  # the two counts only
