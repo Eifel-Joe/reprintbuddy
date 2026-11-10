@@ -31,6 +31,11 @@ def mark(s, sort_id, qty=1, *, days_ago=1, received=False):
     return row
 
 
+def supplier(s, sort_id):
+    """The default supplier of a sort's settings: lead time, roll size and shop sit there (0016)."""
+    return filament.default_supplier(s, sort_id)
+
+
 def open_marks(s):
     return s.scalars(
         select(ReorderMark).where(ReorderMark.received_at.is_(None)).order_by(ReorderMark.id)
@@ -57,8 +62,9 @@ def test_the_sort_with_most_spools_takes_settings_and_mark(db):
         ids = filament.sync_sorts(s, spools)
         target = ids[spools[1].id]
         assert s.get(FilamentSettings, old.id) is None
-        settings = s.get(FilamentSettings, target)
-        assert (settings.lead_time_days, settings.supplier) == (4, "Example Supplier")
+        assert s.get(FilamentSettings, target) is not None
+        assert (supplier(s, target).lead_time_days, supplier(s, target).name) == (4, "Example Supplier")
+        assert filament.sort_suppliers(s, old.id) == []
         assert (old_mark.item_id, old_mark.qty, old_mark.received_at) == (target, 2, None)
         (row,) = journal(s)
         assert (row.actor, row.qty) == ("auto", 0)
@@ -84,7 +90,7 @@ def test_a_tie_goes_to_the_lower_id(db):
         second = fake.add_spool("PLA", brand="Brand B")
         ids = filament.sync_sorts(s, [first, second])
         assert ids[second.id] == lower.id < ids[first.id]
-        assert s.get(FilamentSettings, lower.id).lead_time_days == 4
+        assert supplier(s, lower.id).lead_time_days == 4
         assert s.get(FilamentSettings, ids[first.id]) is None
         assert journal(s)[0].details["into"] == lower.id
 
@@ -102,7 +108,7 @@ def test_without_a_target_the_legacy_sort_waits(db):
             fake.add_spool("PETG", brand="Brand A", subtype="Matte"),
         ]
         assert filament.sync_sorts(s, spools) and filament.convert_legacy(s, spools, {}) == 0
-        assert s.get(FilamentSettings, old.id).lead_time_days == 4
+        assert supplier(s, old.id).lead_time_days == 4
         assert old_mark.received_at is None and old_mark.item_id == old.id
         assert journal(s) == []
 
@@ -130,7 +136,7 @@ def test_all_spools_archived_waits_then_a_new_spool_of_the_sort_is_the_target(db
         target = s.scalar(select(FilamentSort).where(FilamentSort.brand == "Brand A", FilamentSort.legacy.is_(False)))
         (moved,) = open_marks(s)
         assert moved.item_id == target.id  # 3 of Brand A (2 archived) beat 1 of Brand B
-        assert s.get(FilamentSettings, target.id).pack_grams == 1000
+        assert supplier(s, target.id).pack_size == 1000
         (row,) = journal(s)
         assert row.details["into"] == target.id
 
@@ -144,10 +150,11 @@ def test_settings_of_the_target_win(db):
         make_filament_settings(s, target.id, lead_time_days=9)
         filament.sync_sorts(s, [fake.add_spool("PLA", brand="Brand A")])
         assert s.get(FilamentSettings, old.id) is None
-        assert s.get(FilamentSettings, target.id).lead_time_days == 9
+        assert supplier(s, target.id).lead_time_days == 9
+        assert [r.lead_time_days for r in filament.sort_suppliers(s, target.id)] == [9]
         (row,) = journal(s)
         assert row.details["settings"] == "dropped"
-        assert row.details["dropped_settings"]["lead_time_days"] == 4
+        assert row.details["dropped_settings"]["suppliers"][0]["lead_time_days"] == 4
         assert "marks" not in row.details
 
 
@@ -217,8 +224,8 @@ def test_each_spool_belongs_to_its_nearest_legacy_sort(db):
         a = fake.add_spool("PLA", brand="Brand A", color_hex="#000000")
         b = fake.add_spool("PLA", brand="Brand B", color_hex="#0C0C0C")  # within 7 of both, nearer to #101010
         ids = filament.sync_sorts(s, [a, b])
-        assert s.get(FilamentSettings, ids[a.id]).lead_time_days == 1
-        assert s.get(FilamentSettings, ids[b.id]).lead_time_days == 2
+        assert supplier(s, ids[a.id]).lead_time_days == 1
+        assert supplier(s, ids[b.id]).lead_time_days == 2
 
 
 def test_daily_rows_of_listed_spools_leave_the_legacy_sort(db):
@@ -253,9 +260,10 @@ def test_an_empty_spool_list_converts_nothing(db):
         assert journal(s) == []
 
 
-def test_a_mark_moved_onto_other_settings_is_counted_in_their_order_units(db):
-    """The old sort ordered 4 x 250 g; the target already has settings with 1000 g packs: the moved
-    mark counts 1 x 1000 g, and joined with the target's own open mark 2 x 1000 g."""
+def test_a_mark_moved_onto_other_settings_keeps_its_rolls_and_joins_in_grams(db):
+    """The old sort ordered 4 x 250 g; the target has settings with 1000 g rolls and its own open
+    mark of 1 x 1000 g. A mark keeps the roll size it was ordered in (Spec 9.4, p281), so the moved
+    one stays 4 x 250 g; joined, the earlier mark counts the 2000 g in its rolls: 8 x 250 g."""
     fake = FakeBambuddy()
     spool = fake.add_spool("PLA", brand="Brand A", color_hex="#000000")
     with db.begin() as s:
@@ -267,10 +275,10 @@ def test_a_mark_moved_onto_other_settings_is_counted_in_their_order_units(db):
         mark(s, target.id, 1, days_ago=1)
         filament.sync_sorts(s, [spool])
         (joined,) = open_marks(s)
-        assert (joined.item_id, joined.qty) == (target.id, 2)
+        assert (joined.item_id, joined.qty, joined.pack_size) == (target.id, 8, 250)
 
 
-def test_a_moved_mark_rounds_up_to_whole_order_units(db):
+def test_a_moved_mark_keeps_its_roll_size(db):
     fake = FakeBambuddy()
     spool = fake.add_spool("PLA", brand="Brand A", color_hex="#000000")
     with db.begin() as s:
@@ -281,12 +289,12 @@ def test_a_moved_mark_rounds_up_to_whole_order_units(db):
         make_filament_settings(s, target.id, pack_grams=1000)
         filament.sync_sorts(s, [spool])
         (moved,) = open_marks(s)
-        assert (moved.item_id, moved.qty) == (target.id, 1)
+        assert (moved.item_id, moved.qty, moved.pack_size) == (target.id, 1, 750)
 
 
 def test_a_mark_without_settings_counts_the_default_unit_when_moved(db):
-    """Without settings a mark counts 1000 g units (as "on its way" shows it); moved onto 250 g units,
-    it keeps its grams: 2 x 1000 g become 8 x 250 g."""
+    """Without settings a mark counts 1000 g units (as "on its way" shows it); moved onto a sort
+    with 250 g rolls it keeps them: 2 x 1000 g."""
     fake = FakeBambuddy()
     spool = fake.add_spool("PLA", brand="Brand A", color_hex="#000000")
     with db.begin() as s:
@@ -296,7 +304,7 @@ def test_a_mark_without_settings_counts_the_default_unit_when_moved(db):
         make_filament_settings(s, target.id, pack_grams=250)
         filament.sync_sorts(s, [spool])
         (moved,) = open_marks(s)
-        assert (moved.item_id, moved.qty) == (target.id, 8)
+        assert (moved.item_id, moved.qty, moved.pack_size) == (target.id, 2, 1000)
 
 
 async def test_archived_spools_reach_the_conversion_through_the_client(db):

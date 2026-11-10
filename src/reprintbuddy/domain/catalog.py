@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
@@ -14,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.activity.capture import quiet
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
-from reprintbuddy.domain import rules, workqueue
+from reprintbuddy.domain import rules, suppliers, workqueue
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.domain.workqueue import OPEN_STATES
 from reprintbuddy.domain.status import ArticleStatus, article_status
@@ -459,20 +457,9 @@ def list_articles(session: Session, *, archived: bool = False) -> list[ArticleRo
 # ---- purchased parts -----------------------------------------------------------------------
 
 
-MAX_SUPPLIERS = 10  # per part (Spec 5.3)
-SUPPLIER_COLUMNS = ("name", "order_url", "pack_size", "min_order_packs", "lead_time_days", "is_default")
-
-
-@dataclass
-class SupplierInput:
-    """One supplier of a part (Spec 5.3): where it is bought, in which packs, how fast."""
-
-    name: str | None = None
-    order_url: str | None = None
-    pack_size: int = 1
-    min_order_packs: int = 1
-    lead_time_days: int = 0
-    is_default: bool = False
+# The suppliers of a part (Spec 5.3) are checked, saved and compared like those of a spool sort.
+MAX_SUPPLIERS = suppliers.MAX_SUPPLIERS
+SupplierInput = suppliers.SupplierInput
 
 
 def _one_default() -> list[SupplierInput]:
@@ -490,45 +477,18 @@ class PartInput:
     suppliers: list[SupplierInput] = field(default_factory=_one_default)
 
 
-def _check_supplier(data: SupplierInput, number: int | None) -> SupplierInput:
-    """One supplier's fields; with several, an error names the supplier by its number (1 first)."""
-    try:
-        url = _text(data.order_url, "parts.field.order_url", 2000)
-        if url is not None and not url.lower().startswith(("http://", "https://")):
-            raise ValidationError("parts.invalid_url")
-        return SupplierInput(
-            name=_text(data.name, "parts.field.supplier_name", MAX_NAME),
-            order_url=url,
-            pack_size=_int_in(data.pack_size, "parts.field.pack_size", 1, MAX_QTY),
-            min_order_packs=_int_in(data.min_order_packs, "parts.field.min_order_packs", 1, 1000),
-            lead_time_days=_int_in(data.lead_time_days, "parts.field.lead_time_days", 0, 365),
-            is_default=bool(data.is_default),
-        )
-    except ValidationError as error:
-        if number is not None:
-            error.params["supplier"] = number
-        raise
-
-
 def _check_part_input(data: PartInput) -> PartInput:
     unit = _text(data.unit, "parts.field.unit", 20, required=True)
     if data.safety_unit not in ("days", "qty"):
         raise ValidationError("parts.invalid_safety_unit")
-    if not 1 <= len(data.suppliers) <= MAX_SUPPLIERS:
-        raise ValidationError("parts.suppliers_count", max=MAX_SUPPLIERS)
-    several = len(data.suppliers) > 1
-    suppliers = [
-        _check_supplier(item, number if several else None) for number, item in enumerate(data.suppliers, start=1)
-    ]
-    if sum(item.is_default for item in suppliers) != 1:
-        raise ValidationError("parts.supplier_default")
+    checked = suppliers.check(data.suppliers, suppliers.PART_LABELS)
     return replace(
         data,
         name=_required_name(data.name, "parts.field.name"),
         unit=unit,
         min_stock=_int_in(data.min_stock, "parts.field.min_stock", 0, MAX_QTY),
         safety_value=_int_in(data.safety_value, "parts.field.safety_value", 0, MAX_QTY),
-        suppliers=suppliers,
+        suppliers=checked,
     )
 
 
@@ -541,29 +501,11 @@ def _apply_part(part: Part, data: PartInput) -> None:
 
 
 def _apply_suppliers(session: Session, part_id: int, wanted: list[SupplierInput]) -> None:
-    """Make the part's suppliers what the form says, compared by position.
-
-    Unchanged rows are not touched, so saving the same values writes nothing: no log line, and no
-    other open form is told it changed (Spec 10.5, 10.7). Rejected: deleting and writing every row
-    again, which is no change for the log (`capture` compares child rows) but is one for the live
-    feed. The default moves in two steps: the unique index allows one default per part at any time.
-    """
-    rows = part_suppliers(session, part_id)
-    for row in rows[len(wanted):]:
-        session.delete(row)
-    for row, item in zip(rows, wanted):
-        if row.is_default and not item.is_default:
-            row.is_default = False
-    session.flush()
-    for position, item in enumerate(wanted):
-        row = rows[position] if position < len(rows) else None
-        if row is None:
-            row = PartSupplier(part_id=part_id, position=position)
-            session.add(row)
-        for column in SUPPLIER_COLUMNS:
-            if getattr(row, column) != getattr(item, column):
-                setattr(row, column, getattr(item, column))
-    session.flush()
+    """Make the part's suppliers what the form says, compared by position (`suppliers.apply`)."""
+    suppliers.apply(
+        session, part_suppliers(session, part_id), wanted,
+        lambda position: PartSupplier(part_id=part_id, position=position),
+    )
 
 
 def part_suppliers(session: Session, part_id: int) -> list[PartSupplier]:
@@ -575,18 +517,7 @@ def part_suppliers(session: Session, part_id: int) -> list[PartSupplier]:
     )
 
 
-def suppliers_key(rows: Sequence[PartSupplier]) -> str:
-    """A short fingerprint of a part's suppliers as a page shows them.
-
-    Saving compares the rows by position, so removing a supplier moves the next one into its row
-    and its id. A reorder page shown before such a change sends the key of what it showed; a mark
-    with a key that no longer matches is refused rather than booked on the wrong supplier.
-    """
-    seen = [
-        (r.id, r.position, r.name, r.order_url, r.pack_size, r.min_order_packs, r.lead_time_days, bool(r.is_default))
-        for r in rows
-    ]
-    return hashlib.sha256(json.dumps(seen).encode("utf-8")).hexdigest()[:16]
+suppliers_key = suppliers.key  # what a reorder page showed of a part's suppliers
 
 
 def default_supplier(session: Session, part_id: int) -> PartSupplier | None:
@@ -604,10 +535,7 @@ def suppliers_by_part(session: Session) -> dict[int, list[PartSupplier]]:
     return found
 
 
-def supplier_names(session: Session) -> list[str]:
-    """The supplier names in use, offered while typing (Spec 5.3); each once, sorted."""
-    names = session.scalars(select(PartSupplier.name).where(PartSupplier.name.is_not(None)).distinct())
-    return sorted(set(names), key=lambda name: (name.casefold(), name))
+supplier_names = suppliers.names_in_use  # offered while typing, from parts and spool sorts (Spec 9.3)
 
 
 def create_part(session: Session, data: PartInput, initial_stock: int, actor: Actor) -> Part:

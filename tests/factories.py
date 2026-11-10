@@ -17,6 +17,7 @@ from reprintbuddy.models import (
     FilamentSettings,
     FilamentSnapshot,
     FilamentSort,
+    FilamentSupplier,
     Order,
     Part,
     PartSupplier,
@@ -178,9 +179,18 @@ def make_snapshot(
     return snapshot
 
 
+FILAMENT_SUPPLIER_FIELDS = {"pack_grams": "pack_size", "min_order_packs": "min_order_packs",
+                            "lead_time_days": "lead_time_days", "supplier": "name", "order_url": "order_url"}
+
+
 def make_filament_settings(s: Session, sort_id: int, **fields) -> FilamentSettings:
+    """Order settings with one default supplier; the supplier fields the settings had before 0016
+    (`pack_grams`, `min_order_packs`, `lead_time_days`, `supplier`, `order_url`) go to it."""
+    supplier = {FILAMENT_SUPPLIER_FIELDS[key]: fields.pop(key) for key in list(fields) if key in FILAMENT_SUPPLIER_FIELDS}
     settings = FilamentSettings(spool_filament_id=sort_id, **fields)
     s.add(settings)
+    s.flush()
+    s.add(FilamentSupplier(sort_id=sort_id, position=0, is_default=True, **supplier))
     s.flush()
     return settings
 

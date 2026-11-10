@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from collections import Counter, defaultdict
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Literal
 
@@ -20,10 +20,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from reprintbuddy.activity.capture import quiet
 from reprintbuddy.bambuddy.client import BambuddyClient
 from reprintbuddy.bambuddy.types import Spool
-from reprintbuddy.domain import color, rules
+from reprintbuddy.domain import color, rules, suppliers
 from reprintbuddy.domain import catalog
 from reprintbuddy.domain.catalog import _int_in
-from reprintbuddy.domain.catalog import _text as _form_text
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.models import (
     Article,
@@ -32,6 +31,7 @@ from reprintbuddy.models import (
     FilamentSettings,
     FilamentSnapshot,
     FilamentSort,
+    FilamentSupplier,
     JournalEntry,
     ReorderMark,
     utcnow,
@@ -174,9 +174,17 @@ def _legacy_nearest(sorts: Iterable[FilamentSort], color_hex: str | None) -> Fil
     return found
 
 
-_SETTINGS = (
-    "lead_time_days", "safety_value", "safety_unit", "pack_grams", "min_order_packs", "supplier", "order_url",
-)
+_SETTINGS = ("safety_value", "safety_unit")  # the rest sits at the suppliers (0016)
+
+
+def keep_roll_size(session: Session, mark: ReorderMark) -> int:
+    """The roll size a filament mark counts in, kept at the mark (Spec 9.4, p281); a mark that kept
+    none (written before 0016 filled them) takes its sort's default supplier, without settings the
+    default unit of 1000 g, and keeps it from now on."""
+    if mark.pack_size is None:
+        default = default_supplier(session, mark.item_id)
+        mark.pack_size = default.pack_size if default is not None else DEFAULT_ROLL_GRAMS
+    return mark.pack_size
 
 
 def convert_legacy(
@@ -190,8 +198,8 @@ def convert_legacy(
     lower id. If that spool sort is not stored yet (all its spools archived) or no spool belongs to the
     legacy sort, it waits: nothing is dropped or closed, the mark stays "on its way" and a later list
     converts (Hauptsitzung 07.11.2026, against ordering twice). Settings move only to a target
-    without settings, else they are dropped; open marks move to the target in its order units (two
-    open marks there become one). Each converted sort gets a journal row. Legacy sorts stay as
+    without settings, with their suppliers, else they are dropped; open marks move to the target with
+    the roll size they were ordered in (Spec 9.4), two open marks there become one. Each converted sort gets a journal row. Legacy sorts stay as
     hidden rows, so that old received marks and the daily rows of gone spools keep a sort to point at.
     """
     # The journal has it ("filament_sorts_converted"); the moved settings and marks are not the
@@ -260,34 +268,43 @@ def _open_filament_marks(session: Session, sort_id: int) -> list[ReorderMark]:
 def _convert_one(session: Session, old: FilamentSort, target: FilamentSort, now: datetime) -> None:
     details: dict[str, object] = {"from": old.id, "from_label": old.label, "into": target.id, "into_label": target.label}
     notes = []
+    # A mark keeps the roll size it was ordered in (Spec 9.4, p281); one from before that kept none
+    # counts in its sort's roll size of now. Fixed before the settings move.
+    for mark in _open_filament_marks(session, old.id):
+        keep_roll_size(session, mark)
     settings = session.get(FilamentSettings, old.id)
-    # without settings a mark counts in the default unit, as "on its way" shows it (reorder.open_marks)
-    old_pack = settings.pack_grams if settings is not None else FilamentSettingsInput.pack_grams
     if settings is not None:
-        values = {f: getattr(settings, f) for f in _SETTINGS}
-        session.delete(settings)
-        session.flush()
+        values: dict[str, object] = {f: getattr(settings, f) for f in _SETTINGS}
+        rows = sort_suppliers(session, old.id)
         if session.get(FilamentSettings, target.id) is None:
+            # the suppliers follow their settings; the target's row comes first for the foreign key
             session.add(FilamentSettings(spool_filament_id=target.id, **values))
+            session.flush()
+            for row in rows:
+                row.sort_id = target.id
             details["settings"] = "moved"
             notes.append("settings moved")
         else:
+            values["suppliers"] = [{c: getattr(row, c) for c in suppliers.COLUMNS} for row in rows]
+            for row in rows:
+                session.delete(row)
             details["settings"] = "dropped"
             details["dropped_settings"] = values
             notes.append("settings dropped")
+        session.flush()
+        session.delete(settings)
+        session.flush()
     marks = _open_filament_marks(session, old.id)
     if marks:
-        target_settings = session.get(FilamentSettings, target.id)
-        new_pack = target_settings.pack_grams if target_settings is not None else FilamentSettingsInput.pack_grams
         for mark in marks:
             mark.item_id = target.id
-            if old_pack != new_pack:
-                # the target orders in other units: the same grams, rounded up to whole units
-                mark.qty = max(1, math.ceil(mark.qty * old_pack / new_pack))
         session.flush()
         joined = _open_filament_marks(session, target.id)
         if len(joined) > 1:
-            joined[0].qty = sum(m.qty for m in joined)
+            # one open mark per sort (Spec 9.4): the earliest takes the grams of all, in its rolls
+            first = joined[0]
+            grams = sum(m.qty * keep_roll_size(session, m) for m in joined)
+            first.qty = max(1, math.ceil(grams / first.pack_size))
             for mark in joined[1:]:
                 session.delete(mark)
         details["marks"] = "moved"
@@ -647,19 +664,41 @@ def unmapped_slots(session: Session, article_id: int | None = None) -> list[tupl
 # ---- settings of a spool sort (Spec 9.3) ------------------------------------------------------
 
 
+DEFAULT_ROLL_GRAMS = 1000  # the roll size a new supplier starts with; a mark without one counts in it
+
+
+def _one_default() -> list[suppliers.SupplierInput]:
+    return [suppliers.SupplierInput(pack_size=DEFAULT_ROLL_GRAMS, is_default=True)]
+
+
 @dataclass
 class FilamentSettingsInput:
-    lead_time_days: int = 0
+    """The order settings of a spool sort (Spec 9.3): the safety margin, and 1 to 10 suppliers in
+    the order of the form, exactly one the default. They only serve the reorder suggestion;
+    filament is never booked in Reprintbuddy (Spec 9.1)."""
+
     safety_value: int = 0
     safety_unit: Literal["days", "grams"] = "days"
-    pack_grams: int = 1000
-    min_order_packs: int = 1
-    supplier: str | None = None
-    order_url: str | None = None
+    suppliers: list[suppliers.SupplierInput] = field(default_factory=_one_default)
 
 
 def get_settings(session: Session, sort_id: int) -> FilamentSettings | None:
     return session.get(FilamentSettings, sort_id)
+
+
+def sort_suppliers(session: Session, sort_id: int) -> list[FilamentSupplier]:
+    """The suppliers of a spool sort in the order of its form; none without settings."""
+    return list(
+        session.scalars(
+            select(FilamentSupplier).where(FilamentSupplier.sort_id == sort_id).order_by(FilamentSupplier.position)
+        )
+    )
+
+
+def default_supplier(session: Session, sort_id: int) -> FilamentSupplier | None:
+    return session.scalar(
+        select(FilamentSupplier).where(FilamentSupplier.sort_id == sort_id, FilamentSupplier.is_default.is_(True))
+    )
 
 
 def save_settings(session: Session, sort_id: int, data: FilamentSettingsInput) -> FilamentSettings:
@@ -669,21 +708,21 @@ def save_settings(session: Session, sort_id: int, data: FilamentSettingsInput) -
         raise NotFoundError("filament.sort_not_found")
     if data.safety_unit not in ("days", "grams"):
         raise ValidationError("filament.invalid_safety_unit")
-    lead = _int_in(data.lead_time_days, "filament.field.lead_time_days", 0, 365)
     safety = _int_in(data.safety_value, "filament.field.safety_value", 0, 1_000_000)
-    pack = _int_in(data.pack_grams, "filament.field.pack_grams", 1, 100_000)
-    packs = _int_in(data.min_order_packs, "filament.field.min_order_packs", 1, 1000)
-    supplier = _form_text(data.supplier, "filament.field.supplier", 200)
-    url = _form_text(data.order_url, "filament.field.order_url", 2000)
-    if url is not None and not url.lower().startswith(("http://", "https://")):
-        raise ValidationError("filament.invalid_url")
+    wanted = suppliers.check(data.suppliers, suppliers.FILAMENT_LABELS)
     row = session.get(FilamentSettings, sort_id)
     if row is None:
         row = FilamentSettings(spool_filament_id=sort_id)
         session.add(row)
-    row.lead_time_days, row.safety_value, row.safety_unit = lead, safety, data.safety_unit
-    row.pack_grams, row.min_order_packs, row.supplier, row.order_url = pack, packs, supplier, url
+    if row.safety_value != safety:
+        row.safety_value = safety
+    if row.safety_unit != data.safety_unit:
+        row.safety_unit = data.safety_unit
     session.flush()
+    suppliers.apply(
+        session, sort_suppliers(session, sort_id), wanted,
+        lambda position: FilamentSupplier(sort_id=sort_id, position=position),
+    )
     return row
 
 

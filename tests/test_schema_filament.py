@@ -1,14 +1,14 @@
 from datetime import date
 
 import pytest
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, select, text
 from sqlalchemy.exc import IntegrityError
 
-from reprintbuddy.models import ArticleFilamentSort, ReorderMark
+from reprintbuddy.models import ArticleFilamentSort, FilamentSettings, FilamentSupplier, ReorderMark
 
 from factories import make_article, make_filament_settings, make_legacy_sort, make_snapshot, make_sort, tick_sorts
 
-TABLES = {"filament_sorts", "filament_settings", "filament_snapshots", "reorder_marks", "article_filament_sorts"}
+TABLES = {"filament_sorts", "filament_settings", "filament_suppliers", "filament_snapshots", "reorder_marks", "article_filament_sorts"}
 
 
 def test_tables_exist(db):
@@ -43,13 +43,36 @@ def test_settings_defaults(db):
         sort = make_sort(s)
         settings = make_filament_settings(s, sort.id)
         s.refresh(settings)
-        assert settings.lead_time_days == 0
         assert settings.safety_value == 0
         assert settings.safety_unit == "days"
-        assert settings.pack_grams == 1000
-        assert settings.min_order_packs == 1
-        assert settings.supplier is None
-        assert settings.order_url is None
+        supplier = s.scalars(select(FilamentSupplier).where(FilamentSupplier.sort_id == sort.id)).one()
+        assert (supplier.position, supplier.is_default) == (0, True)
+        assert supplier.lead_time_days == 0
+        assert supplier.pack_size == 1000
+        assert supplier.min_order_packs == 1
+        assert supplier.name is None
+        assert supplier.order_url is None
+
+
+def test_supplier_defaults_without_factory(db):
+    """Since 0016 the roll size, minimum order, lead time and shop sit at a supplier (Spec 9.3)."""
+    with db.begin() as s:
+        sort = make_sort(s)
+        s.add(FilamentSettings(spool_filament_id=sort.id))
+        s.flush()
+        row = FilamentSupplier(sort_id=sort.id, position=0, is_default=True)
+        s.add(row)
+        s.flush()
+        s.refresh(row)
+        assert (row.pack_size, row.min_order_packs, row.lead_time_days) == (1000, 1, 0)
+
+
+def test_one_default_supplier_per_sort(db):
+    with db.begin() as s:
+        sort = make_filament_settings(s, make_sort(s).id).spool_filament_id
+    with pytest.raises(IntegrityError):
+        with db.begin() as s:
+            s.add(FilamentSupplier(sort_id=sort, position=1, is_default=True))
 
 
 @pytest.mark.parametrize(
@@ -60,8 +83,9 @@ def test_settings_defaults(db):
         lambda s, sort: make_filament_settings(s, sort, min_order_packs=0),
         lambda s, sort: _mark(s, sort, item_type="other"),
         lambda s, sort: _mark(s, sort, qty=0),
+        lambda s, sort: make_filament_settings(s, sort, lead_time_days=-1),
     ],
-    ids=["safety_unit", "pack_grams=0", "min_order_packs=0", "item_type", "qty=0"],
+    ids=["safety_unit", "pack_grams=0", "min_order_packs=0", "item_type", "qty=0", "lead_time_days=-1"],
 )
 def test_checks(db, build):
     with db.begin() as s:
@@ -84,6 +108,7 @@ def test_mark_defaults(db):
         s.refresh(mark)
         assert mark.marked_at is not None
         assert mark.received_at is None
+        assert mark.withdrawn is False  # p280: closed by "take back" only when set
 
 
 def test_sort_key_unique(db):
