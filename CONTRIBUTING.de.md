@@ -56,6 +56,8 @@ veröffentlicht. Jede Seite gibt es zweimal: `seite.md` auf Englisch und daneben
 Bildschirmfotos zeigen nur erfundene Beispieldaten, nie echte Artikel, Namen oder
 Adressen. `tools/docs_screenshots.py` nimmt sie von einer Testinstanz auf
 (Aufruf im Kopf des Skripts); nach einer geänderten Oberfläche läuft es erneut.
+Die Bilder zeigen eine feste Platzhalter-Version (`1.2.3`), nicht die installierte;
+eine neue Version allein macht also keine neuen Bilder nötig.
 
 ## Lizenz von Beiträgen
 
