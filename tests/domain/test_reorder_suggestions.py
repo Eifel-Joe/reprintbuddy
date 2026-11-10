@@ -583,3 +583,149 @@ def test_part_consumption_counts_by_the_booking_date(db):
         s.flush()
         # the oldest row is booked 40 days back: 30 days of history; the 99 outside the window do not count
         assert reorder.part_consumption(s, part.id, TODAY) == 1.0  # 30 over 30 days; by `at` it would be 129 / 1
+
+
+# ---- several suppliers per part (Spec 9.3, 9.4) -----------------------------------------------
+
+
+def add_supplier(s, part, position=1, **fields):
+    from reprintbuddy.models import PartSupplier
+
+    values = dict(name="Example Supplier B", order_url="https://shop.example/b", pack_size=10,
+                  min_order_packs=1, lead_time_days=1, is_default=False)
+    values.update(fields)
+    row = PartSupplier(part_id=part.id, position=position, **values)
+    s.add(row)
+    s.flush()
+    return row
+
+
+def test_every_supplier_gets_its_own_quantity_default_first(db):
+    """The end-to-end example of the spec: stock 0, minimum 10, A pack 50 (default), B pack 10."""
+    with db.begin() as s:
+        part = make_part(s, stock=0, min_stock=10, pack_size=50, lead_time_days=3, supplier="Example Supplier")
+        add_supplier(s, part, position=0 + 1)
+        (sug,) = reorder.suggestions(s, sorts=None, today=TODAY)
+        assert [(o.name, o.packs, o.pack_size, o.lead_days, o.is_default) for o in sug.options] == [
+            ("Example Supplier", 1, 50, 3, True), ("Example Supplier B", 1, 10, 1, False),
+        ]
+        assert (sug.packs, sug.pack_size, sug.supplier) == (1, 50, "Example Supplier")
+
+
+def test_the_default_comes_first_wherever_it_stands(db):
+    with db.begin() as s:
+        part = make_part(s, stock=0, min_stock=10, pack_size=50, supplier="Example Supplier")
+        a = catalog.default_supplier(s, part.id)
+        a.is_default = False
+        s.flush()
+        add_supplier(s, part, is_default=True)
+        (sug,) = reorder.suggestions(s, sorts=None, today=TODAY)
+        assert [o.name for o in sug.options] == ["Example Supplier B", "Example Supplier"]
+        assert (sug.pack_size, sug.supplier, sug.order_url) == (10, "Example Supplier B", "https://shop.example/b")
+
+
+def test_each_quantity_uses_that_suppliers_lead_time_pack_and_minimum(db):
+    """Usage 1 a day: A (lead 10, pack 50) needs 10 + 10 + 6 - 10 = 16 → 1 × 50;
+    B (lead 2, pack 4, at least 3 packs) needs 10 + 2 + 6 - 10 = 8 → 2 packs, at least 3."""
+    with db.begin() as s:
+        part = part_with_demand(s, safety_value=10, lead_time_days=10)
+        add_supplier(s, part, pack_size=4, min_order_packs=3, lead_time_days=2)
+        for back in range(30):
+            journal(s, "part_consumed", part.id, 1, datetime(2026, 11, 5, 9) - timedelta(days=back))
+        (sug,) = reorder.suggestions(s, sorts=None, today=TODAY)
+        assert [(o.packs, o.pack_size, o.lead_days) for o in sug.options] == [(1, 50, 10), (3, 4, 2)]
+
+
+def test_only_the_default_decides_whether_a_suggestion_appears(db):
+    """B's longer lead time alone makes no suggestion; A's makes one, and B is listed too."""
+    with db.begin() as s:
+        part = part_with_demand(s, stock=40, safety_value=20, lead_time_days=0)
+        add_supplier(s, part, lead_time_days=30)
+        for back in range(30):
+            journal(s, "part_consumed", part.id, 1, datetime(2026, 11, 5, 9) - timedelta(days=back))
+        assert reorder.suggestions(s, sorts=None, today=TODAY) == []  # 40 - 6 - 0 >= 20
+        catalog.default_supplier(s, part.id).lead_time_days = 30  # 40 - 6 - 30 < 20
+        s.flush()
+        (sug,) = reorder.suggestions(s, sorts=None, today=TODAY)
+        assert len(sug.options) == 2
+
+
+def test_a_part_with_one_supplier_suggests_as_before(db):
+    with db.begin() as s:
+        part_with_demand(s)
+        (sug,) = reorder.suggestions(s, sorts=None, today=TODAY)
+        assert [(o.packs, o.pack_size) for o in sug.options] == [(1, 50)]
+        assert (sug.packs, sug.pack_size, sug.order_url) == (1, 50, "https://shop.example/insert-m4")
+
+
+def test_a_filament_suggestion_has_no_supplier_options(db):
+    with db.begin() as s:
+        sort = filament_setup(s)
+        with_demand(s, sort)
+        (sug,) = reorder.suggestions(s, sorts=sorts_of((sort, 100.0)), today=TODAY)
+        assert sug.options == ()
+
+
+def test_mark_with_a_supplier_keeps_its_pack_and_name(db):
+    with db.begin() as s:
+        part = part_with_demand(s)
+        b = add_supplier(s, part)
+        mark = reorder.mark_ordered(s, "part", part.id, 2, supplier_id=b.id)
+        assert (mark.qty, mark.pack_size, mark.supplier_name) == (2, 10, "Example Supplier B")
+        assert reorder.ordered_amount(s, mark) == 20
+        assert reorder.on_way(s) == {("part", part.id): 20.0}
+        (row,) = reorder.open_marks(s)
+        assert (row.packs, row.pack_size, row.supplier) == (2, 10, "Example Supplier B")
+
+
+def test_mark_without_a_supplier_takes_the_default(db):
+    with db.begin() as s:
+        part = part_with_demand(s)
+        add_supplier(s, part)
+        mark = reorder.mark_ordered(s, "part", part.id, 1)
+        assert (mark.pack_size, mark.supplier_name) == (50, "Example Supplier")
+
+
+def test_the_amount_on_its_way_stays_as_ordered(db):
+    """Spec 9.4: changing or removing the supplier later changes nothing on its way."""
+    with db.begin() as s:
+        part = part_with_demand(s)
+        b = add_supplier(s, part)
+        reorder.mark_ordered(s, "part", part.id, 2, supplier_id=b.id)
+        b.pack_size = 25
+        s.flush()
+        assert reorder.on_way(s) == {("part", part.id): 20.0}
+        s.delete(b)
+        s.flush()
+        assert reorder.on_way(s) == {("part", part.id): 20.0}
+        assert reorder.open_marks(s)[0].supplier == "Example Supplier B"
+
+
+def test_a_supplier_of_another_part_is_not_found(db):
+    with db.begin() as s:
+        part = part_with_demand(s)
+        other = make_part(s, name="Screw")
+        foreign = add_supplier(s, other)
+        with pytest.raises(NotFoundError) as info:
+            reorder.mark_ordered(s, "part", part.id, 1, supplier_id=foreign.id)
+        assert info.value.key == "reorder.supplier_not_found"
+        assert s.query(ReorderMark).count() == 0
+
+
+def test_a_filament_mark_takes_no_supplier(db):
+    with db.begin() as s:
+        sort = filament_setup(s)
+        mark = reorder.mark_ordered(s, "filament", sort.id, 2)
+        assert (mark.pack_size, mark.supplier_name) == (None, None)
+        assert reorder.ordered_amount(s, mark) == 2000
+        with pytest.raises(NotFoundError):
+            reorder.mark_ordered(s, "filament", sort.id, 1, supplier_id=1)
+
+
+def test_still_one_open_mark_per_part(db):
+    with db.begin() as s:
+        part = part_with_demand(s)
+        b = add_supplier(s, part)
+        reorder.mark_ordered(s, "part", part.id, 1)
+        with pytest.raises(ConflictError):
+            reorder.mark_ordered(s, "part", part.id, 1, supplier_id=b.id)

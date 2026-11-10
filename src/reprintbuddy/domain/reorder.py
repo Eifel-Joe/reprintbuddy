@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
@@ -26,6 +26,7 @@ from reprintbuddy.models import (
     FilamentSort,
     JournalEntry,
     Part,
+    PartSupplier,
     ReorderMark,
     utcnow,
 )
@@ -127,6 +128,21 @@ def part_consumption(session: Session, part_id: int, today: date) -> float:
 
 
 @dataclass(frozen=True)
+class SupplierOption:
+    """What one supplier of a part would deliver for a suggestion (Spec 9.3): the same rule with
+    its own lead time, pack size and minimum order."""
+
+    supplier_id: int
+    position: int  # in the part's form; "Supplier n" is position + 1
+    name: str | None
+    order_url: str | None
+    packs: int
+    pack_size: int
+    lead_days: int
+    is_default: bool
+
+
+@dataclass(frozen=True)
 class Suggestion:
     item_type: Literal["filament", "part"]
     item_id: int
@@ -143,10 +159,39 @@ class Suggestion:
     order_url: str | None
     has_history: bool = True  # False: no usage recorded yet, the tile says so instead of "0.0 g/day" (p59)
     on_way: float = 0.0  # ordered and not arrived yet (Spec 9.4, p171); counts like stock, shown apart
+    # Parts: every supplier with its own quantity, the default first (Spec 9.3); the fields above
+    # (packs, pack size, lead time, supplier, link) are the default's. Filament: none.
+    options: tuple[SupplierOption, ...] = ()
+
+
+def ordered_amount(session: Session, mark: ReorderMark) -> float:
+    """The amount a mark ordered, in the item's unit: packs x the pack size (Spec 9.4).
+
+    A part counts with the pack size kept at the mark: the supplier's as it was when marked, so a
+    later change or removal of the supplier changes nothing (Spec 9.4). A part mark without one
+    (none is written so since 0015, which filled the older ones) falls back to the default supplier.
+    Filament counts with the pack size of its settings, the default unit without settings.
+    """
+    if mark.item_type == "part":
+        size = mark.pack_size
+        if size is None:
+            default = _default_supplier(session, mark.item_id)
+            size = default.pack_size if default is not None else 0
+    else:
+        settings = session.get(FilamentSettings, mark.item_id)
+        # without settings a mark counts in the default unit, as "on its way" shows it (open_marks)
+        size = settings.pack_grams if settings is not None else filament.FilamentSettingsInput.pack_grams
+    return mark.qty * size
+
+
+def _default_supplier(session: Session, part_id: int) -> PartSupplier | None:
+    return session.scalar(
+        select(PartSupplier).where(PartSupplier.part_id == part_id, PartSupplier.is_default.is_(True))
+    )
 
 
 def on_way(session: Session) -> dict[tuple[str, int], float]:
-    """What counts as on its way per item, in its unit: the open marks, packs x pack size (Spec 9.4).
+    """What counts as on its way per item, in its unit: the open marks, `ordered_amount` (Spec 9.4).
 
     p171: before, an open mark only hid its own suggestion and the amount counted nowhere; a spool
     sort ticked in the group of another reordered sort then made that suggestion come too early.
@@ -156,14 +201,7 @@ def on_way(session: Session) -> dict[tuple[str, int], float]:
     """
     amounts: dict[tuple[str, int], float] = defaultdict(float)
     for mark in session.scalars(select(ReorderMark).where(ReorderMark.received_at.is_(None))):
-        if mark.item_type == "part":
-            part = session.get(Part, mark.item_id)
-            size = part.pack_size if part is not None else 0
-        else:
-            settings = session.get(FilamentSettings, mark.item_id)
-            # without settings a mark counts in the default unit, as "on its way" shows it (open_marks)
-            size = settings.pack_grams if settings is not None else filament.FilamentSettingsInput.pack_grams
-        amounts[(mark.item_type, mark.item_id)] += mark.qty * size
+        amounts[(mark.item_type, mark.item_id)] += ordered_amount(session, mark)
     return dict(amounts)
 
 
@@ -233,26 +271,62 @@ def suggestions(
             )
             if sug is not None:
                 result.append(sug)
+    result += _part_suggestions(session, marked, coming, today)
+    return result
+
+
+def _suppliers_by_part(session: Session) -> dict[int, list[PartSupplier]]:
+    """Each part's suppliers, the default first, then in the order of the form (Spec 9.3)."""
+    found: dict[int, list[PartSupplier]] = defaultdict(list)
+    rows = session.scalars(
+        select(PartSupplier).order_by(PartSupplier.part_id, PartSupplier.is_default.desc(), PartSupplier.position)
+    )
+    for row in rows:
+        found[row.part_id].append(row)
+    return found
+
+
+def _part_suggestions(
+    session: Session, marked: set[tuple[str, int]], coming: Mapping[tuple[str, int], float], today: date
+) -> list[Suggestion]:
+    """Parts: the default supplier decides with its lead time whether a suggestion appears; then
+    every supplier gets its quantity by the same rule with its own lead time, pack size and minimum
+    order, the default first (Spec 9.3)."""
+    result: list[Suggestion] = []
     part_needs = part_demand(session)
     part_history = session.scalar(select(func.min(JournalEntry.booked_at))) is not None
+    suppliers = _suppliers_by_part(session)
     for part in session.scalars(
         select(Part).where(Part.archived_at.is_(None)).order_by(Part.name, Part.id)
     ):
-        if ("part", part.id) in marked:
-            continue
+        rows = suppliers.get(part.id)
+        if ("part", part.id) in marked or not rows:
+            continue  # every part has a supplier (Spec 5.3, migration 0015); without one there is nothing to order
+        default = rows[0]
         per_day = part_consumption(session, part.id, today)
+        safety = rules.reorder_floor(rules.safety_amount(part.safety_value, part.safety_unit, per_day), part.min_stock)
+        stock_now, demand = part.stock, part_needs.get(part.id, 0)
+        have = stock_now + coming.get(("part", part.id), 0.0)  # 0 here, a part with an open mark is skipped
         sug = _suggest(
-            "part", part.id, part.name, part.unit, stock=part.stock,
-            demand=part_needs.get(part.id, 0), per_day=per_day, lead_days=part.lead_time_days,
-            safety=rules.reorder_floor(
-                rules.safety_amount(part.safety_value, part.safety_unit, per_day), part.min_stock
-            ),
-            pack=part.pack_size, min_packs=part.min_order_packs, supplier=part.supplier,
-            order_url=part.order_url, has_history=part_history,
-            coming=coming.get(("part", part.id), 0.0),  # 0 here, a part with an open mark is skipped
+            "part", part.id, part.name, part.unit, stock=stock_now, demand=demand, per_day=per_day,
+            lead_days=default.lead_time_days, safety=safety, pack=default.pack_size,
+            min_packs=default.min_order_packs, supplier=default.name, order_url=default.order_url,
+            has_history=part_history, coming=have - stock_now,
         )
-        if sug is not None:
-            result.append(sug)
+        if sug is None:
+            continue
+        options = tuple(
+            SupplierOption(
+                row.id, row.position, row.name, row.order_url,
+                rules.suggest_packs(
+                    stock=have, demand=demand, per_day=per_day, lead_days=row.lead_time_days,
+                    safety=safety, pack=row.pack_size, min_packs=row.min_order_packs,
+                ),
+                row.pack_size, row.lead_time_days, row.is_default,
+            )
+            for row in rows
+        )
+        result.append(replace(sug, options=options))
     return result
 
 
@@ -301,14 +375,29 @@ def _open_mark_for(session: Session, item_type: str, item_id: int) -> ReorderMar
     )
 
 
-def mark_ordered(session: Session, item_type: str, item_id: int, packs: int) -> ReorderMark:
-    """Mark a part or filament sort as ordered, `packs` in order units. No journal row."""
+def mark_ordered(
+    session: Session, item_type: str, item_id: int, packs: int, supplier_id: int | None = None
+) -> ReorderMark:
+    """Mark a part or filament sort as ordered, `packs` in order units. No journal row.
+
+    A part is marked with one of its suppliers (`None`: the default); the mark keeps that
+    supplier's pack size and name (Spec 9.4). Filament has no suppliers to choose.
+    """
     if isinstance(packs, bool) or not isinstance(packs, int) or not 1 <= packs <= MAX_PACKS:
         raise ValidationError("reorder.invalid_packs")
+    supplier: PartSupplier | None = None
     if item_type == "part":
         part = session.get(Part, item_id)
         known = part is not None and part.archived_at is None
+        if known:
+            supplier = (
+                _default_supplier(session, item_id) if supplier_id is None else session.get(PartSupplier, supplier_id)
+            )
+            if supplier is None or supplier.part_id != item_id:
+                raise NotFoundError("reorder.supplier_not_found")
     elif item_type == "filament":
+        if supplier_id is not None:
+            raise NotFoundError("reorder.supplier_not_found")
         sort = session.get(FilamentSort, item_id)  # a legacy sort of 0006 is no spool sort to order
         known = sort is not None and not sort.legacy and session.get(FilamentSettings, item_id) is not None
     else:
@@ -317,7 +406,11 @@ def mark_ordered(session: Session, item_type: str, item_id: int, packs: int) -> 
         raise NotFoundError("reorder.item_not_found")
     if _open_mark_for(session, item_type, item_id) is not None:
         raise ConflictError("reorder.already_marked")
-    mark = ReorderMark(item_type=item_type, item_id=item_id, qty=packs)
+    mark = ReorderMark(
+        item_type=item_type, item_id=item_id, qty=packs,
+        pack_size=supplier.pack_size if supplier is not None else None,
+        supplier_name=supplier.name if supplier is not None else None,
+    )
     session.add(mark)
     session.flush()
     return mark
@@ -343,6 +436,7 @@ class MarkRow:
     pack_size: float
     unit: str
     marked_at: datetime
+    supplier: str | None = None  # parts: the supplier's name when marked (Spec 9.4)
 
 
 def open_marks(session: Session) -> list[MarkRow]:
@@ -358,14 +452,16 @@ def open_marks(session: Session) -> list[MarkRow]:
             part = session.get(Part, mark.item_id)
             if part.archived_at is not None:
                 continue  # archived parts leave every list (Spec 5.5); the mark stays for a restore (p60)
-            label, size, unit = part.name, part.pack_size, part.unit
+            label, unit = part.name, part.unit
         else:
             sort = session.get(FilamentSort, mark.item_id)
-            settings = session.get(FilamentSettings, mark.item_id)
-            size = settings.pack_grams if settings is not None else filament.FilamentSettingsInput.pack_grams
             label, unit = sort.label, "g"
+        size = ordered_amount(session, mark) / mark.qty
         rows.append(
-            MarkRow(mark.id, mark.item_type, mark.item_id, label, mark.qty, size, unit, mark.marked_at)
+            MarkRow(
+                mark.id, mark.item_type, mark.item_id, label, mark.qty, size, unit, mark.marked_at,
+                mark.supplier_name,
+            )
         )
     return rows
 
