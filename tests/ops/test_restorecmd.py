@@ -554,3 +554,31 @@ def test_the_marks_of_the_log_of_the_replaced_database_are_carried_over(tmp_path
     marker = read_restored_marker(target.parent)
     assert marker["via"] == "cli"
     assert marker["marks"] == {"bambuddy.connection": {"state": "unreachable", "at": "2026-11-08T09:00:00"}}
+
+
+def test_the_marks_of_the_push_messages_of_the_replaced_database_are_carried_over(tmp_path, source, target):
+    """p220: the restore from the command line also leaves the marks of the push messages (`notify_marks`) of the
+    database it replaces for the next start, so an event already reported does not go to the phone again."""
+    from reprintbuddy.activity.writer import read_restored_marker
+
+    con = sqlite3.connect(target)
+    with con:
+        con.execute(
+            "INSERT INTO notify_marks (kind, ref, state, streak, first_seen_at, notified_at)"
+            " VALUES ('print_done', '17', 'sent', 0, '2026-11-08 08:00:00', '2026-11-08 08:01:00')"
+        )
+    con.close()
+    code, said, _ = run(backup_of(source, tmp_path), target)
+    assert code == 0, said.text()
+    marker = read_restored_marker(target.parent)
+    assert marker["notify_marks"] == [
+        {
+            "kind": "print_done",
+            "ref": "17",
+            "state": "sent",
+            "streak": 0,
+            "first_seen_at": "2026-11-08T08:00:00",
+            "notified_at": "2026-11-08T08:01:00",
+            "gone_since": None,
+        }
+    ]

@@ -31,7 +31,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy.activity.kinds import KINDS, Actor, area_of
-from reprintbuddy.models import ActivityEntry, ActivityMark, utcnow
+from reprintbuddy.models import ActivityEntry, ActivityMark, NotifyMark, utcnow
 from reprintbuddy.ops.runner import in_thread
 
 log = logging.getLogger(__name__)
@@ -306,7 +306,8 @@ class ActivityLog:
 
 def read_restored_marker(data_dir: Path) -> dict[str, Any] | None:
     """What a restore left for the next start (and remove it): the date and version of the backup, and
-    the marks of the database it replaced (`marks`, None when there were none to read)."""
+    the marks of the database it replaced: those of the log (`marks`) and those of the push messages
+    (`notify_marks`), each None when there were none to read."""
     path = data_dir / RESTORED_MARKER
     try:
         raw = path.read_text(encoding="utf-8")
@@ -323,9 +324,11 @@ def read_restored_marker(data_dir: Path) -> dict[str, Any] | None:
     if not isinstance(data, dict):
         return None
     marks = data.get("marks")
+    notify_marks = data.get("notify_marks")
     return {
         **{key: data.get(key) for key in ("created_at", "version", "via")},
         "marks": marks if isinstance(marks, dict) else None,
+        "notify_marks": notify_marks if isinstance(notify_marks, list) else None,
     }
 
 
@@ -336,11 +339,14 @@ def write_restored_marker(
     version: str,
     via: str | None,
     marks: dict[str, dict[str, str | None]] | None = None,
+    notify_marks: list[dict[str, Any]] | None = None,
 ) -> None:
     """Left after a restore replaced the database; the next start logs it into the restored one."""
     content: dict[str, Any] = {"created_at": created_at.isoformat(), "version": version, "via": via}
     if marks is not None:
         content["marks"] = marks
+    if notify_marks is not None:
+        content["notify_marks"] = notify_marks
     try:
         (data_dir / RESTORED_MARKER).write_text(json.dumps(content), encoding="utf-8")
     except OSError:
@@ -365,20 +371,95 @@ def _iso(value: object) -> str | None:
         return None
 
 
-def current_marks(db_path: Path) -> dict[str, dict[str, str | None]] | None:
-    """The marks of the log in the database at `db_path`, read only; None when they cannot be read (no
-    database, or one of a version before the log)."""
+def _rows(db_path: Path, query: str) -> list[tuple[Any, ...]] | None:
+    """The rows of `query` in the database at `db_path`, read only; None when they cannot be read."""
     try:
         connection = sqlite3.connect(f"{Path(db_path).resolve().as_uri()}?mode=ro", uri=True, timeout=5)
     except sqlite3.Error:
         return None
     try:
-        rows = connection.execute("SELECT key, state, at FROM activity_marks").fetchall()
+        return connection.execute(query).fetchall()
     except sqlite3.Error:
         return None
     finally:
         connection.close()
+
+
+def current_marks(db_path: Path) -> dict[str, dict[str, str | None]] | None:
+    """The marks of the log in the database at `db_path`, read only; None when they cannot be read (no
+    database, or one of a version before the log)."""
+    rows = _rows(db_path, "SELECT key, state, at FROM activity_marks")
+    if rows is None:
+        return None
     return {str(key): {"state": str(state), "at": _iso(at)} for key, state, at in rows}
+
+
+# p220 (v0.3.15). Root: which events were reported to Home Assistant is kept in the database too
+# (`notify_marks`, Spec 10.6); restored from an older backup, an event reported since (a print done, an
+# article below its minimum) had no mark or one still `due`, and went to the phone once more. Same way as
+# p186: the restore reads the marks of the database it replaces and leaves them in the restore marker; the
+# next start makes them the marks of the restored database, after its migration and before the first tick.
+# The whole table is taken over, `due` and `watch` included: they describe what happened, not the data.
+# Tests: tests/activity/test_activity_ops.py (p220), tests/ops/test_restorecmd.py (push_messages).
+
+_NOTIFY_FIELDS = ("kind", "ref", "state", "streak", "first_seen_at", "notified_at", "gone_since")
+_NOTIFY_MOMENTS = ("first_seen_at", "notified_at", "gone_since")
+
+
+def current_notify_marks(db_path: Path) -> list[dict[str, Any]] | None:
+    """The marks of the push messages in the database at `db_path`, read only; None when they cannot be
+    read (no database, or one of a version before the push messages)."""
+    rows = _rows(db_path, f"SELECT {', '.join(_NOTIFY_FIELDS)} FROM notify_marks ORDER BY id")
+    if rows is None:
+        return None
+    return [
+        {
+            name: (_iso(value) if value is not None else None) if name in _NOTIFY_MOMENTS else value
+            for name, value in zip(_NOTIFY_FIELDS, row, strict=True)
+        }
+        for row in rows
+    ]
+
+
+def _moment(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return _naive(datetime.fromisoformat(value))
+    except ValueError:
+        return None
+
+
+def restore_notify_marks(maker: sessionmaker, marks: list[Any]) -> None:
+    """Make the marks of the push messages of the restored database those of the one it replaced (in one
+    write transaction). A row that does not fit is left out; it would at worst report once more."""
+    try:
+        with maker.begin() as session:
+            session.execute(delete(NotifyMark))
+            seen: set[tuple[str, str]] = set()
+            for mark in marks:
+                if not isinstance(mark, dict):
+                    continue
+                kind, ref, state = mark.get("kind"), mark.get("ref"), mark.get("state")
+                if not (isinstance(kind, str) and isinstance(ref, str) and state in ("watch", "due", "sent")):
+                    continue
+                if (kind, ref) in seen:
+                    continue
+                seen.add((kind, ref))
+                streak = mark.get("streak")
+                session.add(
+                    NotifyMark(
+                        kind=kind,
+                        ref=ref,
+                        state=state,
+                        streak=streak if isinstance(streak, int) and streak >= 0 else 0,
+                        first_seen_at=_moment(mark.get("first_seen_at")) or utcnow(),
+                        notified_at=_moment(mark.get("notified_at")),
+                        gone_since=_moment(mark.get("gone_since")),
+                    )
+                )
+    except Exception as error:  # noqa: BLE001 - the push messages must not stop the start
+        log.warning("push messages: the marks could not be carried over (%s)", type(error).__name__)
 
 
 def restore_marks(maker: sessionmaker, marks: dict[str, Any]) -> None:

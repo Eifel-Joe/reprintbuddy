@@ -177,3 +177,39 @@ def test_an_older_backup_does_not_bring_back_states_the_log_already_has(ops_env)
         kinds = [row.kind for row in s.scalars(select(ActivityEntry).order_by(ActivityEntry.id))]
     assert "bambuddy_connection" not in kinds and "version_found" not in kinds
     assert kinds[-2:] == ["restore_done", "started"]
+
+
+# --- p220 (v0.3.15): the marks of the push messages after restoring an older backup ----------------------------
+
+
+def set_notify_mark(env, kind: str, ref: str, state: str) -> None:
+    from reprintbuddy.models import NotifyMark
+
+    with env.client.app.state.sessionmaker.begin() as s:
+        mark = s.scalar(select(NotifyMark).where(NotifyMark.kind == kind, NotifyMark.ref == ref))
+        if mark is None:
+            s.add(NotifyMark(kind=kind, ref=ref, state=state))
+        else:
+            mark.state = state
+
+
+def test_an_older_backup_does_not_bring_back_push_messages_already_sent(ops_env):
+    """p220. Which events were reported to Home Assistant is kept in the database (`notify_marks`). Restored from
+    an older backup, those marks were the backup's: an event already reported went to the phone once more. The
+    restore now carries the marks of the database it replaces over, as for the log (p186)."""
+    from reprintbuddy.models import NotifyMark
+
+    set_notify_mark(ops_env, "below_min", "4", "due")  # the older backup: not yet sent
+    content = backup_tests.made_backup(ops_env)
+    set_notify_mark(ops_env, "below_min", "4", "sent")  # sent since
+    set_notify_mark(ops_env, "print_done", "17", "sent")  # a print finished and reported after the backup
+    backup_tests.upload(ops_env, content)
+    assert backup_tests.confirm(ops_env).status_code == 200
+    from conftest import make_client
+
+    restarted = make_client(ops_env.db_path)
+    with restarted:
+        pass
+    with restarted.app.state.sessionmaker() as s:
+        marks = {(m.kind, m.ref): m.state for m in s.scalars(select(NotifyMark))}
+    assert marks == {("below_min", "4"): "sent", ("print_done", "17"): "sent"}

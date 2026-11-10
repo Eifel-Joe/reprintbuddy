@@ -31,7 +31,7 @@ from datetime import datetime
 from pathlib import Path
 
 from reprintbuddy import settings as st
-from reprintbuddy.activity.writer import current_marks, write_restored_marker
+from reprintbuddy.activity.writer import current_marks, current_notify_marks, write_restored_marker
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops.backup import _copy, backup_dir_for, connect_existing
 from reprintbuddy.ops.runner import CommandRunner
@@ -307,8 +307,10 @@ def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, 
                 f"Reprintbuddy was started meanwhile ({why}). Stop it first: systemctl stop reprintbuddy.",
             )
         state["touched"] = True
-        marks = current_marks(db_path) if _readable(db_path) else None  # p186: carried over to the next start
-        if _readable(db_path):
+        readable = _readable(db_path)
+        marks = current_marks(db_path) if readable else None  # p186: carried over to the next start
+        notify_marks = current_notify_marks(db_path) if readable else None  # p220: likewise
+        if readable:
             before = fb.replace_database(candidate, db_path, now=now)
         else:
             before = _install_unreadable(candidate, db_path, now)
@@ -326,7 +328,12 @@ def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, 
 
     # The next start logs the restore into the restored database (Spec 10.7, group 4).
     write_restored_marker(
-        db_path.parent, created_at=manifest.created_at, version=manifest.app_version, via="cli", marks=marks
+        db_path.parent,
+        created_at=manifest.created_at,
+        version=manifest.app_version,
+        via="cli",
+        marks=marks,
+        notify_marks=notify_marks,
     )
     say(f"Restored the backup {_say_when(manifest)}.")
     if before is not None:
