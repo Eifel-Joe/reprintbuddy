@@ -31,7 +31,17 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy.activity.kinds import KINDS, Actor, area_of
-from reprintbuddy.models import ActivityEntry, ActivityMark, NotifyMark, utcnow
+from reprintbuddy.models import (
+    ActivityEntry,
+    ActivityMark,
+    Article,
+    Dispatch,
+    FilamentSort,
+    NotifyMark,
+    Part,
+    Setting,
+    utcnow,
+)
 from reprintbuddy.ops.runner import in_thread
 
 log = logging.getLogger(__name__)
@@ -400,7 +410,14 @@ def current_marks(db_path: Path) -> dict[str, dict[str, str | None]] | None:
 # p186: the restore reads the marks of the database it replaces and leaves them in the restore marker; the
 # next start makes them the marks of the restored database, after its migration and before the first tick.
 # The whole table is taken over, `due` and `watch` included: they describe what happened, not the data.
-# Tests: tests/activity/test_activity_ops.py (p220), tests/ops/test_restorecmd.py (push_messages).
+# Two limits (review v0.3.15 D, findings 1 and 2):
+# - Ids are not kept for ever: SQLite hands out max(id)+1, so after an older backup the next print, article
+#   or part gets an id the replaced database had used. A mark of a thing the restored database does not have
+#   would mute that new one (for 30 days for a print); such marks are left out (`_still_there`).
+# - Switched off, the messages keep no marks (`events.forget_all`) and switching on relies on that. The marks
+#   are carried only when the messages are on in both databases; otherwise the restored one keeps its own.
+# Tests: tests/activity/test_activity_ops.py (p220), tests/ops/test_restorecmd.py (push_messages),
+# tests/notify/test_notify_restore_marks.py.
 
 _NOTIFY_FIELDS = ("kind", "ref", "state", "streak", "first_seen_at", "notified_at", "gone_since")
 _NOTIFY_MOMENTS = ("first_seen_at", "notified_at", "gone_since")
@@ -408,7 +425,11 @@ _NOTIFY_MOMENTS = ("first_seen_at", "notified_at", "gone_since")
 
 def current_notify_marks(db_path: Path) -> list[dict[str, Any]] | None:
     """The marks of the push messages in the database at `db_path`, read only; None when they cannot be
-    read (no database, or one of a version before the push messages)."""
+    read (no database, or one of a version before the push messages) or when the messages are switched
+    off there (then it has none, and the restored database keeps its own)."""
+    enabled = _rows(db_path, "SELECT value FROM settings WHERE key = 'ha_enabled'")
+    if not enabled or enabled[0][0] != "true":
+        return None
     rows = _rows(db_path, f"SELECT {', '.join(_NOTIFY_FIELDS)} FROM notify_marks ORDER BY id")
     if rows is None:
         return None
@@ -430,11 +451,35 @@ def _moment(value: object) -> datetime | None:
         return None
 
 
+_PRINT_KINDS = ("print_done", "print_failed")  # notify.events.ONCE_PER_PRINT (that module imports the web)
+
+
+def _still_there(session: Session, kind: str, ref: str) -> bool:
+    """Does the restored database have the thing a mark is about? Warnings and rights are no things."""
+    model: type | None = None
+    if kind in _PRINT_KINDS:
+        model, key = Dispatch, ref
+    elif kind in ("paused", "below_min"):
+        model, key = Article, ref
+    elif kind == "reorder":
+        item_type, _, key = ref.partition(":")
+        model = {"part": Part, "filament": FilamentSort}.get(item_type)
+        if model is None:
+            return False
+    if model is None:
+        return True
+    return key.isdigit() and session.get(model, int(key)) is not None
+
+
 def restore_notify_marks(maker: sessionmaker, marks: list[Any]) -> None:
     """Make the marks of the push messages of the restored database those of the one it replaced (in one
-    write transaction). A row that does not fit is left out; it would at worst report once more."""
+    write transaction), when the messages are on there; marks of things it does not have are left out. A
+    row that does not fit is left out too; it would at worst report once more."""
     try:
         with maker.begin() as session:
+            enabled = session.get(Setting, "ha_enabled")
+            if enabled is None or json.loads(enabled.value) is not True:
+                return  # switched off: no marks, as `forget_all` left them
             session.execute(delete(NotifyMark))
             seen: set[tuple[str, str]] = set()
             for mark in marks:
@@ -443,7 +488,7 @@ def restore_notify_marks(maker: sessionmaker, marks: list[Any]) -> None:
                 kind, ref, state = mark.get("kind"), mark.get("ref"), mark.get("state")
                 if not (isinstance(kind, str) and isinstance(ref, str) and state in ("watch", "due", "sent")):
                     continue
-                if (kind, ref) in seen:
+                if (kind, ref) in seen or not _still_there(session, kind, ref):
                     continue
                 seen.add((kind, ref))
                 streak = mark.get("streak")

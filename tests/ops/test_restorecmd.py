@@ -563,6 +563,7 @@ def test_the_marks_of_the_push_messages_of_the_replaced_database_are_carried_ove
 
     con = sqlite3.connect(target)
     with con:
+        con.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('ha_enabled', 'true')")  # messages on
         con.execute(
             "INSERT INTO notify_marks (kind, ref, state, streak, first_seen_at, notified_at)"
             " VALUES ('print_done', '17', 'sent', 0, '2026-11-08 08:00:00', '2026-11-08 08:01:00')"
@@ -596,6 +597,7 @@ def test_marks_only_in_the_wal_of_a_crashed_service_are_carried_over_too(tmp_pat
     con = sqlite3.connect(target)
     con.execute("PRAGMA wal_autocheckpoint=0")
     with con:
+        con.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('ha_enabled', 'true')")  # messages on
         con.execute(
             "INSERT INTO activity_marks (key, state, at)"
             " VALUES ('bambuddy.connection', 'unreachable', '2026-11-08 09:00:00')"

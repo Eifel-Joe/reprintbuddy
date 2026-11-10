@@ -129,7 +129,7 @@ Die Karte **Wiederherstellen** ersetzt alle Daten durch eine vollständige Siche
 3. Gib das **Passwort der Sicherung** (nur wenn sie verschlüsselt ist) und dein **Anmelde-Passwort** ein und drücke **Wiederherstellen und neu starten**. **Abbrechen** verwirft die Datei. Eine geprüfte Datei wartet eine Stunde.
 4. Reprintbuddy sichert die laufende Datenbank wie vor einem Update, ersetzt sie und startet neu. Änderungen sind gesperrt, bis es wieder da ist.
 
-Danach gelten Benutzername und Passwort **aus der Sicherung**, und alle melden sich neu an. Das [Protokoll](log.md) der Sicherung gilt ebenfalls, mit einer neuen Zeile über die Wiederherstellung (mit Datum und Version der Sicherung); Zeilen, die nach dem Stand der Sicherung entstanden sind, sind nicht mehr zu sehen. Schon verschickte Push-Nachrichten kommen nicht noch einmal, nur weil die Sicherung älter ist. Auch eine abgelehnte oder abgebrochene Wiederherstellung wird protokolliert. Lauschadresse, Port und HTTPS kommen ebenfalls aus der Sicherung; haben sie sich geändert, nennt die Seite die neue Adresse.
+Danach gelten Benutzername und Passwort **aus der Sicherung**, und alle melden sich neu an. Das [Protokoll](log.md) der Sicherung gilt ebenfalls, mit einer neuen Zeile über die Wiederherstellung (mit Datum und Version der Sicherung); Zeilen, die nach dem Stand der Sicherung entstanden sind, sind nicht mehr zu sehen. Schon verschickte Push-Nachrichten kommen nicht noch einmal, nur weil die Sicherung älter ist (siehe [Push-Nachrichten](../use/notifications.md#keine-flut-von-nachrichten)). Auch eine abgelehnte oder abgebrochene Wiederherstellung wird protokolliert. Lauschadresse, Port und HTTPS kommen ebenfalls aus der Sicherung; haben sie sich geändert, nennt die Seite die neue Adresse.
 
 - Eine Sicherung aus einer **älteren** Version wird so eingespielt und beim Start migriert.
 - Eine Sicherung aus einer **neueren** Version wird abgelehnt („Erst aktualisieren, dann wiederherstellen“).
@@ -154,7 +154,7 @@ rm /var/lib/reprintbuddy/restore.zip
 systemctl start reprintbuddy
 ```
 
-Der Befehl fragt nach dem Passwort der Sicherung, wenn sie verschlüsselt ist (nur am Terminal, nie als Argument; drei Versuche). Er lehnt ab, solange Reprintbuddy oder sein Update läuft. Die Datenbank, die vorher da war, sichert er zuerst nach `backups/`, oder als `damaged-<Datum>T<Uhrzeit>Z.db`, falls sie sich nicht lesen ließ, und sagt, was er wiederhergestellt hat. Er läuft als Dienstbenutzer aus dem Ordner `/`, gib also den vollen Pfad an; der Dienstbenutzer muss die Datei lesen können: Kopiere sie wie gezeigt in den Datenordner, mit dem Modus 0600, weil sie deine Schlüssel enthält, wenn sie nicht verschlüsselt ist, und lösche sie danach. Danach melden sich alle neu an.
+Der Befehl fragt nach dem Passwort der Sicherung, wenn sie verschlüsselt ist (nur am Terminal, nie als Argument; drei Versuche). Er lehnt ab, solange Reprintbuddy oder sein Update läuft. Die Datenbank, die vorher da war, sichert er zuerst nach `backups/`, oder als `damaged-<Datum>T<Uhrzeit>Z.db`, falls sie sich nicht lesen ließ, und sagt, was er wiederhergestellt hat. Wie die Oberfläche behält er, was Protokoll und Push-Nachrichten schon gemeldet hatten. Er läuft als Dienstbenutzer aus dem Ordner `/`, gib also den vollen Pfad an; der Dienstbenutzer muss die Datei lesen können: Kopiere sie wie gezeigt in den Datenordner, mit dem Modus 0600, weil sie deine Schlüssel enthält, wenn sie nicht verschlüsselt ist, und lösche sie danach. Danach melden sich alle neu an.
 
 ## Datenbankkopie von Hand wiederherstellen
 

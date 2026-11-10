@@ -129,7 +129,7 @@ The card **Restore** replaces all data with a full backup.
 3. Enter the **Password of the backup** (only if it is encrypted) and your **Sign-in password**, then press **Restore and restart**. **Cancel** drops the file. A checked file waits for one hour.
 4. Reprintbuddy backs up the running database as before an update, replaces it and restarts. Changes are paused until it is back.
 
-Afterwards the user name and password **of the backup** apply, and everybody signs in again. The [Log](log.md) of the backup applies too, with one new line about the restore (with the date and version of the backup); log lines made after the backup was taken are no longer visible. Push messages that were already sent are not sent again just because the backup is older. A refused or cancelled restore is logged as well. Listen address, port and HTTPS come from the backup too; if they changed, the page names the new address.
+Afterwards the user name and password **of the backup** apply, and everybody signs in again. The [Log](log.md) of the backup applies too, with one new line about the restore (with the date and version of the backup); log lines made after the backup was taken are no longer visible. Push messages that were already sent are not sent again just because the backup is older (see [Push messages](../use/notifications.md#no-flood-of-messages)). A refused or cancelled restore is logged as well. Listen address, port and HTTPS come from the backup too; if they changed, the page names the new address.
 
 - A backup from an **older** version is restored as it is and migrated at the start.
 - A backup from a **newer** version is refused ("Update first, then restore").
@@ -154,7 +154,7 @@ rm /var/lib/reprintbuddy/restore.zip
 systemctl start reprintbuddy
 ```
 
-The command asks for the password of the backup if it is encrypted (on the terminal only, never as an argument; three tries). It refuses while Reprintbuddy or its update is running. It saves the database that was there first in `backups/`, or as `damaged-<date>T<time>Z.db` if it could not be read, and says what it restored. It runs as the service user from the folder `/`, so give the full path, and the service user must be able to read the file: copy it to the data folder as shown, with mode 0600 because it holds your keys unless it is encrypted, and delete it afterwards. Everybody signs in again afterwards.
+The command asks for the password of the backup if it is encrypted (on the terminal only, never as an argument; three tries). It refuses while Reprintbuddy or its update is running. It saves the database that was there first in `backups/`, or as `damaged-<date>T<time>Z.db` if it could not be read, and says what it restored. Like the interface, it keeps what the log and the push messages had already reported. It runs as the service user from the folder `/`, so give the full path, and the service user must be able to read the file: copy it to the data folder as shown, with mode 0600 because it holds your keys unless it is encrypted, and delete it afterwards. Everybody signs in again afterwards.
 
 ## Restore a database copy by hand
 
