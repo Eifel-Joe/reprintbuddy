@@ -3,7 +3,7 @@
 
 import re
 
-from conftest import REQUIRED, csrf_of, mock_auth_me
+from conftest import REQUIRED, csrf_of, landed, mock_auth_me
 
 from reprintbuddy.web.i18n import translate
 
@@ -19,7 +19,7 @@ def en(key, **params):
 def _post(client, respx_mock, **me):
     mock_auth_me(respx_mock, **me)
     token = csrf_of(client, CONNECT)
-    return client.post(CONNECT, data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": KEY})
+    return landed(client, client.post(CONNECT, data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": KEY}))
 
 
 def _rights(html):

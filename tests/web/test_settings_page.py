@@ -236,10 +236,10 @@ def test_settings_check_admin_owner_warns(ready_client, respx_mock):
     response = post(ready_client, "/settings/bambuddy", **bambuddy_form())
     assert response.status_code == 303
     assert saved(ready_client, "bambuddy_username") == "boss"
-    page = ready_client.get("/settings")
+    page = ready_client.get("/settings?tab=bambuddy")
     assert "administrator" in page.text and "more than" in page.text
     assert _is_warning(_tag_with(page.text, "The key belongs to an administrator"))  # a warning, not a success
-    assert "administrator" not in ready_client.get("/settings").text  # shown once
+    assert "administrator" not in ready_client.get("/settings?tab=bambuddy").text  # shown once
 
 
 def test_settings_without_a_stored_key_and_no_entry_is_reported(ready_client):

@@ -21,7 +21,7 @@ from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.netcheck import can_bind
 from reprintbuddy.ops.tls import validate_tls_pair
 from reprintbuddy.web import activity_view
-from reprintbuddy.web import labels_view, notify_view
+from reprintbuddy.web import labels_view, notify_view, regions
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bambuddy_check import permission_context, run_check, validate_address, validate_key
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
@@ -29,7 +29,16 @@ from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.routes.auth import password_confirmed
 from reprintbuddy.web.routes.ops import ops_ready, ops_view
-from reprintbuddy.web.deps import get_db, logged_in_user, render, safe_next, start_session, take_verdict
+from reprintbuddy.web.deps import (
+    get_db,
+    logged_in_user,
+    render,
+    safe_next,
+    start_session,
+    store_connection_result,
+    take_connection_result,
+    take_verdict,
+)
 from reprintbuddy.web.forms import run_form_action
 from reprintbuddy.web.formtoken import write_transaction
 
@@ -108,6 +117,10 @@ def _page(
     label_context = labels_view.settings_context(values, str(st.get_setting(db, "language"))) if current_tab == "labels" else {}
     notify_context = notify_view.settings_context(request, db) if current_tab == "notify" else {}
     log_context = activity_view.context(request, db, str(st.get_setting(db, "language"))) if current_tab == "log" else {}
+    # What the good check before the redirect found, once (p191). A refused entry shows its own message and
+    # check instead, another tab leaves it for the Bambuddy tab, and a region fetch (another browser tab, Spec 10.5.3)
+    # uses nothing up.
+    connection_result = take_connection_result(request.session) if current_tab == "bambuddy" and error is None and not regions.requested(request) else None
     return render(
         request,
         "settings.html",
@@ -127,6 +140,7 @@ def _page(
         channel_retry_minutes=NO_RIGHT_DELAY // 60,
         **permission_context(),
         check=check,
+        connection_result=connection_result,
         **label_context,
         **notify_context,
         **log_context,
@@ -217,11 +231,10 @@ async def save_bambuddy(request: Request, db: Session = Depends(get_db)):
     # p97: a new key or new rights must not wait for the live channel's pause (up to 15 minutes).
     request.app.state.live_listener.wake(reconnect=changed)
     take_verdict(request, check)  # a fixed key clears the notice at once
-    # The optional right (Spec 11.3 c, 5.1a): saved either way, the person learns whether uploading works.
-    flash(request, "bambuddy.upload_right_ok" if check.can_upload else "bambuddy.upload_right_missing")
-    flash(request, "bambuddy.live_right_ok" if check.can_live else "bambuddy.live_right_missing")
-    if check.owner_is_admin:
-        return _saved(request, "bambuddy.admin_warning", warning=True, tab=SECTION_TAB["bambuddy"])
+    # p191/p192 (Spec 11.3 c): the result comes with the page the redirect leads to, once, in the block the setup
+    # uses: owner, every required right with a tick, the sentences about uploading (Spec 5.1a) and the live
+    # channel (p170), the note for an administrator's key. No message of its own for any of it.
+    store_connection_result(request.session, check)
     return _saved(request, tab=SECTION_TAB["bambuddy"])
 
 

@@ -426,7 +426,6 @@
   "bambuddy.result.missing": "missing",
   "bambuddy.result.fix": "A missing right of the group \"Reprintbuddy\" is added there; you do not need a new key. If a right is missing at the key itself (e.g. \"Read Status\"), you need a new key, because Bambuddy's interface does not let you change the rights of an existing key.",
   "bambuddy.admin_note": "The key belongs to an administrator and may do more than Reprintbuddy needs. It is safer to use the user \"reprintbuddy\" from the guide.",
-  "bambuddy.admin_warning": "Saved. The key belongs to an administrator and may do more than Reprintbuddy needs. It is safer to use the user \"reprintbuddy\" from the guide.",
   "settings.bambuddy_owner": "Saved key owner: {owner}",
   "ops.restart.title": "Restart",
   "ops.restart.button": "Restart Reprintbuddy",

@@ -2,7 +2,7 @@
 
 import re
 
-from conftest import REQUIRED, csrf_of, mock_auth_me
+from conftest import REQUIRED, csrf_of, landed, mock_auth_me
 
 from reprintbuddy.web.i18n import translate
 
@@ -33,7 +33,7 @@ def test_setup_lists_the_upload_right_as_recommended_not_required(admin_client):
 def _connect(client, respx_mock, permissions):
     mock_auth_me(respx_mock, permissions=permissions)
     token = csrf_of(client, CONNECT)
-    return client.post(CONNECT, data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": KEY})
+    return landed(client, client.post(CONNECT, data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": KEY}))
 
 
 def test_a_failed_check_shows_the_upload_right_apart(admin_client, respx_mock):

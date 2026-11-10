@@ -17,8 +17,8 @@ BACKSLASH, CR, LF, TAB, NUL = chr(92), chr(13), chr(10), chr(9), chr(0)
 def connect(client, respx_mock, **me):
     mock_auth_me(respx_mock, **me)
     token = csrf_of(client, CONNECT)
-    # p179: a good check ends on the page that shows the result; "Continue" leads where the redirect led before.
-    return landed(client.post(CONNECT, data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": KEY}))
+    # p179, p192: a good check redirects to the page that shows the result; "Continue" leads where the redirect led before.
+    return landed(client, client.post(CONNECT, data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": KEY}))
 
 
 def walk_setup(client):

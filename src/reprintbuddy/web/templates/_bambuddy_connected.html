@@ -1,0 +1,7 @@
+{# What a good check found, once, after the redirect (p191, p192; Spec 11.3 c): the owner, every required right with
+   a tick, one sentence each about uploading (Spec 5.1a) and the live channel (p170), the note for an administrator's
+   key. The one block of set-up step 4 and of Settings -> Bambuddy. Needs `check` and the permission context. #}
+{% with show_optional=False, guide_link=True %}{% include "_bambuddy_result.html" %}{% endwith %}
+<p class="status">{{ t('bambuddy.upload_right_ok' if check.can_upload else 'bambuddy.upload_right_missing') }}</p>
+<p class="status">{{ t('bambuddy.live_right_ok' if check.can_live else 'bambuddy.live_right_missing') }}</p>
+{% if check.owner_is_admin %}<p class="alert" role="alert">{{ t('bambuddy.admin_note') }}</p>{% endif %}

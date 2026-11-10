@@ -75,11 +75,14 @@ def auth_me(username="reprintbuddy", permissions=REQUIRED, groups=("Reprintbuddy
     return body
 
 
-def landed(response):
-    """What a good check in set-up step 4 leads to (p179): the page that shows the result has a link
-    "Continue", and where it leads is what the redirect said before. Anything else comes back as it is."""
+def landed(client, response):
+    """What a good check in set-up step 4 leads to (p179, p192): the POST redirects to the page that shows the
+    result once; that page has a link "Continue", and where it leads is what the redirect said before.
+    Anything else (a failed check, an error) comes back as it is."""
     from types import SimpleNamespace
 
+    if response.status_code == 303 and response.headers["location"] == "/setup/bambuddy/done":
+        response = client.get(response.headers["location"])
     if response.status_code != 200:
         return response
     found = re.search(r'<a class="btn" href="([^"]+)"[^>]*>\s*Continue\s*</a>', response.text)
