@@ -1257,6 +1257,7 @@
   "activity.field.lead_time_days": "Lieferzeit",
   "activity.field.safety": "Sicherheitspolster",
   "activity.field.supplier": "Lieferant",
+  "activity.field.suppliers": "Lieferanten",
   "activity.field.order_url": "Bestell-Link",
   "activity.field.positions": "Positionen",
   "settings.tab.log": "Protokoll",

@@ -46,6 +46,7 @@ from reprintbuddy.models import (
     Order,
     OrderLine,
     Part,
+    PartSupplier,
     ProductSet,
     ReorderMark,
     SetPosition,
@@ -71,6 +72,7 @@ _KIND: dict[type, str] = {
     ArticleFilamentSort: "article",
     ArticlePart: "article",
     Part: "part",
+    PartSupplier: "part",
     ProductSet: "set",
     SetPosition: "set",
     SetPositionOption: "set",
@@ -112,13 +114,8 @@ SETTINGS_COLUMNS: dict[type, frozenset[str]] = {
             "name",
             "unit",
             "min_stock",
-            "pack_size",
-            "min_order_packs",
-            "lead_time_days",
             "safety_value",
             "safety_unit",
-            "supplier",
-            "order_url",
             "archived_at",
         }
     ),
@@ -147,6 +144,9 @@ def topics_of(obj: object, change: Change) -> set[str]:
         if _settings_changed(obj, change):
             topics.add(f"{kind}-settings:{obj.id}")
         return topics
+    if cls is PartSupplier:
+        # The suppliers are part of the part's form (Spec 5.3).
+        return {"part", f"part:{obj.part_id}", f"part-settings:{obj.part_id}"}
     if cls in (ArticleFilament, ArticlePart):
         return {"article", f"article:{obj.article_id}", f"article-settings:{obj.article_id}"}
     if cls is ArticleFilamentSort:

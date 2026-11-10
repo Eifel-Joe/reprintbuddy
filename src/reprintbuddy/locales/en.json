@@ -1257,6 +1257,7 @@
   "activity.field.lead_time_days": "lead time",
   "activity.field.safety": "safety margin",
   "activity.field.supplier": "supplier",
+  "activity.field.suppliers": "suppliers",
   "activity.field.order_url": "order link",
   "activity.field.positions": "positions",
   "settings.tab.log": "Log",
