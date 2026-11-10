@@ -359,7 +359,7 @@ def test_count_matches_the_page_when_nothing_is_known(db):
 
 def test_count_closes_a_received_part_mark_first(db):
     with db.begin() as s:
-        part = part_with_demand(s)
+        part = part_with_demand(s, pack_size=1)  # 1 ordered: one receipt of 1 is the whole order (p211)
         mark = reorder.mark_ordered(s, "part", part.id, 1)
         mark.marked_at -= timedelta(seconds=1)  # the clock may not advance between the two
         s.flush()
@@ -583,3 +583,82 @@ def test_part_consumption_counts_by_the_booking_date(db):
         s.flush()
         # the oldest row is booked 40 days back: 30 days of history; the 99 outside the window do not count
         assert reorder.part_consumption(s, part.id, TODAY) == 1.0  # 30 over 30 days; by `at` it would be 129 / 1
+
+
+# ---- p211: what has arrived no longer counts as on its way (Spec 9.4) ---------------------------
+
+
+def test_new_spools_of_a_partial_delivery_are_taken_off_on_its_way(db):
+    fake = FakeBambuddy()
+    with db.begin() as s:
+        sort = filament_setup(s)
+        mark = reorder.mark_ordered(s, "filament", sort.id, 3)  # 3000 g ordered
+        after = mark.marked_at + timedelta(hours=1)
+        spools = [
+            fake.add_spool("PLA", brand="Brand A", created_at=mark.marked_at - timedelta(days=1)),
+            fake.add_spool("PLA", brand="Brand A", created_at=after, remaining_g=400.0),  # used: still arrived
+            fake.add_spool("PLA", brand="Brand A", created_at=after),
+        ]
+        filament.sync_sorts(s, spools)
+        assert reorder.close_arrived_marks(s, spools, NOW) == 0
+        assert reorder.on_way(s, spools) == {("filament", sort.id): 1000.0}
+        (row,) = reorder.open_marks(s, spools)
+        assert row.arrived == 2000.0
+
+
+def test_a_partial_delivery_counts_from_the_record_without_bambuddy(db):
+    with db.begin() as s:
+        sort = filament_setup(s)
+        mark = reorder.mark_ordered(s, "filament", sort.id, 3)
+        make_snapshot(s, TODAY, 1, sort.id, 900.0, spool_created_at=mark.marked_at + timedelta(hours=1))
+        make_snapshot(s, TODAY, 2, sort.id, 900.0, spool_created_at=mark.marked_at - timedelta(days=2))
+        make_snapshot(s, TODAY - timedelta(days=1), 3, sort.id, 900.0,
+                      spool_created_at=mark.marked_at + timedelta(hours=1))  # an older day does not count
+        assert reorder.on_way(s, None) == {("filament", sort.id): 2000.0}
+
+
+def test_on_its_way_never_goes_below_zero(db):
+    fake = FakeBambuddy()
+    with db.begin() as s:
+        sort = filament_setup(s)
+        mark = reorder.mark_ordered(s, "filament", sort.id, 1)
+        big = fake.add_spool("PLA", brand="Brand A", created_at=mark.marked_at + timedelta(hours=1), label_g=5000)
+        filament.sync_sorts(s, [big])
+        assert reorder.on_way(s, [big]).get(("filament", sort.id), 0.0) == 0.0
+
+
+def test_suggestion_counts_only_the_rest_on_its_way(db):
+    """End to end over `current`: 2 of 3 rolls of B arrived, only 1000 g of B is still on its way."""
+    fake = FakeBambuddy()
+    with db.begin() as s:
+        a = filament_setup(s, safety_value=4500)
+        b = filament_setup(s, make_sort(s, brand="Brand B"))
+        with_demand(s, a, b, name="One")
+        mark = reorder.mark_ordered(s, "filament", b.id, 3)
+        after = mark.marked_at + timedelta(hours=1)
+        spools = [
+            fake.add_spool("PLA", brand="Brand A", remaining_g=300.0),
+            fake.add_spool("PLA", brand="Brand B", created_at=after),
+            fake.add_spool("PLA", brand="Brand B", created_at=after),
+        ]
+        filament.sync_sorts(s, spools)
+        # the group of A: stock 300 + 2000; with all 3000 g on its way 5300 - 170 >= 4500 hid it
+        (sug,) = reorder.current(s, spools, NOW).suggestions
+        assert (sug.item_id, sug.stock, sug.on_way, sug.packs) == (a.id, 2300.0, 1000.0, 2)
+
+
+def test_a_part_mark_stays_open_until_the_ordered_amount_is_in(db):
+    """Sister path: a first receipt of 20 of 50 no longer closes the mark; 30 stay on their way."""
+    with db.begin() as s:
+        part = part_with_demand(s)
+        mark = reorder.mark_ordered(s, "part", part.id, 1)  # 50
+        mark.marked_at -= timedelta(seconds=1)
+        s.flush()
+        stock.receive_part(s, part.id, 20, "user")
+        assert reorder.close_arrived_marks(s, None, NOW) == 0
+        assert reorder.on_way(s, None) == {("part", part.id): 30.0}
+        (row,) = reorder.open_marks(s)
+        assert row.arrived == 20
+        stock.receive_part(s, part.id, 30, "user")
+        assert reorder.close_arrived_marks(s, None, NOW) == 1
+        assert reorder.on_way(s, None) == {}

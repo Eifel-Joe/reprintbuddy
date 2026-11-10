@@ -23,6 +23,7 @@ from reprintbuddy.models import (
     ArticleFilament,
     ArticlePart,
     FilamentSettings,
+    FilamentSnapshot,
     FilamentSort,
     JournalEntry,
     Part,
@@ -145,26 +146,86 @@ class Suggestion:
     on_way: float = 0.0  # ordered and not arrived yet (Spec 9.4, p171); counts like stock, shown apart
 
 
-def on_way(session: Session) -> dict[tuple[str, int], float]:
-    """What counts as on its way per item, in its unit: the open marks, packs x pack size (Spec 9.4).
+def _ordered(session: Session, mark: ReorderMark) -> float:
+    """What a mark ordered, in the item's unit: packs x pack size (Spec 9.4)."""
+    if mark.item_type == "part":
+        part = session.get(Part, mark.item_id)
+        size = part.pack_size if part is not None else 0
+    else:
+        settings = session.get(FilamentSettings, mark.item_id)
+        # without settings a mark counts in the default unit, as "on its way" shows it (open_marks)
+        size = settings.pack_grams if settings is not None else filament.FilamentSettingsInput.pack_grams
+    return mark.qty * size
 
-    p171: before, an open mark only hid its own suggestion and the amount counted nowhere; a spool
-    sort ticked in the group of another reordered sort then made that suggestion come too early.
-    The amount counts in full until the mark closes: Spec 9.4 says the ordered amount counts until it
-    has arrived; a partial delivery is not taken off (rejected: subtracting new spools seen so far,
-    which the spec does not ask for and which the snapshot path could not do the same way).
+
+@dataclass(frozen=True)
+class _NewSpool:
+    sort_id: int | None
+    label_g: float
+    created_at: datetime | None
+
+
+def _spools_seen(session: Session, spools: Sequence[Spool] | None) -> list[_NewSpool]:
+    """The non-archived spools Reprintbuddy knows: Bambuddy's list, without it the latest record.
+
+    Filament is never booked in Reprintbuddy; Bambuddy keeps it, Reprintbuddy only reads the spool
+    list (Spec 9.1, 9.4). The record keeps sort, nominal weight and creation time of each spool.
     """
-    amounts: dict[tuple[str, int], float] = defaultdict(float)
+    if spools is not None:
+        live = [s for s in spools if not s.archived]
+        sort_of = filament.resolve_sorts(session, live)
+        return [_NewSpool(sort_of[s.id], s.label_g, s.created_at) for s in live]
+    latest = session.scalar(select(func.max(FilamentSnapshot.day)))
+    if latest is None:
+        return []
+    rows = session.scalars(select(FilamentSnapshot).where(FilamentSnapshot.day == latest))
+    return [_NewSpool(r.spool_filament_id, r.label_g, r.spool_created_at) for r in rows]
+
+
+def _part_receipts(session: Session, mark: ReorderMark) -> list[tuple[datetime, int]]:
+    """Receipts of the part entered after the mark, oldest first: (saved at, quantity)."""
+    rows = session.execute(
+        select(JournalEntry.at, JournalEntry.qty)
+        .where(
+            JournalEntry.kind == "part_receipt",
+            JournalEntry.part_id == mark.item_id,
+            JournalEntry.at > mark.marked_at,
+        )
+        .order_by(JournalEntry.at, JournalEntry.id)
+    )
+    return [(at, qty) for at, qty in rows]
+
+
+def _arrived(session: Session, mark: ReorderMark, seen: Sequence[_NewSpool]) -> float:
+    """What of a mark has arrived, in the item's unit (Spec 9.4, p211): for a part the receipts
+    after the mark, for filament the nominal weight of new spools of the sort (created after the
+    mark; a new roll already in use has arrived all the same)."""
+    if mark.item_type == "part":
+        return float(sum(qty for _at, qty in _part_receipts(session, mark)))
+    return float(sum(
+        s.label_g
+        for s in seen
+        if s.sort_id == mark.item_id and s.created_at is not None and _naive_utc(s.created_at) > mark.marked_at
+    ))
+
+
+def on_way(session: Session, spools: Sequence[Spool] | None = None) -> dict[tuple[str, int], float]:
+    """What counts as on its way per item, in its unit: per open mark the ordered amount less what
+    has arrived of it (Spec 9.4). `spools`: Bambuddy's list; None takes the latest record.
+
+    p171: an open mark counts, also in the group of another reordered sort. p211: before, the full
+    amount counted until the mark closed, so of 3 rolls ordered 2 arrived ones counted twice (in
+    the stock and on its way) and a suggestion came late; a part mark closed with the first
+    receipt, so the rest counted nowhere and a suggestion came early. Now what arrived is taken off.
+    """
+    seen = _spools_seen(session, spools)
+    amounts: dict[tuple[str, int], float] = {}
     for mark in session.scalars(select(ReorderMark).where(ReorderMark.received_at.is_(None))):
-        if mark.item_type == "part":
-            part = session.get(Part, mark.item_id)
-            size = part.pack_size if part is not None else 0
-        else:
-            settings = session.get(FilamentSettings, mark.item_id)
-            # without settings a mark counts in the default unit, as "on its way" shows it (open_marks)
-            size = settings.pack_grams if settings is not None else filament.FilamentSettingsInput.pack_grams
-        amounts[(mark.item_type, mark.item_id)] += mark.qty * size
-    return dict(amounts)
+        rest = max(0.0, _ordered(session, mark) - _arrived(session, mark, seen))
+        if rest > 0:
+            key = (mark.item_type, mark.item_id)
+            amounts[key] = amounts.get(key, 0.0) + rest
+    return amounts
 
 
 def _open_marked(session: Session) -> set[tuple[str, int]]:
@@ -195,7 +256,8 @@ def _suggest(
 
 
 def suggestions(
-    session: Session, *, sorts: Mapping[int, filament.SortStock] | None, today: date
+    session: Session, *, sorts: Mapping[int, filament.SortStock] | None, today: date,
+    spools: Sequence[Spool] | None = None,
 ) -> list[Suggestion]:
     """Reorder suggestions: reordered spool sorts with settings (only when the stock is known, i.e.
     `sorts` is not None), then every active part. Items with an open mark have none (Entscheidung 14);
@@ -203,10 +265,10 @@ def suggestions(
 
     A reordered spool sort counts, over the slots where it is reordered, the stock and the usage of
     every spool sort ticked there (Spec 9.2); a sort ticked in the slots of two reordered sorts
-    counts for both.
+    counts for both. `spools` tells what of an order has arrived (p211); None: the latest record.
     """
     marked = _open_marked(session)
-    coming = on_way(session)
+    coming = on_way(session, spools)
     result: list[Suggestion] = []
     if sorts is not None:
         demand = filament_demand(session)
@@ -270,7 +332,7 @@ def current(session: Session, spools: Sequence[Spool] | None, now: datetime) -> 
     It writes (new sorts, closed marks): call it in a write transaction."""
     sorts, day = filament.known_sorts(session, spools)
     close_arrived_marks(session, spools, now)
-    return Current(sorts, day, suggestions(session, sorts=sorts, today=now.date()))
+    return Current(sorts, day, suggestions(session, sorts=sorts, today=now.date(), spools=spools))
 
 
 def count_suggestions(
@@ -343,10 +405,13 @@ class MarkRow:
     pack_size: float
     unit: str
     marked_at: datetime
+    arrived: float = 0.0  # what of it has arrived so far (p211), in `unit`
 
 
-def open_marks(session: Session) -> list[MarkRow]:
-    """The open marks (on its way), oldest first; those of archived parts are left out."""
+def open_marks(session: Session, spools: Sequence[Spool] | None = None) -> list[MarkRow]:
+    """The open marks (on its way), oldest first; those of archived parts are left out.
+    `spools`: Bambuddy's list for what has arrived; None takes the latest record."""
+    seen = _spools_seen(session, spools)
     rows: list[MarkRow] = []
     marks = session.scalars(
         select(ReorderMark)
@@ -365,7 +430,10 @@ def open_marks(session: Session) -> list[MarkRow]:
             size = settings.pack_grams if settings is not None else filament.FilamentSettingsInput.pack_grams
             label, unit = sort.label, "g"
         rows.append(
-            MarkRow(mark.id, mark.item_type, mark.item_id, label, mark.qty, size, unit, mark.marked_at)
+            MarkRow(
+                mark.id, mark.item_type, mark.item_id, label, mark.qty, size, unit, mark.marked_at,
+                _arrived(session, mark, seen),
+            )
         )
     return rows
 
@@ -379,9 +447,10 @@ def _naive_utc(value: datetime) -> datetime:
 def close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: datetime) -> int:
     """Close open marks whose goods have arrived; returns how many (Entscheidung 14).
 
-    A part mark closes with the first `part_receipt` row after the mark. A filament mark closes
-    only with a spool list: new spools of the sort (created after the mark, not archived, with a
-    creation time) must add up to at least `qty x pack_grams` of net weight.
+    A part mark closes when the `part_receipt` rows after the mark reach the ordered amount (p211;
+    before, the first receipt closed it). A filament mark closes only with a spool list: new spools
+    of the sort (created after the mark, not archived, with a creation time) must add up to at
+    least `qty x pack_grams` of net weight.
     """
     # Reprintbuddy closes them by its rule, also when a page asks (Spec 9.4, 10.7: "Automatik").
     with acting(session, "auto"):
@@ -390,33 +459,21 @@ def close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: d
 
 def _close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: datetime) -> int:
     closed = 0
-    live = None if spools is None else [s for s in spools if not s.archived]
-    sort_of = {} if live is None else filament.resolve_sorts(session, live)
+    seen = None if spools is None else _spools_seen(session, spools)
     for mark in session.scalars(select(ReorderMark).where(ReorderMark.received_at.is_(None))).all():
         if mark.item_type == "part":
-            arrived = session.scalar(
-                select(func.min(JournalEntry.at)).where(
-                    JournalEntry.kind == "part_receipt",
-                    JournalEntry.part_id == mark.item_id,
-                    JournalEntry.at > mark.marked_at,
-                )
-            )
-            if arrived is not None:
-                mark.received_at = arrived
-                closed += 1
-        elif live is not None:
-            settings = session.get(FilamentSettings, mark.item_id)
-            sort = session.get(FilamentSort, mark.item_id)
-            if settings is None or sort is None:
+            # p211: the mark closes when the receipts reach the ordered amount, at the one that did
+            ordered, total = _ordered(session, mark), 0
+            for at, qty in _part_receipts(session, mark):
+                total += qty
+                if total >= ordered:
+                    mark.received_at = at
+                    closed += 1
+                    break
+        elif seen is not None:
+            if session.get(FilamentSettings, mark.item_id) is None or session.get(FilamentSort, mark.item_id) is None:
                 continue
-            grams = sum(
-                s.label_g
-                for s in live
-                if s.created_at is not None
-                and _naive_utc(s.created_at) > mark.marked_at
-                and sort_of[s.id] == sort.id
-            )
-            if grams >= mark.qty * settings.pack_grams:
+            if _arrived(session, mark, seen) >= _ordered(session, mark):
                 mark.received_at = now
                 closed += 1
     session.flush()

@@ -748,6 +748,7 @@
   "reorder.mark": "als bestellt markieren",
   "reorder.open_link": "Öffnen",
   "reorder.under_way": "Unterwegs",
+  "reorder.arrived_so_far": "davon eingetroffen {amount} {unit}",
   "reorder.col.ordered": "Bestellt am",
   "reorder.received": "eingetroffen",
   "reorder.marked": "{item} als bestellt markiert.",

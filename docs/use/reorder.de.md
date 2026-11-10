@@ -59,10 +59,12 @@ Wenn du bestellt hast:
 1. Prüfe die Zahl bei **Bestelleinheiten**. Sie ist mit der vorgeschlagenen Menge vorbelegt; du kannst 1 bis 1000 eintragen.
 2. Klicke auf **als bestellt markieren**.
 
-Der Posten wandert in die Liste **Unterwegs**, mit der Menge und dem Datum unter **Bestellt am**. Bis er eingetroffen ist, macht Reprintbuddy dafür keinen neuen Vorschlag. So lange zählt die bestellte Menge als unterwegs: Sie zählt wie Bestand überall, wo der Posten zählt, bei Filament auch im Vorschlag einer anderen Spulensorte, in deren Slots er angekreuzt ist. Eine solche Kachel zeigt die Zeile **Unterwegs**. Der Vorschlag endet von selbst, wenn die Ware auftaucht:
+Der Posten wandert in die Liste **Unterwegs**, mit der Menge und dem Datum unter **Bestellt am**. Bis er eingetroffen ist, macht Reprintbuddy dafür keinen neuen Vorschlag. So lange zählt die bestellte Menge, abzüglich dessen, was davon schon eingetroffen ist, als unterwegs: Sie zählt wie Bestand überall, wo der Posten zählt, bei Filament auch im Vorschlag einer anderen Spulensorte, in deren Slots er angekreuzt ist. Eine solche Kachel zeigt die Zeile **Unterwegs**. Als eingetroffen zählt:
 
-- Bei einem Zukaufteil mit der ersten Buchung **Zukaufteil-Eingang** nach deiner Markierung. Den Eingang buchst du auf der Seite Buchen, siehe [Zu prüfen und Montage](inspection.md#buchen).
-- Bei Filament, sobald Bambuddys Spulenliste neue Spulen dieser Sorte zeigt, die nach deiner Markierung angelegt wurden und zusammen mindestens die bestellte Menge wiegen.
+- Bei einem Zukaufteil die Buchungen **Zukaufteil-Eingang** nach deiner Markierung. Den Eingang buchst du auf der Seite Buchen, siehe [Zu prüfen und Montage](inspection.md#buchen).
+- Bei Filament die Nennmenge neuer Spulen dieser Sorte in Bambuddys Spulenliste, die nach deiner Markierung angelegt wurden (eine schon angebrochene neue Rolle zählt voll). Filament buchst du nie in Reprintbuddy ein: Bambuddy führt es, Reprintbuddy liest nur die Spulenliste. Ist Bambuddy nicht erreichbar, nimmt Reprintbuddy die zuletzt aufgezeichnete Liste.
+
+Eine Teillieferung zeigt die Liste **Unterwegs** mit **davon eingetroffen …**, und nur der Rest zählt als unterwegs. Der Vorschlag endet von selbst, sobald das Eingetroffene die bestellte Menge erreicht.
 
 Du kannst in der Liste auch selbst auf **eingetroffen** klicken, zum Beispiel bei einer Lieferung, die du nicht buchst.
 
