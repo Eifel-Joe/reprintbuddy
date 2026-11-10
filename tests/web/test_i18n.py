@@ -169,17 +169,23 @@ def test_german_restart_hint_is_in_german():
 # a full stop, a colon, a quotation mark, a list or heading mark or the start of the text comes before it
 # ("Sie enthält keinen G-Code."): that is not found. "Ihr...", "Ihnen" are found in every place; a
 # sentence that starts with a third-person "Ihr..." (her/their) would trip the check and goes into
-# `_NOT_POLITE`. The pattern does not look across a line break (a wrapped sentence start has a full stop
+# `_NOT_POLITE` (a longer snippet of the text, so the exception holds for that place only). The pattern does not look across a line break (a wrapped sentence start has a full stop
 # before it, a wrapped middle is not caught).
 _POLITE_SIE = re.compile(
     r"(?<=[A-Za-zäöüÄÖÜß,;]) Sie\b(?!-)"  # one word or a comma before it, on the same line
     r"|\bIhr(?:e|en|em|er|es)?\b|\bIhnen\b"
 )
-_NOT_POLITE: set[str] = set()  # none today; add the exact hit here when a third-person text trips the check
+_NOT_POLITE: set[str] = set()  # none today; add the snippet of the text (with its surroundings) here when a third-person text trips the check
 
 
 def _polite_hits(text):
-    return [m.group(0) for m in _POLITE_SIE.finditer(text) if m.group(0) not in _NOT_POLITE]
+    """The hits of the pattern; one that lies inside a snippet of `_NOT_POLITE` is a third person."""
+    hits = []
+    for m in _POLITE_SIE.finditer(text):
+        around = text[max(0, m.start() - 40):m.end() + 40]
+        if not any(snippet in around for snippet in _NOT_POLITE):
+            hits.append(m.group(0).strip())
+    return hits
 
 
 def test_german_texts_have_no_polite_sie_form():
@@ -236,3 +242,9 @@ def test_the_polite_form_is_found(text):
 )
 def test_the_third_person_is_not_taken_for_the_polite_form(text):
     assert not _polite_hits(text), text
+
+
+def test_a_snippet_in_not_polite_excuses_only_its_own_place(monkeypatch):
+    monkeypatch.setitem(globals(), "_NOT_POLITE", {"Ihre Zukaufteile werden"})
+    assert not _polite_hits("Artikel ohne Handarbeit. Ihre Zukaufteile werden abgezogen.")
+    assert _polite_hits("Ihre Daten bleiben hier.")

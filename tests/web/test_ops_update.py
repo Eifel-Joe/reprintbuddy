@@ -258,7 +258,7 @@ def test_the_reason_of_a_failed_update_is_in_the_language_of_the_page(ops_env, l
         ("de", "Die Versionen konnten nicht geholt werden"),
     ],
 )
-@pytest.mark.parametrize("detail", ["", "  "])
+@pytest.mark.parametrize("detail", ["", "  ", "\n"])
 def test_an_empty_technical_line_leaves_no_colon_at_the_end_of_the_reason(ops_env, lang, expected, detail):  # p200
     """The texts end in ": {detail}"; without a technical line the card ended on a lone colon."""
     git_env(ops_env)

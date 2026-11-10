@@ -54,7 +54,7 @@
   <div class="{% if ops.update.state in ('failed', 'rolled_back', 'rollback_failed') or ops.interrupted or ops.not_started or ops.unrecorded %}alert{% else %}notice{% endif %}" role="status">
     <strong>{{ t(ops.state_key, **ops.state_params) }}</strong>
     {% if ops.step_key %}<br>{{ t(ops.step_key) }}{% endif %}
-    {% if ops.reason_key %}<br>{% set reason_text = t(ops.reason_key, **ops.reason_params) %}{{ reason_text|trim(': ') if ops.reason_open_end else reason_text }}
+    {% if ops.reason_key %}<br>{% set reason_text = t(ops.reason_key, **ops.reason_params) %}{{ reason_text|trim(': \t\r\n') if ops.reason_open_end else reason_text }}
     {% elif ops.update.message %}<br>{{ ops.update.message }}{% endif %}
     {% if ops.update.backup %}<br><span class="hint">{{ t('ops.update.backup_line', path=ops.update.backup) }}</span>{% endif %}
     {% if ops.state_key == 'ops.update.state.not_started_check' %}
