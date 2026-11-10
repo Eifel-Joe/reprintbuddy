@@ -176,7 +176,9 @@ def test_german_restart_hint_is_in_german():
 # only named, closed again right behind it ("(Sie)", "„Sie“", "**Sie**"), is not an address. "Ihrerseits",
 # "Ihretwegen", "Ihretwillen" and "Ihrethalben" belong to the "Ihr..." words.
 _POLITE_SIE = re.compile(
-    r"(?<=[A-Za-zäöüÄÖÜß,;]) [(\[{\"'„“‚‘»«*_]*Sie\b(?![-\"'“”‘’«»)\]}*_])"  # one word or a comma before it, same line
+    r"(?<=[A-Za-zäöüÄÖÜß,;]) Sie\b(?!-)"  # one word or a comma before it, on the same line
+    # behind opening marks only a "Sie" that is closed again right behind it is a mention (review of p251)
+    r"|(?<=[A-Za-zäöüÄÖÜß,;]) [(\[{\"'„“‚‘»«*_]+Sie\b(?![-\"'“”‘’«»)\]}*_])"
     r"|\bIhr(?:e|en|em|er|es|erseits|etwegen|etwillen|ethalben)?\b|\bIhnen\b"
 )
 _NOT_POLITE: set[str] = set()  # none today; add the snippet of the text (with its surroundings) here when a third-person text trips the check
@@ -232,6 +234,15 @@ def test_german_docs_and_readme_have_no_polite_sie_form():
         "Das liegt Ihrerseits vor.",
         "Ihretwegen ist es fertig.",
         "Um Ihretwillen bleibt es so.",
+        # review of p251: a closer behind the address ("klicken Sie)") is no mention; only a "Sie" that
+        # an opener leads in and a closer follows at once is one.
+        "(dann klicken Sie) weiter",
+        "Dann klicken Sie)",
+        "Bitte speichern Sie“",
+        "**Speichern Sie**",
+        "'Speichern Sie'",
+        "»Speichern Sie«",
+        "Klicken Sie]",
     ],
 )
 def test_the_polite_form_is_found(text):

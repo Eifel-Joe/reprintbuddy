@@ -156,8 +156,10 @@ def foreign_ahead(rows: Sequence[tuple[QueueItem, bool]]) -> bool:
 
     `rows` are the queue entries with the answer "own" (Spec 7.6: an id Reprintbuddy knows, or the
     user of the key). A foreign print runs now, or it waits and no own waiting entry lies behind it
-    (with no own entry waiting at all, every foreign waiting print counts: the next own print goes
-    behind it). A foreign waiting print behind every own one does not (v0.3.16 p65).
+    (with no own entry waiting at all, every foreign waiting print counts: an own print handed over
+    now goes behind it, unless "insert next" puts it on top, see `next_insert_position`; the hint is
+    then too careful, never too quiet). A foreign waiting print behind every own one does not
+    (v0.3.16 p65). Positions of all printers are compared alike, as `next_insert_position` does.
     """
     waiting_own = [item for item, own in rows if own and item.status == "pending"]
     last_own = max((i.position for i in waiting_own if i.position is not None), default=None)
