@@ -32,6 +32,8 @@ def journal_rows(db: Session, entries: Sequence[JournalEntry]) -> list[dict[str,
         for field, pair in ((entry.details or {}).get("changes") or {}).items():
             if field in CHANGE_LABELS and isinstance(pair, list) and len(pair) == 2:
                 changes.append({"label": CHANGE_LABELS[field], "before": pair[0], "after": pair[1]})
+        # an inventory dated back: the value of the booking day, before and after the count (p210)
+        then = (entry.details or {}).get("then") if entry.kind == "inventory" else None
         rows.append(
             {
                 "at": entry.booked_at,  # when it counts (p172)
@@ -46,6 +48,7 @@ def journal_rows(db: Session, entries: Sequence[JournalEntry]) -> list[dict[str,
                 "part": (entry.part_id, parts.get(entry.part_id)) if entry.part_id else None,
                 "order": (entry.order_id, orders.get(entry.order_id)) if entry.order_id else None,
                 "changes": changes,
+                "then": then if isinstance(then, list) and len(then) == 2 else None,
             }
         )
     return rows

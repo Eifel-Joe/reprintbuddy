@@ -9,8 +9,8 @@ import pytest
 from reprintbuddy import settings as st
 from conftest import csrf_of, form_token_of, sm_of
 from factories import assign_sort, make_article, make_filament_settings, make_part, make_snapshot, make_sort
-from reprintbuddy.domain import stock
-from reprintbuddy.models import ArticlePart, ReorderMark, utcnow
+from reprintbuddy.domain import catalog, stock
+from reprintbuddy.models import ArticlePart, Part, ReorderMark, utcnow
 
 
 def add_part(client, **fields):
@@ -402,6 +402,9 @@ def test_the_count_is_the_number_of_tiles(bb_client, fake_bambuddy, case):  # p6
     elif case == "nothing":
         fake_bambuddy.unavailable = True
     else:  # an open part mark whose goods were booked in: the page closes it, the count too
+        with sm_of(bb_client).begin() as s:
+            # 1 ordered: one receipt of 1 is the whole order (p211); the pack size is the supplier's (Spec 5.3)
+            catalog.default_supplier(s, pid).pack_size = 1
         mark_form(bb_client, "part", pid, "1")
         with sm_of(bb_client).begin() as s:
             s.query(ReorderMark).one().marked_at -= timedelta(seconds=1)
@@ -619,3 +622,22 @@ def test_a_number_typed_before_an_error_is_kept_by_the_script(bb_client):  # rev
     })
     assert re.search(r'name="packs"[^>]*value="0"[^>]*data-typed', part_tile(response.text))
     assert "data-typed" not in part_tile(bb_client.get("/reorder").text)
+
+
+# ---- p211: a partial delivery shows what has arrived, only the rest is on its way ----------------
+
+
+def test_a_partial_part_receipt_keeps_the_mark_open_and_shows_what_arrived(bb_client):
+    from reprintbuddy.web.formatting import unit_label
+    from reprintbuddy.web.i18n import translate
+
+    pid = add_part(bb_client)
+    mark_form(bb_client, "part", pid, "1")  # 1 x 50
+    with sm_of(bb_client).begin() as s:
+        s.query(ReorderMark).one().marked_at -= timedelta(seconds=1)
+        stock.receive_part(s, pid, 20, "user")
+        unit = s.get(Part, pid).unit
+    html = bb_client.get("/reorder").text
+    assert translate("en", "reorder.arrived_so_far", amount="20", unit=unit_label(unit, "en")) in html
+    with sm_of(bb_client).begin() as s:
+        assert s.query(ReorderMark).one().received_at is None

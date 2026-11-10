@@ -192,7 +192,7 @@ def test_to_check_leads_to_assembly_when_only_assembly_waits(ready_client):
 
 
 def spool_calls(monkeypatch):
-    from reprintbuddy.web.routes import overview as route
+    from reprintbuddy.web import filament_view as route  # the overview asks through `page_spools`
 
     calls = []
 

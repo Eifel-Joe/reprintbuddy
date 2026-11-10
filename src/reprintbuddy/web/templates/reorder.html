@@ -70,7 +70,7 @@
     <tbody>
     {% for m in under_way %}
       <tr>
-        <td class="name">{{ m.label }}: {{ m.packs }} × {{ m.size }} {{ m.unit|unit }}{% if m.supplier %} · {{ m.supplier }}{% endif %}</td>
+        <td class="name">{{ m.label }}: {{ m.packs }} × {{ m.size }} {{ m.unit|unit }}{% if m.supplier %} · {{ m.supplier }}{% endif %}{% if m.arrived %}<span class="col-note">{{ t('reorder.arrived_so_far', amount=m.arrived, unit=m.unit|unit) }}</span>{% endif %}</td>
         <td class="nowrap">{{ m.day }}</td>
         <td class="actions-col">{% call ui.row_actions() -%}
           {{ ui.icon_post('check', t('reorder.received'), '/reorder/marks/' ~ m.id ~ '/received', subject=m.label) }}

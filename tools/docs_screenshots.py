@@ -65,7 +65,6 @@ from websockets.sync.client import connect as ws_connect
 
 ROOT = Path(__file__).resolve().parents[1]
 
-from reprintbuddy import __version__  # noqa: E402
 from reprintbuddy import models  # noqa: E402
 from reprintbuddy import settings as st  # noqa: E402
 from reprintbuddy.activity import capture as activity_capture  # noqa: E402
@@ -74,7 +73,9 @@ from reprintbuddy.bambuddy.types import FilamentRequirement  # noqa: E402
 from reprintbuddy.domain import catalog, filament, orders, pauses, reorder, stock, workqueue  # noqa: E402
 from reprintbuddy.ops.context import OpsContext  # noqa: E402
 from reprintbuddy.ops.runner import CommandResult  # noqa: E402
+from reprintbuddy.web import app as web_app  # noqa: E402
 from reprintbuddy.web.app import create_app  # noqa: E402
+from reprintbuddy.web.routes import ops as ops_routes  # noqa: E402
 
 WIDTH = 1280
 MOBILE_WIDTH = 375
@@ -270,10 +271,25 @@ class Mock:
         return httpx.AsyncClient(transport=httpx.MockTransport(self.handler))
 
 
+# The pictures show this version, never the installed one (p190): the menu foot, the line "installed" and
+# the card "Update" would otherwise be out of date with every release and every picture would have to be
+# taken again for a step of the version alone. The stand-in starts with 1 on purpose: no release of the
+# project looks like it, so nobody takes it for an old version.
+SHOT_VERSION = "1.2.3"
+
+
 def next_version() -> str:
-    """The version after the installed one: the card "Update" shows it as the newer release."""
-    major, minor, patch = (int(part) for part in __version__.split("."))
+    """The version after the stand-in: the card "Update" shows it as the newer release."""
+    major, minor, patch = (int(part) for part in SHOT_VERSION.split("."))
     return f"{major}.{minor}.{patch + 1}"
+
+
+def pin_version() -> None:
+    """Makes the application tell the stand-in as its version (menu foot, `?v=` of the files, the live
+    channel, the line of the card "Update", the log entry "started"). The modules read the name when they
+    are used, so this holds for the application created afterwards."""
+    web_app.__version__ = SHOT_VERSION
+    ops_routes.__version__ = SHOT_VERSION
 
 
 def release_runner(args, *, cwd=None, timeout=120.0) -> CommandResult:
@@ -281,9 +297,9 @@ def release_runner(args, *, cwd=None, timeout=120.0) -> CommandResult:
     on a repository that is invented (`example/reprintbuddy`)."""
     joined = " ".join(str(a) for a in args)
     if "describe" in joined:
-        return CommandResult(0, f"v{__version__}\n")
+        return CommandResult(0, f"v{SHOT_VERSION}\n")
     if "ls-remote" in joined:
-        tags = [("0123abc", "0.3.11"), ("0123abd", __version__), ("0123abe", next_version())]
+        tags = [("0123abc", "0.3.11"), ("0123abd", SHOT_VERSION), ("0123abe", next_version())]
         return CommandResult(0, "".join(f"{sha}\trefs/tags/v{tag}\n" for sha, tag in tags))
     if "get-url" in joined:
         return CommandResult(0, "https://github.com/example/reprintbuddy.git\n")
@@ -316,6 +332,7 @@ class Server:
     def __init__(self, workdir: Path, language: str) -> None:
         self.mock = Mock()
         self.fake = ShotBambuddy()
+        pin_version()
         install = workdir / "install"
         (install / ".git").mkdir(parents=True)
         self.app = create_app(

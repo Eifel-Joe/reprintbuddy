@@ -53,7 +53,9 @@ page exists twice: `page.md` in English and `page.de.md` in German next to it.
 
 Screenshots show invented example data only, never real articles, names or
 addresses. `tools/docs_screenshots.py` takes them from a test instance (usage in
-its header), so a changed interface means running it again.
+its header), so a changed interface means running it again. The pictures show
+a fixed stand-in version (`1.2.3`), not the installed one, so a new release alone
+never calls for new pictures.
 
 ## License of contributions
 

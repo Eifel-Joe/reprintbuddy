@@ -432,8 +432,8 @@ def count_article(
 ) -> int:
     """Inventory: sets the value to the counted quantity and books the difference (Spec 6.2).
 
-    A date in the past only dates the row: the value is set now, bookings since then are not
-    replayed (the counters keep no history to replay).
+    Dated back, the count holds for that time: the difference is taken against the value of then
+    (see `_count`), bookings since then stay.
     """
     if field not in ("stock", "awaiting_assembly"):
         raise ValidationError("bookings.invalid_field", value=str(field))
@@ -441,19 +441,89 @@ def count_article(
     counted = _counted(counted)
     booked_at = _booked(booked_at)
     article = _article(session, article_id)
-    before = getattr(article, field)
-    difference = counted - before
-    changes = {field: [before, counted]}
-    _apply(article, changes)
+    own_rows = (JournalEntry.article_id == article.id, JournalEntry.part_id.is_(None))
+    return _count(
+        session, article, field, counted, actor, note, booked_at, own_rows, article_id=article.id
+    )
+
+
+def _change(row: JournalEntry, field: str) -> int:
+    """How much a journal row changed `field`; every counter booking keeps its before/after in
+    `details["changes"]` (this module is the only writer)."""
+    pair = ((row.details or {}).get("changes") or {}).get(field)
+    return pair[1] - pair[0] if isinstance(pair, list) and len(pair) == 2 else 0
+
+
+def _replay(
+    target: Article | Part, field: str, counted: int, now_value: int, later: list[JournalEntry]
+) -> tuple[int, int]:
+    """(value then, value now) for a count dated before the `later` rows (oldest first).
+
+    The value then is today's value less every later change, as booked. From the count the later
+    rows are played forward again: a use of parts takes its full amount, capped at 0 (Spec 8.3) -
+    its recorded change may have been capped against a lower value. Review finding: adding only
+    the difference got that wrong (a use capped at 0 took nothing after a higher count) and missed
+    a later booking that the count would have made go below 0; that is refused (Spec 6.4).
+    """
+    then = now_value - sum(_change(row, field) for row in later)
+    value = counted
+    for row in later:
+        if isinstance(target, Part) and row.kind == "part_consumed":
+            value = max(0, value - row.qty)
+        else:
+            value += _change(row, field)
+        if value < 0:
+            raise StockLimitError(f"stock.limit.{field}", item=target.name)
+    return then, value
+
+
+def _count(
+    session: Session,
+    target: Article | Part,
+    field: str,
+    counted: int,
+    actor: Actor,
+    note: str | None,
+    booked_at: datetime | None,
+    target_rows: tuple,
+    **ids: int,
+) -> int:
+    """Set `field` of `target` by a count; returns the difference booked (Spec 6.2, p210).
+
+    Today: value := counted. Dated back: the count holds for that time. Root of p210: the value was
+    set to the count now, so bookings between that day and now (a sale this morning) were lost and
+    the journal no longer added up. Now the difference is taken against the value of then and the
+    later bookings are played forward from the count (`_replay`). Rejected (rather than replayed) when an inventory of the same field lies
+    after the date; going below 0 is refused as always (Spec 6.4). Rejected alternative: inventory
+    only for today - the date field would mean nothing there and a count of yesterday had to be
+    worked out by hand.
+    """
+    before = getattr(target, field)
+    details: dict = {"field": field, "counted": counted}
+    if booked_at is None:
+        difference, after = counted - before, counted
+    else:
+        later = list(session.scalars(
+            select(JournalEntry)
+            .where(*target_rows, JournalEntry.booked_at > booked_at)
+            .order_by(JournalEntry.booked_at, JournalEntry.id)
+        ))
+        later_count = [
+            r for r in later if r.kind == "inventory" and (r.details or {}).get("field", "stock") == field
+        ]
+        if later_count:
+            raise ValidationError("bookings.later_inventory", at=later_count[0].booked_at)
+        then, after = _replay(target, field, counted, before, later)
+        difference = counted - then
+        details["then"] = [then, counted]
+    if after < 0:
+        raise StockLimitError(f"stock.limit.{field}", item=target.name)
+    changes = {field: [before, after]}
+    _apply(target, changes)
+    details["changes"] = changes
     write_journal(
-        session,
-        kind="inventory",
-        actor=actor,
-        qty=difference,
-        article_id=article.id,
-        note=note,
-        details={"field": field, "counted": counted, "changes": changes},
-        booked_at=booked_at,
+        session, kind="inventory", actor=actor, qty=difference, note=note, details=details,
+        booked_at=booked_at, **ids,
     )
     return difference
 
@@ -479,17 +549,13 @@ def count_part(
     session: Session, part_id: int, counted: int, actor: Actor, note: str | None = None, *,
     booked_at: datetime | None = None,
 ) -> int:
-    """Inventory of a purchased part; also books the initial stock (Spec 5.3, 6.5)."""
+    """Inventory of a purchased part; also books the initial stock (Spec 5.3, 6.5). Dated back, like
+    `count_article` (p210)."""
     note = _clean_note(note)
     counted = _counted(counted)
     booked_at = _booked(booked_at)
     part = _part(session, part_id)
-    difference = counted - part.stock
-    changes = {"stock": [part.stock, counted]}
-    _apply(part, changes)
-    write_journal(
-        session, kind="inventory", actor=actor, qty=difference, part_id=part.id, note=note,
-        details={"field": "stock", "counted": counted, "changes": changes},
-        booked_at=booked_at,
+    return _count(
+        session, part, "stock", counted, actor, note, booked_at, (JournalEntry.part_id == part.id,),
+        part_id=part.id,
     )
-    return difference

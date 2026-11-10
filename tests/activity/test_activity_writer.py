@@ -237,6 +237,7 @@ def test_the_restore_marker_is_read_once(tmp_path):
     write_restored_marker(tmp_path, created_at=datetime(2026, 11, 1, 8, 0, tzinfo=UTC), version="0.3.12", via=None)
     assert read_restored_marker(tmp_path) == {
         "created_at": "2026-11-01T08:00:00+00:00", "version": "0.3.12", "via": None, "marks": None,
+        "notify_marks": None,  # p220
     }
     assert read_restored_marker(tmp_path) is None
 

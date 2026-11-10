@@ -64,10 +64,12 @@ When you have ordered:
 2. Check the number in **Order units**. It starts with the suggested quantity; you can enter 1 to 1000. It counts packs of the chosen supplier.
 3. Press **mark as ordered**.
 
-The item moves to the list **On its way**, showing the quantity, for a part the supplier (one without a name as **Supplier 2** and so on), and the date under **Ordered on**. The quantity on its way is the packs times the supplier's order unit at the time you marked it. If you change or remove the supplier on the part later, it stays as ordered. A part has at most one order on its way. If the suppliers of the part were changed on another device after the page was shown, nothing is marked: reload the page and choose again. Reprintbuddy makes no new suggestion for it until it has arrived. Until then the ordered quantity counts as on its way: it counts like stock wherever the item counts, for filament also in the suggestion of another spool sort whose slots tick it. Such a tile shows the line **On its way**. The suggestion ends by itself when the goods show up:
+The item moves to the list **On its way**, showing the quantity, for a part the supplier (one without a name as **Supplier 2** and so on), and the date under **Ordered on**. For a part the ordered quantity is the packs times the supplier's order unit at the time you marked it; if you change or remove the supplier on the part later, it stays as ordered. A part has at most one order on its way. If the suppliers of the part were changed on another device after the page was shown, nothing is marked: reload the page and choose again. Reprintbuddy makes no new suggestion for it until it has arrived. Until then the ordered quantity, less what has already arrived of it, counts as on its way: it counts like stock wherever the item counts, for filament also in the suggestion of another spool sort whose slots tick it. Such a tile shows the line **On its way**. What has arrived:
 
-- A part: with the first **Goods receipt of a part** booking after you marked it. Book the receipt on the Bookings page, see [To check and assembly](inspection.md#bookings).
-- Filament: as soon as Bambuddy's spool list shows new spools of that sort, created after your mark, that together weigh at least the ordered quantity.
+- A part: the **Goods receipt of a part** bookings after you marked it. Book the receipt on the Bookings page, see [To check and assembly](inspection.md#bookings).
+- Filament: the nominal weight of new spools of that sort in Bambuddy's spool list, created after your mark (a new roll already in use counts in full). Filament is never booked in Reprintbuddy: Bambuddy keeps it, Reprintbuddy only reads the spool list. If Bambuddy cannot be reached, it takes the last recorded list.
+
+A partial delivery shows in the list **On its way** as **… of it arrived**, and only the rest counts as on its way. The suggestion ends by itself when what has arrived reaches the ordered quantity.
 
 You can also press **arrived** in the list yourself, for example for a delivery that you do not book.
 

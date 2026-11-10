@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from contextlib import nullcontext
 from itertools import zip_longest
 from collections.abc import Mapping
 
@@ -33,7 +34,9 @@ from reprintbuddy.models import (
 from reprintbuddy.web import kpis, labels_view, listing, regions
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_bambuddy, get_db, local_next, release_connection, render
+from reprintbuddy.web.deps import (
+    current_language, db_session, get_bambuddy, get_db, local_next, release_connection, render,
+)
 from reprintbuddy.web.forms import (
     bounded_int,
     duplicate_redirect,
@@ -48,7 +51,7 @@ from reprintbuddy.web.forms import (
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.formatting import format_date
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
-from reprintbuddy.web.filament_view import BAMBUDDY_ERRORS, COLOR, spools_or_none
+from reprintbuddy.web.filament_view import BAMBUDDY_ERRORS, COLOR, may_write, page_spools
 from reprintbuddy.web.journal_view import journal_rows
 from reprintbuddy.web.routes.queue import DISPATCH_TONES
 from reprintbuddy.web.routes.upload import upload_url
@@ -839,11 +842,15 @@ def _tell_apart(choices: list[dict[str, object]]) -> None:
 def _filament_page(request: Request, spools, article_id: int, typed: _Typed | None = None,
                    error: str | None = None, status: int = 200):
     """The form to tick the spool sorts of each slot. Reads (and enters new spool sorts, Entscheidung 4)
-    in one write transaction; `typed` holds what a rejected submission ticked, which stays as it was."""
+    in one write transaction; `typed` holds what a rejected submission ticked, which stays as it was.
+    While writes are paused (a restore or an update, p230) it reads the record only and writes nothing."""
     lang = current_language(request)
     later = request.query_params.get("later") == "1"  # p153: led here by a creation or a change of the file
     suggest = later and request.query_params.get("suggest") == "1"  # p156: only right after creating
-    with write_transaction(request) as tx:
+    writing = may_write(request)
+    if not writing:
+        spools = None  # live spools would enter new sorts
+    with write_transaction(request) if writing else nullcontext(db_session(request)) as tx:
         article = tx.get(Article, article_id)
         if article is None:
             raise HTTPException(status_code=404)
@@ -895,7 +902,7 @@ def _filament_page(request: Request, spools, article_id: int, typed: _Typed | No
 @router.get("/articles/{article_id:int}/filaments")
 async def article_filaments(request: Request, article_id: int, db: Session = Depends(get_db)):
     _get_article(db, article_id)
-    spools = await spools_or_none(request)  # before any write transaction
+    spools = await page_spools(request)  # before any write transaction
     return _filament_page(request, spools, article_id)
 
 
@@ -928,7 +935,7 @@ async def article_filaments_save(request: Request, article_id: int, db: Session 
         with write_transaction(request) as tx:
             filament.set_groups(tx, article_id, groups)
     except DomainError as exc:
-        spools = await spools_or_none(request)  # only to show the form again, outside the write transaction
+        spools = await page_spools(request)  # only to show the form again, outside the write transaction
         known = {k: v for k, v in typed.items()}
         return _filament_page(request, spools, article_id, known, error_text(lang, exc), error_status(exc))
     return saved_redirect(request, f"/articles/{article_id}", "filament.mapping_saved")

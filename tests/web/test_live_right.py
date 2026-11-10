@@ -5,7 +5,7 @@ opens after an update, and Reprintbuddy only asks at the set interval."""
 
 import re
 
-from conftest import REQUIRED, csrf_of, mock_auth_me
+from conftest import REQUIRED, csrf_of, landed, mock_auth_me
 
 from reprintbuddy.bambuddy import connection
 from reprintbuddy.web.i18n import translate
@@ -27,7 +27,7 @@ def _optional(html):
 def _post(client, respx_mock, permissions):
     mock_auth_me(respx_mock, permissions=permissions)
     token = csrf_of(client, CONNECT)
-    return client.post(CONNECT, data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": KEY})
+    return landed(client, client.post(CONNECT, data={"csrf_token": token, "bambuddy_address": URL, "bambuddy_token": KEY}))
 
 
 def test_the_right_is_recommended_not_required():

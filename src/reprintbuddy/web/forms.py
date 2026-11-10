@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import re
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 from fastapi import Request
@@ -12,6 +13,7 @@ from fastapi.responses import RedirectResponse
 
 from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.web.flash import flash
+from reprintbuddy.web.formatting import format_date, to_local
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
 from reprintbuddy.web.i18n import translate
 
@@ -73,6 +75,9 @@ def error_text(lang: str, err: DomainError | FormTokenInvalid) -> str:
     params = dict(err.params)
     if isinstance(params.get("field"), str):
         params["field"] = translate(lang, params["field"])
+    for name, value in params.items():
+        if isinstance(value, datetime):  # naive UTC from the domain: shown as the local day (p210)
+            params[name] = format_date(to_local(value).date(), lang)
     text = translate(lang, err.key, **params)
     if isinstance(params.get("supplier"), int):  # an error in one of several suppliers of a part (Spec 5.3)
         return translate(lang, "parts.supplier_error", n=params["supplier"], error=text)

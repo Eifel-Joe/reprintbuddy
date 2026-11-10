@@ -118,6 +118,7 @@ class OpsView:
     step_key: str | None = None  # translation key for the running step
     reason_key: str | None = None  # translation key for why the update failed (p176), if the state file names one
     reason_params: dict[str, str] = field(default_factory=dict)
+    reason_open_end: bool = False  # a technical line is empty: the text must not end on its colon (p200)
 
 
 def _display_host(request: Request, effective: EffectiveServer) -> str:
@@ -211,6 +212,7 @@ def ops_view(request: Request, session: Session, busy: bool | None = None) -> Op
     if (view.busy or view.interrupted) and view.update.step in UPDATE_STEPS:
         view.step_key = f"ops.update.step.{view.update.step}"
     view.reason_key, view.reason_params = _reason_text(view.update)
+    view.reason_open_end = any(not value.strip() for value in view.reason_params.values())
     return view
 
 
