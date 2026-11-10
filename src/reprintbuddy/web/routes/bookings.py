@@ -4,7 +4,7 @@ without order, stock-in without a print (Spec 6.2). One form and one POST route 
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy.domain import catalog, stock
 from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
-from reprintbuddy.localtime import end_of_local_day
+from reprintbuddy.localtime import at_local_time, end_of_local_day
 from reprintbuddy.models import Article, Part, utcnow
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
@@ -103,7 +103,7 @@ def _booked_at(form, *, day_end: bool = False) -> datetime | None:
         return None
     if day_end:
         return end_of_local_day(day)
-    return datetime.combine(day, now.timetz()).astimezone(UTC).replace(tzinfo=None)
+    return at_local_time(day, now.time())
 
 
 def _active_article(tx: Session, article_id: int) -> Article:

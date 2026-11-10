@@ -418,3 +418,21 @@ def test_each_dated_booking_before_a_count_is_refused_with_its_day(ready_client,
     item = "Insert M4" if action == "part-receipt" else "Template A"
     assert en("bookings.counted_later", item=item, at=f"{local_today():%Y-%m-%d}") in response.text
     assert len(journal(ready_client)) == 2  # the two counts only
+
+
+def test_a_sale_dated_to_a_summer_day_stays_on_its_day_in_the_zone_of_the_server(ready_client, monkeypatch):
+    """Review finding: the clock time of an earlier day took the offset of today. Typed in winter at
+    23:30 and dated to a summer day, the sale landed on the next day (in a zone with summer time)."""
+    from datetime import UTC, date, datetime
+
+    from reprintbuddy import localtime
+    from reprintbuddy.web.routes import bookings
+
+    monkeypatch.setattr(localtime, "LOCAL_ZONE", localtime.SERVER_ZONE)
+    winter_evening = datetime.combine(date(2026, 11, 10), time(23, 30)).astimezone().astimezone(UTC)
+    monkeypatch.setattr(bookings, "utcnow", lambda: winter_evening.replace(tzinfo=None))
+    a = article(ready_client, stock=5)
+    response, _ = post(ready_client, "sale", article_id=a, qty="1", booked_on="2026-10-24")
+    assert response.status_code == 303
+    (row,) = journal(ready_client)
+    assert localtime.to_local(row.booked_at).replace(tzinfo=None) == datetime(2026, 10, 24, 23, 30)

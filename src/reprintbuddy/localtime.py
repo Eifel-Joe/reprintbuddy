@@ -28,12 +28,20 @@ def local_date(dt: datetime) -> date:
     return to_local(dt).date()
 
 
-def end_of_local_day(day: date) -> datetime:
-    """The last moment of `day` in the zone of the display, as naive UTC like every stored time.
+def at_local_time(day: date, clock: time) -> datetime:
+    """The moment `clock` on `day` in the zone of the display, as naive UTC like every stored time.
 
-    Taken through the zone itself, not today's offset, so a day with a change of summer time ends
-    at its own 23:59:59.999999.
+    Taken through the zone itself with the offset of that day, not of today. Review finding: a
+    booking dated back took today's clock time with today's offset; with the zone of the machine
+    that is a fixed offset, so a sale typed at 23:30 in winter and dated to a summer day landed on
+    the next day, and the check against a later count (p261) looked at the wrong day.
     """
-    end = datetime.combine(day, time.max)
-    local = end.astimezone() if LOCAL_ZONE is None else end.replace(tzinfo=LOCAL_ZONE)
+    moment = datetime.combine(day, clock.replace(tzinfo=None))
+    local = moment.astimezone() if LOCAL_ZONE is None else moment.replace(tzinfo=LOCAL_ZONE)
     return local.astimezone(UTC).replace(tzinfo=None)
+
+
+def end_of_local_day(day: date) -> datetime:
+    """The last moment of `day` in the zone of the display (p260), as naive UTC; a day with a change
+    of summer time ends at its own 23:59:59.999999."""
+    return at_local_time(day, time.max)

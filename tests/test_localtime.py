@@ -52,3 +52,23 @@ def test_the_display_reads_the_same_zone(monkeypatch):
 
     monkeypatch.setattr(localtime, "LOCAL_ZONE", ZoneInfo("America/New_York"))
     assert formatting.format_local(datetime(2026, 7, 15, 12, 0), "en") == "2026-07-15 08:00"
+
+
+@pytest.mark.parametrize(
+    ("day", "clock", "utc"),
+    [
+        (date(2026, 10, 24), time(23, 30), datetime(2026, 10, 24, 21, 30)),  # a summer day, UTC+2
+        (date(2026, 11, 10), time(23, 30), datetime(2026, 11, 10, 22, 30)),  # a winter day, UTC+1
+    ],
+)
+def test_a_clock_time_on_a_day_takes_the_offset_of_that_day(day, clock, utc):
+    assert localtime.at_local_time(day, clock) == utc
+
+
+def test_a_clock_time_on_a_day_in_the_zone_of_the_server(monkeypatch):
+    """Review finding: with the zone of the machine, the offset of today was used for an earlier
+    day; a sale typed at 23:30 in winter and dated to a summer day landed on the next day."""
+    monkeypatch.setattr(localtime, "LOCAL_ZONE", localtime.SERVER_ZONE)
+    for day in (date(2026, 7, 15), date(2026, 1, 15)):
+        moment = localtime.at_local_time(day, time(23, 30))
+        assert localtime.to_local(moment).replace(tzinfo=None) == datetime.combine(day, time(23, 30))
