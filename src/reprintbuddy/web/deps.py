@@ -368,7 +368,10 @@ def logged_in_user(request: Request, session: Session) -> User | None:
     if uid is None:
         return None
     user = session.get(User, uid)
-    if user is None or not auth.session_valid(session, request.session.get(SID_KEY)):
+    # p271: while writing rests (restore, update) the login is checked but not refreshed, the same
+    # rule as the activity log and the GET pages since v0.3.15.
+    may_write = bool(request.app.state.activity.may_write())
+    if user is None or not auth.session_valid(session, request.session.get(SID_KEY), may_write=may_write):
         return None
     return user
 

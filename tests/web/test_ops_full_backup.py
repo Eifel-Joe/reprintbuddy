@@ -918,3 +918,93 @@ def test_restore_closes_the_temporary_file_when_the_token_is_wrong(ops_env, monk
     )
     assert response.status_code == 403
     assert "b.zip" in closed
+
+
+def test_restore_waits_for_a_push_message_on_its_way_before_it_copies(ops_env, monkeypatch):
+    """p270: the marks are copied only after the message on its way has its outcome written."""
+    upload(ops_env, made_backup(ops_env))
+    app = ops_env.client.app
+    order = []
+
+    async def settle(timeout):
+        order.append(("settle", timeout, app.state.restore.active))
+        return True
+
+    real = fb.replace_database
+
+    def spy(*args, **kwargs):
+        order.append(("replace",))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(app.state.notifier, "settle", settle)
+    monkeypatch.setattr(fb, "replace_database", spy)
+    response = confirm(ops_env)
+    assert response.status_code == 200
+    assert order == [("settle", app.state.restore_notify_wait, True), ("replace",)]
+
+
+def test_restore_goes_on_when_a_push_message_is_still_on_its_way(ops_env, monkeypatch):
+    """The wait is bounded: past it the restore goes ahead (the message may then come once more)."""
+    upload(ops_env, made_backup(ops_env))
+    app = ops_env.client.app
+
+    async def settle(timeout):
+        return False
+
+    monkeypatch.setattr(app.state.notifier, "settle", settle)
+    response = confirm(ops_env)
+    assert response.status_code == 200
+    assert RESTART_CMD in ops_env.runner.calls
+
+
+def test_restore_is_refused_while_an_update_by_hand_holds_the_lock(ops_env):
+    """p91: `reprintbuddy update` typed in the container is no unit; systemd says nothing, the lock does."""
+    from reprintbuddy.ops import oplock
+
+    upload(ops_env, made_backup(ops_env))
+    app = ops_env.client.app
+    held = oplock.acquire(app.state.db_path.parent, "update")
+    try:
+        response = confirm_with(ops_env, staged_token(ops_env))
+    finally:
+        held.release()
+    assert response.headers["location"] == f"{MAINTENANCE}&ops=restore_busy#ops-restore"
+    assert app.state.restore.phase == "idle"
+
+
+def test_restore_holds_the_lock_until_the_process_ends(ops_env, monkeypatch):
+    """An update typed by hand meanwhile is refused; after a failed replace the lock is free again."""
+    from reprintbuddy.ops import oplock
+
+    upload(ops_env, made_backup(ops_env))
+    app = ops_env.client.app
+    data_dir = app.state.db_path.parent
+    seen = []
+    real = fb.replace_database
+
+    def spy(*args, **kwargs):
+        seen.append(oplock.holder(data_dir))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(fb, "replace_database", spy)
+    assert confirm(ops_env).status_code == 200
+    assert seen == ["restore"]
+    assert app.state.restore.phase == "restart_pending"
+    assert oplock.holder(data_dir) == "restore"  # until the restart ends this process
+    app.state.restore.phase = "idle"  # what a test fixture does; the lock goes with it
+    assert oplock.holder(data_dir) is None
+
+
+def test_a_failed_replace_lets_the_lock_go(ops_env, monkeypatch):
+    from reprintbuddy.ops import oplock
+
+    upload(ops_env, made_backup(ops_env))
+    app = ops_env.client.app
+
+    def fails(*args, **kwargs):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(fb, "replace_database", fails)
+    confirm(ops_env)
+    assert app.state.restore.phase == "idle"
+    assert oplock.holder(app.state.db_path.parent) is None

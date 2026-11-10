@@ -133,7 +133,7 @@ def test_missing_database_is_not_healthy(tmp_path):
 STDLIB = set(__import__("sys").stdlib_module_names)
 
 
-@pytest.mark.parametrize("module", ["updater", "backup", "runner", "service", "status", "versions"])
+@pytest.mark.parametrize("module", ["updater", "backup", "runner", "service", "status", "versions", "oplock"])
 def test_update_helper_modules_import_only_the_standard_library(module):
     """Imports done lazily after `pip install` could pick up a different version of a package."""
     source = (Path(updater.__file__).parent / f"{module}.py").read_text(encoding="utf-8")

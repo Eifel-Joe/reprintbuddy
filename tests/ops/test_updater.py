@@ -647,3 +647,49 @@ def test_a_status_file_that_cannot_be_written_does_not_stop_the_update(update_en
     monkeypatch.setattr(module, "write_status", broken)
     assert e.update().state == "succeeded"
 
+
+
+def test_an_update_refuses_while_a_restore_holds_the_lock(update_env, capsys):
+    """p91: by hand on the command line during a restore from the page (or the other way round)."""
+    from reprintbuddy.ops import oplock
+
+    write_status(update_env.data, UpdateStatus(state="succeeded", step="done"))
+    held = oplock.acquire(update_env.data, "restore")
+    try:
+        result = update_env.update()
+    finally:
+        held.release()
+    assert result.state == "running"  # review C 3: the command exits 3, not 0 - nothing was done
+    assert update_env.runner.calls == []
+    assert read_status(update_env.data).state == "succeeded"
+    assert "a restore is running" in capsys.readouterr().out
+    assert not backup_dir_for(update_env.db).exists()  # not even the backup was made
+
+
+def test_an_update_holds_the_lock_while_it_runs_and_lets_it_go(update_env):
+    from reprintbuddy.ops import oplock
+
+    seen = []
+    real = update_env.wait_healthy
+
+    def healthy():
+        seen.append(oplock.holder(update_env.data))
+        return real()
+
+    update_env.wait_healthy = healthy
+    assert update_env.update().state == "succeeded"
+    assert seen and set(seen) == {"update"}
+    assert oplock.holder(update_env.data) is None
+
+
+def test_an_update_whose_lock_file_cannot_be_opened_is_refused_cleanly(update_env, monkeypatch, capsys):
+    """Review C 5: no traceback; nothing done."""
+    from reprintbuddy.ops import updater
+
+    def denied(*args, **kwargs):
+        raise PermissionError("maintenance.lock")
+
+    monkeypatch.setattr(updater, "acquire", denied)
+    result = update_env.update()
+    assert result.state == "running" and update_env.runner.calls == []
+    assert "lock" in capsys.readouterr().out

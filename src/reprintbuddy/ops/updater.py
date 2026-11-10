@@ -17,6 +17,7 @@ import sqlite3
 import ssl
 import time
 import urllib.request
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -28,6 +29,7 @@ from reprintbuddy.ops.backup import (
     prune_backups,
     restore_database,
 )
+from reprintbuddy.ops.oplock import LOCK_NAME, Held, acquire
 from reprintbuddy.ops.runner import CommandResult, CommandRunner
 from reprintbuddy.ops.service import RESTART_WAIT_CMD, START_CMD, STOP_CMD
 from reprintbuddy.ops.status import UpdateStatus, is_busy, mark_interrupted, read_status, write_status
@@ -102,13 +104,43 @@ def run_update(
     keep_backups: int = KEEP_BACKUPS,
 ) -> UpdateStatus:
     data_dir = db_path.parent
-    backup_dir = backup_dir_for(db_path)
     started = now()
 
     previous = read_status(data_dir)
     if previous.state == "running" and is_busy(previous, started):
         print("update: another update is running, nothing done", flush=True)
         return previous
+    # p91: one lock with the restore, also for an update typed by hand on the command line.
+    # Refused: the status file stays as it is; the result says "running" so the command exits 3, not 0
+    # (review C 3: after a successful update the old status would have made a refusal look like one).
+    try:
+        lock = acquire(data_dir, "update", tries=10)
+    except Held as held:
+        running = "a restore is running" if held.what == "restore" else "another update is running"
+        print(f"update: {running}, nothing done", flush=True)
+        return replace(previous, state="running")
+    except OSError as error:
+        print(f"update: cannot take the lock {data_dir / LOCK_NAME} ({error}), nothing done", flush=True)
+        return replace(previous, state="running")
+    try:
+        return _run_update(db_path, install_dir, runner, wait_healthy, now, target, keep_backups, previous, started)
+    finally:
+        lock.release()
+
+
+def _run_update(
+    db_path: Path,
+    install_dir: Path,
+    runner: CommandRunner,
+    wait_healthy: Callable[[], bool],
+    now: Callable[[], datetime],
+    target: str | None,
+    keep_backups: int,
+    previous: UpdateStatus,
+    started: datetime,
+) -> UpdateStatus:
+    data_dir = db_path.parent
+    backup_dir = backup_dir_for(db_path)
 
     d = str(install_dir)
     py = str(venv_python(install_dir))

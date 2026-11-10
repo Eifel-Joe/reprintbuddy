@@ -17,11 +17,51 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.orm import DeclarativeBase, Mapped, configure_mappers, mapped_column
 
 
 class Base(DeclarativeBase):
-    pass
+    """Shared base of all tables.
+
+    Assigning a public name that is neither a mapped attribute (column, relationship, ...) nor a
+    settable descriptor of the class raises `AttributeError`. Without this guard SQLAlchemy keeps
+    such a value as a plain Python attribute and never stores it, so code or a test that still
+    writes a column moved elsewhere (e.g. `Part.pack_size`, moved to `PartSupplier` in 0015)
+    passed silently. Private names (`_...`, including SQLAlchemy's `_sa_*`) stay free. A table
+    that wants a deliberate extra attribute lists it in `__extra_attrs__`.
+    """
+
+    __extra_attrs__: frozenset[str] = frozenset()
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if not name.startswith("_") and name not in _settable(type(self)):
+            raise AttributeError(
+                f"{type(self).__name__} has no field {name!r}; assigning it would not be stored"
+            )
+        super().__setattr__(name, value)
+
+
+_SETTABLE: dict[type, frozenset[str]] = {}
+
+
+def _settable(cls: type) -> frozenset[str]:
+    """Public names an instance of `cls` may be assigned; computed once per class."""
+    names = _SETTABLE.get(cls)
+    if names is None:
+        mapper = sa_inspect(cls)
+        if not mapper.configured:
+            # Review C 7: a backref appears on its target only when the mappers are configured; a
+            # list made before that would refuse it for good.
+            configure_mappers()
+        mapped = set(mapper.all_orm_descriptors.keys())
+        descriptors = {
+            name for klass in cls.__mro__ for name, attr in vars(klass).items()
+            if hasattr(attr, "__set__")
+        }
+        names = frozenset(mapped | descriptors | set(cls.__extra_attrs__))
+        _SETTABLE[cls] = names
+    return names
 
 
 class Setting(Base):

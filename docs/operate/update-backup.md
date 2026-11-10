@@ -91,6 +91,8 @@ It does the same as the button and goes to the newest release. The progress show
 journalctl -u reprintbuddy-update
 ```
 
+An update and a restore never run at the same time, however they were started: the one that comes second is refused. This also holds for `reprintbuddy update` typed directly on the command line and for [`reprintbuddy restore-backup`](#restore-on-the-command-line). Both take a lock on the file `maintenance.lock` in the data folder. The system releases it when the process ends, also after a crash or a power cut, so no lock stays behind; leave the file where it is.
+
 ## Versions and release notes
 
 Versions are git tags `vX.Y.Z`, and the package version equals the tag. The update installs the newest release tag. If a release changes the systemd units or the sudoers rule, its release notes say so, and you run the installer again after the update. The release notes are on [GitHub](https://github.com/Eifel-Joe/reprintbuddy/releases) and, for the versions a newer release brings, on the update card (see [What the newer versions bring](#what-the-newer-versions-bring)).
@@ -133,7 +135,7 @@ Afterwards the user name and password **of the backup** apply, and everybody sig
 
 - A backup from an **older** version is restored as it is and migrated at the start.
 - A backup from a **newer** version is refused ("Update first, then restore").
-- No restore starts while an update or another restore runs.
+- No restore starts while an update or another restore runs, also one started on the command line (see [Update by hand](#update-by-hand)).
 
 !!! note "On a new machine"
     The interface opens only after the account and the Bambuddy connection are set up, see [First setup](../start/setup.md). To restore before that, use the command line, see below. If the address or port of the backup does not fit the new machine, fix them with `reprintbuddy set-host` and `reprintbuddy set-port`, see [Command line](cli.md).
@@ -154,7 +156,7 @@ rm /var/lib/reprintbuddy/restore.zip
 systemctl start reprintbuddy
 ```
 
-The command asks for the password of the backup if it is encrypted (on the terminal only, never as an argument; three tries). It refuses while Reprintbuddy or its update is running. It saves the database that was there first in `backups/`, or as `damaged-<date>T<time>Z.db` if it could not be read, and says what it restored. Like the interface, it keeps what the log and the push messages had already reported. It runs as the service user from the folder `/`, so give the full path, and the service user must be able to read the file: copy it to the data folder as shown, with mode 0600 because it holds your keys unless it is encrypted, and delete it afterwards. Everybody signs in again afterwards.
+The command asks for the password of the backup if it is encrypted (on the terminal only, never as an argument; three tries). It refuses while Reprintbuddy or an update is running, also an update typed by hand on the command line. It saves the database that was there first in `backups/`, or as `damaged-<date>T<time>Z.db` if it could not be read, and says what it restored. Like the interface, it keeps what the log and the push messages had already reported. It runs as the service user from the folder `/`, so give the full path, and the service user must be able to read the file: copy it to the data folder as shown, with mode 0600 because it holds your keys unless it is encrypted, and delete it afterwards. Everybody signs in again afterwards.
 
 ## Restore a database copy by hand
 

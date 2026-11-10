@@ -69,8 +69,13 @@ def create_session(session: Session, *, commit: bool = True) -> str:
     return sid
 
 
-def session_valid(session: Session, sid: object) -> bool:
-    """Is this a live session? Refreshes `last_seen_at` (at most once a minute)."""
+def session_valid(session: Session, sid: object, *, may_write: bool = True) -> bool:
+    """Is this a live session? Refreshes `last_seen_at` (at most once a minute).
+
+    With `may_write` false (a restore or an update runs) nothing is written: no refresh and no
+    removal of an expired row, which still counts as ended. During an update a written row could be
+    dropped again by a rollback (p271); the next request after the pause catches up.
+    """
     if not isinstance(sid, str):
         return False
     row = session.get(LoginSession, session_id_hash(sid))
@@ -78,10 +83,12 @@ def session_valid(session: Session, sid: object) -> bool:
         return False
     now = _utcnow()
     if row.last_seen_at < now - SESSION_MAX_IDLE:
+        if not may_write:
+            return False
         session.delete(row)
         session.commit()
         return False
-    if now - row.last_seen_at > TOUCH_INTERVAL:
+    if may_write and now - row.last_seen_at > TOUCH_INTERVAL:
         row.last_seen_at = now
         session.commit()
     return True

@@ -547,3 +547,86 @@ async def test_a_rejection_of_the_same_token_stops_even_if_other_fields_were_sav
     release.set()
     await env.settle()
     assert _rejected(env)
+
+
+# ---- p270: a restore waits a little for a message on its way --------------------------------------
+
+
+async def test_a_restore_waits_for_a_message_on_its_way_and_its_outcome_is_kept(env, respx_mock):
+    """Home Assistant accepts while the restore has begun: the mark is written before the copy is made,
+    so the restored database (with the marks carried over) does not send it again after the restart."""
+    answer = asyncio.Event()
+
+    async def slow(request):
+        await answer.wait()
+        return httpx.Response(200, json=[])
+
+    route = respx_mock.post(CALL).mock(side_effect=slow)
+    env.pause()
+    env.notifier.after_tick(False)
+    await asyncio.sleep(0.05)
+    env.updating = True  # the restore has begun
+    settle = asyncio.ensure_future(env.notifier.settle(5.0))
+    await asyncio.sleep(0.05)
+    assert not settle.done()  # it waits for the answer
+    answer.set()
+    assert await settle is True
+    assert ("paused", "sent") in env.marks()
+    await env.settle()
+    assert route.call_count == 1
+
+
+async def test_a_restore_waits_only_so_long_and_a_late_answer_is_not_written(env, respx_mock):
+    answer = asyncio.Event()
+
+    async def slow(request):
+        await answer.wait()
+        return httpx.Response(200, json=[])
+
+    respx_mock.post(CALL).mock(side_effect=slow)
+    env.pause()
+    env.notifier.after_tick(False)
+    await asyncio.sleep(0.05)
+    env.updating = True
+    assert await env.notifier.settle(0.1) is False
+    answer.set()  # the database may be being replaced now: not touched
+    await env.settle()
+    assert env.marks() == [("paused", "due")]
+
+
+async def test_a_restore_with_no_message_on_its_way_does_not_wait(env):
+    assert await asyncio.wait_for(env.notifier.settle(5.0), 0.5) is True
+
+
+
+async def test_an_answer_before_the_restore_waits_is_kept_too(env, respx_mock):
+    """Review C 2: the restore opens the window when it begins, not only when it starts waiting;
+    an answer that comes while it still asks systemd or waits for writes is written as well."""
+    answer = asyncio.Event()
+
+    async def slow(request):
+        await answer.wait()
+        return httpx.Response(200, json=[])
+
+    respx_mock.post(CALL).mock(side_effect=slow)
+    env.pause()
+    env.notifier.after_tick(False)
+    await asyncio.sleep(0.05)
+    env.updating = True  # the restore has begun ...
+    env.notifier.begin_settle()  # ... in the same step
+    answer.set()
+    await env.settle()
+    assert env.marks() == [("paused", "sent")]
+    assert await env.notifier.settle(5.0) is True
+    env.notifier.end_settle()
+
+
+async def test_a_task_that_starts_after_the_restore_began_sends_nothing(env, respx_mock):
+    """Review C 6: a state message is not marked before its call, so the task asks itself."""
+    route = respx_mock.post(CALL).respond(200, json=[])
+    env.pause()
+    env.notifier.after_tick(False)  # the task is created but has not run yet
+    env.updating = True
+    await env.settle()
+    assert route.call_count == 0
+    assert env.marks() == [("paused", "due")]

@@ -136,6 +136,8 @@ class Notifier:
         self._last_ctx: ev.Context | None = None
         self._seen_poll_at: datetime | None = None
         self._stopped = False
+        self._open_call = False  # a call to Home Assistant is on its way, its outcome not yet stored
+        self._settling = False  # a restore waits for that outcome (`settle`)
 
     # ---- after the tick (synchronous) ------------------------------------------------------------
 
@@ -219,12 +221,29 @@ class Notifier:
                     # write safely while a restore may be replacing the database.
                     if out.kind in ev.ONCE_PER_PRINT and not self._store([(out, "sending")], None, None):
                         return
-                    outcome = await ha.send(self.http_factory, target.url, target.token, target.service, out.message)
-                    if not self._store([(out, outcome)], None, self.now(), target) or outcome == "token":
+                    if self.update_started():
+                        return  # review C 6: a state is not marked before its call; nothing new starts
+                    self._open_call = True
+                    try:
+                        outcome = await ha.send(
+                            self.http_factory, target.url, target.token, target.service, out.message
+                        )
+                        stored = self._store([(out, outcome)], None, self.now(), target)
+                    finally:
+                        self._open_call = False
+                    if not stored or outcome == "token":
                         return  # p152: after a rejected token not one more call, not even in this round
-                checked = await ha.ping(self.http_factory, target.url, target.token) if check else None
-                if checked is not None and not self._store([], checked, self.now(), target):
-                    return
+                if check:
+                    if self.update_started():
+                        return
+                    self._open_call = True
+                    try:
+                        checked = await ha.ping(self.http_factory, target.url, target.token)
+                        stored = self._store([], checked, self.now(), target)
+                    finally:
+                        self._open_call = False
+                    if not stored:
+                        return
                 if not self._again or self._last_ctx is None:
                     return
                 self._again = False
@@ -261,8 +280,12 @@ class Notifier:
         marks stay as they are), or the messages were switched off meanwhile (final review 3: the
         warning stays off, Spec 10.6). `now` None: only the marks of prints before their call.
         A rejected token (401) of `target` stops every automatic try until the card is saved (p152).
+
+        p270: while a restore waits in `settle`, the outcome of the call on its way is still written
+        (the restore copies the marks only afterwards) and then the task stops all the same.
         """
-        if self.update_started():
+        restoring = self.update_started()
+        if restoring and not (self._settling and self._open_call):
             return False
         with self.sm.begin() as session:
             for out, outcome in results:
@@ -285,7 +308,45 @@ class Notifier:
             return False  # the refused token is gone: its answer says nothing about the new one
         if now is not None:
             self._take(results, checked, now)
-        return True
+        return not restoring
+
+    async def settle(self, timeout: float) -> bool:
+        """A restore has begun: wait up to `timeout` seconds for a call on its way (p270).
+
+        Root cause: Home Assistant could accept a message after the restore had begun; `_store` then
+        refused to write "sent" (the database may be replaced), the marks the restore carries over
+        lacked it, and after the restart it came once more. Now the restore waits here before it copies
+        anything, and the outcome of that one call is written meanwhile. True: nothing on its way any
+        more. False: still on its way after `timeout`; its late outcome is not written (the message can
+        then come once more). Rejected: counting the call as a write in flight - Home Assistant may
+        take up to 30 s, and the restore would then be refused instead of going ahead.
+        The check and the write in `_store` both run in the loop without an `await`, so an outcome is
+        either written before this returns True or not at all.
+        """
+        if not self._open_call:
+            self._settling = False
+            return True
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        self._settling = True
+        try:
+            while self._open_call:
+                if loop.time() >= deadline:
+                    return False
+                await asyncio.sleep(0.02)
+            return True
+        finally:
+            self._settling = False
+
+    def begin_settle(self) -> None:
+        """The restore has begun (review C 2): from this step on, without an `await` in between, the
+        outcome of a call on its way may still be written, also while the restore asks systemd or
+        waits for writes before it reaches `settle`. `settle` or `end_settle` closes it again."""
+        self._settling = True
+
+    def end_settle(self) -> None:
+        """The restore was refused or has stopped waiting: a late outcome is not written."""
+        self._settling = False
 
     def _take(self, results: list[tuple[ev.Outgoing, str]], checked: str | None, now: datetime) -> None:
         problem = self.status.problem

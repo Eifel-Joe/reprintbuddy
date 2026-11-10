@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from reprintbuddy.ops import oplock
 from reprintbuddy.ops.runner import CommandRunner, in_thread
 from reprintbuddy.ops.service import update_unit_state
 from reprintbuddy.ops.status import BUSY_STATES, is_busy, read_status
@@ -33,7 +34,10 @@ def update_running(data_dir: Path, runner: CommandRunner, now: datetime) -> bool
     ):
         return True
     # Unknown (systemd silent or missing) counts as running: do not guess an update away.
-    return update_unit_state(runner) not in DEAD_UNIT_STATES
+    if update_unit_state(runner) not in DEAD_UNIT_STATES:
+        return True
+    # p91: `reprintbuddy update` typed by hand runs outside the unit; its lock tells.
+    return oplock.holder(data_dir) == "update"
 
 
 async def update_running_async(data_dir: Path, runner: CommandRunner, now: datetime) -> bool:

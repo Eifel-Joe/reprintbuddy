@@ -24,7 +24,6 @@ import time
 import secrets
 import sqlite3
 import threading
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -39,7 +38,7 @@ from reprintbuddy.activity.writer import current_marks, current_notify_marks, wr
 from reprintbuddy.auth import MIN_PASSWORD_LENGTH
 from reprintbuddy.db import known_revisions
 from reprintbuddy.ops import fullbackup as fb
-from reprintbuddy.ops import running
+from reprintbuddy.ops import oplock, running
 from reprintbuddy.ops.server import address_changed, base_url, effective_from_settings
 from reprintbuddy.ops.runner import in_thread
 from reprintbuddy.ops.service import request_restart
@@ -59,13 +58,43 @@ UPLOAD_MAX_AGE = fb.STALE_AFTER
 _TOKEN = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
 
-@dataclass
 class RestoreState:
     """`running` from the decision to replace until the database is replaced; then
     `restart_pending` until the process ends (signing in and the restart button work again,
-    in case the restart does not happen)."""
+    in case the restart does not happen).
 
-    phase: Literal["idle", "running", "restart_pending"] = "idle"
+    p91: while not idle it holds the lock shared with the update helper and the command line
+    (`oplock`), so an update typed by hand is refused too. Back to "idle" frees it; otherwise the end
+    of the process does.
+    """
+
+    def __init__(self, phase: Literal["idle", "running", "restart_pending"] = "idle") -> None:
+        self._phase = phase
+        self._lock: oplock.OpLock | None = None
+
+    @property
+    def phase(self) -> Literal["idle", "running", "restart_pending"]:
+        return self._phase
+
+    @phase.setter
+    def phase(self, value: Literal["idle", "running", "restart_pending"]) -> None:
+        self._phase = value
+        if value == "idle" and self._lock is not None:
+            lock, self._lock = self._lock, None
+            lock.release()
+
+    def take_lock(self, data_dir: Path) -> bool:
+        """Take the shared lock for this restore; False when an update (or another restore) has it."""
+        if self._lock is not None:
+            return True
+        try:
+            self._lock = oplock.acquire(data_dir, "restore")
+        except oplock.Held:
+            return False
+        except OSError as error:  # a folder that cannot be written: the restore will fail there anyway
+            log.warning("restore: the lock file cannot be written (%s)", type(error).__name__)
+            return False
+        return True
 
     @property
     def active(self) -> bool:
@@ -492,30 +521,44 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         _remove(candidate)
         return _refused(request, "busy")
     state.phase = "running"
+    # Review C 2 (p270): from here on, with no `await` in between, a push message on its way may
+    # still write its outcome; `settle` below waits for it, every other way out closes the window.
+    app.state.notifier.begin_settle()
     try:
-        update_busy = await running.update_running_async(data_dir, app.state.ops.runner, _now())
-    except BaseException:  # cancelled (shutdown) or failing: nothing is replaced
-        state.phase = "idle"
-        _remove(candidate)
-        raise
-    if update_busy:
-        state.phase = "idle"
-        _remove(candidate)
-        return _refused(request, "busy")
-    # A write that passed the guard just before this line may still be under way; it would
-    # land in the restored database with what it read from the old one. This request is one.
-    deadline = time.monotonic() + app.state.restore_write_wait
-    try:
-        while app.state.writes_in_flight > 1:
-            if time.monotonic() > deadline:
-                state.phase = "idle"
-                _remove(candidate)
-                return _refused(request, "busy")
-            await asyncio.sleep(0.02)
-    except BaseException:  # cancelled while waiting (shutdown, …): nothing is replaced yet
-        state.phase = "idle"
-        _remove(candidate)
-        raise
+        if not state.take_lock(data_dir):  # p91: an update typed by hand on the command line
+            state.phase = "idle"
+            _remove(candidate)
+            return _refused(request, "busy")
+        try:
+            update_busy = await running.update_running_async(data_dir, app.state.ops.runner, _now())
+        except BaseException:  # cancelled (shutdown) or failing: nothing is replaced
+            state.phase = "idle"
+            _remove(candidate)
+            raise
+        if update_busy:
+            state.phase = "idle"
+            _remove(candidate)
+            return _refused(request, "busy")
+        # A write that passed the guard just before this line may still be under way; it would
+        # land in the restored database with what it read from the old one. This request is one.
+        deadline = time.monotonic() + app.state.restore_write_wait
+        try:
+            while app.state.writes_in_flight > 1:
+                if time.monotonic() > deadline:
+                    state.phase = "idle"
+                    _remove(candidate)
+                    return _refused(request, "busy")
+                await asyncio.sleep(0.02)
+            # p270: a push message on its way gets its outcome written before the marks are copied, so the
+            # restored database does not send it once more. Bounded: past it the restore goes ahead.
+            if not await app.state.notifier.settle(app.state.restore_notify_wait):
+                log.info("restore: a push message was still on its way; it may be sent once more")
+        except BaseException:  # cancelled while waiting (shutdown, …): nothing is replaced yet
+            state.phase = "idle"
+            _remove(candidate)
+            raise
+    finally:
+        app.state.notifier.end_settle()
     gate = _ReplaceGate(state)
 
     def replace() -> None:

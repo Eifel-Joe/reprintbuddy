@@ -33,6 +33,7 @@ from pathlib import Path
 from reprintbuddy import settings as st
 from reprintbuddy.activity.writer import current_marks, current_notify_marks, write_restored_marker
 from reprintbuddy.ops import fullbackup as fb
+from reprintbuddy.ops import oplock
 from reprintbuddy.ops.backup import _copy, backup_dir_for, connect_existing
 from reprintbuddy.ops.runner import CommandRunner
 from reprintbuddy.ops.server import connect_host
@@ -209,7 +210,28 @@ def restore_backup(
     # service user, whatever the umask of the shell it runs from.
     previous_umask = os.umask(0o077) if os.name == "posix" else None
     state = {"touched": False}  # set when the database in place is about to be replaced
+    lock = None
     try:
+        # p91: one lock with the update, which systemd does not know of when it was typed by hand. No
+        # data folder: nothing can run there.
+        if db_path.parent.is_dir():
+            try:
+                lock = oplock.acquire(db_path.parent, "restore", tries=10)
+            except OSError as error:
+                complain(f"reprintbuddy: cannot take the lock {db_path.parent / oplock.LOCK_NAME} ({error}).")
+                complain("Nothing was changed.")
+                return EXIT_NOT_DONE
+            except oplock.Held as held:
+                complain(
+                    "reprintbuddy: "
+                    + (
+                        "another restore is running."
+                        if held.what == "restore"
+                        else "an update is running. Wait until it has finished, then try again."
+                    )
+                )
+                complain("Nothing was changed.")
+                return EXIT_NOT_DONE
         return _restore(archive, db_path, runner, ask_password, say, complain, now, probe, state)
     except KeyboardInterrupt:
         complain("reprintbuddy: interrupted.")
@@ -220,6 +242,8 @@ def restore_backup(
         )
         return EXIT_NOT_DONE
     finally:
+        if lock is not None:
+            lock.release()
         if previous_umask is not None:
             os.umask(previous_umask)
 
