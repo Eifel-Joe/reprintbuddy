@@ -146,7 +146,7 @@ class Suggestion:
     on_way: float = 0.0  # ordered and not arrived yet (Spec 9.4, p171); counts like stock, shown apart
 
 
-def _ordered(session: Session, mark: ReorderMark) -> float:
+def ordered_amount(session: Session, mark: ReorderMark) -> float:
     """What a mark ordered, in the item's unit: packs x pack size (Spec 9.4)."""
     if mark.item_type == "part":
         part = session.get(Part, mark.item_id)
@@ -221,7 +221,7 @@ def on_way(session: Session, spools: Sequence[Spool] | None = None) -> dict[tupl
     seen = _spools_seen(session, spools)
     amounts: dict[tuple[str, int], float] = {}
     for mark in session.scalars(select(ReorderMark).where(ReorderMark.received_at.is_(None))):
-        rest = max(0.0, _ordered(session, mark) - _arrived(session, mark, seen))
+        rest = max(0.0, ordered_amount(session, mark) - _arrived(session, mark, seen))
         if rest > 0:
             key = (mark.item_type, mark.item_id)
             amounts[key] = amounts.get(key, 0.0) + rest
@@ -463,7 +463,7 @@ def _close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: 
     for mark in session.scalars(select(ReorderMark).where(ReorderMark.received_at.is_(None))).all():
         if mark.item_type == "part":
             # p211: the mark closes when the receipts reach the ordered amount, at the one that did
-            ordered, total = _ordered(session, mark), 0
+            ordered, total = ordered_amount(session, mark), 0
             for at, qty in _part_receipts(session, mark):
                 total += qty
                 if total >= ordered:
@@ -473,7 +473,7 @@ def _close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: 
         elif seen is not None:
             if session.get(FilamentSettings, mark.item_id) is None or session.get(FilamentSort, mark.item_id) is None:
                 continue
-            if _arrived(session, mark, seen) >= _ordered(session, mark):
+            if _arrived(session, mark, seen) >= ordered_amount(session, mark):
                 mark.received_at = now
                 closed += 1
     session.flush()
