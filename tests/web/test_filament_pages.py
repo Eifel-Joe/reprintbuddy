@@ -6,9 +6,10 @@ from datetime import timedelta
 import pytest
 
 from conftest import csrf_of, sm_of
-from factories import assign_sort, make_article, make_filament_settings, make_snapshot, make_sort, tick_sorts
+from factories import assign_sort, make_article, make_filament_settings, make_part, make_snapshot, make_sort, tick_sorts
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.client import BambuddyRejected
+from reprintbuddy.domain import filament
 from reprintbuddy.models import ArticleFilament, FilamentSettings, FilamentSort, utcnow
 
 
@@ -122,8 +123,9 @@ def sort_id_of(client):
         return make_sort(s).id
 
 
+# One supplier (Spec 9.3): the field names of the block are those of a part's suppliers.
 VALID = {
-    "lead_time_days": "5", "safety_value": "300", "safety_unit": "grams", "pack_grams": "1000",
+    "lead_time_days": "5", "safety_value": "300", "safety_unit": "grams", "pack_size": "1000",
     "min_order_packs": "1", "supplier": "Example Supplier", "order_url": "https://shop.example/pla-black",
 }
 
@@ -133,11 +135,37 @@ def post(client, sort_id, **fields):
     return client.post(f"/filament/{sort_id}", data=data, follow_redirects=False)
 
 
+def post_rows(client, sort_id, rows, **fields):
+    """A form with several suppliers: `rows` of (name, pack size, lead time)."""
+    data = {
+        "csrf_token": csrf_of(client, f"/filament/{sort_id}"), "safety_value": "0", "safety_unit": "days",
+        "supplier": [name for name, _pack, _lead in rows], "order_url": ["" for _row in rows],
+        "pack_size": [pack for _name, pack, _lead in rows], "min_order_packs": ["1" for _row in rows],
+        "lead_time_days": [lead for _name, _pack, lead in rows], **fields,
+    }
+    return client.post(f"/filament/{sort_id}", data=data, follow_redirects=False)
+
+
 def saved(client, sort_id):
+    """Safety margin and unit, then lead time, roll size, minimum order, name and link of the default."""
     with sm_of(client).begin() as s:
         row = s.get(FilamentSettings, sort_id)
-        return None if row is None else (row.lead_time_days, row.safety_value, row.safety_unit,
-                                         row.pack_grams, row.min_order_packs, row.supplier, row.order_url)
+        if row is None:
+            return None
+        default = filament.default_supplier(s, sort_id)
+        return (default.lead_time_days, row.safety_value, row.safety_unit, default.pack_size,
+                default.min_order_packs, default.name, default.order_url)
+
+
+def blocks(html):
+    """The supplier blocks of the form, without the template for a new one."""
+    return re.sub(r"<template.*?</template>", "", html, flags=re.S).count("data-supplier>")
+
+
+def suppliers_of(client, sort_id):
+    with sm_of(client).begin() as s:
+        return [(r.name, r.pack_size, r.min_order_packs, r.lead_time_days, r.is_default)
+                for r in filament.sort_suppliers(s, sort_id)]
 
 
 def test_save_settings(ready_client):
@@ -153,12 +181,61 @@ def test_save_settings(ready_client):
 def test_settings_defaults(ready_client):
     sid = sort_id_of(ready_client)
     form = ready_client.get(f"/filament/{sid}").text
-    assert 'name="pack_grams"' in form and 'value="1000"' in form and "PLA Black" in form
+    assert 'name="pack_size"' in form and 'value="1000"' in form and "PLA Black" in form
+    assert blocks(form) == 1  # one supplier to start with
+
+
+def test_several_suppliers_with_one_default(ready_client):
+    """Spec 9.3 (p281): like a part, 1 to 10 suppliers, exactly one the default."""
+    sid = sort_id_of(ready_client)
+    r = post_rows(ready_client, sid, [("Example Shop", "1000", "3"), ("Roll Shop", "500", "1")], supplier_default="1")
+    assert r.status_code == 303
+    assert suppliers_of(ready_client, sid) == [("Example Shop", 1000, 1, 3, False), ("Roll Shop", 500, 1, 1, True)]
+    form = ready_client.get(f"/filament/{sid}").text
+    assert blocks(form) == 2
+    assert re.search(r'name="supplier_default" value="1" checked', form)
+
+
+def test_no_default_is_an_error_at_the_form(ready_client):
+    sid = sort_id_of(ready_client)
+    r = post_rows(ready_client, sid, [("Example Shop", "1000", "0"), ("Roll Shop", "1000", "0")])
+    assert r.status_code == 200 and en("filament.supplier_default") in unescape(r.text)
+    assert saved(ready_client, sid) is None and 'value="Roll Shop"' in r.text
+
+
+def test_an_error_names_the_supplier(ready_client):
+    sid = sort_id_of(ready_client)
+    r = post_rows(ready_client, sid, [("", "1000", "0"), ("", "0", "0")], supplier_default="0")
+    assert r.status_code == 200 and "Supplier 2:" in unescape(r.text)
+
+
+def test_add_and_remove_without_javascript_save_nothing(ready_client):
+    sid = sort_id_of(ready_client)
+    added = post(ready_client, sid, suppliers_add="1")
+    assert added.status_code == 200 and blocks(added.text) == 2
+    assert saved(ready_client, sid) is None
+    removed = post_rows(ready_client, sid, [("Example Shop", "1000", "0"), ("Roll Shop", "1000", "0")],
+                        supplier_default="0", suppliers_remove="0")
+    assert removed.status_code == 200 and blocks(removed.text) == 1
+    assert 'value="Roll Shop"' in removed.text and 'value="Example Shop"' not in removed.text
+    assert saved(ready_client, sid) is None
+
+
+def test_the_names_of_parts_and_sorts_are_offered(ready_client):
+    """Spec 9.3: names used at parts and spool sorts are offered while typing."""
+    sid = sort_id_of(ready_client)
+    with sm_of(ready_client).begin() as s:
+        make_part(s, supplier="Part Shop")
+        make_filament_settings(s, make_sort(s, brand="Brand B").id, supplier="Roll Shop")
+    form = ready_client.get(f"/filament/{sid}").text
+    assert '<option value="Part Shop">' in form and '<option value="Roll Shop">' in form
+    assert 'list="supplier-names"' in form
+    assert '<script src="/static/js/suppliers.js' in form
 
 
 @pytest.mark.parametrize(
     "field,value",
-    [("pack_grams", "0"), ("pack_grams", ""), ("pack_grams", "abc"), ("lead_time_days", "366"),
+    [("pack_size", "0"), ("pack_size", ""), ("pack_size", "abc"), ("lead_time_days", "366"),
      ("order_url", "ftp://x"), ("min_order_packs", "1001"), ("safety_value", "-1")],
 )
 def test_settings_invalid_numbers(ready_client, field, value):  # Review Focus 4
@@ -175,6 +252,7 @@ def test_settings_replace_existing(ready_client):
         make_filament_settings(s, sid, lead_time_days=1)
     assert post(ready_client, sid).status_code == 303
     assert saved(ready_client, sid)[0] == 5
+    assert len(suppliers_of(ready_client, sid)) == 1
 
 
 def test_unknown_sort_is_404(ready_client):
@@ -385,9 +463,9 @@ def test_settings_fields_have_info_buttons(ready_client, lang, tr):
     page = ready_client.get(f"/filament/{sid}").text
     pops = [unescape(p) for p in re.findall(r'<div class="info-pop" role="note">(.*?)</div>', page, re.S)]
     assert pops == [tr(key) for key in
-                    ("info.filament_lead_time", "info.filament_pack_grams", "info.filament_safety",
-                     "info.filament_min_order_packs")]
-    for name in ("lead_time_days", "pack_grams", "safety_value", "min_order_packs"):
+                    ("info.filament_safety", "info.filament_pack_grams", "info.filament_min_order_packs",
+                     "info.filament_lead_time")]
+    for name in ("lead_time_days", "pack_size", "safety_value", "min_order_packs"):
         tag = re.search(rf'<input[^>]*\bname="{name}"[^>]*>', page).group(0)
         field_id = re.search(r'\bid="([^"]+)"', tag).group(1)
         assert f'<label for="{field_id}">' in page
@@ -397,17 +475,18 @@ def test_settings_fields_have_info_buttons(ready_client, lang, tr):
         assert re.search(rf'<(?:input|select)[^>]*\bid="{re.escape(target)}"', page), target
 
 
-def test_settings_form_field_names_are_unchanged(ready_client):
+def test_settings_form_field_names(ready_client):
+    """Since 0016 the roll size is a supplier's field, named as a part supplier's pack size."""
     sid = sort_id_of(ready_client)
     page = ready_client.get(f"/filament/{sid}").text
-    for name in ("csrf_token", "lead_time_days", "pack_grams", "safety_value", "safety_unit",
-                 "min_order_packs", "supplier", "order_url"):
+    for name in ("csrf_token", "lead_time_days", "pack_size", "safety_value", "safety_unit",
+                 "min_order_packs", "supplier", "order_url", "supplier_default"):
         assert f'name="{name}"' in page, name
 
 
 def test_settings_error_page_keeps_the_card(ready_client):
     sid = sort_id_of(ready_client)
-    r = post(ready_client, sid, pack_grams="0")
+    r = post(ready_client, sid, pack_size="0")
     assert r.status_code == 200 and 'role="alert"' in r.text and 'class="card-head"' in r.text
     assert 'value="Example Supplier"' in r.text
 

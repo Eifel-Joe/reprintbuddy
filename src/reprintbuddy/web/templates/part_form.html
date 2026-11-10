@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_ui.html" as ui with context %}
+{% import "_suppliers.html" as sup with context %}
 {% block title %}{% if part %}{{ t('parts.edit') }}{% else %}{{ t('parts.new') }}{% endif %}{% endblock %}
 {% block content %}
 {% set sub %}{{ t('parts.form_subtitle') }}{% if part and part.archived_at %} · {{ ui.badge('part', 'archived') }}{% endif %}{% endset %}
@@ -13,58 +14,6 @@
 {#- The edit form shows the stock, so its region follows every change of the part (a booking too);
     the form watches only the settings, so a booking never says "changed in the meantime" (Design 4.6).
     A new part shows no data and has no region. -#}
-{#- The suppliers of the part (Spec 5.3): one block each, 1 to 10, exactly one the default.
-    Every supplier sends the same field names, in order; the default is its index. Without
-    JavaScript "add" and "remove" send the form, which comes back changed and unsaved (like the
-    parts of an article); part_suppliers.js does both in place. The info buttons sit at the first
-    block only, one per field on the page. -#}
-{% macro supplier_block(index, row, default, count) -%}
-{% set first = index == 0 %}
-{% set n = index + 1 if index is number else "" %}
-<fieldset class="supplier" data-supplier>
-  <legend data-supplier-title>{{ t('parts.supplier_unnamed', n=n) }}</legend>
-  <div class="supplier-head">
-    <label class="check"><input type="radio" name="supplier_default" value="{{ index }}"{% if default == index | string %} checked{% endif %}><span>{{ t('parts.is_default') }}</span></label>
-    <button class="btn-link supplier-remove" type="submit" name="suppliers_remove" value="{{ index }}" formnovalidate data-supplier-remove{% if count <= 1 %} disabled{% endif %}>{{ ui.icon('x') }}<span>{{ t('parts.supplier_remove') }}</span></button>
-  </div>
-  <div class="row">
-    {% call ui.field("supplier-" ~ index ~ "-name", t('parts.field.supplier_name')) %}
-      <input id="supplier-{{ index }}-name" name="supplier" value="{{ row.supplier }}" maxlength="200" list="supplier-names" autocomplete="off">
-    {% endcall %}
-    {% call ui.field("supplier-" ~ index ~ "-order_url", t('parts.field.order_url')) %}
-      <input id="supplier-{{ index }}-order_url" name="order_url" value="{{ row.order_url }}" maxlength="2000" inputmode="url">
-    {% endcall %}
-  </div>
-  <div class="row">
-    {% call ui.field("supplier-" ~ index ~ "-pack_size", t('parts.field.pack_size'), t('info.pack_size') if first else "") %}
-      <input id="supplier-{{ index }}-pack_size" name="pack_size" inputmode="numeric" min="1" value="{{ row.pack_size }}">
-    {% endcall %}
-    {% call ui.field("supplier-" ~ index ~ "-min_order_packs", t('parts.field.min_order_packs'), t('info.min_order_packs') if first else "") %}
-      <input id="supplier-{{ index }}-min_order_packs" name="min_order_packs" inputmode="numeric" min="1" value="{{ row.min_order_packs }}">
-    {% endcall %}
-  </div>
-  <div class="row">
-    {% call ui.field("supplier-" ~ index ~ "-lead_time_days", t('parts.field.lead_time_days'), t('info.lead_time_days') if first else "") %}
-      <input id="supplier-{{ index }}-lead_time_days" name="lead_time_days" inputmode="numeric" min="0" value="{{ row.lead_time_days }}">
-    {% endcall %}
-    <div></div>
-  </div>
-</fieldset>
-{%- endmacro %}
-{% macro suppliers_section() -%}
-{% set rows = values.supplier_rows or [{"supplier": "", "order_url": "", "pack_size": "1", "min_order_packs": "1", "lead_time_days": "0"}] %}
-<fieldset class="suppliers" data-suppliers data-title="{{ t('parts.supplier_unnamed', n='{n}') }}" data-max="{{ max_suppliers }}">
-  <legend>{{ t('parts.suppliers_title') }}</legend>
-  <p class="hint">{{ t('parts.suppliers_hint') }}</p>
-  <div class="supplier-rows" data-supplier-rows>
-    {% for row in rows %}{{ supplier_block(loop.index0, row, values.supplier_default, rows | length) }}{% endfor %}
-  </div>
-  <template data-supplier-template>{{ supplier_block("new", {"supplier": "", "order_url": "", "pack_size": "1", "min_order_packs": "1", "lead_time_days": "0"}, "", 2) }}</template>
-  <button class="btn secondary" type="submit" name="suppliers_add" value="1" formnovalidate data-suppliers-add{% if rows | length >= max_suppliers %} disabled{% endif %}{% if values.focus == "add" %} autofocus{% endif %}>{{ ui.icon('plus') }}<span>{{ t('parts.supplier_add') }}</span></button>
-  <datalist id="supplier-names">{% for name in supplier_names %}<option value="{{ name }}">{% endfor %}</datalist>
-</fieldset>
-<script src="/static/js/part_suppliers.js?v={{ app_version }}" defer></script>
-{%- endmacro %}
 {% macro form_section() -%}
 <section class="card section">
   {% set action = '/parts/' ~ part.id ~ '/edit' if part else '/parts/new' %}
@@ -110,7 +59,7 @@
         </select>
       {% endcall %}
     </div>
-    {{ suppliers_section() }}
+    {{ sup.suppliers_section(supplier_texts, supplier_blank) }}
     <button class="btn" type="submit">{{ t('parts.save') }}</button>
     <a class="btn-link" href="/parts">{{ t('common.cancel') }}</a>
   </form>

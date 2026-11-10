@@ -1,0 +1,55 @@
+{#- The suppliers of a purchased part (Spec 5.3) or of a spool sort's order settings (Spec 9.3): one
+    block each, 1 to 10, exactly one the default. Every supplier sends the same field names, in
+    order; the default is its index. Without JavaScript "add" and "remove" send the form, which
+    comes back changed and unsaved (like the parts of an article); suppliers.js does both in place.
+    The info buttons sit at the first block only, one per field on the page.
+    `texts` (web/supplier_form.Texts) names the labels of the kind; `blank` is a new supplier.
+    Imported with context: it needs `values`, `max_suppliers` and `supplier_names`. -#}
+{% import "_ui.html" as ui with context %}
+{% macro supplier_block(index, row, default, count, texts) -%}
+{% set first = index == 0 %}
+{% set n = index + 1 if index is number else "" %}
+<fieldset class="supplier" data-supplier>
+  <legend data-supplier-title>{{ t('parts.supplier_unnamed', n=n) }}</legend>
+  <div class="supplier-head">
+    <label class="check"><input type="radio" name="supplier_default" value="{{ index }}"{% if default == index | string %} checked{% endif %}><span>{{ t('parts.is_default') }}</span></label>
+    <button class="btn-link supplier-remove" type="submit" name="suppliers_remove" value="{{ index }}" formnovalidate data-supplier-remove{% if count <= 1 %} disabled{% endif %}>{{ ui.icon('x') }}<span>{{ t('parts.supplier_remove') }}</span></button>
+  </div>
+  <div class="row">
+    {% call ui.field("supplier-" ~ index ~ "-name", t(texts.name)) %}
+      <input id="supplier-{{ index }}-name" name="supplier" value="{{ row.supplier }}" maxlength="200" list="supplier-names" autocomplete="off">
+    {% endcall %}
+    {% call ui.field("supplier-" ~ index ~ "-order_url", t(texts.order_url)) %}
+      <input id="supplier-{{ index }}-order_url" name="order_url" value="{{ row.order_url }}" maxlength="2000" inputmode="url">
+    {% endcall %}
+  </div>
+  <div class="row">
+    {% call ui.field("supplier-" ~ index ~ "-pack_size", t(texts.pack_size), t(texts.info_pack_size) if first else "") %}
+      <input id="supplier-{{ index }}-pack_size" name="pack_size" inputmode="numeric" min="1" value="{{ row.pack_size }}">
+    {% endcall %}
+    {% call ui.field("supplier-" ~ index ~ "-min_order_packs", t(texts.min_order_packs), t(texts.info_min_order_packs) if first else "") %}
+      <input id="supplier-{{ index }}-min_order_packs" name="min_order_packs" inputmode="numeric" min="1" value="{{ row.min_order_packs }}">
+    {% endcall %}
+  </div>
+  <div class="row">
+    {% call ui.field("supplier-" ~ index ~ "-lead_time_days", t(texts.lead_time_days), t(texts.info_lead_time_days) if first else "") %}
+      <input id="supplier-{{ index }}-lead_time_days" name="lead_time_days" inputmode="numeric" min="0" value="{{ row.lead_time_days }}">
+    {% endcall %}
+    <div></div>
+  </div>
+</fieldset>
+{%- endmacro %}
+{% macro suppliers_section(texts, blank) -%}
+{% set rows = values.supplier_rows or [blank] %}
+<fieldset class="suppliers" data-suppliers data-title="{{ t('parts.supplier_unnamed', n='{n}') }}" data-max="{{ max_suppliers }}">
+  <legend>{{ t(texts.title) }}</legend>
+  <p class="hint">{{ t(texts.hint) }}</p>
+  <div class="supplier-rows" data-supplier-rows>
+    {% for row in rows %}{{ supplier_block(loop.index0, row, values.supplier_default, rows | length, texts) }}{% endfor %}
+  </div>
+  <template data-supplier-template>{{ supplier_block("new", blank, "", 2, texts) }}</template>
+  <button class="btn secondary" type="submit" name="suppliers_add" value="1" formnovalidate data-suppliers-add{% if rows | length >= max_suppliers %} disabled{% endif %}{% if values.focus == "add" %} autofocus{% endif %}>{{ ui.icon('plus') }}<span>{{ t('parts.supplier_add') }}</span></button>
+  <datalist id="supplier-names">{% for name in supplier_names %}<option value="{{ name }}">{% endfor %}</datalist>
+</fieldset>
+<script src="/static/js/suppliers.js?v={{ app_version }}" defer></script>
+{%- endmacro %}
