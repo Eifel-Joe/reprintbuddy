@@ -96,3 +96,29 @@ def test_a_finished_update_is_not_just_started(tmp_path, state):
 
     put(tmp_path, state, 0)
     assert update_just_started(tmp_path, NOW) is False
+
+
+def test_an_update_started_by_hand_counts_while_it_holds_the_lock(tmp_path, fake_runner):
+    """p91: `reprintbuddy update` typed in the container runs outside the unit; its lock tells."""
+    from reprintbuddy.ops import oplock
+
+    put(tmp_path, "running", 5)
+    unit(fake_runner, "inactive")
+    held = oplock.acquire(tmp_path, "update")
+    try:
+        assert update_running(tmp_path, fake_runner, NOW) is True
+    finally:
+        held.release()
+    assert update_running(tmp_path, fake_runner, NOW) is False
+
+
+def test_a_restore_lock_is_no_update(tmp_path, fake_runner):
+    from reprintbuddy.ops import oplock
+
+    put(tmp_path, "running", 5)
+    unit(fake_runner, "inactive")
+    held = oplock.acquire(tmp_path, "restore")
+    try:
+        assert update_running(tmp_path, fake_runner, NOW) is False
+    finally:
+        held.release()

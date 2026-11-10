@@ -618,3 +618,33 @@ def test_marks_only_in_the_wal_of_a_crashed_service_are_carried_over_too(tmp_pat
     marker = read_restored_marker(crashed.parent)
     assert marker["marks"] == {"bambuddy.connection": {"state": "unreachable", "at": "2026-11-08T09:00:00"}}
     assert [(m["kind"], m["ref"], m["state"]) for m in marker["notify_marks"]] == [("below_min", "4", "sent")]
+
+
+def test_it_refuses_while_an_update_holds_the_lock(tmp_path, source, target):
+    """p91: an update started by hand runs outside the unit, so systemd says nothing; the lock does."""
+    from reprintbuddy.ops import oplock
+
+    held = oplock.acquire(target.parent, "update")
+    try:
+        code, said, asked = run(backup_of(source, tmp_path), target)
+    finally:
+        held.release()
+    assert code == restorecmd.EXIT_NOT_DONE and asked == []
+    assert cap_of(target) == 3
+    assert "an update is running" in said.text() and "Nothing was changed." in said.text()
+
+
+def test_it_holds_the_lock_while_it_replaces_and_lets_it_go(tmp_path, source, target, monkeypatch):
+    from reprintbuddy.ops import oplock
+
+    seen = []
+    real = fb.replace_database
+
+    def spy(*args, **kwargs):
+        seen.append(oplock.holder(target.parent))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(fb, "replace_database", spy)
+    code, _, _ = run(backup_of(source, tmp_path), target)
+    assert code == restorecmd.EXIT_OK and seen == ["restore"]
+    assert oplock.holder(target.parent) is None

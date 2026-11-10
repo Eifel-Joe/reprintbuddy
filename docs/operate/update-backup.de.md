@@ -91,6 +91,8 @@ Es tut dasselbe wie der Knopf und geht auf die neueste Version. Der Fortschritt 
 journalctl -u reprintbuddy-update
 ```
 
+Ein Update und ein Wiederherstellen laufen nie gleichzeitig, egal wie sie gestartet wurden: Was als Zweites kommt, wird abgelehnt. Das gilt auch für `reprintbuddy update`, direkt auf der Kommandozeile eingegeben, und für [`reprintbuddy restore-backup`](#wiederherstellen-auf-der-kommandozeile). Beide sperren dazu die Datei `maintenance.lock` im Datenordner. Das System gibt die Sperre frei, sobald der Vorgang endet, auch nach einem Absturz oder Stromausfall; es bleibt also keine Sperre hängen. Lass die Datei, wo sie ist.
+
 ## Versionen und Release-Notes
 
 Versionen sind Git-Tags `vX.Y.Z`, und die Paketversion entspricht dem Tag. Das Update installiert das neueste Versions-Tag. Ändert eine Version die systemd-Units oder die sudoers-Regel, steht das in ihren Release-Notes, und du führst nach dem Update das Installationsskript noch einmal aus. Die Release-Notes stehen auf [GitHub](https://github.com/Eifel-Joe/reprintbuddy/releases) und, für die Versionen einer neueren Version, auf der Update-Karte (siehe [Was die neueren Versionen mitbringen](#was-die-neueren-versionen-mitbringen)).
@@ -133,7 +135,7 @@ Danach gelten Benutzername und Passwort **aus der Sicherung**, und alle melden s
 
 - Eine Sicherung aus einer **älteren** Version wird so eingespielt und beim Start migriert.
 - Eine Sicherung aus einer **neueren** Version wird abgelehnt („Erst aktualisieren, dann wiederherstellen“).
-- Solange ein Update oder ein anderes Wiederherstellen läuft, beginnt keins.
+- Solange ein Update oder ein anderes Wiederherstellen läuft, beginnt keins, auch wenn es auf der Kommandozeile gestartet wurde (siehe [Update von Hand](#update-von-hand)).
 
 !!! note "Auf einem neuen Rechner"
     Die Oberfläche öffnet sich erst, wenn das Konto und die Bambuddy-Verbindung eingerichtet sind, siehe [Ersteinrichtung](../start/setup.md). Willst du vorher wiederherstellen, nimm die Kommandozeile, siehe unten. Passen Adresse oder Port aus der Sicherung nicht zum neuen Rechner, setze sie mit `reprintbuddy set-host` und `reprintbuddy set-port` zurecht, siehe [Kommandozeile](cli.md).
@@ -154,7 +156,7 @@ rm /var/lib/reprintbuddy/restore.zip
 systemctl start reprintbuddy
 ```
 
-Der Befehl fragt nach dem Passwort der Sicherung, wenn sie verschlüsselt ist (nur am Terminal, nie als Argument; drei Versuche). Er lehnt ab, solange Reprintbuddy oder sein Update läuft. Die Datenbank, die vorher da war, sichert er zuerst nach `backups/`, oder als `damaged-<Datum>T<Uhrzeit>Z.db`, falls sie sich nicht lesen ließ, und sagt, was er wiederhergestellt hat. Wie die Oberfläche behält er, was Protokoll und Push-Nachrichten schon gemeldet hatten. Er läuft als Dienstbenutzer aus dem Ordner `/`, gib also den vollen Pfad an; der Dienstbenutzer muss die Datei lesen können: Kopiere sie wie gezeigt in den Datenordner, mit dem Modus 0600, weil sie deine Schlüssel enthält, wenn sie nicht verschlüsselt ist, und lösche sie danach. Danach melden sich alle neu an.
+Der Befehl fragt nach dem Passwort der Sicherung, wenn sie verschlüsselt ist (nur am Terminal, nie als Argument; drei Versuche). Er lehnt ab, solange Reprintbuddy oder ein Update läuft, auch ein Update, das von Hand auf der Kommandozeile gestartet wurde. Die Datenbank, die vorher da war, sichert er zuerst nach `backups/`, oder als `damaged-<Datum>T<Uhrzeit>Z.db`, falls sie sich nicht lesen ließ, und sagt, was er wiederhergestellt hat. Wie die Oberfläche behält er, was Protokoll und Push-Nachrichten schon gemeldet hatten. Er läuft als Dienstbenutzer aus dem Ordner `/`, gib also den vollen Pfad an; der Dienstbenutzer muss die Datei lesen können: Kopiere sie wie gezeigt in den Datenordner, mit dem Modus 0600, weil sie deine Schlüssel enthält, wenn sie nicht verschlüsselt ist, und lösche sie danach. Danach melden sich alle neu an.
 
 ## Datenbankkopie von Hand wiederherstellen
 
