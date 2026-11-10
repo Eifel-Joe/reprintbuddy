@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -248,6 +249,23 @@ def test_the_reason_of_a_failed_update_is_in_the_language_of_the_page(ops_env, l
     page = ops_env.client.get("/settings?tab=maintenance").text
     assert expected in page
     assert "fetch: fatal: no network" not in page  # not twice, and not the English line
+
+
+@pytest.mark.parametrize(
+    "lang, expected",
+    [
+        ("en", "The releases could not be fetched"),
+        ("de", "Die Versionen konnten nicht geholt werden"),
+    ],
+)
+@pytest.mark.parametrize("detail", ["", "  "])
+def test_an_empty_technical_line_leaves_no_colon_at_the_end_of_the_reason(ops_env, lang, expected, detail):  # p200
+    """The texts end in ": {detail}"; without a technical line the card ended on a lone colon."""
+    git_env(ops_env)
+    _set_language(ops_env, lang)
+    write_status(data_dir(ops_env), _failed(message="fetch: ", reason="fetch_failed", params={"detail": detail}))
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    assert re.search(re.escape(expected) + r"\s*(?:\n|<)", page), page[page.find(expected):][:80]
 
 
 def test_every_reason_has_a_text_in_both_languages_that_the_card_can_fill(ops_env):
