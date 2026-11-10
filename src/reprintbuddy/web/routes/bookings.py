@@ -18,7 +18,7 @@ from reprintbuddy.models import Article, Part, utcnow
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.flash import flash
-from reprintbuddy.web.formatting import to_local
+from reprintbuddy.web.formatting import format_date, to_local
 from reprintbuddy.web.forms import duplicate_redirect, error_status, error_text, parse_bool, parse_int, parse_text
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
 from reprintbuddy.web.journal_view import journal_rows
@@ -151,6 +151,15 @@ async def _book(
     return RedirectResponse("/bookings", status_code=303)
 
 
+def _inventory_done(request: Request, item: str, p: dict, diff: int) -> tuple[str, dict]:
+    """The message of an inventory; dated back it names the day and the value of then (p210)."""
+    params = {"item": item, "counted": p["counted"], "diff": f"{diff:+d}"}
+    if p["booked_at"] is None:
+        return "bookings.inventory_done", params
+    day = format_date(to_local(p["booked_at"]).date(), current_language(request))
+    return "bookings.inventory_done_then", {**params, "day": day, "then": p["counted"] - diff}
+
+
 @router.post("/bookings/inventory", dependencies=[Depends(verify_csrf)])
 async def book_inventory(request: Request, db: Session = Depends(get_db)):
     def prepare(form):
@@ -162,8 +171,7 @@ async def book_inventory(request: Request, db: Session = Depends(get_db)):
         diff = stock.count_article(
             tx, p["article_id"], p["field"], p["counted"], "user", p["note"], booked_at=p["booked_at"]
         )
-        item = tx.get(Article, p["article_id"]).name
-        return [("bookings.inventory_done", {"item": item, "counted": p["counted"], "diff": f"{diff:+d}"})]
+        return [_inventory_done(request, tx.get(Article, p["article_id"]).name, p, diff)]
 
     return await _book(request, db, "inventory", prepare, book)
 
@@ -177,8 +185,7 @@ async def book_part_inventory(request: Request, db: Session = Depends(get_db)):
     def book(tx, p):
         _active_part(tx, p["part_id"])
         diff = stock.count_part(tx, p["part_id"], p["counted"], "user", p["note"], booked_at=p["booked_at"])
-        item = tx.get(Part, p["part_id"]).name
-        return [("bookings.inventory_done", {"item": item, "counted": p["counted"], "diff": f"{diff:+d}"})]
+        return [_inventory_done(request, tx.get(Part, p["part_id"]).name, p, diff)]
 
     return await _book(request, db, "part-inventory", prepare, book)
 

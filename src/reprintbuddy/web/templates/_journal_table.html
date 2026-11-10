@@ -25,7 +25,7 @@
           {% if row.order %}<br><a class="muted" href="/orders/{{ row.order[0] }}">{{ row.order[1] }}</a>{% endif %}
         </td>
         <td class="num">{{ row.qty }}</td>
-        <td>{% for change in row.changes %}{{ t(change.label) }} {{ change.before }} → {{ change.after }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+        <td>{% for change in row.changes %}{{ t(change.label) }} {{ change.before }} → {{ change.after }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% if row.then %}<span class="col-note">{{ t('journal.then', before=row.then[0], after=row.then[1]) }}</span>{% endif %}</td>
         <td>{{ row.note or '' }}</td>
       </tr>
     {% endfor %}
