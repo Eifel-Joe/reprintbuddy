@@ -54,6 +54,8 @@ The cards on top count spool sorts, total stock, spools and the reordered sorts 
 
 Click a spool sort (or the icon **Configure** or **Edit settings**) to open its **Reorder settings**. They matter only for sorts that are reordered in some article, and they feed the [Reorder suggestions](reorder.md). They serve the suggestions only: Reprintbuddy never books filament, Bambuddy keeps the stock.
 
+![The reorder settings of a spool sort: the safety stock and two suppliers, one of them the default](../assets/images/en/filament-settings.png)
+
 On top stand the fields of the sort itself:
 
 | Field | Meaning | Default |

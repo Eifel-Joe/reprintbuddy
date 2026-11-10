@@ -54,6 +54,8 @@ Die Karten oben zählen Spulensorten, Gesamtbestand, Spulen und die nachgekaufte
 
 Klicke auf eine Spulensorte (oder auf das Symbol **einstellen** oder **Einstellungen ändern**), um ihre **Bestelleinstellungen** zu öffnen. Sie zählen nur für Sorten, die in irgendeinem Artikel nachgekauft werden, und sie speisen die [Bestellvorschläge](reorder.md). Sie dienen nur den Vorschlägen: Reprintbuddy bucht nie Filament, den Bestand führt Bambuddy.
 
+![Die Bestelleinstellungen einer Spulensorte: das Sicherheitspolster und zwei Lieferanten, einer davon der Standard](../assets/images/de/filament-settings.png)
+
 Oben stehen die Felder der Sorte selbst:
 
 | Feld | Bedeutung | Vorgabe |
