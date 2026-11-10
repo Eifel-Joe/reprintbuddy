@@ -6,11 +6,20 @@
 {% macro badge(item) -%}
 <span class="badges">{{ ui.badge('part', 'archived' if archived else item.status) }}</span>
 {%- endmacro %}
-{#- The supplier opens the order link in a new window (Spec 5.3); without one it is plain text. -#}
-{% macro supplier(part) -%}
-{%- if part.order_url %}<a href="{{ part.order_url }}" target="_blank" rel="noopener noreferrer">{{ part.supplier }}</a>
-{%- else %}{{ part.supplier }}{% endif -%}
+{#- The default supplier opens its order link in a new window (Spec 5.3); without one it is plain
+    text. A default without a name is "Supplier n" when there is a link or another supplier to tell
+    apart; then "+ n more" for the other suppliers. Nothing at all for a part with one unnamed
+    supplier without a link, as before. -#}
+{% macro supplier(item) -%}
+{%- set row = item.supplier -%}
+{%- set label = row.name if row and row.name else (t('parts.supplier_unnamed', n=row.position + 1) if row and (row.order_url or item.more) else '') -%}
+{%- if label %}
+{%- if row.order_url %}<a href="{{ row.order_url }}" target="_blank" rel="noopener noreferrer">{{ label }}</a>
+{%- else %}{{ label }}{% endif -%}
+{%- if item.more %} <span class="muted">{{ t('parts.more_suppliers', n=item.more) }}</span>{% endif -%}
+{%- endif -%}
 {%- endmacro %}
+{%- macro has_supplier(item) -%}{{ 'yes' if item.supplier and (item.supplier.name or item.supplier.order_url or item.more) else '' }}{%- endmacro %}
 {#- Fill bar towards the minimum stock; grey in the archive. -#}
 {% macro min_bar(item) -%}
 {{ ui.bar(item.fill, 'archived' if archived else item.status) }}
@@ -57,8 +66,8 @@
         <td>{{ badge(item) }}</td>
         <td class="num">{{ part.stock }} {{ part.unit|unit }}</td>
         <td class="num target">{{ part.min_stock }}{{ min_bar(item) }}</td>
-        <td class="num">{{ part.pack_size }}</td>
-        <td>{% if part.supplier %}{{ supplier(part) }}{% endif %}</td>
+        <td class="num">{{ item.supplier.pack_size if item.supplier else '' }}</td>
+        <td>{{ supplier(item) }}</td>
         <td class="actions-col">{% call ui.row_actions() %}
           {%- if not archived %}{{ ui.icon_button('pencil', t('parts.edit'), '/parts/' ~ part.id ~ '/edit', part.name) }}{% endif %}
           {{- ui.icon_button('history', t('journal.title'), '/journal?part=' ~ part.id, part.name) }}
@@ -79,10 +88,10 @@
     <div class="tile-stats">
       <span>{{ t('parts.stock') }} <strong>{{ part.stock }}</strong> {{ part.unit|unit }}</span>
       <span>{{ t('parts.field.min_stock') }} <strong>{{ part.min_stock }}</strong></span>
-      <span>{{ t('parts.col.pack') }} <strong>{{ part.pack_size }}</strong></span>
+      <span>{{ t('parts.col.pack') }} <strong>{{ item.supplier.pack_size if item.supplier else '' }}</strong></span>
     </div>
     {{ min_bar(item) }}
-    {% if part.supplier %}<div class="tile-foot"><span>{{ supplier(part) }}</span></div>{% endif %}
+    {% if has_supplier(item) %}<div class="tile-foot"><span>{{ supplier(item) }}</span></div>{% endif %}
   </div>
   {% endfor %}
 </div>

@@ -166,6 +166,7 @@
   "parts.supplier_default": "Choose exactly one supplier as the default.",
   "parts.suppliers_count": "A part has 1 to {max} suppliers.",
   "parts.supplier_error": "Supplier {n}: {error}",
+  "parts.more_suppliers": "+ {n} more",
   "articles.not_found": "This article does not exist.",
   "articles.plate_taken": "This plate already belongs to the article {name}.",
   "articles.target_exclusive": "Choose either a printer model or a single printer, not both.",

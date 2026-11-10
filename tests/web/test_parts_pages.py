@@ -303,3 +303,30 @@ def test_supplier_fields_in_german(ready_client):
     page = ready_client.get("/parts/new").text
     for word in ("Lieferanten", "Lieferant 1", "Standard", "Lieferant hinzufügen", "Entfernen"):
         assert word in page, word
+
+
+def test_the_form_brings_its_script_and_enter_saves(ready_client):
+    from pathlib import Path
+
+    from reprintbuddy import __version__
+    from reprintbuddy.web import i18n as web_i18n
+
+    page = ready_client.get("/parts/new").text
+    assert f'<script src="/static/js/part_suppliers.js?v={__version__}" defer></script>' in page
+    assert ready_client.get(f"/static/js/part_suppliers.js?v={__version__}").status_code == 200
+    form = re.search(r'<form method="post" action="/parts/new".*?</form>', page, re.S).group(0)
+    first = re.search(r"<button[^>]*>", form).group(0)  # the one Enter presses: a plain save
+    assert 'type="submit"' in first and "name=" not in first and 'tabindex="-1"' in first
+    script = (Path(web_i18n.__file__).parent / "static" / "js" / "part_suppliers.js").read_text(encoding="utf-8")
+    assert "data-changed" in script  # a removed block changes no field; live.js must not undo it
+
+
+def test_eleven_suppliers_are_refused_not_cut_off(ready_client):
+    eleven = {key: [value] * 11 for key, value in (
+        ("supplier", "Example Supplier"), ("order_url", ""), ("pack_size", "1"),
+        ("min_order_packs", "1"), ("lead_time_days", "0"),
+    )}
+    response = ready_client.post("/parts/new", data=part_fields(ready_client, supplier_default="0", **eleven))
+    assert response.status_code == 200
+    assert en("parts.suppliers_count", max=10) in response.text
+    assert parts_in_db(ready_client) == []

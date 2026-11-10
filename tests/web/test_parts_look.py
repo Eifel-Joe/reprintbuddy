@@ -379,3 +379,25 @@ def test_part_form_head_has_a_subtitle(ready_client):
         head = re.search(r'<header class="page-head">.*?</header>', ready_client.get(path).text, re.S).group(0)
         assert f'<p class="page-sub">{en("parts.form_subtitle")}</p>' in head, path
     assert en("parts.form_subtitle") == "Stock, minimum stock and supplier of the part"
+
+
+def test_the_list_shows_the_default_supplier_and_how_many_more(ready_client):  # Spec 5.3
+    from reprintbuddy.models import PartSupplier
+
+    with sm_of(ready_client).begin() as s:
+        part = make_part(s, name="Insert M4", pack_size=50, supplier="Example Supplier",
+                         order_url="https://shop.example/insert-m4")
+        default = s.get(PartSupplier, 1)
+        default.is_default = False
+        s.flush()
+        s.add(PartSupplier(part_id=part.id, position=1, name="Example Supplier B", pack_size=10, is_default=True))
+        s.add(PartSupplier(part_id=part.id, position=2, name="Example Supplier C", pack_size=20))
+    listing = list_of(ready_client.get("/parts").text)
+    table = re.search(r"<table>.*?</table>", listing, re.S).group(0)
+    tiles = re.search(r'<div class="tiles">.*', listing, re.S).group(0)
+    for block in (table, tiles):
+        assert "Example Supplier B" in block and en("parts.more_suppliers", n=2) in block
+        assert SUPPLIER_LINK not in block  # the link of a supplier that is not the default
+        assert "Example Supplier C" not in block
+    assert '<td class="num">10</td>' in table
+    assert "<strong>10</strong>" in tiles

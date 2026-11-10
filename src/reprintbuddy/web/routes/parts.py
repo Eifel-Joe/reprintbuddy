@@ -13,7 +13,7 @@ from reprintbuddy.domain.catalog import MAX_SUPPLIERS, PartInput, SupplierInput
 from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.domain.status import STATES, PartStatus, part_status, summarize
 from reprintbuddy.domain.stock import MAX_QTY
-from reprintbuddy.models import Part
+from reprintbuddy.models import Part, PartSupplier
 from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
@@ -184,13 +184,18 @@ class PartItem(NamedTuple):
     part: Part
     status: PartStatus
     fill: int | None
+    supplier: PartSupplier | None  # the default supplier (Spec 5.3)
+    more: int  # how many suppliers besides the default
 
 
-def _item(part: Part) -> PartItem:
+def _item(part: Part, suppliers: list[PartSupplier]) -> PartItem:
+    default = next((row for row in suppliers if row.is_default), None)
     return PartItem(
         part,
         part_status(stock=part.stock, min_stock=part.min_stock),
         fill_percent(part.stock, part.min_stock),
+        default,
+        max(0, len(suppliers) - 1),
     )
 
 
@@ -208,7 +213,8 @@ async def parts_list(
     archived = view == "archived"
     states = STATES["part"]
     status = None if archived else listing.pick(request.query_params.get("status"), states)
-    every = [_item(part) for part in catalog.list_parts(db, archived=archived)]
+    suppliers = catalog.suppliers_by_part(db)
+    every = [_item(part, suppliers.get(part.id, [])) for part in catalog.list_parts(db, archived=archived)]
     found = [item for item in every if listing.matches(q, item.part.name)]
     counts = Counter(item.status for item in found)
     lang = current_language(request)

@@ -166,6 +166,7 @@
   "parts.supplier_default": "Wähle genau einen Lieferanten als Standard.",
   "parts.suppliers_count": "Ein Zukaufteil hat 1 bis {max} Lieferanten.",
   "parts.supplier_error": "Lieferant {n}: {error}",
+  "parts.more_suppliers": "+ {n} weitere",
   "articles.not_found": "Diesen Artikel gibt es nicht.",
   "articles.plate_taken": "Diese Platte gehört schon zum Artikel {name}.",
   "articles.target_exclusive": "Bitte entweder ein Druckermodell oder einen einzelnen Drucker wählen, nicht beides.",
