@@ -8,8 +8,7 @@ import pytest
 from sqlalchemy import text
 
 from reprintbuddy import db as dbmod
-from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
-from reprintbuddy.models import JournalEntry
+from reprintbuddy.db import make_engine, upgrade
 
 
 @pytest.fixture
@@ -55,6 +54,22 @@ def rows(engine, sql, **params):
         return [tuple(r) for r in conn.execute(text(sql), params)]
 
 
+class Entry:
+    """A journal row as the database holds it at 0006.
+
+    Read with SQL, not with the ORM model: the model follows the newest revision (0013 added
+    `journal.booked_at`), and a database at 0006 does not have those columns yet.
+    """
+
+    def __init__(self, actor, kind, details, note):
+        self.actor, self.kind, self.note = actor, kind, note
+        self.details = json.loads(details) if details is not None else None
+
+
+def journal_entries(engine):
+    return [Entry(*r) for r in rows(engine, "select actor, kind, details, note from journal order by id")]
+
+
 def test_two_brands_of_one_colour_become_one_sort_and_everything_follows(old_db):
     with old_db.begin() as conn:
         add_sort(conn, 1, "Brand One", "PETG", "#000000", name="Black")
@@ -87,14 +102,12 @@ def test_settings_of_the_lowest_id_stay_the_others_are_dropped_and_journalled(ol
         add_settings(conn, 2, lead_time_days=9, supplier="Other Supplier")
     upgrade(old_db, revision="0006")
     assert rows(old_db, "select spool_filament_id, lead_time_days from filament_settings") == [(1, 5)]
-    session = make_sessionmaker(old_db)()
-    with session:
-        (entry,) = session.query(JournalEntry).all()
-        assert (entry.actor, entry.kind) == ("auto", "filament_sorts_merged")
-        assert entry.details["into"] == 1 and entry.details["from"] == [2, 3]
-        (dropped,) = entry.details["dropped_settings"]
-        assert dropped["sort"] == 2 and dropped["lead_time_days"] == 9 and dropped["supplier"] == "Other Supplier"
-        assert "2, 3" in entry.note and "into 1" in entry.note and "dropped" in entry.note
+    (entry,) = journal_entries(old_db)
+    assert (entry.actor, entry.kind) == ("auto", "filament_sorts_merged")
+    assert entry.details["into"] == 1 and entry.details["from"] == [2, 3]
+    (dropped,) = entry.details["dropped_settings"]
+    assert dropped["sort"] == 2 and dropped["lead_time_days"] == 9 and dropped["supplier"] == "Other Supplier"
+    assert "2, 3" in entry.note and "into 1" in entry.note and "dropped" in entry.note
 
 
 def test_the_next_merged_sort_brings_its_settings_when_the_lowest_has_none(old_db):
@@ -106,10 +119,8 @@ def test_the_next_merged_sort_brings_its_settings_when_the_lowest_has_none(old_d
         add_settings(conn, 6, lead_time_days=8)
     upgrade(old_db, revision="0006")
     assert rows(old_db, "select spool_filament_id, lead_time_days from filament_settings") == [(4, 7)]
-    session = make_sessionmaker(old_db)()
-    with session:
-        (entry,) = session.query(JournalEntry).all()
-        assert [d["sort"] for d in entry.details["dropped_settings"]] == [6]
+    (entry,) = journal_entries(old_db)
+    assert [d["sort"] for d in entry.details["dropped_settings"]] == [6]
 
 
 def test_sorts_that_stay_apart_are_untouched_but_lose_the_brand(old_db):
