@@ -512,6 +512,10 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
                 _remove(candidate)
                 return _refused(request, "busy")
             await asyncio.sleep(0.02)
+        # p270: a push message on its way gets its outcome written before the marks are copied, so the
+        # restored database does not send it once more. Bounded: past it the restore goes ahead.
+        if not await app.state.notifier.settle(app.state.restore_notify_wait):
+            log.info("restore: a push message was still on its way; it may be sent once more")
     except BaseException:  # cancelled while waiting (shutdown, …): nothing is replaced yet
         state.phase = "idle"
         _remove(candidate)

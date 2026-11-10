@@ -918,3 +918,40 @@ def test_restore_closes_the_temporary_file_when_the_token_is_wrong(ops_env, monk
     )
     assert response.status_code == 403
     assert "b.zip" in closed
+
+
+def test_restore_waits_for_a_push_message_on_its_way_before_it_copies(ops_env, monkeypatch):
+    """p270: the marks are copied only after the message on its way has its outcome written."""
+    upload(ops_env, made_backup(ops_env))
+    app = ops_env.client.app
+    order = []
+
+    async def settle(timeout):
+        order.append(("settle", timeout, app.state.restore.active))
+        return True
+
+    real = fb.replace_database
+
+    def spy(*args, **kwargs):
+        order.append(("replace",))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(app.state.notifier, "settle", settle)
+    monkeypatch.setattr(fb, "replace_database", spy)
+    response = confirm(ops_env)
+    assert response.status_code == 200
+    assert order == [("settle", app.state.restore_notify_wait, True), ("replace",)]
+
+
+def test_restore_goes_on_when_a_push_message_is_still_on_its_way(ops_env, monkeypatch):
+    """The wait is bounded: past it the restore goes ahead (the message may then come once more)."""
+    upload(ops_env, made_backup(ops_env))
+    app = ops_env.client.app
+
+    async def settle(timeout):
+        return False
+
+    monkeypatch.setattr(app.state.notifier, "settle", settle)
+    response = confirm(ops_env)
+    assert response.status_code == 200
+    assert RESTART_CMD in ops_env.runner.calls
