@@ -27,6 +27,7 @@ from reprintbuddy.models import (
     Order,
     OrderLine,
     Part,
+    PartSupplier,
     ProductSet,
     SetPosition,
     SetPositionOption,
@@ -456,38 +457,72 @@ def list_articles(session: Session, *, archived: bool = False) -> list[ArticleRo
 # ---- purchased parts -----------------------------------------------------------------------
 
 
+MAX_SUPPLIERS = 10  # per part (Spec 5.3)
+SUPPLIER_COLUMNS = ("name", "order_url", "pack_size", "min_order_packs", "lead_time_days", "is_default")
+
+
+@dataclass
+class SupplierInput:
+    """One supplier of a part (Spec 5.3): where it is bought, in which packs, how fast."""
+
+    name: str | None = None
+    order_url: str | None = None
+    pack_size: int = 1
+    min_order_packs: int = 1
+    lead_time_days: int = 0
+    is_default: bool = False
+
+
+def _one_default() -> list[SupplierInput]:
+    return [SupplierInput(is_default=True)]
+
+
 @dataclass
 class PartInput:
     name: str
     unit: str = "pcs"
     min_stock: int = 0
-    pack_size: int = 1
-    min_order_packs: int = 1
-    lead_time_days: int = 0
     safety_value: int = 0
     safety_unit: Literal["days", "qty"] = "days"
-    supplier: str | None = None
-    order_url: str | None = None
+    # in the order of the form; a part has 1 to 10, exactly one the default (Spec 5.3)
+    suppliers: list[SupplierInput] = field(default_factory=_one_default)
+
+
+def _check_supplier(data: SupplierInput, number: int) -> SupplierInput:
+    """One supplier's fields; an error names the supplier by its number (1 for the first)."""
+    try:
+        url = _text(data.order_url, "parts.field.order_url", 2000)
+        if url is not None and not url.lower().startswith(("http://", "https://")):
+            raise ValidationError("parts.invalid_url")
+        return SupplierInput(
+            name=_text(data.name, "parts.field.supplier", MAX_NAME),
+            order_url=url,
+            pack_size=_int_in(data.pack_size, "parts.field.pack_size", 1, MAX_QTY),
+            min_order_packs=_int_in(data.min_order_packs, "parts.field.min_order_packs", 1, 1000),
+            lead_time_days=_int_in(data.lead_time_days, "parts.field.lead_time_days", 0, 365),
+            is_default=bool(data.is_default),
+        )
+    except ValidationError as error:
+        error.params["supplier"] = number
+        raise
 
 
 def _check_part_input(data: PartInput) -> PartInput:
     unit = _text(data.unit, "parts.field.unit", 20, required=True)
     if data.safety_unit not in ("days", "qty"):
         raise ValidationError("parts.invalid_safety_unit")
-    url = _text(data.order_url, "parts.field.order_url", 2000)
-    if url is not None and not url.lower().startswith(("http://", "https://")):
-        raise ValidationError("parts.invalid_url")
+    if not 1 <= len(data.suppliers) <= MAX_SUPPLIERS:
+        raise ValidationError("parts.suppliers_count", max=MAX_SUPPLIERS)
+    suppliers = [_check_supplier(item, number) for number, item in enumerate(data.suppliers, start=1)]
+    if sum(item.is_default for item in suppliers) != 1:
+        raise ValidationError("parts.supplier_default")
     return replace(
         data,
         name=_required_name(data.name, "parts.field.name"),
         unit=unit,
         min_stock=_int_in(data.min_stock, "parts.field.min_stock", 0, MAX_QTY),
-        pack_size=_int_in(data.pack_size, "parts.field.pack_size", 1, MAX_QTY),
-        min_order_packs=_int_in(data.min_order_packs, "parts.field.min_order_packs", 1, 1000),
-        lead_time_days=_int_in(data.lead_time_days, "parts.field.lead_time_days", 0, 365),
         safety_value=_int_in(data.safety_value, "parts.field.safety_value", 0, MAX_QTY),
-        supplier=_text(data.supplier, "parts.field.supplier", MAX_NAME),
-        order_url=url,
+        suppliers=suppliers,
     )
 
 
@@ -495,13 +530,64 @@ def _apply_part(part: Part, data: PartInput) -> None:
     part.name = data.name
     part.unit = data.unit
     part.min_stock = data.min_stock
-    part.pack_size = data.pack_size
-    part.min_order_packs = data.min_order_packs
-    part.lead_time_days = data.lead_time_days
     part.safety_value = data.safety_value
     part.safety_unit = data.safety_unit
-    part.supplier = data.supplier
-    part.order_url = data.order_url
+
+
+def _apply_suppliers(session: Session, part_id: int, wanted: list[SupplierInput]) -> None:
+    """Make the part's suppliers what the form says, compared by position.
+
+    Unchanged rows are not touched, so saving the same values writes nothing: no log line, and no
+    other open form is told it changed (Spec 10.5, 10.7). Rejected: deleting and writing every row
+    again, which is no change for the log (`capture` compares child rows) but is one for the live
+    feed. The default moves in two steps: the unique index allows one default per part at any time.
+    """
+    rows = part_suppliers(session, part_id)
+    for row in rows[len(wanted):]:
+        session.delete(row)
+    for row, item in zip(rows, wanted):
+        if row.is_default and not item.is_default:
+            row.is_default = False
+    session.flush()
+    for position, item in enumerate(wanted):
+        row = rows[position] if position < len(rows) else None
+        if row is None:
+            row = PartSupplier(part_id=part_id, position=position)
+            session.add(row)
+        for column in SUPPLIER_COLUMNS:
+            if getattr(row, column) != getattr(item, column):
+                setattr(row, column, getattr(item, column))
+    session.flush()
+
+
+def part_suppliers(session: Session, part_id: int) -> list[PartSupplier]:
+    """The suppliers of a part in the order of its form."""
+    return list(
+        session.scalars(
+            select(PartSupplier).where(PartSupplier.part_id == part_id).order_by(PartSupplier.position)
+        )
+    )
+
+
+def default_supplier(session: Session, part_id: int) -> PartSupplier | None:
+    """The default supplier of a part (every part has one, Spec 5.3)."""
+    return session.scalar(
+        select(PartSupplier).where(PartSupplier.part_id == part_id, PartSupplier.is_default.is_(True))
+    )
+
+
+def suppliers_by_part(session: Session) -> dict[int, list[PartSupplier]]:
+    """The suppliers of every part, in the order of their forms; one query for a list page."""
+    found: dict[int, list[PartSupplier]] = {}
+    for row in session.scalars(select(PartSupplier).order_by(PartSupplier.part_id, PartSupplier.position)):
+        found.setdefault(row.part_id, []).append(row)
+    return found
+
+
+def supplier_names(session: Session) -> list[str]:
+    """The supplier names in use, offered while typing (Spec 5.3); each once, sorted."""
+    names = session.scalars(select(PartSupplier.name).where(PartSupplier.name.is_not(None)).distinct())
+    return sorted(set(names), key=lambda name: (name.casefold(), name))
 
 
 def create_part(session: Session, data: PartInput, initial_stock: int, actor: Actor) -> Part:
@@ -512,18 +598,21 @@ def create_part(session: Session, data: PartInput, initial_stock: int, actor: Ac
     _apply_part(part, data)
     session.add(part)
     session.flush()
+    _apply_suppliers(session, part.id, data.suppliers)
     if initial_stock > 0:
         count_part(session, part.id, initial_stock, actor)
     return part
 
 
 def update_part(session: Session, part_id: int, data: PartInput) -> Part:
-    """Change the settings of a part; its stock only changes through bookings."""
+    """Change the settings and suppliers of a part; its stock only changes through bookings."""
     part = session.get(Part, part_id)
     if part is None:
         raise NotFoundError("parts.not_found")
-    _apply_part(part, _check_part_input(data))
+    data = _check_part_input(data)
+    _apply_part(part, data)
     session.flush()
+    _apply_suppliers(session, part_id, data.suppliers)
     return part
 
 
