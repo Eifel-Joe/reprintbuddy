@@ -1,3 +1,5 @@
+import itertools
+import random
 from datetime import date
 
 from reprintbuddy.domain.rules import (
@@ -58,6 +60,51 @@ def test_set_shared_option_with_a_negative_stock_counts_the_worst_choice():  # r
     second = PositionStock(1, (-2, 3), (1, 2))
     assert set_available([first, second]) == -2  # picked once, article 1 is short by 2
     assert set_available([PositionStock(1, (-1,), (7,)), PositionStock(1, (-1, 4), (7, 8))]) == -1
+
+
+def _every_choice(positions: list[PositionStock]) -> int:
+    """Spec 5.4 word for word: for every combination of choices the set is a plain set (the minimum over
+    its articles, the quantities of one article added up); it is deliverable as often as the worst
+    combination allows."""
+    stock = {a: s for p in positions for a, s in zip(p.article_ids, p.option_available)}
+    worst = None
+    for picked in itertools.product(*(p.article_ids for p in positions)):
+        need: dict[int, int] = {}
+        for position, article_id in zip(positions, picked):
+            need[article_id] = need.get(article_id, 0) + position.qty
+        value = min(stock[a] // n for a, n in need.items())
+        worst = value if worst is None else min(worst, value)
+    return worst
+
+
+def test_set_available_is_exact_for_shared_options():  # p321
+    """p321 asked whether the worst choice per article is only an approximation when an article sits in
+    several choice positions and stocks are oversold or reserved. It is not: the set counts the worst
+    combination, the minimum over all combinations of the minimum over the articles; minima can be
+    swapped, so it is the minimum over the articles of each article's own worst combination, and every
+    article reaches its own worst one by picking it in all positions that hold it (stock 0 or more) or
+    in only the one that needs least of it (oversold). Checked against every combination here."""
+    rng = random.Random(321)
+    for _ in range(3000):
+        pool = rng.sample(range(1, 6), rng.randint(1, 4))
+        stock = {a: rng.randint(-6, 9) for a in pool}  # available = stock - reserved, may be negative
+        positions = []
+        for _ in range(rng.randint(1, 4)):
+            ids = tuple(rng.sample(pool, rng.randint(1, min(3, len(pool)))))
+            positions.append(PositionStock(rng.randint(1, 3), tuple(stock[a] for a in ids), ids))
+        assert set_available(positions) == _every_choice(positions), positions
+
+
+def test_set_shared_options_whose_worst_choices_exclude_each_other():  # p321
+    """The worst combination for 1 (picked twice) and for 2 (picked once) cannot happen at the same
+    time; the set still counts the worse of both, as the combination (1, 2) shows."""
+    both = (4, -3)
+    positions = [PositionStock(1, both, (1, 2)), PositionStock(1, both, (1, 2))]
+    assert _every_choice(positions) == -3  # (1, 1): 2, (1, 2): -3, (2, 2): -3 // 2 = -2
+    assert set_available(positions) == -3
+    positions = [PositionStock(1, (4, 9), (1, 2)), PositionStock(2, (4, 9), (1, 2))]
+    assert _every_choice(positions) == 1  # (1, 1): 4 // 3
+    assert set_available(positions) == 1
 
 
 def test_set_negative():

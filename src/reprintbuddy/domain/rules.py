@@ -46,6 +46,12 @@ def set_available(positions: Sequence[PositionStock]) -> int:
     in two positions needs 2 A per set). For an article that is oversold the worst choice is the one that
     takes the least of it: it counts with the fixed quantity, or else the smallest quantity of a choice.
     A position without article ids (not known to the caller) counts on its own.
+
+    This is exact, not an approximation (p321): the set counts its worst combination of choices, the
+    minimum over all combinations of the minimum over the articles. Minima can be swapped, so it is the
+    minimum over the articles of each article's own worst combination, and the positions are chosen
+    independently, so each article reaches its own one, even when those of two articles exclude each
+    other. Tests: tests/domain/test_rules.py (checked against every combination).
     """
     if not positions:
         return 0

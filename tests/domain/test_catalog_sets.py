@@ -54,6 +54,20 @@ def test_set_negative_shown(db):
         assert catalog.list_sets(s)[0].available == -1
 
 
+def test_set_shared_choice_with_reserved_stock_counts_the_worst_combination(db):  # p321
+    """Both choice positions offer A and B; A is reserved beyond its stock (available -2). The worst
+    combination is A once and B once: A is short by 2, so the set shows -2 (A twice: -2 // 2 = -1,
+    B twice: 3 // 2 = 1)."""
+    with db.begin() as s:
+        a = make_article(s, name="Template A", stock=2, reserved=4).id
+        b = make_article(s, name="Template B", stock=3).id
+        catalog.create_set(
+            s, SetInput("Starter Set", None, [PositionInput(1, [a, b]), PositionInput(1, [a, b])])
+        )
+    with db.begin() as s:
+        assert catalog.list_sets(s)[0].available == -2
+
+
 def test_set_validation(db):
     with db.begin() as s:
         a = make_article(s).id
