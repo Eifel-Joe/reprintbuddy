@@ -309,3 +309,39 @@ def test_journal_shows_the_booking_date_and_when_it_was_saved(ready_client):
     dated, plain = cells[1], cells[0]  # newest first: today's sale, then yesterday's
     assert f"{yesterday:%Y-%m-%d}" in dated and en("journal.saved_at", at="").strip() in dated
     assert "col-note" not in plain
+
+
+# ---- p210: an inventory dated back counts against the value of that day (Spec 6.2) --------------
+
+
+def test_inventory_dated_back_keeps_the_later_sale_and_says_so(ready_client):
+    a = article(ready_client, stock=12)
+    yesterday = local_today() - timedelta(days=1)
+    post(ready_client, "sale", article_id=a, qty="2")  # today: 10
+    response, _ = post(ready_client, "inventory", article_id=a, field="stock", counted="10",
+                       booked_on=f"{yesterday:%Y-%m-%d}")
+    assert response.status_code == 303
+    assert number(ready_client, Article, a, "stock") == 8
+    html = ready_client.get("/bookings").text
+    assert en("bookings.inventory_done_then", item="Template A", counted=10, day=f"{yesterday:%Y-%m-%d}",
+              then=12, diff="-2") in html
+
+
+def test_inventory_dated_before_a_later_inventory_is_refused_with_its_date(ready_client):
+    p = part(ready_client, stock=5)
+    post(ready_client, "part-inventory", part_id=p, counted="7")
+    response, _ = post(ready_client, "part-inventory", part_id=p, counted="3",
+                       booked_on=f"{local_today() - timedelta(days=1):%Y-%m-%d}")
+    assert response.status_code == 200
+    assert en("bookings.later_inventory", at=f"{local_today():%Y-%m-%d}") in response.text
+    assert number(ready_client, Part, p, "stock") == 7
+
+
+def test_journal_shows_the_value_of_that_day_of_an_inventory_dated_back(ready_client):
+    a = article(ready_client, stock=12)
+    post(ready_client, "sale", article_id=a, qty="2")
+    post(ready_client, "inventory", article_id=a, field="stock", counted="10",
+         booked_on=f"{local_today() - timedelta(days=1):%Y-%m-%d}")
+    html = ready_client.get("/journal").text
+    assert en("journal.then", before=12, after=10) in html
+    assert "Stock 10 → 8" in html

@@ -62,8 +62,10 @@ async def _page(
         {
             "id": m.id, "label": m.label, "packs": m.packs, "size": _number(m.pack_size),
             "unit": m.unit, "day": format_date(to_local(m.marked_at).date(), lang),
+            # p211: a partial delivery shows what has arrived; only the rest counts as on its way
+            "arrived": _number(m.arrived) if m.arrived > 0 else None,
         }
-        for m in reorder.open_marks(db)
+        for m in reorder.open_marks(db, spools)
     ]
     # The key figures count the tiles and the marks the page shows.
     cards = kpis.reorder_cards(
