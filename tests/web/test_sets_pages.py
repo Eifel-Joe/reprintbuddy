@@ -54,7 +54,8 @@ def test_create_set_fixed_and_choice(ready_client):
     page = ready_client.get("/sets").text
     assert "Starter Set" in page and "S-1" in page
     assert "1 × Template A" in page and "2 × (Template B | Template C)" in page
-    assert '<td class="num">3</td>' in page  # min(3, 3 // 2 + 5 // 2)
+    # v0.3.16 p173 (Spec 5.4): a choice counts its smallest option, not the sum of the options.
+    assert '<td class="num">1</td>' in page  # min(3, min(3 // 2, 5 // 2))
 
 
 def test_negative_available_is_red(ready_client):

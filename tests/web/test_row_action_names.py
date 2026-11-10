@@ -86,7 +86,8 @@ def test_reorder_received_button(bb_client):
         "item_id": str(pid), "packs": "1",
     })
     labels = [label for _, label in actions_of(bb_client.get("/reorder").text)]
-    assert labels == ["Arrived: Insert M4"], labels
+    # v0.3.16 p280: an order on its way can also be taken back; that button names its row too.
+    assert labels == ["Arrived: Insert M4", "Take back: Insert M4"], labels
 
 
 def test_queue_rows_name_their_article(bb_client):
