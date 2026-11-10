@@ -76,6 +76,8 @@ FIELDS: dict[str, str] = {
     "filaments": "filaments",
     "parts": "parts",
     "unit": "unit",
+    "suppliers": "suppliers",
+    # Fields of a part before 0015 (Spec 5.3: now per supplier); kept for the log lines written then.
     "pack_size": "pack_size",
     "min_order_packs": "min_order_packs",
     "lead_time_days": "lead_time_days",

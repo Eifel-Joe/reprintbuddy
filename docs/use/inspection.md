@@ -117,20 +117,33 @@ An order for a set reserves the single articles. A set cannot be ordered if one 
 
 ## Bought parts
 
-Bought parts are the items you build into articles, such as threaded inserts or screws. The page **Parts** lists them with their stock, minimum stock, order unit and supplier. The supplier is a link to the order link and opens in a new window. Press **New part** to add one.
+Bought parts are the items you build into articles, such as threaded inserts or screws. The page **Parts** lists them with their stock, minimum stock, order unit and supplier. It shows the default supplier, a link to its order link that opens in a new window. When the part has more suppliers, their number follows, for example **+ 1 more**. The order unit is the default supplier's. Press **New part** to add one.
 
 | Field | Meaning |
 |---|---|
 | **Name**, **Unit** | The part and its unit. The unit starts as `pcs` (shown as Stk. in the German interface). |
 | **Initial stock** | Only when you create the part. Later the stock changes only through bookings. |
 | **Minimum stock** | Below it the part shows as **below minimum**. |
-| **Order unit (pieces per pack)** | How many pieces come in one pack. |
-| **Minimum order quantity (packs)** | The fewest packs one order may have. |
-| **Lead time (days)** | Days from ordering to arrival, 0 to 365. |
-| **Safety margin** and its unit | A reserve, in days of usage or as a quantity. |
-| **Supplier**, **Order link** | The supplier as text; the link must start with `http://` or `https://`. |
+| **Safety margin** and its unit | A reserve, in days of usage or as a quantity. It belongs to the part, wherever you buy it. |
+| **Suppliers** | Where you buy the part, see below. |
 
-The order fields feed the [reorder suggestions](reorder.md). Which parts an article needs, and how many per piece, you enter in the article (see [Articles](articles.md)).
+### Suppliers
+
+A part has one to ten suppliers, for example when one shop cannot deliver and another sells other packs. Each supplier is a block of its own with these fields:
+
+| Field | Meaning |
+|---|---|
+| **Name** | The supplier's name as text, optional. Without a name it is called **Supplier 1**, **Supplier 2** and so on. While you type, the field suggests names you have used before. |
+| **Order link** | The order page; the link must start with `http://` or `https://`. |
+| **Order unit (pieces per pack)** | How many pieces come in one pack from this supplier. |
+| **Minimum order quantity (packs)** | The fewest packs one order from this supplier may have. |
+| **Lead time (days)** | Days from ordering to arrival, 0 to 365. |
+
+Exactly one supplier is the **Default**: its lead time decides whether Reprintbuddy suggests an order. A part with one supplier has it as the default without choosing. **Add supplier** adds another block, **Remove** takes one away; the last one stays. Everything is saved together with **Save**. If you remove the default, choose another one before saving.
+
+A part from a version before 0.3.15 has exactly one supplier after the update, the default, with the values it had.
+
+The suppliers feed the [reorder suggestions](reorder.md). Which parts an article needs, and how many per piece, you enter in the article (see [Articles](articles.md)).
 
 A part is deducted when a piece becomes stock: at the check for articles without hand work, at assembly for articles with hand work, and with **Stock in without print** while **Deduct parts** is ticked. Parts that are only enclosed, such as a hex key, count the same.
 

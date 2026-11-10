@@ -22,14 +22,33 @@
       <span>{{ t('reorder.col.usage') }} <strong>{% if r.per_day is not none %}{{ t('reorder.per_day_days', per_day=r.per_day|num, unit=r.unit|unit, days=r.lead_days) }}{% else %}{{ t('filament.no_history') }}{% endif %}</strong></span>
       <span>{{ t('reorder.col.safety') }} <strong>{{ r.safety }} {{ r.unit|unit }}</strong></span>
     </div>
+    {% if r.options %}
+    {#- A part with several suppliers: each with its own quantity, the default first (Spec 9.3). -#}
+    <ul class="reorder-suppliers">
+      {% for o in r.options %}
+      <li class="reorder-supplier"><span class="reorder-supplier-name">{{ o.label }}</span>: {{ o.text }}{% if o.order_url %} · <a href="{{ o.order_url }}" target="_blank" rel="noopener noreferrer">{{ t('reorder.open_link') }}</a>{% endif %}{% if o.is_default %} <span class="badge tone-neutral">{{ t('parts.is_default') }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
     <p class="reorder-detail">{{ t('reorder.detail', suggestion=r.suggestion) }}{% if r.supplier %} · {{ r.supplier }}{% endif %}{% if r.order_url %} · <a href="{{ r.order_url }}" target="_blank" rel="noopener noreferrer">{{ t('reorder.open_link') }}</a>{% endif %}</p>
+    {% endif %}
     <form class="tile-foot reorder-mark" method="post" action="/reorder/mark">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="form_token" value="{{ form_token() }}">
       <input type="hidden" name="item_type" value="{{ r.item_type }}">
       <input type="hidden" name="item_id" value="{{ r.item_id }}">
+      {% if r.suppliers_key %}<input type="hidden" name="suppliers_key" value="{{ r.suppliers_key }}">{% endif %}
+      {% if r.options %}
+      {#- Marked with the chosen supplier, the default first (Spec 9.4); reorder.js puts its quantity
+          into the packs field while nobody has typed there. -#}
+      {% call ui.field("supplier-" ~ r.item_type ~ "-" ~ r.item_id, t('parts.field.supplier')) %}
+        <select id="supplier-{{ r.item_type }}-{{ r.item_id }}" name="supplier_id" data-reorder-supplier>
+          {% for o in r.options %}<option value="{{ o.id }}" data-packs="{{ o.packs }}"{% if o.id | string == r.chosen %} selected{% endif %}>{{ o.label }}</option>{% endfor %}
+        </select>
+      {% endcall %}
+      {% endif %}
       {% call ui.field("packs-" ~ r.item_type ~ "-" ~ r.item_id, t('reorder.pack_label'), t('info.reorder_packs')) %}
-        <input type="number" id="packs-{{ r.item_type }}-{{ r.item_id }}" name="packs" value="{{ r.packs_value }}" min="1" max="1000" inputmode="numeric" required>
+        <input type="number" id="packs-{{ r.item_type }}-{{ r.item_id }}" name="packs" value="{{ r.packs_value }}"{% if r.typed %} data-typed{% endif %} min="1" max="1000" inputmode="numeric" required>
       {% endcall %}
       <button class="btn" type="submit">{{ t('reorder.mark') }}</button>
     </form>
@@ -51,7 +70,7 @@
     <tbody>
     {% for m in under_way %}
       <tr>
-        <td class="name">{{ m.label }}: {{ m.packs }} × {{ m.size }} {{ m.unit|unit }}{% if m.arrived %}<span class="col-note">{{ t('reorder.arrived_so_far', amount=m.arrived, unit=m.unit|unit) }}</span>{% endif %}</td>
+        <td class="name">{{ m.label }}: {{ m.packs }} × {{ m.size }} {{ m.unit|unit }}{% if m.supplier %} · {{ m.supplier }}{% endif %}{% if m.arrived %}<span class="col-note">{{ t('reorder.arrived_so_far', amount=m.arrived, unit=m.unit|unit) }}</span>{% endif %}</td>
         <td class="nowrap">{{ m.day }}</td>
         <td class="actions-col">{% call ui.row_actions() -%}
           {{ ui.icon_post('check', t('reorder.received'), '/reorder/marks/' ~ m.id ~ '/received', subject=m.label) }}
@@ -63,4 +82,5 @@
 </div>
 {% endif %}
 {% endcall %}
+<script src="/static/js/reorder.js?v={{ app_version }}" defer></script>
 {% endblock %}

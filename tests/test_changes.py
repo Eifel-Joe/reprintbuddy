@@ -193,7 +193,7 @@ def test_bulk_statements_report_the_kind(db, published):
         make_part(s)
     published.clear()
     with db.begin() as s:
-        s.execute(update(Part).values(supplier="x"))
+        s.execute(update(Part).values(unit="x"))
     assert published == [frozenset({"part"})]
 
 
@@ -377,3 +377,17 @@ def test_the_activity_log_reports_its_topic_and_its_marks_nothing(db, published)
     with db.begin() as s:
         s.add(ActivityMark(key="bambuddy.connection", state="ok"))
     assert published == [frozenset({"activity"})]
+
+
+def test_a_supplier_of_a_part_reports_the_part_and_its_settings(db, published):
+    """Spec 5.3: the suppliers are part of the part's form; an open form hears of their change."""
+    from reprintbuddy.domain.catalog import PartInput, SupplierInput
+
+    with db.begin() as s:
+        p = make_part(s).id
+    published.clear()
+    with db.begin() as s:
+        catalog.update_part(s, p, PartInput(
+            name="Insert M4", suppliers=[SupplierInput(is_default=True), SupplierInput(name="Example Supplier B")]
+        ))
+    assert published == [frozenset({"part", f"part:{p}", f"part-settings:{p}", "activity"})]

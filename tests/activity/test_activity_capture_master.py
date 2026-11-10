@@ -140,10 +140,32 @@ def test_a_part_is_changed(db):
         p = make_part(s, name="Insert")
     last = mark(db)
     with db.begin() as s:
-        catalog.update_part(s, p.id, PartInput(name="Insert", pack_size=50, supplier="Example Supplier"))
+        catalog.update_part(s, p.id, PartInput(name="Insert", min_stock=5))
     assert since(db, last) == [
-        ("part_changed", {"id": p.id, "name": "Insert", "fields": ["pack_size", "supplier"]}, "system")
+        ("part_changed", {"id": p.id, "name": "Insert", "fields": ["min_stock"]}, "system")
     ]
+
+
+def test_the_suppliers_are_one_field_of_the_part(db):
+    """Spec 10.7: a supplier added, changed or removed is "changed: suppliers", without values;
+    saving the same suppliers again is no change."""
+    from reprintbuddy.domain.catalog import SupplierInput
+
+    with db.begin() as s:
+        p = make_part(s, name="Insert")
+    changed = [("part_changed", {"id": p.id, "name": "Insert", "fields": ["suppliers"]}, "system")]
+
+    def save(*suppliers):
+        last = mark(db)
+        with db.begin() as s:
+            catalog.update_part(s, p.id, PartInput(name="Insert", suppliers=list(suppliers)))
+        return since(db, last)
+
+    default = SupplierInput(is_default=True)
+    assert save(default, SupplierInput(name="Example Supplier B", pack_size=10)) == changed  # added
+    assert save(default, SupplierInput(name="Example Supplier B", pack_size=10)) == []  # the same again
+    assert save(default, SupplierInput(name="Example Supplier B", pack_size=20)) == changed  # changed
+    assert save(default) == changed  # removed
 
 
 def test_the_filament_assignment_is_a_field_of_the_article(db):

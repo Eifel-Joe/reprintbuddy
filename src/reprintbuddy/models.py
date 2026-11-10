@@ -150,13 +150,11 @@ class ArticleFilamentSort(Base):
 
 
 class Part(Base):
-    """A purchased part that is built into articles (Spec 5.3)."""
+    """A purchased part that is built into articles (Spec 5.3); where it is bought: `PartSupplier`."""
 
     __tablename__ = "parts"
     __table_args__ = (
         CheckConstraint("stock >= 0", name="ck_parts_stock"),
-        CheckConstraint("pack_size >= 1", name="ck_parts_pack_size"),
-        CheckConstraint("min_order_packs >= 1", name="ck_parts_min_order_packs"),
         CheckConstraint("safety_unit IN ('days', 'qty')", name="ck_parts_safety_unit"),
     )
 
@@ -166,13 +164,37 @@ class Part(Base):
     unit: Mapped[str] = mapped_column(String, default="pcs", server_default="pcs")
     stock: Mapped[int] = _int(0)
     min_stock: Mapped[int] = _int(0)
+    safety_value: Mapped[int] = _int(0)
+    safety_unit: Mapped[str] = mapped_column(String, default="days", server_default="days")
+
+
+class PartSupplier(Base):
+    """One supplier of a purchased part (Spec 5.3): 1 to 10 per part, exactly one the default.
+
+    `position` is the order in the form (0 first); the name may be empty ("Supplier n" is shown).
+    """
+
+    __tablename__ = "part_suppliers"
+    __table_args__ = (
+        CheckConstraint("position >= 0", name="ck_part_suppliers_position"),
+        CheckConstraint("pack_size >= 1", name="ck_part_suppliers_pack_size"),
+        CheckConstraint("min_order_packs >= 1", name="ck_part_suppliers_min_order_packs"),
+        CheckConstraint("lead_time_days >= 0", name="ck_part_suppliers_lead_time_days"),
+        UniqueConstraint("part_id", "position", name="uq_part_suppliers_position"),
+        Index(
+            "uq_part_suppliers_default", "part_id", unique=True, sqlite_where=text("is_default = 1"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    part_id: Mapped[int] = mapped_column(ForeignKey("parts.id"))
+    position: Mapped[int]
+    name: Mapped[str | None] = mapped_column(String, default=None)
+    order_url: Mapped[str | None] = mapped_column(String, default=None)
     pack_size: Mapped[int] = _int(1)
     min_order_packs: Mapped[int] = _int(1)
     lead_time_days: Mapped[int] = _int(0)
-    safety_value: Mapped[int] = _int(0)
-    safety_unit: Mapped[str] = mapped_column(String, default="days", server_default="days")
-    supplier: Mapped[str | None] = mapped_column(String, default=None)
-    order_url: Mapped[str | None] = mapped_column(String, default=None)
+    is_default: Mapped[bool] = _flag()
 
 
 class ArticlePart(Base):
@@ -445,6 +467,11 @@ class ReorderMark(Base):
         DateTime, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
     )
     received_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    # Parts only: the pack size and the supplier name when it was marked (Spec 9.4: the amount on
+    # its way stays as ordered, whatever happens to the supplier later). None for filament.
+    pack_size: Mapped[int | None] = mapped_column(default=None)
+    supplier_name: Mapped[str | None] = mapped_column(String, default=None)
+    supplier_position: Mapped[int | None] = mapped_column(default=None)  # "Supplier n" is position + 1
 
 
 class NotifyMark(Base):

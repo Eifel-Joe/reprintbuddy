@@ -40,6 +40,7 @@ from reprintbuddy.models import (
     FilamentSettings,
     FilamentSort,
     Part,
+    PartSupplier,
     ProductSet,
     ReorderMark,
     SetPosition,
@@ -61,10 +62,7 @@ ARTICLE_COLUMNS: tuple[str, ...] = (
     "name", "sku", "label_text", "units_per_print", "min_stock", "buffer",
     "target_model", "printer_id", "needs_assembly",
 )
-PART_COLUMNS: tuple[str, ...] = (
-    "name", "unit", "min_stock", "pack_size", "min_order_packs", "lead_time_days",
-    "safety_value", "safety_unit", "supplier", "order_url",
-)
+PART_COLUMNS: tuple[str, ...] = ("name", "unit", "min_stock", "safety_value", "safety_unit")
 SET_COLUMNS: tuple[str, ...] = ("name", "sku")
 FILAMENT_COLUMNS: tuple[str, ...] = (
     "lead_time_days", "safety_value", "safety_unit", "pack_grams", "min_order_packs", "supplier", "order_url",
@@ -233,6 +231,18 @@ def _collect_row(session: Session, data: _Data, obj: object, change: str, actor:
             thing.old_rows.setdefault(name, Counter())[row] += 1
         else:
             thing.fields.add(name)
+    elif isinstance(obj, PartSupplier):
+        # The suppliers are one field of the part (Spec 5.3, 10.7); saving compares by position,
+        # so only a real change writes a row.
+        thing = _thing(data, "part", obj.part_id, actor)
+        row = (obj.position, obj.name, obj.order_url, obj.pack_size, obj.min_order_packs,
+               obj.lead_time_days, bool(obj.is_default))
+        if change == "new":
+            thing.new_rows.setdefault("suppliers", Counter())[row] += 1
+        elif change == "deleted":
+            thing.old_rows.setdefault("suppliers", Counter())[row] += 1
+        else:
+            thing.fields.add("suppliers")
     elif isinstance(obj, SetPosition):
         data.positions[obj.id] = obj.set_id
         thing = _thing(data, "set", obj.set_id, actor)

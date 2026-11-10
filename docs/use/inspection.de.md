@@ -117,20 +117,33 @@ Die Bestellung eines Sets reserviert die einzelnen Artikel. Ein Set lässt sich 
 
 ## Zukaufteile
 
-Zukaufteile sind die Dinge, die du in Artikel einbaust, etwa Gewindeeinsätze oder Schrauben. Die Seite **Zukaufteile** listet sie mit Bestand, Mindestbestand, Bestelleinheit und Lieferant. Der Lieferant ist ein Link auf den Bestell-Link und öffnet ihn in einem neuen Fenster. Mit **Neues Zukaufteil** legst du eines an.
+Zukaufteile sind die Dinge, die du in Artikel einbaust, etwa Gewindeeinsätze oder Schrauben. Die Seite **Zukaufteile** listet sie mit Bestand, Mindestbestand, Bestelleinheit und Lieferant. Gezeigt wird der Standard-Lieferant; er ist ein Link auf seinen Bestell-Link und öffnet ihn in einem neuen Fenster. Hat das Teil weitere Lieferanten, steht ihre Zahl dahinter, zum Beispiel **+ 1 weitere**. Die Bestelleinheit ist die des Standard-Lieferanten. Mit **Neues Zukaufteil** legst du eines an.
 
 | Feld | Bedeutung |
 |---|---|
 | **Name**, **Einheit** | Das Teil und seine Einheit. Die Einheit steht zuerst auf `pcs` (in der deutschen Oberfläche als Stk. angezeigt). |
 | **Anfangsbestand** | Nur beim Anlegen. Danach ändert sich der Bestand nur durch Buchungen. |
 | **Mindestbestand** | Darunter steht das Teil auf **unter Minimum**. |
-| **Bestelleinheit (Stück je Packung)** | So viele Stück kommen in einer Packung. |
-| **Mindestbestellmenge (Packungen)** | So viele Packungen muss eine Bestellung mindestens haben. |
-| **Lieferzeit (Tage)** | Tage von der Bestellung bis zum Eintreffen, 0 bis 365. |
-| **Sicherheitspolster** und seine Einheit | Eine Reserve, als Verbrauch in Tagen oder als Menge. |
-| **Lieferant**, **Bestell-Link** | Der Lieferant als Text; der Link muss mit `http://` oder `https://` beginnen. |
+| **Sicherheitspolster** und seine Einheit | Eine Reserve, als Verbrauch in Tagen oder als Menge. Sie gilt für das Teil, egal wo du kaufst. |
+| **Lieferanten** | Wo du das Teil kaufst, siehe unten. |
 
-Die Bestellfelder speisen die [Bestellvorschläge](reorder.md). Welche Teile ein Artikel braucht und wie viele je Stück, trägst du im Artikel ein (siehe [Artikel](articles.md)).
+### Lieferanten
+
+Ein Teil hat einen bis zehn Lieferanten, etwa wenn ein Händler mal nicht liefern kann und ein anderer andere Packungen hat. Jeder Lieferant ist ein eigener Block mit diesen Feldern:
+
+| Feld | Bedeutung |
+|---|---|
+| **Name** | Der Name des Lieferanten als Text, freiwillig. Ohne Namen heißt er **Lieferant 1**, **Lieferant 2** und so weiter. Beim Tippen schlägt das Feld Namen vor, die du schon verwendet hast. |
+| **Bestell-Link** | Die Bestellseite; der Link muss mit `http://` oder `https://` beginnen. |
+| **Bestelleinheit (Stück je Packung)** | So viele Stück kommen bei diesem Lieferanten in einer Packung. |
+| **Mindestbestellmenge (Packungen)** | So viele Packungen muss eine Bestellung bei ihm mindestens haben. |
+| **Lieferzeit (Tage)** | Tage von der Bestellung bis zum Eintreffen, 0 bis 365. |
+
+Genau ein Lieferant ist **Standard**: Mit seiner Lieferzeit entscheidet Reprintbuddy, ob ein Bestellvorschlag kommt. Hat das Teil nur einen Lieferanten, ist er von selbst Standard. **Lieferant hinzufügen** hängt einen weiteren Block an, **Entfernen** nimmt einen weg; der letzte bleibt. Gespeichert wird alles zusammen mit **Speichern**. Entfernst du den Standard, wählst du vor dem Speichern einen anderen.
+
+Ein Teil aus einer Version vor 0.3.15 hat nach dem Update genau einen Lieferanten, den Standard, mit seinen bisherigen Angaben.
+
+Die Lieferanten speisen die [Bestellvorschläge](reorder.md). Welche Teile ein Artikel braucht und wie viele je Stück, trägst du im Artikel ein (siehe [Artikel](articles.md)).
 
 Ein Teil wird abgezogen, wenn ein Stück Bestand wird: bei der Prüfung für Artikel ohne Handarbeit, bei der Montage für Artikel mit Handarbeit und mit **Einbuchen ohne Druck**, solange **Zukaufteile abziehen** angehakt ist. Teile, die nur beigelegt werden, etwa ein Inbusschlüssel, zählen genauso.
 
