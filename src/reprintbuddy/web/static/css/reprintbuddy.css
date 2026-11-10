@@ -807,6 +807,11 @@ label.check input[type="checkbox"] { margin-top: 0.1rem; }
 .section-hint { color: var(--muted); font-size: 12.5px; }
 .queue-section > .section-hint { display: block; margin: 0.5rem 0 0; }
 .stale-note { margin: 0 0 0.6rem; color: var(--warn); font-size: 0.9rem; }
+/* The hint about prints in Bambuddy's queue that Reprintbuddy did not make (p65). */
+.foreign-ahead { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 0.6rem; font-size: 0.85rem; }
+.foreign-ahead .icon { flex: none; width: 15px; height: 15px; margin-top: 2px; color: var(--accent); }
+/* Bambuddy's queue: the state of a running print stands where a position would. */
+.queue-pos-state { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
 
 /* Reprintbuddy's queue: a table, one row per entry (p45). Only the grip takes the finger for
    dragging (touch-action: none); everywhere else the page scrolls as usual. No overflow on the

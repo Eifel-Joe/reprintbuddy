@@ -63,6 +63,8 @@ Der Abschnitt **In Arbeit** listet die Drucke, die übergeben und noch nicht fer
 
 Der Abschnitt **Bambuddys Warteschlange (nur Anzeige)** zeigt die offenen Einträge in Bambuddy (wartend und im Druck) in Bambuddys Reihenfolge, mit **Position**, **Datei / Platte**, **Ziel**, **Zustand** und **Angelegt von**. Drucke, die Reprintbuddy übergeben hat, tragen die Markierung **Reprintbuddy**. **In Bambuddy öffnen** führt dich zu Bambuddy.
 
+**Position** zeigt nur bei wartenden Einträgen eine Zahl. Ein laufender Druck zeigt dort seinen Zustand (*läuft*) statt der Position 0, die Bambuddy ihm gibt. Laufen oder warten vor deinen Einträgen Drucke, die nicht von Reprintbuddy stammen, sagt das ein kurzer Hinweis über der Liste.
+
 Hier kannst du nichts ändern: Ändern nur in Bambuddy. Reprintbuddy sortiert Einträge, die schon in Bambuddy liegen, nicht um und nimmt übergebene Drucke nicht zurück. Lässt sich Bambuddy nicht abfragen, zeigt die Seite die letzte Liste mit ihrer Zeit oder sagt, dass die Warteschlange nicht angezeigt werden kann.
 
 ## Live-Aktualisierung

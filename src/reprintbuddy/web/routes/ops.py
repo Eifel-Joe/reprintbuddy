@@ -211,18 +211,22 @@ def ops_view(request: Request, session: Session, busy: bool | None = None) -> Op
         view.state_key = f"ops.update.state.{view.update.state}"
     if (view.busy or view.interrupted) and view.update.step in UPDATE_STEPS:
         view.step_key = f"ops.update.step.{view.update.step}"
-    view.reason_key, view.reason_params = _reason_text(view.update)
+    view.reason_key, view.reason_params = _reason_text(view.update, str(st.get_setting(session, "language")))
     view.reason_open_end = any(not value.strip() for value in view.reason_params.values())
     return view
 
 
-def _reason_text(status: UpdateStatus) -> tuple[str | None, dict[str, str]]:
+def _reason_text(status: UpdateStatus, lang: str = "en") -> tuple[str | None, dict[str, str]]:
     """The text of why an update failed, in the language of the viewer (v0.3.14 p176).
 
     The helper writes a code and its values next to the English line (`UpdateStatus.reason`, `params`).
     A state file without a code (written by an older version, or by hand), with a code this version does
     not know or with values the text needs and the file does not have gives (None, {}); the card then shows
     the English line as before. `detail` is a technical line of git, pip or the system and stays as it is.
+
+    An empty value (a state file written by hand): the technical line at the very end of a text stays empty,
+    the card cuts the colon in front of it (p200). A value in the middle of a sentence ("found {seen}.")
+    shows a word for "empty" instead, so no gap or lone full stop is left (v0.3.16 p250).
     """
     if status.reason not in UPDATE_REASONS:
         return None, {}
@@ -230,7 +234,15 @@ def _reason_text(status: UpdateStatus) -> tuple[str | None, dict[str, str]]:
     needed = {name for _, name, _, _ in Formatter().parse(translate("en", key)) if name}
     if not needed <= set(status.params):
         return None, {}
-    return key, {name: status.params[name] for name in needed}
+    parsed = list(Formatter().parse(translate(lang, key)))
+    last = parsed[-1][1] if parsed else None  # the field the text ends on, if it does
+    params = {}
+    for name in needed:
+        value = status.params[name]
+        if not value.strip() and name != last:
+            value = translate(lang, "ops.update.empty_value")
+        params[name] = value
+    return key, params
 
 
 def _queued_left_behind(view: OpsView, db_path) -> None:

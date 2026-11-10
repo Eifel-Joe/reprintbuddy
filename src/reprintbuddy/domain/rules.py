@@ -31,31 +31,45 @@ def _position_available(position: PositionStock) -> int:
     options = position.option_available
     if not options:
         return 0  # all articles archived (Spec 5.5)
-    if len(options) == 1:
-        return options[0] // position.qty  # may stay negative
-    # A choice: every order picks one of the articles, so the options add up.
-    return sum(max(0, a // position.qty) for a in options)
+    # A choice counts the option with the smallest stock (Spec 5.4, v0.3.16 p173): the set is as often
+    # deliverable as it can be made with every one of the options, so they are not added up. One option
+    # is the same case; a negative (oversold) option stays negative.
+    return min(a // position.qty for a in options)
 
 
 def set_available(positions: Sequence[PositionStock]) -> int:
     """Set availability: the minimum over its positions (Spec 5.4); 0 without positions.
 
-    Fixed positions that use the same article need it at the same time, so their quantities
-    are added up before dividing (A once in two positions needs 2 A per set).
+    A choice position counts its smallest option (v0.3.16 p173). Positions that use the same article
+    (fixed or as an option) need it at the same time when the customer picks it, so the worst choice
+    counts: per article the quantities of all positions that hold it are added up before dividing (A once
+    in two positions needs 2 A per set). For an article that is oversold the worst choice is the one that
+    takes the least of it: it counts with the fixed quantity, or else the smallest quantity of a choice.
+    A position without article ids (not known to the caller) counts on its own.
     """
     if not positions:
         return 0
-    needed: dict[int, int] = {}
+    fixed: dict[int, int] = {}
+    choices: dict[int, list[int]] = {}
     in_stock: dict[int, int] = {}
     values: list[int] = []
     for position in positions:
-        if len(position.option_available) == 1 and len(position.article_ids) == 1:
-            article_id = position.article_ids[0]
-            needed[article_id] = needed.get(article_id, 0) + position.qty
-            in_stock[article_id] = position.option_available[0]
-        else:
+        if not position.option_available or len(position.article_ids) != len(position.option_available):
             values.append(_position_available(position))
-    values += [in_stock[a] // needed[a] for a in needed]
+            continue
+        for article_id, stock in zip(position.article_ids, position.option_available):
+            in_stock[article_id] = stock
+            if len(position.option_available) == 1:
+                fixed[article_id] = fixed.get(article_id, 0) + position.qty
+            else:
+                choices.setdefault(article_id, []).append(position.qty)
+    for article_id, stock in in_stock.items():
+        picked = choices.get(article_id, [])
+        if stock >= 0:
+            need = fixed.get(article_id, 0) + sum(picked)
+        else:
+            need = fixed.get(article_id) or min(picked)
+        values.append(stock // need)
     return min(values)
 
 

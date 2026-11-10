@@ -171,9 +171,15 @@ def test_german_restart_hint_is_in_german():
 # sentence that starts with a third-person "Ihr..." (her/their) would trip the check and goes into
 # `_NOT_POLITE` (a longer snippet of the text, so the exception holds for that place only). The pattern does not look across a line break (a wrapped sentence start has a full stop
 # before it, a wrapped middle is not caught).
+# v0.3.16 p251: opening brackets, quotation marks and asterisks between the word and "Sie" do not hide it
+# ("(Sie können", "„Sie können", "**Sie können**"): the rule looks at what stands before them. A "Sie" that is
+# only named, closed again right behind it ("(Sie)", "„Sie“", "**Sie**"), is not an address. "Ihrerseits",
+# "Ihretwegen", "Ihretwillen" and "Ihrethalben" belong to the "Ihr..." words.
 _POLITE_SIE = re.compile(
     r"(?<=[A-Za-zäöüÄÖÜß,;]) Sie\b(?!-)"  # one word or a comma before it, on the same line
-    r"|\bIhr(?:e|en|em|er|es)?\b|\bIhnen\b"
+    # behind opening marks only a "Sie" that is closed again right behind it is a mention (review of p251)
+    r"|(?<=[A-Za-zäöüÄÖÜß,;]) [(\[{\"'„“‚‘»«*_]+Sie\b(?![-\"'“”‘’«»)\]}*_])"
+    r"|\bIhr(?:e|en|em|er|es|erseits|etwegen|etwillen|ethalben)?\b|\bIhnen\b"
 )
 _NOT_POLITE: set[str] = set()  # none today; add the snippet of the text (with its surroundings) here when a third-person text trips the check
 
@@ -219,6 +225,24 @@ def test_german_docs_and_readme_have_no_polite_sie_form():
         "Prüfen Sie die Datei.",  # the forms the first version knew keep being found
         "Wenn Sie fertig sind, speichern.",
         "Bitte wählen Sie einen Drucker.",
+        # v0.3.16 p251: "Sie" right behind a bracket, a quotation mark or an asterisk, and the "Ihr..." words
+        # that the first list of endings missed.
+        "Das Update (Sie können es starten) ist da.",
+        "Es heißt dann „Sie können jetzt speichern“.",
+        'Es heißt dann "Sie können jetzt speichern".',
+        "Das ist wichtig, **Sie können** es ändern.",
+        "Das liegt Ihrerseits vor.",
+        "Ihretwegen ist es fertig.",
+        "Um Ihretwillen bleibt es so.",
+        # review of p251: a closer behind the address ("klicken Sie)") is no mention; only a "Sie" that
+        # an opener leads in and a closer follows at once is one.
+        "(dann klicken Sie) weiter",
+        "Dann klicken Sie)",
+        "Bitte speichern Sie“",
+        "**Speichern Sie**",
+        "'Speichern Sie'",
+        "»Speichern Sie«",
+        "Klicken Sie]",
     ],
 )
 def test_the_polite_form_is_found(text):
@@ -238,6 +262,19 @@ def test_the_polite_form_is_found(text):
         "Die Datei und ihr Name werden angezeigt.",
         "Wir fragen die Teile, ob sie passen; sie passen.",
         "Das Projekt „Sie\" gibt es nicht.",
+        # v0.3.16 p251: the new places must not raise false alarms. A bracket, a quote or an asterisk that
+        # opens a new sentence has a full stop, a colon or the line start in front; a word that is only
+        # named ("Sie") is closed again right behind it.
+        "Das Wort (Sie) steht in Klammern.",
+        "Das Wort **Sie** steht fett.",
+        "Das Wort „Sie“ steht in Anführungszeichen.",
+        "Die Datei ist leer. (Sie wird nicht gedruckt.)",
+        "Die Datei ist leer. **Sie wird nicht gedruckt.**",
+        "Hinweis: „Sie enthält keinen G-Code.“",
+        "„Sie enthält keinen G-Code“, steht dort.",
+        "(Sie wird geprüft.)",
+        "- *Sie* wird geprüft.",
+        "Das geschah ihrerseits und ihretwegen.",  # lower case is third person
     ],
 )
 def test_the_third_person_is_not_taken_for_the_polite_form(text):

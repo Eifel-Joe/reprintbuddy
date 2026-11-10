@@ -11,6 +11,11 @@
 <form method="post" action="{{ action }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% if token %}<input type="hidden" name="form_token" value="{{ form_token() }}">{% endif %}{{ caller() }}</form>
 {%- endmacro %}
 
+{#- The state of an entry of Bambuddy's queue in words; a state this page does not know is shown as it came. -#}
+{% macro bambuddy_state(status) -%}
+{% set state_key = 'queue.bambuddy_state.' ~ status %}{% if status in bambuddy_states %}{{ t(state_key) }}{% else %}{{ status }}{% endif %}
+{%- endmacro %}
+
 {% call ui.page_head("list-ordered", t('queue.title'), t('queue.sub')) %}{{ ui.poll_button("/queue") }}<a class="btn" href="#manual">{{ ui.icon('plus') }}{{ t('queue.manual') }}</a>{% endcall %}
 {% if error and error_for != 'manual' %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 
@@ -173,6 +178,7 @@
   <div class="card"><p class="muted">{{ t('queue.bambuddy_unavailable') }}</p></div>
   {% else %}
   {% if not bambuddy_fresh %}<p class="stale-note">{{ t('queue.bambuddy_stale', at=bambuddy_at|local_dt) }}</p>{% endif %}
+  {% if bambuddy_foreign_ahead %}<p class="hint foreign-ahead">{{ ui.icon('info') }}{{ t('queue.foreign_ahead') }}</p>{% endif %}
   {% if bambuddy_rows %}
   <div class="card table-wrap table-card">
     <table>
@@ -188,10 +194,11 @@
       <tbody>
       {% for item, own in bambuddy_rows %}
         <tr>
-          <td class="num">{{ item.position if item.position is not none else '' }}</td>
+          {#- Only a waiting entry has a place in the line; Bambuddy gives a running one the position 0 (p65). -#}
+          <td class="num">{% if item.status == 'pending' %}{{ item.position if item.position is not none else '' }}{% else %}<span class="queue-pos-state">{{ bambuddy_state(item.status) }}</span>{% endif %}</td>
           <td class="name">{{ item.label }}</td>
           <td>{% if item.printer_name %}{{ item.printer_name }}{% elif item.target_model %}{{ t('queue.any_model', model=item.target_model) }}{% endif %}</td>
-          <td>{{ item.status }}</td>
+          <td>{{ bambuddy_state(item.status) }}</td>
           <td>{{ item.created_by or '' }}{% if own %} <span class="badge tone-info badge-own">{{ t('queue.own_badge') }}</span>{% endif %}</td>
         </tr>
       {% endfor %}

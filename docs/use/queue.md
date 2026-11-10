@@ -63,6 +63,8 @@ The section **In progress** lists the prints that were handed over and are not f
 
 The section **Bambuddy queue (view only)** shows the open entries in Bambuddy (waiting and printing) in Bambuddy's order, with **Position**, **File / plate**, **Target**, **State** and **Created by**. Prints that Reprintbuddy handed over carry the mark **Reprintbuddy**. **Open in Bambuddy** takes you to Bambuddy.
 
+**Position** shows a number only for entries that wait. A print that is running shows its state (*running*) there instead of the position 0 that Bambuddy gives it. When prints that Reprintbuddy did not make are running or wait before your entries, a short notice above the list says so.
+
 You cannot change anything here: change it in Bambuddy only. Reprintbuddy does not reorder entries that are already in Bambuddy and does not take handed-over prints back. If Bambuddy cannot be asked, the page shows the last list with its time, or says that the queue cannot be shown.
 
 ## Live updates
