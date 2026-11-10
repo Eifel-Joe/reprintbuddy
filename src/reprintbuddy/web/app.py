@@ -396,6 +396,7 @@ def create_app(
     app.state.writes_in_flight = 0  # counted by the update guard; a restore waits for them
     app.state.restore_write_wait = 30.0  # seconds a restore waits for those writes
     app.state.restore_notify_wait = 10.0  # seconds a restore waits for a push message on its way (p270)
+    app.state.update_notify_wait = 10.0  # the same for the start of an update (p310)
     app.state.version = __version__  # the live channel tells pages of another version to reload
     # The tick engine (plan B4): the app's own sessionmaker, so the change feed reports its
     # writes like any other; its runtime status goes to the pages as topic "bambuddy".
