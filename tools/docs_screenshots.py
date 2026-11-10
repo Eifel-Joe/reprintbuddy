@@ -97,7 +97,7 @@ ALL_NAMES = (
     "setup-admin", "setup-group", "setup-key", "setup-connect", "overview", "articles-list",
     "article-new-files", "article-new-plates", "article-new-form", "article-upload",
     "article-filaments", "article-detail", "queue", "inspection", "assembly", "label-preview",
-    "reorder", "filament-page", "orders", "parts", "sets", "bookings", "journal",
+    "reorder", "filament-page", "filament-settings", "orders", "parts", "sets", "bookings", "journal",
     "settings-bambuddy", "settings-automation", "settings-notifications", "settings-labels",
     "settings-log", "settings-update", "articles-mobile",
 )
@@ -601,6 +601,7 @@ class Scenario:
     folder: int = 0
     sets: dict[str, int] = field(default_factory=dict)
     parts: dict[str, int] = field(default_factory=dict)
+    sorts: dict[str, int] = field(default_factory=dict)  # spool sorts whose settings are shown on their own
 
 
 def at(day: int, hour: int = 9, minute: int = 0) -> datetime:
@@ -740,6 +741,7 @@ def build_catalog(server: Server, scn: Scenario) -> None:
         filament.set_groups(s, a["clip_blue"], {1: ([petg_blue], None)})
         filament.set_groups(s, a["cable_guide"], {1: ([pla_black], None), 2: ([pla_red], None)})
         filament.set_groups(s, a["spool_holder"], {1: ([petg_black], None)})
+        scn.sorts["petg_black"] = petg_black
         for sort_id, lead, pack_g, min_packs in (
             (pla_white, 7, 1000, 2), (petg_black, 10, 1000, 1), (pla_black, 7, 1000, 1),
             (pla_red, 7, 1000, 1), (petg_blue, 10, 1000, 1),
@@ -1035,6 +1037,8 @@ def take_pages(shot: Shooter, scn: Scenario) -> None:
     shot.page("label-preview", f"/articles/{cable}", before=wait_label, element="#label")
     shot.page("reorder", "/reorder")
     shot.page("filament-page", "/filament")
+    # the sort with two suppliers (Spec 9.3): the block of suppliers of the reorder settings
+    shot.page("filament-settings", f"/filament/{scn.sorts['petg_black']}")
     shot.page("orders", "/orders")
     shot.page("parts", "/parts")
     shot.page("sets", "/sets")
