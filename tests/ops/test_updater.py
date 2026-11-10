@@ -344,7 +344,8 @@ def test_a_crashed_update_does_not_block_the_next_one(update_env, capsys):
 
 
 def test_a_crashed_queued_start_does_not_block_either(update_env):
-    """Sister path: "queued" from the page whose helper died before it wrote anything is taken over."""
+    """Sister path: "queued" from the page whose helper died before it wrote anything is taken over.
+    This held before p311 too (only "running" was refused); it pins that the lock-first order keeps it."""
     e = update_env
     write_status(e.data, UpdateStatus(state="queued", step="start", started_at=NOW - timedelta(seconds=5)))
     assert e.update().state == "succeeded"

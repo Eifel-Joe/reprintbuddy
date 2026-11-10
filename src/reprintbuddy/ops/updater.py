@@ -114,8 +114,8 @@ def run_update(
     # was read first, and after a crash (a kill, a power cut) it said "running" for 30 minutes
     # (`STALE_AFTER`), so every new update was refused that long. The kernel frees the lock with its
     # process, so a free lock proves that the "running" in the file is a leftover. Limit: an update helper
-    # older than v0.3.16 runs without the lock; an update typed by hand while such a helper still waits for
-    # the restarted service of this version does not see it. Rejected: asking systemd as the page does - the
+    # older than v0.3.16 runs without the lock; an update typed by hand from the moment such a helper has
+    # installed this version until it ends does not see it (only on a jump from v0.3.15 or older). Rejected: asking systemd as the page does - the
     # helper started by the unit is that unit, "active" would refuse every update the page starts.
     try:
         lock = acquire(data_dir, "update", tries=10)
