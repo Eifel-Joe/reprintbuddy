@@ -15,7 +15,7 @@ from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, db_session, get_db, render
 from reprintbuddy.web.formatting import format_date
 from reprintbuddy.web.forms import error_status, error_text, parse_int, parse_text, saved_redirect
-from reprintbuddy.web.filament_view import COLOR, spools_or_none
+from reprintbuddy.web.filament_view import COLOR, may_write, page_spools
 from reprintbuddy.web.formtoken import write_transaction
 from reprintbuddy.web.i18n import translate
 
@@ -31,12 +31,15 @@ DEFAULTS = {
 
 @router.get("/filament")
 async def filament_list(request: Request):
-    spools = await spools_or_none(request)  # before any write transaction
+    spools = await page_spools(request)  # before any write transaction
     lang = current_language(request)
     today = utcnow().date()
-    with write_transaction(request) as tx:  # entering new sorts is the one write (Entscheidung 4)
-        sorts, day = filament.known_sorts(tx, spools)
     db = db_session(request)  # the rest only reads, on the request's normal session
+    if not may_write(request):  # p230: a restore or an update runs, the page reads the record only
+        sorts, day = filament.known_sorts(db, None)
+    else:
+        with write_transaction(request) as tx:  # entering new sorts is the one write (Entscheidung 4)
+            sorts, day = filament.known_sorts(tx, spools)
     ticked = filament.ticked_sort_ids(db)  # only spool sorts ticked in an active article (Spec 9.3)
     reordered = set(filament.reorder_groups(db))
     directory = [s for s in db.scalars(select(FilamentSort)) if s.id in ticked and not s.legacy]

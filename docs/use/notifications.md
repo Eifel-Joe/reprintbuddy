@@ -51,7 +51,7 @@ Untick an event to stop its messages. If you tick it again later, what holds at 
 - The other events describe a state. Each is reported once for every thing it concerns, such as an article, a spool sort or a part. A new message comes only after the cause has settled and then comes back. Settled means: the pause is lifted; the article is no longer red; the suggestion was marked as ordered and has arrived, or it has been gone for 7 days while the stock was known; the fault was gone at a query; the right is there again.
 - Whatever comes together in one pass of the automation goes as one message for each kind of event, for example "2 prints wait for inspection: A, B".
 - There are no all-clear messages, no quiet hours and no daily summary.
-- A restart does not send anything twice.
+- A restart does not send anything twice. Neither does a [restore](../operate/update-backup.md#restore) of an older backup, as long as the messages are switched on both before and after it: what was reported before the restore counts as reported. Only a message that was on its way just when the restore began can arrive once more.
 
 ### Names in messages
 

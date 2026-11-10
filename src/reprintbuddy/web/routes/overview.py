@@ -15,7 +15,7 @@ from reprintbuddy.models import utcnow
 from reprintbuddy.web import overview_view, regions
 from reprintbuddy.web.deps import current_language, db_session, get_bambuddy, render
 from reprintbuddy.web.engine_view import warnings_context
-from reprintbuddy.web.filament_view import spools_or_none
+from reprintbuddy.web.filament_view import may_write, page_spools
 from reprintbuddy.web.formtoken import write_transaction
 
 router = APIRouter()
@@ -32,12 +32,13 @@ async def _suggestions(request: Request) -> int:
       database may be one the running process must not write to.
     - A Bambuddy that is not set up or did not answer the last query is not asked: the page would
       wait for its timeout and then count from the record anyway.
+    Writes may be paused while the page waits for the spools (a restore began): it looks again after
+    the wait, with no `await` until the write is done (review v0.3.15 D, finding 3).
     """
-    if not request.app.state.activity.may_write():
-        return reorder.count_suggestions(db_session(request), None, utcnow(), write=False)
     status = request.app.state.ticker.status
-    known_down = not status.configured or status.reachable is False
-    spools = None if known_down else await spools_or_none(request)
+    spools = None if not status.configured else await page_spools(request)
+    if not may_write(request):
+        return reorder.count_suggestions(db_session(request), None, utcnow(), write=False)
     with write_transaction(request) as tx:
         return reorder.count_suggestions(tx, spools, utcnow())
 

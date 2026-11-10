@@ -72,3 +72,6 @@ Die Seiten funktionieren weiter, und es wird nichts geraten.
 - Die Seite *Filament* zeigt den Bestand des zuletzt festgehaltenen Tages, mit Datum. Wurde noch nichts festgehalten, sagt sie, dass der Bestand gerade nicht bekannt ist, und zeigt Striche.
 - Die Filament-Zuordnung eines Artikels zeigt ebenfalls den Bestand des zuletzt festgehaltenen Tages; im Kopf der Spalte **Bestand** steht **Stand vom …**. Ohne Aufzeichnung zeigt sie die zuletzt bekannten Spulensorten ohne Bestand.
 - Die Seite *Bestellvorschläge* rechnet die Filament-Vorschläge mit dem zuletzt festgehaltenen Bestand; jede Filament-Kachel sagt an ihrem Bestand **Stand vom …**. Ohne Aufzeichnung zeigt sie keine Filament-Vorschläge, nur die für Zukaufteile.
+- Hat schon die letzte Abfrage Bambuddy nicht erreicht, fragen diese Seiten nicht erneut und zeigen sofort den festgehaltenen Bestand. Live-Zahlen gibt es wieder, sobald eine Abfrage Bambuddy erreicht.
+
+Denselben festgehaltenen Bestand zeigen die Seiten, solange ein [Update oder eine Wiederherstellung](../operate/update-backup.md) läuft. Dann ändern sie nichts: Neue Spulensorten kommen hinzu und eingetroffene Bestellungen verlassen **Unterwegs** erst beim nächsten Aufruf danach.
