@@ -19,6 +19,7 @@ from reprintbuddy.models import (
     FilamentSort,
     Order,
     Part,
+    PartSupplier,
     ProductSet,
     SetPosition,
     SetPositionOption,
@@ -47,9 +48,18 @@ def make_article(
     return article
 
 
+SUPPLIER_FIELDS = {"pack_size": "pack_size", "min_order_packs": "min_order_packs",
+                   "lead_time_days": "lead_time_days", "supplier": "name", "order_url": "order_url"}
+
+
 def make_part(s: Session, *, name: str = "Insert M4", **fields) -> Part:
+    """A part with one default supplier; the supplier fields a part had before 0015
+    (`pack_size`, `min_order_packs`, `lead_time_days`, `supplier`, `order_url`) go to it."""
+    supplier = {SUPPLIER_FIELDS[key]: fields.pop(key) for key in list(fields) if key in SUPPLIER_FIELDS}
     part = Part(name=name, **fields)
     s.add(part)
+    s.flush()
+    s.add(PartSupplier(part_id=part.id, position=0, is_default=True, **supplier))
     s.flush()
     return part
 
