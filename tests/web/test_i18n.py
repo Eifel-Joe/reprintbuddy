@@ -162,19 +162,30 @@ def test_german_restart_hint_is_in_german():
     assert "restart" not in de.lower()
 
 
-# v0.3.14 p175: the German texts speak with "du". One message of the update card said "Suchen Sie ...".
-# "Sie" as a subject at the start of a sentence means "she/it/they" and is fine; the polite form shows as
-# "<verb> Sie" (inverted), "<conjunction> Sie" or as "Ihr..." in the middle of a sentence.
+# v0.3.14 p175, widened in v0.3.15 p201: the German texts speak with "du". One message of the update card
+# said "Suchen Sie ...". Capital "Sie" is the polite form wherever a word or a comma comes before it on the
+# same line ("Prüfen Sie", "sind Sie", "Wie Sie sehen", ", Sie können"): in the middle of a sentence the
+# third person is written "sie". The third person is capital only as the first word of a sentence, and then
+# a full stop, a colon, a quotation mark, a list or heading mark or the start of the text comes before it
+# ("Sie enthält keinen G-Code."): that is not found. "Ihr...", "Ihnen" are found in every place; a
+# sentence that starts with a third-person "Ihr..." (her/their) would trip the check and goes into
+# `_NOT_POLITE` (a longer snippet of the text, so the exception holds for that place only). The pattern does not look across a line break (a wrapped sentence start has a full stop
+# before it, a wrapped middle is not caught).
 _POLITE_SIE = re.compile(
-    r"\b[A-Za-zäöüÄÖÜß]+(?:en|ern|eln|ten|nn|ßt|st) Sie\b"
-    r"|\b(?:wenn|dass|ob|falls|damit|bevor|sobald|weil|und|oder|bitte|dann|dort|hier|jetzt|nun) Sie\b"
-    r"|(?<=[a-zäöüß,;] )Ihr(?:e|en|em|er|es)?\b"
+    r"(?<=[A-Za-zäöüÄÖÜß,;]) Sie\b(?!-)"  # one word or a comma before it, on the same line
+    r"|\bIhr(?:e|en|em|er|es)?\b|\bIhnen\b"
 )
-_NOT_POLITE = {"Dann sind Sie"}  # none today; add an exact snippet here when a third-person "Sie" trips the check
+_NOT_POLITE: set[str] = set()  # none today; add the snippet of the text (with its surroundings) here when a third-person text trips the check
 
 
 def _polite_hits(text):
-    return [m.group(0) for m in _POLITE_SIE.finditer(text) if m.group(0) not in _NOT_POLITE]
+    """The hits of the pattern; one that lies inside a snippet of `_NOT_POLITE` is a third person."""
+    hits = []
+    for m in _POLITE_SIE.finditer(text):
+        around = text[max(0, m.start() - 40):m.end() + 40]
+        if not any(snippet in around for snippet in _NOT_POLITE):
+            hits.append(m.group(0).strip())
+    return hits
 
 
 def test_german_texts_have_no_polite_sie_form():
@@ -189,3 +200,51 @@ def test_german_docs_and_readme_have_no_polite_sie_form():
     bad = {path.name: _polite_hits(path.read_text(encoding="utf-8")) for path in files}
     bad = {name: hits for name, hits in bad.items() if hits}
     assert not bad, f"Sie-Form in German docs (use du): {bad}"
+
+
+# v0.3.15 p201: the check must know more forms of the polite address than the first four it was built on.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Ihre Daten bleiben auf dem Server.",  # "Ihr..." at the start of a sentence
+        "Alles gespeichert. Ihr Konto ist angelegt.",
+        "Das geht nicht. Ihren Wunsch merken wir uns.",
+        "Das Ergebnis liegt Ihnen vor.",
+        "Hier sind Sie richtig.",  # irregular verb forms: "sind", "waren", "wurden"
+        "Wo sind Sie gerade?",
+        "Gestern waren Sie hier.",
+        "Wie Sie sehen, ist es fertig.",  # a lower-case word before "Sie" is never the start of a sentence
+        "Das Update ist da, Sie können es starten.",
+        "Das ist, wie Sie wissen, nicht neu.",
+        "Prüfen Sie die Datei.",  # the forms the first version knew keep being found
+        "Wenn Sie fertig sind, speichern.",
+        "Bitte wählen Sie einen Drucker.",
+    ],
+)
+def test_the_polite_form_is_found(text):
+    assert _polite_hits(text), text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Sie enthält keinen G-Code.",  # "Sie" as the subject at the start of a sentence: she/it/they
+        "Die Datei ist leer. Sie wird nicht gedruckt.",
+        "Hinweis: Sie liegt im Ordner.",
+        "- Sie wird geprüft.",
+        "## Sie\n\nDie Datei sagt es selbst.",
+        "Die Teile sind da. Sie sind sortiert.",  # "sind Sie" would be polite, "Sie sind" is not
+        "Teile: Sie sind sortiert und ihre Farbe stimmt.",  # lower-case "ihre" is third person
+        "Die Datei und ihr Name werden angezeigt.",
+        "Wir fragen die Teile, ob sie passen; sie passen.",
+        "Das Projekt „Sie\" gibt es nicht.",
+    ],
+)
+def test_the_third_person_is_not_taken_for_the_polite_form(text):
+    assert not _polite_hits(text), text
+
+
+def test_a_snippet_in_not_polite_excuses_only_its_own_place(monkeypatch):
+    monkeypatch.setitem(globals(), "_NOT_POLITE", {"Ihre Zukaufteile werden"})
+    assert not _polite_hits("Artikel ohne Handarbeit. Ihre Zukaufteile werden abgezogen.")
+    assert _polite_hits("Ihre Daten bleiben hier.")
