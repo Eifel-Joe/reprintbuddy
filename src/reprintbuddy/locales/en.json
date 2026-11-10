@@ -739,6 +739,7 @@
   "reorder.item_not_found": "This item cannot be ordered.",
   "reorder.invalid_packs": "Enter a number of order units from 1 to 1000.",
   "reorder.mark_not_found": "This order mark does not exist.",
+  "reorder.supplier_not_found": "This supplier does not belong to this part.",
   "reorder.title": "Reorder suggestions",
   "reorder.sub": "What to order for filament and purchased parts, and what is on its way.",
   "reorder.none": "Nothing to order right now.",

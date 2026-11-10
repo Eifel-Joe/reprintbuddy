@@ -739,6 +739,7 @@
   "reorder.item_not_found": "Dieser Posten lässt sich nicht bestellen.",
   "reorder.invalid_packs": "Gib eine Anzahl Bestelleinheiten von 1 bis 1000 ein.",
   "reorder.mark_not_found": "Diese Bestellmarkierung gibt es nicht.",
+  "reorder.supplier_not_found": "Dieser Lieferant gehört nicht zu diesem Zukaufteil.",
   "reorder.title": "Bestellvorschläge",
   "reorder.sub": "Was bei Filament und Zukaufteilen zu bestellen ist und was unterwegs ist.",
   "reorder.none": "Im Moment ist nichts zu bestellen.",

@@ -467,3 +467,105 @@ def test_a_tile_shows_what_is_on_its_way_in_its_group(bb_client, fake_bambuddy):
     add_part(bb_client)
     (part_tile,) = [t for t in re.findall(r'<div class="tile">(.*?)</form>\s*</div>', bb_client.get("/reorder").text, re.S) if "Insert M4" in t]
     assert translate("en", "reorder.under_way") not in part_tile  # nothing on its way: no line
+
+
+# ---- several suppliers per part (Spec 9.3, 9.4) -----------------------------------------------
+
+
+def add_second_supplier(client, part_id, **fields):
+    from reprintbuddy.models import PartSupplier
+
+    values = dict(name="Example Supplier B", order_url="https://shop.example/b", pack_size=10,
+                  min_order_packs=1, lead_time_days=1, position=1)
+    values.update(fields)
+    with sm_of(client).begin() as s:
+        row = PartSupplier(part_id=part_id, **values)
+        s.add(row)
+        s.flush()
+        return row.id
+
+
+def part_tile(html):
+    return re.search(r'<div class="tile">((?:(?!<div class="tile">).)*?Insert M4.*?)</form>\s*</div>', html, re.S).group(1)
+
+
+def test_a_part_with_two_suppliers_lists_each_with_its_quantity_default_first(bb_client):
+    part_id = add_part(bb_client)
+    b = add_second_supplier(bb_client, part_id)
+    tile = part_tile(bb_client.get("/reorder").text)
+    lines = re.findall(r'<li class="reorder-supplier">(.*?)</li>', tile, re.S)
+    assert len(lines) == 2
+    assert "Example Supplier" in lines[0] and translate("en", "parts.is_default") in lines[0]
+    assert "1 × 50 (50 pcs)" in lines[0] and 'href="https://shop.example/insert-m4"' in lines[0]
+    assert "Example Supplier B" in lines[1] and "2 × 10 (20 pcs)" in lines[1]  # shortfall 20 + 6 - 10 = 16
+    assert 'href="https://shop.example/b" target="_blank" rel="noopener noreferrer"' in lines[1]
+    select = re.search(r'<select[^>]*name="supplier_id"[^>]*>(.*?)</select>', tile, re.S).group(1)
+    options = re.findall(r'<option value="(\d+)"([^>]*)>', select)
+    assert [value for value, _ in options][1] == str(b)
+    assert "selected" in options[0][1] and 'data-packs="1"' in options[0][1]
+
+
+def test_a_part_with_one_supplier_keeps_the_single_line(bb_client):
+    add_part(bb_client)
+    tile = part_tile(bb_client.get("/reorder").text)
+    assert 'name="supplier_id"' not in tile and "reorder-supplier" not in tile
+    assert "1 × 50 (50 pcs)" in tile and "Example Supplier" in tile
+
+
+def test_mark_with_the_second_supplier(bb_client):
+    part_id = add_part(bb_client)
+    b = add_second_supplier(bb_client, part_id)
+    token = form_token_of(bb_client, "/reorder", "/reorder/mark")
+    response = bb_client.post("/reorder/mark", data={
+        "csrf_token": csrf_of(bb_client, "/reorder"), "form_token": token, "item_type": "part",
+        "item_id": str(part_id), "packs": "2", "supplier_id": str(b),
+    })
+    assert response.status_code == 303
+    (mark,) = marks(bb_client)
+    assert (mark.qty, mark.pack_size, mark.supplier_name) == (2, 10, "Example Supplier B")
+    html = bb_client.get("/reorder").text
+    under_way = html.split("On its way", 1)[1]
+    assert "Insert M4: 2 × 10 pcs" in under_way and "Example Supplier B" in under_way
+
+
+def test_an_error_keeps_the_chosen_supplier_and_the_typed_packs(bb_client):
+    part_id = add_part(bb_client)
+    b = add_second_supplier(bb_client, part_id)
+    token = form_token_of(bb_client, "/reorder", "/reorder/mark")
+    response = bb_client.post("/reorder/mark", data={
+        "csrf_token": csrf_of(bb_client, "/reorder"), "form_token": token, "item_type": "part",
+        "item_id": str(part_id), "packs": "0", "supplier_id": str(b),
+    })
+    assert response.status_code == 200 and marks(bb_client) == []
+    tile = part_tile(response.text)
+    assert re.search(rf'<option value="{b}"[^>]*selected', tile)
+    assert re.search(r'name="packs"[^>]*value="0"', tile)
+
+
+def test_a_supplier_of_another_part_is_refused(bb_client):
+    part_id = add_part(bb_client)
+    with sm_of(bb_client).begin() as s:
+        other = make_part(s, name="Screw").id
+    foreign = add_second_supplier(bb_client, other, position=1)
+    token = form_token_of(bb_client, "/reorder", "/reorder/mark")
+    response = bb_client.post("/reorder/mark", data={
+        "csrf_token": csrf_of(bb_client, "/reorder"), "form_token": token, "item_type": "part",
+        "item_id": str(part_id), "packs": "1", "supplier_id": str(foreign),
+    })
+    assert response.status_code == 200 and marks(bb_client) == []
+    assert html_escape(translate("en", "reorder.supplier_not_found")) in response.text
+
+
+def test_the_supplier_choice_in_german_and_its_script(bb_client):
+    from reprintbuddy import __version__
+
+    part_id = add_part(bb_client)
+    add_second_supplier(bb_client, part_id)
+    with sm_of(bb_client).begin() as s:
+        st.set_setting(s, "language", "de", commit=False)
+    html = bb_client.get("/reorder").text
+    tile = part_tile(html)
+    assert re.search(r'<label for="supplier-part-\d+">Lieferant</label>', tile)
+    assert "Standard" in tile
+    assert f'<script src="/static/js/reorder.js?v={__version__}" defer></script>' in html
+    assert bb_client.get(f"/static/js/reorder.js?v={__version__}").status_code == 200

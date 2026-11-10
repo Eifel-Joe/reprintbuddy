@@ -553,6 +553,11 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
 /* Reorder tile: the detail line (amount, supplier, order link) wraps a long supplier name too. */
 .reorder-detail { overflow-wrap: anywhere; }
 .reorder-detail a { color: var(--accent); text-decoration: none; }
+/* A part with several suppliers: one line each, the default first (Spec 9.3). */
+.reorder-suppliers { display: grid; gap: 0.3rem; margin: 0 0 0.5rem; padding: 0; list-style: none; font-size: 0.9rem; }
+.reorder-supplier { overflow-wrap: anywhere; }
+.reorder-supplier a { color: var(--accent); text-decoration: none; }
+.reorder-supplier .badge { margin-left: 0.2rem; vertical-align: 0.1em; }
 
 /* ---- orders (Bestellungen) ------------------------------------------------- */
 /* What an order holds, in its tile: one line per set or article. */
