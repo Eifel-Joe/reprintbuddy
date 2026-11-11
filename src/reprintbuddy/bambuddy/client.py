@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import AbstractAsyncContextManager
-from typing import BinaryIO, Callable, Protocol, runtime_checkable
+from typing import BinaryIO, Callable, Literal, Protocol, runtime_checkable
 from urllib.parse import quote
 
 import httpx
@@ -83,6 +83,10 @@ def _image_kind_of(content: bytes) -> str | None:
 
 HttpFactory = Callable[[], AbstractAsyncContextManager[httpx.AsyncClient]]
 
+# What deleting a queue entry did (Spec 7.2a): gone from the queue, kept by Bambuddy as cancelled
+# (#2960, the last run of a batch order; Reprintbuddy makes no batches), or it was not there (404).
+DeleteResult = Literal["deleted", "cancelled", "gone"]
+
 
 @runtime_checkable
 class BambuddyClient(Protocol):
@@ -109,6 +113,8 @@ class BambuddyClient(Protocol):
     async def upload_file(self, folder_id: int | None, filename: str, content: BinaryIO) -> UploadedFile: ...
 
     async def get_queue_item(self, item_id: int) -> QueueItem | None: ...
+
+    async def delete_queue_item(self, item_id: int) -> DeleteResult: ...
 
     async def list_queue(self) -> list[QueueItem]: ...
 
@@ -367,6 +373,24 @@ class HttpBambuddyClient:
             body["insert_position"] = req.insert_position
         body.update(req.print_options.body())
         return _parse.parse_queue_item(await self._post("/queue/", body))
+
+    # ---- the third write call: delete an own waiting entry after a cancel (Spec 3.1, 7.2a) ----
+    async def delete_queue_item(self, item_id: int) -> DeleteResult:
+        """Delete one queue entry (`DELETE /queue/{id}`, Bambuddy `print_queue.py:2697-2748`).
+
+        Only for Reprintbuddy's own prints Bambuddy still keeps waiting (the caller picks them, Spec
+        7.2a). Bambuddy refuses a printing entry (400 "Cannot delete item that is currently printing")
+        and an entry of somebody else or a key without `queue:delete_own` (403): `BambuddyRejected`.
+        404 is `"gone"`. A timeout is `BambuddyUnavailable` with an unknown outcome.
+        """
+        response = await self._send("DELETE", f"/queue/{int(item_id)}")
+        if response.status_code == 404:
+            return "gone"
+        data = self._json(response, "Delete", "/queue/{id}")  # the call above is the only DELETE text (write guard)
+        deleted = data.get("deleted") if isinstance(data, dict) else None
+        if not isinstance(deleted, bool):
+            raise BambuddyUnexpected("DELETE /queue/{id}: answer without `deleted`")
+        return "deleted" if deleted else "cancelled"
 
     # ---- the second write call: one new print file (Spec 3.1, 5.1a; the watch guards it) ----
     async def upload_file(self, folder_id: int | None, filename: str, content: BinaryIO) -> UploadedFile:
