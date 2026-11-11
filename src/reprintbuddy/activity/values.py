@@ -59,6 +59,7 @@ CHANGES: tuple[str, ...] = ("changed", "removed", "uploaded")
 # Kept by Reprintbuddy for itself; no settings page shows them.
 INTERNAL: frozenset[str] = frozenset(
     {"session_secret", "ha_since", "bambuddy_review_confirmed", "ha_token_rejected"}  # the last: p152, set by the sender
+    | {"orders_seen_id", "reorder_seen"}  # what "new" means on the overview (0.4.1, p381)
 )
 
 # Columns of the edit forms (master data) -> the field the log names. Several columns can be one

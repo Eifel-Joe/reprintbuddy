@@ -36,6 +36,12 @@ def requested(request: Request) -> list[str]:
     return names
 
 
+def page_load(request: Request) -> bool:
+    """A GET of the whole page, not the live refetch of its regions: what "opening" a page means for
+    "new" on the overview (Spec 10.2, 0.4.1)."""
+    return request.method == "GET" and not requested(request)
+
+
 def extract(html: str, names: Sequence[str]) -> dict[str, str]:
     """The text between the markers of each name found, in the order of `names`."""
     found: dict[str, str] = {}
