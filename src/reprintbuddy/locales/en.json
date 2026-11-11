@@ -1440,5 +1440,7 @@
   "assembled.in_set": "The article is in the sets {names}. A set holds an assembled article only on stock and without choice parts; take it out of these sets first.",
   "articles.sold_alone_in_set": "The article is in the sets {names}. A part only is in no set; take it out of these sets first.",
   "assembled.part_is_self": "{name} cannot be a part of itself.",
-  "bookings.awaiting_print_only": "\"Awaiting assembly\" exists only for print articles. For an assembled article, count its stock."
+  "bookings.awaiting_print_only": "\"Awaiting assembly\" exists only for print articles. For an assembled article, count its stock.",
+  "articles.to_assembled": "Make it an assembled article",
+  "assembled.to_print": "Make it a print article"
 }

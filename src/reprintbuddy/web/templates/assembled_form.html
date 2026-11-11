@@ -52,7 +52,7 @@
 {% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {% call ui.region("form", ("article:" ~ composite.id ~ " article") if composite else "article") %}
 <section class="card section">
-  <form class="set-form" method="post" action="{% if composite %}/articles/{{ composite.id }}/assembled{% else %}/articles/new-assembled{% endif %}"{% if composite %} data-live-watch="article-settings:{{ composite.id }}"{% endif %} data-assembled-form>
+  <form class="set-form" method="post" action="{{ form_action }}"{% if composite %} data-live-watch="article-settings:{{ composite.id }}"{% endif %} data-assembled-form>
     {% if composite %}{{ ui.live_stale() }}{% endif %}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if not composite %}<input type="hidden" name="form_token" value="{{ form_token() }}">{% endif %}

@@ -25,7 +25,7 @@ from reprintbuddy.domain import articlesets
 from reprintbuddy.domain import color as color_mod
 from reprintbuddy.domain.catalog import MAX_LABEL_TEXT, ArticleInput, TargetOption
 from reprintbuddy.domain.printfile import is_external_folder
-from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
+from reprintbuddy.domain.errors import ConflictError, DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.domain import stock as stock_mod
@@ -642,6 +642,14 @@ def _get_article(db: Session, article_id: int) -> Article:
     return article
 
 
+def _relink_article(db: Session, article_id: int) -> Article:
+    """A print article, or an article made of parts that becomes one again (Spec 5.6); never a variant."""
+    article = _get_article(db, article_id)
+    if article.kind == "variant":
+        raise HTTPException(status_code=404)
+    return article
+
+
 def _target_label(lang: str, article: Article) -> str:
     value = catalog.target_value(article.target_model, article.printer_id)
     if value == "":
@@ -654,8 +662,7 @@ def _target_label(lang: str, article: Article) -> str:
 def _assembled_page(request: Request, db: Session, article: Article, error: str | None = None, status: int = 200):
     """The page of an article made of parts (Spec 5.6, 10.3; 0.4.0 p341)."""
     row = assembled.assembled_row(db, article.id)
-    ids = [article.id] + [h.article_id for h in row.holders if h.article_id != article.id]
-    entries = stock_mod.journal_page(db, article_ids=ids, limit=50)
+    entries = stock_mod.journal_page(db, article_ids=assembled.journal_ids(db, article), limit=50)
     picture = db.get(Article, row.thumbnail_article_id) if row.thumbnail_article_id else None
     base = qr_view.base_address(request, db)
     return render(
@@ -1021,7 +1028,7 @@ router.add_api_route(
 
 @router.get("/articles/{article_id:int}/relink")
 async def relink_browse(request: Request, article_id: int, folder: str | None = None, db: Session = Depends(get_db)):
-    _get_article(db, article_id)
+    _relink_article(db, article_id)
     release_connection(db)  # nothing is pending; no connection is held while Bambuddy answers
     base = f"/articles/{article_id}/relink"
     return await _browse(request, folder, base, f"{base}/file", relink=True, article_id=article_id)
@@ -1029,7 +1036,7 @@ async def relink_browse(request: Request, article_id: int, folder: str | None = 
 
 @router.get("/articles/{article_id:int}/relink/file/{file_id:int}")
 async def relink_plates(request: Request, article_id: int, file_id: int, db: Session = Depends(get_db)):
-    archived = _get_article(db, article_id).archived_at is not None
+    archived = _relink_article(db, article_id).archived_at is not None
     release_connection(db)  # nothing is pending; no connection is held while Bambuddy answers
     base = f"/articles/{article_id}/relink"
     return await _plates_page(
@@ -1043,8 +1050,8 @@ async def relink_plates(request: Request, article_id: int, file_id: int, db: Ses
     dependencies=[Depends(verify_csrf)],
 )
 async def relink_restore(request: Request, article_id: int, file_id: int, index: int, db: Session = Depends(get_db)):
-    article = _get_article(db, article_id)
-    archived, name = article.archived_at is not None, article.name
+    article = _relink_article(db, article_id)
+    archived, name, made_of_parts = article.archived_at is not None, article.name, article.kind == "assembled"
     base = f"/articles/{article_id}/relink"
     release_connection(db)  # nothing is pending; no connection is held while Bambuddy answers
     client = get_bambuddy(request)
@@ -1066,7 +1073,14 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
     def work(tx):
         nonlocal changed
         again.extend(catalog.slots_losing_group(tx, article_id, requirements))  # before the change
-        if archived:
+        if made_of_parts:  # back to a print article (Spec 5.6 "Wechsel"); archived ones are restored first
+            if archived:
+                raise ConflictError("articles.edit_archived")
+            assembled.convert_to_print(
+                tx, article_id, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail,
+                actor="user",
+            )
+        elif archived:
             catalog.restore_article_with_plate(
                 tx, article_id, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail
             )

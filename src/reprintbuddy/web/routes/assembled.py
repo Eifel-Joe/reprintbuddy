@@ -188,14 +188,17 @@ def _variant_table(db: Session, composite: Article | None, values: dict) -> list
     return rows
 
 
-def _form_page(request, db, *, composite, values, error=None, status=200):
+def _form_page(request, db, *, composite, values, error=None, status=200, action=None):
     taken = _taken(values)
+    if action is None:
+        action = f"/articles/{composite.id}/assembled" if composite else "/articles/new-assembled"
     return render(
         request,
         "assembled_form.html",
         status_code=status,
         active_nav="articles",
         composite=composite,
+        form_action=action,
         values=values,
         articles=_print_articles(db, values),
         taken=taken,
@@ -289,6 +292,45 @@ def values_of(db: Session, composite: Article) -> dict:
     if not row.fields:
         values["c1"] = [_blank_option() for _ in range(DEFAULT_OPTIONS)]
     return values
+
+
+def _print_article(db: Session, article_id: int) -> Article:
+    article = db.get(Article, article_id)
+    if article is None or article.kind != "print":
+        raise HTTPException(status_code=404)
+    return article
+
+
+@router.get("/articles/{article_id:int}/to-assembled")
+async def to_assembled_form(request: Request, article_id: int, db: Session = Depends(get_db)):
+    """A print article becomes an article made of parts (Spec 5.6 "Wechsel"): the form, with its name,
+    number and label text; saving checks that nothing runs and its stock is 0."""
+    article = _print_article(db, article_id)
+    values = new_values()
+    values.update(name=article.name, sku=article.sku or "", label_text=article.label_text or "")
+    return _form_page(request, db, composite=None, values=values, action=f"/articles/{article_id}/to-assembled")
+
+
+@router.post("/articles/{article_id:int}/to-assembled", dependencies=[Depends(verify_csrf)])
+async def to_assembled(request: Request, article_id: int, db: Session = Depends(get_db)):
+    article = _print_article(db, article_id)
+    action = f"/articles/{article_id}/to-assembled"
+    form = await request.form()
+    values = _typed(form)
+    if change_part_rows(form, values) or _grow(values, str(form.get("action", ""))):
+        return _form_page(request, db, composite=None, values=values, action=action)
+    try:
+        data = _parse(values, form, active_parts(db))
+        with form_transaction(request, str(form.get("form_token", ""))) as tx:
+            assembled.convert_to_assembled(tx, article.id, data)
+    except FormTokenUsed:
+        return duplicate_redirect(request, f"/articles/{article_id}")
+    except (DomainError, FormTokenInvalid) as exc:
+        return _form_page(
+            request, db, composite=None, values=values, action=action,
+            error=error_text(current_language(request), exc), status=error_status(exc),
+        )
+    return saved_redirect(request, f"/articles/{article_id}", "articles.saved", name=data.name)
 
 
 @router.get("/articles/new-assembled")

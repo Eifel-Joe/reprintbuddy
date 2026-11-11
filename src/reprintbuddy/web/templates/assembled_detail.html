@@ -11,7 +11,7 @@
   {% set mode_key = 'assembled.mode.' ~ row.mode %}{{ ui.badge(kind, row.status) }} · {{ t(mode_key) }}
   {%- if article.archived_at %} · {{ ui.badge('article', 'archived') }}{% endif -%}
 {% endset %}
-{% call ui.page_head("package", article.name, sub) %}{% if not article.archived_at %}<a class="btn" href="/articles/{{ article.id }}/assembled">{{ ui.icon('pencil') }}{{ t('articles.edit') }}</a>{% endif %}{% endcall %}
+{% call ui.page_head("package", article.name, sub) %}{% if not article.archived_at %}<a class="btn" href="/articles/{{ article.id }}/assembled">{{ ui.icon('pencil') }}{{ t('articles.edit') }}</a><a class="btn secondary" href="/articles/{{ article.id }}/relink">{{ ui.icon('refresh-cw') }}{{ t('assembled.to_print') }}</a>{% endif %}{% endcall %}
 <div class="toolbar">
   <div class="toolbar-actions">
     <a class="btn secondary" href="/journal?article={{ article.id }}">{{ ui.icon('history') }}{{ t('journal.title') }}</a>
