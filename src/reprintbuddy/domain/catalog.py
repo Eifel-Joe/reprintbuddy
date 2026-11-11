@@ -74,6 +74,7 @@ def validate_sku(
     *,
     article_id: int | None = None,
     set_id: int | None = None,
+    variants: dict[str, int] | None = None,
 ) -> str | None:
     """Trimmed article number, unique over articles, sets and variants (all become SKUs later)."""
     sku = _text(sku, "catalog.field.sku", MAX_SKU)
@@ -84,17 +85,19 @@ def validate_sku(
     if (
         (taken_by_article is not None and taken_by_article != article_id)
         or (taken_by_set is not None and taken_by_set != set_id)
-        or sku in variant_numbers(session, exclude_set_id=set_id)  # a variant's number (Spec 5.4, p340)
+        # a variant's number (Spec 5.4, p340); a set passes the numbers it already looked up
+        or sku in (variants if variants is not None else variant_numbers(session, exclude_set_id=set_id))
     ):
         raise ConflictError("catalog.sku_taken", sku=sku)
     return sku
 
 
-def _sku_owner(session: Session, sku: str) -> str | None:
-    """'article' or 'set' when an article or a set carries this number."""
+def _sku_owner(session: Session, sku: str, *, besides_set: int | None = None) -> str | None:
+    """'article' or 'set' when an article or a set carries this number. `besides_set` leaves out the
+    set being saved: its old number is gone once it is saved (review of p340, I1)."""
     if session.scalar(select(Article.id).where(Article.sku == sku)) is not None:
         return "article"
-    if session.scalar(select(ProductSet.id).where(ProductSet.sku == sku)) is not None:
+    if session.scalar(select(ProductSet.id).where(ProductSet.sku == sku, ProductSet.id != (besides_set or 0))) is not None:
         return "set"
     return None
 
@@ -702,7 +705,8 @@ def _check_set_input(
     session: Session, data: SetInput, *, set_id: int | None = None
 ) -> tuple[str, str | None, list[tuple[int, int]], list[tuple[int, list[tuple[int, str | None]]]]]:
     name = _required_name(data.name, "sets.field.name")
-    sku = validate_sku(session, data.sku, set_id=set_id)
+    taken = variant_numbers(session, exclude_set_id=set_id)  # looked up once per save
+    sku = validate_sku(session, data.sku, set_id=set_id, variants=taken)
     kept: set[int] = set()  # archived articles that are already part of this set may stay
     if set_id is not None:
         kept = set(
@@ -757,22 +761,24 @@ def _check_set_input(
                 raise ValidationError("sets.suffix_twice", suffix=suffix)
             suffixes.add(suffix)
     if choices:
-        _check_variant_numbers(session, sku, [[suffix for _found, suffix in options] for _qty, options in choices], set_id)
+        _check_variant_numbers(
+            session, sku, [[suffix for _found, suffix in options] for _qty, options in choices], set_id, taken
+        )
     return name, sku, base, [(qty, [(found.id, suffix) for found, suffix in options]) for qty, options in choices]
 
 
 def _check_variant_numbers(
-    session: Session, sku: str | None, fields: list[list[str | None]], set_id: int | None
+    session: Session, sku: str | None, fields: list[list[str | None]], set_id: int | None, taken: dict[str, int]
 ) -> None:
-    """Every variant number fits and is free: not an article's, a set's or another variant's (p340, 6)."""
-    taken = variant_numbers(session, exclude_set_id=set_id)
+    """Every variant number fits and is free: not an article's, another set's or another variant's
+    (p340, question 6). `taken` holds the variant numbers of the other sets."""
     own: set[str] = set()
     for combination in itertools.product(*fields):
         number = rules.variant_number(sku, combination)
         assert number is not None  # set number and suffixes are checked before
         if len(number) > MAX_SKU:
             raise ValidationError("sets.variant_too_long", sku=number, max=MAX_SKU)
-        if number in own or number in taken or _sku_owner(session, number) is not None:
+        if number in own or number in taken or _sku_owner(session, number, besides_set=set_id) is not None:
             raise ConflictError("catalog.sku_taken", sku=number)
         own.add(number)
 

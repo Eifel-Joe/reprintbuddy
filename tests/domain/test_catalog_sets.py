@@ -357,3 +357,15 @@ def test_set_row_lookup(db):
     with db.begin() as s:
         row = catalog.set_row(s, set_id)
         assert row.id == set_id and row.variants[0].sku == "S-1-A"
+
+
+def test_set_can_turn_its_old_number_into_a_variant_number(db):  # review of p340 (I1)
+    """After saving nobody holds EX-S10-A but the variant: the set's own old number is no conflict."""
+    with db.begin() as s:
+        a = articles(s, frame=1, a=1, b=1)
+        set_id = catalog.create_set(s, SetInput("Kit", "EX-S10-A", [BaseInput(1, a["frame"]), BaseInput(1, a["a"])], [])).id
+    with db.begin() as s:
+        catalog.update_set(s, set_id, SetInput("Kit", "EX-S10", [BaseInput(1, a["frame"])],
+                                               [choice(1, (a["a"], "-A"), (a["b"], "-B"))]))
+    with db.begin() as s:
+        assert [v.sku for v in catalog.list_sets(s)[0].variants] == ["EX-S10-A", "EX-S10-B"]
