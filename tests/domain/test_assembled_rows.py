@@ -110,3 +110,23 @@ def test_used_in_names_the_assembled_articles(db):  # Spec 10.3
         make_assembled(s, name="Bracket", base=[(ids["Side part L"], 2)])
         assert [name for _id, name in assembled.used_in(s, ids["Side part L"])] == ["Bracket", "Hose"]
         assert assembled.used_in(s, ids["Socket R40"]) == [(composite.id, "Hose")]
+
+
+def test_capped_search_warns_once_per_article(db, monkeypatch, caplog):  # condition 4 of the plan's approval
+    from reprintbuddy.domain import rules
+
+    with db.begin() as s:
+        ids = [make_article(s, name=f"Ring {i}", stock=1).id for i in range(5)]
+        ring = make_assembled(s, name="Ring", sku="EX-R1", mode="order", fields=[[
+            (f"-{i}", [(ids[i], 1), (ids[(i + 1) % 5], 1)]) for i in range(5)
+        ]])
+        monkeypatch.setattr(rules, "MAX_NODES", 2)
+        caplog.set_level("WARNING", logger="reprintbuddy.domain.assembled")
+        assert assembled.assembled_row(s, ring.id).capped
+        assembled.assembled_row(s, ring.id)
+        assert len([r for r in caplog.records if "search limit" in r.getMessage()]) == 1
+        monkeypatch.setattr(rules, "MAX_NODES", 200_000)
+        assert not assembled.assembled_row(s, ring.id).capped  # uncapped: the next cap warns again
+        monkeypatch.setattr(rules, "MAX_NODES", 2)
+        assembled.assembled_row(s, ring.id)
+        assert len([r for r in caplog.records if "search limit" in r.getMessage()]) == 2
