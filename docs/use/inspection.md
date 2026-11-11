@@ -106,7 +106,7 @@ Shipping and cancelling always apply to the whole order, never to single items.
 
 ## Sets
 
-A set is a bundle of articles sold together, with a name and an article number. It has no stock of its own.
+A set is a bundle of articles sold together, with a name and an article number (required once the set has choice parts). It has no stock of its own.
 
 **Base parts** go into every set: per row a **Quantity** and an **Article**, chosen from a drop-down. An article that is in one row already is not offered in the others; an article is only once in a set.
 
@@ -130,7 +130,7 @@ Under **Sets** press **New set**. The form starts with three rows of base parts 
 An order for a set reserves the single articles. A set cannot be ordered while one of its base parts is archived; a variant whose choice part is archived is not offered. Sets are archived, not deleted; an order that already exists keeps the articles and the variant number it was entered with. Small and large versions of a bundle are separate sets.
 
 !!! note "Sets from an earlier version"
-    Sets from version 0.3.17 or earlier are rebuilt by the update: a position with one article becomes a base part, the first and second position with a choice become choice parts 1 and 2. They have no suffixes yet, so the set shows **suffixes missing** and cannot be ordered until you add them (and an article number, if it has none). What the new form cannot hold, such as a third position with a choice, is dropped and named under **Settings → Log** ([Log](../operate/log.md)). Orders entered before the update stay as they were.
+    Sets from version 0.3.17 or earlier are rebuilt by the update: a position with one article becomes a base part, the first and second position with a choice become choice parts 1 and 2. They have no suffixes yet, so the set shows **suffixes missing** and cannot be ordered until you add them (and an article number, if it has none). What the new form cannot hold, such as a third position with a choice, is dropped; the articles that can no longer be chosen are named under **Settings → Log** ([Log](../operate/log.md)). Orders entered before the update stay as they were.
 
 ## Bought parts
 

@@ -106,7 +106,7 @@ Versand und Storno gelten immer für die ganze Bestellung, nie für einzelne Pos
 
 ## Sets
 
-Ein Set ist eine Zusammenstellung von Artikeln, die zusammen verkauft werden, mit Namen und Artikelnummer. Es hat keinen eigenen Bestand.
+Ein Set ist eine Zusammenstellung von Artikeln, die zusammen verkauft werden, mit Namen und Artikelnummer (Pflicht, sobald das Set Wahlteile hat). Es hat keinen eigenen Bestand.
 
 **Basisteile** kommen in jedes Set: je Zeile eine **Menge** und ein **Artikel** aus der Aufklappliste (Dropdown). Ein Artikel, der schon in einer Zeile steht, wird in den anderen nicht mehr angeboten; ein Artikel steht nur einmal in einem Set.
 
@@ -130,7 +130,7 @@ Klicke unter **Sets** auf **Neues Set**. Das Formular beginnt mit je drei Zeilen
 Die Bestellung eines Sets reserviert die einzelnen Artikel. Ein Set lässt sich nicht bestellen, solange eines seiner Basisteile archiviert ist; eine Variante mit archiviertem Wahlteil wird nicht angeboten. Sets werden archiviert, nicht gelöscht; eine bestehende Bestellung behält die Artikel und die Variantennummer, mit denen sie angelegt wurde. Kleine und große Ausführungen sind getrennte Sets.
 
 !!! note "Sets aus einer früheren Version"
-    Sets aus Version 0.3.17 oder früher baut das Update um: Eine Position mit einem Artikel wird ein Basisteil, die erste und zweite Position mit Wahl werden Wahlteile 1 und 2. Sie haben noch keine Zusatznummern; das Set zeigt deshalb **Zusatznummern fehlen** und lässt sich erst bestellen, wenn du sie einträgst (und eine Artikelnummer, falls es keine hat). Was das neue Formular nicht fassen kann, etwa eine dritte Position mit Wahl, entfällt und steht unter **Einstellungen → Protokoll** ([Protokoll](../operate/log.md)). Bestellungen von vor dem Update bleiben, wie sie waren.
+    Sets aus Version 0.3.17 oder früher baut das Update um: Eine Position mit einem Artikel wird ein Basisteil, die erste und zweite Position mit Wahl werden Wahlteile 1 und 2. Sie haben noch keine Zusatznummern; das Set zeigt deshalb **Zusatznummern fehlen** und lässt sich erst bestellen, wenn du sie einträgst (und eine Artikelnummer, falls es keine hat). Was das neue Formular nicht fassen kann, etwa eine dritte Position mit Wahl, entfällt; die Artikel, die nicht mehr wählbar sind, stehen unter **Einstellungen → Protokoll** ([Protokoll](../operate/log.md)). Bestellungen von vor dem Update bleiben, wie sie waren.
 
 ## Zukaufteile
 
