@@ -9,10 +9,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import catalog
-from reprintbuddy.domain.catalog import SetInput
+from reprintbuddy.domain.catalog import BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
 from reprintbuddy.domain.errors import DomainError
 from reprintbuddy.domain.status import STATES, summarize
-from reprintbuddy.models import Article, ProductSet, SetPosition, SetPositionOption
+from reprintbuddy.models import Article, ProductSet
 from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
@@ -36,57 +36,95 @@ from reprintbuddy.web.formtoken import (
 
 router = APIRouter()
 
-DEFAULT_ROWS = 5
-MORE_ROWS = 5
-MAX_ROWS = 200  # a set may have many positions; the edit form must show all of them
+# The form is compact (plan approval p340): three rows of base parts and of choice parts 1; choice
+# parts 2 appear on request ("add_c2") or when the set has them. "More rows" adds rows to one part.
+DEFAULT_ROWS = 3
+MORE_ROWS = 3
+MAX_ROWS = 200  # a set may have many rows; the edit form must show all of them
 MAX_ID = 2**31 - 1
+SECTIONS = ("base", "c1", "c2")
 
 
-def _rows_of(form, *, more: bool) -> int:
-    raw = str(form.get("rows", "")).strip()
-    value = bounded_int(raw)
-    rows = value if value is not None and 1 <= value <= MAX_ROWS else DEFAULT_ROWS
-    return min(rows + MORE_ROWS, MAX_ROWS) if more else rows
+def _count(form, section: str) -> int:
+    value = bounded_int(str(form.get(f"{section}_rows", "")).strip())
+    return value if value is not None and 1 <= value <= MAX_ROWS else DEFAULT_ROWS
 
 
-def _typed_rows(form, rows: int) -> list[dict[str, object]]:
-    result = []
-    for i in range(rows):
-        selected = set()
-        for raw in form.getlist(f"pos_{i}_articles"):
-            number = bounded_int(str(raw).strip())
-            if number is not None and number <= MAX_ID:
-                selected.add(number)
-        result.append({"qty": str(form.get(f"pos_{i}_qty", "1")), "selected": selected})
-    return result
+def _typed(form) -> dict:
+    """What the form holds, as typed: rows of base parts and of the choice fields."""
+    typed = {
+        "name": str(form.get("name", "")),
+        "sku": str(form.get("sku", "")),
+        "show_c2": form.get("c2_shown") == "1",
+        "base": [
+            {"qty": str(form.get(f"base_{i}_qty", "1")), "article": str(form.get(f"base_{i}_article", "")).strip()}
+            for i in range(_count(form, "base"))
+        ],
+    }
+    for section in SECTIONS[1:]:
+        typed[f"{section}_qty"] = str(form.get(f"{section}_qty", "1"))
+        typed[section] = [
+            {
+                "article": str(form.get(f"{section}_{i}_article", "")).strip(),
+                "suffix": str(form.get(f"{section}_{i}_suffix", "")),
+            }
+            for i in range(_count(form, section) if section == "c1" or typed["show_c2"] else 0)
+        ]
+    return typed
 
 
-def _parse(form, rows: int) -> SetInput:
-    positions = []
-    for i in range(rows):
-        raw_ids = [str(r).strip() for r in form.getlist(f"pos_{i}_articles") if str(r).strip()]
-        if not raw_ids:
-            continue  # rows without an article are skipped
-        article_ids = [parse_int(r, field="sets.field.articles", min=1, max=MAX_ID) for r in raw_ids]
-        qty = parse_int(form.get(f"pos_{i}_qty"), field="sets.field.qty", min=1, max=1000)
-        positions.append(catalog.PositionInput(qty, article_ids))  # rewritten with the form (p340)
+def _empty(values: dict) -> dict:
+    values.setdefault("base", [])
+    for section in SECTIONS[1:]:
+        values.setdefault(f"{section}_qty", "1")
+        values.setdefault(section, [])
+    return values
+
+
+def _grow(values: dict, section: str, rows: int) -> None:
+    """At least `rows` rows in a part (an empty row is one to choose in)."""
+    blank = {"qty": "1", "article": ""} if section == "base" else {"article": "", "suffix": ""}
+    values[section].extend(dict(blank) for _ in range(min(rows, MAX_ROWS) - len(values[section])))
+
+
+def _article_id(raw: str) -> int:
+    return parse_int(raw, field="sets.field.article", min=1, max=MAX_ID)
+
+
+def _parse(values: dict) -> SetInput:
+    base = [
+        BaseInput(parse_int(row["qty"], field="sets.field.qty", min=1, max=1000), _article_id(row["article"]))
+        for row in values["base"]
+        if row["article"]  # rows without an article are skipped
+    ]
+    choices = []
+    for section in ("c1", "c2") if values["show_c2"] else ("c1",):
+        options = [ChoiceOptionInput(_article_id(row["article"]), row["suffix"]) for row in values[section] if row["article"]]
+        qty = parse_int(values[f"{section}_qty"], field="sets.field.choice_qty", min=1, max=1000) if options else 1
+        choices.append(ChoiceInput(qty, options))
     return SetInput(
-        name=parse_text(form.get("name"), field="sets.field.name", max_len=200, required=True),
-        sku=parse_text(form.get("sku"), field="catalog.field.sku", max_len=64),
-        positions=positions,
+        name=parse_text(values["name"], field="sets.field.name", max_len=200, required=True),
+        sku=parse_text(values["sku"], field="catalog.field.sku", max_len=64),
+        base=base,
+        choices=choices,
     )
 
 
-def _article_options(db: Session, rows_values) -> list[dict[str, object]]:
-    """Active articles, plus archived ones that are selected in the form: the set keeps them."""
-    options = {row.id: {"id": row.id, "name": row.name, "archived": False} for row in catalog.list_articles(db)}
-    selected = {article_id for row in rows_values for article_id in row["selected"]}
-    for article in db.scalars(select(Article).where(Article.id.in_(selected), Article.archived_at.is_not(None))):
-        options[article.id] = {"id": article.id, "name": article.name, "archived": True}
+def _article_options(db: Session, values: dict) -> list[dict[str, object]]:
+    """Active articles, plus archived ones that are chosen in the form: the set keeps them (Spec 5.5)."""
+    options = {row.id: {"id": str(row.id), "name": row.name, "archived": False} for row in catalog.list_articles(db)}
+    chosen = set()
+    for section in SECTIONS:
+        for row in values[section]:
+            number = bounded_int(row["article"])
+            if number is not None and number <= MAX_ID:
+                chosen.add(number)
+    for article in db.scalars(select(Article).where(Article.id.in_(chosen), Article.archived_at.is_not(None))):
+        options[article.id] = {"id": str(article.id), "name": article.name, "archived": True}
     return sorted(options.values(), key=lambda o: (str(o["name"]).casefold(), o["id"]))
 
 
-def _form_page(request, db, *, product_set, values, rows_values, rows, error=None, status=200):
+def _form_page(request, db, *, product_set, values, error=None, status=200):
     return render(
         request,
         "set_form.html",
@@ -94,11 +132,42 @@ def _form_page(request, db, *, product_set, values, rows_values, rows, error=Non
         active_nav="sets",
         product_set=product_set,
         values=values,
-        rows_values=rows_values,
-        rows=rows,
-        articles=_article_options(db, rows_values),
+        articles=_article_options(db, values),
+        # an article chosen in one row is not offered in the others (Spec 5.4); set_form.js keeps it so
+        taken=[row["article"] for section in SECTIONS for row in values[section] if row["article"]],
         error=error,
     )
+
+
+async def _post(request: Request, db: Session, product_set: ProductSet | None):
+    """Create or edit: "more rows", "add choice parts 2" or save."""
+    form = await request.form()
+    values = _empty(_typed(form))
+    action = str(form.get("action", ""))
+    if action == "add_c2":  # nothing is saved and the token stays unused
+        values["show_c2"] = True
+        _grow(values, "c2", DEFAULT_ROWS)
+        return _form_page(request, db, product_set=product_set, values=values)
+    if action.startswith("more_") and action[5:] in SECTIONS:
+        section = action[5:]
+        _grow(values, section, len(values[section]) + MORE_ROWS)
+        return _form_page(request, db, product_set=product_set, values=values)
+    try:
+        data = _parse(values)
+        if product_set is None:
+            with form_transaction(request, str(form.get("form_token", ""))) as tx:
+                catalog.create_set(tx, data)
+        else:
+            with write_transaction(request) as tx:
+                catalog.update_set(tx, product_set.id, data)
+    except FormTokenUsed:
+        return duplicate_redirect(request, "/sets")
+    except (DomainError, FormTokenInvalid) as exc:
+        return _form_page(
+            request, db, product_set=product_set, values=values,
+            error=error_text(current_language(request), exc), status=error_status(exc),
+        )
+    return saved_redirect(request, "/sets", "sets.saved" if product_set else "sets.created", name=data.name)
 
 
 @router.get("/sets")
@@ -116,7 +185,7 @@ async def sets_list(
     states = STATES["set"]
     status = None if archived else listing.pick(request.query_params.get("status"), states)
     every = catalog.list_sets(db, archived=archived)
-    found = [row for row in every if listing.matches(q, row.name, row.sku)]
+    found = [row for row in every if listing.matches(q, row.name, row.sku, *(v.sku for v in row.variants if v.sku))]
     counts = Counter(row.status for row in found)
     lang = current_language(request)
     t = lambda key: translate(lang, key)  # noqa: E731
@@ -141,35 +210,15 @@ async def sets_list(
 
 @router.get("/sets/new")
 async def sets_new(request: Request, db: Session = Depends(get_db)):
-    rows_values = [{"qty": "1", "selected": set()} for _ in range(DEFAULT_ROWS)]
-    return _form_page(
-        request, db, product_set=None, values={"name": "", "sku": ""},
-        rows_values=rows_values, rows=DEFAULT_ROWS,
-    )
+    values = _empty({"name": "", "sku": "", "show_c2": False})
+    _grow(values, "base", DEFAULT_ROWS)
+    _grow(values, "c1", DEFAULT_ROWS)
+    return _form_page(request, db, product_set=None, values=values)
 
 
 @router.post("/sets/new", dependencies=[Depends(verify_csrf)])
 async def sets_create(request: Request, db: Session = Depends(get_db)):
-    form = await request.form()
-    more = form.get("action") == "more"
-    rows = _rows_of(form, more=more)
-    values = {"name": str(form.get("name", "")), "sku": str(form.get("sku", ""))}
-    rows_values = _typed_rows(form, rows)
-    if more:  # show more rows; nothing is saved and the token stays unused
-        rows_values += [{"qty": "1", "selected": set()} for _ in range(rows - len(rows_values))]
-        return _form_page(request, db, product_set=None, values=values, rows_values=rows_values, rows=rows)
-    try:
-        data = _parse(form, rows)
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            catalog.create_set(tx, data)
-    except FormTokenUsed:
-        return duplicate_redirect(request, "/sets")
-    except (DomainError, FormTokenInvalid) as exc:
-        return _form_page(
-            request, db, product_set=None, values=values, rows_values=rows_values, rows=rows,
-            error=error_text(current_language(request), exc), status=error_status(exc),
-        )
-    return saved_redirect(request, "/sets", "sets.created", name=data.name)
+    return await _post(request, db, None)
 
 
 def _get_set(db: Session, set_id: int) -> ProductSet:
@@ -186,25 +235,7 @@ async def sets_edit(request: Request, set_id: int, db: Session = Depends(get_db)
 
 @router.post("/sets/{set_id:int}/edit", dependencies=[Depends(verify_csrf)])
 async def sets_update(request: Request, set_id: int, db: Session = Depends(get_db)):
-    product_set = _get_set(db, set_id)
-    form = await request.form()
-    more = form.get("action") == "more"
-    rows = _rows_of(form, more=more)
-    values = {"name": str(form.get("name", "")), "sku": str(form.get("sku", ""))}
-    rows_values = _typed_rows(form, rows)
-    if more:
-        rows_values += [{"qty": "1", "selected": set()} for _ in range(rows - len(rows_values))]
-        return _form_page(request, db, product_set=product_set, values=values, rows_values=rows_values, rows=rows)
-    try:
-        data = _parse(form, rows)
-        with write_transaction(request) as tx:
-            catalog.update_set(tx, set_id, data)
-    except DomainError as exc:
-        return _form_page(
-            request, db, product_set=product_set, values=values, rows_values=rows_values, rows=rows,
-            error=error_text(current_language(request), exc), status=error_status(exc),
-        )
-    return saved_redirect(request, "/sets", "sets.saved", name=data.name)
+    return await _post(request, db, _get_set(db, set_id))
 
 
 def _archive_action(action, flash_key: str):
@@ -227,20 +258,20 @@ def _archive_action(action, flash_key: str):
 
 
 def _edit_again(request, db, product_set, error, status):
-    positions = db.scalars(
-        select(SetPosition).where(SetPosition.set_id == product_set.id).order_by(SetPosition.sort, SetPosition.id)
-    ).all()
-    rows_values = []
-    for position in positions:
-        selected = set(db.scalars(select(SetPositionOption.article_id).where(SetPositionOption.position_id == position.id)))
-        rows_values.append({"qty": str(position.qty), "selected": selected})
-    rows = max(DEFAULT_ROWS, len(rows_values) + 2)
-    rows_values += [{"qty": "1", "selected": set()} for _ in range(rows - len(rows_values))]
-    return _form_page(
-        request, db, product_set=product_set,
-        values={"name": product_set.name, "sku": product_set.sku or ""},
-        rows_values=rows_values, rows=rows, error=error, status=status,
-    )
+    """The form with what the set holds, one empty row more per part (at least three)."""
+    row = catalog.set_row(db, product_set.id)
+    values = _empty({
+        "name": product_set.name,
+        "sku": product_set.sku or "",
+        "show_c2": len(row.choices) > 1,
+        "base": [{"qty": str(b.qty), "article": str(b.article_id)} for b in row.base],
+    })
+    for section, field in zip(("c1", "c2"), row.choices):
+        values[f"{section}_qty"] = str(field.qty)
+        values[section] = [{"article": str(o.article_id), "suffix": o.suffix or ""} for o in field.options]
+    for section in SECTIONS if values["show_c2"] else SECTIONS[:2]:
+        _grow(values, section, max(DEFAULT_ROWS, len(values[section]) + 1))
+    return _form_page(request, db, product_set=product_set, values=values, error=error, status=status)
 
 
 router.add_api_route(

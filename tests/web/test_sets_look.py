@@ -40,10 +40,12 @@ def list_of(page):
 
 
 def set_with(client, name, sku=None, **article_fields):
-    """A set of one position (1 × a new article); returns (set id, article id)."""
+    """A set of 1 × a new article and 1 × a plentiful box (a set has two articles at least, p340);
+    returns (set id, article id): the new article decides the availability."""
     with sm_of(client).begin() as s:
         article = make_article(s, name=f"Part of {name}", **article_fields)
-        product_set = make_set(s, name, [(1, [article.id])])
+        box = make_article(s, name=f"Box of {name}", stock=99)
+        product_set = make_set(s, name, [(1, article.id), (1, box.id)])
         product_set.sku = sku
         return product_set.id, article.id
 
@@ -106,7 +108,7 @@ def test_sets_list_and_tiles(ready_client):
     assert 'class="collection layout-auto"' in listing
     table = re.search(r"<table>.*?</table>", listing, re.S).group(0)
     assert f'<a href="/sets/{set_id}/edit">Starter Set</a>' in table and "S-100" in table
-    assert '<td class="num">3</td>' in table and "1 × Part of Starter Set" in table
+    assert '<td class="num">3</td>' in table and "<span>1 × Part of Starter Set</span>" in table
     tile = re.search(rf'<a class="tile" href="/sets/{set_id}/edit">.*?</a>', listing, re.S).group(0)
     assert "Starter Set" in tile and "S-100" in tile and '<span class="badge tone-ok">deliverable</span>' in tile
     assert "<strong>3</strong>" in tile
@@ -162,7 +164,7 @@ def test_set_edit_watches_its_set(ready_client):
     page = ready_client.get(f"/sets/{set_id}/edit").text
     assert f'data-live-region="form" data-live-topics="set:{set_id} article"' in page
     form = region_of(page, "form")
-    assert re.search(rf'<form method="post" action="/sets/{set_id}/edit" data-live-watch="set:{set_id}">\s*<p class="live-stale" hidden', form)
+    assert re.search(rf'<form class="set-form" method="post" action="/sets/{set_id}/edit" data-live-watch="set:{set_id}" data-set-form>\s*<p class="live-stale" hidden', form)
     assert 'class="page-head"' in page
 
 
@@ -181,7 +183,7 @@ def test_more_rows_page_has_no_region_source(ready_client):
     with sm_of(ready_client).begin() as s:
         a = make_article(s, name="Template A").id
     data = {"csrf_token": csrf_of(ready_client, "/sets/new"), "form_token": "x", "name": "Typed Set",
-            "rows": "5", "pos_0_qty": "1", "pos_0_articles": [str(a)], "action": "more"}
+            "base_rows": "3", "base_0_qty": "1", "base_0_article": str(a), "action": "more_base"}
     response = ready_client.post("/sets/new", data=data)
     assert response.status_code == 200
     assert 'data-live-src=""' in response.text and 'value="Typed Set"' in response.text
@@ -203,9 +205,9 @@ def test_edit_pages_have_one_balanced_form_region(ready_client):
 def test_failed_set_edit_has_no_region_source(ready_client):
     set_id, article_id = set_with(ready_client, "Starter Set", stock=1)
     data = {"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Typed Name", "sku": "",
-            "rows": "5"}  # no position: invalid
+            "base_rows": "3"}  # no article: invalid
     response = ready_client.post(f"/sets/{set_id}/edit", data=data)
-    assert response.status_code == 200 and "A set needs at least one position." in response.text
+    assert response.status_code == 200 and en("sets.too_few_articles") in response.text
     assert 'data-live-src=""' in response.text and 'value="Typed Name"' in response.text
 
 
@@ -300,4 +302,44 @@ def test_set_form_head_has_a_subtitle(ready_client):
     for path in (f"/sets/{set_id}/edit", "/sets/new"):
         head = re.search(r'<header class="page-head">.*?</header>', ready_client.get(path).text, re.S).group(0)
         assert f'<p class="page-sub">{en("sets.form_subtitle")}</p>' in head, path
-    assert en("sets.form_subtitle") == "Name and positions of the set"
+    assert en("sets.form_subtitle") == "Name, number, base parts and choice parts of the set"
+
+
+def variant_set(client):
+    """Grundset-like: 1 × frame (4), choice parts A (2), B (0), C (1), suffixes -A, -B, -C."""
+    with sm_of(client).begin() as s:
+        frame = make_article(s, name="Frame", stock=4).id
+        a, b, c = (make_article(s, name=f"Plate {x}", stock=n).id for x, n in (("A", 2), ("B", 0), ("C", 1)))
+        return make_set(s, "Kit", [(1, frame)], [(1, [(a, "-A"), (b, "-B"), (c, "-C")])], sku="EX-S10").id
+
+
+def test_list_shows_together_and_each_variant(ready_client):  # Spec 5.4, 10.1 (p340)
+    set_id = variant_set(ready_client)
+    table = re.search(r"<table>.*?</table>", list_of(ready_client.get("/sets").text), re.S).group(0)
+    assert '<td class="num">3</td>' in table  # together at most 3
+    assert "<span>1 × Frame</span>" in table
+    assert '<span class="variant">EX-S10-A · <strong>2</strong></span>' in table
+    assert '<span class="variant">EX-S10-B · <strong>0</strong></span>' in table
+    assert f'<a href="/sets/{set_id}/edit">Kit</a>' in table
+
+
+def test_tile_shows_variants(ready_client):
+    set_id = variant_set(ready_client)
+    tile = re.search(rf'<a class="tile" href="/sets/{set_id}/edit">.*?</a>', list_of(ready_client.get("/sets").text), re.S).group(0)
+    assert "<strong>3</strong>" in tile and "EX-S10-C · <strong>1</strong>" in tile
+
+
+def test_incomplete_set_has_grey_badge(ready_client):  # sets the update rebuilt (p340)
+    with sm_of(ready_client).begin() as s:
+        frame = make_article(s, name="Frame", stock=4).id
+        a = make_article(s, name="Plate A", stock=2).id
+        make_set(s, "Kit", [(1, frame)], [(1, [(a, None)])], sku="EX-S10")
+    listing = list_of(ready_client.get("/sets").text)
+    assert '<span class="badge tone-neutral">suffixes missing</span>' in listing
+    assert '<span class="variant">Plate A · <strong>2</strong></span>' in listing  # no number yet: the article
+
+
+def test_search_finds_a_set_by_variant_number(ready_client):
+    variant_set(ready_client)
+    assert "Kit" in list_of(ready_client.get("/sets?q=s10-b").text)
+    assert "Kit" not in list_of(ready_client.get("/sets?q=s10-x").text)
