@@ -13,10 +13,6 @@ from typing import Protocol
 from reprintbuddy.domain.engine import EngineStatus
 from reprintbuddy.web.i18n import translate
 
-# "Below minimum stock" means the red states, as Spec 10.6 (event 4) uses the term: "low" (yellow)
-# is below the minimum too, but its reprint is already planned.
-RED_STATES = ("below_min", "overbooked")
-
 # The text of each connection state (written out, so the language files see every key in use).
 CONNECTION_KEYS = {
     "connected": "overview.connection.connected",
@@ -115,7 +111,8 @@ class TodoCard:
 
 
 def red_counts(rows: Sequence[_Row]) -> tuple[int, int]:
-    """(below minimum, overbooked) over the rows, the red states of Spec 10.1 ("low" is yellow)."""
+    """(below minimum, overbooked) over the rows, the red states of Spec 10.1, as Spec 10.6 (event 4)
+    uses the term: "low" (yellow) is below the minimum too, but its reprint is already planned."""
     return (
         sum(1 for r in rows if r.status == "below_min"),
         sum(1 for r in rows if r.status == "overbooked"),

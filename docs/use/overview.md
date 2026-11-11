@@ -32,7 +32,7 @@ Seven cards, always all seven. A card with nothing to do stays grey with 0; yell
 | **Reorder suggestions** | Suggestions for filament and bought parts not yet marked as ordered, the same number as on [Reorder suggestions](reorder.md). | **n new** · **n on the way** (marked as ordered, not arrived yet) | Reorder suggestions |
 | **Prints** | Prints Bambuddy runs. A print counts as running from the moment Bambuddy sends the start command to the printer, so heating and levelling count too. | **n in the queue**: Reprintbuddy's queue (held entries and entries of paused articles too) plus prints handed over to Bambuddy that wait for their start there | Queue |
 | **Filament** | Spool sorts that are **low**: they have a reorder suggestion. A sort marked as ordered is on its way and no longer low. While the spool stock is not known (Bambuddy not reachable and nothing recorded) the card says **Stock unknown**. | – | Filament |
-| **Below minimum stock** | Articles whose state is **below minimum** or **overbooked** (red); each variant of an article made of parts on stock counts on its own. An article that is **low** (yellow) does not count: its reprint is already planned. | **n overbooked** (leads to the overbooked articles) | Articles, filtered to **below minimum** |
+| **Below minimum stock** | Articles whose state is **below minimum** or **overbooked** (red); each variant of an article made of parts on stock counts on its own. An article that is **low** (yellow) does not count: its reprint is already planned. | **n overbooked** (leads to the overbooked articles) | Articles, filtered to **below minimum**. The list shows one row per article and the overbooked ones under their own filter, so it can show fewer than the card counts. |
 
 ### New
 
