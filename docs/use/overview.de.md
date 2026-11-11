@@ -1,8 +1,8 @@
 # Übersicht
 
-Die **Übersicht** ist die Startseite. Sie zeigt auf einen Blick, ob Reprintbuddy arbeiten kann, was auf dich wartet und wie voll jeder Artikel ist. Wie jede Seite bleibt sie von selbst aktuell: Eine Buchung auf einem anderen Gerät, ein fertiger Druck in Bambuddy oder die Automatik zeigt sich hier nach wenigen Sekunden.
+Die **Übersicht** ist die Startseite. Sie zeigt auf einen Blick, ob Reprintbuddy arbeiten kann und was ansteht: keine Listen, nur Zahlen, und jede führt zu der Seite, auf der du es erledigst. Wie jede Seite bleibt sie von selbst aktuell: Eine Buchung auf einem anderen Gerät, ein fertiger Druck in Bambuddy oder die Automatik zeigt sich hier nach wenigen Sekunden.
 
-![Die Übersicht mit Kopfzeile, Warnungen, den vier Kennzahlen und der Tabelle der Artikel](../assets/images/de/overview.png)
+![Die Übersicht mit Kopfzeile, Warnungen und den Karten zu dem, was ansteht](../assets/images/de/overview.png)
 
 Von oben nach unten:
 
@@ -20,36 +20,26 @@ Von oben nach unten:
 
 Unter der Kopfzeile stehen die Warnungen und die pausierten Artikel, jeweils als Karte mit dem Weg weiter (zum Beispiel **Pause aufheben**). Rot heißt: Bambuddy antwortet nicht oder lehnt ab, eine Übergabe ist unklar oder eine Push-Nachricht ging nicht durch; gelb ist ein Zustand, den du gewählt hast oder der auf dich wartet. Die Seite [Fehlersuche](../help/troubleshooting.md) nennt jede Warnung und was zu tun ist. Ohne Warnungen bleibt dieser Teil leer.
 
-## Kennzahlen
+## Was ansteht
 
-Vier Karten, immer alle vier, auch mit 0. Jede Karte führt zu ihrer Seite.
+Sieben Karten, immer alle sieben. Eine Karte, bei der nichts zu tun ist, bleibt grau mit 0; gelb heißt, es steht etwas an, rot gilt für Artikel unter ihrem Mindestbestand. Die ganze Karte führt zu ihrer Seite; ein unterstrichener Teil der kleinen Zeile führt zu einer gefilterten Liste.
 
-| Karte | Zählt | Führt zu |
-|---|---|---|
-| **Unter Mindestbestand** | Artikel mit dem Status **unter Minimum** oder **überbucht** (rot). Ein Artikel, der **knapp** ist (gelb), zählt nicht: Sein Nachdruck ist schon geplant. Die kleine Zeile nennt, wie viele davon überbucht sind. | Artikel |
-| **Geplant und in Arbeit** | Drucke in Reprintbuddys Warteschlange, auch zurückgehaltene und Einträge pausierter Artikel (sie zählen für die Nachdruck-Regel weiter mit), plus Drucke, die an Bambuddy übergeben und noch nicht fertig sind. Die kleine Zeile trennt beides. Die Karte **Wartende Drucke** auf der Warteschlange lässt zurückgehaltene und pausierte Einträge weg und kann deshalb weniger zeigen. | Warteschlange |
-| **Zu prüfen** | Stück, die auf die Prüfung warten, plus Stück, die auf die Montage warten. Die kleine Zeile trennt beides. | Zu prüfen; Montage, wenn nur die Montage wartet |
-| **Bestellvorschläge** | Die offenen Vorschläge für Filament und Zukaufteile, dieselbe Zahl wie auf der Seite [Bestellvorschläge](reorder.md). | Bestellvorschläge |
+| Karte | Zahl | Kleine Zeile | Führt zu |
+|---|---|---|---|
+| **Bestellungen** | Offene Bestellungen, versandbereite mitgezählt. | **n neu** · **n versandbereit** (führt zu den versandbereiten offenen Bestellungen) | Bestellungen |
+| **Zu prüfen** | Fertige Drucke, die auf die Prüfung warten. | **n Stück** in diesen Drucken | Zu prüfen |
+| **Montage** | Stück, die nach der Prüfung auf die Montage warten, plus Stück offener Bestellungen von Artikeln aus Teilen, die erst bei Bestellung montiert werden. Varianten auf Vorrat unter ihrer Zielmenge zählen nicht: Den Vorrat aufzufüllen steht nicht an. | – | Montage |
+| **Bestellvorschläge** | Vorschläge für Filament und Zukaufteile, die noch nicht als bestellt markiert sind, dieselbe Zahl wie auf [Bestellvorschläge](reorder.md). | **n neu** · **n unterwegs** (als bestellt markiert, noch nicht eingetroffen) | Bestellvorschläge |
+| **Drucke** | Drucke, die Bambuddy laufen lässt. Ein Druck zählt als laufend, sobald Bambuddy dem Drucker den Startbefehl schickt; Aufheizen und Leveln zählen also mit. | **n in der Warteschlange**: Reprintbuddys Warteschlange (auch zurückgehaltene Einträge und Einträge pausierter Artikel) plus Drucke, die an Bambuddy übergeben sind und dort auf ihren Start warten | Warteschlange |
+| **Filament** | Spulensorten, die **knapp** sind: Sie haben einen Bestellvorschlag. Eine Sorte, die als bestellt markiert ist, ist unterwegs und nicht mehr knapp. Solange der Spulenbestand unbekannt ist (Bambuddy nicht erreichbar und nichts aufgezeichnet), steht auf der Karte **Bestand unbekannt**. | – | Filament |
+| **Unter Mindestbestand** | Artikel mit dem Status **unter Minimum** oder **überbucht** (rot); jede Variante eines Artikels aus Teilen auf Vorrat zählt für sich. Ein Artikel, der **knapp** ist (gelb), zählt nicht: Sein Nachdruck ist schon geplant. | **n überbucht** (führt zu den überbuchten Artikeln) | Artikel, gefiltert auf **unter Minimum** |
 
-## Artikel
+### Neu
 
-Eine Tabelle aller aktiven Artikel, nach Namen geordnet wie die Artikelliste. Archivierte Artikel fehlen.
+**Neu** heißt: seit du die Seite **Bestellungen** bzw. **Bestellvorschläge** zuletzt geöffnet hast, egal auf welchem Gerät. Es gibt ein Konto; wer am Handy die Bestellungen öffnet, löscht „neu“ auch am PC. Eine Bestellung ist neu, wenn sie danach angelegt wurde; ein Vorschlag, wenn die Seite ihn damals nicht gezeigt hat. Der Blick auf die Übersicht löscht nichts, und eine Seite, die nur offen bleibt und sich selbst aktualisiert, auch nicht: Es zählt nur das Laden der Seite. Solange eine Seite noch nie geöffnet wurde, ist nichts neu.
 
-| Spalte | Bedeutung |
-|---|---|
-| **Name / Artikelnummer** | Führt zur Seite des Artikels. |
-| **Verfügbar** | Bestand minus reserviert. Rot unter 0 (mehr bestellt als da). |
-| **Reserviert** | Stück offener Bestellungen. |
-| **Min / Ziel** | Mindestbestand und Zielmenge (Mindestbestand + Puffer). |
-| **In Arbeit** | Stück der Drucke, die an Bambuddy übergeben sind. |
-| **Zu prüfen** | Stück, die auf die Prüfung oder die Montage warten. |
-| **Füllstand** | Verfügbar im Verhältnis zur Zielmenge, gefärbt wie der Status. |
-| **Status** | **überbucht**, **unter Minimum**, **knapp** oder **reicht**, dazu **pausiert**, wenn die Automatik für den Artikel pausiert. **Nachdruck läuft (n)** nennt die Drucke des Artikels in Bambuddy. |
-
-Die Status folgen überall in Reprintbuddy denselben Regeln, siehe [Die Artikelliste](articles.md#die-artikelliste).
-
-Am Handy ist die Seite einspaltig: Die Kopfzeile wird zu Zeilen aus Bezeichnung und Wert, je zwei Kennzahlen stehen nebeneinander, und jeder Artikel wird eine Karte mit Name und Status oben und den Zahlen darunter.
+Am Handy ist die Seite einspaltig: Die Kopfzeile wird zu Zeilen aus Bezeichnung und Wert, und die Karten stehen untereinander.
 
 ## Eine frische Installation
 
-Gleich nach der Ersteinrichtung gibt es noch keine Artikel. Die Kennzahlen zeigen 0, und statt der Tabelle sagt die Seite das und bietet **Neuer Artikel aus Druckdatei** an. Bis Reprintbuddy Bambuddy erreicht hat, steht in der Kopfzeile **noch nicht abgefragt**.
+Gleich nach der Ersteinrichtung gibt es noch keine Artikel. Die Karten zeigen 0, und darunter sagt die Seite das und bietet **Neuer Artikel aus Druckdatei** an. Bis Reprintbuddy Bambuddy erreicht hat, steht in der Kopfzeile **noch nicht abgefragt**.

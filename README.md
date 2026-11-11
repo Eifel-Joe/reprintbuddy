@@ -45,7 +45,7 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 
 Invented example data. More pictures are on the [documentation pages](https://eifel-joe.github.io/reprintbuddy/).
 
-![Overview: connection, warnings, key figures and all articles at a glance](docs/assets/images/en/overview.png)
+![Overview: connection, warnings and what is due at a glance](docs/assets/images/en/overview.png)
 
 ![Articles: stock, available stock and target per article](docs/assets/images/en/articles-list.png)
 
