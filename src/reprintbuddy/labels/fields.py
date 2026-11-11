@@ -34,10 +34,12 @@ class LabelData:
 
     name: str
     sku: str | None
-    min_stock: int
-    buffer: int
-    target_qty: int
-    units_per_print: int
+    # None leaves the line out: an article made of parts has no print fields, and with choices no
+    # minimum, buffer or target of its own (Teil C 9, 0.4.0 p341).
+    min_stock: int | None
+    buffer: int | None
+    target_qty: int | None
+    units_per_print: int | None
     print_target: str | None
     label_text: str | None
     date: str

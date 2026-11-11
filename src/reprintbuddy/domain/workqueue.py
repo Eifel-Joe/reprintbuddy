@@ -109,6 +109,8 @@ def add_entry(
         raise NotFoundError("articles.not_found")
     if article.archived_at is not None:
         raise ValidationError("queue.article_archived", name=article.name)
+    if article.kind != "print":  # an article made of parts is never printed: its parts are (Spec 7.4)
+        raise ValidationError("queue.print_only", name=article.name)
     entries = _ordered(session)
     if where == "end":
         index = len(entries)

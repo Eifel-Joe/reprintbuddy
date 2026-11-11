@@ -82,6 +82,18 @@ def _checked(host: str, roll: str, chosen: list[str], own: frozenset[str]) -> tu
 # ---- settings: save, preview, trial print ----------------------------------------------------
 
 
+
+def _has_choices(db: Session, article: Article) -> bool:
+    """An article made of parts with choice parts: its label has no minimum, buffer or target (Teil C 9)."""
+    from sqlalchemy import select
+
+    from reprintbuddy.models import ArticleOption
+
+    return article.kind == "assembled" and db.scalar(
+        select(ArticleOption.id).where(ArticleOption.article_id == article.id).limit(1)
+    ) is not None
+
+
 @router.post("/settings/labels", dependencies=[Depends(verify_csrf)])
 async def save_labels(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
@@ -161,7 +173,7 @@ async def article_preview(request: Request, article_id: int, db: Session = Depen
     lang = current_language(request)
     saved = labels_view.LabelSettings(db)
     address = labels_view.label_address(request, db, article.id)
-    data = labels_view.article_data(article, lang)
+    data = labels_view.article_data(article, lang, has_choices=_has_choices(db, article))
     rendered = await run_in_threadpool(labels_view.draw, lang, data, saved.fields, address, saved.roll)
     return _picture_response(rendered)
 
@@ -197,7 +209,7 @@ async def print_article_label(request: Request, article_id: int, db: Session = D
         return RedirectResponse(back, status_code=303)
     lang = current_language(request)
     address = labels_view.label_address(request, db, article.id)
-    data = labels_view.article_data(article, lang)
+    data = labels_view.article_data(article, lang, has_choices=_has_choices(db, article))
     rendered = await run_in_threadpool(labels_view.draw, lang, data, saved.fields, address, saved.roll)
     await _print(
         request, db, lang, saved.host, saved.roll, rendered.image, copies,
