@@ -1442,5 +1442,19 @@
   "assembled.part_is_self": "{name} cannot be a part of itself.",
   "bookings.awaiting_print_only": "\"Awaiting assembly\" exists only for print articles. For an assembled article, count its stock.",
   "articles.to_assembled": "Make it an assembled article",
-  "assembled.to_print": "Make it a print article"
+  "assembled.to_print": "Make it a print article",
+  "overview.todo.orders": "Orders",
+  "overview.todo.inspection": "To check",
+  "overview.todo.assembly": "Assembly",
+  "overview.todo.reorder": "Reorder suggestions",
+  "overview.todo.prints": "Prints",
+  "overview.todo.filament": "Filament",
+  "overview.todo.below_min": "Below minimum stock",
+  "overview.todo.new": "{n} new",
+  "overview.todo.orders_ready": "{n} ready to ship",
+  "overview.todo.pieces": "{n} pieces",
+  "overview.todo.under_way": "{n} on the way",
+  "overview.todo.waiting": "{n} in the queue",
+  "overview.todo.stock_unknown": "Stock unknown",
+  "overview.todo.overbooked": "{n} overbooked"
 }

@@ -1442,5 +1442,19 @@
   "assembled.part_is_self": "{name} kann nicht Teil von sich selbst sein.",
   "bookings.awaiting_print_only": "„Wartet auf Montage“ gibt es nur bei Druckartikeln. Zähle bei einem Artikel aus Teilen den Bestand.",
   "articles.to_assembled": "Zu Artikel aus Teilen machen",
-  "assembled.to_print": "Zum Druckartikel machen"
+  "assembled.to_print": "Zum Druckartikel machen",
+  "overview.todo.orders": "Bestellungen",
+  "overview.todo.inspection": "Zu prüfen",
+  "overview.todo.assembly": "Montage",
+  "overview.todo.reorder": "Bestellvorschläge",
+  "overview.todo.prints": "Drucke",
+  "overview.todo.filament": "Filament",
+  "overview.todo.below_min": "Unter Mindestbestand",
+  "overview.todo.new": "{n} neu",
+  "overview.todo.orders_ready": "{n} versandbereit",
+  "overview.todo.pieces": "{n} Stück",
+  "overview.todo.under_way": "{n} unterwegs",
+  "overview.todo.waiting": "{n} in der Warteschlange",
+  "overview.todo.stock_unknown": "Bestand unbekannt",
+  "overview.todo.overbooked": "{n} überbucht"
 }
