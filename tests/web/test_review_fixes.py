@@ -7,7 +7,7 @@ import pytest
 from conftest import csrf_of, sm_of
 from factories import make_article
 from reprintbuddy.domain import catalog
-from reprintbuddy.domain.catalog import PositionInput, SetInput
+from reprintbuddy.domain.catalog import BaseInput, SetInput
 from reprintbuddy.domain.errors import ValidationError
 from reprintbuddy.web.i18n import translate
 
@@ -16,13 +16,11 @@ def en(key, **params):
     return translate("en", key, **params)
 
 
-def test_set_edit_keeps_positions_with_archived_articles(ready_client):
+def test_set_edit_keeps_base_parts_with_archived_articles(ready_client):
     with sm_of(ready_client).begin() as s:
         a = make_article(s, name="Template A").id
         b = make_article(s, name="Template B").id
-        set_id = catalog.create_set(
-            s, SetInput("Starter Set", None, [PositionInput(1, [a]), PositionInput(2, [b])])
-        ).id
+        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(2, b)], [])).id
         catalog.archive_article(s, b)
     page = ready_client.get(f"/sets/{set_id}/edit").text
     assert re.search(rf'<option value="{b}" selected>', page)  # still offered, and selected
@@ -30,13 +28,13 @@ def test_set_edit_keeps_positions_with_archived_articles(ready_client):
     response = ready_client.post(
         f"/sets/{set_id}/edit",
         data={"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Renamed", "sku": "",
-              "rows": "5", "pos_0_qty": "1", "pos_0_articles": [str(a)], "pos_1_qty": "2", "pos_1_articles": [str(b)]},
+              "base_rows": "3", "base_0_qty": "1", "base_0_article": str(a), "base_1_qty": "2", "base_1_article": str(b)},
     )
     assert response.status_code == 303
     with sm_of(ready_client).begin() as s:
         row = catalog.list_sets(s)[0]
-        assert row.name == "Renamed" and len(row.positions) == 2
-        assert row.orderable is False  # position 2 has no active article, as before
+        assert row.name == "Renamed" and len(row.base) == 2
+        assert row.orderable is False  # a base part is archived, as before
 
 
 def test_update_set_may_keep_but_not_add_archived_articles(db):
@@ -44,31 +42,32 @@ def test_update_set_may_keep_but_not_add_archived_articles(db):
         a = make_article(s, name="Template A").id
         b = make_article(s, name="Template B").id
         c = make_article(s, name="Template C").id
-        set_id = catalog.create_set(s, SetInput("S", None, [PositionInput(1, [a, b])])).id
+        set_id = catalog.create_set(s, SetInput("S", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
         catalog.archive_article(s, b)
         catalog.archive_article(s, c)
     with db.begin() as s:
-        catalog.update_set(s, set_id, SetInput("S2", None, [PositionInput(1, [a, b])]))  # b was already there
+        catalog.update_set(s, set_id, SetInput("S2", None, [BaseInput(1, a), BaseInput(1, b)], []))  # b was already there
     with pytest.raises(ValidationError) as info:
         with db.begin() as s:
-            catalog.update_set(s, set_id, SetInput("S3", None, [PositionInput(1, [a, c])]))
+            catalog.update_set(s, set_id, SetInput("S3", None, [BaseInput(1, a), BaseInput(1, c)], []))
     assert info.value.key == "sets.article_archived"
 
 
-def test_set_with_many_positions_survives_an_edit(ready_client):
+def test_set_with_many_base_parts_survives_an_edit(ready_client):
     with sm_of(ready_client).begin() as s:
-        a = make_article(s, name="Template A").id
-        set_id = catalog.create_set(s, SetInput("Big Set", None, [PositionInput(1, [a]) for _ in range(49)])).id
+        ids = [make_article(s, name=f"Template {i:02d}").id for i in range(49)]
+        set_id = catalog.create_set(s, SetInput("Big Set", None, [BaseInput(1, a) for a in ids], [])).id
     page = ready_client.get(f"/sets/{set_id}/edit").text
-    rows = int(re.search(r'name="rows" value="(\d+)"', page).group(1))
+    rows = int(re.search(r'name="base_rows" value="(\d+)"', page).group(1))
     assert rows >= 49
-    data = {"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Big Set", "sku": "", "rows": str(rows)}
-    for i in range(49):
-        data[f"pos_{i}_qty"] = "1"
-        data[f"pos_{i}_articles"] = [str(a)]
+    data = {"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Big Set", "sku": "",
+            "base_rows": str(rows), "c1_rows": "3"}
+    for i, a in enumerate(ids):
+        data[f"base_{i}_qty"] = "1"
+        data[f"base_{i}_article"] = str(a)
     assert ready_client.post(f"/sets/{set_id}/edit", data=data).status_code == 303
     with sm_of(ready_client).begin() as s:
-        assert len(catalog.list_sets(s)[0].positions) == 49
+        assert len(catalog.list_sets(s)[0].base) == 49
 
 
 HUGE = "9" * 25
@@ -104,6 +103,6 @@ def test_unicode_digits_do_not_cause_a_500(ready_client):
         }
         data.update(over)
         assert ready_client.post("/orders/new", data=data).status_code in (200, 400), over
-    data = {"csrf_token": csrf_of(ready_client, "/sets/new"), "form_token": "x", "name": "S", "rows": "²",
-            "pos_0_qty": "1", "pos_0_articles": ["²"]}
+    data = {"csrf_token": csrf_of(ready_client, "/sets/new"), "form_token": "x", "name": "S", "base_rows": "²",
+            "c1_rows": "²", "base_0_qty": "1", "base_0_article": "²", "c1_0_article": "²"}
     assert ready_client.post("/sets/new", data=data).status_code in (200, 400)

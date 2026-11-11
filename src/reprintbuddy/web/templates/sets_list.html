@@ -5,7 +5,7 @@
 {#- The state badge; in the archive "archived" instead. -#}
 {#- A set the update rebuilt without its numbers shows a grey badge beside its state (p340). -#}
 {% macro badge(row) -%}
-<span class="badges">{{ ui.badge('set', 'archived' if archived else row.status) }}{% if row.incomplete and not archived %}<span class="badge tone-neutral">{{ t('sets.incomplete.' ~ row.incomplete) }}</span>{% endif %}</span>
+<span class="badges">{{ ui.badge('set', 'archived' if archived else row.status) }}{% if row.incomplete and not archived %}<span class="badge tone-neutral">{{ t('sets.incomplete.too_few') if row.incomplete == 'too_few' else t('sets.incomplete.suffixes_missing') }}</span>{% endif %}</span>
 {%- endmacro %}
 {#- What a set holds (Spec 5.4): the base parts "2 × Frame", then each variant with its number and
     how often it is available on its own, "EX-S10-A · 2"; without a number the chosen articles. -#}

@@ -51,7 +51,7 @@ def test_part_rows(ready_client):
 def test_set_rows(ready_client):
     with sm_of(ready_client).begin() as s:
         art = make_article(s, name="Template A")
-        make_set(s, "Starter Set", [(1, [art.id])])
+        make_set(s, "Starter Set", [(1, art.id)])
     labels = [label for _, label in actions_of(ready_client.get("/sets").text)]
     assert labels == ["Edit set: Starter Set", "Archive: Starter Set"]
 
