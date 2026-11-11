@@ -1442,5 +1442,8 @@
   "assembled.part_is_self": "{name} cannot be a part of itself.",
   "bookings.awaiting_print_only": "\"Awaiting assembly\" exists only for print articles. For an assembled article, count its stock.",
   "articles.to_assembled": "Make it an assembled article",
-  "assembled.to_print": "Make it a print article"
+  "assembled.to_print": "Make it a print article",
+  "permission.queue:delete_own": "so that a cancel can take prints back from Bambuddy that have not started yet (optional)",
+  "bambuddy.withdraw_right_ok": "After a cancel, Reprintbuddy can take prints back from Bambuddy that have not started yet.",
+  "bambuddy.withdraw_right_missing": "After a cancel, prints handed over stay in Bambuddy: the group lacks “Delete Own Queue” for that. Reprintbuddy’s own queue still gets smaller. Everything else works."
 }

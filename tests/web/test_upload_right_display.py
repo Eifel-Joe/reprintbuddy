@@ -39,14 +39,14 @@ def _connect(client, respx_mock, permissions):
 def test_a_failed_check_shows_the_upload_right_apart(admin_client, respx_mock):
     without = [p for p in REQUIRED if p != "queue:create"]
     html = _connect(admin_client, respx_mock, without).text
-    assert _optional(html) == {"library:upload": "bad", "websocket:connect": "bad"}
+    assert _optional(html) == {"library:upload": "bad", "websocket:connect": "bad", "queue:delete_own": "bad"}
     assert en("bambuddy.result.optional") in html
 
 
 def test_a_failed_check_with_the_upload_right_ticks_it(admin_client, respx_mock):
     without = [p for p in REQUIRED if p != "queue:create"]
     html = _connect(admin_client, respx_mock, [*without, "library:upload"]).text
-    assert _optional(html) == {"library:upload": "ok", "websocket:connect": "bad"}
+    assert _optional(html) == {"library:upload": "ok", "websocket:connect": "bad", "queue:delete_own": "bad"}
 
 
 def test_setup_saves_without_the_upload_right_and_says_uploading_is_off(admin_client, respx_mock):

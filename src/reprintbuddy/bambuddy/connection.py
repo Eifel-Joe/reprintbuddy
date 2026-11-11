@@ -49,7 +49,13 @@ UPLOAD_PERMISSION = "library:upload"
 # group; at the key "Read Status" covers it (Bambuddy `core/auth.py`: WEBSOCKET_CONNECT -> can_read_status).
 # Without it Reprintbuddy only asks at the set interval: recommended, not required.
 LIVE_PERMISSION = "websocket:connect"
-OPTIONAL_PERMISSIONS: tuple[str, ...] = (UPLOAD_PERMISSION, LIVE_PERMISSION)
+# Withdrawing prints after a cancel (Spec 7.2a, 11.3, 0.4.1 p382): `DELETE /queue/{id}` needs this right
+# in the group (Bambuddy `print_queue.py:2701-2706`); with only "own" it may delete the entries of the
+# key's owner, which are Reprintbuddy's. At the key "Manage Queue" covers it (`core/auth.py`:
+# QUEUE_DELETE_OWN -> can_queue). Without it a cancel only shrinks Reprintbuddy's own queue.
+WITHDRAW_PERMISSION = "queue:delete_own"
+_WITHDRAW_ALL = "queue:delete_all"  # an administrator's key may delete every entry, own ones included
+OPTIONAL_PERMISSIONS: tuple[str, ...] = (UPLOAD_PERMISSION, LIVE_PERMISSION, WITHDRAW_PERMISSION)
 
 # Assumption until the first live test shows the names Bambuddy really reports (Spec 14):
 # for the two "read all" rights, the older name without the suffix counts as well.
@@ -74,6 +80,7 @@ EDITOR_LABELS: dict[str, str] = {
     "settings:read": "Read Settings",
     UPLOAD_PERMISSION: "Upload Library",  # optional (Spec 5.1a)
     LIVE_PERMISSION: "Connect Websocket",  # optional (p170); Bambuddy makes the label from the name
+    WITHDRAW_PERMISSION: "Delete Own Queue",  # optional (p382); made from the name as well
 }
 
 # Needed only while the key is created (the user must open the API keys page and create a key).
@@ -98,6 +105,7 @@ KEY_RIGHT_FOR: dict[str, str] = {
     "queue:start_unreviewed": "queue",
     UPLOAD_PERMISSION: "library",  # "Manage Library"
     LIVE_PERMISSION: "status",  # "Read Status"
+    WITHDRAW_PERMISSION: "queue",  # "Manage Queue"
 }
 
 # The settings page 3 of the setup asks for: (id, Bambuddy's English label, on or off).
@@ -140,6 +148,11 @@ class ConnectionCheck:
     def can_live(self) -> bool:
         """The key may open Bambuddy's live channel (optional right, p170)."""
         return LIVE_PERMISSION in self.granted
+
+    @property
+    def can_withdraw(self) -> bool:
+        """The key may delete Reprintbuddy's waiting entries after a cancel (optional right, p382)."""
+        return WITHDRAW_PERMISSION in self.granted or _WITHDRAW_ALL in self.granted
 
 
 def _missing(granted: frozenset[str]) -> tuple[str, ...]:

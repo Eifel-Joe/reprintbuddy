@@ -388,6 +388,7 @@ EDITOR = {
     "settings:read": "Read Settings",  # required since 0.4.0 (p342)
     "library:upload": "Upload Library",  # optional, for uploading print files (Spec 5.1a)
     "websocket:connect": "Connect Websocket",  # optional, for the live channel (p170)
+    "queue:delete_own": "Delete Own Queue",  # optional, for withdrawing prints after a cancel (p382)
 }
 KEY_CREATION = {
     "api_keys:read": "Read Api Keys",

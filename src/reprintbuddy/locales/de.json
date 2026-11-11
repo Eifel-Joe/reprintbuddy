@@ -1442,5 +1442,8 @@
   "assembled.part_is_self": "{name} kann nicht Teil von sich selbst sein.",
   "bookings.awaiting_print_only": "„Wartet auf Montage“ gibt es nur bei Druckartikeln. Zähle bei einem Artikel aus Teilen den Bestand.",
   "articles.to_assembled": "Zu Artikel aus Teilen machen",
-  "assembled.to_print": "Zum Druckartikel machen"
+  "assembled.to_print": "Zum Druckartikel machen",
+  "permission.queue:delete_own": "damit ein Storno noch nicht gestartete Drucke aus Bambuddy zurücknehmen kann (optional)",
+  "bambuddy.withdraw_right_ok": "Nach einem Storno kann Reprintbuddy noch nicht gestartete Drucke aus Bambuddy zurücknehmen.",
+  "bambuddy.withdraw_right_missing": "Nach einem Storno bleiben übergebene Drucke in Bambuddy: Der Gruppe fehlt dafür „Delete Own Queue“. Reprintbuddys eigene Warteschlange wird trotzdem verkleinert. Alles andere geht."
 }
