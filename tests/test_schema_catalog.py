@@ -11,7 +11,7 @@ from factories import make_article
 TABLES = {
     "articles", "article_filaments", "parts", "article_parts", "product_sets",
     "set_positions", "set_position_options", "orders", "order_lines", "journal",
-    "form_tokens",
+    "form_tokens", "article_options", "article_components",
 }
 
 

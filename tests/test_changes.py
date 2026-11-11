@@ -408,3 +408,21 @@ def test_a_supplier_of_a_part_reports_the_part_and_its_settings(db, published):
             name="Insert M4", suppliers=[SupplierInput(is_default=True), SupplierInput(name="Example Supplier B")]
         ))
     assert published == [frozenset({"part", f"part:{p}", f"part-settings:{p}", "activity"})]
+
+
+def test_a_bill_of_materials_row_reports_the_assembled_article(db, published):  # 0.4.0, p341
+    from reprintbuddy.models import ArticleComponent, ArticleOption
+
+    from factories import make_assembled
+
+    with db.begin() as s:
+        part = make_article(s, name="Panel A").id
+        box = make_assembled(s, base=[(part, 4)]).id
+    published.clear()
+    with db.begin() as s:
+        s.add(ArticleComponent(article_id=box, field=0, part_id=part, qty=1, sort=1))
+    assert {"article", f"article:{box}", f"article-settings:{box}"} <= published[0]
+    published.clear()
+    with db.begin() as s:
+        s.add(ArticleOption(article_id=box, field=1, sort=0, suffix="-A"))
+    assert {"article", f"article:{box}", f"article-settings:{box}"} <= published[0]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import itertools
 import uuid
 from datetime import date
 
@@ -13,8 +14,10 @@ from sqlalchemy.orm import Session
 from reprintbuddy.domain import filament
 from reprintbuddy.models import (
     Article,
+    ArticleComponent,
     ArticleFilament,
     ArticleFilamentSort,
+    ArticleOption,
     Dispatch,
     FilamentSettings,
     FilamentSnapshot,
@@ -47,6 +50,49 @@ def make_article(
     fields.setdefault("file_name", f"{name}.gcode.3mf")
     article = Article(name=name, library_file_id=library_file_id, plate_id=plate_id, **fields)
     s.add(article)
+    s.flush()
+    return article
+
+
+def make_assembled(
+    s: Session,
+    *,
+    name: str = "Storage box",
+    sku: str | None = None,
+    mode: str = "stock",
+    base: Sequence[tuple[int, int]] = (),
+    fields: Sequence[Sequence[tuple[str, Sequence[tuple[int, int]]]]] = (),
+    **extra,
+) -> Article:
+    """An article made of parts (0.4.0, Spec 5.6): base parts as (part_id, qty), and up to two choice
+    fields, each a list of options (suffix, [(part_id, qty)]). Variant rows come with it, one per
+    combination of options, with the variant number when the base number is set."""
+    article = Article(name=name, sku=sku, kind="assembled", assembly_mode=mode, **extra)
+    s.add(article)
+    s.flush()
+    for sort, (part_id, qty) in enumerate(base):
+        s.add(ArticleComponent(article_id=article.id, field=0, part_id=part_id, qty=qty, sort=sort))
+    per_field: list[list[ArticleOption]] = []
+    for field_no, options in enumerate(fields, start=1):
+        made = []
+        for sort, (suffix, parts) in enumerate(options):
+            option = ArticleOption(article_id=article.id, field=field_no, sort=sort, suffix=suffix)
+            s.add(option)
+            s.flush()
+            for part_sort, (part_id, qty) in enumerate(parts):
+                s.add(ArticleComponent(
+                    article_id=article.id, field=field_no, option_id=option.id, part_id=part_id, qty=qty,
+                    sort=part_sort,
+                ))
+            made.append(option)
+        per_field.append(made)
+    if per_field:
+        for combination in itertools.product(*per_field):
+            s.add(Article(
+                name=name, kind="variant", parent_id=article.id,
+                variant_key=":".join(str(o.id) for o in combination),
+                sku=(sku + "".join(o.suffix for o in combination)) if sku else None,
+            ))
     s.flush()
     return article
 

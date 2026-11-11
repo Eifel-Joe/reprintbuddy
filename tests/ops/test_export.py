@@ -187,3 +187,34 @@ def test_export_holds_the_suppliers_of_a_spool_sort_and_an_order_taken_back(env)
     ]
     (row,) = tables["reorder_marks"]
     assert (row["qty"], row["pack_size"], row["supplier_name"], row["withdrawn"]) == (2, 500, "Roll Shop", True)
+
+
+def test_export_includes_assembled_tables_and_columns(env):  # 0.4.0, p341 (Spec 5.6, 11.6)
+    from factories import make_article, make_assembled
+
+    engine, maker = env
+    with maker.begin() as s:
+        segment = make_article(s, name="Segment")
+        side = make_article(s, name="Side part L")
+        socket = make_article(s, name="Socket L32")
+        hose = make_assembled(s, name="Hose", sku="EX-H1", mode="order", base=[(segment.id, 12)],
+                              fields=[[("-L32", [(side.id, 1), (socket.id, 1)])]])
+        hose_id = hose.id
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO orders (id, reference, order_date) VALUES (1, 'R-1', '2026-11-11')"))
+        conn.execute(text(
+            "INSERT INTO order_lines (order_id, group_no, article_id, qty, set_qty, variant_sku, assembled_id)"
+            f" VALUES (1, 1, {segment.id}, 12, 1, 'EX-H1-L32', {hose_id})"
+        ))
+    with engine.connect() as conn:
+        tables = export_data(conn, now=NOW)["tables"]
+    (option,) = tables["article_options"]
+    assert (option["article_id"], option["field"], option["suffix"]) == (hose_id, 1, "-L32")
+    assert sorted((r["field"], r["qty"]) for r in tables["article_components"]) == [(0, 12), (1, 1), (1, 1)]
+    by_id = {r["id"]: r for r in tables["articles"]}
+    assert (by_id[hose_id]["kind"], by_id[hose_id]["assembly_mode"]) == ("assembled", "order")
+    variant = next(r for r in tables["articles"] if r["parent_id"] == hose_id)
+    assert (variant["kind"], variant["sku"], variant["variant_key"]) == ("variant", "EX-H1-L32", str(option["id"]))
+    assert by_id[segment.id]["sold_alone"] is True and by_id[segment.id]["kind"] == "print"
+    (line,) = tables["order_lines"]
+    assert (line["assembled_id"], line["variant_sku"]) == (hose_id, "EX-H1-L32")
