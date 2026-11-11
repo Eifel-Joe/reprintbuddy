@@ -49,7 +49,7 @@ This works with the automation switched off and beyond the target quantity. Such
 
 ## How prints reach Bambuddy
 
-Reprintbuddy hands entries over from the top down, one print at a time. An entry of three prints becomes three single entries in Bambuddy's queue, and it disappears from Reprintbuddy's queue when its last print is handed over. Each print goes with the article's print file, plate and print target and starts without approval; it takes the *Default print options* set in Bambuddy. Where it lands in Bambuddy's queue depends on **Insert as next print**, see [Automation](automation.md#switches-and-settings).
+Reprintbuddy hands entries over from the top down, one print at a time. An entry of three prints becomes three single entries in Bambuddy's queue, and it disappears from Reprintbuddy's queue when its last print is handed over. Each print goes with the article's print file, plate and print target and starts without approval; it takes the *Default Print Options* set in Bambuddy. Where it lands in Bambuddy's queue depends on **Insert as next print**, see [Automation](automation.md#switches-and-settings).
 
 Reprintbuddy hands over only while fewer prints of its own are open in Bambuddy than the **Limit of open prints in Bambuddy**. Skipped are held entries, entries of paused articles and entries of articles whose printers are all in maintenance mode. Nothing is handed over while the queue is stopped, Bambuddy cannot be reached or refuses the query, a hand-over is unclear, or an update is running.
 

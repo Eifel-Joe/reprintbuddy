@@ -3,7 +3,7 @@
 The automation reprints articles for you. When an article runs low, Reprintbuddy puts an entry into [its own queue](queue.md) and hands the prints, one by one, to Bambuddy's queue. It never controls a printer: Bambuddy stays your print system.
 
 !!! warning "Prints start without your approval"
-    Reprintbuddy hands prints over so that they start as soon as Bambuddy has a matching printer free. Each print takes the *Default print options* set in Bambuddy (bed levelling, flow calibration and the others); Reprintbuddy reads them right before every hand-over and changes nothing in Bambuddy's settings. If Bambuddy holds a print for approval anyway, a notice says so (see below). A printer that should not print goes into maintenance mode in Bambuddy. After the installation the main switch is off. Switch it on when you have checked the connection, for example with one article first.
+    Reprintbuddy hands prints over so that they start as soon as Bambuddy has a matching printer free. Each print takes the *Default Print Options* set in Bambuddy (bed levelling, flow calibration and the others); Reprintbuddy reads them right before every hand-over and changes nothing in Bambuddy's settings. If Bambuddy holds a print for approval anyway, a notice says so (see below). A printer that should not print goes into maintenance mode in Bambuddy. After the installation the main switch is off. Switch it on when you have checked the connection, for example with one article first.
 
 ## The rule
 
@@ -110,4 +110,4 @@ Below the notices the page names the time of the last successful query of Bambud
 
 - It never controls a printer; it does not start, stop or pause a print.
 - What lies in Bambuddy belongs to Bambuddy. Reprintbuddy does not take handed-over prints back, does not change them and never reorders entries that are already there. Reorder, bring forward or delete in Bambuddy's queue only in Bambuddy.
-- It changes none of the print options: every print takes the *Default print options* set in Bambuddy. If Reprintbuddy cannot read them, it hands nothing over: when Bambuddy cannot be reached, the print stays in the queue for the next run; when Bambuddy refuses the read (for example the right *Read Settings* is missing), the print comes back with Bambuddy's message.
+- It changes nothing in Bambuddy's print options: every print takes the *Default Print Options* set in Bambuddy. If Reprintbuddy cannot read them, it hands nothing over: when Bambuddy cannot be reached, the print stays in the queue for the next run; when Bambuddy refuses the read (for example the right *Read Settings* is missing), the print comes back with Bambuddy's message.
