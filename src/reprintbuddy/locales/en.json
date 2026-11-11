@@ -1383,5 +1383,10 @@
   "assembled.variant_too_long": "The variant number {sku} is longer than {max} characters.",
   "assembled.variant_in_use": "The variant {sku} has stock, is reserved or is in an open order, so it cannot go. Count its stock to 0 and ship or cancel the orders first.",
   "assembled.mode_switch_busy": "The assembly mode of {name} can only change when no variant has stock or a reservation and no order is open.",
-  "assembled.field.qty": "Quantity"
+  "assembled.field.qty": "Quantity",
+  "assembled.part_short": "Not enough {name}: {available} available, {needed} needed. Reserved parts are not built in.",
+  "bookings.not_a_holder": "{item} holds no stock of its own. Book one of its variants or, when it is built on order, the sale from its parts.",
+  "bookings.print_only": "Stock in without a print is only for print articles. An assembled article comes into stock by its assembly or a count.",
+  "journal.kind.assembled": "Assembled from parts",
+  "journal.kind.built_in": "Built in"
 }

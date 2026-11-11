@@ -687,3 +687,45 @@ def used_in(session: Session, article_id: int) -> list[tuple[int, str]]:
         .order_by(Article.name, Article.id)
     ).all()
     return [(i, n) for i, n in rows]
+
+
+# ---- bookings (Spec 6.2, 8.3); the stock changes themselves are in domain/stock.py ---------------
+
+
+def build(session: Session, holder_id: int, n: int, actor: Actor) -> list[PartShortage]:
+    """Montage aus Teilen of one stock holder, `n` pieces (Spec 8.3)."""
+    holder = session.get(Article, holder_id)
+    if holder is None or holder.kind == articlesets.PRINT:
+        raise NotFoundError("articles.not_found")
+    composite = parent_of(session, holder)
+    if composite.archived_at is not None or holder.archived_at is not None:
+        raise ConflictError("articles.edit_archived")
+    if holder not in holders(session, composite):
+        raise ValidationError("bookings.not_a_holder", item=composite.name)
+    return stock.build_from_parts(session, holder.id, n, needs_of(session, holder), composite.id, actor)
+
+
+def variant_by_key(session: Session, composite: Article, key: str) -> Article:
+    """The variant row of `key` ("" for an article without choices: the article itself)."""
+    for row in variants(session, composite):
+        if (row.variant_key or "") == key:
+            return row
+    raise ValidationError("orders.choice_invalid")
+
+
+def sell(
+    session: Session, composite_id: int, key: str, n: int, actor: Actor, note: str | None = None, *,
+    booked_at=None,
+) -> list[PartShortage]:
+    """Sale without a reservation of an article made of parts built on order (Teil C 4): its parts and
+    purchased parts go at once. One built on stock sells from its holder (stock.sell_unreserved)."""
+    composite = get_assembled(session, composite_id)
+    if composite.archived_at is not None:
+        raise ConflictError("articles.edit_archived")
+    if composite.assembly_mode != "order":
+        raise ValidationError("bookings.not_a_holder", item=composite.name)
+    row = variant_by_key(session, composite, key)
+    return stock.sell_from_parts(
+        session, composite.id, needs_of_key(session, composite, key), n, actor, note,
+        variant_sku=row.sku, booked_at=booked_at,
+    )

@@ -1383,5 +1383,10 @@
   "assembled.variant_too_long": "Die Variantennummer {sku} ist länger als {max} Zeichen.",
   "assembled.variant_in_use": "Die Variante {sku} hat Bestand, ist reserviert oder steht in einer offenen Bestellung und kann deshalb nicht wegfallen. Buche ihren Bestand per Inventur auf 0 und versende oder storniere die Bestellungen.",
   "assembled.mode_switch_busy": "Die Montage von {name} lässt sich nur wechseln, wenn keine Variante Bestand oder eine Reservierung hat und keine offene Bestellung läuft.",
-  "assembled.field.qty": "Menge"
+  "assembled.field.qty": "Menge",
+  "assembled.part_short": "Zu wenig {name}: verfügbar {available}, gebraucht {needed}. Reservierte Teile werden nicht verbaut.",
+  "bookings.not_a_holder": "{item} hat keinen eigenen Bestand. Buche eine seiner Varianten oder, bei Montage erst bei Bestellung, den Verkauf aus seinen Teilen.",
+  "bookings.print_only": "Einbuchen ohne Druck geht nur bei Druckartikeln. Ein Artikel aus Teilen kommt über die Montage oder die Inventur in den Bestand.",
+  "journal.kind.assembled": "Montage aus Teilen",
+  "journal.kind.built_in": "verbaut"
 }
