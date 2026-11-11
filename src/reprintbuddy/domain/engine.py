@@ -39,7 +39,7 @@ from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, Bambu
 from reprintbuddy.bambuddy.types import QueueItem
 from reprintbuddy.domain import dispatch, tracking, withdraw, workqueue
 from reprintbuddy.domain import articlesets
-from reprintbuddy.models import Article, Dispatch, WorkQueueEntry, utcnow
+from reprintbuddy.models import Article, Dispatch, Withdrawal, WorkQueueEntry, utcnow
 from reprintbuddy.i18n import translate
 from reprintbuddy.ops.runner import in_thread  # stdlib only; runs a blocking call in a thread that can be stopped
 
@@ -606,6 +606,22 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
         add("queue_stopped")
     if status.cap_reached:
         add("cap_reached", cap=int(settings.get_setting(session, "queue_cap")))
+    # Spec 7.2a: prints a cancel noted for Bambuddy. Waiting only once a run could not reach it, not
+    # in the seconds between the cancel and the run (A2); a refusal names the article and the answer.
+    waiting = session.scalar(
+        select(func.coalesce(func.sum(Withdrawal.prints), 0)).where(
+            Withdrawal.unreached.is_(True), Withdrawal.refused.is_(None)
+        )
+    )
+    if waiting:
+        add("withdraw_waiting", count=int(waiting))
+    for name, prints, message in session.execute(
+        select(Article.name, Withdrawal.prints, Withdrawal.refused)
+        .join(Article, Article.id == Withdrawal.article_id)
+        .where(Withdrawal.refused.is_not(None))
+        .order_by(Article.name, Article.id)
+    ):
+        add("withdraw_refused", name=name, count=prints, message=message)
     if status.waiting_for_printer:
         names = session.scalars(
             select(Article.name)

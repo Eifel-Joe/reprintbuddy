@@ -5,6 +5,14 @@
 {% call ui.page_head("receipt", order.reference, t('orders.cancel_subtitle')) %}{% endcall %}
 <section class="card section">
   <p>{{ t('orders.cancel_confirm', reference=order.reference) }}</p>
+  {#- Spec 7.2a: what the cancel takes back, counted before (nothing is booked by counting). -#}
+  {%- if preview and preview.queue_prints and preview.bambuddy_prints %}
+  <p class="withdraw-preview">{{ t('orders.cancel_withdraw_both', queue=preview.queue_prints, bambuddy=preview.bambuddy_prints) }}</p>
+  {%- elif preview and preview.queue_prints %}
+  <p class="withdraw-preview">{{ t('orders.cancel_withdraw_queue', queue=preview.queue_prints) }}</p>
+  {%- elif preview and preview.bambuddy_prints %}
+  <p class="withdraw-preview">{{ t('orders.cancel_withdraw_bambuddy', bambuddy=preview.bambuddy_prints) }}</p>
+  {%- endif %}
   {#- An answer to a POST: no region is fetched, but the form notices when its order changes. -#}
   <form method="post" action="/orders/{{ order.id }}/cancel" data-live-watch="order:{{ order.id }}">
     {{ ui.live_stale() }}
