@@ -324,10 +324,14 @@ def coverage_all(session: Session) -> dict[int, Coverage]:
 
 
 def apply_rule(session: Session, actor: Actor = "auto") -> list[WorkQueueEntry]:
-    """Rule 7.1: queue reprints for articles whose coverage is below the minimum stock."""
+    """Rule 7.1: queue reprints for articles whose coverage is below the minimum stock. A part of
+    articles made of parts counts with minimum + demand from assembly (Spec 7.1, 0.4.0 p341)."""
+    from reprintbuddy.domain import assembled  # assembled builds on this module
+
     if not settings.get_setting(session, "automation"):
         return []
     coverages = coverage_all(session)
+    demand = assembled.assembly_demand(session)
     articles = session.scalars(
         articlesets.print_articles()  # articles made of parts are never printed (Spec 7.1, 0.4.0)
         .where(Article.auto_enabled.is_(True), Article.paused.is_(False))
@@ -336,8 +340,9 @@ def apply_rule(session: Session, actor: Actor = "auto") -> list[WorkQueueEntry]:
     created: list[WorkQueueEntry] = []
     for article in articles:
         c = coverages[article.id]
+        d = demand.get(article.id, 0)
         n = rules.prints_needed(
-            min_stock=article.min_stock,
+            min_stock=article.min_stock + d,
             buffer=article.buffer,
             coverage=c.total,
             units_per_print=article.units_per_print,
@@ -346,7 +351,9 @@ def apply_rule(session: Session, actor: Actor = "auto") -> list[WorkQueueEntry]:
             # One entry holds at most MAX_PRINTS; the capped entry counts into the
             # coverage, so the next run tops up the rest. Raising here would stop the
             # rule for every other article.
-            details = {"coverage": c.total, "target": article.min_stock + article.buffer}
+            details = {"coverage": c.total, "target": article.min_stock + d + article.buffer}
+            if d:
+                details["demand"] = d
             if n > MAX_PRINTS:
                 n = MAX_PRINTS
                 details["capped"] = True

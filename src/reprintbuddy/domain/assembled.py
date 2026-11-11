@@ -477,3 +477,32 @@ def update_assembled(session: Session, article_id: int, data: AssembledInput) ->
     _write_bom(session, composite, checked)
     sync_variants(session, composite, data.variant_targets)
     return composite
+
+
+# ---- demand from assembly (Spec 7.1) -----------------------------------------------------------
+
+
+def missing_of(holder: Article) -> int:
+    """Fehlmenge of a stock holder: target - available once available is below the minimum, else 0
+    (Spec 7.1, as rule 7.1 itself: nothing below the threshold, then up to the target)."""
+    available = rules.available(holder.stock, holder.reserved)
+    if available >= holder.min_stock:
+        return 0
+    return rules.target_quantity(holder.min_stock, holder.buffer) - available
+
+
+def assembly_demand(session: Session) -> dict[int, int]:
+    """Bedarf aus Montage per print article: the sum of Fehlmenge x quantity over every variant on
+    stock it is in (Spec 7.1, 0.4.0 p341). Only active articles made of parts built on stock count;
+    one built on order makes no demand, its orders reserve the parts instead."""
+    demand: dict[int, int] = {}
+    for composite in session.scalars(
+        articlesets.assembled_articles().where(Article.assembly_mode == "stock").order_by(Article.id)
+    ):
+        for holder in holders(session, composite):
+            missing = missing_of(holder)
+            if missing <= 0:
+                continue
+            for part_id, qty in needs_of(session, holder).items():
+                demand[part_id] = demand.get(part_id, 0) + missing * qty
+    return demand
