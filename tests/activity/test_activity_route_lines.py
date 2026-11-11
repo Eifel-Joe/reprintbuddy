@@ -101,10 +101,25 @@ def test_an_article_changed_on_its_edit_page(ready_client):
             "csrf_token": csrf_of(ready_client, f"/articles/{a}/edit"),
             "name": "Bracket 2", "sku": "", "units_per_print": "1", "min_stock": "0", "buffer": "0",
             "target": "model:A1",
+            "sold_alone": "on",  # the box is ticked on the page (0.4.0); a browser sends it so
         },
     )
     assert response.status_code == 303
     assert the_line(ready_client, "article_changed").details == {"id": a, "name": "Bracket 2", "fields": ["name"]}
+
+
+def test_unticking_sold_alone_is_a_change_of_its_own(ready_client):  # 0.4.0, p341
+    a = article_of(ready_client, target_model="A1")
+    response = ready_client.post(
+        f"/articles/{a}/edit",
+        data={
+            "csrf_token": csrf_of(ready_client, f"/articles/{a}/edit"),
+            "name": "Bracket", "sku": "", "units_per_print": "1", "min_stock": "0", "buffer": "0",
+            "target": "model:A1",  # no "sold_alone": the box was unticked
+        },
+    )
+    assert response.status_code == 303
+    assert the_line(ready_client, "article_changed").details == {"id": a, "name": "Bracket", "fields": ["sold_alone"]}
 
 
 def test_the_filaments_of_an_article_saved_on_its_filament_page(bb_client, fake_bambuddy):
