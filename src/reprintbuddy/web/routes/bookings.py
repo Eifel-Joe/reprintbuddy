@@ -11,11 +11,12 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import catalog, stock
+from reprintbuddy.domain import assembled, catalog, stock
 from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.localtime import at_local_time, end_of_local_day
 from reprintbuddy.models import Article, Part, utcnow
+from reprintbuddy.web import assembled_view
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.flash import flash
@@ -36,7 +37,11 @@ def _page(request: Request, db: Session, *, error_form: str | None = None, error
         "bookings.html",
         status_code=status,
         active_nav="bookings",
-        articles=catalog.list_articles(db),
+        # 0.4.0 (p341): count and sale take stock holders, sale also variants built on order,
+        # stock in only print articles (web/assembled_view.py)
+        count_options=assembled_view.count_choices(db),
+        sale_options=assembled_view.sale_choices(db),
+        stock_in_options=assembled_view.stock_in_choices(db),
         parts=catalog.list_parts(db),
         rows=journal_rows(db, stock.journal_page(db, limit=20)),
         error_form=error_form,
@@ -214,11 +219,17 @@ async def book_part_receipt(request: Request, db: Session = Depends(get_db)):
 @router.post("/bookings/sale", dependencies=[Depends(verify_csrf)])
 async def book_sale(request: Request, db: Session = Depends(get_db)):
     def prepare(form):
-        return {"article_id": _article_id(form), "qty": _qty(form), "note": _note(form),
-                "booked_at": _booked_at(form)}
+        built_on_order = assembled_view.parse_assembled(str(form.get("article_id", "")))
+        return {"article_id": built_on_order[0] if built_on_order else _article_id(form),
+                "key": built_on_order[1] if built_on_order else None,
+                "qty": _qty(form), "note": _note(form), "booked_at": _booked_at(form)}
 
     def book(tx, p):
         _active_article(tx, p["article_id"])
+        if p["key"] is not None:  # a variant built on order: its parts go at once (Teil C 4)
+            shortages = assembled.sell(tx, p["article_id"], p["key"], p["qty"], "user", p["note"], booked_at=p["booked_at"])
+            return [("bookings.sale_done", {"item": tx.get(Article, p["article_id"]).name, "qty": p["qty"]}),
+                    *_shortages(tx, shortages)]
         stock.sell_unreserved(tx, p["article_id"], p["qty"], "user", p["note"], booked_at=p["booked_at"])
         return [("bookings.sale_done", {"item": tx.get(Article, p["article_id"]).name, "qty": p["qty"]})]
 

@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import catalog, orders, stock
 from reprintbuddy.domain.errors import DomainError, ValidationError
-from reprintbuddy.domain.orders import ArticleItem, SetItem
+from reprintbuddy.domain.orders import ArticleItem, AssembledItem, SetItem
+from reprintbuddy.web import assembled_view
 from reprintbuddy.domain.status import summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import utcnow
@@ -124,9 +125,9 @@ def _parse_item(raw: str) -> tuple[str, int, tuple[int, ...]]:
     kind, _, rest = raw.partition(":")
     numbers = [bounded_int(part) for part in rest.split(":")]
     if (
-        kind not in ("article", "set")
+        kind not in ("article", "set", "assembled")
         or any(number is None or number > MAX_ID for number in numbers)
-        or len(numbers) > (1 + catalog.CHOICE_FIELDS if kind == "set" else 1)
+        or len(numbers) > (1 + catalog.CHOICE_FIELDS if kind in ("set", "assembled") else 1)
     ):
         raise ValidationError("orders.invalid_item")
     return kind, numbers[0], tuple(numbers[1:])  # type: ignore[arg-type]
@@ -158,7 +159,7 @@ def _form_page(request, db, *, form_values, items, rows, error=None, status=200)
         values=form_values,
         items=items,
         rows=rows,
-        articles=catalog.list_articles(db),
+        articles=assembled_view.order_choices(db),  # sold alone, stock holders, variants on order (0.4.0)
         sets=_set_options(db),
         error=error,
     )
@@ -191,13 +192,16 @@ async def orders_create(request: Request, db: Session = Depends(get_db)):
         return page()
     try:
         order_date = _parse_date(form.get("order_date"))
-        order_items: list[ArticleItem | SetItem] = []
+        order_items: list[ArticleItem | SetItem | AssembledItem] = []
         for row in items:
             if not row["item"].strip():
                 continue
             kind, ident, key = _parse_item(row["item"].strip())
             qty = parse_int(row["qty"], field="orders.field.qty", min=1, max=MAX_QTY)
-            order_items.append(ArticleItem(ident, qty) if kind == "article" else SetItem(ident, qty, key))
+            if kind == "assembled":
+                order_items.append(AssembledItem(ident, qty, ":".join(str(k) for k in key)))
+            else:
+                order_items.append(ArticleItem(ident, qty) if kind == "article" else SetItem(ident, qty, key))
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
             order = orders.create_order(
                 tx, reference=values["reference"], order_date=order_date, items=order_items,

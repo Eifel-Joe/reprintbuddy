@@ -112,7 +112,11 @@ def _parse(values: dict) -> SetInput:
 
 def _article_options(db: Session, values: dict) -> list[dict[str, object]]:
     """Active articles, plus archived ones that are chosen in the form: the set keeps them (Spec 5.5)."""
-    options = {row.id: {"id": str(row.id), "name": row.name, "archived": False} for row in catalog.list_articles(db)}
+    options = {
+        row.id: {"id": str(row.id), "name": row.name, "archived": False}
+        for row in catalog.list_articles(db)
+        if row.sold_alone and (row.assembled is None or (row.assembled.mode == "stock" and not row.assembled.fields))
+    }
     chosen = set()
     for section in SECTIONS:
         for row in values[section]:

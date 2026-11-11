@@ -151,3 +151,72 @@ def test_qr_of_assembled_goes_to_assembly_or_page(ready_client):
     assert response.headers["location"].startswith("/assembly") and str(w["box"]) in response.headers["location"]
     response = ready_client.get(f"/a/{w['hose']}", follow_redirects=False)
     assert response.headers["location"] == f"/articles/{w['hose']}"
+
+
+# ---- Aufgabe 15: bookings, order form, sets -------------------------------------------------------
+
+
+def _select(page: str, form_action: str) -> str:
+    form = re.search(rf'<form[^>]*action="{form_action}".*?</form>', page, re.S).group(0)
+    return re.search(r'<select name="article_id"[^>]*>(.*?)</select>', form, re.S).group(1)
+
+
+def test_bookings_offer_holders_and_print_articles(ready_client):
+    w = world(ready_client)
+    page = ready_client.get("/bookings").text
+    count = _select(page, "/bookings/inventory")
+    assert f'value="{w["box"]}"' in count and "Bracket · EX-K1-A" in count
+    assert f'value="{w["bracket"]}"' not in count and f'value="{w["hose"]}"' not in count
+    sale = _select(page, "/bookings/sale")
+    assert f'value="assembled:{w["hose"]}:{w["keys"]["EX-H1-L32"]}"' in sale
+
+
+def test_stock_in_offers_only_print_articles(ready_client):
+    w = world(ready_client)
+    stock_in = _select(ready_client.get("/bookings").text, "/bookings/stock-in")
+    assert f'value="{w["panel"]}"' in stock_in and f'value="{w["box"]}"' not in stock_in
+
+
+def test_sell_a_hose_variant_from_bookings(ready_client):
+    w = world(ready_client)
+    data = {"csrf_token": csrf_of(ready_client, "/bookings"),
+            "form_token": form_token_of(ready_client, "/bookings", "/bookings/sale"),
+            "article_id": f"assembled:{w['hose']}:{w['keys']['EX-H1-L32']}", "qty": "1"}
+    response = ready_client.post("/bookings/sale", data=data, follow_redirects=False)
+    assert response.status_code == 303
+    with sm_of(ready_client).begin() as s:
+        assert (s.get(Article, w["segment"]).stock, s.get(Article, w["side"]).stock) == (28, 3)
+
+
+def test_order_form_offers_hose_variants_and_hides_parts(ready_client):
+    w = world(ready_client)
+    page = ready_client.get("/orders/new").text
+    group = re.search(r'<select name="item_0">(.*?)</select>', page, re.S).group(1)
+    assert f'value="assembled:{w["hose"]}:{w["keys"]["EX-H1-L32"]}"' in group
+    assert "Hose · EX-H1-L32 (Side part L, Socket L32)" in group
+    assert f'value="article:{w["side"]}"' not in group  # a part only
+    assert f'value="article:{w["bracket"]}"' not in group  # with choices: its variants instead
+    assert f'value="article:{w["variants"]["EX-K1-A"]}"' in group
+
+
+def test_order_detail_shows_assembled_group(ready_client):
+    w = world(ready_client)
+    data = {"csrf_token": csrf_of(ready_client, "/orders/new"),
+            "form_token": form_token_of(ready_client, "/orders/new", "/orders/new"),
+            "reference": "R-5", "order_date": "2026-11-11", "rows": "1",
+            "item_0": f"assembled:{w['hose']}:{w['keys']['EX-H1-L32']}", "qty_0": "2"}
+    response = ready_client.post("/orders/new", data=data, follow_redirects=False)
+    assert response.status_code == 303
+    with sm_of(ready_client).begin() as s:
+        order_id = s.scalars(select(Order.id)).one()
+    page = ready_client.get(f"/orders/{order_id}").text
+    assert "Hose" in page and "EX-H1-L32" in page and "Segment" in page
+
+
+def test_set_form_hides_parts_not_sold_alone(ready_client):
+    w = world(ready_client)
+    page = ready_client.get("/sets/new").text
+    base = re.search(r'<select name="base_0_article"[^>]*>(.*?)</select>', page, re.S).group(1)
+    assert f'value="{w["panel"]}"' in base and f'value="{w["box"]}"' in base
+    for hidden in ("side", "bracket", "hose"):
+        assert f'value="{w[hidden]}"' not in base, hidden

@@ -5,7 +5,7 @@
 {#- What an order holds: a set with its quantity, or the articles one by one. -#}
 {% macro items(order) -%}
 {% for group in order.groups %}
-  {%- if group.set_name %}{{ group.set_name }}{% if group.variant_sku %} {{ group.variant_sku }}{% endif %} × {{ group.set_qty }}{% else %}{% for name, qty in group.lines %}{{ qty }} × {{ name }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% endif %}{% if not loop.last %}<br>{% endif %}
+  {%- if group.set_name or group.assembled_name %}{{ group.set_name or group.assembled_name }}{% if group.variant_sku %} {{ group.variant_sku }}{% endif %} × {{ group.set_qty }}{% else %}{% for name, qty in group.lines %}{{ qty }} × {{ name }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% endif %}{% if not loop.last %}<br>{% endif %}
 {%- endfor %}
 {%- endmacro %}
 
