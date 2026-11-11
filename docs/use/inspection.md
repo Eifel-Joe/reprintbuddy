@@ -88,11 +88,10 @@ Open the page **Orders** and press **New order**.
 1. Enter a **Reference**, free text such as the order number. It is required. Do not enter addresses or customer data.
 2. Check the **Order date**; it starts with today.
 3. Add a **Note** if you like.
-4. Under **Items**, pick an article or a set for each row and enter the **Quantity**. **More rows** adds rows.
-5. For a [set with a choice](#sets), choose the article for each choice position.
-6. Press **Place order**.
+4. Under **Items**, pick an article or a set for each row and enter the **Quantity**. A [set with choice parts](#sets) is listed once per variant, with its number and the chosen articles, for example **Bracket kit · EX-S01-S (Bracket small)**: pick the variant. **More rows** adds rows.
+5. Press **Place order**.
 
-The ordered pieces become **Reserved**. **Available** may go below zero if you order more than you have. An order cannot be edited afterwards; cancel it and enter it again.
+The ordered pieces become **Reserved**. An order of a variant keeps its number as it was when you ordered, even if the set changes later. **Available** may go below zero if you order more than you have. An order cannot be edited afterwards; cancel it and enter it again.
 
 ![The list of open orders](../assets/images/en/orders.png)
 
@@ -107,13 +106,31 @@ Shipping and cancelling always apply to the whole order, never to single items.
 
 ## Sets
 
-A set is a bundle of articles sold together, with a name and an optional article number. It has no stock of its own: it is available as often as all of its positions are available at the same time.
+A set is a bundle of articles sold together, with a name and an article number. It has no stock of its own.
 
-A position holds a quantity and one or more articles. With one article the position is fixed. With several articles you choose one when you take the order. For the availability a choice position counts the article with the smallest stock: the set counts as deliverable only as often as it can be made with every one of the articles, and the stocks of the articles are not added up. If an article is in several positions, the least favourable combination counts: the set counts as deliverable only as often as it can be made with every possible choice in all positions at once. An article that is oversold pulls the number down like a fixed one. A set is **deliverable** when at least one set can be made from the available pieces, otherwise **not deliverable**.
+**Base parts** go into every set: per row a **Quantity** and an **Article**, chosen from a drop-down. An article that is in one row already is not offered in the others; an article is only once in a set.
 
-Under **Sets** press **New set**, enter a name and an article number, and fill the positions: a **Quantity** and the **Articles** (hold Ctrl or Cmd to select several). Rows without an article are ignored; **More rows** adds rows. A set needs at least one position.
+**Choice parts** are optional: one of their articles goes into each set, for example the size of a plate. **Choice parts 1** holds any number of articles, each with a **Suffix**, and one **Quantity of the chosen article**. **Add choice parts 2** opens a second field of the same kind, for example the colour. Every combination is a **variant**. The article number of a variant is the set's number with the suffixes behind it, written as they are: set EX-S10 with choice parts 1 A `-A`, B `-B`, C `-C` and choice parts 2 D `-1`, E `-2` has the six variants EX-S10-A-1, EX-S10-A-2, EX-S10-B-1 … EX-S10-C-2; without choice parts 2 only EX-S10-A, EX-S10-B and EX-S10-C. Write the separator into the suffix yourself.
 
-An order for a set reserves the single articles. A set cannot be ordered if one of its positions has no active article left. Sets are archived, not deleted; an order that already exists keeps the articles it was entered with.
+Rules when you save:
+
+- A set with choice parts needs an article number; the suffixes in one field differ.
+- Every variant has at least two different articles: two base parts, a base part and choice parts, or two fields of choice parts.
+- Choice parts 2 only go with choice parts 1.
+- Variant numbers are at most 64 characters long and unique: no article, set or other variant may have the same number, archived ones included.
+
+**Availability.** A set without choice parts is available as often as all of its articles are available at the same time. With choice parts, each variant is available as often as a set of its own articles, and the list shows the whole set as **Available**: how many sets in any mix of the variants come from the available pieces at the same time. Example: base parts, A, B and C one each: every variant 1, together 1. Base parts 3, A 2, B 0, C 1: variant A 2, B 0, C 1, together 3. A set is **deliverable** when at least one set can be made, otherwise **not deliverable**.
+
+![The list of sets with base parts and variants](../assets/images/en/sets.png)
+
+Under **Sets** press **New set**. The form starts with three rows of base parts and of choice parts 1; **More rows** adds three to that part, and **Add choice parts 2** opens the second field. Rows without an article are ignored.
+
+![The form of a set with base parts and choice parts](../assets/images/en/set-form.png)
+
+An order for a set reserves the single articles. A set cannot be ordered while one of its base parts is archived; a variant whose choice part is archived is not offered. Sets are archived, not deleted; an order that already exists keeps the articles and the variant number it was entered with. Small and large versions of a bundle are separate sets.
+
+!!! note "Sets from an earlier version"
+    Sets from version 0.3.17 or earlier are rebuilt by the update: a position with one article becomes a base part, the first and second position with a choice become choice parts 1 and 2. They have no suffixes yet, so the set shows **suffixes missing** and cannot be ordered until you add them (and an article number, if it has none). What the new form cannot hold, such as a third position with a choice, is dropped and named under **Settings → Log** ([Log](../operate/log.md)). Orders entered before the update stay as they were.
 
 ## Bought parts
 
