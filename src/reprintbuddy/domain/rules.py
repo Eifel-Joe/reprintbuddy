@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import math
 from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
@@ -19,64 +20,47 @@ def target_quantity(min_stock: int, buffer: int) -> int:
 
 
 @dataclass(frozen=True)
-class PositionStock:
-    """One set position: how many of the article it needs, and the available count of each option."""
+class ChoiceStock:
+    """One choice field of a set (Spec 5.4): the quantity of the chosen article, and per option the
+    article id and its available count, in the order of the form."""
 
     qty: int
-    option_available: tuple[int, ...]
-    article_ids: tuple[int, ...] = ()  # the same order as option_available
+    options: tuple[tuple[int, int], ...]
 
 
-def _position_available(position: PositionStock) -> int:
-    options = position.option_available
-    if not options:
-        return 0  # all articles archived (Spec 5.5)
-    # A choice counts the option with the smallest stock (Spec 5.4, v0.3.16 p173): the set is as often
-    # deliverable as it can be made with every one of the options, so they are not added up. One option
-    # is the same case; a negative (oversold) option stays negative.
-    return min(a // position.qty for a in options)
+@dataclass(frozen=True)
+class SetStock:
+    """`total` is "zusammen hoechstens", `variants` the count per variant: the key holds the chosen
+    article ids, one per field, in the order of the form; empty for a set without choices."""
+
+    total: int
+    variants: dict[tuple[int, ...], int]
 
 
-def set_available(positions: Sequence[PositionStock]) -> int:
-    """Set availability: the minimum over its positions (Spec 5.4); 0 without positions.
+def set_availability(base: Sequence[tuple[int, int]], choices: Sequence[ChoiceStock]) -> SetStock:
+    """Availability of a set from (qty, available) per base part and its choice fields (Spec 5.4, p340).
 
-    A choice position counts its smallest option (v0.3.16 p173). Positions that use the same article
-    (fixed or as an option) need it at the same time when the customer picks it, so the worst choice
-    counts: per article the quantities of all positions that hold it are added up before dividing (A once
-    in two positions needs 2 A per set). For an article that is oversold the worst choice is the one that
-    takes the least of it: it counts with the fixed quantity, or else the smallest quantity of a choice.
-    A position without article ids (not known to the caller) counts on its own.
-
-    This is exact, not an approximation (p321): the set counts its worst combination of choices, the
-    minimum over all combinations of the minimum over the articles. Minima can be swapped, so it is the
-    minimum over the articles of each article's own worst combination, and the positions are chosen
-    independently, so each article reaches its own one, even when those of two articles exclude each
-    other. Tests: tests/domain/test_rules.py (checked against every combination).
+    A variant is as often available as a set of its own articles: the minimum over the base parts and
+    its chosen articles. Together, in any mix of the variants, the base parts limit the count, and each
+    field gives the sum of what its articles give, because the customer picks one per set: an article
+    of a field never takes stock of another one (an article is only once in a set, Spec 5.4). An
+    oversold option (negative) adds nothing to the sum; when no option gives anything the field counts
+    its best option, so a field of one article counts like a base part.
+    Tests: tests/domain/test_rules.py (checked against the most sets of every mix).
     """
-    if not positions:
-        return 0
-    fixed: dict[int, int] = {}
-    choices: dict[int, list[int]] = {}
-    in_stock: dict[int, int] = {}
-    values: list[int] = []
-    for position in positions:
-        if not position.option_available or len(position.article_ids) != len(position.option_available):
-            values.append(_position_available(position))
-            continue
-        for article_id, stock in zip(position.article_ids, position.option_available):
-            in_stock[article_id] = stock
-            if len(position.option_available) == 1:
-                fixed[article_id] = fixed.get(article_id, 0) + position.qty
-            else:
-                choices.setdefault(article_id, []).append(position.qty)
-    for article_id, stock in in_stock.items():
-        picked = choices.get(article_id, [])
-        if stock >= 0:
-            need = fixed.get(article_id, 0) + sum(picked)
-        else:
-            need = fixed.get(article_id) or min(picked)
-        values.append(stock // need)
-    return min(values)
+    limits = [available // qty for qty, available in base]
+    if any(not field.options for field in choices) or (not limits and not choices):
+        return SetStock(0, {})
+    per_field = [[(article_id, available // field.qty) for article_id, available in field.options] for field in choices]
+    totals = list(limits)
+    for values in per_field:
+        positive = sum(v for _, v in values if v > 0)
+        totals.append(positive if positive > 0 else max(v for _, v in values))
+    variants: dict[tuple[int, ...], int] = {}
+    if per_field:
+        for combination in itertools.product(*per_field):
+            variants[tuple(a for a, _ in combination)] = min(limits + [v for _, v in combination])
+    return SetStock(min(totals), variants)
 
 
 def order_ready(needed: Mapping[int, int], stock: Mapping[int, int]) -> bool:
