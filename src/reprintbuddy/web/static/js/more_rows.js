@@ -69,16 +69,38 @@
     return value > 0 ? value : fallback;
   }
 
-  // The template's markup with the number of the new row put in; {i} and {i1} of an outer part are
-  // filled in the templates inside it too, a template of an inner part keeps its {j}.
-  function markup(template, key, index) {
-    var html = template.innerHTML;
-    if (key) {
-      html = html.split("{" + key + "}").join(String(index)).split("{" + key + "1}").join(String(index + 1));
+  function put(text, key, index) {
+    return text.split("{" + key + "}").join(String(index)).split("{" + key + "1}").join(String(index + 1));
+  }
+
+  // The tokens are put in the copy, in attributes and in text, but not in what an <option> shows: an
+  // article may be called "Rail {i}". {i} and {i1} of an outer part are filled in the templates inside
+  // it too (their content is a tree of its own); a template of an inner part keeps its {j}.
+  function fill(node, key, index) {
+    if (node.nodeType === 3) {
+      node.nodeValue = put(node.nodeValue, key, index);
+      return;
     }
-    var holder = document.createElement("template");
-    holder.innerHTML = html;
-    return holder.content;
+    if (node.nodeType !== 1 || node.tagName === "OPTION") {
+      return;
+    }
+    each(node.attributes, function (attribute) {
+      attribute.value = put(attribute.value, key, index);
+    });
+    each(node.tagName === "TEMPLATE" ? node.content.childNodes : node.childNodes, function (child) {
+      fill(child, key, index);
+    });
+  }
+
+  // A copy of what the template holds, with the number of the new row put in.
+  function markup(template, key, index) {
+    var copy = document.importNode(template.content, true);
+    if (key) {
+      each(copy.childNodes, function (node) {
+        fill(node, key, index);
+      });
+    }
+    return copy;
   }
 
   function reducedMotion() {
@@ -147,7 +169,7 @@
     var group = closest(button, "[data-more-group]");
     var template = group && templateOf(group);
     if (!template) {
-      return;
+      return false; // nothing to copy: the button sends the form, as without the script
     }
     var key = group.getAttribute("data-more-key") || "i";
     var count = rowsOf(group).length;
@@ -161,7 +183,7 @@
       template.parentNode.insertBefore(fragment, template);
     }
     if (!added.length) {
-      return;
+      return true; // the part is full
     }
     var counter = counterOf(group);
     if (counter) {
@@ -171,13 +193,14 @@
     markChanged(group);
     show(added);
     group.dispatchEvent(new CustomEvent("more:added", { bubbles: true, detail: { rows: added } }));
+    return true;
   }
 
   function reveal(button) {
     var host = closest(button, "[data-more-reveal]");
     var template = host && templateOf(host);
     if (!template) {
-      return;
+      return false;
     }
     var added = [];
     each(markup(template, "", 0).children, function (node) {
@@ -191,6 +214,7 @@
     show(added);
     added[0].dispatchEvent(new CustomEvent("more:added", { bubbles: true, detail: { rows: added } }));
     each(added, refreshAll);
+    return true;
   }
 
   // The parts of a node that came in with its template: the node itself and the parts inside it.
@@ -207,11 +231,8 @@
     if (!add && !open) {
       return;
     }
-    event.preventDefault(); // no round trip to the server
-    if (add) {
-      addRows(add);
-    } else {
-      reveal(open);
+    if (add ? addRows(add) : reveal(open)) {
+      event.preventDefault(); // no round trip to the server
     }
   });
 
