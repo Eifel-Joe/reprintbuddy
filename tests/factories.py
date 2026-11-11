@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import itertools
 import uuid
 from datetime import date
 
@@ -65,8 +64,8 @@ def make_assembled(
     **extra,
 ) -> Article:
     """An article made of parts (0.4.0, Spec 5.6): base parts as (part_id, qty), and up to two choice
-    fields, each a list of options (suffix, [(part_id, qty)]). Variant rows come with it, one per
-    combination of options, with the variant number when the base number is set."""
+    fields, each a list of options (suffix, [(part_id, qty)]). Its variant rows come from
+    `assembled.sync_variants`, one per combination of options. No checks: tests build odd ones too."""
     article = Article(name=name, sku=sku, kind="assembled", assembly_mode=mode, **extra)
     s.add(article)
     s.flush()
@@ -86,13 +85,10 @@ def make_assembled(
                 ))
             made.append(option)
         per_field.append(made)
-    if per_field:
-        for combination in itertools.product(*per_field):
-            s.add(Article(
-                name=name, kind="variant", parent_id=article.id,
-                variant_key=":".join(str(o.id) for o in combination),
-                sku=(sku + "".join(o.suffix for o in combination)) if sku else None,
-            ))
+    s.flush()
+    from reprintbuddy.domain import assembled  # the rows as the program makes them (0.4.0 task 3)
+
+    assembled.sync_variants(s, article)
     s.flush()
     return article
 

@@ -178,6 +178,7 @@ class ArticleInput:
     needs_assembly: bool = False
     auto_enabled: bool = False
     parts: dict[int, int] = field(default_factory=dict)  # part id -> quantity per unit
+    sold_alone: bool = True  # "einzeln erhaeltlich" (Spec 5.2, 0.4.0); off = a part only (Bauteil)
 
 
 _SUFFIXES = (".gcode.3mf", ".3mf", ".gcode")
@@ -206,6 +207,21 @@ def _linked_parts(session: Session, article_id: int | None) -> dict[int, int]:
     return {part_id: qty for part_id, qty in rows}
 
 
+def check_purchased_parts(session: Session, wanted: dict[int, int], article_id: int | None) -> dict[int, int]:
+    """Purchased parts and their quantity per unit (Spec 5.2); an archived part only when the article
+    already uses it. Shared by print articles and articles made of parts (0.4.0)."""
+    parts: dict[int, int] = {}
+    linked = _linked_parts(session, article_id)
+    for part_id, qty in wanted.items():
+        parts[part_id] = _int_in(qty, "articles.field.qty_per_unit", 1, 1000)
+        part = session.get(Part, part_id)
+        if part is None:
+            raise NotFoundError("parts.not_found")
+        if part.archived_at is not None and part_id not in linked:
+            raise ValidationError("parts.archived", name=part.name)
+    return parts
+
+
 def _check_article_input(
     session: Session, data: ArticleInput, *, article_id: int | None = None
 ) -> ArticleInput:
@@ -222,15 +238,7 @@ def _check_article_input(
     # target, `dispatch.reserve_next` would pause the article with `no_target` at once (p52).
     if data.auto_enabled and target_model is None and printer_id is None:
         raise ValidationError("articles.field_auto_needs_target", field="articles.field.auto_enabled")
-    parts: dict[int, int] = {}
-    linked = _linked_parts(session, article_id)
-    for part_id, qty in data.parts.items():
-        parts[part_id] = _int_in(qty, "articles.field.qty_per_unit", 1, 1000)
-        part = session.get(Part, part_id)
-        if part is None:
-            raise NotFoundError("parts.not_found")
-        if part.archived_at is not None and part_id not in linked:
-            raise ValidationError("parts.archived", name=part.name)
+    parts = check_purchased_parts(session, data.parts, article_id)
     return replace(
         data,
         name=name,
@@ -270,6 +278,7 @@ def _apply_input(article: Article, data: ArticleInput) -> None:
     article.printer_id = data.printer_id
     article.needs_assembly = data.needs_assembly
     article.auto_enabled = data.auto_enabled
+    article.sold_alone = data.sold_alone
 
 
 def create_article(

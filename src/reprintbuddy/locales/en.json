@@ -1370,5 +1370,18 @@
   "activity.label.printed": "done",
   "activity.label.partial": "not all printed",
   "activity.label.not_ready": "printer not ready, nothing printed",
-  "activity.label.failed": "failed"
+  "activity.label.failed": "failed",
+  "assembled.part_not_print": "{name} is made of parts itself and cannot be used as a part. Parts are print articles.",
+  "assembled.part_archived": "The article {name} is archived and cannot be used as a part.",
+  "assembled.article_twice": "{name} is more than once in the parts list. An article is at most once in the base parts, once per option and in only one field of choice parts.",
+  "assembled.option_empty": "The option {suffix} has no parts. Every option needs at least one row with quantity and article.",
+  "assembled.choices2_without_1": "Choice parts 2 only go with choice parts 1. Fill in choice parts 1 first.",
+  "assembled.too_small": "Every variant needs at least two units of parts and purchased parts together, at least one of them a part. A single part alone is that article itself.",
+  "assembled.sku_required": "An assembled article with choice parts needs an article number: the variant numbers start with it.",
+  "assembled.suffix_required": "The option with {name} needs a suffix.",
+  "assembled.suffix_twice": "The suffix {suffix} is twice in one field of choice parts.",
+  "assembled.variant_too_long": "The variant number {sku} is longer than {max} characters.",
+  "assembled.variant_in_use": "The variant {sku} has stock, is reserved or is in an open order, so it cannot go. Count its stock to 0 and ship or cancel the orders first.",
+  "assembled.mode_switch_busy": "The assembly mode of {name} can only change when no variant has stock or a reservation and no order is open.",
+  "assembled.field.qty": "Quantity"
 }

@@ -1370,5 +1370,18 @@
   "activity.label.printed": "fertig",
   "activity.label.partial": "nicht alle gedruckt",
   "activity.label.not_ready": "Drucker nicht bereit, nichts gedruckt",
-  "activity.label.failed": "fehlgeschlagen"
+  "activity.label.failed": "fehlgeschlagen",
+  "assembled.part_not_print": "{name} ist selbst aus Teilen und lässt sich nicht als Teil verwenden. Teile sind Druckartikel.",
+  "assembled.part_archived": "Der Artikel {name} ist archiviert und lässt sich nicht als Teil verwenden.",
+  "assembled.article_twice": "{name} steht mehrmals in der Stückliste. Ein Artikel steht höchstens einmal in den Basisteilen, einmal je Möglichkeit und nur in einem Feld Wahlteile.",
+  "assembled.option_empty": "Die Möglichkeit {suffix} hat keine Teile. Jede Möglichkeit braucht mindestens eine Zeile mit Menge und Artikel.",
+  "assembled.choices2_without_1": "Wahlteile 2 gehen nur zusammen mit Wahlteilen 1. Fülle zuerst Wahlteile 1.",
+  "assembled.too_small": "Jede Variante braucht aus Teilen und Zukaufteilen zusammen mindestens zwei Einheiten, darunter mindestens ein Teil. Ein einzelnes Teil allein ist der Artikel selbst.",
+  "assembled.sku_required": "Ein Artikel aus Teilen mit Wahlteilen braucht eine Artikelnummer: Mit ihr beginnen die Nummern der Varianten.",
+  "assembled.suffix_required": "Die Möglichkeit mit {name} braucht eine Zusatznummer.",
+  "assembled.suffix_twice": "Die Zusatznummer {suffix} steht zweimal in einem Feld Wahlteile.",
+  "assembled.variant_too_long": "Die Variantennummer {sku} ist länger als {max} Zeichen.",
+  "assembled.variant_in_use": "Die Variante {sku} hat Bestand, ist reserviert oder steht in einer offenen Bestellung und kann deshalb nicht wegfallen. Buche ihren Bestand per Inventur auf 0 und versende oder storniere die Bestellungen.",
+  "assembled.mode_switch_busy": "Die Montage von {name} lässt sich nur wechseln, wenn keine Variante Bestand oder eine Reservierung hat und keine offene Bestellung läuft.",
+  "assembled.field.qty": "Menge"
 }
