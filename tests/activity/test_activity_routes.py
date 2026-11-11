@@ -17,6 +17,10 @@ WRITES = {"POST", "PUT", "PATCH", "DELETE"}
 LOGGED = {
     "/articles/new/file/{file_id:int}/plate/{index:int}": "test_a_new_article_is_created_by_the_user",
     "/articles/new/upload": "test_an_upload_names_file_and_folder",
+    # articles made of parts (0.4.0, p341): created, changed, and a print article made one
+    "/articles/new-assembled": "test_an_assembled_article_created_and_changed_on_its_form",
+    "/articles/{article_id:int}/assembled": "test_an_assembled_article_created_and_changed_on_its_form",
+    "/articles/{article_id:int}/to-assembled": "test_a_print_article_made_an_assembled_one",
     "/articles/{article_id:int}/archive": "test_an_article_archived_and_restored_by_the_user",
     "/articles/{article_id:int}/auto": "test_the_automation_of_an_article_switched_in_the_list",
     "/articles/{article_id:int}/edit": "test_an_article_changed_on_its_edit_page",
@@ -70,6 +74,7 @@ JOURNAL = {
     "/api/inspections/{inspection_id:int}",
     "/articles/{article_id:int}/confirm-file",
     "/articles/{article_id:int}/resume",
+    "/assembly/build/{holder_id:int}",  # assembly from parts: a booking (0.4.0, p341)
     "/assembly/{article_id:int}",
     "/bookings/inventory",
     "/bookings/part-inventory",

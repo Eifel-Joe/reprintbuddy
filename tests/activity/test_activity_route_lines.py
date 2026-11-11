@@ -367,3 +367,49 @@ def test_the_bambuddy_connection_of_the_setup(admin_client, respx_mock):
     assert names["bambuddy_url"]["new"] == "http://bambuddy.test:8000"
     assert "bambuddy_key" in names
     assert "SETUPKEY" not in repr(line.details)
+
+
+# ---- articles made of parts (0.4.0, p341) --------------------------------------------------------
+
+
+def _last_line(client, kind: str) -> ActivityEntry:
+    """The newest line of `kind`: the factory's parts wrote lines of their own before."""
+    line = lines_of(client, kind)[-1]
+    assert line.actor == "user"
+    return line
+
+
+def _assembled_form(client, page: str, action: str, part: int, **more) -> dict:
+    data = {
+        "csrf_token": csrf_of(client, page),
+        "name": "Storage box", "sku": "EX-B1", "mode": "stock",
+        "base_rows": "1", "base_0_qty": "2", "base_0_article": str(part),
+        "c1_options": "1", "c1_0_rows": "1",
+    }
+    if action:
+        data["form_token"] = form_token_of(client, page, action)
+    data.update(more)
+    return data
+
+
+def test_an_assembled_article_created_and_changed_on_its_form(ready_client):
+    part = article_of(ready_client, name="Panel A")
+    page = "/articles/new-assembled"
+    assert ready_client.post(page, data=_assembled_form(ready_client, page, page, part)).status_code == 303
+    with sm_of(ready_client)() as s:
+        box = s.scalars(select(Article).where(Article.kind == "assembled")).one().id
+    assert _last_line(ready_client, "article_created").details == {"id": box, "name": "Storage box"}
+    page = f"/articles/{box}/assembled"
+    response = ready_client.post(page, data=_assembled_form(ready_client, page, "", part, base_0_qty="3"))
+    assert response.status_code == 303
+    assert the_line(ready_client, "article_changed").details == {"id": box, "name": "Storage box", "fields": ["base"]}
+
+
+def test_a_print_article_made_an_assembled_one(ready_client):
+    lamp = article_of(ready_client, name="Lamp", target_model="A1")
+    part = article_of(ready_client, name="Clip")
+    page = f"/articles/{lamp}/to-assembled"
+    data = _assembled_form(ready_client, page, page, part, name="Lamp", sku="")
+    assert ready_client.post(page, data=data).status_code == 303
+    line = the_line(ready_client, "article_changed")
+    assert line.details["id"] == lamp and {"kind", "base"} <= set(line.details["fields"])
