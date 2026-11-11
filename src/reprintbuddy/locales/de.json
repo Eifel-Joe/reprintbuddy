@@ -1337,7 +1337,7 @@
   "activity.change.removed": "entfernt",
   "activity.change.uploaded": "hochgeladen",
   "activity.fields": "Geändert: {fields}",
-  "activity.dropped": "Entfallen: {articles}",
+  "activity.dropped": "Nicht mehr wählbar: {articles}",
   "activity.owner": "Besitzer des Schlüssels: {owner}",
   "activity.failed_count": "{count} Versuche, der erste um {first}",
   "activity.via_cli": "Befehl auf dem Server",

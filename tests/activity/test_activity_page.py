@@ -159,9 +159,9 @@ def test_a_set_rebuilt_by_the_update_names_what_was_dropped(ready_client):
     html = ready_client.get(PAGE).text
     row = text_of(table_rows(html)[0])
     assert "Set rebuilt by the update: Bracket kit" in row
-    assert "Dropped: Handle, Strip" in row
+    assert "No longer to choose: Handle, Strip" in row
     assert 'href="/sets/4/edit"' in table_rows(html)[0]
     with sm_of(ready_client).begin() as s:
         st.set_setting(s, "language", "de", commit=False)
     rows = [text_of(row) for row in table_rows(ready_client.get(PAGE).text)]
-    assert any("Set beim Update umgebaut: Bracket kit" in row and "Entfallen: Handle, Strip" in row for row in rows)
+    assert any("Set beim Update umgebaut: Bracket kit" in row and "Nicht mehr wählbar: Handle, Strip" in row for row in rows)

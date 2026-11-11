@@ -16,8 +16,9 @@ position becomes choice field 1, the second choice field 2, options sorted by na
 suffix (the set then shows "suffixes missing" until they are typed in). An article is only once in
 a set: an option whose article is already a base part or in an earlier field is dropped, a choice
 position that loses all its options goes, and the next one moves up. Choice positions beyond the
-second are dropped. Whatever was dropped is named in one line of the activity log per set, from
-"system". Order lines are not touched: they hold the articles chosen at the time and get no number.
+second are dropped, and so is a position without any article. The articles that can no longer be
+chosen (dropped, or kept as a base part only) are named in one line of the activity log per set,
+from "system". Order lines are not touched: they hold the articles chosen at the time and get no number.
 
 Columns are added with a plain ALTER TABLE (see 0013, 0015); a new and an upgraded database come
 out alike (tests/test_migration_0017_set_choices.py).
@@ -78,6 +79,8 @@ def _convert(conn) -> None:
                 _delete(conn, pid)
             elif len(ids) == 1:
                 base[ids[0]] = pid
+            else:  # no article left in the position: a new database cannot hold that row (review M2)
+                _delete(conn, pid)
         seen = set(base)
         dropped: set[int] = set()
         kept = 0

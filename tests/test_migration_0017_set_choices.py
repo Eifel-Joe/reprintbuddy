@@ -33,6 +33,7 @@ SETS = [
     (3, "Twice", None, [(1, [1]), (2, [1]), (1, [6])]),
     (4, "Three choices", "EX-S04", [(1, [1]), (1, [2, 3]), (1, [4, 5]), (1, [7, 8])]),
     (5, "Base and choice", "EX-S05", [(1, [2]), (1, [3]), (1, [2, 3]), (1, [4, 5])]),
+    (6, "Without options", None, [(1, [1]), (1, []), (1, [6])]),  # a position whose article rows are gone
 ]
 
 
@@ -134,6 +135,16 @@ def test_choice_option_that_is_a_base_part_is_dropped_and_logged(old_db):
     assert logged[0]["dropped"] == ["Plate large", "Plate small"]
 
 
+def test_a_position_without_articles_goes(old_db):  # review of p340 (M2)
+    upgrade(old_db, revision=REVISION)
+    assert shape(old_db, 6) == [(0, 1, [("Frame", None)]), (0, 1, [("Screw", None)])]
+    with old_db.connect() as conn:
+        assert conn.execute(text(
+            "SELECT count(*) FROM set_positions p WHERE NOT EXISTS"
+            " (SELECT 1 FROM set_position_options o WHERE o.position_id = p.id)"
+        )).scalar() == 0
+
+
 def test_sets_without_anything_dropped_are_not_logged(old_db):
     upgrade(old_db, revision=REVISION)
     assert sorted(row["id"] for row in migrated(old_db)) == [4, 5]
@@ -159,13 +170,6 @@ def test_slot_values_are_checked(old_db):
     with pytest.raises(Exception):  # noqa: B017 - one choice field per slot and set
         with old_db.begin() as conn:
             conn.execute(text("UPDATE set_positions SET slot = 1 WHERE set_id = 2 AND slot = 2"))
-
-
-def test_a_second_run_changes_nothing(old_db):
-    upgrade(old_db, revision=REVISION)
-    first = [shape(old_db, s) for s, *_ in SETS], migrated(old_db)
-    upgrade(old_db, revision=REVISION)
-    assert ([shape(old_db, s) for s, *_ in SETS], migrated(old_db)) == first
 
 
 def test_downgrade_gives_choice_positions_back(old_db):

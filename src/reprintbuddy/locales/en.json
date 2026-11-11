@@ -1337,7 +1337,7 @@
   "activity.change.removed": "removed",
   "activity.change.uploaded": "uploaded",
   "activity.fields": "Changed: {fields}",
-  "activity.dropped": "Dropped: {articles}",
+  "activity.dropped": "No longer to choose: {articles}",
   "activity.owner": "Owner of the key: {owner}",
   "activity.failed_count": "{count} attempts, the first at {first}",
   "activity.via_cli": "command on the server",
