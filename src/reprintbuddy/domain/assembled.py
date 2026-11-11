@@ -729,3 +729,98 @@ def sell(
         session, composite.id, needs_of_key(session, composite, key), n, actor, note,
         variant_sku=row.sku, booked_at=booked_at,
     )
+
+
+# ---- switching between print article and article made of parts (Spec 5.6 "Wechsel") -------------
+
+
+def _refuse_if_part(session: Session, article: Article) -> None:
+    """A print article that is a part of an article made of parts stays a print article (Spec 5.6)."""
+    users = used_in(session, article.id)
+    if users:
+        raise ConflictError("articles.archive_in_assembled", names=", ".join(name for _id, name in users))
+
+
+def convert_to_assembled(session: Session, article_id: int, data: AssembledInput) -> Article:
+    """A print article becomes an article made of parts: only while nothing runs and its stock is 0
+    (Spec 5.6, question 8a). Name, number and journal stay; plate, filament, picture and automation go,
+    so the plate is free again."""
+    article = session.get(Article, article_id)
+    if article is None or article.kind != articlesets.PRINT:
+        raise NotFoundError("articles.not_found")
+    if article.archived_at is not None:
+        raise ConflictError("articles.edit_archived")
+    _refuse_if_part(session, article)
+    reasons = catalog.busy_reasons(session, article)
+    if reasons:
+        raise ConflictError(reasons[0])
+    if article.stock or article.reserved:
+        raise ConflictError("assembled.switch_busy", name=article.name)
+    checked = _check(session, data, article_id=article.id)
+    _check_numbers(session, None, _plan_for_new(checked))
+    for model in (ArticleFilamentSort, ArticleFilament):
+        for row in session.scalars(select(model).where(model.article_id == article.id)).all():
+            session.delete(row)
+    session.flush()
+    article.kind = articlesets.ASSEMBLED
+    article.library_file_id = article.plate_id = None
+    article.file_name = article.file_fingerprint = None
+    article.thumbnail = None
+    article.auto_enabled = article.paused = article.needs_assembly = False
+    article.pause_reason = article.target_model = None
+    article.printer_id = None
+    article.units_per_print = 1
+    article.consecutive_failures = 0
+    article.sold_alone = True
+    _apply(article, checked)
+    session.flush()
+    catalog._set_parts(session, article.id, checked.parts)
+    _write_bom(session, article, checked)
+    sync_variants(session, article)
+    return article
+
+
+def convert_to_print(
+    session: Session,
+    article_id: int,
+    *,
+    file: LibraryFile,
+    plate: Plate,
+    requirements: Sequence[FilamentRequirement],
+    thumbnail: bytes | None,
+    actor: Actor,
+) -> Article:
+    """An article made of parts becomes a print article again by choosing a print file and a plate,
+    as "Druckdatei aendern" (Spec 5.1, 5.6). Only while no variant has stock, a reservation or an
+    open order; the parts list goes, the variant rows are archived and keep their numbers."""
+    composite = get_assembled(session, article_id)
+    if composite.archived_at is not None:
+        raise ConflictError("articles.edit_archived")
+    rows = [composite, *session.scalars(articlesets.variant_rows(composite.id)).all()]
+    if any(in_use(session, composite, row) for row in rows):
+        raise ConflictError("assembled.switch_busy", name=composite.name)
+    holder = catalog._plate_holder(session, file.id, plate.index, besides=composite.id)
+    if holder is not None:
+        raise ConflictError("articles.plate_taken", name=holder.name)
+    for row in components(session, composite):
+        session.delete(row)
+    session.flush()
+    for option in [o for f in options(session, composite) for o in f]:
+        session.delete(option)
+    now = utcnow()
+    for row in rows[1:]:
+        row.archived_at = now
+    composite.kind = articlesets.PRINT
+    composite.assembly_mode = None
+    composite.library_file_id = file.id
+    composite.plate_id = plate.index
+    composite.file_name = file.filename
+    composite.file_fingerprint = file.fingerprint
+    composite.thumbnail = thumbnail
+    session.flush()
+    catalog._take_over_filaments(session, composite.id, requirements)
+    stock.write_journal(
+        session, kind="article_relinked", actor=actor, article_id=composite.id,
+        details={"old_file_id": None, "old_plate": None, "new_file_id": file.id, "new_plate": plate.index},
+    )
+    return composite

@@ -1392,5 +1392,8 @@
   "orders.not_sold_alone": "{name} ist nicht einzeln erhältlich und lässt sich nicht bestellen.",
   "orders.assembled_on_order": "{name} wird erst bei Bestellung montiert: Wähle im Bestellformular eine seiner Varianten.",
   "orders.pick_variant": "{name} hat Wahlteile: Wähle eine seiner Varianten.",
-  "orders.choice_invalid": "Diese Variante gibt es nicht. Lade die Seite neu und wähle noch einmal."
+  "orders.choice_invalid": "Diese Variante gibt es nicht. Lade die Seite neu und wähle noch einmal.",
+  "articles.archive_in_assembled": "Der Artikel steckt als Teil in {names}. Nimm ihn erst aus der Stückliste oder archiviere den Artikel aus Teilen.",
+  "sets.article_not_allowed": "{name} lässt sich nicht in ein Set nehmen: Im Set stehen nur einzeln erhältliche Artikel, Artikel aus Teilen nur auf Vorrat und ohne Wahlteile.",
+  "assembled.switch_busy": "{name} lässt sich nur umstellen, wenn kein Bestand, keine Reservierung und keine offene Bestellung da ist."
 }

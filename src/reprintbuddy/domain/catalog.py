@@ -23,7 +23,9 @@ from reprintbuddy.domain.stock import MAX_QTY, Actor, count_part, write_journal
 from reprintbuddy.models import (
     Article,
     ArticleFilament,
+    ArticleComponent,
     ArticleFilamentSort,
+    ArticleOption,
     ArticlePart,
     Dispatch,
     Order,
@@ -762,6 +764,16 @@ def variant_numbers(session: Session, *, exclude_set_id: int | None = None) -> d
     return numbers
 
 
+def _allowed_in_set(session: Session, article: Article) -> bool:
+    """Only articles sold alone; an article made of parts only built on stock and without choices: it
+    then counts like a print article with its stock (Spec 5.4, 0.4.0 p341)."""
+    if article.kind == articlesets.PRINT:
+        return article.sold_alone
+    if article.kind == articlesets.ASSEMBLED and article.assembly_mode == "stock":
+        return session.scalar(select(ArticleOption.id).where(ArticleOption.article_id == article.id).limit(1)) is None
+    return False
+
+
 def _check_set_input(
     session: Session, data: SetInput, *, set_id: int | None = None
 ) -> tuple[str, str | None, list[tuple[int, int]], list[tuple[int, list[tuple[int, str | None]]]]]:
@@ -788,6 +800,8 @@ def _check_set_input(
             raise ValidationError("sets.article_archived", name=found.name)
         if article_id in seen:
             raise ValidationError("sets.article_twice", name=found.name)
+        if article_id not in kept and not _allowed_in_set(session, found):
+            raise ValidationError("sets.article_not_allowed", name=found.name)
         seen.add(article_id)
         return found
 
@@ -978,35 +992,68 @@ def _article_or_404(session: Session, article_id: int) -> Article:
     return article
 
 
+def busy_reasons(session: Session, article: Article) -> list[str]:
+    """What still runs for an article, as error keys in the order of the checks (Spec 5.5): open
+    orders, provisional, awaiting assembly, queue, in progress. Shared by archiving and by the switch
+    between print article and article made of parts (Spec 5.6, 0.4.0). For an article made of parts
+    the open orders of its variant rows and of its groups (built on order) count too."""
+    ids = [article.id]
+    if article.kind == articlesets.ASSEMBLED:
+        ids += list(session.scalars(select(Article.id).where(Article.parent_id == article.id)))
+    open_lines = select(OrderLine.id).join(Order, Order.id == OrderLine.order_id).where(Order.status == "open")
+    reasons = []
+    if (
+        session.scalar(open_lines.where(OrderLine.article_id.in_(ids)).limit(1)) is not None
+        or session.scalar(open_lines.where(OrderLine.assembled_id == article.id).limit(1)) is not None
+    ):
+        reasons.append("articles.archive_open_orders")
+    if article.provisional > 0:
+        reasons.append("articles.archive_provisional")
+    if article.awaiting_assembly > 0:
+        reasons.append("articles.archive_awaiting_assembly")
+    if session.scalar(select(WorkQueueEntry.id).where(WorkQueueEntry.article_id == article.id).limit(1)):
+        reasons.append("articles.archive_in_queue")
+    if session.scalar(
+        select(Dispatch.id).where(Dispatch.article_id == article.id, Dispatch.status.in_(OPEN_STATES)).limit(1)
+    ):
+        reasons.append("articles.archive_in_progress")
+    return reasons
+
+
+def _assembled_users(session: Session, article_id: int) -> list[str]:
+    """Names of the active articles made of parts a print article is a part of (Spec 5.5, 0.4.0)."""
+    users = session.scalars(
+        select(Article.name)
+        .where(
+            articlesets.where_assembled(),
+            Article.id.in_(select(ArticleComponent.article_id).where(ArticleComponent.part_id == article_id)),
+        )
+        .order_by(Article.name, Article.id)
+    ).all()
+    return list(users)
+
+
 def archive_article(session: Session, article_id: int) -> None:
-    """Only when nothing is running. B3 knows open orders, provisional and awaiting
-    assembly; B4 adds the queue and in-progress checks."""
+    """Only when nothing is running (Spec 5.5). A print article that is a part of an active article
+    made of parts stays; an article made of parts takes its variant rows into the archive with the
+    same time (condition 2 of the plan's approval, 0.4.0), so every `archived_at IS NULL` filter
+    leaves them out without a join on the parent."""
     article = _article_or_404(session, article_id)
+    if article.kind == articlesets.VARIANT:
+        raise NotFoundError("articles.not_found")  # a variant goes with its article made of parts
     if article.archived_at is not None:
         raise ConflictError("catalog.already_archived")
-    in_open_order = session.scalar(
-        select(OrderLine.id)
-        .join(Order, Order.id == OrderLine.order_id)
-        .where(OrderLine.article_id == article_id, Order.status == "open")
-        .limit(1)
-    )
-    if in_open_order is not None:
-        raise ConflictError("articles.archive_open_orders")
-    if article.provisional > 0:
-        raise ConflictError("articles.archive_provisional")
-    if article.awaiting_assembly > 0:
-        raise ConflictError("articles.archive_awaiting_assembly")
-    if session.scalar(
-        select(WorkQueueEntry.id).where(WorkQueueEntry.article_id == article_id).limit(1)
-    ):
-        raise ConflictError("articles.archive_in_queue")
-    if session.scalar(
-        select(Dispatch.id)
-        .where(Dispatch.article_id == article_id, Dispatch.status.in_(OPEN_STATES))
-        .limit(1)
-    ):
-        raise ConflictError("articles.archive_in_progress")
-    article.archived_at = utcnow()
+    users = _assembled_users(session, article.id) if article.kind == articlesets.PRINT else []
+    if users:
+        raise ConflictError("articles.archive_in_assembled", names=", ".join(users))
+    reasons = busy_reasons(session, article)
+    if reasons:
+        raise ConflictError(reasons[0])
+    now = utcnow()
+    article.archived_at = now
+    if article.kind == articlesets.ASSEMBLED:
+        for row in session.scalars(articlesets.variant_rows(article.id)).all():
+            row.archived_at = now
     session.flush()
 
 
@@ -1038,12 +1085,37 @@ def restore_article(session: Session, article_id: int) -> Article:
     article = _article_or_404(session, article_id)
     if article.archived_at is None:
         raise ConflictError("catalog.not_archived")
+    if article.kind == articlesets.ASSEMBLED:
+        return _restore_assembled(session, article)
     holder = _plate_holder(session, article.library_file_id, article.plate_id, besides=article.id)
     if holder is not None:
         raise ConflictError("articles.restore_plate_taken", name=holder.name)
     _check_parts_active(session, article_id)
     article.archived_at = None
     session.flush()
+    return article
+
+
+def _restore_assembled(session: Session, article: Article) -> Article:
+    """An article made of parts comes back with the variant rows of its options (condition 2 of the
+    plan's approval); rows archived before because their option went stay archived."""
+    from reprintbuddy.domain import assembled  # assembled builds on this module
+
+    archived_part = session.scalar(
+        select(Article)
+        .where(
+            Article.archived_at.is_not(None),
+            Article.id.in_(select(ArticleComponent.part_id).where(ArticleComponent.article_id == article.id)),
+        )
+        .order_by(Article.name)
+        .limit(1)
+    )
+    if archived_part is not None:
+        raise ValidationError("assembled.part_archived", name=archived_part.name)
+    _check_parts_active(session, article.id)
+    article.archived_at = None
+    session.flush()
+    assembled.sync_variants(session, article)
     return article
 
 

@@ -1392,5 +1392,8 @@
   "orders.not_sold_alone": "{name} is not sold alone and cannot be ordered.",
   "orders.assembled_on_order": "{name} is built on order: choose one of its variants in the order form.",
   "orders.pick_variant": "{name} has choice parts: choose one of its variants.",
-  "orders.choice_invalid": "This variant does not exist. Reload the page and choose again."
+  "orders.choice_invalid": "This variant does not exist. Reload the page and choose again.",
+  "articles.archive_in_assembled": "The article is a part of {names}. Take it out of the parts list first or archive the assembled article.",
+  "sets.article_not_allowed": "{name} cannot go into a set: a set holds only articles sold alone, assembled articles only on stock and without choice parts.",
+  "assembled.switch_busy": "{name} can only be switched when there is no stock, no reservation and no open order."
 }
