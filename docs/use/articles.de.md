@@ -39,6 +39,7 @@ Dasselbe Formular öffnet sich auf der Artikelseite unter **Einstellungen änder
 | **Mindestbestand** | Nachgedruckt wird, wenn die Deckung unter diese Zahl fällt (siehe unten). 0 bis 1.000.000. | 0 |
 | **Puffer** | Ein Nachdruck füllt bis Mindestbestand plus Puffer auf. 0 bis 1.000.000. | 0 |
 | **Handarbeit nötig (Montage)** | Gute Einheiten warten erst auf die Montage und zählen erst nach **Montiert buchen** zum Bestand; dabei werden die Zukaufteile abgezogen. Siehe [Zu prüfen und Montage](inspection.md). | aus |
+| **Einzeln erhältlich** | Aus: Der Artikel ist ein Bauteil. Er steht nicht im Bestellformular und in keinem Set, nur in [Artikeln aus Teilen](assembled.md); Nachdruck, Prüfung und Bestand laufen wie bei jedem Artikel. | an |
 | **Automatik** | Ob die Automatik Nachdrucke dieses Artikels plant. Sie braucht ein Druckziel und wirkt nur, wenn auch der Hauptschalter an ist. | aus |
 | **Zukaufteile nötig** | Erscheint, sobald du Zukaufteile angelegt hast. Wähle je Teil die Menge je fertiger Einheit. | keine |
 

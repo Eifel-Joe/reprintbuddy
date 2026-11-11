@@ -1,6 +1,6 @@
 # Articles
 
-An article is something you stock and sell, for example "Example article A". Each article is made from one plate of one sliced print file in Bambuddy. Reprintbuddy keeps its numbers (stock, reserved, available and more), its minimum stock and buffer, and the settings the [automation](automation.md) needs to print it again.
+An article is something you stock and sell, for example "Example article A". Each article is made from one plate of one sliced print file in Bambuddy; a product made of several printed parts is an [assembled article](assembled.md). Reprintbuddy keeps its numbers (stock, reserved, available and more), its minimum stock and buffer, and the settings the [automation](automation.md) needs to print it again.
 
 ## Create an article from a print file
 
@@ -39,6 +39,7 @@ The same form opens under **Edit settings** on the article page. An info button 
 | **Minimum stock** | A reprint is due when the coverage falls below this number (see below). 0 to 1,000,000. | 0 |
 | **Buffer** | A reprint fills up to minimum stock plus buffer. 0 to 1,000,000. | 0 |
 | **Manual work needed (assembly)** | Good units first wait for assembly and count as stock only after **Book assembled**; the purchased parts are deducted then. See [To check and assembly](inspection.md). | off |
+| **Sold alone** | Off: the article is a part only. It is not offered in the order form or in any set, only in [assembled articles](assembled.md); reprints, checks and stock work as for any article. | on |
 | **Automation** | Whether the automation plans reprints of this article. It needs a print target and works only while the main switch is on too. | off |
 | **Purchased parts needed** | Appears when you have created parts. Pick each part and the quantity per finished unit. | none |
 

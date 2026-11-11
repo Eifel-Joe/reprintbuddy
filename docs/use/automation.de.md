@@ -30,6 +30,14 @@ Beispiel: Mindestbestand 10, Puffer 5 (Zielmenge 15), 4 Stück je Druck.
 - Ein Eintrag hat höchstens 1000 Drucke; der nächste Durchlauf legt den Rest an.
 - Reprintbuddy prüft die Regel nach jeder Änderung, die du speicherst, und bei jeder regelmäßigen Abfrage. Es wartet nicht auf die nächste Abfrage.
 
+## Bedarf aus Montage
+
+Ein Teil eines [Artikels aus Teilen](assembled.md) auf Vorrat wird auch für diesen Artikel gedruckt. Für jede Variante, deren Verfügbar unter ihrem Mindestbestand liegt, ist die Fehlmenge bis zur Zielmenge mal Menge des Teils sein **Bedarf aus Montage**, summiert über alle Varianten und Artikel. Die Regel rechnet dann mit Mindestbestand + Bedarf und Zielmenge + Bedarf; Stück je Druck bleibt die des Teils.
+
+Beispiel: Ein Clip (4 Stück je Druck, Mindestbestand 2, Puffer 2, Deckung 3) steckt 2-mal in einer Box (Mindestbestand 3, Puffer 2, Verfügbar 2) und 1-mal in einer Lampe (Mindestbestand 1, Verfügbar 1). Der Box fehlen 5 − 2 = 3, der Lampe nichts, der Bedarf ist also 6. Deckung 3 liegt unter 2 + 6, also hat der Eintrag aufgerundet((4 + 6 − 3) / 4) = **2 Drucke**. Nach der Montage von 3 Boxen ist der Bedarf 0 und die Deckung 11 − 6 = 5: Es wird nichts mehr gedruckt.
+
+Artikel aus Teilen selbst werden nie gedruckt; Regel und Warteschlange gelten nur für Druckartikel. Bei einem Artikel erst bei Bestellung senken seine Reservierungen das Verfügbar der Teile und lösen so ihren Nachdruck aus.
+
 ## Schalter und Einstellungen
 
 | Schalter oder Einstellung | Wo | Vorgabe |
