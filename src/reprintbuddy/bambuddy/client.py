@@ -17,6 +17,7 @@ from reprintbuddy.bambuddy.types import (
     LibraryFile,
     LibraryFolder,
     Plate,
+    PrintOptions,
     Printer,
     QueueItem,
     Spool,
@@ -118,6 +119,8 @@ class BambuddyClient(Protocol):
     async def list_printers(self) -> list[Printer]: ...
 
     async def spool_mode(self) -> SpoolMode: ...
+
+    async def print_defaults(self) -> PrintOptions: ...
 
 
 BambuddyFactory = Callable[[], BambuddyClient | None]
@@ -302,6 +305,17 @@ class HttpBambuddyClient:
         path = "/spoolman/inventory/spools" if mode == "spoolman" else "/inventory/spools"
         return _parse.parse_spools(await self._get(path, {"include_archived": "true"}))
 
+    async def print_defaults(self) -> PrintOptions:
+        """Bambuddy's "Default print options" (p342, 0.4.0), read from `GET /settings/`.
+
+        Root: `POST /queue/` without options does not apply them; Bambuddy then takes the fixed
+        defaults of `PrintQueueItemCreate` (`schemas/print_queue.py`), so a print from
+        Reprintbuddy ran without the bed levelling and flow calibration set in Bambuddy. Its own
+        "Add to queue" reads them from the settings (`services/print_defaults.py`). The read
+        needs `settings:read` in the group ("Read Status" at the key; `core/auth.py`).
+        """
+        return _parse.parse_print_defaults(await self._get("/settings/"))
+
     async def get_queue_item(self, item_id: int) -> QueueItem | None:
         """`None`: the entry is gone (deleted, or removed with the history; Decision 3)."""
         data = await self._get(f"/queue/{item_id}", none_on_404=True)
@@ -327,7 +341,9 @@ class HttpBambuddyClient:
         The body holds exactly the file, the plate, one target (model or printer) and
         `manual_start: false`; `insert_at_top` only when set, `insert_position` only when
         given. No `batch_id` and no `quantity`: Bambuddy then makes exactly one entry outside
-        any batch (`print_queue.py:1347-1408`). No print options: Bambuddy's defaults apply.
+        any batch (`print_queue.py:1347-1408`). The print options are the ones in
+        `req.print_options` (Bambuddy's "Default print options", read by the caller right
+        before; p342, 0.4.0), only the known ones.
         A request with both targets, none, an empty model or a position below 1 is a
         `ValueError` before any network call. A timeout is `BambuddyUnavailable` with an
         unknown outcome; the caller looks for the entry (`list_all_items`) instead of
@@ -349,6 +365,7 @@ class HttpBambuddyClient:
             body["insert_at_top"] = True
         if req.insert_position is not None:
             body["insert_position"] = req.insert_position
+        body.update(req.print_options.body())
         return _parse.parse_queue_item(await self._post("/queue/", body))
 
     # ---- the second write call: one new print file (Spec 3.1, 5.1a; the watch guards it) ----
