@@ -656,7 +656,7 @@ class SetRow:
     base: list[BaseRow]
     choices: list[ChoiceRow]
     variants: list[VariantRow]  # of the active choice articles only
-    incomplete: str | None  # "too_few" or "suffixes_missing" (sets the update of v0.3.18 rebuilt)
+    incomplete: str | None  # "too_few" or "suffixes_missing" (sets the update to v0.4.0 rebuilt)
     orderable: bool
     status: SetStatus  # deliverable when at least one set comes together (Spec 10.1)
 
