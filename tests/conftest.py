@@ -60,6 +60,7 @@ REQUIRED = (
     "printers:read",
     "inventory:read",
     "filaments:read",
+    "settings:read",  # Bambuddy's default print options (p342, 0.4.0)
 )
 
 

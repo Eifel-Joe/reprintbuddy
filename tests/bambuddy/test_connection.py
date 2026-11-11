@@ -12,9 +12,18 @@ async def run(url=URL, key="bb_testkey"):
         return await check_connection(url, key, client)
 
 
-def test_required_permissions_are_the_seven_from_the_spec():
+def test_required_permissions_are_the_eight_from_the_spec():
     assert REQUIRED_PERMISSIONS == REQUIRED
-    assert len(REQUIRED_PERMISSIONS) == 7
+    assert len(REQUIRED_PERMISSIONS) == 8
+
+
+async def test_settings_read_is_required(respx_mock):
+    """p342 (0.4.0), Spec 7.3, 11.3 a: Bambuddy's default print options are read with it."""
+    without = [p for p in REQUIRED if p != "settings:read"]
+    respx_mock.get(ME).respond(200, json=auth_me(permissions=without))
+    result = await run()
+    assert (result.ok, result.reason) == (False, "missing_permissions")
+    assert result.missing == ("settings:read",)
 
 
 async def test_filaments_read_is_required(respx_mock):
@@ -32,6 +41,8 @@ def test_labels_as_bambuddy_shows_them():
     assert EDITOR_LABELS["queue:start_unreviewed"] == "Print Without Review (else jobs wait for someone to start them)"
     assert EDITOR_LABELS["filaments:read"] == "Read Filaments"
     assert KEY_RIGHT_FOR["filaments:read"] == "status"  # at the key it is covered by "Read Status"
+    assert EDITOR_LABELS["settings:read"] == "Read Settings"
+    assert KEY_RIGHT_FOR["settings:read"] == "status"  # Bambuddy core/auth.py: SETTINGS_READ -> can_read_status
 
 
 async def test_ok_with_all_permissions(respx_mock):
@@ -189,7 +200,7 @@ async def test_key_is_not_logged(respx_mock, caplog):
 
 
 def test_key_creation_rights_are_not_required():
-    assert not any(p.startswith("api_keys:") or p == "settings:read" for p in REQUIRED_PERMISSIONS)
+    assert not any(p.startswith("api_keys:") for p in REQUIRED_PERMISSIONS)
 
 
 async def test_a_key_without_the_key_creation_rights_passes(respx_mock):
@@ -203,8 +214,7 @@ def test_key_creation_labels_are_a_fixed_table():
     assert KEY_CREATION_LABELS == {
         "api_keys:read": "Read Api Keys",
         "api_keys:create": "Create Api Keys",
-        "settings:read": "Read Settings",
-    }
+    }  # `settings:read` is a required right since 0.4.0 (p342)
 
 
 # ---- the right to upload print files: optional (Spec 5.1a, 11.3 a–c, v0.3.9 p20) ------------

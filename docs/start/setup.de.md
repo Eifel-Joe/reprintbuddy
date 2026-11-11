@@ -28,6 +28,7 @@ Reprintbuddy braucht in Bambuddy eine eigene Gruppe, weil keine Systemgruppe pas
 | Read Printers | `printers:read` | damit Reprintbuddy die Drucker und ihren Zustand sieht |
 | Read Inventory | `inventory:read` | damit Reprintbuddy den Filamentbestand liest |
 | Read Filaments | `filaments:read` | um zu erkennen, ob Bambuddy die Spulen selbst führt oder in Spoolman |
+| Read Settings | `settings:read` | damit Nachdrucke mit Bambuddys Standard-Druckoptionen laufen |
 
 Bambuddy hängt an die Beschriftung von *Print Without Review* einen Hinweis an („else jobs wait for someone to start them“); es ist dasselbe Recht.
 
@@ -40,13 +41,12 @@ Zwei weitere Rechte sind empfohlen, aber nicht nötig:
 
 Ohne *Upload Library* geht alles andere; nur das Hochladen nicht. Ohne *Connect Websocket* läuft alles über die regelmäßige Abfrage, und unter *Einstellungen → Bambuddy* steht bei der Karte **Live-Kanal** „Recht fehlt“ (siehe [Automatik](../use/automation.md)). Am Schlüssel genügt *Read Status* („Status lesen“) für den Live-Kanal; mehr ist nicht einzustellen.
 
-Zum Erzeugen des Schlüssels im nächsten Schritt braucht die Gruppe zusätzlich diese drei Rechte. Reprintbuddy prüft sie nicht, und du kannst sie wieder entfernen, sobald der Schlüssel existiert:
+Zum Erzeugen des Schlüssels im nächsten Schritt braucht die Gruppe zusätzlich diese zwei Rechte. Reprintbuddy prüft sie nicht, und du kannst sie wieder entfernen, sobald der Schlüssel existiert:
 
 | Beschriftung in Bambuddy | Interner Name | Wofür |
 |---|---|---|
 | Read Api Keys | `api_keys:read` | nur zum Erzeugen des Schlüssels |
 | Create Api Keys | `api_keys:create` | nur zum Erzeugen des Schlüssels |
-| Read Settings | `settings:read` | nur zum Erzeugen des Schlüssels; ohne es blendet Bambuddy das Menü Einstellungen aus |
 
 Lege dann den Benutzer `reprintbuddy` an und nimm ihn in diese Gruppe auf. Sein Passwort brauchst du nur einmal, um den Schlüssel zu erzeugen. Reprintbuddy fragt es nicht ab und speichert es nicht. Drücke **Weiter**.
 

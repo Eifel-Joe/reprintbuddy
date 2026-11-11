@@ -34,6 +34,9 @@ REQUIRED_PERMISSIONS: tuple[str, ...] = (
     "printers:read",
     "inventory:read",
     "filaments:read",  # to tell which spool management Bambuddy runs (Spec 9.1)
+    # Bambuddy's default print options, sent with every entry (p342, 0.4.0, Spec 7.3):
+    # `GET /settings/` needs it. Until 0.3.x it was needed only to create the key.
+    "settings:read",
 )
 
 # Rights that are not required: without them only one feature is missing, the check still
@@ -68,17 +71,18 @@ EDITOR_LABELS: dict[str, str] = {
     "printers:read": "Read Printers",
     "inventory:read": "Read Inventory",
     "filaments:read": "Read Filaments",
+    "settings:read": "Read Settings",
     UPLOAD_PERMISSION: "Upload Library",  # optional (Spec 5.1a)
     LIVE_PERMISSION: "Connect Websocket",  # optional (p170); Bambuddy makes the label from the name
 }
 
 # Needed only while the key is created (the user must open the API keys page and create a key).
-# All three may be removed from the group again afterwards.
-# Reprintbuddy does not check them: its own key does not need them.
+# Both may be removed from the group again afterwards.
+# Reprintbuddy does not check them: its own key does not need them. `settings:read` (without it
+# Bambuddy hides the whole Settings menu) was the third one until 0.4.0; it is required now.
 KEY_CREATION_LABELS: dict[str, str] = {
     "api_keys:read": "Read Api Keys",
     "api_keys:create": "Create Api Keys",
-    "settings:read": "Read Settings",  # without it Bambuddy hides the whole Settings menu
 }
 
 # The effective rights come from the group and the key together. Which key right
@@ -89,6 +93,7 @@ KEY_RIGHT_FOR: dict[str, str] = {
     "printers:read": "status",
     "inventory:read": "status",
     "filaments:read": "status",
+    "settings:read": "status",  # Bambuddy `core/auth.py`: SETTINGS_READ -> can_read_status
     "queue:create": "queue",
     "queue:start_unreviewed": "queue",
     UPLOAD_PERMISSION: "library",  # "Manage Library"

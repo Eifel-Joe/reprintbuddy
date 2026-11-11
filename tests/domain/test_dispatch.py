@@ -11,7 +11,7 @@ from reprintbuddy.bambuddy.client import (
     BambuddyUnavailable,
     BambuddyUnexpected,
 )
-from reprintbuddy.bambuddy.types import EnqueueRequest, QueueItem
+from reprintbuddy.bambuddy.types import EnqueueRequest, PrintOptions, QueueItem
 from reprintbuddy.domain import dispatch
 from reprintbuddy.domain import workqueue as wq
 from reprintbuddy.models import Article, Dispatch, JournalEntry, WorkQueueEntry, utcnow
@@ -170,7 +170,10 @@ async def test_hand_over_queued(db, fake_bambuddy):
     assert result == "queued"
     with db.begin() as s:
         row = s.get(Dispatch, res.dispatch_id)
-        assert fake_bambuddy.enqueued[-1] == EnqueueRequest(1, 1, "A1", None, False, None)
+        # p342 (0.4.0): every entry carries Bambuddy's default print options.
+        assert fake_bambuddy.enqueued[-1] == EnqueueRequest(
+            1, 1, "A1", None, False, None, fake_bambuddy.defaults
+        )
         assert row.status == "queued"
         assert row.bambuddy_item_id is not None
         assert row.last_status == "pending"
@@ -181,10 +184,28 @@ async def test_hand_over_queued(db, fake_bambuddy):
         assert lines[0].actor == "auto" and lines[0].qty == 1 and lines[0].article_id == a
         assert lines[0].details == {"dispatch_id": row.id, "item_id": row.bambuddy_item_id}
         assert wq.list_entries(s) == []
-    # Spec 7.6: one single entry, no batch is made or asked for.
-    assert fake_bambuddy.calls == ["enqueue"]
+    # Spec 7.6: one single entry, no batch is made or asked for; the defaults are read first.
+    assert fake_bambuddy.calls == ["print_defaults", "enqueue"]
     (item,) = await fake_bambuddy.list_all_items()
     assert item.batch_id is None
+
+
+async def test_hand_over_sends_bambuddy_default_print_options(db, fake_bambuddy):  # p342, 0.4.0
+    """Bambuddy's `POST /queue/` does not apply its own "Default print options"; Reprintbuddy
+    reads them right before each hand-over and sends them along (Spec 7.3)."""
+    set_on = PrintOptions("on", "on", "off", False, True, True)
+    fake_bambuddy.defaults = set_on
+    with db.begin() as s:
+        a = article(s).id
+        entry(s, a, 2)
+    _, first = await hand(db, fake_bambuddy, insert_next=True)
+    changed = PrintOptions("off", "auto", "auto", True, False, False)
+    fake_bambuddy.defaults = changed  # changed in Bambuddy between two prints
+    _, second = await hand(db, fake_bambuddy)
+    assert (first, second) == ("queued", "queued")
+    assert [r.print_options for r in fake_bambuddy.enqueued] == [set_on, changed]
+    assert [fake_bambuddy.options[i.id] for i in await fake_bambuddy.list_queue()] == [set_on, changed]
+    assert fake_bambuddy.calls.count("print_defaults") == 2
 
 
 async def test_hand_over_printer_target(db, fake_bambuddy):
@@ -348,7 +369,7 @@ async def test_unavailable_on_enqueue_marks_unclear(db, fake_bambuddy, exc, afte
     assert fake_bambuddy.calls.count("enqueue") == 1
 
 
-@pytest.mark.parametrize("method", ["list_queue"])
+@pytest.mark.parametrize("method", ["list_queue", "print_defaults"])
 async def test_unavailable_before_enqueue_returns(db, fake_bambuddy, method):
     with db.begin() as s:
         a = article(s).id
@@ -372,7 +393,7 @@ async def test_unavailable_before_enqueue_returns(db, fake_bambuddy, method):
     assert fake_bambuddy.enqueued == []
 
 
-@pytest.mark.parametrize("method", ["list_queue", "enqueue"])
+@pytest.mark.parametrize("method", ["list_queue", "print_defaults", "enqueue"])
 async def test_rejected_puts_print_back(db, fake_bambuddy, method):
     with db.begin() as s:
         a = article(s).id
@@ -531,7 +552,8 @@ async def test_only_allowed_bambuddy_calls(db, fake_bambuddy):
     await hand(db, fake_bambuddy, insert_next=True)
     fake_bambuddy.fail_next("enqueue", BambuddyRejected("invalid", status=422))
     await hand(db, fake_bambuddy, insert_next=True)
-    assert set(fake_bambuddy.calls) == {"list_queue", "enqueue"}
+    # p342 (0.4.0): the default print options are read before each send
+    assert set(fake_bambuddy.calls) == {"list_queue", "print_defaults", "enqueue"}
 
 
 async def test_update_before_send_puts_print_back(db, fake_bambuddy):
@@ -552,7 +574,8 @@ async def test_update_before_send_puts_print_back(db, fake_bambuddy):
     )
 
     assert result == "held_for_update"
-    assert asked == [[]]  # asked right before the mark, before any write
+    # asked right before the mark, before any write; only the reads came first (p342, 0.4.0)
+    assert asked == [["print_defaults"]]
     assert "enqueue" not in fake_bambuddy.calls
     assert fake_bambuddy.enqueued == []
     with db.begin() as s:

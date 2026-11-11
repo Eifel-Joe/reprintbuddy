@@ -28,6 +28,7 @@ In Bambuddy open *Settings → Users* and create a group named `Reprintbuddy` wi
 | Read Printers | `printers:read` | so that Reprintbuddy sees the printers and their state |
 | Read Inventory | `inventory:read` | so that Reprintbuddy reads the filament stock |
 | Read Filaments | `filaments:read` | to tell whether Bambuddy keeps the spools itself or in Spoolman |
+| Read Settings | `settings:read` | so that reprints run with the default print options set in Bambuddy |
 
 Bambuddy adds a hint to the label of *Print Without Review* ("else jobs wait for someone to start them"); it is the same right.
 
@@ -40,13 +41,12 @@ Two more rights are recommended but not required:
 
 Without *Upload Library* everything else works; only uploading is not possible. Without *Connect Websocket* everything runs through the regular query, and the card **Live channel** under *Settings → Bambuddy* says "Right missing" (see [Automation](../use/automation.md)). At the key, *Read Status* is enough for the live channel; there is nothing more to set.
 
-To create the key in the next step, the group also needs these three rights. Reprintbuddy does not check them, and you can remove them again once the key exists:
+To create the key in the next step, the group also needs these two rights. Reprintbuddy does not check them, and you can remove them again once the key exists:
 
 | Bambuddy label | Internal name | What it is for |
 |---|---|---|
 | Read Api Keys | `api_keys:read` | only to create the key |
 | Create Api Keys | `api_keys:create` | only to create the key |
-| Read Settings | `settings:read` | only to create the key; without it Bambuddy hides the Settings menu |
 
 Then create the user `reprintbuddy` and put it in this group. Its password is needed only once, to create the key. Reprintbuddy neither asks for it nor stores it. Press **Next**.
 
