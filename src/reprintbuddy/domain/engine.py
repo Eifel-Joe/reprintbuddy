@@ -284,10 +284,9 @@ class Engine:
         if client is None or self.status.reachable is not True:
             withdraw.mark_unreached(self.sm)
             return
-        if not await self._may_send():
+        run = await withdraw.withdraw_from_bambuddy(client, self.sm, may_delete=self._may_send)
+        if run.held_for_update:
             self.status.skipped_for_update = True
-            return
-        run = await withdraw.withdraw_from_bambuddy(client, self.sm)
         if not run.reachable:
             self.status.reachable = False
 
@@ -608,11 +607,7 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
         add("cap_reached", cap=int(settings.get_setting(session, "queue_cap")))
     # Spec 7.2a: prints a cancel noted for Bambuddy. Waiting only once a run could not reach it, not
     # in the seconds between the cancel and the run (A2); a refusal names the article and the answer.
-    waiting = session.scalar(
-        select(func.coalesce(func.sum(Withdrawal.prints), 0)).where(
-            Withdrawal.unreached.is_(True), Withdrawal.refused.is_(None)
-        )
-    )
+    waiting = withdraw.waiting_prints(session)
     if waiting:
         add("withdraw_waiting", count=int(waiting))
     for name, prints, message in session.execute(

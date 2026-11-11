@@ -21,10 +21,12 @@ cancel, decided 11.11.2026); `workqueue.set_prints`/`delete_entry` for shrinking
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import logging
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import exists, func, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable
@@ -34,6 +36,7 @@ from reprintbuddy.domain.workqueue import OPEN_STATES, _ordered, _renumber, cove
 from reprintbuddy.models import Article, Dispatch, Order, OrderLine, Withdrawal, WorkQueueEntry, utcnow
 
 MAX_MESSAGE = 500
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -74,19 +77,27 @@ def surplus_units(session: Session, article: Article, demand: Mapping[int, int])
     return coverage_of(session, article).total - target
 
 
-def bambuddy_candidates(session: Session, article_id: int) -> list[Dispatch]:
-    """Rule prints Bambuddy keeps waiting, as far as Reprintbuddy knows, and whose delete is not under
-    way: the newest first (they would print last)."""
+def _waiting_rule_print(article_id):
+    """A rule print Reprintbuddy has as waiting in Bambuddy (its stored state; the engine reads Bambuddy
+    again right before each delete)."""
+    return (
+        (Dispatch.article_id == article_id)
+        & (Dispatch.origin == "rule")
+        & (Dispatch.status == "queued")
+        & Dispatch.bambuddy_item_id.is_not(None)
+    )
+
+
+def bambuddy_candidates(session: Session, article_id: int, *, include_marked: bool = False) -> list[Dispatch]:
+    """Rule prints Bambuddy keeps waiting, as far as Reprintbuddy knows, the newest first (they would
+    print last). Without `include_marked` only those whose delete is not under way: the ones the engine
+    may delete now. With it, also those: a cancel counts them into its note, since the engine counts
+    them off the note when they settle as withdrawn (review 4)."""
+    condition = _waiting_rule_print(article_id)
+    if not include_marked:
+        condition = condition & Dispatch.withdraw_sent_at.is_(None)
     return list(session.scalars(
-        select(Dispatch)
-        .where(
-            Dispatch.article_id == article_id,
-            Dispatch.origin == "rule",
-            Dispatch.status == "queued",
-            Dispatch.bambuddy_item_id.is_not(None),
-            Dispatch.withdraw_sent_at.is_(None),
-        )
-        .order_by(Dispatch.dispatched_at.desc().nulls_last(), Dispatch.id.desc())
+        select(Dispatch).where(condition).order_by(Dispatch.dispatched_at.desc().nulls_last(), Dispatch.id.desc())
     ))
 
 
@@ -155,7 +166,7 @@ def withdraw_after_cancel(session: Session, order_id: int) -> WithdrawReport:
                 session, kind="queue_entry_withdrawn", actor="auto", qty=taken, article_id=article_id,
                 order_id=order_id, details={"entries": entries},
             )
-        noted = len(countable(bambuddy_candidates(session, article_id), surplus))
+        noted = len(countable(bambuddy_candidates(session, article_id, include_marked=True), surplus))
         _note(session, article_id, noted, order_id)
         queue_total += taken
         bambuddy_total += noted
@@ -163,11 +174,13 @@ def withdraw_after_cancel(session: Session, order_id: int) -> WithdrawReport:
     return WithdrawReport(queue_total, bambuddy_total)
 
 
-def preview_cancel(sm: sessionmaker, order_id: int) -> WithdrawReport:
+def preview_cancel(sm: sessionmaker, order_id: int) -> WithdrawReport | None:
     """What a cancel of the open order would take back, for the confirmation page (Spec 7.2a).
 
     The cancel runs in a session of its own that is rolled back and never committed: the change feed
     and the activity log publish only on a commit, so nothing leaves it (no live event, no push).
+    None when the database is busy right then (its read turns into a write, and the engine may have
+    committed in between): the page then shows no preview rather than an error (review 5).
     """
     from reprintbuddy.domain import orders  # orders calls this module
 
@@ -177,6 +190,9 @@ def preview_cancel(sm: sessionmaker, order_id: int) -> WithdrawReport:
             if order is None or order.status != "open":
                 return WithdrawReport(0, 0)
             return orders.cancel_order(session, order_id, "user")
+        except OperationalError:
+            log.warning("withdraw: the preview of a cancel could not be counted", exc_info=True)
+            return None
         finally:
             session.rollback()
 
@@ -188,6 +204,7 @@ def preview_cancel(sm: sessionmaker, order_id: int) -> WithdrawReport:
 class WithdrawRun:
     reachable: bool = True
     withdrawn: int = 0
+    held_for_update: bool = False
 
 
 def has_work(sm: sessionmaker) -> bool:
@@ -200,11 +217,28 @@ def has_work(sm: sessionmaker) -> bool:
         ) is not None
 
 
+def _open_note():
+    """A note that can still take something back: prints left, not refused, a waiting rule print."""
+    return (
+        (Withdrawal.prints > 0)
+        & Withdrawal.refused.is_(None)
+        & exists().where(_waiting_rule_print(Withdrawal.article_id))
+    )
+
+
 def mark_unreached(sm: sessionmaker) -> None:
-    """A run could not reach Bambuddy: open notes say so on the overview (A2, Spec 7.2a)."""
+    """A run could not reach Bambuddy: open notes say so on the overview (A2, Spec 7.2a). A note whose
+    prints all started meanwhile waits for nothing and says nothing (review 6)."""
     with sm.begin() as session:
-        for note in session.scalars(select(Withdrawal).where(Withdrawal.prints > 0, Withdrawal.refused.is_(None))):
+        for note in session.scalars(select(Withdrawal).where(_open_note())):
             note.unreached = True
+
+
+def waiting_prints(session: Session) -> int:
+    """Prints that wait for their withdrawal because a run could not reach Bambuddy (the overview)."""
+    return int(session.scalar(
+        select(func.coalesce(func.sum(Withdrawal.prints), 0)).where(_open_note(), Withdrawal.unreached.is_(True))
+    ))
 
 
 async def _settle_marked(client: BambuddyClient, sm: sessionmaker) -> bool:
@@ -256,9 +290,17 @@ def _drop_or_pick(session: Session, note: Withdrawal) -> list[tuple[int, int]]:
     return [(row.id, row.bambuddy_item_id) for row in chosen]
 
 
-async def withdraw_from_bambuddy(client: BambuddyClient, sm: sessionmaker) -> WithdrawRun:
+async def withdraw_from_bambuddy(
+    client: BambuddyClient, sm: sessionmaker, *, may_delete: Callable[[], Awaitable[bool]] | None = None
+) -> WithdrawRun:
     """Delete the noted prints (Spec 7.2a). One print at a time, never with a network call inside a
-    transaction: mark it (`withdraw_sent_at`, committed), delete, then settle in a new transaction.
+    transaction: read it, mark it (`withdraw_sent_at`, committed), delete, settle in a new transaction.
+
+    Each print is read right before its delete (review 1): the short tick after a cancel works from
+    the state of the last poll, and Bambuddy deletes a finished entry as well. Anything but waiting is
+    applied as the poll would (finished: to the inspection; failed: replaced; gone or cancelled by
+    somebody else: the pause of Spec 7.6) and not deleted. `may_delete` (no update starting) is asked
+    once, before the first delete only: a run with nothing to delete asks nothing.
 
     - deleted, kept as cancelled (#2960) or already gone: withdrawn, no pause;
     - 400 (it started meanwhile): the mark goes, its state is read again and applied; the note stays
@@ -282,6 +324,23 @@ async def withdraw_from_bambuddy(client: BambuddyClient, sm: sessionmaker) -> Wi
         items: list[int] = []
         ids: list[int] = []
         for dispatch_id, item_id in picked:
+            try:
+                item = await client.get_queue_item(item_id)
+            except BambuddyUnavailable:
+                run.reachable = False
+                break
+            except BambuddyRejected:
+                break  # a refused read: the poll reports it; nothing is deleted unread
+            outcome = tracking.classify(item)
+            if outcome != "waiting":
+                with sm.begin() as session:
+                    tracking.apply_outcome(session, dispatch_id, outcome, item.status if item else None)
+                continue
+            if may_delete is not None:
+                allowed, may_delete = await may_delete(), None
+                if not allowed:
+                    run.held_for_update = True
+                    break
             with sm.begin() as session:
                 session.get(Dispatch, dispatch_id).withdraw_sent_at = utcnow()
             try:
@@ -310,6 +369,8 @@ async def withdraw_from_bambuddy(client: BambuddyClient, sm: sessionmaker) -> Wi
         if not run.reachable:
             mark_unreached(sm)
             return run
+        if run.held_for_update:
+            return run
     return run
 
 
@@ -317,20 +378,27 @@ async def _refused(
     client: BambuddyClient, sm: sessionmaker, article_id: int, order_id: int | None,
     dispatch_id: int, item_id: int, exc: BambuddyRejected,
 ) -> bool:
-    """Bambuddy refused one delete. True: it started meanwhile, go on with the next print."""
+    """Bambuddy refused one delete. True: it started meanwhile (400), go on with the next print.
+
+    A 400 is a journal line, never a refusal for good (review 2, 3): the note stays, and a print that
+    falls back to waiting (the printer did not take the start) is taken on a later run (Spec 7.2a).
+    """
     with sm.begin() as session:
         session.get(Dispatch, dispatch_id).withdraw_sent_at = None
+    message = (exc.detail or str(exc))[:MAX_MESSAGE]
     if exc.status == 400:
+        with sm.begin() as session:
+            write_journal(
+                session, kind="print_withdraw_refused", actor="auto", qty=1, article_id=article_id,
+                order_id=order_id, details={"item_id": item_id, "status": 400, "message": message},
+            )
         try:
             item = await client.get_queue_item(item_id)
         except (BambuddyUnavailable, BambuddyRejected):
             return True  # the poll reads it later; without the mark it waits there as before
-        outcome = tracking.classify(item)
-        if outcome != "waiting":
-            with sm.begin() as session:
-                tracking.apply_outcome(session, dispatch_id, outcome, item.status if item else None)
-            return True
-    message = (exc.detail or str(exc))[:MAX_MESSAGE]
+        with sm.begin() as session:
+            tracking.apply_outcome(session, dispatch_id, tracking.classify(item), item.status if item else None)
+        return True
     with sm.begin() as session:
         note = session.get(Withdrawal, article_id)
         prints = note.prints if note is not None else 0

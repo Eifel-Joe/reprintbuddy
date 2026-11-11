@@ -10,7 +10,7 @@ from datetime import date
 
 from sqlalchemy import select
 
-from reprintbuddy.bambuddy.client import BambuddyUnavailable
+from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable
 from reprintbuddy.domain import orders
 from reprintbuddy.domain.orders import ArticleItem
 from reprintbuddy.models import Article, Dispatch, JournalEntry, Withdrawal
@@ -216,3 +216,125 @@ async def test_nothing_is_deleted_while_an_update_runs(engine_env):
     env.updating = False
     await env.engine.tick(poll=False)
     assert _statuses(env.sm) == ["withdrawn"] * 3
+
+
+# ---- review of 0.4.1 C (Opus): prints whose state changed in Bambuddy since the last poll ---------
+
+
+async def test_only_prints_bambuddy_still_keeps_waiting_are_deleted(engine_env):  # review 1
+    """The short tick after a cancel works from Reprintbuddy's stored state, up to a poll interval
+    old. Bambuddy deletes a finished entry too, so each print is read right before its delete."""
+    env = engine_env
+    order_id = await _three_handed_over(env)
+    oldest = _items(env.sm)[0]
+    env.fake.set_status(oldest, "completed")  # finished in Bambuddy, still waiting in Reprintbuddy
+    _cancel(env.sm, order_id)
+    await env.engine.tick(poll=False)
+    assert _statuses(env.sm) == ["completed", "withdrawn", "withdrawn"]
+    assert oldest not in env.fake.deleted and len(env.fake.deleted) == 2
+    with env.sm() as s:
+        assert s.get(Article, env.article_id).provisional == 1  # its pieces wait for the inspection
+    assert _note(env.sm) is None
+
+
+async def test_a_failed_print_is_replaced_not_withdrawn(engine_env):  # review 1, Spec 7.5
+    env = engine_env
+    order_id = await _three_handed_over(env)
+    oldest = _items(env.sm)[0]
+    env.fake.set_status(oldest, "failed")
+    _cancel(env.sm, order_id)
+    await env.engine.tick(poll=False)
+    assert _statuses(env.sm)[0] == "failed" and oldest not in env.fake.deleted
+    assert _journal(env.sm, "print_failed")
+
+
+async def test_a_print_cancelled_or_deleted_by_somebody_else_still_pauses(engine_env):  # review 1, Spec 7.6
+    env = engine_env
+    order_id = await _three_handed_over(env)
+    oldest = _items(env.sm)[0]
+    env.fake.delete_item(oldest)  # deleted in Bambuddy before the cancel, not yet polled
+    _cancel(env.sm, order_id)
+    await env.engine.tick(poll=False)
+    assert _statuses(env.sm)[0] == "missing"
+    assert _paused(env.sm, env.article_id) == (True, "missing_in_bambuddy")
+
+
+async def test_a_started_print_gets_a_journal_line(engine_env):  # review 2, Spec 7.2a
+    env = engine_env
+    order_id = await _three_handed_over(env)
+    newest = _items(env.sm)[-1]
+    _cancel(env.sm, order_id)
+    original = env.fake.delete_queue_item
+
+    async def starts_first(item_id):  # read as waiting, started before the delete arrives: the race
+        if item_id == newest:
+            env.fake.set_status(item_id, "printing")
+        return await original(item_id)
+
+    env.fake.delete_queue_item = starts_first
+    await env.engine.tick(poll=False)
+    assert _statuses(env.sm) == ["withdrawn", "withdrawn", "printing"]
+    (line,) = _journal(env.sm, "print_withdraw_refused")
+    assert line.details["status"] == 400 and "currently printing" in line.details["message"]
+    assert line.qty == 1 and line.details["item_id"] == newest
+    assert _note(env.sm)[1] is None  # not a refusal for good
+
+
+async def test_a_400_while_still_waiting_is_tried_again(engine_env):  # review 3
+    env = engine_env
+    order_id = await _three_handed_over(env)
+    _cancel(env.sm, order_id)
+    env.fake.fail_next(
+        "delete_queue_item", BambuddyRejected("Cannot delete item that is currently printing", status=400)
+    )
+    await env.engine.tick(poll=False)  # the newest: 400, read again: waiting (the start was not taken)
+    prints, refused, _ = _note(env.sm)
+    assert refused is None and prints == 1
+    await env.engine.tick(poll=False)
+    assert _statuses(env.sm) == ["withdrawn"] * 3 and _note(env.sm) is None
+
+
+async def test_a_second_cancel_counts_a_print_whose_delete_is_unsettled(engine_env):  # review 4
+    env = engine_env
+    first = await _three_handed_over(env)
+    _cancel(env.sm, first)
+    env.fake.fail_next("delete_queue_item", BambuddyUnavailable("timeout"), after_effect=True)
+    await env.engine.tick(poll=False)  # the newest is deleted, its answer lost: marked
+    second = _order(env.sm, env.article_id, 1, reference="R-2")
+    assert _cancel(env.sm, second).bambuddy_prints == 3  # the marked one counts in the note
+    await env.engine.tick(poll=False)
+    assert _statuses(env.sm) == ["withdrawn"] * 3 and _note(env.sm) is None
+
+
+async def test_a_note_with_nothing_left_to_take_back_warns_not(engine_env):  # review 6
+    from reprintbuddy.domain.engine import collect_warnings
+
+    env = engine_env
+    order_id = await _three_handed_over(env)
+    newest = _items(env.sm)[-1]
+    _cancel(env.sm, order_id)
+    env.fake.set_status(newest, "printing")
+    await env.engine.tick(poll=False)  # two withdrawn, the printing one stays, the note too
+    env.fake.unavailable = True
+    await env.engine.tick(poll=False)
+    with env.sm() as s:
+        keys = [w.key for w in collect_warnings(s, env.engine.status)]
+    assert "warning.withdraw_waiting" not in keys
+
+
+async def test_the_poll_takes_the_mark_off_a_print_that_waits_or_prints(engine_env):  # review 9
+    env = engine_env
+    order_id = await _three_handed_over(env)
+    newest = _items(env.sm)[-1]
+    _cancel(env.sm, order_id)
+    env.fake.fail_next("delete_queue_item", BambuddyUnavailable("timeout"))  # never reached Bambuddy
+    env.updating = False
+    await env.engine.tick(poll=False)
+    env.fake.set_status(newest, "printing")
+    with env.sm.begin() as s:
+        from reprintbuddy.domain import tracking
+
+        row = s.scalars(select(Dispatch).where(Dispatch.bambuddy_item_id == newest)).one()
+        assert row.withdraw_sent_at is not None
+        tracking.apply_outcome(s, row.id, "printing", "printing")
+        assert row.withdraw_sent_at is None

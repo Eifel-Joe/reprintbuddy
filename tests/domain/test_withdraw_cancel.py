@@ -124,10 +124,14 @@ def test_prints_on_their_way_are_never_candidates(db):  # review focus 5
         order_id = order(s, ArticleItem(a, 3))
         make_dispatch(s, a, status="sending")
         make_dispatch(s, a, status="unclear", enqueue_sent_at=utcnow())
-        make_dispatch(s, a, status="queued", bambuddy_item_id=1, withdraw_sent_at=utcnow())
+        marked = make_dispatch(s, a, status="queued", bambuddy_item_id=1, withdraw_sent_at=utcnow()).id
         report = orders.cancel_order(s, order_id, "user")
-        assert report == withdraw.WithdrawReport(0, 0)
-        assert noted(s) == {}
+        # A print whose delete is under way counts into the note: the engine counts it off when it
+        # settles as withdrawn (Opus review 4). The engine never deletes it a second time.
+        assert report == withdraw.WithdrawReport(0, 1)
+        assert noted(s) == {a: (1, order_id)}
+        assert withdraw.bambuddy_candidates(s, a) == []
+        assert [d.id for d in withdraw.bambuddy_candidates(s, a, include_marked=True)] == [marked]
 
 
 def test_newest_waiting_prints_first(db):
@@ -282,6 +286,20 @@ def test_preview_changes_nothing(db):
     with db.begin() as s:
         assert (queue(s), kinds(s), s.get(Article, a).reserved) == before
         assert s.get(Order, order_id).status == "open" and noted(s) == {}
+
+
+def test_a_busy_database_gives_no_preview(db, monkeypatch):  # Opus review 5
+    from sqlalchemy.exc import OperationalError
+
+    with db.begin() as s:
+        a = template(s).id
+        order_id = order(s, ArticleItem(a, 2))
+
+    def busy(*_args, **_kwargs):
+        raise OperationalError("BEGIN IMMEDIATE", {}, Exception("database is locked"))
+
+    monkeypatch.setattr(orders, "cancel_order", busy)
+    assert withdraw.preview_cancel(db, order_id) is None
 
 
 def test_preview_of_a_closed_order_is_nothing(db):

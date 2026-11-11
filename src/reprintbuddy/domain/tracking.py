@@ -66,6 +66,11 @@ def apply_outcome(
         return False
     if outcome in ("waiting", "printing"):
         state = "queued" if outcome == "waiting" else "printing"
+        if row.withdraw_sent_at is not None:
+            # Still there after a delete was sent: it did not take (Spec 7.2a). Without the mark a
+            # later cancel or delete in Bambuddy is somebody else's again, with its pause (review 9).
+            row.withdraw_sent_at = None
+            session.flush()
         if row.status == state and row.last_status == raw_status:
             return False
         row.status = state
