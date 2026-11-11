@@ -55,6 +55,10 @@ TEXTS = {
         "Enter which bought parts go into this article and how many per unit. They are taken off the parts stock when a unit becomes stock: at inspection “good”, with manual work only at assembly, and when booking in with “Deduct parts”.",
         "Hier trägst du ein, welche gekauften Teile in diesem Artikel stecken und wie viele je Einheit. Sie werden vom Bestand abgezogen, sobald eine Einheit Bestand wird: bei der Prüfung „gut“, bei Handarbeit erst bei der Montage, und beim Einbuchen mit „Zukaufteile abziehen“.",
     ),
+    "info.sold_alone": (  # 0.4.0, p341
+        'Off: the article is a part only. It is not in the order form or in any set, only in assembled articles. Reprints, checks and stock work as for any article.',
+        'Aus: Der Artikel ist ein Bauteil. Er steht nicht im Bestellformular und in keinem Set, nur in Artikeln aus Teilen. Nachdruck, Prüfung und Bestand laufen wie bei jedem Artikel.',
+    ),
     "info.part_min_stock": (
         "Below this stock the part shows as “below minimum” and Reprintbuddy suggests an order, even if no article needs it.",
         "Liegt der Bestand darunter, steht das Teil auf „unter Minimum“ und Reprintbuddy schlägt eine Bestellung vor, auch wenn kein Artikel es braucht.",
@@ -86,7 +90,7 @@ TEXTS = {
 }
 ARTICLE_KEYS = {
     "info.units_per_print", "info.target", "info.min_stock", "info.buffer",
-    "info.needs_assembly", "info.auto_enabled", "info.has_parts",
+    "info.needs_assembly", "info.auto_enabled", "info.has_parts", "info.sold_alone",
 }
 PART_KEYS = {
     "info.part_min_stock", "info.pack_size", "info.min_order_packs", "info.lead_time_days",
