@@ -57,6 +57,7 @@ from reprintbuddy.models import (
     Setting,
     User,
     WorkQueueEntry,
+    Withdrawal,
 )
 
 log = logging.getLogger(__name__)
@@ -87,6 +88,7 @@ _KIND: dict[type, str] = {
     Setting: "settings",
     WorkQueueEntry: "queue",
     Dispatch: "queue",
+    Withdrawal: "queue",  # prints a cancel takes back from Bambuddy (Spec 7.2a, 0.4.1 p382)
     Inspection: "inspection",
     FilamentSort: "filament",
     FilamentSettings: "filament",

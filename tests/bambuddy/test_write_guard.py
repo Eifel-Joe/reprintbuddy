@@ -1,5 +1,6 @@
-"""Reprintbuddy writes to Bambuddy in exactly two ways: a single queue entry (Spec 3.1, 7.6) and
-one new print file uploaded on the user's click (Spec 3.1, 5.1a; v0.3.9 p20).
+"""Reprintbuddy writes to Bambuddy in exactly three ways: a single queue entry (Spec 3.1, 7.6),
+one new print file uploaded on the user's click (Spec 3.1, 5.1a; v0.3.9 p20), and deleting one own
+waiting queue entry after a cancel (Spec 3.1, 7.2a; v0.4.1 p382).
 
 The only other POST is the live channel's token (`/auth/ws-token`, Spec 7.6, B2 Task 9): it
 changes nothing in the queue, the printers or the library. The upload goes through its own
@@ -15,6 +16,9 @@ A watch over the HTTP client, on its syntax tree with a text check as a second l
 - `_send` is called with anything but `"GET"` only from `_post` and `_post_file`, there only
   with `"POST"` and with their own `path` parameter; `files=` only from `_post_file`, which
   sends no `body=`;
+- `"DELETE"` appears once: in `delete_queue_item`, whose one `_send` has the path
+  `f"/queue/{int(item_id)}"` and nothing else (no query, no body), and which never changes
+  `item_id`. `/cancel` and `/stop` stay forbidden: Reprintbuddy never stops a print (Spec 3.1);
 - no helper is taken without calling it (`f = self._post`, `getattr(http, "post")`);
 - no module under `src/reprintbuddy/` imports httpx beyond today's allow-list.
 
@@ -126,7 +130,6 @@ FORBIDDEN = (
     ".delete(",
     '"PUT"',
     '"PATCH"',
-    '"DELETE"',
     "/reorder",
     "/start",
     "/stop",
@@ -135,6 +138,10 @@ FORBIDDEN = (
     "/pause",
     "/resume",
 )
+
+# The one function that may delete, and the one thing it may delete: an entry of the queue by its
+# number (Spec 7.2a, v0.4.1 p382). `"DELETE"` may appear only there, once.
+DELETER = "delete_queue_item"
 
 # Method names of httpx that send or prepare a request.
 HTTP_METHODS = {"post", "put", "patch", "delete", "request", "send", "stream", "build_request"}
@@ -228,7 +235,7 @@ def check_source(text: str) -> list[str]:
         keywords = {kw.arg for kw in call.keywords}
         if name == "_send":
             method = _text(_arg(call, 0, "method"))
-            allowed = "POST" if where in POSTERS else "GET"
+            allowed = "POST" if where in POSTERS else "DELETE" if where == DELETER else "GET"
             if method != allowed:
                 problems.append(f"_send with {method!r} in {where} (line {call.lineno})")
             if "files" in keywords and where != "_post_file":
@@ -255,8 +262,52 @@ def check_source(text: str) -> list[str]:
                 problems.append(f"_post_file with other arguments (line {call.lineno})")
     problems += _post_file_signature(text)
     problems += _posters_keep_their_inputs(text)
+    problems += _delete_only_a_queue_entry(text, scan)
     problems += _request_arguments(scan)
     problems += _upload_files(scan)
+    return problems
+
+
+def _is_queue_entry_path(node: ast.AST | None) -> bool:
+    """`f"/queue/{int(item_id)}"` and nothing else."""
+    if not (isinstance(node, ast.JoinedStr) and len(node.values) == 2):
+        return False
+    head, value = node.values
+    return (
+        _text(head) == "/queue/"
+        and isinstance(value, ast.FormattedValue)
+        and value.conversion == -1
+        and value.format_spec is None
+        and isinstance(value.value, ast.Call)
+        and _name(value.value.func) == "int"
+        and len(value.value.args) == 1
+        and not value.value.keywords
+        and isinstance(value.value.args[0], ast.Name)
+        and value.value.args[0].id == "item_id"
+    )
+
+
+def _delete_only_a_queue_entry(text: str, scan: _Scan) -> list[str]:
+    """`"DELETE"` once, in `delete_queue_item`'s single `_send`, on one queue entry (Spec 7.2a)."""
+    problems: list[str] = []
+    if text.count('"DELETE"') > 1:
+        problems.append(f'"DELETE" appears {text.count(chr(34) + "DELETE" + chr(34))} times')
+    # The protocol `BambuddyClient` declares it too (body `...`): sends are counted, not definitions.
+    sends = [call for call, where in scan.calls if _name(call.func) == "_send" and where == DELETER]
+    if len(sends) > 1:
+        problems.append(f"{DELETER} sends more than once")
+    for call in sends:
+        if not _is_queue_entry_path(_arg(call, 1, "path")):
+            problems.append(f"_send in {DELETER} to a path other than one queue entry (line {call.lineno})")
+        if len(call.args) > 2 or call.keywords:
+            problems.append(f"_send in {DELETER} with other arguments (line {call.lineno})")
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == DELETER:
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Name) and inner.id == "item_id" and not isinstance(inner.ctx, ast.Load):
+                    problems.append(f"item_id is changed in {DELETER} (line {inner.lineno})")
+                if isinstance(inner, ast.NamedExpr) and inner.target.id == "item_id":
+                    problems.append(f"item_id is changed in {DELETER} (line {inner.lineno})")
     return problems
 
 
@@ -659,6 +710,9 @@ class Client:
 
     async def upload_file(self, folder_id, name, content):
         return await self._post_file("/library/files", folder_id=folder_id, files={"file": (name, content)})
+
+    async def delete_queue_item(self, item_id):
+        return await self._send("DELETE", f"/queue/{int(item_id)}")
 '''
 
 
@@ -701,6 +755,10 @@ BYPASSES = {
     "upload-getattr": ('await getattr(self, "_post_file")("/library/files")', "the name '_post_file' appears as a text"),
     "post-with-files": ('await self._post("/queue/", {}, files={})', "_post with files"),
     "send-files-outside": ('await self._send("GET", "/x", files={})', "_send with files in bad"),
+    # deleting (v0.4.1 p382): only one queue entry, only from `delete_queue_item`
+    "delete-elsewhere": ('await self._send("DELETE", f"/queue/{int(suffix)}")', "_send with 'DELETE' in bad"),
+    "delete-cancel": ('await self._get("/queue/1/cancel")', "contains '/cancel'"),
+    "delete-stop": ('await self._get("/queue/1/stop")', "contains '/stop'"),
 }
 
 
@@ -758,6 +816,32 @@ def _base_with(old: str, new: str) -> str:
 def test_upload_helper_bypass_is_caught(old, new, reason):
     problems = check_source(_base_with(old, new))
     assert any(reason in problem for problem in problems), problems
+
+
+DELETE_LINE = 'return await self._send("DELETE", f"/queue/{int(item_id)}")'
+
+
+@pytest.mark.parametrize(
+    ("new", "reason"),
+    [
+        ('return await self._send("DELETE", f"/printers/{int(item_id)}")', "to a path other than one queue entry"),
+        ('return await self._send("DELETE", f"/queue/{int(item_id)}/x")', "to a path other than one queue entry"),
+        ('return await self._send("DELETE", f"/queue/{item_id}")', "to a path other than one queue entry"),
+        ('return await self._send("DELETE", "/queue/")', "to a path other than one queue entry"),
+        ('return await self._send("DELETE", f"/queue/{int(item_id)}", params={"all": 1})', "with other arguments"),
+        ('item_id = 1\n        return await self._send("DELETE", f"/queue/{int(item_id)}")', "item_id is changed"),
+        ('await self._send("DELETE", f"/queue/{int(item_id)}")\n        return await self._send("DELETE", f"/queue/{int(item_id)}")', "sends more than once"),
+        ('return await self._send("GET", f"/queue/{int(item_id)}")', "_send with 'GET' in delete_queue_item"),
+    ],
+)
+def test_delete_bypass_is_caught(new, reason):  # v0.4.1 p382, Spec 7.2a
+    problems = check_source(_base_with(DELETE_LINE, new))
+    assert any(reason in problem for problem in problems), problems
+
+
+def test_a_second_delete_text_is_caught():
+    problems = check_source(_with('method = "DELETE"'))
+    assert any('"DELETE" appears 2 times' in problem for problem in problems), problems
 
 
 def test_put_through_send_is_caught():

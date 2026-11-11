@@ -464,7 +464,7 @@ class Dispatch(Base):
         ),
         CheckConstraint(
             "status IN ('sending', 'unclear', 'queued', 'printing', 'completed', 'failed',"
-            " 'cancelled', 'missing', 'returned')",
+            " 'cancelled', 'missing', 'returned', 'withdrawn')",
             name="ck_dispatches_status",
         ),
         CheckConstraint("units >= 1", name="ck_dispatches_units"),
@@ -492,6 +492,30 @@ class Dispatch(Base):
     )
     dispatched_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    # Set while Reprintbuddy's delete of this print in Bambuddy is under way (Spec 7.2a, 0.4.1 p382):
+    # a print that then is gone was withdrawn, not deleted by somebody else (no pause, Spec 7.6).
+    withdraw_sent_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+
+
+class Withdrawal(Base):
+    """Prints of one article still to be withdrawn from Bambuddy after a cancel (Spec 7.2a, p382).
+
+    `prints` is what the cancel found over the target; each run deletes at most what is still over
+    it then. `refused` keeps Bambuddy's answer when it refused (no further try); `unreached` says a
+    run could not reach Bambuddy (the overview says so until the withdrawal is done or gone).
+    """
+
+    __tablename__ = "withdrawals"
+    __table_args__ = (CheckConstraint("prints >= 0", name="ck_withdrawals_prints"),)
+
+    article_id: Mapped[int] = mapped_column(ForeignKey("articles.id"), primary_key=True)
+    prints: Mapped[int] = _int(0)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), default=None)
+    refused: Mapped[str | None] = mapped_column(String, default=None)
+    unreached: Mapped[bool] = _flag()
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow, server_default=text("CURRENT_TIMESTAMP")
+    )
 
 
 class Inspection(Base):

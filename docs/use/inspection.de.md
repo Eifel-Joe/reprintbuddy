@@ -104,6 +104,21 @@ Die Liste zeigt offene Bestellungen mit dem Zustand **offen**, oder **versandber
 
 Versand und Storno gelten immer für die ganze Bestellung, nie für einzelne Posten.
 
+### Was ein Storno zurücknimmt
+
+Eine Bestellung senkt **Verfügbar** und lässt so die [Regel](automation.md#die-regel) Nachdrucke planen. Stornierst du sie, nimmt Reprintbuddy zurück, was danach über der Zielmenge jedes Artikels der Bestellung geplant ist (bei einem Artikel aus Teilen: seiner Teile):
+
+1. zuerst Drucke aus Einträgen mit der Herkunft **Mindestbestand** in [Reprintbuddys Warteschlange](queue.md#reprintbuddys-warteschlange), von unten, zurückgehaltene Einträge eingeschlossen;
+2. dann Drucke dieser Herkunft, die Reprintbuddy an Bambuddy übergeben hat und die noch nicht gestartet sind, die zuletzt übergebenen zuerst. Sie werden aus Bambuddys Warteschlange gelöscht.
+
+Zurück kommen nur ganze Drucke, nie so viele, dass die Deckung unter die Zielmenge fällt. Ersatzdrucke und von Hand angelegte Drucke bleiben, ebenso Drucke, die gerade drucken. Das gilt auch bei ausgeschalteter Automatik und bei pausiertem Artikel, und es pausiert nichts. Die Bestätigung sagt vorher, wie viele Drucke zurückkommen, die Meldung danach, wie viele zurückgekommen sind; das Journal des Artikels nennt sie mit der Bestellung.
+
+Beispiel: Mindestbestand 2, Puffer 1, Bestand 3. Zwei Bestellungen über 2 und 3 Stück planen 5 Drucke. Der Storno der Bestellung über 3 nimmt 3 Drucke zurück; 2 bleiben für die andere Bestellung.
+
+Ein Druck gilt als gestartet, sobald Bambuddy ihn an den Drucker schickt, auch wenn der Drucker noch aufheizt oder kalibriert. Einen solchen Druck kann Reprintbuddy nicht zurücknehmen, denn anhalten ließe er sich nur mit einem Druckerbefehl, und den gibt Reprintbuddy nie. Er wird gedruckt, geprüft und eingebucht wie jeder andere. Willst du ihn nicht, brich ihn in Bambuddy ab; dann pausiert der Artikel wie gewohnt (siehe [Pausen](automation.md#pausen)).
+
+Das Löschen in Bambuddy braucht das empfohlene Recht **Delete Own Queue** in der Gruppe `Reprintbuddy` (siehe [Einrichtung](../start/setup.md)). Ohne es verkleinert ein Storno nur Reprintbuddys eigene Warteschlange, und ein Hinweis auf der Übersicht nennt die Drucke, die in Bambuddy bleiben. Ist Bambuddy nicht erreichbar, versucht Reprintbuddy es bei jedem Lauf wieder; ein Hinweis sagt, wie viele Drucke warten.
+
 ## Sets
 
 Ein Set ist eine Zusammenstellung von Artikeln, die zusammen verkauft werden, mit Namen und Artikelnummer (Pflicht, sobald das Set Wahlteile hat). Es hat keinen eigenen Bestand.

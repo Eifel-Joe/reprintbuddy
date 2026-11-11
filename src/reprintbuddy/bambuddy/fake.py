@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import BinaryIO
 from datetime import UTC, datetime
 
-from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable
+from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable, DeleteResult
 from reprintbuddy.bambuddy.types import (
     EnqueueRequest,
     FilamentRequirement,
@@ -29,7 +29,7 @@ from reprintbuddy.bambuddy.types import (
 # The methods with an effect (Spec 3.1, 5.1a): `fail_next(..., after_effect=True)` lets the
 # effect happen first ("the answer got lost"). Every other method has no effect, so it fails
 # at once.
-_EFFECT_METHODS = frozenset({"enqueue", "upload_file"})
+_EFFECT_METHODS = frozenset({"enqueue", "upload_file", "delete_queue_item"})
 _FAILABLE_METHODS = _EFFECT_METHODS | {
     "list_folders", "list_files", "get_file", "list_plates", "plate_thumbnail", "file_thumbnail",
     "filament_requirements", "list_printers", "spool_mode", "list_spools", "print_defaults",
@@ -99,6 +99,10 @@ class FakeBambuddy:
         self.uploaded: list[tuple[int | None, str, bytes]] = []
         self._hashes: dict[int, str] = {}
         self._readonly: set[int] = set()
+        # Deleting an own waiting entry after a cancel (Spec 7.2a, p382): the group holds
+        # `queue:delete_own` ("Delete Own Queue"), and which entries were deleted.
+        self.can_delete_own = True
+        self.deleted: list[int] = []
 
     # ---- fill ------------------------------------------------------------
     def add_folder(
@@ -463,6 +467,27 @@ class FakeBambuddy:
         if failure:
             raise failure[0]
         return UploadedFile(id=file.id, filename=filename, sliced=sliced, duplicate_of=duplicate_of)
+
+    async def delete_queue_item(self, item_id: int) -> DeleteResult:
+        """Bambuddy's `delete_queue_item` (`print_queue.py:2697-2748`): unknown is gone (404); the
+        right, then the owner, then a printing entry are refused, in Bambuddy's order."""
+        failure = await self._write_call("delete_queue_item")
+        item = self._items.get(item_id)
+        if item is None:
+            result: DeleteResult = "gone"
+        elif not self.can_delete_own:
+            raise BambuddyRejected("API key owner does not have 'queue:delete_own' permission", status=403)
+        elif item.created_by != self.username:
+            raise BambuddyRejected("You can only delete your own queue items", status=403)
+        elif item.status == "printing":
+            raise BambuddyRejected("Cannot delete item that is currently printing", status=400)
+        else:
+            del self._items[item_id]
+            self.deleted.append(item_id)
+            result = "deleted"
+        if failure:
+            raise failure[0]
+        return result
 
     async def _queue_read(self, name: str, read):
         await asyncio.sleep(self.delay)

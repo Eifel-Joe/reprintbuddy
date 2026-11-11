@@ -104,6 +104,21 @@ Open the order to finish it, with an optional **Note**:
 
 Shipping and cancelling always apply to the whole order, never to single items.
 
+### What a cancel takes back
+
+An order lowers **Available** and so makes the [rule](automation.md#the-rule) plan reprints. When you cancel it, Reprintbuddy takes back what is then planned over the target quantity of each article in the order (for an article made of parts: of its parts):
+
+1. first prints from entries with the origin **Minimum stock** in [Reprintbuddy's queue](queue.md#reprintbuddys-queue), from the bottom, held entries included;
+2. then prints of this origin that Reprintbuddy handed to Bambuddy and that have not started yet, the newest first. They are deleted from Bambuddy's queue.
+
+Only whole prints come back, never so many that the coverage falls below the target. Replacements and manual prints stay, so do prints that are printing. This works with the automation switched off and for a paused article too, and it pauses nothing. The confirmation says beforehand how many prints come back, the message afterwards how many came back; the journal of the article lists them with the order.
+
+Example: minimum stock 2, buffer 1, stock 3. Two orders of 2 and 3 pieces plan 5 prints. Cancelling the order of 3 takes back 3 prints; 2 stay for the other order.
+
+A print counts as started as soon as Bambuddy sends it to the printer, also while the printer still heats up or calibrates. Reprintbuddy cannot take such a print back, because only a printer command could stop it, and Reprintbuddy never sends one. It is printed, checked and booked like any other. If you do not want it, cancel it in Bambuddy; then the article pauses as usual (see [Pauses](automation.md#pauses)).
+
+Deleting in Bambuddy needs the recommended right **Delete Own Queue** in the group `Reprintbuddy` (see [Set-up](../start/setup.md)). Without it a cancel only shrinks Reprintbuddy's own queue, and a notice on the Overview names the prints that stay in Bambuddy. If Bambuddy cannot be reached, Reprintbuddy tries again on every run; a notice says how many prints are waiting.
+
 ## Sets
 
 A set is a bundle of articles sold together, with a name and an article number (required once the set has choice parts). It has no stock of its own.

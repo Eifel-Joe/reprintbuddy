@@ -1445,5 +1445,20 @@
   "overview.todo.stock_unknown": "Stock unknown",
   "overview.todo.overbooked": "{n} overbooked",
   "overview.todo.title": "What is due",
-  "filament.short": "low"
+  "filament.short": "low",
+  "permission.queue:delete_own": "so that a cancel can take prints back from Bambuddy that have not started yet (optional)",
+  "bambuddy.withdraw_right_ok": "After a cancel, Reprintbuddy can take prints back from Bambuddy that have not started yet.",
+  "bambuddy.withdraw_right_missing": "After a cancel, prints handed over stay in Bambuddy: the group lacks “Delete Own Queue” for that. Reprintbuddy’s own queue still gets smaller. Everything else works.",
+  "journal.kind.queue_entry_withdrawn": "Planned print taken back (cancel)",
+  "journal.kind.print_withdrawn": "Print taken back from Bambuddy (cancel)",
+  "journal.kind.print_withdraw_refused": "Taking back from Bambuddy refused",
+  "dispatch.status.withdrawn": "taken back (cancel)",
+  "orders.cancel_withdraw_both": "Reprintbuddy then takes back {queue} planned prints from its queue and {bambuddy} prints from Bambuddy that have not started.",
+  "orders.cancel_withdraw_queue": "Reprintbuddy then takes back {queue} planned prints from its queue.",
+  "orders.cancel_withdraw_bambuddy": "Reprintbuddy then takes back {bambuddy} prints from Bambuddy that have not started.",
+  "orders.cancelled_withdrawn_both": "Order {reference} cancelled. {queue} prints taken back from Reprintbuddy’s queue; {bambuddy} prints are being removed from Bambuddy.",
+  "orders.cancelled_withdrawn_queue": "Order {reference} cancelled. {queue} prints taken back from Reprintbuddy’s queue.",
+  "orders.cancelled_withdrawn_bambuddy": "Order {reference} cancelled. {bambuddy} prints are being removed from Bambuddy.",
+  "warning.withdraw_waiting": "{count} prints wait to be taken back from Bambuddy (cancel); Reprintbuddy tries again on every run.",
+  "warning.withdraw_refused": "Bambuddy refused to take back the prints of {name} ({count} stay there): {message}. If the right is missing, add “Delete Own Queue” to the group Reprintbuddy; it holds from the next cancel."
 }

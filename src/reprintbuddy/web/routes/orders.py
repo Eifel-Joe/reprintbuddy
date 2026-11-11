@@ -9,7 +9,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import catalog, orders, seen, stock
+from reprintbuddy.domain import catalog, orders, seen, stock, withdraw
 from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.domain.orders import ArticleItem, AssembledItem, SetItem
 from reprintbuddy.web import assembled_view
@@ -249,7 +249,20 @@ async def order_detail(request: Request, order_id: int, db: Session = Depends(ge
     return _detail_page(request, db, order_id)
 
 
-async def _act(request: Request, order_id: int, db: Session, action, flash_key: str):
+def _cancelled_flash(report: withdraw.WithdrawReport) -> tuple[str, dict[str, int]]:
+    """The message after a cancel names what came back (Spec 7.2a): from the queue, from Bambuddy."""
+    queue, bambuddy = report.queue_prints, report.bambuddy_prints
+    if queue and bambuddy:
+        return "orders.cancelled_withdrawn_both", {"queue": queue, "bambuddy": bambuddy}
+    if queue:
+        return "orders.cancelled_withdrawn_queue", {"queue": queue}
+    if bambuddy:
+        return "orders.cancelled_withdrawn_bambuddy", {"bambuddy": bambuddy}
+    return "orders.cancelled", {}
+
+
+async def _act(request: Request, order_id: int, db: Session, action, flash_key: str, flash_for=None):
+    """`flash_for(result)`: the message key and its parameters from what `action` returned."""
     form = await request.form()
     after = local_next(form) or f"/orders/{order_id}"
     try:
@@ -259,7 +272,7 @@ async def _act(request: Request, order_id: int, db: Session, action, flash_key: 
     try:
         note = parse_text(form.get("note"), field="journal.field.note", max_len=stock.MAX_NOTE)
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            action(tx, order_id, "user", note)
+            result = action(tx, order_id, "user", note)
             reference = orders.get_order(tx, order_id).reference
     except FormTokenUsed:
         return duplicate_redirect(request, after)
@@ -267,7 +280,8 @@ async def _act(request: Request, order_id: int, db: Session, action, flash_key: 
         return _detail_page(
             request, db, order_id, error=error_text(current_language(request), exc), status=error_status(exc)
         )
-    return saved_redirect(request, after, flash_key, reference=reference)
+    key, params = (flash_key, {}) if flash_for is None else flash_for(result)
+    return saved_redirect(request, after, key, reference=reference, **params)
 
 
 @router.post("/orders/{order_id:int}/ship", dependencies=[Depends(verify_csrf)])
@@ -286,9 +300,12 @@ async def order_cancel(request: Request, order_id: int, db: Session = Depends(ge
             return _detail_page(
                 request, db, order_id, error=translate(current_language(request), "orders.not_open")
             )
+        # What the cancel would take back (Spec 7.2a), counted in a session of its own that is rolled
+        # back: nothing is booked, published or reported (A3).
+        preview = withdraw.preview_cancel(request.app.state.sessionmaker, order_id)
         return render(
-            request, "order_cancel.html", active_nav="orders", order=view,
+            request, "order_cancel.html", active_nav="orders", order=view, preview=preview,
             note=str(form.get("note", "")), form_token_value=str(form.get("form_token", "")),
             next_url=local_next(form),
         )
-    return await _act(request, order_id, db, orders.cancel_order, "orders.cancelled")
+    return await _act(request, order_id, db, orders.cancel_order, "orders.cancelled", _cancelled_flash)

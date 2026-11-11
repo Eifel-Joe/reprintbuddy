@@ -41,6 +41,8 @@ Das Menü eines Eintrags bietet:
 !!! note "Verringern oder Löschen eines Regel-Eintrags pausiert den Artikel"
     Verringerst du die Drucke eines Eintrags mit der Herkunft **Mindestbestand** oder löschst du ihn, pausiert die Automatik für diesen Artikel und sagt das. Sonst legte die Regel den Eintrag beim nächsten Durchlauf einfach wieder an. Die Zahl erhöhen, zurückhalten und andere Einträge ändern pausiert nichts. Wer dauerhaft weniger Drucke will, senkt Mindestbestand oder Puffer des Artikels. Zum Weitermachen nimmst du **Pause aufheben**, siehe [Pausen](automation.md#pausen).
 
+Wird eine Bestellung storniert, verkleinert Reprintbuddy selbst die Regel-Einträge, die nicht mehr gebraucht werden, und nimmt solche Drucke auch aus Bambuddy zurück, solange sie noch nicht gestartet sind. Das pausiert nichts; siehe [Was ein Storno zurücknimmt](inspection.md#was-ein-storno-zurucknimmt).
+
 ## Von Hand drucken
 
 Die Karte **Von Hand drucken** legt selbst einen Eintrag an. Wähle den **Artikel**, die Zahl der **Drucke** (1 bis 1000) und die **Stelle in der Warteschlange**: **Am Ende**, **Am Anfang** oder vor einem der Einträge. Klicke dann auf **In die Warteschlange**.
@@ -57,7 +59,7 @@ Geht Bambuddys Antwort auf einen Druck verloren, sendet Reprintbuddy ihn nicht n
 
 ## In Arbeit
 
-Der Abschnitt **In Arbeit** listet die Drucke, die übergeben und noch nicht fertig sind: **Artikel**, **Herkunft**, **Zustand**, **Übergeben am** und die **Bambuddy-Kennung**. Der Zustand ist **wird übergeben**, **unklar**, **eingereiht** oder **druckt**.
+Der Abschnitt **In Arbeit** listet die Drucke, die übergeben und noch nicht fertig sind: **Artikel**, **Herkunft**, **Zustand**, **Übergeben am** und die **Bambuddy-Kennung**. Der Zustand ist **wird übergeben**, **unklar**, **eingereiht** oder **druckt**. Ein nach einem Storno zurückgenommener Druck verschwindet aus der Liste; auf der Seite des Artikels steht er als **zurückgenommen (Storno)**.
 
 ## Bambuddys Warteschlange
 

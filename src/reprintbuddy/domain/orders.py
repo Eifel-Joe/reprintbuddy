@@ -16,7 +16,7 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import articlesets, assembled, catalog, rules
+from reprintbuddy.domain import articlesets, assembled, catalog, rules, withdraw
 from reprintbuddy.domain.errors import (
     ConflictError,
     NotFoundError,
@@ -239,12 +239,15 @@ def _needed(session: Session, order_id: int) -> dict[int, int]:
 
 def cancel_order(
     session: Session, order_id: int, actor: Actor, note: str | None = None
-) -> None:
+) -> withdraw.WithdrawReport:
+    """Release the reservations, then take back what is now planned over the target (Spec 6.2, 7.2a):
+    rule entries of Reprintbuddy's queue at once, waiting prints in Bambuddy noted for the engine."""
     order = _open_order(session, order_id)
     release_for_order(session, order.id, _needed(session, order.id), actor, note)
     order.status = "cancelled"
     order.closed_at = utcnow()
     session.flush()
+    return withdraw.withdraw_after_cancel(session, order.id)
 
 
 def _stock_of(session: Session, article_ids: Sequence[int]) -> dict[int, int]:

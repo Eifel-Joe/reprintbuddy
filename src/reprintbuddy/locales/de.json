@@ -1445,5 +1445,20 @@
   "overview.todo.stock_unknown": "Bestand unbekannt",
   "overview.todo.overbooked": "{n} überbucht",
   "overview.todo.title": "Was ansteht",
-  "filament.short": "knapp"
+  "filament.short": "knapp",
+  "permission.queue:delete_own": "damit ein Storno noch nicht gestartete Drucke aus Bambuddy zurücknehmen kann (optional)",
+  "bambuddy.withdraw_right_ok": "Nach einem Storno kann Reprintbuddy noch nicht gestartete Drucke aus Bambuddy zurücknehmen.",
+  "bambuddy.withdraw_right_missing": "Nach einem Storno bleiben übergebene Drucke in Bambuddy: Der Gruppe fehlt dafür „Delete Own Queue“. Reprintbuddys eigene Warteschlange wird trotzdem verkleinert. Alles andere geht.",
+  "journal.kind.queue_entry_withdrawn": "Geplanter Druck zurückgenommen (Storno)",
+  "journal.kind.print_withdrawn": "Druck aus Bambuddy zurückgenommen (Storno)",
+  "journal.kind.print_withdraw_refused": "Rücknahme aus Bambuddy abgelehnt",
+  "dispatch.status.withdrawn": "zurückgenommen (Storno)",
+  "orders.cancel_withdraw_both": "Damit nimmt Reprintbuddy {queue} geplante Drucke aus seiner Warteschlange und {bambuddy} noch nicht gestartete Drucke aus Bambuddy zurück.",
+  "orders.cancel_withdraw_queue": "Damit nimmt Reprintbuddy {queue} geplante Drucke aus seiner Warteschlange zurück.",
+  "orders.cancel_withdraw_bambuddy": "Damit nimmt Reprintbuddy {bambuddy} noch nicht gestartete Drucke aus Bambuddy zurück.",
+  "orders.cancelled_withdrawn_both": "Bestellung {reference} storniert. {queue} Drucke aus Reprintbuddys Warteschlange zurückgenommen; {bambuddy} Drucke werden aus Bambuddy entfernt.",
+  "orders.cancelled_withdrawn_queue": "Bestellung {reference} storniert. {queue} Drucke aus Reprintbuddys Warteschlange zurückgenommen.",
+  "orders.cancelled_withdrawn_bambuddy": "Bestellung {reference} storniert. {bambuddy} Drucke werden aus Bambuddy entfernt.",
+  "warning.withdraw_waiting": "{count} Drucke warten auf die Rücknahme aus Bambuddy (Storno); Reprintbuddy versucht es bei jedem Lauf wieder.",
+  "warning.withdraw_refused": "Bambuddy hat die Rücknahme für {name} abgelehnt ({count} Drucke bleiben dort): {message}. Fehlt das Recht, ergänze „Delete Own Queue“ in der Gruppe Reprintbuddy; es gilt ab dem nächsten Storno."
 }

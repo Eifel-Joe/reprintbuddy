@@ -37,9 +37,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from reprintbuddy import settings
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable
 from reprintbuddy.bambuddy.types import QueueItem
-from reprintbuddy.domain import dispatch, tracking, workqueue
+from reprintbuddy.domain import dispatch, tracking, withdraw, workqueue
 from reprintbuddy.domain import articlesets
-from reprintbuddy.models import Article, Dispatch, WorkQueueEntry, utcnow
+from reprintbuddy.models import Article, Dispatch, Withdrawal, WorkQueueEntry, utcnow
 from reprintbuddy.i18n import translate
 from reprintbuddy.ops.runner import in_thread  # stdlib only; runs a blocking call in a thread that can be stopped
 
@@ -257,6 +257,7 @@ class Engine:
             await self._settle(client)
             if poll and status.reachable:
                 await self._poll(client)
+        await self._withdraw(client)
 
         with self.sm.begin() as session:
             created = len(workqueue.apply_rule(session))
@@ -270,6 +271,24 @@ class Engine:
             self._prune_duplicates(session)
         status.last_tick_at = self.now()
         return TickResult(None, created, dispatched)
+
+    async def _withdraw(self, client: BambuddyClient | None) -> None:
+        """Delete what a cancel noted for Bambuddy (Spec 7.2a), on every tick: a cancel is a write,
+        and every write asks for a short tick (`web.app.tick_after_write`), so it runs right after the
+        cancel, not at the next poll (A1). Before the rule and the hand-over: the coverage they count
+        is then the one without the withdrawn prints. Unreachable: the notes say so (A2). Not while
+        an update starts: a delete after its backup would come back with a restore as a print that
+        is gone, and pause its article."""
+        if not withdraw.has_work(self.sm):  # the common case: no question to systemd, no call
+            return
+        if client is None or self.status.reachable is not True:
+            withdraw.mark_unreached(self.sm)
+            return
+        run = await withdraw.withdraw_from_bambuddy(client, self.sm, may_delete=self._may_send)
+        if run.held_for_update:
+            self.status.skipped_for_update = True
+        if not run.reachable:
+            self.status.reachable = False
 
     async def _settle(self, client: BambuddyClient) -> None:
         """Step 4: reachability, then every `sending`/`unclear` print (decision 5)."""
@@ -586,6 +605,18 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
         add("queue_stopped")
     if status.cap_reached:
         add("cap_reached", cap=int(settings.get_setting(session, "queue_cap")))
+    # Spec 7.2a: prints a cancel noted for Bambuddy. Waiting only once a run could not reach it, not
+    # in the seconds between the cancel and the run (A2); a refusal names the article and the answer.
+    waiting = withdraw.waiting_prints(session)
+    if waiting:
+        add("withdraw_waiting", count=int(waiting))
+    for name, prints, message in session.execute(
+        select(Article.name, Withdrawal.prints, Withdrawal.refused)
+        .join(Article, Article.id == Withdrawal.article_id)
+        .where(Withdrawal.refused.is_not(None))
+        .order_by(Article.name, Article.id)
+    ):
+        add("withdraw_refused", name=name, count=prints, message=message)
     if status.waiting_for_printer:
         names = session.scalars(
             select(Article.name)

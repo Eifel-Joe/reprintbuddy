@@ -62,6 +62,10 @@ KINDS: frozenset[str] = frozenset(
         "automation_resumed",
         "article_file_confirmed",
         "article_relinked",
+        # Spec 7.2a (0.4.1 p382): a cancel takes back reprints over the target
+        "queue_entry_withdrawn",
+        "print_withdrawn",
+        "print_withdraw_refused",
     }
 )
 
