@@ -71,7 +71,7 @@ from reprintbuddy.activity import capture as activity_capture  # noqa: E402
 from reprintbuddy.bambuddy.connection import REQUIRED_PERMISSIONS  # noqa: E402
 from reprintbuddy.bambuddy.fake import FakeBambuddy  # noqa: E402
 from reprintbuddy.bambuddy.types import FilamentRequirement  # noqa: E402
-from reprintbuddy.domain import assembled, catalog, filament, orders, pauses, reorder, stock, workqueue  # noqa: E402
+from reprintbuddy.domain import assembled, catalog, filament, orders, pauses, reorder, seen, stock, workqueue  # noqa: E402
 from reprintbuddy.ops.context import OpsContext  # noqa: E402
 from reprintbuddy.ops.runner import CommandResult  # noqa: E402
 from reprintbuddy.web import app as web_app  # noqa: E402
@@ -1057,6 +1057,14 @@ def prepare_settings(server: Server) -> None:
         st.set_setting(s, "ha_service", "notify.example_phone")
     # Bambuddy's live channel does not run here (no background tasks): the card says what a running one says.
     server.app.state.live_listener.state = "connected"
+    # "New" on the overview (Spec 10.2, 0.4.1): the orders and the reorder suggestions were looked at
+    # before the newest order and one suggestion came in, so each card shows "1 new".
+    with server.sm() as s:
+        open_ids = sorted(o.id for o in orders.list_orders(s, "open"))
+        st.set_setting(s, "orders_seen_id", open_ids[-2] if len(open_ids) > 1 else 0)
+        shown = reorder.current(s, None, at(9, 11, 30), write=False).suggestions
+        seen.mark_suggestions(s, shown[1:])
+        s.commit()
 
 
 def take_pages(shot: Shooter, scn: Scenario) -> None:

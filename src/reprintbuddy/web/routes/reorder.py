@@ -5,10 +5,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import reorder
+from reprintbuddy.domain import reorder, seen
 from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
 from reprintbuddy.models import ReorderMark, utcnow
-from reprintbuddy.web import kpis
+from reprintbuddy.web import kpis, regions
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.filament_view import COLOR, may_write, page_spools
@@ -77,6 +77,9 @@ async def _page(
             # booked while Bambuddy was down still ends "on its way" (controller ruling R7). The key
             # figure of the overview counts with the same function (p64).
             state = reorder.current(tx, spools, now)
+            if regions.page_load(request):
+                # Opening the page clears "new" on the overview (Spec 10.2); a live refetch does not.
+                seen.mark_suggestions(tx, state.suggestions)
     sorts, day = state.sorts, state.day
     rows = []
     for sug in state.suggestions:

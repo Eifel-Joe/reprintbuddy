@@ -1,28 +1,26 @@
-"""The overview's numbers (Spec 10.2): the state of the Bambuddy connection and the four key figures.
+"""The overview's numbers (Spec 10.2, "Was ansteht" since 0.4.1): the state of the Bambuddy connection
+and the seven cards of what is due.
 
-Pure: no app, no database. The figures count the rows of `catalog.list_articles` and the prints of
-the queue, so they follow the same rules as the article list, the queue and the reorder page.
+Pure: no app, no database. The route fills `Todo` from the same functions the pages behind the cards
+use; this file checks what the cards make of it (order, numbers, small line, tone, where they lead).
 """
+
+from dataclasses import replace
 
 import pytest
 
 from reprintbuddy.domain.engine import EngineStatus
 from reprintbuddy.domain.status import article_status
 from reprintbuddy.web.i18n import translate
-from reprintbuddy.web.overview_view import CONNECTION_KEYS, connection_state, figures
+from reprintbuddy.web.overview_view import CONNECTION_KEYS, Todo, connection_state, red_counts, todo_cards
 
 
-def row(name="A", *, available=5, min_stock=2, coverage=None, provisional=0, awaiting_assembly=0,
-        in_progress_prints=0, paused=False):
-    """A stand-in for catalog.ArticleRow with the fields the figures read."""
+def row(name="A", *, available=5, min_stock=2, coverage=None):
+    """A stand-in for a row of catalog.list_articles (one per variant) with the field the count reads."""
     from types import SimpleNamespace
 
     coverage = available if coverage is None else coverage
-    return SimpleNamespace(
-        name=name, available=available, min_stock=min_stock, provisional=provisional,
-        awaiting_assembly=awaiting_assembly, in_progress_prints=in_progress_prints, paused=paused,
-        status=article_status(available=available, min_stock=min_stock, coverage=coverage),
-    )
+    return SimpleNamespace(name=name, status=article_status(available=available, min_stock=min_stock, coverage=coverage))
 
 
 # ---- connection ---------------------------------------------------------------------------
@@ -45,32 +43,102 @@ def test_connection_state(status, state, tone):
     assert CONNECTION_KEYS[state] == f"overview.connection.{state}"
 
 
-# ---- key figures --------------------------------------------------------------------------
+# ---- the cards of what is due -------------------------------------------------------------
+
+EMPTY = Todo(
+    orders_open=0, orders_new=0, orders_ready=0, checks=0, check_units=0, assembly_units=0,
+    suggestions=0, suggestions_new=0, under_way=0, printing=0, waiting=0, filament_short=0,
+    below_min=0, overbooked=0,
+)
 
 
-def by_label(cards, key, lang="en"):
+def en(key, **params):
+    return translate("en", key, **params)
+
+
+def card(cards, key, lang="en"):
     label = translate(lang, key)
     found = [c for c in cards if c.label == label]
     assert len(found) == 1, f"no card {key}"
     return found[0]
 
 
-def test_always_four_cards_in_the_order_of_the_spec_also_when_empty():
-    cards = figures("en", [], queued_prints=0, open_prints=0, suggestions=0)
+def note(c):
+    """The small line as plain text and the links in it."""
+    return " · ".join(part.text for part in c.note), [part.href for part in c.note if part.href]
+
+
+def test_seven_cards_in_the_order_of_the_spec_grey_at_zero():
+    cards = todo_cards("en", EMPTY)
     assert [c.label for c in cards] == [
-        translate("en", "overview.kpi.below_min"),
-        translate("en", "overview.kpi.planned"),
-        translate("en", "overview.kpi.to_check"),
-        translate("en", "overview.kpi.reorder"),
+        en("overview.todo.orders"), en("overview.todo.inspection"), en("overview.todo.assembly"),
+        en("overview.todo.reorder"), en("overview.todo.prints"), en("overview.todo.filament"),
+        en("overview.todo.below_min"),
     ]
-    assert [c.value for c in cards] == [0, 0, 0, 0]
-    assert [c.href for c in cards] == ["/articles", "/queue", "/inspection", "/reorder"]
-    assert [c.note for c in cards] == ["", "", "", ""]
-    # Nothing to do: green below the minimum, the others quiet.
-    assert [c.tone for c in cards] == ["ok", "accent", "neutral", "neutral"]
+    assert [c.value for c in cards] == [0] * 7
+    assert [c.href for c in cards] == [
+        "/orders", "/inspection", "/assembly", "/reorder", "/queue", "/filament", "/articles?status=below_min",
+    ]
+    assert [c.tone for c in cards] == ["neutral"] * 7  # a 0 stays, grey (Spec 10.2)
+    assert [c.note for c in cards] == [()] * 7
 
 
-def test_below_min_counts_the_red_states_not_low():
+def test_orders_new_and_ready_the_ready_ones_lead_to_their_filter():
+    c = card(todo_cards("en", replace(EMPTY, orders_open=5, orders_new=2, orders_ready=1)), "overview.todo.orders")
+    assert (c.value, c.tone, c.href) == (5, "warn", "/orders")
+    assert note(c) == (
+        f'{en("overview.todo.new", n=2)} · {en("overview.todo.orders_ready", n=1)}', ["/orders?status=ready"],
+    )
+
+
+def test_a_part_at_zero_is_left_out_of_the_small_line():
+    c = card(todo_cards("en", replace(EMPTY, orders_open=3, orders_ready=2)), "overview.todo.orders")
+    assert note(c) == (en("overview.todo.orders_ready", n=2), ["/orders?status=ready"])
+    c = card(todo_cards("en", replace(EMPTY, orders_open=3, orders_new=3)), "overview.todo.orders")
+    assert note(c) == (en("overview.todo.new", n=3), [])
+
+
+def test_inspection_counts_prints_and_names_the_pieces():
+    c = card(todo_cards("en", replace(EMPTY, checks=3, check_units=12)), "overview.todo.inspection")
+    assert (c.value, c.tone) == (3, "warn")
+    assert note(c) == (en("overview.todo.pieces", n=12), [])
+
+
+def test_assembly_counts_pieces():
+    c = card(todo_cards("en", replace(EMPTY, assembly_units=4)), "overview.todo.assembly")
+    assert (c.value, c.tone, c.note) == (4, "warn", ())
+
+
+def test_reorder_new_and_under_way():
+    c = card(todo_cards("en", replace(EMPTY, suggestions=3, suggestions_new=1, under_way=2)), "overview.todo.reorder")
+    assert (c.value, c.tone) == (3, "warn")
+    assert note(c) == (f'{en("overview.todo.new", n=1)} · {en("overview.todo.under_way", n=2)}', [])
+    # under way alone: nothing to order, the card is grey but says what is coming
+    c = card(todo_cards("en", replace(EMPTY, under_way=2)), "overview.todo.reorder")
+    assert (c.value, c.tone) == (0, "neutral")
+    assert note(c) == (en("overview.todo.under_way", n=2), [])
+
+
+def test_prints_running_and_waiting():
+    c = card(todo_cards("en", replace(EMPTY, printing=1, waiting=4)), "overview.todo.prints")
+    assert (c.value, c.tone, c.href) == (1, "warn", "/queue")
+    assert note(c) == (en("overview.todo.waiting", n=4), [])
+
+
+def test_filament_short_and_unknown():
+    c = card(todo_cards("en", replace(EMPTY, filament_short=2)), "overview.todo.filament")
+    assert (c.value, c.tone, c.href) == (2, "warn", "/filament")
+    c = card(todo_cards("en", replace(EMPTY, filament_short=None)), "overview.todo.filament")
+    assert (c.value, c.tone) == (en("overview.todo.stock_unknown"), "neutral")
+
+
+def test_below_min_is_red_and_overbooked_leads_to_its_filter():
+    c = card(todo_cards("en", replace(EMPTY, below_min=1, overbooked=2)), "overview.todo.below_min")
+    assert (c.value, c.tone, c.href) == (3, "bad", "/articles?status=below_min")
+    assert note(c) == (en("overview.todo.overbooked", n=2), ["/articles?status=overbooked"])
+
+
+def test_red_counts_counts_rows_red_states_not_low():
     rows = [
         row("ok", available=5, min_stock=2),
         row("low", available=1, min_stock=2, coverage=4),  # yellow: the reprint covers it
@@ -79,34 +147,12 @@ def test_below_min_counts_the_red_states_not_low():
         row("over2", available=-2, min_stock=3),
     ]
     assert [r.status for r in rows] == ["ok", "low", "below_min", "overbooked", "overbooked"]
-    card = by_label(figures("en", rows, queued_prints=0, open_prints=0, suggestions=0), "overview.kpi.below_min")
-    assert card.value == 3
-    assert card.tone == "bad"
-    assert card.note == translate("en", "overview.kpi.overbooked_note", n=2)
-
-
-def test_planned_adds_the_queue_and_bambuddy():
-    card = by_label(figures("en", [], queued_prints=4, open_prints=3, suggestions=0), "overview.kpi.planned")
-    assert card.value == 7
-    assert card.note == translate("en", "overview.kpi.planned_note", queued=4, open=3)
-
-
-def test_to_check_adds_provisional_and_assembly_units():
-    rows = [row("a", provisional=4), row("b", awaiting_assembly=2), row("c", provisional=1, awaiting_assembly=1)]
-    card = by_label(figures("en", rows, queued_prints=0, open_prints=0, suggestions=0), "overview.kpi.to_check")
-    assert card.value == 8
-    assert card.tone == "warn"
-    assert card.note == translate("en", "overview.kpi.to_check_note", check=5, assembly=3)
-
-
-def test_reorder_shows_the_count_yellow():
-    card = by_label(figures("en", [], queued_prints=0, open_prints=0, suggestions=2), "overview.kpi.reorder")
-    assert card.value == 2
-    assert card.tone == "warn"
+    assert red_counts(rows) == (1, 2)
 
 
 def test_german_labels():
-    cards = figures("de", [], queued_prints=0, open_prints=0, suggestions=0)
+    cards = todo_cards("de", replace(EMPTY, filament_short=None))
     assert [c.label for c in cards] == [
-        "Unter Mindestbestand", "Geplant und in Arbeit", "Zu prüfen", "Bestellvorschläge",
+        "Bestellungen", "Zu prüfen", "Montage", "Bestellvorschläge", "Drucke", "Filament", "Unter Mindestbestand",
     ]
+    assert card(cards, "overview.todo.filament", "de").value == "Bestand unbekannt"

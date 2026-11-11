@@ -371,3 +371,20 @@ def apply_rule(session: Session, actor: Actor = "auto") -> list[WorkQueueEntry]:
                 )
             )
     return created
+
+
+# The states of the overview card "Prints" (Spec 10.2), named one by one: a state added later counts
+# nowhere until it is placed here. `printing` is what Bambuddy runs (it sets it right before the start
+# command, so heating and levelling count as printing; decided 11.11.2026).
+RUNNING_STATES: frozenset[str] = frozenset({"printing"})
+HANDED_OVER_WAITING: frozenset[str] = frozenset({"sending", "unclear", "queued"})
+
+
+def print_counts(session: Session) -> tuple[int, int]:
+    """(running, waiting): prints Bambuddy runs; Reprintbuddy's queue (held entries too) plus prints
+    handed over to Bambuddy and not started."""
+    running = session.scalar(select(func.count()).select_from(Dispatch).where(Dispatch.status.in_(RUNNING_STATES)))
+    handed = session.scalar(
+        select(func.count()).select_from(Dispatch).where(Dispatch.status.in_(HANDED_OVER_WAITING))
+    )
+    return int(running or 0), int(handed or 0) + sum(queued_prints(session).values())

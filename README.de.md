@@ -46,7 +46,7 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 
 Erfundene Beispieldaten. Weitere Bilder stehen auf den [Doku-Seiten](https://eifel-joe.github.io/reprintbuddy/).
 
-![Übersicht: Verbindung, Warnungen, Kennzahlen und alle Artikel auf einen Blick](docs/assets/images/de/overview.png)
+![Übersicht: Verbindung, Warnungen und was ansteht auf einen Blick](docs/assets/images/de/overview.png)
 
 ![Artikel: Bestand, verfügbarer Bestand und Soll je Artikel](docs/assets/images/de/articles-list.png)
 

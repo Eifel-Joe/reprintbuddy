@@ -9,14 +9,14 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import catalog, orders, stock
+from reprintbuddy.domain import catalog, orders, seen, stock
 from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.domain.orders import ArticleItem, AssembledItem, SetItem
 from reprintbuddy.web import assembled_view
 from reprintbuddy.domain.status import summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import utcnow
-from reprintbuddy.web import kpis, listing
+from reprintbuddy.web import kpis, listing, regions
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, local_next, render
 from reprintbuddy.web.formatting import to_local
@@ -29,7 +29,8 @@ from reprintbuddy.web.forms import (
     parse_text,
     saved_redirect,
 )
-from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
+from reprintbuddy.web.filament_view import may_write
+from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
 from reprintbuddy.web.i18n import translate
 
 router = APIRouter()
@@ -58,6 +59,11 @@ async def orders_list(
     if (redirect := listing.remember_layout(request, "orders")) is not None:
         return redirect  # ?layout=... only sets the cookie
     closed = view == "closed"
+    if not closed and regions.page_load(request) and may_write(request) and seen.orders_mark_due(db):
+        # Opening the open orders clears "new" on the overview (Spec 10.2); a live refetch does not.
+        # The write lock only when the mark changes; inside, `mark_orders` looks again.
+        with write_transaction(request) as tx:
+            seen.mark_orders(tx)
     states = _CLOSED_STATES if closed else _OPEN_STATES
     status = listing.pick(request.query_params.get("status"), states)
     every = orders.list_orders(db, "closed" if closed else "open")

@@ -31,7 +31,6 @@ class Kpi:
     value: int
     label: str
     note: str = ""  # a small line below the label (finished text); empty: none
-    href: str = ""  # the card is a link to this page (the overview, Spec 10.2); empty: no link
 
 
 def state_cards(

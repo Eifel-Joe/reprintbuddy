@@ -36,11 +36,16 @@ async def filament_list(request: Request):
     lang = current_language(request)
     today = utcnow().date()
     db = db_session(request)  # the rest only reads, on the request's normal session
+    # The stock and the suggestions with the reorder page's function (p64): a sort with a suggestion is
+    # "low" (Spec 9.4, 0.4.1), the sorts the overview's card "Filament" counts. It writes what the
+    # reorder page writes (new sorts, Entscheidung 4; arrived marks closed).
     if not may_write(request):  # p230: a restore or an update runs, the page reads the record only
-        sorts, day = filament.known_sorts(db, None)
+        state = reorder.current(db, None, utcnow(), write=False)
     else:
-        with write_transaction(request) as tx:  # entering new sorts is the one write (Entscheidung 4)
-            sorts, day = filament.known_sorts(tx, spools)
+        with write_transaction(request) as tx:
+            state = reorder.current(tx, spools, utcnow())
+    sorts, day = state.sorts, state.day
+    short = {sug.item_id for sug in state.suggestions if sug.item_type == "filament"}
     ticked = filament.ticked_sort_ids(db)  # only spool sorts ticked in an active article (Spec 9.3)
     reordered = set(filament.reorder_groups(db))
     directory = [s for s in db.scalars(select(FilamentSort)) if s.id in ticked and not s.legacy]
@@ -62,6 +67,7 @@ async def filament_list(request: Request):
             "demand": f"{demand.get(sort.id, 0.0):.0f}" if is_reordered else None,
             "reordered": is_reordered,
             "configured": sort.id in configured,
+            "short": sort.id in short,
         })
     unmapped = filament.unmapped_slots(db)
     rows.sort(key=lambda r: (r["label"].casefold(), r["id"]))

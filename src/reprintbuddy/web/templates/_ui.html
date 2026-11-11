@@ -92,11 +92,10 @@
 
 {# ---- look like Bambuddy: building blocks (Spec 10.1) ---- #}
 
-{# One key figure card (kpis.Kpi): symbol in the colour of its tone, number, label. With `href`
-   the whole card is a link to its page (the overview, Spec 10.2). #}
+{# One key figure card (kpis.Kpi): symbol in the colour of its tone, number, label. The overview's
+   cards that lead to a page are its own (overview.html, 0.4.1). #}
 {% macro kpi(card) -%}
-{%- set inner -%}<span class="kpi-icon tone-{{ card.tone }}">{{ icon(card.icon) }}</span><div><span class="kpi-value">{{ card.value }}</span><span class="kpi-label">{{ card.label }}</span>{% if card.note %}<span class="kpi-note">{{ card.note }}</span>{% endif %}</div>{%- endset -%}
-{%- if card.href %}<a class="kpi kpi-link" href="{{ card.href }}">{{ inner }}</a>{% else %}<div class="kpi">{{ inner }}</div>{% endif %}
+<div class="kpi"><span class="kpi-icon tone-{{ card.tone }}">{{ icon(card.icon) }}</span><div><span class="kpi-value">{{ card.value }}</span><span class="kpi-label">{{ card.label }}</span>{% if card.note %}<span class="kpi-note">{{ card.note }}</span>{% endif %}</div></div>
 {%- endmacro %}
 
 {# The row of key figure cards (kpis.state_cards); fine inside ui.region("summary", …). #}

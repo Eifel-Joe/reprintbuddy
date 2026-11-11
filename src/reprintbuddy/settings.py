@@ -66,6 +66,10 @@ DEFAULTS: dict[str, object] = {
     # Home Assistant refused the stored token (401): no automatic try until the card is saved again
     # (Spec 10.6 "Token abgelehnt", p152); set by Reprintbuddy, not shown, kept over a restart.
     "ha_token_rejected": False,
+    # What "new" means on the overview (Spec 10.2, 0.4.1): set when /orders or /reorder is loaded,
+    # shared by every device; set by Reprintbuddy, not shown. None: the page was never loaded.
+    "orders_seen_id": None,  # the highest order id when /orders was last loaded
+    "reorder_seen": None,  # the suggestions /reorder showed then, as "filament:3", "part:7"
 }
 
 SENSITIVE: frozenset[str] = frozenset({"bambuddy_api_key", "tls_key", "ha_token"})
@@ -286,6 +290,27 @@ def _ha_since(value: Any) -> str | None:
     return value
 
 
+def _seen_id(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError("expected an order id")
+    return value
+
+
+def _seen_keys(value: Any) -> list[str] | None:
+    """The suggestions shown, sorted and once each; "filament:<id>" or "part:<id>"."""
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValueError("expected a list of suggestions")
+    for item in value:
+        kind, _, number = item.partition(":") if isinstance(item, str) else ("", "", "")
+        if kind not in ("filament", "part") or not number.isdigit():
+            raise ValueError("expected a list of suggestions")
+    return sorted(set(value))
+
+
 def _optional_pem(value: Any) -> str | None:
     if value is None:
         return None
@@ -323,6 +348,8 @@ _VALIDATORS: dict[str, Callable[[Any], object]] = {
     "ha_events": _ha_events,
     "ha_since": _ha_since,
     "ha_token_rejected": _bool,
+    "orders_seen_id": _seen_id,
+    "reorder_seen": _seen_keys,
 }
 
 

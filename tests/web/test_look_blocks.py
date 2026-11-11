@@ -58,16 +58,6 @@ def test_kpi_row(ready_client):
     assert '<span class="kpi-label">&lt;i&gt;</span>' in html
 
 
-def test_kpi_with_href_is_a_link(ready_client):
-    """The overview's cards lead to their page (Spec 10.2); a card without `href` stays a div."""
-    cards = [Kpi("printer", "accent", 3, "Planned", href="/queue"), Kpi("x", "bad", 1, "Plain")]
-    html = render(ready_client, "{{ ui.kpi_row(cards) }}", cards=cards)
-    assert '<a class="kpi kpi-link" href="/queue">' in html
-    assert html.count("<a ") == 1
-    assert html.count('<div class="kpi">') == 1
-    assert '<span class="kpi-value">3</span>' in html
-
-
 def test_icon_button_is_a_link_with_title_and_label(ready_client):
     html = render(ready_client, '{{ ui.icon_button("pencil", "Edit <it>", "/a?x=1&y=2") }}')
     assert html.startswith('<a class="icon-btn"')
@@ -159,6 +149,16 @@ def test_css_kpis_two_columns_on_phone(ready_client):
     css = ready_client.get(CSS).text
     media = re.search(r"@media \(max-width: 899px\) \{[^@]*?\.kpis \{[^}]*repeat\(2", css)
     assert media, "no two-column .kpis rule inside the phone query"
+
+
+def test_css_overview_cards_show_which_link_has_focus(ready_client):
+    """The overview's card is one link with a link of its own in its small line (Spec 10.2, 0.4.1):
+    the keyboard focus shows on the card for the card's link and on the small link for that one
+    (review v0.4.1 B, R3); a click does not draw it."""
+    css = ready_client.get(CSS).text
+    assert re.search(r"\.todo-card:has\(\.todo-main:focus-visible\) \{[^}]*outline: 2px solid", css)
+    assert re.search(r"\.todo-sub:focus-visible \{[^}]*outline: 2px solid", css)
+    assert ":focus-within" not in css.split(".todo-card", 1)[1].split("@media", 1)[0]
 
 
 def test_css_tap_targets(ready_client):

@@ -41,6 +41,8 @@ EXPECTED_DEFAULTS = {
     "ha_events": ["print_done", "print_failed", "paused", "below_min", "reorder", "trouble", "rights"],
     "ha_since": None,
     "ha_token_rejected": False,
+    "orders_seen_id": None,
+    "reorder_seen": None,
 }
 
 

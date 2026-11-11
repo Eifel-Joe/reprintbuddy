@@ -22,6 +22,11 @@
   var FIRST_RETRY_MS = 2000; // after the stream was closed for good; doubled up to the maximum
   var MAX_RETRY_MS = 60000;
   var SETTLE_MS = 250; // after focusout or input: wait until the focus has moved on
+  // Set right before this script loads the page again by itself; the server does not count such a
+  // load as opening the page for "new" on the overview (Spec 10.2, 0.4.1). The mark is for one page:
+  // every page clears it as soon as this script runs.
+  var AUTO_RELOAD = "rb_auto_reload";
+  document.cookie = AUTO_RELOAD + "=; max-age=0; path=/; samesite=strict";
 
   var streamAddress = app.getAttribute("data-live");
   var source = app.getAttribute("data-live-src") || ""; // empty: the page answered a POST
@@ -169,9 +174,12 @@
   // The only place that loads the page again. A page shown as the answer to a form (no region
   // source) has an address that only answers POST: loading it again would send the form a
   // second time, a second booking. Such a page is never reloaded by this script.
-  function reloadIfSafe() {
+  function reloadIfSafe(automatic) {
     if (!source) {
       return false;
+    }
+    if (automatic) {
+      document.cookie = AUTO_RELOAD + "=1; max-age=30; path=/; samesite=strict";
     }
     window.location.reload();
     return true;
@@ -181,7 +189,7 @@
   // gone, a new version): load it again, unless that would throw away what somebody typed
   // or send a form again; then say so instead.
   function reloadOrNotice() {
-    if (anyFormChanged() || !reloadIfSafe()) {
+    if (anyFormChanged() || !reloadIfSafe(true)) {
       showNotice(document.getElementById("live-version"));
     }
   }
