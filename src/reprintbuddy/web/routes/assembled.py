@@ -75,6 +75,7 @@ def _typed(form) -> dict:
         "has_parts": form.get("has_parts") is not None,
         "part_rows": part_rows(form),
         "focus": None,
+        "fresh": "",
         "targets": {},
     }
     for field in FIELDS:
@@ -209,27 +210,39 @@ def _form_page(request, db, *, composite, values, error=None, status=200, action
         },
         parts=active_parts(db),
         variants=_variant_table(db, composite, values),
+        blank_option=_blank_option(),  # what a new option and a new choice field start with (more_rows.js)
+        default_options=DEFAULT_OPTIONS,
+        more_rows=MORE_ROWS,
+        max_rows=MAX_ROWS,
+        max_options=MAX_OPTIONS,
         error=error,
     )
 
 
 def _grow(values: dict, action: str) -> bool:
-    """The actions that only show the form again with more room; True when one was taken."""
+    """The actions that only show the form again with more room; True when one was taken.
+
+    values["fresh"] names the first new place for the jump mark (p380): "base:3" a base row, "c1:2" an
+    option, "c1:0:2" a row of option 0, "c2" choice parts 2 as a whole."""
     if action == "add_c2":
         values["show_c2"] = True
         values["c2"] = values["c2"] or [_blank_option() for _ in range(DEFAULT_OPTIONS)]
+        values["fresh"] = "c2"
         return True
     if action == "more_base":
+        values["fresh"] = f"base:{len(values['base'])}"
         values["base"].extend(_blank_row() for _ in range(MORE_ROWS))
         return True
     for field in FIELDS:
         if action == f"more_{field}":
+            values["fresh"] = f"{field}:{len(values[field])}"
             values[field].extend(_blank_option() for _ in range(MORE_ROWS))
             return True
         prefix = f"more_{field}_"
         if action.startswith(prefix):
             index = bounded_int(action[len(prefix):])
             if index is not None and index < len(values[field]):
+                values["fresh"] = f"{field}:{index}:{len(values[field][index]['rows'])}"
                 values[field][index]["rows"].extend(_blank_row() for _ in range(MORE_ROWS))
             return True
     return False
@@ -265,7 +278,7 @@ def new_values() -> dict:
         "name": "", "sku": "", "label_text": "", "mode": "stock", "min_stock": "0", "buffer": "0",
         "show_c2": False, "base": [_blank_row() for _ in range(DEFAULT_BASE_ROWS)],
         "c1": [_blank_option() for _ in range(DEFAULT_OPTIONS)], "c2": [],
-        "has_parts": False, "part_rows": [], "focus": None, "targets": {},
+        "has_parts": False, "part_rows": [], "focus": None, "fresh": "", "targets": {},
     }
 
 
@@ -281,7 +294,7 @@ def values_of(db: Session, composite: Article) -> dict:
         "c1": [], "c2": [],
         "has_parts": bool(links),
         "part_rows": [{"part": str(p), "qty": str(q)} for p, q in links.items()],
-        "focus": None, "targets": {},
+        "focus": None, "fresh": "", "targets": {},
     }
     for field, options in zip(FIELDS, row.fields):
         values[field] = [

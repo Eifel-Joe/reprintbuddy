@@ -45,5 +45,13 @@
     }
   });
 
+  // Rows added in place (more_rows.js) follow the same rule.
+  document.addEventListener("more:added", function (event) {
+    var form = event.target.closest ? event.target.closest("[data-set-form]") : null;
+    if (form) {
+      refresh(form);
+    }
+  });
+
   each(document.querySelectorAll("[data-set-form]"), refresh);
 })();

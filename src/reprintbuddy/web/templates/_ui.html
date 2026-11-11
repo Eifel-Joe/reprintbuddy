@@ -208,3 +208,12 @@
 {% macro check_row(info_text, label) -%}
 <div class="check-row">{{ caller() }}{{ info(info_text, label) }}</div>
 {%- endmacro %}
+
+{#- A button that only shows more room in a form (rows, options, a second field): more_rows.js adds it
+    in place (data-more-add copies the group's row template, data-more-show opens a part that was
+    left out). Without the script the button sends the form, which comes back with the room added
+    and nothing saved; formaction ends in #more-new, the mark on the first new row (p380), so the
+    page does not start at the top again. `url` is the address of the form. -#}
+{% macro more_button(value, label, url, reveal=false) -%}
+<button class="btn secondary" type="submit" name="action" value="{{ value }}" formaction="{{ url }}#more-new" formnovalidate {% if reveal %}data-more-show{% else %}data-more-add{% endif %}>{{ icon('plus') }}{{ label }}</button>
+{%- endmacro %}

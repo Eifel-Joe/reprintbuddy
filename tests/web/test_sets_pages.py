@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_set
+from more_rows_support import without_templates
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog
 from reprintbuddy.domain.catalog import BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
@@ -60,7 +61,7 @@ def test_new_set_form_has_drop_downs_per_row_not_a_multi_select(ready_client):
     assert "multiple" not in page
     assert 'name="base_2_article"' in page and 'name="base_3_article"' not in page  # 3 rows, compact
     assert 'name="c1_2_article"' in page and 'name="c1_2_suffix"' in page and 'name="c1_3_article"' not in page
-    assert 'name="c2_0_article"' not in page  # choice parts 2 only on request
+    assert 'name="c2_0_article"' not in without_templates(page)  # choice parts 2 only on request (the script has them)
     assert 'name="action" value="add_c2"' in page and en("sets.add_choices_2") in page
     assert en("sets.base") in page and en("sets.choices_1") in page
     assert 'src="/static/js/set_form.js' in page
@@ -189,7 +190,7 @@ def test_edit_without_second_field_offers_to_add_it(ready_client):
     a, b, c = three_articles(ready_client)
     ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c))
     page = ready_client.get(f"/sets/{sets_in_db(ready_client)[0].id}/edit").text
-    assert 'name="c2_0_article"' not in page and 'name="action" value="add_c2"' in page
+    assert 'name="c2_0_article"' not in without_templates(page) and 'name="action" value="add_c2"' in page
 
 
 def test_edit_set(ready_client):
