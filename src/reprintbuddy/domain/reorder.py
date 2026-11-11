@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy.activity.capture import acting, note_withdrawn
 from reprintbuddy.bambuddy.types import Spool
 from reprintbuddy.domain import catalog, filament, rules, suppliers, workqueue
+from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.localtime import local_date
 from reprintbuddy.models import (
@@ -45,7 +46,7 @@ def missing_to_target(article: Article, coverage_total: int) -> int:
 
 def _missing_by_article(session: Session) -> tuple[dict[int, Article], dict[int, int]]:
     articles = {
-        a.id: a for a in session.scalars(select(Article).where(Article.archived_at.is_(None)))
+        a.id: a for a in session.scalars(articlesets.print_articles())
     }
     coverage = workqueue.coverage_all(session)
     return articles, {i: missing_to_target(a, coverage[i].total) for i, a in articles.items()}

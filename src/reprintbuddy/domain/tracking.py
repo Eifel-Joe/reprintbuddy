@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable
 from reprintbuddy.bambuddy.types import QueueItem
 from reprintbuddy.domain.inspection import open_inspection
+from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.pauses import pause_article
 from reprintbuddy.domain.stock import write_journal
 from reprintbuddy.domain.workqueue import OPEN_STATES, add_replacement
@@ -204,7 +205,7 @@ async def check_articles(client: BambuddyClient, sm: sessionmaker) -> ArticleChe
                 Article.file_fingerprint, Article.target_model, Article.printer_id,
                 Article.paused,
             )
-            .where(Article.archived_at.is_(None))
+            .where(articlesets.where_print())  # only print articles have a file and a target (0.4.0)
             .order_by(Article.id)
         ).all()
     try:

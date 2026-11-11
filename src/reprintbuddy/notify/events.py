@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy import settings as st
 from reprintbuddy.domain import filament, reorder, rules, workqueue
+from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.engine import EngineStatus, collect_warnings
 from reprintbuddy.domain.status import article_status
 from reprintbuddy.i18n import translate, translate_count
@@ -179,7 +180,7 @@ def _paused_refs(session: Session) -> list[str]:
     ids = session.scalars(
         select(Article.id).where(
             Article.paused.is_(True),
-            Article.archived_at.is_(None),
+            articlesets.where_print(),
             (Article.pause_reason.is_(None)) | (Article.pause_reason != USER_PAUSE),
         )
     ).all()
@@ -204,7 +205,7 @@ def red_articles(session: Session) -> dict[int, str]:
         select(
             Article.id, Article.stock, Article.reserved, Article.min_stock, Article.units_per_print,
             Article.provisional, Article.awaiting_assembly,
-        ).where(Article.archived_at.is_(None))
+        ).where(articlesets.where_print())
     )
     red: dict[int, str] = {}
     for row in rows:

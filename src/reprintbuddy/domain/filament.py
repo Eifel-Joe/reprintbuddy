@@ -21,6 +21,7 @@ from reprintbuddy.activity.capture import quiet
 from reprintbuddy.bambuddy.client import BambuddyClient
 from reprintbuddy.bambuddy.types import Spool
 from reprintbuddy.domain import color, rules, suppliers
+from reprintbuddy.domain import articlesets
 from reprintbuddy.domain import catalog
 from reprintbuddy.domain.catalog import _int_in
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
@@ -492,7 +493,7 @@ def suggest_from_similar(session: Session, article_id: int) -> dict[int, Suggest
         return {}
     sources = session.execute(
         select(Article.id, Article.name)
-        .where(Article.id != article_id, Article.archived_at.is_(None))
+        .where(Article.id != article_id, articlesets.where_print())
         .order_by(Article.id.desc())
     ).all()
     kinds: dict[int, list[tuple[int, str | None, str | None]]] = defaultdict(list)
@@ -612,7 +613,7 @@ def reorder_groups(session: Session) -> dict[int, ReorderGroup]:
     rows = session.execute(
         select(ArticleFilamentSort)
         .join(Article, Article.id == ArticleFilamentSort.article_id)
-        .where(Article.archived_at.is_(None))
+        .where(articlesets.where_print())
     ).scalars()
     by_slot: dict[tuple[int, int], list[ArticleFilamentSort]] = defaultdict(list)
     for row in rows:
@@ -633,7 +634,7 @@ def ticked_sort_ids(session: Session) -> set[int]:
     rows = session.scalars(
         select(ArticleFilamentSort.sort_id)
         .join(Article, Article.id == ArticleFilamentSort.article_id)
-        .where(Article.archived_at.is_(None))
+        .where(articlesets.where_print())
         .distinct()
     )
     return set(rows)
@@ -653,7 +654,7 @@ def unmapped_slots(session: Session, article_id: int | None = None) -> list[tupl
     stmt = (
         select(Article.id, Article.name, ArticleFilament.slot)
         .join(ArticleFilament, ArticleFilament.article_id == Article.id)
-        .where(Article.archived_at.is_(None), ~ticked)
+        .where(articlesets.where_print(), ~ticked)
         .order_by(Article.name, ArticleFilament.slot)
     )
     if article_id is not None:

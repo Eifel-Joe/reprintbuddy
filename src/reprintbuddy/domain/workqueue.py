@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy import settings
 from reprintbuddy.domain import rules
+from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.errors import NotFoundError, ValidationError
 from reprintbuddy.domain.pauses import pause_article
 from reprintbuddy.domain.stock import Actor, write_journal
@@ -315,10 +316,10 @@ def coverage_of(session: Session, article: Article) -> Coverage:
 
 
 def coverage_all(session: Session) -> dict[int, Coverage]:
-    """Coverage of every non-archived article: one query per table."""
+    """Coverage of every active print article: one query per table."""
     queued = queued_prints(session)
     units = in_progress_units(session)
-    articles = session.scalars(select(Article).where(Article.archived_at.is_(None)))
+    articles = session.scalars(articlesets.print_articles())
     return {a.id: _coverage(a, queued.get(a.id, 0), units.get(a.id, 0)) for a in articles}
 
 
@@ -328,12 +329,8 @@ def apply_rule(session: Session, actor: Actor = "auto") -> list[WorkQueueEntry]:
         return []
     coverages = coverage_all(session)
     articles = session.scalars(
-        select(Article)
-        .where(
-            Article.auto_enabled.is_(True),
-            Article.paused.is_(False),
-            Article.archived_at.is_(None),
-        )
+        articlesets.print_articles()  # articles made of parts are never printed (Spec 7.1, 0.4.0)
+        .where(Article.auto_enabled.is_(True), Article.paused.is_(False))
         .order_by(Article.id)
     ).all()
     created: list[WorkQueueEntry] = []

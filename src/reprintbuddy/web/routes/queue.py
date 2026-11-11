@@ -26,6 +26,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable
 from reprintbuddy.bambuddy.types import QUEUE_STATUSES
 from reprintbuddy.domain import dispatch, workqueue
+from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.models import Article, Dispatch, WorkQueueEntry
 from reprintbuddy.web import regions
@@ -167,7 +168,7 @@ def _page(
         .order_by(Dispatch.id)
     ).all()
     articles = db.execute(
-        select(Article.id, Article.name).where(Article.archived_at.is_(None)).order_by(Article.name, Article.id)
+        select(Article.id, Article.name).where(articlesets.where_print()).order_by(Article.name, Article.id)
     ).all()
     return render(
         request,

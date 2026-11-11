@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
 from reprintbuddy.domain import catalog, filament, pauses, workqueue
+from reprintbuddy.domain import articlesets
 from reprintbuddy.domain import color as color_mod
 from reprintbuddy.domain.catalog import MAX_LABEL_TEXT, ArticleInput, TargetOption
 from reprintbuddy.domain.printfile import is_external_folder
@@ -412,7 +413,7 @@ def _taken_plates(db: Session, file_id: int, besides: int | None = None) -> dict
     """Plates of the file held by an active article; `besides` (the one relinked) is left
     out, so it can choose its own plate again, as the domain allows (`_plate_holder`)."""
     query = select(Article.plate_id, Article.name).where(
-        Article.library_file_id == file_id, Article.archived_at.is_(None)
+        Article.library_file_id == file_id, articlesets.where_print()
     )
     if besides is not None:
         query = query.where(Article.id != besides)

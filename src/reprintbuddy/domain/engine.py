@@ -38,6 +38,7 @@ from reprintbuddy import settings
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable
 from reprintbuddy.bambuddy.types import QueueItem
 from reprintbuddy.domain import dispatch, tracking, workqueue
+from reprintbuddy.domain import articlesets
 from reprintbuddy.models import Article, Dispatch, WorkQueueEntry, utcnow
 from reprintbuddy.i18n import translate
 from reprintbuddy.ops.runner import in_thread  # stdlib only; runs a blocking call in a thread that can be stopped
@@ -444,7 +445,7 @@ class Engine:
             .where(
                 WorkQueueEntry.held.is_(False),
                 Article.paused.is_(False),
-                Article.archived_at.is_(None),
+                articlesets.where_print(),
             )
         ).all()
         return any(
@@ -599,7 +600,7 @@ def collect_warnings(session: Session, status: EngineStatus) -> list[EngineWarni
         select(
             Article.id, Article.name, Article.pause_reason, Article.target_model, Article.printer_id
         )
-        .where(Article.paused.is_(True), Article.archived_at.is_(None))
+        .where(Article.paused.is_(True), articlesets.where_print())
         .order_by(Article.name, Article.id)
     ).all()
     for article_id, name, reason, target_model, printer_id in paused:

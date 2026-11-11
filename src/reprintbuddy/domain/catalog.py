@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy.activity.capture import quiet
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
 from reprintbuddy.domain import rules, suppliers, workqueue
+from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.domain.workqueue import OPEN_STATES
 from reprintbuddy.domain.status import ArticleStatus, article_status
@@ -286,7 +287,7 @@ def create_article(
         select(Article).where(
             Article.library_file_id == file.id,
             Article.plate_id == plate.index,
-            Article.archived_at.is_(None),
+            articlesets.where_print(),
         )
     )
     if taken is not None:
@@ -451,7 +452,8 @@ def _archive_filter(column, archived: bool):
 
 def list_articles(session: Session, *, archived: bool = False) -> list[ArticleRow]:
     """Active articles; with `archived=True` only the archived ones (Spec 5.5)."""
-    articles = session.scalars(select(Article).where(_archive_filter(Article.archived_at, archived))).all()
+    # Print articles only until 0.4.0 task 5 gives articles made of parts their rows.
+    articles = session.scalars(articlesets.print_articles(archived=archived)).all()
     # one query per table; an archived article has no entry and no open print (plan B4 decision 20)
     coverages = {} if archived else workqueue.coverage_all(session)
     prints = {} if archived else workqueue.in_progress_prints(session)
@@ -954,7 +956,7 @@ def _plate_holder(session: Session, file_id: int, plate_index: int, *, besides: 
         select(Article).where(
             Article.library_file_id == file_id,
             Article.plate_id == plate_index,
-            Article.archived_at.is_(None),
+            articlesets.where_print(),
             Article.id != besides,
         )
     )
@@ -1182,7 +1184,7 @@ def archive_part(session: Session, part_id: int) -> None:
     user = session.scalar(
         select(Article)
         .join(ArticlePart, ArticlePart.article_id == Article.id)
-        .where(ArticlePart.part_id == part_id, Article.archived_at.is_(None))
+        .where(ArticlePart.part_id == part_id, articlesets.where_catalog())
         .order_by(Article.name)
         .limit(1)
     )
