@@ -1301,6 +1301,8 @@
   "activity.field.suppliers": "suppliers",
   "activity.field.order_url": "order link",
   "activity.field.positions": "positions",
+  "activity.field.base": "base parts",
+  "activity.field.choices": "choice parts",
   "settings.tab.log": "Log",
   "activity.col.time": "Time",
   "activity.col.area": "Group",

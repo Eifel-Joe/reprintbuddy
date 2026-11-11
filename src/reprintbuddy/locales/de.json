@@ -1301,6 +1301,8 @@
   "activity.field.suppliers": "Lieferanten",
   "activity.field.order_url": "Bestell-Link",
   "activity.field.positions": "Positionen",
+  "activity.field.base": "Basisteile",
+  "activity.field.choices": "Wahlteile",
   "settings.tab.log": "Protokoll",
   "activity.col.time": "Zeitpunkt",
   "activity.col.area": "Gruppe",

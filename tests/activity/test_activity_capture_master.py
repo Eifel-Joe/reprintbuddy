@@ -16,7 +16,7 @@ from reprintbuddy.activity import capture
 from reprintbuddy.bambuddy.fake import FakeBambuddy
 from reprintbuddy.bambuddy.types import Plate
 from reprintbuddy.domain import catalog, filament, reorder, stock
-from reprintbuddy.domain.catalog import ArticleInput, PartInput, PositionInput, SetInput
+from reprintbuddy.domain.catalog import ArticleInput, BaseInput, ChoiceInput, ChoiceOptionInput, PartInput, SetInput
 from reprintbuddy.domain.filament import FilamentSettingsInput
 from reprintbuddy.domain.suppliers import SupplierInput
 from reprintbuddy.domain.pauses import pause_article
@@ -91,7 +91,7 @@ def test_archived_and_restored(db):
     with db.begin() as s:
         a = make_article(s, name="Bracket")
         p = make_part(s, name="Insert")
-        product_set = make_set(s, "Kit", [(1, [a.id])])
+        product_set = make_set(s, "Kit", [(1, a.id)])
     last = mark(db)
     with db.begin() as s:
         catalog.archive_set(s, product_set.id)
@@ -118,22 +118,45 @@ def test_parts_written_again_with_the_same_content_are_no_change(db):
     assert since(db, last) == [("article_changed", {"id": a.id, "name": "Bracket", "fields": ["parts"]}, "system")]
 
 
-def test_set_positions_written_again_with_the_same_content_are_no_change(db):
+def test_set_parts_written_again_with_the_same_content_are_no_change(db):
     with db.begin() as s:
         a = make_article(s, name="A")
         b = make_article(s, name="B", plate_id=9)
-        product_set = make_set(s, "Kit", [(1, [a.id]), (2, [a.id, b.id])])
+        c = make_article(s, name="C", plate_id=10)
+        product_set = make_set(s, "Kit", [(1, a.id)], [(2, [(b.id, "-B"), (c.id, "-C")])], sku="K")
     last = mark(db)
-    same = SetInput("Kit", None, [PositionInput(1, [a.id]), PositionInput(2, [a.id, b.id])])
+
+    def kit(base_qty: int, suffix_c: str) -> SetInput:
+        options = [ChoiceOptionInput(b.id, "-B"), ChoiceOptionInput(c.id, suffix_c)]
+        return SetInput("Kit", "K", [BaseInput(base_qty, a.id)], [ChoiceInput(2, options)])
+
     with db.begin() as s:
-        catalog.update_set(s, product_set.id, same)
+        catalog.update_set(s, product_set.id, kit(1, "-C"))
     assert since(db, last) == []
-    other = SetInput("Kit", None, [PositionInput(1, [a.id]), PositionInput(2, [b.id])])
+
+
+def test_changing_a_suffix_logs_choice_parts(db):  # Spec 10.7: which fields, p340
     with db.begin() as s:
-        catalog.update_set(s, product_set.id, other)
-    assert since(db, last) == [
-        ("set_changed", {"id": product_set.id, "name": "Kit", "fields": ["positions"]}, "system")
-    ]
+        a = make_article(s, name="A")
+        b = make_article(s, name="B", plate_id=9)
+        product_set = make_set(s, "Kit", [(1, a.id)], [(1, [(b.id, "-B")])], sku="K")
+    last = mark(db)
+    with db.begin() as s:
+        catalog.update_set(s, product_set.id, SetInput("Kit", "K", [BaseInput(1, a.id)],
+                                                       [ChoiceInput(1, [ChoiceOptionInput(b.id, "-X")])]))
+    assert since(db, last) == [("set_changed", {"id": product_set.id, "name": "Kit", "fields": ["choices"]}, "system")]
+
+
+def test_changing_a_base_quantity_logs_base_parts(db):
+    with db.begin() as s:
+        a = make_article(s, name="A")
+        b = make_article(s, name="B", plate_id=9)
+        product_set = make_set(s, "Kit", [(1, a.id)], [(1, [(b.id, "-B")])], sku="K")
+    last = mark(db)
+    with db.begin() as s:
+        catalog.update_set(s, product_set.id, SetInput("Kit", "K", [BaseInput(3, a.id)],
+                                                       [ChoiceInput(1, [ChoiceOptionInput(b.id, "-B")])]))
+    assert since(db, last) == [("set_changed", {"id": product_set.id, "name": "Kit", "fields": ["base"]}, "system")]
 
 
 def test_a_part_is_changed(db):
