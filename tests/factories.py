@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import uuid
 from datetime import date
 
@@ -65,17 +67,30 @@ def make_part(s: Session, *, name: str = "Insert M4", **fields) -> Part:
     return part
 
 
-def make_set(s: Session, name: str, positions: list[tuple[int, list[int]]]) -> ProductSet:
-    """`positions` is a list of (qty, [article ids]); several ids make a position with a choice."""
-    product_set = ProductSet(name=name)
+def make_set(
+    s: Session,
+    name: str,
+    base: list[tuple[int, int]],
+    choices: Sequence[tuple[int, list[tuple[int, str | None]]]] = (),
+    *,
+    sku: str | None = None,
+) -> ProductSet:
+    """`base` is a list of (qty, article id); `choices` up to two fields of (qty, [(article id, suffix)]).
+    Nothing is checked: an update or an older version may have left a set like this (Spec 5.4)."""
+    product_set = ProductSet(name=name, sku=sku)
     s.add(product_set)
     s.flush()
-    for sort, (qty, article_ids) in enumerate(positions):
-        position = SetPosition(set_id=product_set.id, sort=sort, qty=qty)
+    for sort, (qty, article_id) in enumerate(base):
+        position = SetPosition(set_id=product_set.id, sort=sort, qty=qty, slot=0)
         s.add(position)
         s.flush()
-        for article_id in article_ids:
-            s.add(SetPositionOption(position_id=position.id, article_id=article_id))
+        s.add(SetPositionOption(position_id=position.id, article_id=article_id))
+    for slot, (qty, options) in enumerate(choices, start=1):
+        position = SetPosition(set_id=product_set.id, sort=0, qty=qty, slot=slot)
+        s.add(position)
+        s.flush()
+        for sort, (article_id, suffix) in enumerate(options):
+            s.add(SetPositionOption(position_id=position.id, article_id=article_id, suffix=suffix, sort=sort))
     s.flush()
     return product_set
 

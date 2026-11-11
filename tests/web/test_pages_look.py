@@ -51,7 +51,7 @@ def ids(ready_client):
         return {
             "article": article_id,
             "part": make_part(s, name="Insert M4").id,
-            "set": make_set(s, "Set A", [(1, [article_id])]).id,
+            "set": make_set(s, "Set A", [(1, article_id)]).id,
             "order": make_order(s, reference="Order 1001").id,
         }
 
@@ -230,7 +230,7 @@ def test_archived_badge_of_part_and_set_forms_sits_in_the_subtitle(ready_client)
     with sm_of(ready_client).begin() as s:
         a = make_article(s, name="Template A").id
         part = make_part(s, name="Insert M4", archived_at=utcnow()).id
-        pset = make_set(s, "Set A", [(1, [a])])
+        pset = make_set(s, "Set A", [(1, a)])
         pset.archived_at = utcnow()
         set_id = pset.id
     for path in (f"/parts/{part}/edit", f"/sets/{set_id}/edit"):

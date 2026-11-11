@@ -3,7 +3,7 @@
 {% block title %}{{ t('orders.new') }}{% endblock %}
 {% block content %}
 {% call ui.page_head("receipt", t('orders.new'), t('orders.new_subtitle')) %}{% endcall %}
-{#- The choice lists follow new articles and sets. The form has no data of its own to watch: while
+{#- The lists follow new articles and sets. The form has no data of its own to watch: while
     something is typed it is not swapped, and no notice is shown (Design 4.6). -#}
 {% call ui.region("form", "article set") %}
 <section class="card section">
@@ -42,22 +42,13 @@
             {% endfor %}
           </optgroup>
           <optgroup label="{{ t('nav.sets') }}">
-            {% for set in sets %}
-            <option value="set:{{ set.id }}"{% if row.item == 'set:' ~ set.id %} selected{% endif %}>{{ set.name }}</option>
+            {#- a set with choice parts once per variant (Spec 6.7, p340) #}
+            {% for value, label in sets %}
+            <option value="{{ value }}"{% if row.item == value %} selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </optgroup>
         </select>
       </label>
-      {% for block in blocks.get(i, []) %}
-      <label class="choice">{{ t('orders.choose_for_position', qty=block.qty) }}
-        <select name="choice_{{ i }}_{{ block.position_id }}">
-          <option value="">–</option>
-          {% for article_id, article_name in block.options %}
-          <option value="{{ article_id }}"{% if block.chosen == article_id|string %} selected{% endif %}>{{ article_name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      {% endfor %}
     </div>
     {% endfor %}
     <p>

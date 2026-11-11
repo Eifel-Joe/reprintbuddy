@@ -7,7 +7,7 @@ from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_part
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog, orders
-from reprintbuddy.domain.catalog import PositionInput, SetInput
+from reprintbuddy.domain.catalog import BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
 from reprintbuddy.domain.orders import ArticleItem
 from reprintbuddy.models import Article, ArticlePart, Part, ProductSet
 from reprintbuddy.web.i18n import translate
@@ -157,7 +157,8 @@ def test_archive_restore_part(bb_client):
 def test_archive_restore_set(bb_client):
     with sm_of(bb_client).begin() as s:
         a = make_article(s, name="Template A").id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a])])).id
+        z = make_article(s, name="Template Z").id
+        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, z)], [])).id
     assert act(bb_client, f"/sets/{set_id}", "archive", page=f"/sets/{set_id}/edit").status_code == 303
     assert "Starter Set" in bb_client.get("/sets?view=archived").text
     assert en("sets.empty") in bb_client.get("/sets").text
@@ -189,8 +190,9 @@ def test_archived_absent_from_selections(bb_client):
         b = make_article(s, name="Template B", library_file_id=2, plate_id=1, stock=3).id
         insert = make_part(s, name="Insert M4").id
         hex_key = make_part(s, name="Hex key 2").id
-        starter = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a])])).id
-        other = catalog.create_set(s, SetInput("Other Set", None, [PositionInput(1, [a])])).id
+        z = make_article(s, name="Template Z", library_file_id=3, plate_id=1, stock=3).id
+        starter = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, z)], [])).id
+        other = catalog.create_set(s, SetInput("Other Set", None, [BaseInput(1, a), BaseInput(1, z)], [])).id
         catalog.archive_set(s, starter)
         catalog.archive_article(s, b)
         catalog.archive_part(s, hex_key)
@@ -210,28 +212,24 @@ def test_archived_absent_from_selections(bb_client):
 def test_set_with_archived_article_is_not_orderable_in_form(bb_client):
     with sm_of(bb_client).begin() as s:
         a = make_article(s, name="Template A", library_file_id=1, plate_id=1).id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a])])).id
+        z = make_article(s, name="Template Z", library_file_id=2, plate_id=1).id
+        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, z)], [])).id
         catalog.archive_article(s, a)
     assert f'value="set:{set_id}"' not in bb_client.get("/orders/new").text
 
 
-def test_choice_form_offers_only_active_options(bb_client):
+def test_order_form_offers_only_variants_of_active_choices(bb_client):  # Spec 5.5, p340
     with sm_of(bb_client).begin() as s:
         a = make_article(s, name="Template A", library_file_id=1, plate_id=1).id
         b = make_article(s, name="Template B", library_file_id=2, plate_id=1).id
         c = make_article(s, name="Template C", library_file_id=3, plate_id=1).id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a, b, c])])).id
+        z = make_article(s, name="Template Z", library_file_id=4, plate_id=1).id
+        options = [ChoiceOptionInput(x, f"-{n}") for x, n in ((a, "A"), (b, "B"), (c, "C"))]
+        set_id = catalog.create_set(s, SetInput("Starter Set", "S", [BaseInput(1, z)], [ChoiceInput(1, options)])).id
         catalog.archive_article(s, c)
-    data = {
-        "csrf_token": csrf_of(bb_client, "/orders/new"),
-        "form_token": form_token_of(bb_client, "/orders/new", "/orders/new"),
-        "reference": "Order 1001", "order_date": "2026-01-15", "note": "", "rows": "5",
-        "item_0": f"set:{set_id}", "qty_0": "1",
-    }
-    response = bb_client.post("/orders/new", data=data)
-    assert response.status_code == 200
-    choice = re.search(r'<select name="choice_0_\d+">(.*?)</select>', response.text, re.S).group(1)
-    assert f'value="{a}"' in choice and f'value="{b}"' in choice and f'value="{c}"' not in choice
+    page = bb_client.get("/orders/new").text
+    assert f'value="set:{set_id}:{a}"' in page and f'value="set:{set_id}:{b}"' in page
+    assert f'value="set:{set_id}:{c}"' not in page
 
 
 def test_archived_booking_post_rejected(bb_client):
@@ -307,7 +305,8 @@ def test_archive_and_restore_of_a_part_go_back_to_the_list(bb_client):
 def test_archive_and_restore_of_a_set_go_back_to_the_list(bb_client):
     with sm_of(bb_client).begin() as s:
         a = make_article(s, name="Template A").id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a])])).id
+        z = make_article(s, name="Template Z").id
+        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, z)], [])).id
     archived = act(bb_client, f"/sets/{set_id}", "archive", page=f"/sets/{set_id}/edit")
     assert archived.status_code == 303 and archived.headers["location"] == "/sets"
     assert en("sets.flash_archived", name="Starter Set") in bb_client.get("/sets").text

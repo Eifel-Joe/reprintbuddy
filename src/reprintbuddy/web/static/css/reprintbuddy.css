@@ -353,10 +353,8 @@ td a:hover, .btn-link:hover { text-decoration: underline; }
 .props dd { margin: 0; overflow-wrap: anywhere; }
 
 .position { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 3fr); gap: 1rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }
-select[multiple] { height: auto; }
 @media (max-width: 899px) { .position { grid-template-columns: minmax(0, 1fr); gap: 0; } }
 
-.position .choice { grid-column: 1 / -1; }
 .actions form { margin: 0; }
 .badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 
@@ -547,7 +545,10 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
 /* On a narrow screen the table scrolls in its box instead of squeezing the name to one word per
    line; each set position stays on one line. */
 .table-card td.name { min-width: 9rem; }
-.table-card td.positions { white-space: nowrap; }
+.table-card td.set-contents span { display: block; white-space: nowrap; }
+/* a variant line is muted beside the base parts; its count stays bright (Spec 5.4, p340) */
+.set-contents .variant { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.set-contents .variant strong { color: var(--text); }
 /* A long supplier or article name without spaces wraps inside the tile instead of widening the page. */
 .tile-foot span { min-width: 0; overflow-wrap: anywhere; }
 /* Reorder tile: the detail line (amount, supplier, order link) wraps a long supplier name too. */
@@ -970,6 +971,26 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 /* the cross shows alone; the word and the part's name stay in the accessible name */
 .part-row .icon-btn > span:not([data-parts-name]) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .parts-list > .btn { display: inline-flex; gap: 0.4rem; align-items: center; justify-content: center; min-height: 2.75rem; }
+
+/* ---- base parts and choice parts of a set (templates/set_form.html) -------- */
+
+/* Built like the parts of an article: one line per row, a drop-down for the article. */
+.set-part { min-width: 0; margin: 0 0 1rem; padding: 0.5rem 0 0; border: 0; border-top: 1px solid var(--line); }
+.set-part legend { padding: 0.5rem 0 0; margin: 0; color: var(--text); font-size: 0.95rem; font-weight: 600; }
+.set-part .hint { margin: 0.1rem 0 0.5rem; }
+.set-head, .set-row { display: grid; gap: 0.5rem; align-items: center; }
+.set-base { grid-template-columns: 6rem minmax(0, 1fr); }
+.set-choice { grid-template-columns: minmax(0, 1fr) 9rem; }
+.set-head { margin: 0.5rem 0 0.3rem; color: var(--text-2); font-size: 0.8rem; }
+.set-row { padding: 8px 0; border-top: 1px solid var(--surface-2); }
+.set-head + .set-row { border-top: 0; }
+.card.section .set-row select, .card.section .set-row input { margin-top: 0; min-height: 2.75rem; min-width: 0; max-width: none; width: 100%; }
+.set-qty { max-width: 16rem; }
+.set-part > .btn, .set-form .btn.secondary { display: inline-flex; gap: 0.4rem; align-items: center; justify-content: center; min-height: 2.75rem; margin-top: 0.25rem; }
+@media (max-width: 480px) {
+  .set-base { grid-template-columns: 4.5rem minmax(0, 1fr); }
+  .set-choice { grid-template-columns: minmax(0, 1fr) 6.5rem; }
+}
 
 /* ---- suppliers of a part (templates/part_form.html) ----------------------- */
 

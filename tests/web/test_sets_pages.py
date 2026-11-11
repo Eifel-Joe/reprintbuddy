@@ -1,13 +1,15 @@
+"""The set form: base parts and choice parts per row in a drop-down (Spec 5.4, p340)."""
+
 import re
 
 from sqlalchemy import func, select
 
 from conftest import csrf_of, form_token_of, sm_of
-from factories import make_article
+from factories import make_article, make_set
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog
-from reprintbuddy.domain.catalog import PositionInput, SetInput
-from reprintbuddy.models import ProductSet, SetPosition
+from reprintbuddy.domain.catalog import BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
+from reprintbuddy.models import Article, ProductSet, SetPosition, utcnow
 from reprintbuddy.web.i18n import translate
 
 
@@ -26,12 +28,13 @@ def three_articles(client, a=3, b=3, c=5):
 
 
 def set_fields(client, a, b, c, **over):
+    """Template A as base part, B and C as choice parts 1 with quantity 2."""
     data = {
         "csrf_token": csrf_of(client, "/sets/new"),
         "form_token": form_token_of(client, "/sets/new", "/sets/new"),
-        "name": "Starter Set", "sku": "S-1", "rows": "5",
-        "pos_0_qty": "1", "pos_0_articles": [str(a)],
-        "pos_1_qty": "2", "pos_1_articles": [str(b), str(c)],
+        "name": "Starter Set", "sku": "S-1", "base_rows": "3", "c1_rows": "3",
+        "base_0_qty": "1", "base_0_article": str(a),
+        "c1_qty": "2", "c1_0_article": str(b), "c1_0_suffix": "-B", "c1_1_article": str(c), "c1_1_suffix": "-C",
     }
     data.update(over)
     return data
@@ -42,51 +45,102 @@ def sets_in_db(client):
         return list(s.scalars(select(ProductSet)))
 
 
+def select_html(page: str, name: str) -> str:
+    return re.search(rf'<select name="{name}"[^>]*>(.*?)</select>', page, re.S).group(1)
+
+
 def test_sets_empty(ready_client):
     page = ready_client.get("/sets")
     assert page.status_code == 200 and en("sets.empty") in page.text
 
 
-def test_create_set_fixed_and_choice(ready_client):
+def test_new_set_form_has_drop_downs_per_row_not_a_multi_select(ready_client):
+    three_articles(ready_client)
+    page = ready_client.get("/sets/new").text
+    assert "multiple" not in page
+    assert 'name="base_2_article"' in page and 'name="base_3_article"' not in page  # 3 rows, compact
+    assert 'name="c1_2_article"' in page and 'name="c1_2_suffix"' in page and 'name="c1_3_article"' not in page
+    assert 'name="c2_0_article"' not in page  # choice parts 2 only on request
+    assert 'name="action" value="add_c2"' in page and en("sets.add_choices_2") in page
+    assert en("sets.base") in page and en("sets.choices_1") in page
+    assert 'src="/static/js/set_form.js' in page
+
+
+def test_create_set_with_base_part_and_choices(ready_client):
     a, b, c = three_articles(ready_client)
     response = ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c))
     assert response.status_code == 303 and response.headers["location"] == "/sets"
-    page = ready_client.get("/sets").text
-    assert "Starter Set" in page and "S-1" in page
-    assert "1 × Template A" in page and "2 × (Template B | Template C)" in page
-    # v0.3.16 p173 (Spec 5.4): a choice counts its smallest option, not the sum of the options.
-    assert '<td class="num">1</td>' in page  # min(3, min(3 // 2, 5 // 2))
-
-
-def test_negative_available_is_red(ready_client):
     with sm_of(ready_client).begin() as s:
-        a = make_article(s, name="Template A", stock=0, reserved=1).id
-        catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a])]))
-    assert '<td class="num neg">-1</td>' in ready_client.get("/sets").text
+        row = catalog.list_sets(s)[0]
+    assert [(v.sku, v.available) for v in row.variants] == [("S-1-B", 1), ("S-1-C", 2)]
+    assert (row.available, [b.name for b in row.base], row.choices[0].qty) == (3, ["Template A"], 2)
 
 
-def test_more_rows_keeps_values(ready_client):
+def test_add_choices_2_shows_the_second_field_and_saves_nothing(ready_client):
     a, b, c = three_articles(ready_client)
-    response = ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c, action="more"))
+    response = ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c, action="add_c2"))
     assert response.status_code == 200
-    assert 'name="pos_9_qty"' in response.text and 'name="pos_10_qty"' not in response.text
-    assert 'value="Starter Set"' in response.text
-    assert re.search(rf'<option value="{b}" selected>', response.text)  # selections stay
+    assert 'name="c2_0_article"' in response.text and 'name="c2_2_suffix"' in response.text
+    assert 'name="action" value="add_c2"' not in response.text
+    assert 'value="-C"' in response.text and 'value="Starter Set"' in response.text
+    assert sets_in_db(ready_client) == []
+
+
+def test_create_set_with_two_choice_fields(ready_client):
+    with sm_of(ready_client).begin() as s:
+        ids = [make_article(s, name=n, stock=4).id for n in ("Frame", "Plate S", "Plate L", "Red", "Blue")]
+    frame, small, large, red, blue = ids
+    data = set_fields(ready_client, frame, small, large, c1_qty="1", c2_shown="1", c2_rows="3", c2_qty="1",
+                      c1_0_suffix="-S", c1_1_suffix="-L",
+                      c2_0_article=str(red), c2_0_suffix="-1", c2_1_article=str(blue), c2_1_suffix="-2")
+    assert ready_client.post("/sets/new", data=data).status_code == 303
+    with sm_of(ready_client).begin() as s:
+        assert [v.sku for v in catalog.list_sets(s)[0].variants] == ["S-1-S-1", "S-1-S-2", "S-1-L-1", "S-1-L-2"]
+
+
+def test_more_rows_per_section_keeps_what_was_typed(ready_client):
+    a, b, c = three_articles(ready_client)
+    response = ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c, action="more_base"))
+    assert response.status_code == 200
+    assert 'name="base_5_qty"' in response.text and 'name="base_6_qty"' not in response.text
+    assert 'name="c1_2_article"' in response.text and 'name="c1_3_article"' not in response.text
+    assert re.search(rf'<option value="{b}" selected>', select_html(response.text, "c1_0_article"))
+    response = ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c, action="more_c1"))
+    assert 'name="c1_5_suffix"' in response.text and 'name="base_3_qty"' not in response.text
+    assert sets_in_db(ready_client) == []
+
+
+def test_article_chosen_in_one_row_is_not_offered_in_the_others(ready_client):
+    a, b, c = three_articles(ready_client)
+    page = ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c, action="more_base")).text
+    assert re.search(rf'<option value="{a}" selected>', select_html(page, "base_0_article"))
+    for other in ("base_1_article", "c1_2_article"):
+        assert re.search(rf'<option value="{a}" disabled hidden>', select_html(page, other)), other
+        assert re.search(rf'<option value="{b}" disabled hidden>', select_html(page, other)), other
+    assert re.search(rf'<option value="{c}" disabled hidden>', select_html(page, "c1_0_article"))
+
+
+def test_duplicate_article_without_script_shows_its_name(ready_client):  # review focus 4
+    a, b, c = three_articles(ready_client)
+    data = set_fields(ready_client, a, b, c, base_1_qty="1", base_1_article=str(a))
+    response = ready_client.post("/sets/new", data=data)
+    assert response.status_code == 200 and en("sets.article_twice", name="Template A") in response.text
+    assert 'value="-B"' in response.text and 'value="Starter Set"' in response.text
     assert sets_in_db(ready_client) == []
 
 
 def test_set_validation_message(ready_client):
     a, b, c = three_articles(ready_client)
-    data = set_fields(ready_client, a, b, c, pos_0_articles=[], pos_1_articles=[])
+    data = set_fields(ready_client, a, b, c, base_0_article="", c1_0_article="", c1_1_article="")
     response = ready_client.post("/sets/new", data=data)
-    assert response.status_code == 200 and en("sets.no_positions") in response.text
+    assert response.status_code == 200 and en("sets.too_few_articles") in response.text
     assert sets_in_db(ready_client) == []
 
 
 def test_invalid_numbers_no_500(ready_client):
     a, b, c = three_articles(ready_client)
-    for over in ({"pos_0_qty": "abc"}, {"pos_0_qty": "0"}, {"pos_0_qty": ""}, {"pos_0_qty": "1.5"},
-                 {"pos_0_articles": ["x"]}, {"pos_0_articles": ["99999999999999999999"]},
+    for over in ({"base_0_qty": "abc"}, {"base_0_qty": "0"}, {"base_0_qty": ""}, {"base_0_qty": "1.5"},
+                 {"c1_qty": "x"}, {"base_0_article": "x"}, {"c1_0_article": "99999999999999999999"},
                  {"name": " "}):
         response = ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c, **over))
         assert response.status_code == 200, over
@@ -96,14 +150,14 @@ def test_invalid_numbers_no_500(ready_client):
 def test_bad_row_count_falls_back_to_default(ready_client):
     a, b, c = three_articles(ready_client)
     for rows, sku in (("abc", "S-1"), ("-4", "S-2"), ("999999", "S-3")):
-        response = ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c, rows=rows, sku=sku))
-        assert response.status_code == 303, rows
+        data = set_fields(ready_client, a, b, c, base_rows=rows, c1_rows=rows, sku=sku)
+        assert ready_client.post("/sets/new", data=data).status_code == 303, rows
     assert len(sets_in_db(ready_client)) == 3
 
 
-def test_unknown_article_in_position(ready_client):
+def test_unknown_article_in_a_row(ready_client):
     a, b, c = three_articles(ready_client)
-    response = ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c, pos_0_articles=["9999"]))
+    response = ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c, base_0_article="9999"))
     assert response.status_code == 200 and en("articles.not_found") in response.text
 
 
@@ -116,23 +170,72 @@ def test_set_double_submit(ready_client):
     assert en("form.duplicate") in ready_client.get("/sets").text
 
 
+def test_edit_form_shows_base_parts_choices_and_suffixes(ready_client):
+    a, b, c = three_articles(ready_client)
+    with sm_of(ready_client).begin() as s:
+        d = make_article(s, name="Template D", stock=2).id
+        set_id = catalog.create_set(s, SetInput("Kit", "K", [BaseInput(2, a)], [
+            ChoiceInput(1, [ChoiceOptionInput(b, "-B")]), ChoiceInput(3, [ChoiceOptionInput(c, "-C"), ChoiceOptionInput(d, "-D")]),
+        ])).id
+    page = ready_client.get(f"/sets/{set_id}/edit").text
+    assert re.search(rf'<option value="{a}" selected>', select_html(page, "base_0_article"))
+    assert 'name="base_0_qty" inputmode="numeric" min="1" value="2"' in page
+    assert re.search(rf'<option value="{d}" selected>', select_html(page, "c2_1_article"))
+    assert 'name="c2_1_suffix"' in page and 'value="-D"' in page and 'name="c2_qty" inputmode="numeric" min="1" value="3"' in page
+    assert 'name="action" value="add_c2"' not in page
+
+
+def test_edit_without_second_field_offers_to_add_it(ready_client):
+    a, b, c = three_articles(ready_client)
+    ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c))
+    page = ready_client.get(f"/sets/{sets_in_db(ready_client)[0].id}/edit").text
+    assert 'name="c2_0_article"' not in page and 'name="action" value="add_c2"' in page
+
+
 def test_edit_set(ready_client):
     a, b, c = three_articles(ready_client)
     ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c))
     set_id = sets_in_db(ready_client)[0].id
-    page = ready_client.get(f"/sets/{set_id}/edit").text
-    assert 'value="Starter Set"' in page and re.search(rf'<option value="{c}" selected>', page)
     response = ready_client.post(
         f"/sets/{set_id}/edit",
         data={"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Starter Set 2", "sku": "",
-              "rows": "5", "pos_0_qty": "3", "pos_0_articles": [str(b)]},
+              "base_rows": "3", "c1_rows": "3", "c1_qty": "1",
+              "base_0_qty": "3", "base_0_article": str(b), "base_1_qty": "1", "base_1_article": str(c)},
     )
     assert response.status_code == 303 and response.headers["location"] == "/sets"
-    row = None
     with sm_of(ready_client).begin() as s:
         row = catalog.list_sets(s)[0]
-        assert s.scalar(select(func.count()).select_from(SetPosition)) == 1
-    assert (row.name, row.sku, row.available) == ("Starter Set 2", None, 1)
+        assert s.scalar(select(func.count()).select_from(SetPosition)) == 2
+    assert (row.name, row.sku, row.available, row.choices) == ("Starter Set 2", None, 1, [])
+
+
+def test_migrated_set_opens_with_empty_suffixes_and_saving_requires_them(ready_client):  # review focus 5
+    a, b, c = three_articles(ready_client)
+    with sm_of(ready_client).begin() as s:
+        set_id = make_set(s, "Kit", [(1, a)], [(1, [(b, None), (c, None)])], sku="K").id
+    edit = f"/sets/{set_id}/edit"
+    page = ready_client.get(edit).text
+    assert 'name="c1_0_suffix" value=""' in page and 'name="c1_1_suffix" value=""' in page
+    data = {"csrf_token": csrf_of(ready_client, edit), "name": "Kit", "sku": "K", "base_rows": "3", "c1_rows": "3",
+            "base_0_qty": "1", "base_0_article": str(a), "c1_qty": "1",
+            "c1_0_article": str(b), "c1_0_suffix": "", "c1_1_article": str(c), "c1_1_suffix": ""}
+    response = ready_client.post(edit, data=data)
+    assert response.status_code == 200 and en("sets.suffix_required", name="Template B") in response.text
+    response = ready_client.post(edit, data={**data, "c1_0_suffix": "-B", "c1_1_suffix": "-C"})
+    assert response.status_code == 303
+    with sm_of(ready_client).begin() as s:
+        assert catalog.list_sets(s)[0].orderable
+
+
+def test_archived_choice_article_stays_in_the_form_marked(ready_client):
+    a, b, c = three_articles(ready_client)
+    ready_client.post("/sets/new", data=set_fields(ready_client, a, b, c))
+    with sm_of(ready_client).begin() as s:
+        s.get(Article, c).archived_at = utcnow()
+    page = ready_client.get(f"/sets/{sets_in_db(ready_client)[0].id}/edit").text
+    chosen = select_html(page, "c1_1_article")
+    assert re.search(rf'<option value="{c}" selected>Template C \({en("catalog.archived_badge")}\)', chosen)
+    assert f'<option value="{c}"' not in select_html(page, "c1_2_article")  # not offered for a new row
 
 
 def test_edit_unknown_set(ready_client):
@@ -145,9 +248,9 @@ def test_edit_validation_keeps_form(ready_client):
     set_id = sets_in_db(ready_client)[0].id
     response = ready_client.post(
         f"/sets/{set_id}/edit",
-        data={"csrf_token": csrf_of(ready_client, "/sets"), "name": "Changed", "sku": "", "rows": "5"},
+        data={"csrf_token": csrf_of(ready_client, "/sets"), "name": "Changed", "sku": "", "base_rows": "3"},
     )
-    assert response.status_code == 200 and en("sets.no_positions") in response.text
+    assert response.status_code == 200 and en("sets.too_few_articles") in response.text
     assert sets_in_db(ready_client)[0].name == "Starter Set"
 
 
@@ -160,12 +263,15 @@ def test_sets_requires_csrf(ready_client):
 
 
 def test_sets_german(ready_client):
-    three_articles(ready_client)
+    a, b, _c = three_articles(ready_client)
     with sm_of(ready_client).begin() as s:
         st.set_setting(s, "language", "de", commit=False)
-        catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [1])]))
+        catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, b)], []))
     page = ready_client.get("/sets").text
     assert "Sets" in page and "Verfügbar" in page
+    form = ready_client.get("/sets/new").text
+    assert "Basisteile" in form and "Wahlteile 1" in form and "Wahlteile 2 hinzufügen" in form
+    assert "Aufklappliste" in form
 
 
 def test_nav_sets_active(ready_client):

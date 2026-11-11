@@ -1,9 +1,9 @@
-import itertools
 import random
 from datetime import date
 
 from reprintbuddy.domain.rules import (
-    PositionStock,
+    ChoiceStock,
+    SetStock,
     available,
     consumption_per_day,
     coverage,
@@ -13,9 +13,10 @@ from reprintbuddy.domain.rules import (
     prints_for_units,
     prints_needed,
     safety_amount,
-    set_available,
+    set_availability,
     suggest_packs,
     target_quantity,
+    variant_number,
 )
 
 
@@ -28,112 +29,87 @@ def test_target_quantity():
     assert target_quantity(4, 2) == 6  # Spec 7.1
 
 
-def test_set_minimum():  # Spec 5.4
-    assert set_available([PositionStock(1, (3,)), PositionStock(2, (5,))]) == 2
+def test_set_without_choices_is_the_minimum_over_its_articles():  # Spec 5.4
+    result = set_availability([(1, 4), (2, 5)], [])
+    assert result == SetStock(2, {})
 
 
-def test_set_choice_takes_the_smallest_option():  # Spec 5.4, v0.3.16 p173: the options are not added up
-    assert set_available([PositionStock(1, (3, 5))]) == 3
-    assert set_available([PositionStock(1, (3, 5)), PositionStock(1, (4,))]) == 3
-    assert set_available([PositionStock(1, (5, 3))]) == 3  # the order of the options does not matter
-    assert set_available([PositionStock(2, (7, 9))]) == 3  # 7 // 2
-    assert set_available([PositionStock(1, (3, 0))]) == 0  # one option empty: the set is not deliverable
+def test_all_one_each_gives_one_per_variant_and_one_together():  # Spec 5.4, first example
+    result = set_availability([(1, 1)], [ChoiceStock(1, ((10, 1), (11, 1), (12, 1)))])
+    assert result.variants == {(10,): 1, (11,): 1, (12,): 1}
+    assert result.total == 1
 
 
-def test_set_choice_option_shared_with_a_fixed_position():  # review of p173
-    """The article that is fixed in one position and an option in another needs both quantities when the
-    customer picks it: the worst choice counts."""
-    fixed = PositionStock(1, (5,), (1,))
-    choice = PositionStock(1, (5, 10), (1, 2))
-    assert set_available([fixed, choice]) == 2  # picking article 1 needs two of it per set: 5 // 2
-    assert set_available([PositionStock(1, (5,), (1,)), PositionStock(1, (9, 10), (2, 3))]) == 5  # nothing shared
+def test_base_three_choices_two_zero_one_together_three():  # Spec 5.4, second example
+    result = set_availability([(1, 3)], [ChoiceStock(1, ((10, 2), (11, 0), (12, 1)))])
+    assert result.variants == {(10,): 2, (11,): 0, (12,): 1}
+    assert result.total == 3
 
 
-def test_set_choice_options_shared_between_two_choice_positions():  # review of p173
-    first = PositionStock(1, (4, 10), (1, 2))
-    second = PositionStock(1, (4, 10), (1, 3))
-    assert set_available([first, second]) == 2  # article 1 picked in both positions: 4 // 2
+def test_two_fields_give_the_cross_product():  # Spec 5.4: Wahlteile 1 x Wahlteile 2
+    result = set_availability(
+        [(1, 10)], [ChoiceStock(1, ((10, 2), (11, 1))), ChoiceStock(1, ((20, 1), (21, 5)))]
+    )
+    assert result.variants == {(10, 20): 1, (10, 21): 2, (11, 20): 1, (11, 21): 1}
+    assert list(result.variants) == [(10, 20), (10, 21), (11, 20), (11, 21)]  # the order of the form
+    assert result.total == 3  # min(10, 2 + 1, 1 + 5)
 
 
-def test_set_shared_option_with_a_negative_stock_counts_the_worst_choice():  # review of p173
-    first = PositionStock(1, (-2, 3), (1, 2))
-    second = PositionStock(1, (-2, 3), (1, 2))
-    assert set_available([first, second]) == -2  # picked once, article 1 is short by 2
-    assert set_available([PositionStock(1, (-1,), (7,)), PositionStock(1, (-1, 4), (7, 8))]) == -1
+def test_choice_quantity_divides_each_option():  # one quantity per field (decision p340, question 1)
+    result = set_availability([], [ChoiceStock(2, ((10, 5), (11, 1)))])
+    assert result.variants == {(10,): 2, (11,): 0}
+    assert result.total == 2
 
 
-def _every_choice(positions: list[PositionStock]) -> int:
-    """Spec 5.4 word for word: for every combination of choices the set is a plain set (the minimum over
-    its articles, the quantities of one article added up); it is deliverable as often as the worst
-    combination allows."""
-    stock = {a: s for p in positions for a, s in zip(p.article_ids, p.option_available)}
-    worst = None
-    for picked in itertools.product(*(p.article_ids for p in positions)):
-        need: dict[int, int] = {}
-        for position, article_id in zip(positions, picked):
-            need[article_id] = need.get(article_id, 0) + position.qty
-        value = min(stock[a] // n for a, n in need.items())
-        worst = value if worst is None else min(worst, value)
-    return worst
+def test_oversold_option_does_not_lower_the_others():  # Spec 6.4: Verfuegbar may be negative
+    result = set_availability([(1, 9)], [ChoiceStock(1, ((10, -2), (11, 3)))])
+    assert result.variants == {(10,): -2, (11,): 3}
+    assert result.total == 3
+    assert set_availability([(1, 9)], [ChoiceStock(1, ((10, -2),))]).total == -2
+    assert set_availability([(1, -1)], [ChoiceStock(1, ((10, 4),))]) == SetStock(-1, {(10,): -1})
 
 
-def test_set_available_is_exact_for_shared_options():  # p321
-    """p321 asked whether the worst choice per article is only an approximation when an article sits in
-    several choice positions and stocks are oversold or reserved. It is not: the set counts the worst
-    combination, the minimum over all combinations of the minimum over the articles; minima can be
-    swapped, so it is the minimum over the articles of each article's own worst combination, and every
-    article reaches its own worst one by picking it in all positions that hold it (stock 0 or more) or
-    in only the one that needs least of it (oversold). Checked against every combination here."""
-    rng = random.Random(321)
-    for _ in range(3000):
-        pool = rng.sample(range(1, 6), rng.randint(1, 4))
-        stock = {a: rng.randint(-6, 9) for a in pool}  # available = stock - reserved, may be negative
-        positions = []
-        for _ in range(rng.randint(1, 4)):
-            ids = tuple(rng.sample(pool, rng.randint(1, min(3, len(pool)))))
-            positions.append(PositionStock(rng.randint(1, 3), tuple(stock[a] for a in ids), ids))
-        assert set_available(positions) == _every_choice(positions), positions
+def test_only_choice_fields_without_base():
+    result = set_availability([], [ChoiceStock(1, ((10, 2),)), ChoiceStock(1, ((20, 1), (21, 1)))])
+    assert result.total == 2
+    assert result.variants == {(10, 20): 1, (10, 21): 1}
 
 
-def test_set_shared_options_whose_worst_choices_exclude_each_other():  # p321
-    """The worst combination for 1 (picked twice) and for 2 (picked once) cannot happen at the same
-    time; the set still counts the worse of both, as the combination (1, 2) shows."""
-    both = (4, -3)
-    positions = [PositionStock(1, both, (1, 2)), PositionStock(1, both, (1, 2))]
-    assert _every_choice(positions) == -3  # (1, 1): 2, (1, 2): -3, (2, 2): -3 // 2 = -2
-    assert set_available(positions) == -3
-    positions = [PositionStock(1, (4, 9), (1, 2)), PositionStock(2, (4, 9), (1, 2))]
-    assert _every_choice(positions) == 1  # (1, 1): 4 // 3
-    assert set_available(positions) == 1
+def test_empty_field_gives_zero():  # every choice archived (Spec 5.5)
+    assert set_availability([(1, 5)], [ChoiceStock(1, ())]) == SetStock(0, {})
+    assert set_availability([], []) == SetStock(0, {})
 
 
-def test_set_negative():
-    assert set_available([PositionStock(1, (-1,))]) == -1
+def _most_sets(base, choices) -> int:
+    """Brute force: the largest n for which n sets in some mix of the variants come from the stock."""
+    n = 0
+    while True:
+        wanted = n + 1
+        if any(a < wanted * q for q, a in base):
+            return n
+        for field in choices:  # the fields hold different articles, so each is filled on its own
+            if sum(max(a, 0) // field.qty for _, a in field.options) < wanted:
+                return n
+        n = wanted
 
 
-def test_set_choice_with_a_negative_option():
-    """An option that is oversold pulls the position down like a fixed one (it was ignored while the options were added)."""
-    assert set_available([PositionStock(1, (-2, 3))]) == -2
-    assert set_available([PositionStock(1, (-2, 3)), PositionStock(1, (4,))]) == -2
+def test_together_is_the_most_sets_in_any_mix():  # Spec 5.4 "zusammen hoechstens"
+    rng = random.Random(340)
+    for _ in range(300):
+        base = [(rng.randint(1, 3), rng.randint(0, 9)) for _ in range(rng.randint(0, 2))]
+        ids = iter(range(100))
+        choices = [
+            ChoiceStock(rng.randint(1, 2), tuple((next(ids), rng.randint(0, 9)) for _ in range(rng.randint(1, 3))))
+            for _ in range(rng.randint(1, 2))
+        ]
+        assert set_availability(base, choices).total == _most_sets(base, choices), (base, choices)
 
-
-def test_set_empty():
-    assert set_available([]) == 0
-    assert set_available([PositionStock(1, (5,)), PositionStock(1, ())]) == 0
 
 
 def test_order_ready():  # Spec 6.7
     assert order_ready({1: 2}, {1: 2}) is True
     assert order_ready({1: 3}, {1: 2}) is False
     assert order_ready({1: 1}, {}) is False
-
-
-def test_set_same_article_in_two_fixed_positions_adds_up():  # Spec 5.4 "gleichzeitig"
-    positions = [PositionStock(1, (3,), (7,)), PositionStock(1, (3,), (7,))]
-    assert set_available(positions) == 1
-    assert set_available([PositionStock(2, (7,), (7,)), PositionStock(1, (7,), (7,))]) == 2  # 7 // 3
-    assert set_available([PositionStock(1, (3,), (7,)), PositionStock(1, (9,), (8,))]) == 3  # different articles
-    assert set_available([PositionStock(1, (-1,), (7,)), PositionStock(1, (-1,), (7,))]) == -1
 
 
 def test_coverage_sum():  # Spec 7.1
@@ -227,3 +203,16 @@ def test_suggest_packs_float_safe():
         stock=0, demand=0, per_day=0, lead_days=0, safety=1000.0000000001, pack=1000, min_packs=1
     )
     assert result == 1
+
+
+def test_variant_number_writes_the_suffixes_behind_the_number():  # Spec 5.4: as they are, no separator
+    assert variant_number("EX-S10", ["-A", "-1"]) == "EX-S10-A-1"
+    assert variant_number("EX-S10", ["A"]) == "EX-S10A"
+    assert variant_number("EX-S10", []) == "EX-S10"
+
+
+def test_variant_number_is_none_while_a_part_is_missing():
+    assert variant_number(None, ["-A"]) is None
+    assert variant_number("", ["-A"]) is None
+    assert variant_number("EX-S10", ["-A", None]) is None
+    assert variant_number("EX-S10", ["-A", ""]) is None

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
@@ -73,18 +74,32 @@ def validate_sku(
     *,
     article_id: int | None = None,
     set_id: int | None = None,
+    variants: dict[str, int] | None = None,
 ) -> str | None:
-    """Trimmed article number, unique over articles and sets together (both become SKUs later)."""
+    """Trimmed article number, unique over articles, sets and variants (all become SKUs later)."""
     sku = _text(sku, "catalog.field.sku", MAX_SKU)
     if sku is None:
         return None
     taken_by_article = session.scalar(select(Article.id).where(Article.sku == sku))
     taken_by_set = session.scalar(select(ProductSet.id).where(ProductSet.sku == sku))
-    if (taken_by_article is not None and taken_by_article != article_id) or (
-        taken_by_set is not None and taken_by_set != set_id
+    if (
+        (taken_by_article is not None and taken_by_article != article_id)
+        or (taken_by_set is not None and taken_by_set != set_id)
+        # a variant's number (Spec 5.4, p340); a set passes the numbers it already looked up
+        or sku in (variants if variants is not None else variant_numbers(session, exclude_set_id=set_id))
     ):
         raise ConflictError("catalog.sku_taken", sku=sku)
     return sku
+
+
+def _sku_owner(session: Session, sku: str, *, besides_set: int | None = None) -> str | None:
+    """'article' or 'set' when an article or a set carries this number. `besides_set` leaves out the
+    set being saved: its old number is gone once it is saved (review of p340, I1)."""
+    if session.scalar(select(Article.id).where(Article.sku == sku)) is not None:
+        return "article"
+    if session.scalar(select(ProductSet.id).where(ProductSet.sku == sku, ProductSet.id != (besides_set or 0))) is not None:
+        return "set"
+    return None
 
 
 # ---- print target (decision 2) -----------------------------------------------------------
@@ -570,28 +585,69 @@ def list_parts(session: Session, *, archived: bool = False) -> list[Part]:
 
 
 # ---- sets ----------------------------------------------------------------------------------
+# A set has base parts and up to two choice fields (Spec 5.4, p340). A base part is a position in
+# slot 0 with one article; a choice field is one position in slot 1 or 2 whose options are the
+# articles to choose from, each with a suffix. A variant is one article of each field with all base
+# parts; its number is the set number with the suffixes behind it, written as they are. Sets only
+# point at articles and count with their available number, nothing about how an article is built.
+
+CHOICE_FIELDS = 2
 
 
 @dataclass
-class PositionInput:
+class BaseInput:
     qty: int
-    article_ids: list[int]  # one article: fixed; several: a choice (Spec 5.4)
+    article_id: int
+
+
+@dataclass
+class ChoiceOptionInput:
+    article_id: int
+    suffix: str | None
+
+
+@dataclass
+class ChoiceInput:
+    qty: int
+    options: list[ChoiceOptionInput]
 
 
 @dataclass
 class SetInput:
     name: str
     sku: str | None
-    positions: list[PositionInput]
+    base: list[BaseInput]
+    choices: list[ChoiceInput]  # choice field 1 and 2; an empty last field is no field
 
 
 @dataclass(frozen=True)
-class PositionRow:
-    id: int
+class BaseRow:
     qty: int
-    article_ids: list[int]
-    article_names: list[str]
-    is_choice: bool
+    article_id: int
+    name: str
+    archived: bool
+
+
+@dataclass(frozen=True)
+class ChoiceOptionRow:
+    article_id: int
+    name: str
+    suffix: str | None
+    archived: bool
+
+
+@dataclass(frozen=True)
+class ChoiceRow:
+    qty: int
+    options: list[ChoiceOptionRow]
+
+
+@dataclass(frozen=True)
+class VariantRow:
+    key: tuple[int, ...]  # the chosen article per field
+    sku: str | None  # None while the set number or a suffix is missing
+    names: list[str]  # the chosen articles
+    available: int
 
 
 @dataclass(frozen=True)
@@ -599,20 +655,58 @@ class SetRow:
     id: int
     name: str
     sku: str | None
-    available: int
-    positions: list[PositionRow]
-    orderable: bool  # every position still has an active article
+    available: int  # without choices: how often the set comes together; with them "together at most"
+    base: list[BaseRow]
+    choices: list[ChoiceRow]
+    variants: list[VariantRow]  # of the active choice articles only
+    incomplete: str | None  # "too_few" or "suffixes_missing" (sets the update to v0.4.0 rebuilt)
+    orderable: bool
     status: SetStatus  # deliverable when at least one set comes together (Spec 10.1)
+
+
+def _fields_of(
+    session: Session, set_id: int
+) -> tuple[list[SetPosition], list[tuple[SetPosition, list[SetPositionOption]]]]:
+    """The base positions and the choice fields with their options, in the order of the form."""
+    positions = session.scalars(
+        select(SetPosition)
+        .where(SetPosition.set_id == set_id)
+        .order_by(SetPosition.slot, SetPosition.sort, SetPosition.id)
+    ).all()
+    fields = []
+    for position in (p for p in positions if p.slot > 0):
+        options = session.scalars(
+            select(SetPositionOption)
+            .where(SetPositionOption.position_id == position.id)
+            .order_by(SetPositionOption.sort, SetPositionOption.article_id)
+        ).all()
+        fields.append((position, list(options)))
+    return [p for p in positions if p.slot == 0], fields
+
+
+def variant_numbers(session: Session, *, exclude_set_id: int | None = None) -> dict[str, int]:
+    """Every variant number -> its set. Archived sets and archived choice articles count too, so that
+    restoring one never brings back a number that is taken meanwhile (plan approval p340)."""
+    numbers: dict[str, int] = {}
+    for set_id, sku in session.execute(select(ProductSet.id, ProductSet.sku).where(ProductSet.sku.is_not(None))):
+        if set_id == exclude_set_id:
+            continue
+        _base, fields = _fields_of(session, set_id)
+        if not fields:
+            continue
+        for combination in itertools.product(*(options for _position, options in fields)):
+            number = rules.variant_number(sku, [option.suffix for option in combination])
+            if number is not None:
+                numbers[number] = set_id
+    return numbers
 
 
 def _check_set_input(
     session: Session, data: SetInput, *, set_id: int | None = None
-) -> tuple[str, str | None, list[tuple[int, list[int]]]]:
+) -> tuple[str, str | None, list[tuple[int, int]], list[tuple[int, list[tuple[int, str | None]]]]]:
     name = _required_name(data.name, "sets.field.name")
-    sku = validate_sku(session, data.sku, set_id=set_id)
-    if not data.positions:
-        raise ValidationError("sets.no_positions")
-    positions: list[tuple[int, list[int]]] = []
+    taken = variant_numbers(session, exclude_set_id=set_id)  # looked up once per save
+    sku = validate_sku(session, data.sku, set_id=set_id, variants=taken)
     kept: set[int] = set()  # archived articles that are already part of this set may stay
     if set_id is not None:
         kept = set(
@@ -622,39 +716,99 @@ def _check_set_input(
                 .where(SetPosition.set_id == set_id)
             )
         )
-    for position in data.positions:
-        qty = _int_in(position.qty, "sets.field.qty", 1, 1000)
-        article_ids = list(dict.fromkeys(position.article_ids))
-        if not article_ids:
-            raise ValidationError("sets.position_empty")
-        for article_id in article_ids:
-            article = session.get(Article, article_id)
-            if article is None:
-                raise NotFoundError("articles.not_found")
-            if article.archived_at is not None and article_id not in kept:
-                raise ValidationError("sets.article_archived", name=article.name)
-        positions.append((qty, article_ids))
-    return name, sku, positions
+    seen: set[int] = set()
+
+    def article(article_id: int) -> Article:
+        """The article of a row; each article is only once in a set (p340, question 5)."""
+        found = session.get(Article, article_id)
+        if found is None:
+            raise NotFoundError("articles.not_found")
+        if found.archived_at is not None and article_id not in kept:
+            raise ValidationError("sets.article_archived", name=found.name)
+        if article_id in seen:
+            raise ValidationError("sets.article_twice", name=found.name)
+        seen.add(article_id)
+        return found
+
+    base: list[tuple[int, int]] = []
+    for row in data.base:
+        qty = _int_in(row.qty, "sets.field.qty", 1, 1000)
+        base.append((qty, article(row.article_id).id))
+    fields = list(data.choices)
+    while fields and not fields[-1].options:
+        fields.pop()  # an empty last field is no field
+    if len(fields) > CHOICE_FIELDS:
+        raise ValueError("a set has at most two choice fields")
+    if any(not field.options for field in fields):
+        raise ValidationError("sets.choices2_without_1")
+    choices: list[tuple[int, list[tuple[Article, str | None]]]] = []
+    for field in fields:
+        qty = _int_in(field.qty, "sets.field.choice_qty", 1, 1000)
+        options = [
+            (article(option.article_id), _text(option.suffix, "sets.field.suffix", MAX_SKU)) for option in field.options
+        ]
+        choices.append((qty, options))
+    if len(base) + len(choices) < 2:  # every variant has two different articles (p340, question 3)
+        raise ValidationError("sets.too_few_articles")
+    if choices and sku is None:
+        raise ValidationError("sets.sku_required")
+    for _qty, options in choices:
+        suffixes: set[str] = set()
+        for found, suffix in options:
+            if suffix is None:
+                raise ValidationError("sets.suffix_required", name=found.name)
+            if suffix in suffixes:
+                raise ValidationError("sets.suffix_twice", suffix=suffix)
+            suffixes.add(suffix)
+    if choices:
+        _check_variant_numbers(
+            session, sku, [[suffix for _found, suffix in options] for _qty, options in choices], set_id, taken
+        )
+    return name, sku, base, [(qty, [(found.id, suffix) for found, suffix in options]) for qty, options in choices]
+
+
+def _check_variant_numbers(
+    session: Session, sku: str | None, fields: list[list[str | None]], set_id: int | None, taken: dict[str, int]
+) -> None:
+    """Every variant number fits and is free: not an article's, another set's or another variant's
+    (p340, question 6). `taken` holds the variant numbers of the other sets."""
+    own: set[str] = set()
+    for combination in itertools.product(*fields):
+        number = rules.variant_number(sku, combination)
+        assert number is not None  # set number and suffixes are checked before
+        if len(number) > MAX_SKU:
+            raise ValidationError("sets.variant_too_long", sku=number, max=MAX_SKU)
+        if number in own or number in taken or _sku_owner(session, number, besides_set=set_id) is not None:
+            raise ConflictError("catalog.sku_taken", sku=number)
+        own.add(number)
 
 
 def _write_positions(
-    session: Session, set_id: int, positions: list[tuple[int, list[int]]]
+    session: Session,
+    set_id: int,
+    base: list[tuple[int, int]],
+    choices: list[tuple[int, list[tuple[int, str | None]]]],
 ) -> None:
-    for sort, (qty, article_ids) in enumerate(positions):
-        position = SetPosition(set_id=set_id, sort=sort, qty=qty)
+    for sort, (qty, article_id) in enumerate(base):
+        position = SetPosition(set_id=set_id, sort=sort, qty=qty, slot=0)
         session.add(position)
         session.flush()
-        for article_id in article_ids:
-            session.add(SetPositionOption(position_id=position.id, article_id=article_id))
+        session.add(SetPositionOption(position_id=position.id, article_id=article_id))
+    for slot, (qty, options) in enumerate(choices, start=1):
+        position = SetPosition(set_id=set_id, sort=0, qty=qty, slot=slot)
+        session.add(position)
+        session.flush()
+        for sort, (article_id, suffix) in enumerate(options):
+            session.add(SetPositionOption(position_id=position.id, article_id=article_id, suffix=suffix, sort=sort))
     session.flush()
 
 
 def create_set(session: Session, data: SetInput) -> ProductSet:
-    name, sku, positions = _check_set_input(session, data)
+    name, sku, base, choices = _check_set_input(session, data)
     product_set = ProductSet(name=name, sku=sku)
     session.add(product_set)
     session.flush()
-    _write_positions(session, product_set.id, positions)
+    _write_positions(session, product_set.id, base, choices)
     return product_set
 
 
@@ -666,9 +820,9 @@ def get_set(session: Session, set_id: int) -> ProductSet:
 
 
 def update_set(session: Session, set_id: int, data: SetInput) -> ProductSet:
-    """Replace name, number and all positions. Open orders keep their own lines."""
+    """Replace name, number, base parts and choices. Open orders keep their own lines."""
     product_set = get_set(session, set_id)
-    name, sku, positions = _check_set_input(session, data, set_id=set_id)
+    name, sku, base, choices = _check_set_input(session, data, set_id=set_id)
     old = session.scalars(select(SetPosition.id).where(SetPosition.set_id == set_id)).all()
     if old:
         # Options first: they point at their position.
@@ -676,49 +830,75 @@ def update_set(session: Session, set_id: int, data: SetInput) -> ProductSet:
         _delete_rows(session, select(SetPosition).where(SetPosition.id.in_(old)))
     product_set.name = name
     product_set.sku = sku
-    _write_positions(session, set_id, positions)
+    _write_positions(session, set_id, base, choices)
     return product_set
 
 
 def _set_row(session: Session, product_set: ProductSet) -> SetRow:
-    positions = session.scalars(
-        select(SetPosition).where(SetPosition.set_id == product_set.id).order_by(SetPosition.sort, SetPosition.id)
-    ).all()
-    rows: list[PositionRow] = []
-    stocks: list[rules.PositionStock] = []
+    positions, fields = _fields_of(session, product_set.id)
+    base: list[BaseRow] = []
+    base_stock: list[tuple[int, int]] = []
     for position in positions:
-        articles = session.scalars(
+        article = session.scalar(
             select(Article)
             .join(SetPositionOption, SetPositionOption.article_id == Article.id)
-            .where(SetPositionOption.position_id == position.id, Article.archived_at.is_(None))
-            .order_by(Article.name, Article.id)
-        ).all()
-        rows.append(
-            PositionRow(
-                id=position.id,
-                qty=position.qty,
-                article_ids=[a.id for a in articles],
-                article_names=[a.name for a in articles],
-                is_choice=len(articles) > 1,
-            )
+            .where(SetPositionOption.position_id == position.id)
         )
-        stocks.append(
-            rules.PositionStock(
-                position.qty,
-                tuple(rules.available(a.stock, a.reserved) for a in articles),
-                tuple(a.id for a in articles),
-            )
-        )
-    available = rules.set_available(stocks)
+        if article is None:
+            continue
+        archived = article.archived_at is not None
+        base.append(BaseRow(position.qty, article.id, article.name, archived))
+        # An archived base part is missing: the set does not come together (Spec 5.5).
+        base_stock.append((position.qty, 0 if archived else rules.available(article.stock, article.reserved)))
+    choices: list[ChoiceRow] = []
+    stocks: list[rules.ChoiceStock] = []
+    suffixes: dict[int, str | None] = {}
+    names: dict[int, str] = {}
+    for position, options in fields:
+        rows = []
+        active = []
+        for option in options:
+            article = session.get(Article, option.article_id)
+            archived = article.archived_at is not None
+            rows.append(ChoiceOptionRow(article.id, article.name, option.suffix, archived))
+            suffixes[article.id] = option.suffix
+            names[article.id] = article.name
+            if not archived:
+                active.append((article.id, rules.available(article.stock, article.reserved)))
+        choices.append(ChoiceRow(position.qty, rows))
+        stocks.append(rules.ChoiceStock(position.qty, tuple(active)))
+    stock = rules.set_availability(base_stock, stocks)
+    variants = [
+        VariantRow(key, rules.variant_number(product_set.sku, [suffixes[a] for a in key]), [names[a] for a in key], count)
+        for key, count in stock.variants.items()
+    ]
+    incomplete = None
+    if len(base) + len(choices) < 2:
+        incomplete = "too_few"
+    elif choices and rules.variant_number(product_set.sku, list(suffixes.values())) is None:
+        incomplete = "suffixes_missing"
+    orderable = (
+        product_set.archived_at is None
+        and incomplete is None
+        and not any(row.archived for row in base)
+        and (not choices or bool(variants))
+    )
     return SetRow(
         id=product_set.id,
         name=product_set.name,
         sku=product_set.sku,
-        available=available,
-        positions=rows,
-        orderable=bool(rows) and all(row.article_ids for row in rows),
-        status=set_status(available=available),
+        available=stock.total,
+        base=base,
+        choices=choices,
+        variants=variants,
+        incomplete=incomplete,
+        orderable=orderable,
+        status=set_status(available=stock.total),
     )
+
+
+def set_row(session: Session, set_id: int) -> SetRow:
+    return _set_row(session, get_set(session, set_id))
 
 
 def list_sets(session: Session, *, archived: bool = False) -> list[SetRow]:

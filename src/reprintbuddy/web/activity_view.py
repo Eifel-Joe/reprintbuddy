@@ -99,6 +99,8 @@ def _describe(lang: str, entry: ActivityEntry) -> tuple[str, list[str], str | No
     if details.get("fields"):
         names = ", ".join(_t(lang, f"activity.field.{name}") for name in details["fields"])
         extras.append(translate(lang, "activity.fields", fields=names))
+    if kind == "set_migrated" and details.get("dropped"):
+        extras.append(translate(lang, "activity.dropped", articles=", ".join(str(n) for n in details["dropped"])))
     if kind == "settings_changed":
         extras += [_setting_line(lang, change) for change in details.get("settings", []) if isinstance(change, dict)]
         if details.get("owner"):

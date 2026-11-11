@@ -97,7 +97,7 @@ ALL_NAMES = (
     "setup-admin", "setup-group", "setup-key", "setup-connect", "overview", "articles-list",
     "article-new-files", "article-new-plates", "article-new-form", "article-upload",
     "article-filaments", "article-detail", "queue", "inspection", "assembly", "label-preview",
-    "reorder", "filament-page", "filament-settings", "orders", "parts", "sets", "bookings", "journal",
+    "reorder", "filament-page", "filament-settings", "orders", "parts", "sets", "set-form", "bookings", "journal",
     "settings-bambuddy", "settings-automation", "settings-notifications", "settings-labels",
     "settings-log", "settings-update", "articles-mobile",
 )
@@ -713,13 +713,18 @@ def build_catalog(server: Server, scn: Scenario) -> None:
 
     with sm.begin() as s:
         a = scn.articles
-        scn.sets["Bracket kit"] = catalog.create_set(s, catalog.SetInput("Bracket kit", "EX-S01", [
-            catalog.PositionInput(1, [a["bracket_small"]]), catalog.PositionInput(1, [a["bracket_large"]]),
-        ])).id
-        scn.sets["Clip assortment"] = catalog.create_set(s, catalog.SetInput("Clip assortment", "EX-S02", [
-            catalog.PositionInput(2, [a["clip_set"], a["clip_blue"]]),
-            catalog.PositionInput(1, [a["cable_guide"]]),
-        ])).id
+        # Sets with base parts and choice parts (Spec 5.4, p340): the kit has a variant per bracket,
+        # the assortment two fields of choice parts, so the list shows both kinds of variants.
+        scn.sets["Bracket kit"] = catalog.create_set(s, catalog.SetInput(
+            "Bracket kit", "EX-S01", [catalog.BaseInput(2, a["clip_set"])],
+            [catalog.ChoiceInput(1, [catalog.ChoiceOptionInput(a["bracket_small"], "-S"),
+                                     catalog.ChoiceOptionInput(a["bracket_large"], "-L")])],
+        )).id
+        scn.sets["Clip assortment"] = catalog.create_set(s, catalog.SetInput(
+            "Clip assortment", "EX-S02", [catalog.BaseInput(1, a["cable_guide"])],
+            [catalog.ChoiceInput(2, [catalog.ChoiceOptionInput(a["clip_blue"], "-B")]),
+             catalog.ChoiceInput(1, [catalog.ChoiceOptionInput(a["spool_holder"], "-1")])],
+        )).id
 
 
     # the spool sorts of the stand-in are entered the way the filament page does it
@@ -806,7 +811,7 @@ def build_history(server: Server, scn: Scenario) -> None:
         orders.create_order(
             s, reference=tr("Order 1001", "Bestellung 1001"), order_date=date(2026, 11, 7), actor="user", note=tr("Ship with the next parcel", "Mit dem nächsten Paket versenden"),
             items=[orders.ArticleItem(a["bracket_small"], 3), orders.ArticleItem(a["clip_blue"], 2),
-                   orders.SetItem(scn.sets["Bracket kit"], 1, {})],
+                   orders.SetItem(scn.sets["Bracket kit"], 1, (a["bracket_small"],))],
         )
     CLOCK.set(at(8, 13, 20))
     with sm.begin() as s:
@@ -1042,6 +1047,7 @@ def take_pages(shot: Shooter, scn: Scenario) -> None:
     shot.page("orders", "/orders")
     shot.page("parts", "/parts")
     shot.page("sets", "/sets")
+    shot.page("set-form", f"/sets/{scn.sets['Bracket kit']}/edit", cap=1300)
     shot.page("bookings", "/bookings", cap=990)  # the four forms; the fifth would be cut
     shot.page("journal", "/journal", before=lambda b: keep_rows(b, 15))
     shot.page("settings-bambuddy", "/settings?tab=bambuddy")

@@ -11,7 +11,7 @@ from factories import make_article
 
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog, orders, stock
-from reprintbuddy.domain.catalog import PositionInput, SetInput
+from reprintbuddy.domain.catalog import BaseInput, SetInput
 from reprintbuddy.domain.orders import ArticleItem
 from reprintbuddy.web import regions
 from reprintbuddy.web.i18n import translate
@@ -343,7 +343,8 @@ def test_new_order_form_offers_an_article_created_elsewhere(ready_client):
     article(ready_client, name="Template Z")
     with sm_of(ready_client).begin() as s:
         a = make_article(s, name="Template Y").id
-        catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a])]))
+        b = make_article(s, name="Template X").id
+        catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, b)], []))
     found = regions_of(ready_client, "/orders/new", "form")
     assert "Template Z" in found["form"] and "Starter Set" in found["form"]
 

@@ -13,7 +13,7 @@ from sqlalchemy import select, update
 from reprintbuddy import auth
 from reprintbuddy.changes import CLASSIFIED, install_change_feed
 from reprintbuddy.domain import catalog, filament, orders, stock
-from reprintbuddy.domain.catalog import ArticleInput, PositionInput, SetInput
+from reprintbuddy.domain.catalog import ArticleInput, BaseInput, SetInput
 from reprintbuddy.domain.errors import StockLimitError
 from reprintbuddy.models import (
     Article,
@@ -134,10 +134,10 @@ def test_set_update_reports_the_set(db, published):
     with db.begin() as s:
         a = make_article(s).id
         b = make_article(s, name="Template B").id
-        set_id = make_set(s, "Set A", [(1, [a]), (2, [a, b])]).id
+        set_id = make_set(s, "Set A", [(1, a)], [(2, [(b, "-B")])], sku="S-A").id
     published.clear()
     with db.begin() as s:
-        catalog.update_set(s, set_id, SetInput("Set A", None, [PositionInput(3, [b])]))
+        catalog.update_set(s, set_id, SetInput("Set A", None, [BaseInput(3, b), BaseInput(1, a)], []))
     assert len(published) == 1
     assert {"set", f"set:{set_id}"} <= published[0]
 

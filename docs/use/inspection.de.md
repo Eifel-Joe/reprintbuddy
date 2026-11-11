@@ -88,11 +88,10 @@ Eine Bestellung reserviert Bestand, bis du sie versendest oder stornierst. Repri
 1. Trage eine **Referenz** ein, freien Text wie die Bestellnummer. Sie ist Pflicht. Gib keine Adressen oder Kundendaten ein.
 2. Prüfe das **Bestelldatum**; vorgegeben ist heute.
 3. Trage bei Bedarf eine **Notiz** ein.
-4. Wähle unter **Posten** je Zeile einen Artikel oder ein Set und trage die **Menge** ein. **Mehr Zeilen** fügt Zeilen hinzu.
-5. Wähle bei einem [Set mit Wahl](#sets) für jede Position mit Wahl den Artikel.
-6. Klicke auf **Bestellung anlegen**.
+4. Wähle unter **Posten** je Zeile einen Artikel oder ein Set und trage die **Menge** ein. Ein [Set mit Wahlteilen](#sets) steht einmal je Variante in der Liste, mit ihrer Nummer und den gewählten Artikeln, zum Beispiel **Bracket kit · EX-S01-S (Bracket small)**: Wähle die Variante. **Mehr Zeilen** fügt Zeilen hinzu.
+5. Klicke auf **Bestellung anlegen**.
 
-Die bestellten Stücke werden **Reserviert**. **Verfügbar** kann unter null fallen, wenn du mehr bestellst, als du hast. Eine Bestellung lässt sich danach nicht ändern; storniere sie und lege sie neu an.
+Die bestellten Stücke werden **Reserviert**. Die Bestellung einer Variante behält deren Nummer, wie sie beim Bestellen war, auch wenn sich das Set später ändert. **Verfügbar** kann unter null fallen, wenn du mehr bestellst, als du hast. Eine Bestellung lässt sich danach nicht ändern; storniere sie und lege sie neu an.
 
 ![Die Liste der offenen Bestellungen](../assets/images/de/orders.png)
 
@@ -107,13 +106,31 @@ Versand und Storno gelten immer für die ganze Bestellung, nie für einzelne Pos
 
 ## Sets
 
-Ein Set ist eine Zusammenstellung von Artikeln, die zusammen verkauft werden, mit Namen und optionaler Artikelnummer. Es hat keinen eigenen Bestand: Es ist so oft verfügbar, wie alle seine Positionen gleichzeitig verfügbar sind.
+Ein Set ist eine Zusammenstellung von Artikeln, die zusammen verkauft werden, mit Namen und Artikelnummer (Pflicht, sobald das Set Wahlteile hat). Es hat keinen eigenen Bestand.
 
-Eine Position hat eine Menge und einen oder mehrere Artikel. Bei einem Artikel ist die Position fest. Bei mehreren Artikeln wählst du bei der Bestellung einen aus. Bei einer Position mit Wahl zählt für die Verfügbarkeit der Artikel mit dem kleinsten Bestand: Das Set gilt nur so oft als lieferbar, wie es sich mit jedem der Artikel zusammenstellen lässt; die Bestände der Artikel werden nicht addiert. Kommt ein Artikel in mehreren Positionen vor, zählt die ungünstigste Kombination: Das Set gilt nur so oft als lieferbar, wie es sich mit jeder möglichen Wahl in allen Positionen zugleich zusammenstellen lässt. Ein überbuchter Artikel zieht die Zahl herunter wie bei einer festen Position. Ein Set ist **lieferbar**, wenn mindestens ein Set aus dem verfügbaren Bestand zusammenkommt, sonst **nicht lieferbar**.
+**Basisteile** kommen in jedes Set: je Zeile eine **Menge** und ein **Artikel** aus der Aufklappliste (Dropdown). Ein Artikel, der schon in einer Zeile steht, wird in den anderen nicht mehr angeboten; ein Artikel steht nur einmal in einem Set.
 
-Klicke unter **Sets** auf **Neues Set**, trage Name und Artikelnummer ein und fülle die Positionen: eine **Menge** und die **Artikel** (mit gedrückter Strg- oder Cmd-Taste mehrere wählen). Zeilen ohne Artikel werden übergangen; **Mehr Zeilen** fügt Zeilen hinzu. Ein Set braucht mindestens eine Position.
+**Wahlteile** sind freiwillig: In jedes Set kommt einer ihrer Artikel, zum Beispiel die Größe einer Platte. **Wahlteile 1** nimmt beliebig viele Artikel auf, jeden mit einer **Zusatznummer**, dazu eine **Menge des gewählten Artikels**. **Wahlteile 2 hinzufügen** öffnet ein zweites Feld derselben Art, zum Beispiel für die Farbe. Jede Zusammenstellung ist eine **Variante**. Die Artikelnummer einer Variante ist die des Sets mit den Zusatznummern dahinter, so wie sie geschrieben sind: Set EX-S10 mit Wahlteilen 1 A `-A`, B `-B`, C `-C` und Wahlteilen 2 D `-1`, E `-2` hat die sechs Varianten EX-S10-A-1, EX-S10-A-2, EX-S10-B-1 … EX-S10-C-2; ohne Wahlteile 2 nur EX-S10-A, EX-S10-B und EX-S10-C. Den Trenner schreibst du selbst in die Zusatznummer.
 
-Die Bestellung eines Sets reserviert die einzelnen Artikel. Ein Set lässt sich nicht bestellen, wenn für eine Position kein aktiver Artikel mehr übrig ist. Sets werden archiviert, nicht gelöscht; eine bestehende Bestellung behält die Artikel, mit denen sie angelegt wurde.
+Regeln beim Speichern:
+
+- Ein Set mit Wahlteilen braucht eine Artikelnummer; die Zusatznummern eines Feldes unterscheiden sich.
+- Jede Variante hat mindestens zwei verschiedene Artikel: zwei Basisteile, ein Basisteil und Wahlteile oder zwei Felder Wahlteile.
+- Wahlteile 2 gehen nur zusammen mit Wahlteilen 1.
+- Variantennummern sind höchstens 64 Zeichen lang und eindeutig: Kein Artikel, kein Set und keine andere Variante darf dieselbe Nummer haben, auch archivierte nicht.
+
+**Verfügbarkeit.** Ein Set ohne Wahlteile ist so oft verfügbar, wie alle seine Artikel gleichzeitig verfügbar sind. Mit Wahlteilen ist jede Variante so oft verfügbar wie ein Set aus ihren Artikeln, und die Liste zeigt für das ganze Set als **Verfügbar**, wie viele Sets in beliebiger Mischung der Varianten gleichzeitig aus dem verfügbaren Bestand gehen. Beispiel: Basisteile, A, B und C je 1: jede Variante 1, zusammen 1. Basisteile 3, A 2, B 0, C 1: Variante A 2, B 0, C 1, zusammen 3. Ein Set ist **lieferbar**, wenn mindestens ein Set zusammenkommt, sonst **nicht lieferbar**.
+
+![Die Liste der Sets mit Basisteilen und Varianten](../assets/images/de/sets.png)
+
+Klicke unter **Sets** auf **Neues Set**. Das Formular beginnt mit je drei Zeilen Basisteile und Wahlteile 1; **Mehr Zeilen** fügt dem Abschnitt drei hinzu, **Wahlteile 2 hinzufügen** öffnet das zweite Feld. Zeilen ohne Artikel werden übergangen.
+
+![Das Formular eines Sets mit Basisteilen und Wahlteilen](../assets/images/de/set-form.png)
+
+Die Bestellung eines Sets reserviert die einzelnen Artikel. Ein Set lässt sich nicht bestellen, solange eines seiner Basisteile archiviert ist; eine Variante mit archiviertem Wahlteil wird nicht angeboten. Sets werden archiviert, nicht gelöscht; eine bestehende Bestellung behält die Artikel und die Variantennummer, mit denen sie angelegt wurde. Kleine und große Ausführungen sind getrennte Sets.
+
+!!! note "Sets aus einer früheren Version"
+    Sets aus Version 0.3.17 oder früher baut das Update um: Eine Position mit einem Artikel wird ein Basisteil, die erste und zweite Position mit Wahl werden Wahlteile 1 und 2. Sie haben noch keine Zusatznummern; das Set zeigt deshalb **Zusatznummern fehlen** und lässt sich erst bestellen, wenn du sie einträgst (und eine Artikelnummer, falls es keine hat). Was das neue Formular nicht fassen kann, etwa eine dritte Position mit Wahl, entfällt; die Artikel, die nicht mehr wählbar sind, stehen unter **Einstellungen → Protokoll** ([Protokoll](../operate/log.md)). Bestellungen von vor dem Update bleiben, wie sie waren.
 
 ## Zukaufteile
 

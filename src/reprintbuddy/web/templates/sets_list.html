@@ -3,12 +3,15 @@
 {% block title %}{{ t('sets.title') }}{% endblock %}
 {% block content %}
 {#- The state badge; in the archive "archived" instead. -#}
+{#- A set the update rebuilt without its numbers shows a grey badge beside its state (p340). -#}
 {% macro badge(row) -%}
-<span class="badges">{{ ui.badge('set', 'archived' if archived else row.status) }}</span>
+<span class="badges">{{ ui.badge('set', 'archived' if archived else row.status) }}{% if row.incomplete and not archived %}<span class="badge tone-neutral">{{ t('sets.incomplete.too_few') if row.incomplete == 'too_few' else t('sets.incomplete.suffixes_missing') }}</span>{% endif %}</span>
 {%- endmacro %}
-{#- One position: "2 × Template A" or, with a choice, "2 × (Template B | Template C)". -#}
-{% macro position_text(position) -%}
-{{ position.qty }} × {% if position.is_choice %}({{ position.article_names|join(' | ') }}){% else %}{{ position.article_names[0] if position.article_names else '–' }}{% endif %}
+{#- What a set holds (Spec 5.4): the base parts "2 × Frame", then each variant with its number and
+    how often it is available on its own, "EX-S10-A · 2"; without a number the chosen articles. -#}
+{% macro contents(row) -%}
+{%- for part in row.base %}<span>{{ part.qty }} × {{ part.name }}</span>{% endfor -%}
+{%- for variant in row.variants %}<span class="variant">{{ variant.sku or variant.names|join(', ') }} · <strong{% if variant.available < 0 %} class="neg"{% endif %}>{{ variant.available }}</strong></span>{% endfor -%}
 {%- endmacro %}
 
 {% call ui.page_head("boxes", t('sets.title') ~ (' · ' ~ t('catalog.archived') if archived else ''), t('sets.subtitle')) %}<a class="btn" href="/sets/new">{{ ui.icon('plus') }}{{ t('sets.new') }}</a>{% endcall %}
@@ -39,7 +42,7 @@
         <th>{{ t('catalog.field.sku') }}</th>
         <th>{{ t('list.col.status') }}</th>
         <th class="num">{{ t('articles.col.available') }}</th>
-        <th>{{ t('sets.positions') }}</th>
+        <th>{{ t('sets.contents') }}</th>
         <th class="actions-col"><span class="sr-only">{{ t('list.col.actions') }}</span></th>
       </tr>
     </thead>
@@ -50,10 +53,7 @@
         <td>{{ row.sku or '' }}</td>
         <td>{{ badge(row) }}</td>
         <td class="num{% if row.available < 0 %} neg{% endif %}">{{ row.available }}</td>
-        <td class="positions">
-          {% for position in row.positions %}{{ position_text(position) }}{% if not loop.last %}<br>{% endif %}
-          {% endfor %}
-        </td>
+        <td class="set-contents">{{ contents(row) }}</td>
         <td class="actions-col">{% call ui.row_actions() %}
           {%- if archived %}{{ ui.icon_post('archive-restore', t('catalog.restore'), '/sets/' ~ row.id ~ '/restore', subject=row.name) }}
           {%- else %}{{ ui.icon_button('pencil', t('sets.edit'), '/sets/' ~ row.id ~ '/edit', row.name) }}{{ ui.icon_post('archive', t('catalog.archive'), '/sets/' ~ row.id ~ '/archive', subject=row.name) }}{% endif %}
@@ -70,10 +70,8 @@
     <div class="tile-stats">
       <span>{{ t('articles.col.available') }} <strong{% if row.available < 0 %} class="neg"{% endif %}>{{ row.available }}</strong></span>
     </div>
-    {% if row.positions %}
-    <div class="tile-foot">
-      {%- for position in row.positions %}<span>{{ position_text(position) }}</span>{% endfor -%}
-    </div>
+    {% if row.base or row.variants %}
+    <div class="tile-foot">{{ contents(row) }}</div>
     {% endif %}
   </a>
   {% endfor %}

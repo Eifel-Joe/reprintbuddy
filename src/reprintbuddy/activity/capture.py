@@ -12,7 +12,7 @@ and `ADDRESS` (the device of a request). `acting()` marks what Reprintbuddy chan
 
 Only the columns of the edit forms count as master data (`changes.SETTINGS_COLUMNS`); stock, pause
 and print file are the journal's. Rows that are deleted and written again with the same content
-(the parts of an article, the positions of a set) are no change.
+(the parts of an article, the base parts and choices of a set) are no change.
 """
 
 from __future__ import annotations
@@ -262,26 +262,32 @@ def _collect_row(session: Session, data: _Data, obj: object, change: str, actor:
         else:
             thing.fields.add("suppliers")
     elif isinstance(obj, SetPosition):
+        # Base parts and choice fields are two fields of the set (Spec 5.4, 10.7; p340).
         data.positions[obj.id] = obj.set_id
         thing = _thing(data, "set", obj.set_id, actor)
-        row = ("position", obj.sort, obj.qty)
+        name = "base" if obj.slot == 0 else "choices"
+        row = ("position", obj.slot, obj.sort, obj.qty)
         if change == "new":
-            thing.new_rows.setdefault("positions", Counter())[row] += 1
+            thing.new_rows.setdefault(name, Counter())[row] += 1
         elif change == "deleted":
-            thing.old_rows.setdefault("positions", Counter())[row] += 1
+            thing.old_rows.setdefault(name, Counter())[row] += 1
         else:
-            thing.fields.add("positions")
+            thing.fields.add(name)
     elif isinstance(obj, SetPositionOption):
         set_id = _set_of_position(session, data, obj.position_id)
         if set_id is None:
             return
         thing = _thing(data, "set", set_id, actor)
         position = session.get(SetPosition, obj.position_id)
-        row = ("option", position.sort if position is not None else None, obj.article_id)
+        slot = position.slot if position is not None else None
+        name = "base" if slot == 0 else "choices"
+        row = ("option", slot, position.sort if position is not None else None, obj.article_id, obj.suffix, obj.sort)
         if change == "new":
-            thing.new_rows.setdefault("positions", Counter())[row] += 1
+            thing.new_rows.setdefault(name, Counter())[row] += 1
         elif change == "deleted":
-            thing.old_rows.setdefault("positions", Counter())[row] += 1
+            thing.old_rows.setdefault(name, Counter())[row] += 1
+        else:
+            thing.fields.add(name)
     elif isinstance(obj, FilamentSettings):
         if (change == "new" and _differs_from_defaults(obj)) or (
             change == "dirty" and any(_history(obj, name)[0] for name in FILAMENT_COLUMNS)

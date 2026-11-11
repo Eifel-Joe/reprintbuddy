@@ -9,7 +9,7 @@ from conftest import sm_of
 from factories import make_article, make_part
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog, orders, stock
-from reprintbuddy.domain.catalog import PositionInput, SetInput
+from reprintbuddy.domain.catalog import BaseInput, SetInput
 from reprintbuddy.web.i18n import translate
 
 PAGES = [
@@ -32,7 +32,8 @@ def test_pages_with_data_without_bambuddy(ready_client):
     with sm_of(ready_client).begin() as s:
         a = make_article(s, name="Template A", stock=5, thumbnail=b"\x89PNG").id
         p = make_part(s, name="Insert M4", stock=3).id
-        set_id = catalog.create_set(s, SetInput("Starter Set", "S-1", [PositionInput(1, [a])])).id
+        z = make_article(s, name="Template Z", stock=5).id
+        set_id = catalog.create_set(s, SetInput("Starter Set", "S-1", [BaseInput(1, a), BaseInput(1, z)], [])).id
         order_id = orders.create_order(
             s, reference="Order 1001", order_date=date(2026, 1, 15),
             items=[orders.ArticleItem(a, 1)], actor="user",

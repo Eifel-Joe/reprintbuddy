@@ -85,7 +85,9 @@ FIELDS: dict[str, str] = {
     "safety_unit": "safety",
     "supplier": "supplier",
     "order_url": "order_url",
-    "positions": "positions",
+    "base": "base",  # the base parts of a set (Spec 5.4, p340)
+    "choices": "choices",  # its choice fields with their suffixes
+    "positions": "positions",  # the positions of a set before p340; kept for the log lines written then
 }
 
 

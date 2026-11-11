@@ -186,8 +186,8 @@ def test_a_set_created_changed_archived_and_restored(ready_client):
     a = article_of(ready_client, name="Bracket A", stock=3)
     b = article_of(ready_client, name="Bracket B", stock=3)
     response = form_post(
-        ready_client, "/sets/new", name="Kit", sku="K-1", rows="5",
-        pos_0_qty="1", pos_0_articles=[str(a)], pos_1_qty="2", pos_1_articles=[str(b)],
+        ready_client, "/sets/new", name="Kit", sku="K-1", base_rows="3",
+        base_0_qty="1", base_0_article=str(a), base_1_qty="2", base_1_article=str(b),
     )
     assert response.status_code == 303
     with sm_of(ready_client)() as s:
@@ -199,8 +199,8 @@ def test_a_set_created_changed_archived_and_restored(ready_client):
     edit = f"/sets/{sid}/edit"
     response = ready_client.post(
         edit,
-        data={"csrf_token": csrf_of(ready_client, edit), "name": "Kit 2", "sku": "K-1", "rows": "5",
-              "pos_0_qty": "1", "pos_0_articles": [str(a)], "pos_1_qty": "2", "pos_1_articles": [str(b)]},
+        data={"csrf_token": csrf_of(ready_client, edit), "name": "Kit 2", "sku": "K-1", "base_rows": "3",
+              "base_0_qty": "1", "base_0_article": str(a), "base_1_qty": "2", "base_1_article": str(b)},
     )
     assert response.status_code == 303
     assert the_line(ready_client, "set_changed").details == {"id": sid, "name": "Kit 2", "fields": ["name"]}

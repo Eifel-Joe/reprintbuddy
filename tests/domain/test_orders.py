@@ -3,9 +3,9 @@ from datetime import date
 import pytest
 from sqlalchemy import select
 
-from factories import make_article
+from factories import make_article, make_set
 from reprintbuddy.domain import catalog, orders, stock
-from reprintbuddy.domain.catalog import PositionInput, SetInput
+from reprintbuddy.domain.catalog import BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, StockLimitError, ValidationError
 from reprintbuddy.domain.orders import ArticleItem, SetItem
 from reprintbuddy.models import Article, JournalEntry, Order, OrderLine
@@ -19,9 +19,13 @@ def new_order(s, items, reference="Order 1001"):
 
 def starter_set(s, a, b):
     """Template A x 1 and Template B x 2."""
-    return catalog.create_set(
-        s, SetInput("Starter Set", None, [PositionInput(1, [a]), PositionInput(2, [b])])
-    )
+    return catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(2, b)], []))
+
+
+def variant_set(s, a, b, c):
+    """Template A x 1 as base part, choice parts B "-B" and C "-C" with quantity 2; number S-1."""
+    options = [ChoiceOptionInput(b, "-B"), ChoiceOptionInput(c, "-C")]
+    return catalog.create_set(s, SetInput("Starter Set", "S-1", [BaseInput(1, a)], [ChoiceInput(2, options)]))
 
 
 def test_create_order_reserves(db):  # Spec 6.2
@@ -41,7 +45,7 @@ def test_order_with_set_reserves_articles(db):  # Spec 5.4
         a = make_article(s, name="Template A").id
         b = make_article(s, name="Template B").id
         set_id = starter_set(s, a, b).id
-        new_order(s, [SetItem(set_id, 2, {})])
+        new_order(s, [SetItem(set_id, 2)])
     with db.begin() as s:
         assert (s.get(Article, a).reserved, s.get(Article, b).reserved) == (2, 4)
         lines = s.scalars(select(OrderLine).order_by(OrderLine.id)).all()
@@ -49,59 +53,100 @@ def test_order_with_set_reserves_articles(db):  # Spec 5.4
         assert {l.group_no for l in lines} == {1}
 
 
-def test_choice_required(db):
+def test_a_set_with_choices_needs_a_variant(db):  # Spec 6.7: the variant is chosen (p340)
     with db.begin() as s:
-        a = make_article(s, name="Template A").id
-        b = make_article(s, name="Template B").id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a, b])])).id
+        a, b, c = (make_article(s, name=f"Template {x}").id for x in "ABC")
+        set_id = variant_set(s, a, b, c).id
     with pytest.raises(ValidationError) as info:
         with db.begin() as s:
-            new_order(s, [SetItem(set_id, 1, {})])
-    assert info.value.key == "orders.choice_required"
+            new_order(s, [SetItem(set_id, 1)])
+    assert info.value.key == "orders.variant_invalid"
     with db.begin() as s:
         assert s.get(Article, a).reserved == 0 and s.scalars(select(Order)).all() == []
 
 
-def test_choice_must_be_allowed(db):
+def test_unknown_variant_is_refused(db):
     with db.begin() as s:
-        a = make_article(s, name="Template A").id
-        b = make_article(s, name="Template B").id
-        c = make_article(s, name="Template C").id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [b, c])])).id
-        position = catalog.list_sets(s)[0].positions[0].id
-    with pytest.raises(ValidationError) as info:
-        with db.begin() as s:
-            new_order(s, [SetItem(set_id, 1, {position: a})])
-    assert info.value.key == "orders.choice_invalid"
+        a, b, c, d = (make_article(s, name=f"Template {x}").id for x in "ABCD")
+        set_id = variant_set(s, a, b, c).id
+    for key in ((d,), (a,), (b, c), (b, b)):
+        with pytest.raises(ValidationError) as info:
+            with db.begin() as s:
+                new_order(s, [SetItem(set_id, 1, key)])
+        assert info.value.key == "orders.variant_invalid", key
 
 
-def test_choice_groups_and_quantities(db):
+def test_order_of_a_variant_reserves_base_and_chosen_parts(db):
     with db.begin() as s:
-        a = make_article(s, name="Template A").id
-        b = make_article(s, name="Template B").id
-        c = make_article(s, name="Template C").id
-        set_id = catalog.create_set(
-            s, SetInput("Starter Set", None, [PositionInput(1, [a]), PositionInput(2, [b, c])])
-        ).id
-        position = catalog.list_sets(s)[0].positions[1].id
-        order_id = new_order(s, [SetItem(set_id, 3, {position: c}), ArticleItem(a, 1)]).id
+        a, b, c = (make_article(s, name=f"Template {x}").id for x in "ABC")
+        set_id = variant_set(s, a, b, c).id
+        order_id = new_order(s, [SetItem(set_id, 3, (c,)), ArticleItem(a, 1)]).id
     with db.begin() as s:
         assert (s.get(Article, a).reserved, s.get(Article, b).reserved, s.get(Article, c).reserved) == (4, 0, 6)
         view = orders.get_order(s, order_id)
-        assert [g.set_name for g in view.groups] == ["Starter Set", None]
+        assert [(g.set_name, g.variant_sku) for g in view.groups] == [("Starter Set", "S-1-C"), (None, None)]
         assert view.groups[0].set_qty == 3
         assert view.groups[0].lines == [("Template A", 3), ("Template C", 6)]
         assert view.groups[1].lines == [("Template A", 1)]
 
 
+def test_variant_number_is_stored_on_the_order(db):  # Spec 6.7: as it was when ordered
+    with db.begin() as s:
+        a, b, c = (make_article(s, name=f"Template {x}").id for x in "ABC")
+        set_id = variant_set(s, a, b, c).id
+        new_order(s, [SetItem(set_id, 1, (b,)), ArticleItem(c, 1)])
+    with db.begin() as s:
+        lines = s.scalars(select(OrderLine).order_by(OrderLine.id)).all()
+        assert [(l.article_id, l.variant_sku) for l in lines] == [(a, "S-1-B"), (b, "S-1-B"), (c, None)]
+
+
+def test_order_of_an_archived_choice_is_refused(db):
+    with db.begin() as s:
+        a, b, c = (make_article(s, name=f"Template {x}").id for x in "ABC")
+        set_id = variant_set(s, a, b, c).id
+        s.get(Article, c).archived_at = date(2026, 1, 1)
+    with pytest.raises(ValidationError) as info:
+        with db.begin() as s:
+            new_order(s, [SetItem(set_id, 1, (c,))])
+    assert info.value.key == "orders.item_archived"
+    with db.begin() as s:
+        new_order(s, [SetItem(set_id, 1, (b,))])  # the other variant still goes
+
+
+def test_incomplete_set_cannot_be_ordered(db):  # a set the update rebuilt without suffixes
+    with db.begin() as s:
+        a, b = (make_article(s, name=f"Template {x}").id for x in "AB")
+        set_id = make_set(s, "Kit", [(1, a)], [(1, [(b, None)])], sku="K").id
+    with pytest.raises(ValidationError) as info:
+        with db.begin() as s:
+            new_order(s, [SetItem(set_id, 1, (b,))])
+    assert info.value.key == "orders.set_incomplete"
+
+
+def test_old_order_without_variant_number_shows_as_before(db):  # Spec 5.4: orders stay as they were
+    with db.begin() as s:
+        a, b = (make_article(s, name=f"Template {x}").id for x in "AB")
+        set_id = starter_set(s, a, b).id
+        order = Order(reference="Old", order_date=TODAY)
+        s.add(order)
+        s.flush()
+        s.add_all([OrderLine(order_id=order.id, group_no=1, article_id=a, qty=1, set_id=set_id, set_qty=1),
+                   OrderLine(order_id=order.id, group_no=1, article_id=b, qty=2, set_id=set_id, set_qty=1)])
+        order_id = order.id
+    with db.begin() as s:
+        group = orders.get_order(s, order_id).groups[0]
+        assert (group.set_name, group.variant_sku, group.lines) == ("Starter Set", None, [("Template A", 1), ("Template B", 2)])
+
+
 def test_same_article_direct_and_via_set_aggregated(db):
     with db.begin() as s:
         a = make_article(s, name="Template A").id
-        set_id = catalog.create_set(s, SetInput("S", None, [PositionInput(1, [a])])).id
-        new_order(s, [ArticleItem(a, 1), SetItem(set_id, 1, {})])
+        b = make_article(s, name="Template B").id
+        set_id = catalog.create_set(s, SetInput("S", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
+        new_order(s, [ArticleItem(a, 1), SetItem(set_id, 1)])
     with db.begin() as s:
         assert s.get(Article, a).reserved == 2
-        assert len(s.scalars(select(JournalEntry)).all()) == 1  # one booking per article
+        assert len(s.scalars(select(JournalEntry).where(JournalEntry.article_id == a)).all()) == 1  # one booking per article
 
 
 def test_ready_when_all_in_stock(db):  # Spec 6.7
@@ -109,7 +154,7 @@ def test_ready_when_all_in_stock(db):  # Spec 6.7
         a = make_article(s, name="Template A", stock=2).id
         b = make_article(s, name="Template B", stock=3).id
         set_id = starter_set(s, a, b).id
-        order_id = new_order(s, [SetItem(set_id, 2, {})]).id  # needs A 2 and B 4
+        order_id = new_order(s, [SetItem(set_id, 2)]).id  # needs A 2 and B 4
     with db.begin() as s:
         assert orders.get_order(s, order_id).ready is False
         stock.stock_in(s, b, 1, "user", consume_parts=False)
@@ -192,21 +237,24 @@ def test_unknown_order(db):
         assert info.value.key == "orders.not_found"
 
 
-def test_set_changed_after_order(db):  # Review Focus 5
+def test_order_keeps_variant_number_after_set_change(db):  # review focus 1 (p340)
     with db.begin() as s:
         a = make_article(s, name="Template A", stock=5).id
+        b = make_article(s, name="Template B", stock=5).id
         c = make_article(s, name="Template C", stock=5).id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a, c])])).id
-        position = catalog.list_sets(s)[0].positions[0].id
-        order_id = new_order(s, [SetItem(set_id, 1, {position: c})]).id
+        set_id = variant_set(s, a, b, c).id
+        order_id = new_order(s, [SetItem(set_id, 1, (c,))]).id
     with db.begin() as s:
-        catalog.update_set(s, set_id, SetInput("Starter Set", None, [PositionInput(1, [a])]))
+        catalog.update_set(s, set_id, SetInput("Starter Set", "S-1", [BaseInput(1, a)],
+                                               [ChoiceInput(1, [ChoiceOptionInput(b, "-X")])]))
     with db.begin() as s:
+        group = orders.get_order(s, order_id).groups[0]
+        assert (group.variant_sku, group.lines) == ("S-1-C", [("Template A", 1), ("Template C", 2)])
         orders.ship_order(s, order_id, "user")
     with db.begin() as s:
         art_c = s.get(Article, c)
-        assert (art_c.stock, art_c.reserved) == (4, 0)
-        assert s.get(Article, a).stock == 5
+        assert (art_c.stock, art_c.reserved) == (3, 0)
+        assert s.get(Article, a).stock == 4
 
 
 def test_reserved_matches_open_orders(db):

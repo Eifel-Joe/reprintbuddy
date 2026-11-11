@@ -258,20 +258,33 @@ class ProductSet(Base):
 
 
 class SetPosition(Base):
+    """A base part (`slot` 0, one option) or a choice field (`slot` 1 or 2, one position per set
+    holding all its options); the quantity counts for the article that is chosen (Spec 5.4, p340)."""
+
     __tablename__ = "set_positions"
-    __table_args__ = (CheckConstraint("qty >= 1", name="ck_set_positions_qty"),)
+    __table_args__ = (
+        CheckConstraint("qty >= 1", name="ck_set_positions_qty"),
+        CheckConstraint("slot IN (0, 1, 2)", name="ck_set_positions_slot"),
+        Index("uq_set_positions_slot", "set_id", "slot", unique=True, sqlite_where=text("slot > 0")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     set_id: Mapped[int] = mapped_column(ForeignKey("product_sets.id"))
     sort: Mapped[int] = _int(0)
     qty: Mapped[int]
+    slot: Mapped[int] = _int(0)
 
 
 class SetPositionOption(Base):
+    """An article of a position; in a choice field with its suffix (part of the variant number) and
+    its place in the field."""
+
     __tablename__ = "set_position_options"
 
     position_id: Mapped[int] = mapped_column(ForeignKey("set_positions.id"), primary_key=True)
     article_id: Mapped[int] = mapped_column(ForeignKey("articles.id"), primary_key=True)
+    suffix: Mapped[str | None] = mapped_column(String, default=None)
+    sort: Mapped[int] = _int(0)
 
 
 class Order(Base):
@@ -302,6 +315,7 @@ class OrderLine(Base):
     qty: Mapped[int]
     set_id: Mapped[int | None] = mapped_column(ForeignKey("product_sets.id"), default=None)
     set_qty: Mapped[int | None] = mapped_column(default=None)
+    variant_sku: Mapped[str | None] = mapped_column(String, default=None)  # as ordered (Spec 6.7, p340)
 
 
 def _booked_default(context) -> datetime:

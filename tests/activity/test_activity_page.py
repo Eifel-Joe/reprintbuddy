@@ -148,3 +148,20 @@ def test_an_order_taken_back_shows_amount_supplier_and_what_arrived(ready_client
     assert "Bestellung zurückgenommen: Insert M4" in rows[1]
     assert "Bestellt: 4 × 50 Stk." in rows[1] and "Lieferant: Example Supplier" in rows[1]
     assert "Davon eingetroffen: 100 Stk." in rows[1]
+
+
+def test_a_set_rebuilt_by_the_update_names_what_was_dropped(ready_client):
+    """Spec 5.4 (p340): the update names the choice articles a set could not keep, from "System"."""
+    with sm_of(ready_client).begin() as s:
+        s.query(ActivityEntry).delete()
+    add(ready_client, ActivityEntry(area="master", kind="set_migrated", actor="system", at=datetime(2026, 11, 11, 8, 0),
+                                    details={"id": 4, "name": "Bracket kit", "dropped": ["Handle", "Strip"]}))
+    html = ready_client.get(PAGE).text
+    row = text_of(table_rows(html)[0])
+    assert "Set rebuilt by the update: Bracket kit" in row
+    assert "No longer to choose: Handle, Strip" in row
+    assert 'href="/sets/4/edit"' in table_rows(html)[0]
+    with sm_of(ready_client).begin() as s:
+        st.set_setting(s, "language", "de", commit=False)
+    rows = [text_of(row) for row in table_rows(ready_client.get(PAGE).text)]
+    assert any("Set beim Update umgebaut: Bracket kit" in row and "Nicht mehr wählbar: Handle, Strip" in row for row in rows)

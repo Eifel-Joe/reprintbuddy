@@ -1,4 +1,4 @@
-"""Orders: open list, new order (also with set choices), ship, cancel (Spec 6.7)."""
+"""Orders: open list, new order (also of a set's variant), ship, cancel (Spec 6.7)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from dataclasses import replace
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import catalog, orders, stock
@@ -15,7 +14,7 @@ from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.domain.orders import ArticleItem, SetItem
 from reprintbuddy.domain.status import summarize
 from reprintbuddy.domain.stock import MAX_QTY
-from reprintbuddy.models import Article, SetPosition, SetPositionOption, utcnow
+from reprintbuddy.models import utcnow
 from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, local_next, render
@@ -120,42 +119,37 @@ def _typed_items(form, rows: int) -> list[dict[str, str]]:
     ]
 
 
-def _parse_item(raw: str) -> tuple[str, int]:
-    kind, _, ident = raw.partition(":")
-    number = bounded_int(ident)
-    if kind not in ("article", "set") or number is None or number > MAX_ID:
+def _parse_item(raw: str) -> tuple[str, int, tuple[int, ...]]:
+    """"article:<id>", "set:<id>" or, for a variant, "set:<id>:<article id per choice field>"."""
+    kind, _, rest = raw.partition(":")
+    numbers = [bounded_int(part) for part in rest.split(":")]
+    if (
+        kind not in ("article", "set")
+        or any(number is None or number > MAX_ID for number in numbers)
+        or len(numbers) > (1 + catalog.CHOICE_FIELDS if kind == "set" else 1)
+    ):
         raise ValidationError("orders.invalid_item")
-    return kind, number
+    return kind, numbers[0], tuple(numbers[1:])  # type: ignore[arg-type]
 
 
-def _choice_blocks(db: Session, form, items: list[dict[str, str]]) -> dict[int, list[dict[str, object]]]:
-    """For each set row: the positions with a choice and what was chosen so far."""
-    blocks: dict[int, list[dict[str, object]]] = {}
-    for i, row in enumerate(items):
-        kind, _, ident = row["item"].partition(":")
-        set_id = bounded_int(ident)
-        if kind != "set" or set_id is None or set_id > MAX_ID:
+def _set_options(db: Session) -> list[tuple[str, str]]:
+    """What the form offers under "Sets": a set without choices by its name, a set with choice parts
+    once per variant, "Starter Set · EX-S10-A (Plate A)" (Spec 6.7, p340). Sets that cannot be
+    ordered and variants of archived choice parts are left out."""
+    options = []
+    for row in catalog.list_sets(db):
+        if not row.orderable:
             continue
-        positions = db.scalars(
-            select(SetPosition).where(SetPosition.set_id == set_id).order_by(SetPosition.sort, SetPosition.id)
-        ).all()
-        found = []
-        for position in positions:
-            articles = db.execute(
-                select(Article.id, Article.name)
-                .join(SetPositionOption, SetPositionOption.article_id == Article.id)
-                .where(SetPositionOption.position_id == position.id, Article.archived_at.is_(None))
-                .order_by(Article.name, Article.id)
-            ).all()
-            if len(articles) > 1:
-                chosen = str(form.get(f"choice_{i}_{position.id}", ""))
-                found.append({"position_id": position.id, "qty": position.qty, "options": articles, "chosen": chosen})
-        if found:
-            blocks[i] = found
-    return blocks
+        if not row.choices:
+            options.append((f"set:{row.id}", row.name))
+            continue
+        for variant in row.variants:
+            value = ":".join(["set", str(row.id), *(str(a) for a in variant.key)])
+            options.append((value, f"{row.name} · {variant.sku} ({', '.join(variant.names)})"))
+    return options
 
 
-def _form_page(request, db, *, form_values, items, rows, blocks, error=None, status=200):
+def _form_page(request, db, *, form_values, items, rows, error=None, status=200):
     return render(
         request,
         "order_new.html",
@@ -164,9 +158,8 @@ def _form_page(request, db, *, form_values, items, rows, blocks, error=None, sta
         values=form_values,
         items=items,
         rows=rows,
-        blocks=blocks,
         articles=catalog.list_articles(db),
-        sets=[row for row in catalog.list_sets(db) if row.orderable],
+        sets=_set_options(db),
         error=error,
     )
 
@@ -175,7 +168,7 @@ def _form_page(request, db, *, form_values, items, rows, blocks, error=None, sta
 async def orders_new(request: Request, db: Session = Depends(get_db)):
     values = {"reference": "", "order_date": _today(), "note": ""}
     items = [{"item": "", "qty": "1"} for _ in range(DEFAULT_ROWS)]
-    return _form_page(request, db, form_values=values, items=items, rows=DEFAULT_ROWS, blocks={})
+    return _form_page(request, db, form_values=values, items=items, rows=DEFAULT_ROWS)
 
 
 @router.post("/orders/new", dependencies=[Depends(verify_csrf)])
@@ -192,38 +185,19 @@ async def orders_create(request: Request, db: Session = Depends(get_db)):
     lang = current_language(request)
 
     def page(error=None, status=200):
-        return _form_page(
-            request, db, form_values=values, items=items, rows=rows,
-            blocks=_choice_blocks(db, form, items), error=error, status=status,
-        )
+        return _form_page(request, db, form_values=values, items=items, rows=rows, error=error, status=status)
 
     if more:  # show more rows; nothing is booked and the token stays unused
         return page()
     try:
         order_date = _parse_date(form.get("order_date"))
-        parsed: list[tuple[int, str, int, int]] = []  # (row, kind, id, qty)
-        for i, row in enumerate(items):
+        order_items: list[ArticleItem | SetItem] = []
+        for row in items:
             if not row["item"].strip():
                 continue
-            kind, ident = _parse_item(row["item"].strip())
+            kind, ident, key = _parse_item(row["item"].strip())
             qty = parse_int(row["qty"], field="orders.field.qty", min=1, max=MAX_QTY)
-            parsed.append((i, kind, ident, qty))
-        blocks = _choice_blocks(db, form, items)
-        missing = any(
-            not block["chosen"] for i, kind, _id, _q in parsed if kind == "set" for block in blocks.get(i, [])
-        )
-        if missing:
-            return page(error=translate(lang, "orders.choose"))
-        order_items: list[ArticleItem | SetItem] = []
-        for i, kind, ident, qty in parsed:
-            if kind == "article":
-                order_items.append(ArticleItem(ident, qty))
-            else:
-                choices = {}
-                for block in blocks.get(i, []):
-                    chosen = bounded_int(str(block["chosen"]))
-                    choices[int(block["position_id"])] = chosen if chosen is not None and chosen <= MAX_ID else -1
-                order_items.append(SetItem(ident, qty, choices))
+            order_items.append(ArticleItem(ident, qty) if kind == "article" else SetItem(ident, qty, key))
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
             order = orders.create_order(
                 tx, reference=values["reference"], order_date=order_date, items=order_items,

@@ -5,7 +5,7 @@ import pytest
 from conftest import csrf_of, sm_of
 from factories import make_article
 from reprintbuddy.domain import catalog
-from reprintbuddy.domain.catalog import PositionInput, SetInput
+from reprintbuddy.domain.catalog import BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
 
 LONG = "9" * 5000
 
@@ -15,9 +15,10 @@ def seeded(bb_client):
     with sm_of(bb_client).begin() as s:
         a = make_article(s, name="Template A").id
         b = make_article(s, name="Template B", library_file_id=2).id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a, b])])).id
-        position = catalog.list_sets(s)[0].positions[0].id
-    return bb_client, a, set_id, position
+        c = make_article(s, name="Template C", library_file_id=3).id
+        options = [ChoiceOptionInput(b, "-B"), ChoiceOptionInput(c, "-C")]
+        set_id = catalog.create_set(s, SetInput("Starter Set", "S", [BaseInput(1, a)], [ChoiceInput(1, options)])).id
+    return bb_client, a, set_id, b
 
 
 def order_data(client, **over):
@@ -30,23 +31,26 @@ def order_data(client, **over):
 
 
 def test_order_form_fields(seeded):
-    client, a, set_id, position = seeded
+    client, a, set_id, b = seeded
     for over in (
         {"rows": LONG},
         {"item_0": f"article:{LONG}", "qty_0": "1"},
         {"item_0": f"set:{LONG}", "qty_0": "1"},
         {"item_0": f"article:{a}", "qty_0": LONG},
-        {"item_0": f"set:{set_id}", "qty_0": "1", f"choice_0_{position}": LONG},
+        {"item_0": f"set:{set_id}:{LONG}", "qty_0": "1"},
+        {"item_0": f"set:{set_id}:{b}:{LONG}", "qty_0": "1"},
     ):
         response = client.post("/orders/new", data=order_data(client, **over))
         assert response.status_code in (200, 400), list(over)
 
 
 def test_set_form_fields(seeded):
-    client, a, *_ = seeded
-    for over in ({"rows": LONG}, {"pos_0_articles": [LONG]}, {"pos_0_qty": LONG}):
-        data = {"csrf_token": csrf_of(client, "/sets/new"), "form_token": "x", "name": "S", "rows": "5",
-                "pos_0_qty": "1", "pos_0_articles": [str(a)]}
+    client, a, _set_id, b = seeded
+    for over in ({"base_rows": LONG}, {"c1_rows": LONG}, {"base_0_article": LONG}, {"base_0_qty": LONG},
+                 {"c1_qty": LONG}, {"c1_0_article": LONG}, {"c1_0_suffix": LONG}):
+        data = {"csrf_token": csrf_of(client, "/sets/new"), "form_token": "x", "name": "S", "sku": "S",
+                "base_rows": "3", "c1_rows": "3", "base_0_qty": "1", "base_0_article": str(a),
+                "c1_qty": "1", "c1_0_article": str(b), "c1_0_suffix": "-B"}
         data.update(over)
         assert client.post("/sets/new", data=data).status_code in (200, 400), list(over)
 
