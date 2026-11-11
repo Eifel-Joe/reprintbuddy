@@ -20,7 +20,7 @@
   <h2>{{ t('orders.items') }}</h2>
   {% for group in order.groups %}
     {% if group.set_name %}
-    <p><strong>{{ group.set_name }} × {{ group.set_qty }}</strong></p>
+    <p><strong>{{ group.set_name }}{% if group.variant_sku %} {{ group.variant_sku }}{% endif %} × {{ group.set_qty }}</strong></p>
     {% endif %}
     <ul class="plain-list">{% for name, qty in group.lines %}<li>{{ qty }} × {{ name }}</li>{% endfor %}</ul>
   {% endfor %}

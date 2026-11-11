@@ -4,10 +4,10 @@ from datetime import date
 from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
-from factories import make_article
+from factories import make_article, make_set
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog, orders, stock
-from reprintbuddy.domain.catalog import PositionInput, SetInput
+from reprintbuddy.domain.catalog import BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
 from reprintbuddy.domain.orders import ArticleItem
 from reprintbuddy.models import Article, JournalEntry, Order
 from reprintbuddy.web.formtoken import issue_form_token
@@ -67,37 +67,64 @@ def test_create_order_articles(ready_client):  # Spec 6.2
     assert en("orders.created", reference="Order 1001") in detail
 
 
-def test_create_order_set_choice_two_steps(ready_client):  # Spec 5.4
-    with sm_of(ready_client).begin() as s:
-        a = make_article(s, name="Template A").id
-        b = make_article(s, name="Template B").id
-        c = make_article(s, name="Template C").id
-        set_id = catalog.create_set(
-            s, SetInput("Starter Set", None, [PositionInput(1, [a]), PositionInput(1, [b, c])])
-        ).id
-        position = catalog.list_sets(s)[0].positions[1].id
-    data = order_fields(ready_client, item_0=f"set:{set_id}", qty_0="1")
-    first = ready_client.post("/orders/new", data=data)
-    assert first.status_code == 200
-    assert f'name="choice_0_{position}"' in first.text and en("orders.choose") in first.text
-    assert reserved(ready_client, c) == 0 and order_in_db(ready_client) == []
-    assert 'value="Order 1001"' in first.text  # input stays
-    data[f"choice_0_{position}"] = str(c)
-    second = ready_client.post("/orders/new", data=data)  # the same one-time token still works
-    assert second.status_code == 303
-    assert reserved(ready_client, c) == 1 and reserved(ready_client, a) == 1 and reserved(ready_client, b) == 0
+def variant_set(s):
+    """Starter Set S-1: Template A as base part, choice parts B "-B" and C "-C" (Spec 5.4, p340)."""
+    a, b, c = (make_article(s, name=f"Template {x}").id for x in "ABC")
+    options = [ChoiceOptionInput(b, "-B"), ChoiceOptionInput(c, "-C")]
+    set_id = catalog.create_set(s, SetInput("Starter Set", "S-1", [BaseInput(1, a)], [ChoiceInput(1, options)])).id
+    return set_id, a, b, c
 
 
-def test_choice_not_allowed_rejected(ready_client):
+def test_order_form_offers_each_variant_by_number(ready_client):  # Spec 6.7 (p340, question 7)
     with sm_of(ready_client).begin() as s:
-        a = make_article(s, name="Template A").id
-        b = make_article(s, name="Template B").id
-        c = make_article(s, name="Template C").id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [b, c])])).id
-        position = catalog.list_sets(s)[0].positions[0].id
-    data = order_fields(ready_client, item_0=f"set:{set_id}", qty_0="1", **{f"choice_0_{position}": str(a)})
-    response = ready_client.post("/orders/new", data=data)
-    assert response.status_code == 200 and order_in_db(ready_client) == []
+        set_id, a, b, c = variant_set(s)
+        d = make_article(s, name="Template D").id
+        plain = catalog.create_set(s, SetInput("Plain Set", None, [BaseInput(1, a), BaseInput(1, d)], [])).id
+    page = ready_client.get("/orders/new").text
+    assert f'<option value="set:{set_id}:{b}">Starter Set · S-1-B (Template B)</option>' in page
+    assert f'<option value="set:{set_id}:{c}">Starter Set · S-1-C (Template C)</option>' in page
+    assert f'<option value="set:{set_id}">' not in page  # a set with choices is ordered by variant
+    assert f'<option value="set:{plain}">Plain Set</option>' in page
+    assert "choice_0_" not in page
+
+
+def test_order_a_variant(ready_client):
+    with sm_of(ready_client).begin() as s:
+        set_id, a, b, c = variant_set(s)
+    response = ready_client.post("/orders/new", data=order_fields(ready_client, item_0=f"set:{set_id}:{c}", qty_0="2"))
+    assert response.status_code == 303
+    assert (reserved(ready_client, a), reserved(ready_client, b), reserved(ready_client, c)) == (2, 0, 2)
+    detail = ready_client.get(response.headers["location"]).text
+    assert "Starter Set S-1-C × 2" in re.sub(r"<[^>]+>", "", detail)
+    listing = re.sub(r"<[^>]+>", "", ready_client.get("/orders").text)
+    assert "Starter Set S-1-C × 2" in listing
+
+
+def test_variant_not_of_the_set_is_rejected(ready_client):
+    with sm_of(ready_client).begin() as s:
+        set_id, a, _b, _c = variant_set(s)
+    for item in (f"set:{set_id}:{a}", f"set:{set_id}", f"set:{set_id}:x", f"set:{set_id}:1:2:3"):
+        response = ready_client.post("/orders/new", data=order_fields(ready_client, item_0=item, qty_0="1"))
+        assert response.status_code == 200, item
+    assert order_in_db(ready_client) == []
+    assert en("orders.variant_invalid", set="Starter Set") in ready_client.post(
+        "/orders/new", data=order_fields(ready_client, item_0=f"set:{set_id}:{a}", qty_0="1")).text
+
+
+def test_order_form_hides_variants_of_archived_choices(ready_client):  # review focus 2
+    with sm_of(ready_client).begin() as s:
+        set_id, _a, b, c = variant_set(s)
+        s.get(Article, c).archived_at = date(2026, 1, 1)
+    page = ready_client.get("/orders/new").text
+    assert f'value="set:{set_id}:{b}"' in page and f'value="set:{set_id}:{c}"' not in page
+
+
+def test_order_form_leaves_out_incomplete_sets(ready_client):
+    with sm_of(ready_client).begin() as s:
+        a, b = (make_article(s, name=f"Template {x}").id for x in "AB")
+        set_id = make_set(s, "Kit", [(1, a)], [(1, [(b, None)])], sku="K").id
+    page = ready_client.get("/orders/new").text
+    assert f'value="set:{set_id}' not in page
 
 
 def test_more_rows_keeps_values(ready_client):
@@ -224,8 +251,9 @@ def test_unknown_order(ready_client):
 def test_open_list_shows_ready_badge_and_set_group(ready_client):
     with sm_of(ready_client).begin() as s:
         a = make_article(s, name="Template A", stock=1).id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a])])).id
-        orders.create_order(s, reference="Order 1001", order_date=date(2026, 1, 15), items=[orders.SetItem(set_id, 1, {})], actor="user")
+        b = make_article(s, name="Template B", stock=1).id
+        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
+        orders.create_order(s, reference="Order 1001", order_date=date(2026, 1, 15), items=[orders.SetItem(set_id, 1)], actor="user")
     page = ready_client.get("/orders").text
     assert "Order 1001" in page and en("status.order.ready") in page and "Starter Set" in page
     assert "view=closed" in page
