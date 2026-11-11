@@ -1444,5 +1444,6 @@
   "overview.todo.waiting": "{n} in der Warteschlange",
   "overview.todo.stock_unknown": "Bestand unbekannt",
   "overview.todo.overbooked": "{n} überbucht",
-  "overview.todo.title": "Was ansteht"
+  "overview.todo.title": "Was ansteht",
+  "filament.short": "knapp"
 }

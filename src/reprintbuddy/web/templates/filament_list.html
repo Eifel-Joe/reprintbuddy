@@ -4,7 +4,7 @@
 {% block content %}
 {% call ui.page_head("disc-3", t('nav.filament'), t('filament.sub')) %}{% endcall %}
 {% call ui.region("summary", "filament article queue") %}{{ ui.kpi_row(cards) }}{% endcall %}
-{% call ui.region("list", "filament article queue") %}
+{% call ui.region("list", "filament article queue reorder") %}
 {% if live %}<p class="muted" role="status">{{ t('filament.live') }}</p>
 {% elif stale_day %}<p class="alert" role="status">{{ t('filament.stale', day=stale_day) }}</p>
 {% else %}<p class="alert" role="status">{{ t('filament.stock_unknown') }}</p>{% endif %}
@@ -21,7 +21,7 @@
     {% for r in rows %}
       <tr>
         <td class="name">{% if r.swatch %}<span class="swatch" style="background: {{ r.swatch }}"></span>{% endif %}<a href="/filament/{{ r.id }}">{{ r.label }}</a>
-          <span class="badges">{% if r.reordered %}<span class="badge tone-{{ 'ok' if r.configured else 'warn' }}">{{ t('filament.configured' if r.configured else 'filament.not_configured') }}</span>{% else %}<span class="badge tone-neutral">{{ t('filament.not_reordered') }}</span>{% endif %}</span></td>
+          <span class="badges">{% if r.reordered %}<span class="badge tone-{{ 'ok' if r.configured else 'warn' }}">{{ t('filament.configured' if r.configured else 'filament.not_configured') }}</span>{% else %}<span class="badge tone-neutral">{{ t('filament.not_reordered') }}</span>{% endif %}{% if r.short %} <span class="badge tone-warn">{{ t('filament.short') }}</span>{% endif %}</span></td>
         <td>{{ r.material }}</td>
         <td class="num nowrap">{% if r.stock is not none %}{{ r.stock }} g{% else %}—{% endif %}</td>
         <td class="num nowrap">{% if r.spools is not none %}{{ r.spools }}{% else %}—{% endif %}</td>

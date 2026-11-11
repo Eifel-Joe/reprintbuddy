@@ -207,7 +207,7 @@ def test_rendered_regions_are_balanced_unnested_and_unique(ready_client, path):
 # The four pages of the filament and reorder block (Spec 10.5): region names, topics, watched forms.
 B6_REGIONS = [
     ("/filament", "summary", "filament article queue"),
-    ("/filament", "list", "filament article queue"),
+    ("/filament", "list", "filament article queue reorder"),  # 0.4.1: the badge "low" follows the marks
     ("/filament", "hint", "article"),
     ("/filament/{sort}", "form", "filament-settings:{sort}"),
     ("/articles/{article}/filaments", "form", "article-settings:{article} filament"),

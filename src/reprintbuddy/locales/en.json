@@ -1444,5 +1444,6 @@
   "overview.todo.waiting": "{n} in the queue",
   "overview.todo.stock_unknown": "Stock unknown",
   "overview.todo.overbooked": "{n} overbooked",
-  "overview.todo.title": "What is due"
+  "overview.todo.title": "What is due",
+  "filament.short": "low"
 }
