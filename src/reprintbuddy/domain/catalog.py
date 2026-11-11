@@ -417,10 +417,15 @@ class ArticleRow:
     in_progress_prints: int  # open prints in Bambuddy: the note "N in Bambuddy" (Spec 10.1)
     auto_enabled: bool = False  # the switch of the list (p44)
     buffer: int = 0  # the field of the target quantity stops at it (p154)
+    kind: str = "print"  # 0.4.0 (p341): "print" or "assembled"; variant rows are never rows of their own
+    sold_alone: bool = True
+    demand: int = 0  # Bedarf aus Montage (Spec 7.1): the status counts with minimum + demand
+    assembled: object | None = None  # assembled.AssembledRow of an article made of parts
 
 
 def article_row(
-    article: Article, *, queued_units: int = 0, in_progress_units: int = 0, in_progress_prints: int = 0
+    article: Article, *, queued_units: int = 0, in_progress_units: int = 0, in_progress_prints: int = 0,
+    demand: int = 0,
 ) -> ArticleRow:
     """The numbers and the state of one article, as the overview shows them.
 
@@ -446,12 +451,49 @@ def article_row(
         has_thumbnail=bool(article.thumbnail),
         paused=article.paused,
         coverage=coverage,
-        status=article_status(available=available, min_stock=article.min_stock, coverage=coverage),
+        # A part with demand from assembly counts with minimum + demand (Spec 10.1, 7.1; 0.4.0).
+        status=article_status(available=available, min_stock=article.min_stock + demand, coverage=coverage),
         queued_units=queued_units,
         in_progress_units=in_progress_units,
         in_progress_prints=in_progress_prints,
         auto_enabled=article.auto_enabled,
         buffer=article.buffer,
+        kind=article.kind,
+        sold_alone=article.sold_alone,
+        demand=demand,
+    )
+
+
+def assembled_article_row(session: Session, article: Article, row) -> ArticleRow:
+    """The row of an article made of parts in the list and the overview (Spec 10.1, 0.4.0 p341), from
+    its `assembled.AssembledRow`: on stock the sums over its variants, on order "zusammen hoechstens"."""
+    on_stock = row.mode == "stock"
+    single = row.holders[0] if on_stock and len(row.holders) == 1 and not row.fields else None
+    picture = session.get(Article, row.thumbnail_article_id) if row.thumbnail_article_id else None
+    return ArticleRow(
+        id=article.id,
+        name=article.name,
+        sku=article.sku,
+        stock=sum(h.stock for h in row.holders),
+        reserved=sum(h.reserved for h in row.holders),
+        available=row.available,
+        provisional=0,
+        awaiting_assembly=0,
+        min_stock=single.min_stock if single else 0,
+        target=single.target if single else 0,
+        has_thumbnail=bool(picture is not None and picture.thumbnail),
+        paused=False,
+        coverage=row.available,
+        status=row.status,  # type: ignore[arg-type]  # on order: deliverable / not deliverable
+        queued_units=0,
+        in_progress_units=0,
+        in_progress_prints=0,
+        auto_enabled=False,
+        buffer=single.buffer if single else 0,
+        kind=article.kind,
+        sold_alone=True,
+        demand=0,
+        assembled=row,
     )
 
 
@@ -460,14 +502,21 @@ def _archive_filter(column, archived: bool):
 
 
 def list_articles(session: Session, *, archived: bool = False) -> list[ArticleRow]:
-    """Active articles; with `archived=True` only the archived ones (Spec 5.5)."""
-    # Print articles only until 0.4.0 task 5 gives articles made of parts their rows.
-    articles = session.scalars(articlesets.print_articles(archived=archived)).all()
+    """Active articles; with `archived=True` only the archived ones (Spec 5.5). Print articles and
+    articles made of parts, never a variant row: it shows under its article (0.4.0, p341)."""
+    from reprintbuddy.domain import assembled  # assembled builds on this module
+
+    articles = session.scalars(articlesets.catalog_articles(archived=archived)).all()
     # one query per table; an archived article has no entry and no open print (plan B4 decision 20)
     coverages = {} if archived else workqueue.coverage_all(session)
     prints = {} if archived else workqueue.in_progress_prints(session)
+    demand = {} if archived else assembled.assembly_demand(session)
     rows = []
     for a in articles:
+        if a.kind == articlesets.ASSEMBLED:
+            row = assembled.assembled_row(session, a.id, demand=demand, coverage=coverages)
+            rows.append(assembled_article_row(session, a, row))
+            continue
         c = coverages.get(a.id)
         rows.append(
             article_row(
@@ -475,6 +524,7 @@ def list_articles(session: Session, *, archived: bool = False) -> list[ArticleRo
                 queued_units=c.queued_units if c else 0,
                 in_progress_units=c.in_progress_units if c else 0,
                 in_progress_prints=prints.get(a.id, 0),
+                demand=demand.get(a.id, 0),
             )
         )
     return sorted(rows, key=lambda r: (r.name.casefold(), r.id))

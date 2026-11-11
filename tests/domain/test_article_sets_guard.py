@@ -110,9 +110,8 @@ async def test_only_print_articles_where_only_print_articles_belong(db, world, f
 def test_lists_show_no_variant_row_and_nothing_archived(db, world):
     with db() as s:
         listed = {row.id for row in catalog.list_articles(s)}
-        assert listed.isdisjoint(world["hose_variants"] | archived(world))
-        # Until 0.4.0 task 5 the list holds print articles only; task 5 adds the box and the hose.
-        assert world["print"] <= listed
+        assert listed == world["print"] | {world["box"], world["hose"]}  # no variant row, nothing archived
+        assert {row.id for row in catalog.list_articles(s, archived=True)} == {world["lamp"]}
 
 
 def test_export_keeps_every_row(db, world):

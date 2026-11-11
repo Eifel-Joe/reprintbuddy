@@ -24,6 +24,7 @@ from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate
 from reprintbuddy.domain import articlesets, catalog, rules, stock, workqueue
 from reprintbuddy.domain.catalog import BaseInput
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
+from reprintbuddy.domain.status import assembled_status, set_status
 from reprintbuddy.domain.stock import MAX_QTY, Actor, PartShortage
 from reprintbuddy.domain.workqueue import Coverage
 from reprintbuddy.models import (
@@ -506,3 +507,183 @@ def assembly_demand(session: Session) -> dict[int, int]:
             for part_id, qty in needs_of(session, holder).items():
                 demand[part_id] = demand.get(part_id, 0) + missing * qty
     return demand
+
+
+# ---- rows, availability and status (Spec 5.6, 10.1) --------------------------------------------
+
+
+@dataclass(frozen=True)
+class PartLine:
+    article_id: int
+    name: str
+    qty: int
+    available: int
+    sold_alone: bool
+
+
+@dataclass(frozen=True)
+class OptionLine:
+    option_id: int
+    suffix: str
+    rows: list[PartLine]
+
+
+@dataclass(frozen=True)
+class HolderRow:
+    """One variant (or the article itself without choices)."""
+
+    article_id: int
+    key: str
+    sku: str | None
+    names: list[str]  # the articles of the chosen options
+    stock: int
+    reserved: int
+    available: int
+    buildable: int  # how often it can be built from the available stock of its parts
+    min_stock: int
+    buffer: int
+    target: int
+    missing: int
+    status: str  # ArticleStatus on stock, SetStatus on order
+
+
+@dataclass(frozen=True)
+class AssembledRow:
+    id: int
+    name: str
+    sku: str | None
+    mode: str
+    base: list[PartLine]
+    fields: list[list[OptionLine]]
+    purchased: list[tuple[int, str, int]]  # (part id, name, qty per unit)
+    holders: list[HolderRow]
+    available: int  # on stock: the sum over the variants; on order: "zusammen hoechstens"
+    buildable: int  # "zusammen hoechstens" from the parts
+    capped: bool  # the search for "zusammen hoechstens" hit its limit: a lower bound
+    status: str
+    thumbnail_article_id: int | None
+    archived: bool
+
+
+_WORST = ("overbooked", "below_min", "low", "ok")
+
+# Ids of articles made of parts whose "zusammen hoechstens" was capped and already logged (condition 4
+# of the plan's approval): one warning while it stays capped, again only after an uncapped result.
+_capped_logged: set[int] = set()
+
+
+def _log_capped(composite: Article, capped: bool) -> None:
+    if capped and composite.id not in _capped_logged:
+        _capped_logged.add(composite.id)
+        log.warning(
+            "availability of assembled article %s (%s) hit the search limit of %d nodes;"
+            " together-at-most shows a lower bound",
+            composite.id, composite.name, rules.MAX_NODES,
+        )
+    elif not capped:
+        _capped_logged.discard(composite.id)
+
+
+def _covered(part: Article, coverage: Mapping[int, Coverage], demand: Mapping[int, int]) -> bool:
+    """Rule 7.1 covers the part: its coverage reaches its minimum plus the demand from assembly."""
+    c = coverage.get(part.id)
+    total = c.total if c is not None else rules.available(part.stock, part.reserved)
+    return total >= part.min_stock + demand.get(part.id, 0)
+
+
+def assembled_row(
+    session: Session,
+    article_id: int,
+    *,
+    demand: Mapping[int, int] | None = None,
+    coverage: Mapping[int, Coverage] | None = None,
+) -> AssembledRow:
+    """Everything a page shows of an article made of parts. A caller with many rows passes `demand`
+    (`assembly_demand`) and `coverage` (`workqueue.coverage_all`), computed once."""
+    composite = session.get(Article, article_id)
+    if composite is None or composite.kind != articlesets.ASSEMBLED:
+        raise NotFoundError("articles.not_found")
+    if demand is None:
+        demand = assembly_demand(session)
+    if coverage is None:
+        coverage = workqueue.coverage_all(session)
+    comps = components(session, composite)
+    part_ids = {c.part_id for c in comps}
+    parts = {a.id: a for a in session.scalars(select(Article).where(Article.id.in_(part_ids)))} if part_ids else {}
+    available = {a.id: rules.available(a.stock, a.reserved) for a in parts.values()}
+
+    def line(c: ArticleComponent) -> PartLine:
+        part = parts[c.part_id]
+        return PartLine(part.id, part.name, c.qty, available[part.id], part.sold_alone)
+
+    base = [line(c) for c in comps if c.field == 0]
+    option_rows = options(session, composite)
+    by_option: dict[int, list[PartLine]] = {}
+    for c in comps:
+        if c.option_id is not None:
+            by_option.setdefault(c.option_id, []).append(line(c))
+    fields = [[OptionLine(o.id, o.suffix, by_option.get(o.id, [])) for o in f] for f in option_rows]
+    bundles = [
+        [rules.Bundle(o.id, tuple((p.article_id, p.qty) for p in by_option.get(o.id, []))) for o in f]
+        for f in option_rows
+    ]
+    together = rules.bundle_availability([(p.article_id, p.qty) for p in base], bundles, available)
+    _log_capped(composite, together.capped)
+
+    on_stock = composite.assembly_mode == "stock"
+    holder_rows: list[HolderRow] = []
+    for row in variants(session, composite):
+        key = row.variant_key or ""
+        option_ids = tuple(int(k) for k in key.split(":")) if key else ()
+        buildable = together.variants.get(option_ids, 0) if option_ids else together.total
+        names = [p.name for oid in option_ids for p in by_option.get(oid, [])]
+        if on_stock:
+            avail = rules.available(row.stock, row.reserved)
+            covered = all(_covered(parts[p], coverage, demand) for p in needs_of_key(session, composite, key))
+            status: str = assembled_status(available=avail, min_stock=row.min_stock, parts_covered=covered)
+            missing = missing_of(row)
+        else:
+            avail, missing = buildable, 0
+            status = set_status(available=buildable)
+        holder_rows.append(HolderRow(
+            article_id=row.id, key=key, sku=row.sku, names=names,
+            stock=row.stock if on_stock else 0, reserved=row.reserved if on_stock else 0,
+            available=avail, buildable=buildable, min_stock=row.min_stock, buffer=row.buffer,
+            target=rules.target_quantity(row.min_stock, row.buffer), missing=missing, status=status,
+        ))
+    if on_stock:
+        total = sum(h.available for h in holder_rows)
+        overall = min((h.status for h in holder_rows), key=_WORST.index, default="ok")
+    else:
+        total = together.total
+        overall = set_status(available=total)
+    first_option = fields[0][0].rows if fields and fields[0] else []
+    first = base[0].article_id if base else (first_option[0].article_id if first_option else None)
+    purchased = [
+        (part.id, part.name, link.qty_per_unit)
+        for link, part in session.execute(
+            select(ArticlePart, Part)
+            .join(Part, Part.id == ArticlePart.part_id)
+            .where(ArticlePart.article_id == composite.id)
+            .order_by(Part.name, Part.id)
+        ).all()
+    ]
+    return AssembledRow(
+        id=composite.id, name=composite.name, sku=composite.sku, mode=composite.assembly_mode or "stock",
+        base=base, fields=fields, purchased=purchased, holders=holder_rows, available=total,
+        buildable=together.total, capped=together.capped, status=overall, thumbnail_article_id=first,
+        archived=composite.archived_at is not None,
+    )
+
+
+def used_in(session: Session, article_id: int) -> list[tuple[int, str]]:
+    """The active articles made of parts a print article is in, by name (Spec 10.3)."""
+    rows = session.execute(
+        select(Article.id, Article.name)
+        .where(
+            articlesets.where_assembled(),
+            Article.id.in_(select(ArticleComponent.article_id).where(ArticleComponent.part_id == article_id)),
+        )
+        .order_by(Article.name, Article.id)
+    ).all()
+    return [(i, n) for i, n in rows]
