@@ -1448,5 +1448,6 @@
   "bambuddy.withdraw_right_missing": "Nach einem Storno bleiben übergebene Drucke in Bambuddy: Der Gruppe fehlt dafür „Delete Own Queue“. Reprintbuddys eigene Warteschlange wird trotzdem verkleinert. Alles andere geht.",
   "journal.kind.queue_entry_withdrawn": "Geplanter Druck zurückgenommen (Storno)",
   "journal.kind.print_withdrawn": "Druck aus Bambuddy zurückgenommen (Storno)",
-  "journal.kind.print_withdraw_refused": "Rücknahme aus Bambuddy abgelehnt"
+  "journal.kind.print_withdraw_refused": "Rücknahme aus Bambuddy abgelehnt",
+  "dispatch.status.withdrawn": "zurückgenommen (Storno)"
 }

@@ -39,7 +39,7 @@ def _dispatches(sm) -> list[str]:
         return list(s.scalars(select(Dispatch.status).order_by(Dispatch.id)))
 
 
-async def test_cancel_leaves_handed_over_prints_in_bambuddy(engine_env):
+async def test_cancel_takes_waiting_prints_out_of_bambuddy(engine_env):
     env = engine_env
     with env.sm.begin() as s:
         s.get(Article, env.article_id).stock = 1  # minimum 1, buffer 0: covered
@@ -50,9 +50,9 @@ async def test_cancel_leaves_handed_over_prints_in_bambuddy(engine_env):
     _cancel(env.sm, order_id)
     await env.engine.tick(poll=True)
 
-    # 0.4.0: all three stay in Bambuddy and keep counting "in progress"; nothing is withdrawn.
-    assert [i.status for i in await env.fake.list_queue()] == ["pending"] * 3
-    assert _dispatches(env.sm) == ["queued"] * 3
+    # Since 0.4.1 all three come out of Bambuddy (0.4.0 left them there to be printed).
+    assert await env.fake.list_queue() == []
+    assert _dispatches(env.sm) == ["withdrawn"] * 3
     assert len(env.fake.enqueued) == 3
     with env.sm() as s:
         art = s.get(Article, env.article_id)

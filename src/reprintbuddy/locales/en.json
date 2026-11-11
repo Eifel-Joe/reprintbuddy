@@ -1448,5 +1448,6 @@
   "bambuddy.withdraw_right_missing": "After a cancel, prints handed over stay in Bambuddy: the group lacks “Delete Own Queue” for that. Reprintbuddy’s own queue still gets smaller. Everything else works.",
   "journal.kind.queue_entry_withdrawn": "Planned print taken back (cancel)",
   "journal.kind.print_withdrawn": "Print taken back from Bambuddy (cancel)",
-  "journal.kind.print_withdraw_refused": "Taking back from Bambuddy refused"
+  "journal.kind.print_withdraw_refused": "Taking back from Bambuddy refused",
+  "dispatch.status.withdrawn": "taken back (cancel)"
 }

@@ -23,7 +23,7 @@ from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.pauses import pause_article
 from reprintbuddy.domain.stock import write_journal
 from reprintbuddy.domain.workqueue import OPEN_STATES, add_replacement
-from reprintbuddy.models import Article, Dispatch, utcnow
+from reprintbuddy.models import Article, Dispatch, Withdrawal, utcnow
 
 Outcome = Literal["waiting", "printing", "completed", "failed", "cancelled", "missing", "unknown"]
 
@@ -75,6 +75,11 @@ def apply_outcome(
 
     if raw_status is not None:
         row.last_status = raw_status
+    if outcome in ("cancelled", "missing") and row.withdraw_sent_at is not None:
+        # Reprintbuddy's own delete after a cancel (Spec 7.2a), its answer lost: gone (or kept by
+        # Bambuddy as cancelled, #2960) because of it. Not a delete by somebody else: no pause (7.6).
+        withdrawn(session, row.id)
+        return True
     row.finished_at = utcnow()
     article = session.get(Article, row.article_id)
     if outcome == "completed":
@@ -103,6 +108,33 @@ def apply_outcome(
     else:  # pragma: no cover - Outcome is closed
         raise ValueError(f"unknown outcome {outcome!r}")
     return True
+
+
+def withdrawn(session: Session, dispatch_id: int, *, journal: bool = True) -> None:
+    """A print Reprintbuddy deleted from Bambuddy after a cancel (Spec 7.2a): finished as `withdrawn`,
+    no longer "in progress", one print fewer to take back for its article. Never a pause.
+
+    `journal=False`: the engine's run writes one line per article for all it took back.
+    """
+    row = session.get(Dispatch, dispatch_id)
+    if row is None:
+        raise ValueError(f"unknown dispatch {dispatch_id}")
+    row.status = "withdrawn"
+    row.withdraw_sent_at = None
+    row.finished_at = utcnow()
+    note = session.get(Withdrawal, row.article_id)
+    order_id = None if note is None else note.order_id
+    if note is not None:
+        note.prints -= 1
+        if note.prints <= 0:
+            session.delete(note)  # all noted prints are back
+    session.flush()
+    if journal:
+        write_journal(
+            session, kind="print_withdrawn", actor="auto", qty=1, article_id=row.article_id,
+            order_id=order_id,
+            details={"item_ids": [row.bambuddy_item_id], "dispatch_ids": [row.id]},
+        )
 
 
 def _failed(session: Session, row: Dispatch, article: Article) -> None:
