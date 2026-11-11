@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import inspection
+from reprintbuddy.domain import assembled, inspection
 from reprintbuddy.models import Article
 from reprintbuddy.web import listing, qr
 from reprintbuddy.web.deps import get_db
@@ -28,6 +28,12 @@ def target_of(db: Session, article: Article) -> str:
     """Where a scan of the article's code leads (Spec 8.4), decided by the lists themselves so the
     link never ends on an empty list: prints waiting for inspection, else units waiting for
     assembly (the list shows no archived article), else the article's page."""
+    if article.kind == "assembled":
+        # An article made of parts: the assembly list when a variant stands there and can be built
+        # at least once, else its page (Spec 8.4, Teil C 10; 0.4.0 p341).
+        if any(row.buildable >= 1 for row in assembled.list_buildable(db, article.id)):
+            return listing.with_article(ASSEMBLY_URL, article.id)
+        return f"/articles/{article.id}"
     if inspection.list_open(db, article.id):
         return listing.with_article(INSPECTION_URL, article.id)
     if inspection.list_awaiting_assembly(db, article.id):

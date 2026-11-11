@@ -1427,5 +1427,14 @@
   "assembled.parts_list": "Stückliste",
   "assembled.qr_hint": "Ein Scan öffnet die Liste „Montage“ mit diesem Artikel, wenn eine Variante unter ihrer Zielmenge liegt und sich montieren lässt, sonst diese Seite.",
   "assembled.used_in": "Steckt in",
-  "assembled.demand_line": "Bedarf aus Montage: {n} Stück zusätzlich zum Mindestbestand."
+  "assembled.demand_line": "Bedarf aus Montage: {n} Stück zusätzlich zum Mindestbestand.",
+  "assembly.from_parts": "Aus Teilen",
+  "assembly.col.missing": "Fehlt bis Ziel",
+  "assembly.buildable": "montierbar {n}",
+  "assembly.part_line_available": "{qty} je Stück, verfügbar {available}",
+  "assembly.parts_missing": "Teile fehlen",
+  "assembly.for_orders": "Für Bestellungen",
+  "assembly.for_orders_hint": "Nur zur Ansicht: Artikel aus Teilen, die erst bei Bestellung montiert werden. Der Versand der Bestellung bucht Teile und Zukaufteile ab.",
+  "assembly.built": "{name}: {n} aus Teilen montiert.",
+  "assembly.build_refused": "Nicht montiert: {text}"
 }

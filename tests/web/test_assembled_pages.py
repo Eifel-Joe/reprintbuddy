@@ -2,9 +2,15 @@
 (Spec 5.6, 8.3, 10.1-10.3; 0.4.0 p341)."""
 
 import re
-from conftest import sm_of
+from datetime import date
+
+from sqlalchemy import select
+
+from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_assembled
-from reprintbuddy.domain import assembled
+from reprintbuddy.domain import assembled, orders
+from reprintbuddy.domain.orders import AssembledItem
+from reprintbuddy.models import Article, Order
 from reprintbuddy.web.i18n import translate
 
 
@@ -97,3 +103,51 @@ def test_edit_of_print_article_keeps_sold_alone_off(ready_client):
     page = ready_client.get(f"/articles/{w['side']}/edit").text
     box = re.search(r'<input name="sold_alone"[^>]*>', page).group(0)
     assert "checked" not in box
+
+
+# ---- Aufgabe 14: assembly list and QR code ----------------------------------------------------
+
+
+def test_assembly_lists_box_below_target_with_buildable(ready_client):
+    w = world(ready_client)
+    page = ready_client.get("/assembly").text
+    assert en("assembly.from_parts") in page
+    assert f'action="/assembly/build/{w["box"]}"' in page
+    assert en("assembly.buildable", n=5) in page
+
+
+def test_build_from_the_list(ready_client):
+    w = world(ready_client)
+    data = {"csrf_token": csrf_of(ready_client, "/assembly"),
+            "form_token": form_token_of(ready_client, "/assembly", f"/assembly/build/{w['box']}"), "qty": "1"}
+    response = ready_client.post(f"/assembly/build/{w['box']}", data=data, follow_redirects=False)
+    assert response.status_code == 303
+    with sm_of(ready_client).begin() as s:
+        assert (s.get(Article, w["box"]).stock, s.get(Article, w["panel"]).stock) == (1, 4)
+
+
+def test_build_refused_shows_the_short_part(ready_client):
+    w = world(ready_client)
+    data = {"csrf_token": csrf_of(ready_client, "/assembly"),
+            "form_token": form_token_of(ready_client, "/assembly", f"/assembly/build/{w['box']}"), "qty": "9"}
+    page = ready_client.post(f"/assembly/build/{w['box']}", data=data)
+    assert page.status_code == 200
+    assert en("assembled.part_short", name="Panel A", available=5, needed=9) in page.text
+
+
+def test_orders_section_is_read_only(ready_client):
+    w = world(ready_client)
+    with sm_of(ready_client).begin() as s:
+        orders.create_order(s, reference="R-77", order_date=date(2026, 11, 11),
+                            items=[AssembledItem(w["hose"], 1, w["keys"]["EX-H1-L32"])], actor="user")
+    page = ready_client.get("/assembly").text
+    assert en("assembly.for_orders") in page and "R-77" in page and "EX-H1-L32" in page
+    assert f'/assembly/build/{w["hose"]}' not in page
+
+
+def test_qr_of_assembled_goes_to_assembly_or_page(ready_client):
+    w = world(ready_client)
+    response = ready_client.get(f"/a/{w['box']}", follow_redirects=False)
+    assert response.headers["location"].startswith("/assembly") and str(w["box"]) in response.headers["location"]
+    response = ready_client.get(f"/a/{w['hose']}", follow_redirects=False)
+    assert response.headers["location"] == f"/articles/{w['hose']}"

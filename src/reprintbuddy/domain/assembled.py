@@ -824,3 +824,91 @@ def convert_to_print(
         details={"old_file_id": None, "old_plate": None, "new_file_id": file.id, "new_plate": plate.index},
     )
     return composite
+
+
+# ---- the assembly list (Spec 8.3, Teil C 5) ----------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BuildRow:
+    """A variant on stock below its target: what to build."""
+
+    holder_id: int
+    article_id: int  # the article made of parts
+    name: str
+    sku: str | None
+    missing: int  # up to the target
+    buildable: int
+    preset: int  # the smaller of missing and buildable
+    parts: list[PartLine]  # each part with its quantity per piece and available
+    thumbnail_article_id: int | None  # the first part, when it has a picture
+
+
+@dataclass(frozen=True)
+class OrderBuildRow:
+    """An open order with an article made of parts built on order (view only)."""
+
+    order_id: int
+    reference: str
+    article_id: int
+    name: str
+    variant_sku: str | None
+    qty: int
+    ready: bool
+
+
+def list_buildable(session: Session, article_id: int | None = None) -> list[BuildRow]:
+    """Every variant on stock whose available is below its target, by name and number; only those of
+    `article_id` if given (the filtered list of a scan)."""
+    query = articlesets.assembled_articles().where(Article.assembly_mode == "stock").order_by(Article.name, Article.id)
+    if article_id is not None:
+        query = query.where(Article.id == article_id)
+    demand = assembly_demand(session)
+    coverage = workqueue.coverage_all(session)
+    rows: list[BuildRow] = []
+    for composite in session.scalars(query).all():
+        row = assembled_row(session, composite.id, demand=demand, coverage=coverage)
+        picture = session.get(Article, row.thumbnail_article_id) if row.thumbnail_article_id else None
+        thumbnail = picture.id if picture is not None and picture.thumbnail else None
+        lines = {p.article_id: p for p in row.base}
+        lines.update({p.article_id: p for f in row.fields for o in f for p in o.rows})
+        for holder in row.holders:
+            missing = holder.target - holder.available
+            if missing <= 0:
+                continue
+            needs = needs_of_key(session, composite, holder.key)
+            parts = [
+                PartLine(part_id, lines[part_id].name, qty, lines[part_id].available, lines[part_id].sold_alone)
+                for part_id, qty in needs.items()
+            ]
+            rows.append(BuildRow(
+                holder_id=holder.article_id, article_id=composite.id, name=composite.name, sku=holder.sku,
+                missing=missing, buildable=max(0, holder.buildable),
+                preset=max(0, min(missing, holder.buildable)), parts=parts,
+                thumbnail_article_id=thumbnail,
+            ))
+    return rows
+
+
+def list_for_orders(session: Session, article_id: int | None = None) -> list[OrderBuildRow]:
+    """Open orders with articles made of parts built on order, one row per group (Spec 8.3: only to
+    look at; shipping books them)."""
+    from reprintbuddy.domain import orders  # orders builds on this module
+
+    query = (
+        select(Order.id, Order.reference, OrderLine.group_no, OrderLine.assembled_id, OrderLine.variant_sku, OrderLine.set_qty)
+        .join(OrderLine, OrderLine.order_id == Order.id)
+        .where(Order.status == "open", OrderLine.assembled_id.is_not(None))
+        .distinct()
+        .order_by(Order.order_date, Order.id, OrderLine.group_no)
+    )
+    if article_id is not None:
+        query = query.where(OrderLine.assembled_id == article_id)
+    rows = []
+    ready: dict[int, bool] = {}
+    for order_id, reference, _group, assembled_id, sku, qty in session.execute(query).all():
+        if order_id not in ready:
+            ready[order_id] = orders.get_order(session, order_id).ready
+        composite = session.get(Article, assembled_id)
+        rows.append(OrderBuildRow(order_id, reference, assembled_id, composite.name, sku, qty or 0, ready[order_id]))
+    return rows

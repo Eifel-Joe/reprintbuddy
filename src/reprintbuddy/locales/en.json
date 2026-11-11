@@ -1427,5 +1427,14 @@
   "assembled.parts_list": "Parts list",
   "assembled.qr_hint": "A scan opens the assembly list with this article when a variant is below its target and can be built, otherwise this page.",
   "assembled.used_in": "Used in",
-  "assembled.demand_line": "Demand from assembly: {n} on top of the minimum stock."
+  "assembled.demand_line": "Demand from assembly: {n} on top of the minimum stock.",
+  "assembly.from_parts": "From parts",
+  "assembly.col.missing": "Missing to target",
+  "assembly.buildable": "buildable {n}",
+  "assembly.part_line_available": "{qty} per piece, {available} available",
+  "assembly.parts_missing": "Parts missing",
+  "assembly.for_orders": "For orders",
+  "assembly.for_orders_hint": "To look at only: assembled articles built on order. Shipping the order takes off the parts and purchased parts.",
+  "assembly.built": "{name}: {n} assembled from parts.",
+  "assembly.build_refused": "Not assembled: {text}"
 }
