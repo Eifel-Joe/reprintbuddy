@@ -80,6 +80,16 @@ def test_no_sentence_without_anything_to_take_back(ready_client):
     assert 'class="withdraw-preview"' not in html
 
 
+def test_the_confirmation_works_without_a_preview(ready_client, monkeypatch):  # Opus review 5
+    from reprintbuddy.domain import withdraw
+
+    _, order_id = place(ready_client)
+    monkeypatch.setattr(withdraw, "preview_cancel", lambda *_args: None)
+    page = confirm_page(ready_client, order_id)
+    assert page.status_code == 200 and 'class="withdraw-preview"' not in page.text
+    assert en("orders.cancel_yes") in page.text
+
+
 def test_cancelling_says_what_came_back_and_wakes_the_engine(ready_client):  # A1
     article_id, order_id = place(ready_client)
     calls: list[int] = []

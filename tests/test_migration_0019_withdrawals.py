@@ -37,6 +37,8 @@ def fill_old(conn) -> None:
             f"INSERT INTO dispatches ({DISPATCH_COLUMNS}) VALUES ({i}, 1, 'rule', {100 + i}, '{state}', 1,"
             " '2026-11-10 08:00:00', NULL, 0, 'pending', NULL, '2026-11-10 08:00:00', NULL, NULL, 1, 1)"
         ))
+    # `inspections.dispatch_id` points at `dispatches` (the completed print, id 5): Opus review 7
+    conn.execute(text("INSERT INTO inspections (id, dispatch_id, article_id, units) VALUES (1, 5, 1, 1)"))
 
 
 @pytest.fixture
@@ -59,6 +61,17 @@ def test_prints_keep_their_values(old_db):
     assert _rows(old_db, f"SELECT {DISPATCH_COLUMNS} FROM dispatches ORDER BY id") == before
     assert _rows(old_db, "SELECT DISTINCT withdraw_sent_at FROM dispatches") == [(None,)]
     assert _rows(old_db, "SELECT version_num FROM alembic_version") == [(REVISION,)]
+
+
+def test_an_inspection_still_points_at_its_print(old_db):
+    upgrade(old_db, revision=REVISION)
+    assert _rows(old_db, "SELECT i.id, d.status FROM inspections i JOIN dispatches d ON d.id = i.dispatch_id") == [
+        (1, "completed")
+    ]
+    with old_db.connect() as conn:
+        assert conn.execute(text("PRAGMA foreign_key_check")).all() == []
+        fks = {(r[2], r[3], r[4]) for r in conn.execute(text("PRAGMA foreign_key_list(inspections)"))}
+    assert ("dispatches", "dispatch_id", "id") in fks
 
 
 def test_withdrawn_is_a_state_and_others_are_still_refused(old_db):

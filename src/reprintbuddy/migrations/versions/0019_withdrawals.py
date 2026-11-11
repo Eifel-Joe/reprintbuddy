@@ -12,8 +12,10 @@ order, and Bambuddy's refusal if it refused.
 
 `dispatches` gets a new state in its CHECK, so it is rebuilt, written out like `articles` in 0018
 and not with `batch_alter_table`, whose order of CHECKs is not stable (0015). Its columns keep their
-order (`library_file_id`, `plate_id` stay where 0010 put them); the new column follows. Nothing
-points at `dispatches`. Tests: tests/test_migration_0019_withdrawals.py.
+order (`library_file_id`, `plate_id` stay where 0010 put them); the new column follows.
+`inspections.dispatch_id` points at `dispatches` by name, so after the rename it points at the new
+table; the migration runs with foreign keys off and checks them after (db.py), as 0018 does for
+`articles`. Tests: tests/test_migration_0019_withdrawals.py.
 """
 import sqlalchemy as sa
 from alembic import op
