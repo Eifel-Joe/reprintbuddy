@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import catalog
-from reprintbuddy.domain.catalog import PositionInput, SetInput
+from reprintbuddy.domain.catalog import SetInput
 from reprintbuddy.domain.errors import DomainError
 from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.models import Article, ProductSet, SetPosition, SetPositionOption
@@ -69,7 +69,7 @@ def _parse(form, rows: int) -> SetInput:
             continue  # rows without an article are skipped
         article_ids = [parse_int(r, field="sets.field.articles", min=1, max=MAX_ID) for r in raw_ids]
         qty = parse_int(form.get(f"pos_{i}_qty"), field="sets.field.qty", min=1, max=1000)
-        positions.append(PositionInput(qty, article_ids))
+        positions.append(catalog.PositionInput(qty, article_ids))  # rewritten with the form (p340)
     return SetInput(
         name=parse_text(form.get("name"), field="sets.field.name", max_len=200, required=True),
         sku=parse_text(form.get("sku"), field="catalog.field.sku", max_len=64),
