@@ -16,7 +16,7 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import catalog, rules
+from reprintbuddy.domain import articlesets, assembled, catalog, rules
 from reprintbuddy.domain.errors import (
     ConflictError,
     NotFoundError,
@@ -27,6 +27,7 @@ from reprintbuddy.domain.status import OrderStatus, order_status
 from reprintbuddy.domain.stock import (
     MAX_QTY,
     Actor,
+    consume_assembled_parts,
     release_for_order,
     reserve_for_order,
     ship_for_order,
@@ -57,11 +58,22 @@ class SetItem:
 
 
 @dataclass(frozen=True)
+class AssembledItem:
+    """A variant of an article made of parts built on order (Spec 6.7, 0.4.0 p341): its parts are
+    reserved one by one, like the articles of a set."""
+
+    article_id: int
+    qty: int
+    key: str = ""  # the variant: its option ids; empty without choices
+
+
+@dataclass(frozen=True)
 class OrderGroup:
     set_name: str | None
     set_qty: int | None
     lines: list[tuple[str, int]]  # (article name, quantity)
     variant_sku: str | None = None  # the number of the variant as it was ordered (p340)
+    assembled_name: str | None = None  # a group of an article made of parts built on order (0.4.0)
 
 
 @dataclass(frozen=True)
@@ -82,10 +94,41 @@ def _qty(value: object) -> int:
     return value
 
 
-def _resolve(session: Session, items: Sequence[ArticleItem | SetItem]):
-    """Turn the items into line specs (group_no, article_id, qty, set_id, set_qty, variant_sku),
-    writing nothing."""
-    specs: list[tuple[int, int, int, int | None, int | None, str | None]] = []
+def _check_orderable(session: Session, article: Article) -> None:
+    """An order line names an article sold alone or a stock holder (Spec 6.7, 5.2; 0.4.0 p341)."""
+    if article.kind == articlesets.PRINT:
+        if not article.sold_alone:
+            raise ValidationError("orders.not_sold_alone", name=article.name)
+        return
+    composite = assembled.parent_of(session, article)
+    if composite.assembly_mode == "order":
+        raise ValidationError("orders.assembled_on_order", name=composite.name)
+    if article.kind == articlesets.ASSEMBLED and assembled.options(session, article):
+        raise ValidationError("orders.pick_variant", name=article.name)
+
+
+def _resolve_assembled(session: Session, group_no: int, item: AssembledItem, qty: int):
+    composite = session.get(Article, item.article_id)
+    if composite is None or composite.kind != articlesets.ASSEMBLED:
+        raise NotFoundError("articles.not_found")
+    if composite.archived_at is not None:
+        raise ValidationError("orders.item_archived", name=composite.name)
+    if composite.assembly_mode != "order":
+        raise ValidationError("orders.choice_invalid")
+    row = assembled.variant_by_key(session, composite, item.key)
+    needs = assembled.needs_of_key(session, composite, item.key)
+    for part_id in needs:
+        part = session.get(Article, part_id)
+        if part.archived_at is not None:
+            raise ValidationError("orders.item_archived", name=part.name)
+    # The parts as they are now: the order keeps them when the parts list changes later (Spec 5.6).
+    return [(group_no, part_id, qty * q, None, qty, row.sku, composite.id) for part_id, q in needs.items()]
+
+
+def _resolve(session: Session, items: Sequence[ArticleItem | SetItem | AssembledItem]):
+    """Turn the items into line specs (group_no, article_id, qty, set_id, set_qty, variant_sku,
+    assembled_id), writing nothing."""
+    specs: list[tuple[int, int, int, int | None, int | None, str | None, int | None]] = []
     for group_no, item in enumerate(items, start=1):
         qty = _qty(item.qty)
         if isinstance(item, ArticleItem):
@@ -94,7 +137,11 @@ def _resolve(session: Session, items: Sequence[ArticleItem | SetItem]):
                 raise NotFoundError("articles.not_found")
             if article.archived_at is not None:
                 raise ValidationError("orders.item_archived", name=article.name)
-            specs.append((group_no, item.article_id, qty, None, None, None))
+            _check_orderable(session, article)
+            specs.append((group_no, item.article_id, qty, None, None, None, None))
+            continue
+        if isinstance(item, AssembledItem):
+            specs.extend(_resolve_assembled(session, group_no, item, qty))
             continue
         row = catalog.set_row(session, item.set_id)
         if session.get(ProductSet, item.set_id).archived_at is not None:
@@ -116,9 +163,9 @@ def _resolve(session: Session, items: Sequence[ArticleItem | SetItem]):
         variant = next((v for v in row.variants if v.key == key), None) if key else None
         sku = variant.sku if variant is not None else None
         for part in row.base:
-            specs.append((group_no, part.article_id, qty * part.qty, row.id, qty, sku))
+            specs.append((group_no, part.article_id, qty * part.qty, row.id, qty, sku, None))
         for option, field in zip(chosen, row.choices):
-            specs.append((group_no, option.article_id, qty * field.qty, row.id, qty, sku))
+            specs.append((group_no, option.article_id, qty * field.qty, row.id, qty, sku, None))
     return specs
 
 
@@ -134,7 +181,7 @@ def create_order(
     *,
     reference: str,
     order_date: date,
-    items: Sequence[ArticleItem | SetItem],
+    items: Sequence[ArticleItem | SetItem | AssembledItem],
     actor: Actor,
     note: str | None = None,
 ) -> Order:
@@ -154,7 +201,7 @@ def create_order(
     order = Order(reference=reference, order_date=order_date, status="open", note=note)
     session.add(order)
     session.flush()
-    for group_no, article_id, qty, set_id, set_qty, variant_sku in specs:
+    for group_no, article_id, qty, set_id, set_qty, variant_sku, assembled_id in specs:
         session.add(
             OrderLine(
                 order_id=order.id,
@@ -164,6 +211,7 @@ def create_order(
                 set_id=set_id,
                 set_qty=set_qty,
                 variant_sku=variant_sku,
+                assembled_id=assembled_id,
             )
         )
     session.flush()
@@ -213,6 +261,15 @@ def ship_order(session: Session, order_id: int, actor: Actor, note: str | None =
     if not rules.order_ready(needed, _stock_of(session, list(needed))):
         raise StockLimitError("orders.not_ready")
     ship_for_order(session, order.id, needed, actor, note)
+    # Shipping an article made of parts built on order is its assembly: its purchased parts go too.
+    groups = session.execute(
+        select(OrderLine.group_no, OrderLine.assembled_id, OrderLine.set_qty, OrderLine.variant_sku)
+        .where(OrderLine.order_id == order.id, OrderLine.assembled_id.is_not(None))
+        .distinct()
+        .order_by(OrderLine.group_no)
+    ).all()
+    for _group_no, assembled_id, units, variant_sku in groups:
+        consume_assembled_parts(session, assembled_id, units, order.id, actor, variant_sku=variant_sku)
     order.status = "shipped"
     order.closed_at = utcnow()
     session.flush()
@@ -235,7 +292,10 @@ def _view(session: Session, order: Order) -> OrderView:
                 if line.set_id not in set_names:
                     set_names[line.set_id] = session.get(ProductSet, line.set_id).name
                 name = set_names[line.set_id]
-            group = OrderGroup(name, line.set_qty, [], line.variant_sku)
+            assembled_name = None
+            if line.assembled_id is not None:
+                assembled_name = session.get(Article, line.assembled_id).name
+            group = OrderGroup(name, line.set_qty, [], line.variant_sku, assembled_name)
             groups[line.group_no] = group
         group.lines.append((article_name, line.qty))
     needed = _needed(session, order.id)

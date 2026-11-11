@@ -1388,5 +1388,9 @@
   "bookings.not_a_holder": "{item} holds no stock of its own. Book one of its variants or, when it is built on order, the sale from its parts.",
   "bookings.print_only": "Stock in without a print is only for print articles. An assembled article comes into stock by its assembly or a count.",
   "journal.kind.assembled": "Assembled from parts",
-  "journal.kind.built_in": "Built in"
+  "journal.kind.built_in": "Built in",
+  "orders.not_sold_alone": "{name} is not sold alone and cannot be ordered.",
+  "orders.assembled_on_order": "{name} is built on order: choose one of its variants in the order form.",
+  "orders.pick_variant": "{name} has choice parts: choose one of its variants.",
+  "orders.choice_invalid": "This variant does not exist. Reload the page and choose again."
 }
