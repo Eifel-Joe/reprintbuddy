@@ -36,6 +36,8 @@ from reprintbuddy.models import (
     ActivityEntry,
     Article,
     ArticleFilamentSort,
+    ArticleComponent,
+    ArticleOption,
     ArticlePart,
     FilamentSettings,
     FilamentSupplier,
@@ -61,7 +63,7 @@ _DATA = "activity_data"
 # The columns of the edit forms (Design 4.6); the same lists tell the open forms that they changed.
 ARTICLE_COLUMNS: tuple[str, ...] = (
     "name", "sku", "label_text", "units_per_print", "min_stock", "buffer",
-    "target_model", "printer_id", "needs_assembly",
+    "target_model", "printer_id", "needs_assembly", "sold_alone", "assembly_mode", "kind",
 )
 PART_COLUMNS: tuple[str, ...] = ("name", "unit", "min_stock", "safety_value", "safety_unit")
 SET_COLUMNS: tuple[str, ...] = ("name", "sku")
@@ -216,6 +218,12 @@ def _collect_row(session: Session, data: _Data, obj: object, change: str, actor:
             data.account_created = actor
         elif change == "dirty" and (_history(obj, "username")[0] or _history(obj, "password_hash")[0]):
             data.credentials_changed = actor
+    elif isinstance(obj, Article) and obj.kind == "variant":
+        # A variant row is a part of its article made of parts (Spec 5.6, 0.4.0 p341): created,
+        # renamed, archived or revived with it, it writes no line of its own; its minimum and buffer
+        # are the field "variant_targets" of the article.
+        if change == "dirty" and (_history(obj, "min_stock")[0] or _history(obj, "buffer")[0]):
+            _thing(data, "article", obj.parent_id, actor).fields.add(values.FIELDS["variant_targets"])
     elif isinstance(obj, (Article, Part, ProductSet)):
         kind = {Article: "article", Part: "part", ProductSet: "set"}[type(obj)]
         columns = {"article": ARTICLE_COLUMNS, "part": PART_COLUMNS, "set": SET_COLUMNS}[kind]
@@ -243,6 +251,21 @@ def _collect_row(session: Session, data: _Data, obj: object, change: str, actor:
             else (obj.slot, obj.sort_id, bool(obj.reordered))
         )
         thing = _thing(data, "article", obj.article_id, actor)
+        if change == "new":
+            thing.new_rows.setdefault(name, Counter())[row] += 1
+        elif change == "deleted":
+            thing.old_rows.setdefault(name, Counter())[row] += 1
+        else:
+            thing.fields.add(name)
+    elif isinstance(obj, (ArticleOption, ArticleComponent)):
+        # The parts list is two fields of the article made of parts, like base parts and choices
+        # of a set (Spec 5.6, 10.7); written again with the same content it is no change.
+        thing = _thing(data, "article", obj.article_id, actor)
+        if isinstance(obj, ArticleOption):
+            name, row = "choices", ("option", obj.field, obj.sort, obj.suffix)
+        else:
+            name = "base" if obj.field == 0 else "choices"
+            row = ("row", obj.field, obj.option_id, obj.sort, obj.part_id, obj.qty)
         if change == "new":
             thing.new_rows.setdefault(name, Counter())[row] += 1
         elif change == "deleted":

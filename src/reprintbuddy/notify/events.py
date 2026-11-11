@@ -199,8 +199,11 @@ def red_articles(session: Session) -> dict[int, str]:
     of a tick's detection with 500 articles (condition 2 of the plan's approval, measured in the
     report). tests/notify/test_events.py checks that both agree.
     """
+    from reprintbuddy.domain import assembled  # it builds on workqueue and catalog
+
     queued = workqueue.queued_prints(session)
     in_progress = workqueue.in_progress_units(session)
+    demand = assembled.assembly_demand(session)
     rows = session.execute(
         select(
             Article.id, Article.stock, Article.reserved, Article.min_stock, Article.units_per_print,
@@ -214,9 +217,21 @@ def red_articles(session: Session) -> dict[int, str]:
             available, queued.get(row.id, 0) * row.units_per_print, in_progress.get(row.id, 0),
             row.provisional, row.awaiting_assembly,
         )
-        state = article_status(available=available, min_stock=row.min_stock, coverage=coverage)
+        # A part counts with minimum + demand from assembly (Spec 7.1, 10.6; 0.4.0 p341).
+        state = article_status(available=available, min_stock=row.min_stock + demand.get(row.id, 0), coverage=coverage)
         if state in RED:
             red[row.id] = state
+    # Every variant (or article without choices) of an article made of parts built on stock (Teil C 8),
+    # with the status of its row (assembled.assembled_row, the same as the article list).
+    composites = session.scalars(
+        articlesets.assembled_articles().where(Article.assembly_mode == "stock").order_by(Article.id)
+    ).all()
+    if composites:
+        coverage_all = workqueue.coverage_all(session)
+        for composite in composites:
+            for holder in assembled.assembled_row(session, composite.id, demand=demand, coverage=coverage_all).holders:
+                if holder.status in RED:
+                    red[holder.article_id] = holder.status
     return red
 
 

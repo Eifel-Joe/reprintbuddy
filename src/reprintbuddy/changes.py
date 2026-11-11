@@ -115,6 +115,7 @@ SETTINGS_COLUMNS: dict[type, frozenset[str]] = {
             "archived_at",
             "sold_alone",
             "assembly_mode",
+            "kind",
         }
     ),
     Part: frozenset(
@@ -151,6 +152,11 @@ def topics_of(obj: object, change: Change) -> set[str]:
         topics = {kind, f"{kind}:{obj.id}"}
         if _settings_changed(obj, change):
             topics.add(f"{kind}-settings:{obj.id}")
+        if cls is Article and obj.parent_id is not None:
+            # A variant row shows on the page of its article made of parts (Spec 5.6, 0.4.0 p341).
+            topics.add(f"article:{obj.parent_id}")
+            if _settings_changed(obj, change):
+                topics.add(f"article-settings:{obj.parent_id}")
         return topics
     if cls is PartSupplier:
         # The suppliers are part of the part's form (Spec 5.3).

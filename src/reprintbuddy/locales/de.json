@@ -1396,5 +1396,9 @@
   "articles.archive_in_assembled": "Der Artikel steckt als Teil in {names}. Nimm ihn erst aus der Stückliste oder archiviere den Artikel aus Teilen.",
   "sets.article_not_allowed": "{name} lässt sich nicht in ein Set nehmen: Im Set stehen nur einzeln erhältliche Artikel, Artikel aus Teilen nur auf Vorrat und ohne Wahlteile.",
   "assembled.switch_busy": "{name} lässt sich nur umstellen, wenn kein Bestand, keine Reservierung und keine offene Bestellung da ist.",
-  "queue.print_only": "{name} ist ein Artikel aus Teilen und wird nicht gedruckt. Drucke seine Teile."
+  "queue.print_only": "{name} ist ein Artikel aus Teilen und wird nicht gedruckt. Drucke seine Teile.",
+  "activity.field.sold_alone": "Einzeln erhältlich",
+  "activity.field.assembly_mode": "Montage",
+  "activity.field.kind": "Druckartikel / Artikel aus Teilen",
+  "activity.field.variant_targets": "Mindestbestand und Puffer der Varianten"
 }

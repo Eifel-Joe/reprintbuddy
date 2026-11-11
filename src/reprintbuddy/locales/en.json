@@ -1396,5 +1396,9 @@
   "articles.archive_in_assembled": "The article is a part of {names}. Take it out of the parts list first or archive the assembled article.",
   "sets.article_not_allowed": "{name} cannot go into a set: a set holds only articles sold alone, assembled articles only on stock and without choice parts.",
   "assembled.switch_busy": "{name} can only be switched when there is no stock, no reservation and no open order.",
-  "queue.print_only": "{name} is an assembled article and is not printed. Print its parts."
+  "queue.print_only": "{name} is an assembled article and is not printed. Print its parts.",
+  "activity.field.sold_alone": "Sold alone",
+  "activity.field.assembly_mode": "Assembly",
+  "activity.field.kind": "Print article / assembled article",
+  "activity.field.variant_targets": "Minimum and buffer of the variants"
 }
