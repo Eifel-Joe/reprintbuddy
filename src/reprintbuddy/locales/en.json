@@ -1436,5 +1436,9 @@
   "assembly.for_orders": "For orders",
   "assembly.for_orders_hint": "To look at only: assembled articles built on order. Shipping the order takes off the parts and purchased parts.",
   "assembly.built": "{name}: {n} assembled from parts.",
-  "assembly.build_refused": "Not assembled: {text}"
+  "assembly.build_refused": "Not assembled: {text}",
+  "assembled.in_set": "The article is in the sets {names}. A set holds an assembled article only on stock and without choice parts; take it out of these sets first.",
+  "articles.sold_alone_in_set": "The article is in the sets {names}. A part only is in no set; take it out of these sets first.",
+  "assembled.part_is_self": "{name} cannot be a part of itself.",
+  "bookings.awaiting_print_only": "\"Awaiting assembly\" exists only for print articles. For an assembled article, count its stock."
 }

@@ -457,6 +457,8 @@ def count_article(
     counted = _counted(counted)
     booked_at = _booked(booked_at)
     article = _holder(session, article_id)
+    if field == "awaiting_assembly" and article.kind != "print":  # review finding 8 (Spec 6.1)
+        raise ValidationError("bookings.awaiting_print_only")
     own_rows = (JournalEntry.article_id == article.id, JournalEntry.part_id.is_(None))
     return _count(
         session, article, field, counted, actor, note, booked_at, own_rows, article_id=article.id

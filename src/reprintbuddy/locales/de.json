@@ -1436,5 +1436,9 @@
   "assembly.for_orders": "Für Bestellungen",
   "assembly.for_orders_hint": "Nur zur Ansicht: Artikel aus Teilen, die erst bei Bestellung montiert werden. Der Versand der Bestellung bucht Teile und Zukaufteile ab.",
   "assembly.built": "{name}: {n} aus Teilen montiert.",
-  "assembly.build_refused": "Nicht montiert: {text}"
+  "assembly.build_refused": "Nicht montiert: {text}",
+  "assembled.in_set": "Der Artikel steht in den Sets {names}. Im Set steht ein Artikel aus Teilen nur auf Vorrat und ohne Wahlteile; nimm ihn zuerst aus diesen Sets.",
+  "articles.sold_alone_in_set": "Der Artikel steht in den Sets {names}. Ein Bauteil steht in keinem Set; nimm ihn zuerst aus diesen Sets.",
+  "assembled.part_is_self": "{name} kann nicht Teil von sich selbst sein.",
+  "bookings.awaiting_print_only": "„Wartet auf Montage“ gibt es nur bei Druckartikeln. Zähle bei einem Artikel aus Teilen den Bestand."
 }

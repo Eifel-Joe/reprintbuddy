@@ -328,15 +328,31 @@ def create_article(
     return article
 
 
+def sets_using(session: Session, article_id: int) -> list[str]:
+    """Names of the active sets an article stands in, by name (0.4.0: what a set may hold, Spec 5.4)."""
+    return list(session.scalars(
+        select(ProductSet.name)
+        .join(SetPosition, SetPosition.set_id == ProductSet.id)
+        .join(SetPositionOption, SetPositionOption.position_id == SetPosition.id)
+        .where(SetPositionOption.article_id == article_id, ProductSet.archived_at.is_(None))
+        .distinct()
+        .order_by(ProductSet.name)
+    ))
+
+
 def update_article(session: Session, article_id: int, data: ArticleInput) -> Article:
-    """Change the settings of an article; file and plate stay."""
+    """Change the settings of a print article; file and plate stay."""
     article = session.get(Article, article_id)
-    if article is None:
+    if article is None or article.kind != articlesets.PRINT:  # review finding 5: the others have own forms
         raise NotFoundError("articles.not_found")
     if article.archived_at is not None:
         raise ConflictError("articles.edit_archived")
     linked = _linked_parts(session, article_id)
     data = _check_article_input(session, data, article_id=article_id)
+    if article.sold_alone and not data.sold_alone:
+        sets = sets_using(session, article_id)
+        if sets:  # review finding 2: a part only stands in no set (Spec 5.2, 5.4)
+            raise ConflictError("articles.sold_alone_in_set", names=", ".join(sets))
     # The form only offers active parts: a link to an archived part is not the user's to drop.
     archived_links = {
         part_id: qty
@@ -1083,6 +1099,8 @@ def restore_article(session: Session, article_id: int) -> Article:
     """Bring an article back. If its plate has been taken meanwhile, the caller offers
     `restore_article_with_plate` with another file."""
     article = _article_or_404(session, article_id)
+    if article.kind == articlesets.VARIANT:  # review finding 5: a variant comes back with its article
+        raise NotFoundError("articles.not_found")
     if article.archived_at is None:
         raise ConflictError("catalog.not_archived")
     if article.kind == articlesets.ASSEMBLED:

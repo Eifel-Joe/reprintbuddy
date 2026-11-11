@@ -163,6 +163,13 @@ def variants(session: Session, composite: Article) -> list[Article]:
     return [rows[_key(c)] for c in itertools.product(*fields) if _key(c) in rows]
 
 
+def journal_ids(session: Session, composite: Article) -> list[int]:
+    """The article and every variant row it ever had, archived ones too: its journal (Teil C 12)."""
+    return [composite.id, *session.scalars(
+        select(Article.id).where(Article.kind == articlesets.VARIANT, Article.parent_id == composite.id).order_by(Article.id)
+    )]
+
+
 def holders(session: Session, composite: Article) -> list[Article]:
     """The rows that hold finished stock (Spec 5.6): the variants when built on stock, none on order."""
     if composite.assembly_mode != "stock":
@@ -194,6 +201,8 @@ def _check(session: Session, data: AssembledInput, *, article_id: int | None = N
         found = session.get(Article, article_id_)
         if found is None:
             raise NotFoundError("articles.not_found")
+        if article_id is not None and found.id == article_id:  # review finding 6: switching to one
+            raise ValidationError("assembled.part_is_self", name=found.name)
         if found.kind != articlesets.PRINT:
             raise ValidationError("assembled.part_not_print", name=found.name)
         if found.archived_at is not None and article_id_ not in kept:
@@ -282,6 +291,12 @@ def in_use(session: Session, composite: Article, row: Article) -> bool:
         .limit(1)
     ) is not None:
         return True
+    # Review finding 1: without choices the article is its only variant, and its open orders may carry
+    # no number at all (an article without one): every open group of it counts.
+    if row.id == composite.id and session.scalar(
+        _open_order_lines(session).where(OrderLine.assembled_id == composite.id).limit(1)
+    ) is not None:
+        return True
     return False
 
 
@@ -305,18 +320,25 @@ def _plan(session: Session, composite: Article, sku: str | None, fields: list[li
             key = ":".join(k for k, _s in combination)
             wanted[key] = (rules.variant_number(sku, [s for _k, s in combination]), active.get(key))
     taken_by_revive: set[int] = set()
+    # Active rows whose option goes: one whose number comes back in the same save keeps it (review
+    # finding 7, a suffix emptied and typed again into a new option), the others are dropped.
+    leaving = [r for key, r in active.items() if key not in wanted]
     for key, (number, row) in list(wanted.items()):
         if row is not None:
             continue
         # The same variant back (archived together with its article and restored), or a number of
-        # this article that comes back: revive that row instead of locking the number for good.
+        # this article that comes back: revive that row instead of locking the number for good. A row
+        # dropped with its option never matches by key (sync_variants gives it a key of its own), so an
+        # option id handed out again by SQLite cannot revive the wrong row (review finding 4).
         revived = next((r for r in archived if r.variant_key == key and r.id not in taken_by_revive), None)
+        if revived is None and number is not None:
+            revived = next((r for r in leaving if r.sku == number and r.id not in taken_by_revive), None)
         if revived is None and number is not None:
             revived = next((r for r in archived if r.sku == number and r.id not in taken_by_revive), None)
         if revived is not None:
             taken_by_revive.add(revived.id)
             wanted[key] = (number, revived)
-    dropped = [r for key, r in active.items() if key not in wanted]
+    dropped = [r for r in leaving if r.id not in taken_by_revive]
     return _Plan(wanted, dropped)
 
 
@@ -352,6 +374,7 @@ def sync_variants(session: Session, composite: Article, targets: dict[int, tuple
     now = utcnow()
     for row in plan.dropped:
         row.archived_at = now
+        row.variant_key = f"dropped-{row.id}"  # its option is gone; its number may still come back
     # Numbers may move between rows (suffixes swapped): clear them first, the column is unique.
     moving = [r for number, r in plan.wanted.values() if r is not None and r.sku != number]
     for row in moving:
@@ -467,8 +490,14 @@ def update_assembled(session: Session, article_id: int, data: AssembledInput) ->
     _check_numbers(session, composite.id, plan)
     if checked.mode != composite.assembly_mode:
         current = [composite, *_all_variant_rows(session, composite.id)]
-        if any(r.archived_at is None and in_use(session, composite, r) for r in current):
+        if catalog.busy_reasons(session, composite) or any(
+            r.archived_at is None and in_use(session, composite, r) for r in current
+        ):
             raise ConflictError("assembled.mode_switch_busy", name=composite.name)
+    sets = catalog.sets_using(session, composite.id)
+    if sets and (checked.mode != "stock" or checked.fields):
+        # Review finding 2: a set holds an article made of parts only on stock and without choices.
+        raise ConflictError("assembled.in_set", names=", ".join(sets))
     _check_drops(session, composite, plan)
     if checked.fields and not options(session, composite) and in_use(session, composite, composite):
         # The article itself was its only variant; with choices it holds no stock any more.
@@ -758,6 +787,9 @@ def convert_to_assembled(session: Session, article_id: int, data: AssembledInput
         raise ConflictError("assembled.switch_busy", name=article.name)
     checked = _check(session, data, article_id=article.id)
     _check_numbers(session, None, _plan_for_new(checked))
+    sets = catalog.sets_using(session, article.id)
+    if sets and (checked.mode != "stock" or checked.fields):  # what a set may hold (Spec 5.4)
+        raise ConflictError("assembled.in_set", names=", ".join(sets))
     for model in (ArticleFilamentSort, ArticleFilament):
         for row in session.scalars(select(model).where(model.article_id == article.id)).all():
             session.delete(row)
@@ -797,8 +829,11 @@ def convert_to_print(
     if composite.archived_at is not None:
         raise ConflictError("articles.edit_archived")
     rows = [composite, *session.scalars(articlesets.variant_rows(composite.id)).all()]
-    if any(in_use(session, composite, row) for row in rows):
+    if catalog.busy_reasons(session, composite) or any(in_use(session, composite, row) for row in rows):
         raise ConflictError("assembled.switch_busy", name=composite.name)
+    sets = catalog.sets_using(session, composite.id)
+    if sets:
+        raise ConflictError("assembled.in_set", names=", ".join(sets))
     holder = catalog._plate_holder(session, file.id, plate.index, besides=composite.id)
     if holder is not None:
         raise ConflictError("articles.plate_taken", name=holder.name)
