@@ -30,6 +30,14 @@ Example: minimum stock 10, buffer 5 (target quantity 15), 4 units per print.
 - One entry holds at most 1000 prints; the next run adds the rest.
 - Reprintbuddy checks the rule after every change you save and with every regular query. It does not wait for the next query.
 
+## Demand from assembly
+
+A part of an [assembled article](assembled.md) built on stock is also printed for that article. For every variant whose available is below its minimum, the missing units up to its target, times the quantity of the part, are the part's **demand from assembly**, summed over all variants and articles. The rule then works with minimum stock + demand and target + demand; the units per print stay the part's own.
+
+Example: a clip (4 per print, minimum 2, buffer 2, coverage 3) is twice in a storage box (minimum 3, buffer 2, available 2) and once in a lamp (minimum 1, available 1). The box misses 5 − 2 = 3, the lamp nothing, so the demand is 6. Coverage 3 is below 2 + 6, so the entry has ceil((4 + 6 − 3) / 4) = **2 prints**. After 3 boxes are assembled the demand is 0 and the coverage 11 − 6 = 5: nothing more is printed.
+
+Assembled articles themselves are never printed; the rule and the queue are for print articles only. For an article built on order its reservations lower the available of its parts and so start their reprints.
+
 ## Switches and settings
 
 | Switch or setting | Where | Default |

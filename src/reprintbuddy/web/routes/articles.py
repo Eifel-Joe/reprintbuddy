@@ -20,11 +20,12 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
-from reprintbuddy.domain import catalog, filament, pauses, workqueue
+from reprintbuddy.domain import assembled, catalog, filament, pauses, workqueue
+from reprintbuddy.domain import articlesets
 from reprintbuddy.domain import color as color_mod
 from reprintbuddy.domain.catalog import MAX_LABEL_TEXT, ArticleInput, TargetOption
 from reprintbuddy.domain.printfile import is_external_folder
-from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
+from reprintbuddy.domain.errors import ConflictError, DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.domain import stock as stock_mod
@@ -175,6 +176,7 @@ def parse_article_form(form, parts: list[Part], *, default_target: str) -> Artic
         needs_assembly=parse_bool(form.get("needs_assembly")),
         auto_enabled=parse_bool(form.get("auto_enabled")),
         parts=parse_parts(form, parts),
+        sold_alone=parse_bool(form.get("sold_alone")),
     )
 
 
@@ -190,6 +192,7 @@ def typed_values(form) -> dict[str, object]:
         "target": str(form.get("target", "")),
         "needs_assembly": parse_bool(form.get("needs_assembly")),
         "auto_enabled": parse_bool(form.get("auto_enabled")),
+        "sold_alone": parse_bool(form.get("sold_alone")),
         "has_parts": parse_bool(form.get("has_parts")),
         "part_rows": part_rows(form),
         "focus": None,
@@ -208,6 +211,7 @@ def values_of_input(data: ArticleInput, parts: list[Part]) -> dict[str, object]:
         "target": catalog.target_value(data.target_model, data.printer_id),
         "needs_assembly": data.needs_assembly,
         "auto_enabled": data.auto_enabled,
+        "sold_alone": data.sold_alone,
         "has_parts": bool(in_use),
         "part_rows": [{"part": str(part.id), "qty": str(data.parts[part.id])} for part in in_use],
         "focus": None,
@@ -282,7 +286,11 @@ async def articles_list(
     states = STATES["article"]
     status = None if archived else listing.pick(request.query_params.get("status"), states)
     every = catalog.list_articles(db, archived=archived)
-    found = [row for row in every if listing.matches(q, row.name, row.sku)]
+    # the search also finds a variant by its number (0.4.0, p341)
+    found = [
+        row for row in every
+        if listing.matches(q, row.name, row.sku, *(h.sku for h in (row.assembled.holders if row.assembled else ())))
+    ]
     counts = Counter(row.status for row in found)
     lang = current_language(request)
     t = lambda key: translate(lang, key)  # noqa: E731
@@ -412,7 +420,7 @@ def _taken_plates(db: Session, file_id: int, besides: int | None = None) -> dict
     """Plates of the file held by an active article; `besides` (the one relinked) is left
     out, so it can choose its own plate again, as the domain allows (`_plate_holder`)."""
     query = select(Article.plate_id, Article.name).where(
-        Article.library_file_id == file_id, Article.archived_at.is_(None)
+        Article.library_file_id == file_id, articlesets.where_print()
     )
     if besides is not None:
         query = query.where(Article.id != besides)
@@ -634,6 +642,14 @@ def _get_article(db: Session, article_id: int) -> Article:
     return article
 
 
+def _relink_article(db: Session, article_id: int) -> Article:
+    """A print article, or an article made of parts that becomes one again (Spec 5.6); never a variant."""
+    article = _get_article(db, article_id)
+    if article.kind == "variant":
+        raise HTTPException(status_code=404)
+    return article
+
+
 def _target_label(lang: str, article: Article) -> str:
     value = catalog.target_value(article.target_model, article.printer_id)
     if value == "":
@@ -643,8 +659,31 @@ def _target_label(lang: str, article: Article) -> str:
     return translate(lang, "articles.target_printer_id", id=article.printer_id)
 
 
+def _assembled_page(request: Request, db: Session, article: Article, error: str | None = None, status: int = 200):
+    """The page of an article made of parts (Spec 5.6, 10.3; 0.4.0 p341)."""
+    row = assembled.assembled_row(db, article.id)
+    entries = stock_mod.journal_page(db, article_ids=assembled.journal_ids(db, article), limit=50)
+    picture = db.get(Article, row.thumbnail_article_id) if row.thumbnail_article_id else None
+    base = qr_view.base_address(request, db)
+    return render(
+        request,
+        "assembled_detail.html",
+        status_code=status,
+        active_nav="articles",
+        article=article,
+        row=row,
+        picture=bool(picture is not None and picture.thumbnail),
+        qr_address=qr_view.article_address(base, article.id),
+        **labels_view.article_card_context(db),
+        rows=journal_rows(db, entries),
+        error=error,
+    )
+
+
 def _detail_page(request: Request, db: Session, article: Article, error: str | None = None, status: int = 200,
                  relink_offer: bool = False):
+    if article.kind == "assembled":
+        return _assembled_page(request, db, article, error, status)
     lang = current_language(request)
     article_id = article.id
     filaments = db.scalars(
@@ -682,12 +721,13 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         .where(Dispatch.article_id == article_id, Dispatch.status.in_(workqueue.OPEN_STATES))
         .order_by(Dispatch.id)
     ).all()
-    # numbers and state, the same as in the list (full coverage, Spec 7.1 and 10.1)
+    # numbers and state, the same as in the list (full coverage, Spec 7.1 and 10.1; demand from assembly)
     row = catalog.article_row(
         article,
         queued_units=coverage.queued_units,
         in_progress_units=coverage.in_progress_units,
         in_progress_prints=len(open_prints),
+        demand=assembled.assembly_demand(db).get(article.id, 0),
     )
     base = qr_view.base_address(request, db)
     qr_address = qr_view.article_address(base, article_id)
@@ -715,12 +755,17 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         rows=journal_rows(db, entries),
         error=error,
         relink_offer=relink_offer,
+        used_in=assembled.used_in(db, article_id),  # Spec 10.3: the articles made of parts it is in
+        demand=assembled.assembly_demand(db).get(article_id, 0),
     )
 
 
 @router.get("/articles/{article_id:int}")
 async def article_detail(request: Request, article_id: int, db: Session = Depends(get_db)):
-    return _detail_page(request, db, _get_article(db, article_id))
+    article = _get_article(db, article_id)
+    if article.kind == "variant":  # a variant shows on the page of its article made of parts
+        return RedirectResponse(f"/articles/{article.parent_id}", status_code=303)
+    return _detail_page(request, db, article)
 
 
 @router.get("/articles/{article_id:int}/thumbnail")
@@ -764,7 +809,7 @@ def _article_values(db: Session, article: Article, parts: list[Part]) -> dict[st
         units_per_print=article.units_per_print,
         min_stock=article.min_stock, buffer=article.buffer, target_model=article.target_model,
         printer_id=article.printer_id, needs_assembly=article.needs_assembly,
-        auto_enabled=article.auto_enabled, parts=links,
+        auto_enabled=article.auto_enabled, parts=links, sold_alone=article.sold_alone,
     )
     return values_of_input(data, parts)
 
@@ -779,6 +824,8 @@ def _edit_refused(request: Request, db: Session, article: Article):
 @router.get("/articles/{article_id:int}/edit")
 async def article_edit(request: Request, article_id: int, db: Session = Depends(get_db)):
     article = _get_article(db, article_id)
+    if article.kind == "assembled":  # an article made of parts has its own form (Spec 5.6, 0.4.0)
+        return RedirectResponse(f"/articles/{article.id}/assembled", status_code=303)
     if article.archived_at is not None:
         return _edit_refused(request, db, article)
     printers = await _printers_for_edit(request)
@@ -981,7 +1028,7 @@ router.add_api_route(
 
 @router.get("/articles/{article_id:int}/relink")
 async def relink_browse(request: Request, article_id: int, folder: str | None = None, db: Session = Depends(get_db)):
-    _get_article(db, article_id)
+    _relink_article(db, article_id)
     release_connection(db)  # nothing is pending; no connection is held while Bambuddy answers
     base = f"/articles/{article_id}/relink"
     return await _browse(request, folder, base, f"{base}/file", relink=True, article_id=article_id)
@@ -989,7 +1036,7 @@ async def relink_browse(request: Request, article_id: int, folder: str | None = 
 
 @router.get("/articles/{article_id:int}/relink/file/{file_id:int}")
 async def relink_plates(request: Request, article_id: int, file_id: int, db: Session = Depends(get_db)):
-    archived = _get_article(db, article_id).archived_at is not None
+    archived = _relink_article(db, article_id).archived_at is not None
     release_connection(db)  # nothing is pending; no connection is held while Bambuddy answers
     base = f"/articles/{article_id}/relink"
     return await _plates_page(
@@ -1003,8 +1050,8 @@ async def relink_plates(request: Request, article_id: int, file_id: int, db: Ses
     dependencies=[Depends(verify_csrf)],
 )
 async def relink_restore(request: Request, article_id: int, file_id: int, index: int, db: Session = Depends(get_db)):
-    article = _get_article(db, article_id)
-    archived, name = article.archived_at is not None, article.name
+    article = _relink_article(db, article_id)
+    archived, name, made_of_parts = article.archived_at is not None, article.name, article.kind == "assembled"
     base = f"/articles/{article_id}/relink"
     release_connection(db)  # nothing is pending; no connection is held while Bambuddy answers
     client = get_bambuddy(request)
@@ -1026,7 +1073,14 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
     def work(tx):
         nonlocal changed
         again.extend(catalog.slots_losing_group(tx, article_id, requirements))  # before the change
-        if archived:
+        if made_of_parts:  # back to a print article (Spec 5.6 "Wechsel"); archived ones are restored first
+            if archived:
+                raise ConflictError("articles.edit_archived")
+            assembled.convert_to_print(
+                tx, article_id, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail,
+                actor="user",
+            )
+        elif archived:
             catalog.restore_article_with_plate(
                 tx, article_id, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail
             )

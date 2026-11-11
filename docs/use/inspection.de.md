@@ -48,7 +48,7 @@ Die Liste kann nur einen Artikel zeigen. Dorthin führt der [QR-Code](labels.md)
 
 ## Montage
 
-Die Seite **Montage** ist für Artikel, bei denen in den Einstellungen **Handarbeit nötig (Montage)** angehakt ist. Nach der Prüfung warten ihre guten Stücke hier, statt in den Bestand zu gehen. Die Liste zeigt je Artikel die wartenden Stücke, die nötigen Zukaufteile und wie viele davon du hast.
+Die Seite **Montage** ist für Artikel, bei denen in den Einstellungen **Handarbeit nötig (Montage)** angehakt ist, und für [Artikel aus Teilen](assembled.md#montieren) (Abschnitte **Aus Teilen** und **Für Bestellungen**). Nach der Prüfung warten ihre guten Stücke hier, statt in den Bestand zu gehen. Die Liste zeigt je Artikel die wartenden Stücke, die nötigen Zukaufteile und wie viele davon du hast.
 
 ![Die Seite Montage mit den wartenden Stücken und den Teilen, die sie brauchen](../assets/images/de/assembly.png)
 

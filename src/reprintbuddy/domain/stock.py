@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.domain.errors import NotFoundError, StockLimitError, ValidationError
 from reprintbuddy.localtime import end_of_local_day, to_local
-from reprintbuddy.models import Article, ArticlePart, JournalEntry, Part, utcnow
+from reprintbuddy.models import Article, ArticleOption, ArticlePart, JournalEntry, Part, utcnow
 
 Actor = Literal["user", "auto"]
 
@@ -44,6 +44,8 @@ KINDS: frozenset[str] = frozenset(
         "inspection_scrap",
         "assembly",
         "part_consumed",
+        "assembled",  # Montage aus Teilen, on the holder (0.4.0, p341)
+        "built_in",  # a part built into an article made of parts
         "queue_entry_created",
         "queue_entry_changed",
         "queue_entry_deleted",
@@ -179,11 +181,15 @@ def journal_page(
     part_id: int | None = None,
     limit: int = 100,
     offset: int = 0,
+    article_ids: list[int] | None = None,
 ) -> list[JournalEntry]:
-    """Newest first by the booking date: a booking dated back sorts in at its day (p172)."""
+    """Newest first by the booking date: a booking dated back sorts in at its day (p172).
+    `article_ids`: the rows of several articles, as an article made of parts and its variants (0.4.0)."""
     query = select(JournalEntry).order_by(JournalEntry.booked_at.desc(), JournalEntry.id.desc())
     if article_id is not None:
         query = query.where(JournalEntry.article_id == article_id)
+    if article_ids is not None:
+        query = query.where(JournalEntry.article_id.in_(article_ids))
     if part_id is not None:
         query = query.where(JournalEntry.part_id == part_id)
     return list(session.scalars(query.limit(limit).offset(offset)))
@@ -355,6 +361,7 @@ def sell_unreserved(
     booked_at: datetime | None = None,
 ) -> None:
     """Sale without a reservation: stock − n (Spec 6.2). Available may become negative."""
+    _holder(session, article_id)  # an article made of parts on order sells through sell_from_parts
     _simple(session, "sale", article_id, n, actor, note, {"stock": -1}, booked_at=booked_at)
 
 
@@ -368,7 +375,10 @@ def stock_in(
     consume_parts: bool,
     booked_at: datetime | None = None,
 ) -> list[PartShortage]:
-    """Stock in without a print (Spec 6.2); with `consume_parts` the parts are used up (Spec 6.6)."""
+    """Stock in without a print (Spec 6.2); with `consume_parts` the parts are used up (Spec 6.6).
+    Only print articles: one made of parts comes in by its assembly or a count (Spec 6.2, 0.4.0)."""
+    if _article(session, article_id).kind != "print":
+        raise ValidationError("bookings.print_only")
     return _simple(
         session, "stock_in", article_id, n, actor, note, {"stock": 1},
         parts_cause="stock_in" if consume_parts else None, booked_at=booked_at,
@@ -446,7 +456,9 @@ def count_article(
     note = _clean_note(note)
     counted = _counted(counted)
     booked_at = _booked(booked_at)
-    article = _article(session, article_id)
+    article = _holder(session, article_id)
+    if field == "awaiting_assembly" and article.kind != "print":  # review finding 8 (Spec 6.1)
+        raise ValidationError("bookings.awaiting_print_only")
     own_rows = (JournalEntry.article_id == article.id, JournalEntry.part_id.is_(None))
     return _count(
         session, article, field, counted, actor, note, booked_at, own_rows, article_id=article.id
@@ -639,3 +651,123 @@ def count_part(
         session, part, "stock", counted, actor, note, booked_at, (JournalEntry.part_id == part.id,),
         part_id=part.id,
     )
+
+
+# ---- articles made of parts (Spec 5.6, 6.2, 8.3; 0.4.0 p341) -------------------------------------
+
+
+def _options_of(session: Session, composite_id: int) -> bool:
+    return session.scalar(select(ArticleOption.id).where(ArticleOption.article_id == composite_id).limit(1)) is not None
+
+
+def is_stock_holder(session: Session, article: Article) -> bool:
+    """A row that holds finished stock (Spec 5.6, 6.1): a print article, an article made of parts built
+    on stock without choices, or a variant row of one built on stock. Archived or not."""
+    if article.kind == "print":
+        return True
+    if article.kind == "assembled":
+        return article.assembly_mode == "stock" and not _options_of(session, article.id)
+    parent = session.get(Article, article.parent_id)
+    return parent is not None and parent.assembly_mode == "stock"
+
+
+def _holder(session: Session, article_id: int) -> Article:
+    article = _article(session, article_id)
+    if not is_stock_holder(session, article):
+        raise ValidationError("bookings.not_a_holder", item=article.name)
+    return article
+
+
+def _part_rows(session: Session, needs: Mapping[int, int], n: int) -> list[tuple[Article, int]]:
+    """(print article, units) per part of `n` pieces, by id."""
+    return [(_article(session, part_id), n * qty) for part_id, qty in sorted(needs.items())]
+
+
+def build_from_parts(
+    session: Session,
+    holder_id: int,
+    n: int,
+    needs: Mapping[int, int],
+    composite_id: int,
+    actor: Actor,
+) -> list[PartShortage]:
+    """Montage aus Teilen (Spec 6.2, 8.3): the holder + n; each part - n x qty, only from its available
+    stock (stock - reserved, Spec 8.3 / question 5: a part reserved for an order is never built in);
+    the purchased parts of the article made of parts - n x qty per unit, clamped at 0 (Spec 8.3).
+    Refused before anything is written when a part has too little available."""
+    n = _qty(n)
+    holder = _holder(session, holder_id)
+    composite = _article(session, composite_id)
+    parts = _part_rows(session, needs, n)
+    for part, units in parts:
+        available = part.stock - part.reserved
+        if units > available:
+            raise ValidationError("assembled.part_short", name=part.name, available=available, needed=units)
+    holder_changes = _plan_article(holder, {"stock": n})
+    part_changes = [(part, units, _plan_article(part, {"stock": -units})) for part, units in parts]
+    plans = _plan_parts(session, composite, n)
+    _apply(holder, holder_changes)
+    write_journal(
+        session, kind="assembled", actor=actor, qty=n, article_id=holder.id,
+        details={"composite_id": composite.id, "variant_sku": holder.sku, "changes": holder_changes},
+    )
+    for part, units, changes in part_changes:
+        _apply(part, changes)
+        write_journal(
+            session, kind="built_in", actor=actor, qty=units, article_id=part.id,
+            details={"into": holder.id, "composite_id": composite.id, "variant_sku": holder.sku, "changes": changes},
+        )
+    return _consume_parts(session, plans, composite, "assembled", actor)
+
+
+def sell_from_parts(
+    session: Session,
+    composite_id: int,
+    needs: Mapping[int, int],
+    n: int,
+    actor: Actor,
+    note: str | None = None,
+    *,
+    variant_sku: str | None = None,
+    booked_at: datetime | None = None,
+) -> list[PartShortage]:
+    """Sale without a reservation of an article made of parts built on order (Spec 6.2, Teil C 4): the
+    stock of each part - n x qty and its purchased parts - n x qty per unit. Dated back, it is refused
+    when a part or a purchased part was counted after that date (Spec 6.2, p261)."""
+    note = _clean_note(note)
+    n = _qty(n)
+    booked_at = _booked(booked_at)
+    composite = _article(session, composite_id)
+    parts = _part_rows(session, needs, n)
+    part_changes = [(part, units, _plan_article(part, {"stock": -units})) for part, units in parts]
+    plans = _plan_parts(session, composite, n)
+    if booked_at is not None:
+        for part, _units in parts:
+            _refuse_if_counted_later(session, part, booked_at)
+        for plan in plans:
+            _refuse_if_counted_later(session, plan.part, booked_at)
+    write_journal(
+        session, kind="sale", actor=actor, qty=n, article_id=composite.id, note=note,
+        details={"variant_sku": variant_sku, "changes": {}}, booked_at=booked_at,
+    )
+    for part, units, changes in part_changes:
+        _apply(part, changes)
+        write_journal(
+            session, kind="sale", actor=actor, qty=units, article_id=part.id, note=note,
+            details={"assembled_id": composite.id, "variant_sku": variant_sku, "changes": changes},
+            booked_at=booked_at,
+        )
+    return _consume_parts(session, plans, composite, "sale_assembled", actor, booked_at)
+
+
+def consume_assembled_parts(
+    session: Session, composite_id: int, units: int, order_id: int, actor: Actor, *, variant_sku: str | None = None,
+) -> list[PartShortage]:
+    """Shipping an article made of parts built on order is its assembly (Spec 6.2, 6.6): its purchased
+    parts go with it. The parts themselves leave with the order lines (`ship_for_order`)."""
+    composite = _article(session, composite_id)
+    write_journal(
+        session, kind="order_shipped", actor=actor, qty=units, article_id=composite.id, order_id=order_id,
+        details={"variant_sku": variant_sku, "changes": {}},
+    )
+    return _consume_parts(session, _plan_parts(session, composite, units), composite, "shipped_assembled", actor)

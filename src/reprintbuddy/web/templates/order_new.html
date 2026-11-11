@@ -37,8 +37,9 @@
         <select name="item_{{ i }}">
           <option value=""{% if not row.item %} selected{% endif %}>–</option>
           <optgroup label="{{ t('nav.articles') }}">
-            {% for article in articles %}
-            <option value="article:{{ article.id }}"{% if row.item == 'article:' ~ article.id %} selected{% endif %}>{{ article.name }}</option>
+            {#- sold alone, stock holders by number, variants built on order (0.4.0, p341) #}
+            {% for value, label in articles %}
+            <option value="{{ value }}"{% if row.item == value %} selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </optgroup>
           <optgroup label="{{ t('nav.sets') }}">

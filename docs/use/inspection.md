@@ -48,7 +48,7 @@ The list can show one article only. This is where the [QR code](labels.md) of an
 
 ## Assembly
 
-The page **Assembly** is for articles with **Manual work needed (assembly)** ticked in the article's settings. After checking, their good pieces wait here instead of going to stock. It lists each article with the pieces waiting, the bought parts it needs and how many of each you have.
+The page **Assembly** is for articles with **Manual work needed (assembly)** ticked in the article's settings, and for [assembled articles](assembled.md#assemble) (sections **From parts** and **For orders**). After checking, their good pieces wait here instead of going to stock. It lists each article with the pieces waiting, the bought parts it needs and how many of each you have.
 
 ![The page Assembly with the waiting pieces and the parts they need](../assets/images/en/assembly.png)
 

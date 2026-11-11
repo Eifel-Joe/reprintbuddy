@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% block title %}{{ article.name }}{% endblock %}
+{% block content %}
+{#- The page of an article made of parts (Spec 5.6, 10.3; 0.4.0 p341): parts list, variants with
+    stock, buildable and target, building per variant on stock, journal over all its rows. -#}
+{% set kind = 'set' if row.status in ('deliverable', 'not_deliverable') else 'article' %}
+{% call ui.region("head", "article:" ~ article.id) %}
+{% set sub %}
+  {%- if article.sku %}{{ article.sku }} · {% endif -%}
+  {% set mode_key = 'assembled.mode.' ~ row.mode %}{{ ui.badge(kind, row.status) }} · {{ t(mode_key) }}
+  {%- if article.archived_at %} · {{ ui.badge('article', 'archived') }}{% endif -%}
+{% endset %}
+{% call ui.page_head("package", article.name, sub) %}{% if not article.archived_at %}<a class="btn" href="/articles/{{ article.id }}/assembled">{{ ui.icon('pencil') }}{{ t('articles.edit') }}</a><a class="btn secondary" href="/articles/{{ article.id }}/relink">{{ ui.icon('refresh-cw') }}{{ t('assembled.to_print') }}</a>{% endif %}{% endcall %}
+<div class="toolbar">
+  <div class="toolbar-actions">
+    <a class="btn secondary" href="/journal?article={{ article.id }}">{{ ui.icon('history') }}{{ t('journal.title') }}</a>
+    <a class="btn secondary" href="/articles">{{ ui.icon('package') }}{{ t('articles.title') }}</a>
+  </div>
+</div>
+{% endcall %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+
+{% call ui.region("main", "article:" ~ article.id ~ " article part") %}
+<section class="card section wide">
+  <div class="detail-head">
+    {% if row.thumbnail_article_id and picture %}<img class="thumb" src="/articles/{{ row.thumbnail_article_id }}/thumbnail" alt="">{% endif %}
+    <div class="stats">
+      <div class="stat"><span class="stat-label">{{ t('articles.col.available') }}</span><span class="stat-value{% if row.available < 0 %} neg{% endif %}">{{ row.available }}</span></div>
+      <div class="stat"><span class="stat-label">{{ t('assembled.together') }}</span><span class="stat-value">{{ row.buildable }}{% if row.capped %}+{% endif %}</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="card section wide">
+  <h2>{{ t('assembled.variants') }}</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>{{ t('catalog.field.sku') }}</th>
+        {% if row.mode == 'stock' %}<th class="num">{{ t('articles.col.stock') }}</th><th class="num">{{ t('articles.col.reserved') }}</th>{% endif %}
+        <th class="num">{{ t('articles.col.available') }}</th>
+        <th class="num">{{ t('assembled.buildable') }}</th>
+        {% if row.mode == 'stock' %}<th class="num">{{ t('articles.target_quantity') }}</th>{% endif %}
+        <th>{{ t('list.col.status') }}</th>
+        {% if row.mode == 'stock' and not article.archived_at %}<th>{{ t('assembled.build') }}</th>{% endif %}
+      </tr></thead>
+      <tbody>
+      {% for h in row.holders %}
+        <tr>
+          <td><span class="mono">{{ h.sku or '–' }}</span>{% if h.names %}<br><span class="muted">{{ h.names | join(', ') }}</span>{% endif %}</td>
+          {% if row.mode == 'stock' %}<td class="num">{{ h.stock }}</td><td class="num">{{ h.reserved }}</td>{% endif %}
+          <td class="num{% if h.available < 0 %} neg{% endif %}">{{ h.available }}</td>
+          <td class="num">{{ h.buildable }}</td>
+          {% if row.mode == 'stock' %}<td class="num">{{ h.target }}</td>{% endif %}
+          <td>{{ ui.badge(kind, h.status) }}</td>
+          {% if row.mode == 'stock' and not article.archived_at %}
+          <td>
+            <form class="build-form" method="post" action="/assembly/build/{{ h.article_id }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="form_token" value="{{ form_token() }}">
+              <input type="hidden" name="next" value="/articles/{{ article.id }}">
+              <input class="qty-input" name="qty" inputmode="numeric" min="1" value="1" aria-label="{{ t('assembled.build_qty', sku=h.sku or article.name) }}">
+              <button class="btn secondary" type="submit">{{ ui.icon('wrench') }}{{ t('assembled.build') }}</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card section wide">
+  <h2>{{ t('assembled.parts_list') }}</h2>
+  {% if row.base %}
+  <h3>{{ t('sets.base') }}</h3>
+  <ul class="plain-list">
+    {% for p in row.base %}<li>{{ p.qty }} × <a href="/articles/{{ p.article_id }}">{{ p.name }}</a> <span class="muted">({{ t('articles.col.available') }} {{ p.available }})</span></li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% for field in row.fields %}
+  {% set field_key = 'sets.choices_' ~ loop.index %}<h3>{{ t(field_key) }}</h3>
+  <ul class="plain-list">
+    {% for option in field %}<li><span class="mono">{{ option.suffix }}</span>: {% for p in option.rows %}{{ p.qty }} × <a href="/articles/{{ p.article_id }}">{{ p.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</li>{% endfor %}
+  </ul>
+  {% endfor %}
+  <h3>{{ t('articles.parts_title') }}</h3>
+  {% if row.purchased %}
+  <ul class="plain-list">{% for _id, name, qty in row.purchased %}<li>{{ qty }} × {{ name }}</li>{% endfor %}</ul>
+  {% else %}<p class="muted">{{ t('articles.no_parts') }}</p>{% endif %}
+</section>
+
+<section class="card section wide article-qr" id="qr">
+  <div class="section-head"><h2>{{ ui.icon('qr-code') }}{{ t('qr.title') }}</h2></div>
+  <div class="qr-body">
+    <img class="qr-image" src="/articles/{{ article.id }}/qr.svg" width="168" height="168" alt="{{ t('qr.alt', name=article.name) }}">
+    <div class="qr-text">
+      <p class="muted">{{ t('assembled.qr_hint') }}</p>
+      <p><span class="muted">{{ t('qr.address') }}:</span> <code class="qr-address">{{ qr_address }}</code></p>
+    </div>
+  </div>
+</section>
+
+{% include "_label_card.html" %}
+
+<div class="actions">
+  {% if article.archived_at %}
+  <form method="post" action="/articles/{{ article.id }}/restore">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <button class="btn" type="submit">{{ t('catalog.restore') }}</button>
+  </form>
+  {% else %}
+  <form method="post" action="/articles/{{ article.id }}/archive">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="form_token" value="{{ form_token() }}">
+    <button class="btn secondary" type="submit">{{ t('catalog.archive') }}</button>
+  </form>
+  {% endif %}
+</div>
+{% endcall %}
+
+<h2>{{ t('articles.recent_journal') }}</h2>
+{% call ui.region("journal", "journal") %}
+{% include "_journal_table.html" %}
+{% endcall %}
+{% endblock %}
+{% block scripts %}<script src="/static/js/labels.js?v={{ app_version }}" defer></script>{% endblock %}

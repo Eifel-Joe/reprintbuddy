@@ -442,6 +442,31 @@ def test_older_database_is_accepted_but_not_migrated(tmp_path, work):
     assert sorted(p.name for p in work.iterdir()) == sorted([created.path.name, db.name])
 
 
+def test_full_backup_round_trip_with_assembled_articles(live, work):  # 0.4.0, p341 (Spec 5.6, 11.6)
+    """A database with a box (on stock, no choices) and a hose (choices, built on order, variant rows)
+    passes the structure check of the restore and comes back row for row."""
+    from factories import make_article, make_assembled
+
+    maker = make_sessionmaker(make_engine(live))
+    with maker.begin() as s:
+        panel = make_article(s, name="Panel A")
+        lid = make_article(s, name="Lid")
+        segment = make_article(s, name="Segment")
+        side = make_article(s, name="Side part L")
+        socket32 = make_article(s, name="Socket L32")
+        socket40 = make_article(s, name="Socket L40")
+        make_assembled(s, name="Storage box", sku="EX-B1", base=[(panel.id, 4), (lid.id, 1)], stock=3)
+        make_assembled(s, name="Hose", sku="EX-H1", mode="order", base=[(segment.id, 12)], fields=[[
+            ("-L32", [(side.id, 1), (socket32.id, 1)]), ("-L40", [(side.id, 1), (socket40.id, 1)]),
+        ]])
+    tables = ("articles", "article_options", "article_components")
+    before = {t: rows(live, f"SELECT * FROM {t} ORDER BY id") for t in tables}
+    assert len(before["article_options"]) == 2
+    db = read_back(plain_backup(live, work).path, work)  # verify_database compares the structure
+    assert {t: rows(db, f"SELECT * FROM {t} ORDER BY id") for t in tables} == before
+    assert rows(db, "SELECT sku FROM articles WHERE kind = 'variant' ORDER BY id") == [("EX-H1-L32",), ("EX-H1-L40",)]
+
+
 def test_corrupt_page_is_damaged(live, work):
     created = plain_backup(live, work)
     db = work / "plain.db"

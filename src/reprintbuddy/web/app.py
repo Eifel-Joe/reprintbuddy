@@ -59,6 +59,7 @@ from reprintbuddy.web.preload import PreloadedLoader
 from reprintbuddy.web.rights import RightsMonitor
 from reprintbuddy.web.throttle import FailureBrake, HashLimiter
 from reprintbuddy.web.routes import articles as articles_routes
+from reprintbuddy.web.routes import assembled as assembled_routes
 from reprintbuddy.web.routes import upload as upload_routes
 from reprintbuddy.web.routes import auth as auth_routes
 from reprintbuddy.web.routes import backup as backup_routes
@@ -520,6 +521,7 @@ def create_app(
     app.include_router(filament_routes.router)
     app.include_router(reorder_routes.router)
     app.include_router(upload_routes.router)  # before the articles: /articles/new/upload
+    app.include_router(assembled_routes.router)  # /articles/new-assembled before /articles/{id}
     app.include_router(articles_routes.router)
     app.include_router(journal_routes.router)
     app.include_router(sets_routes.router)

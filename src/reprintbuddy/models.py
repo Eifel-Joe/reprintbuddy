@@ -110,7 +110,11 @@ def _flag() -> Mapped[bool]:
 
 
 class Article(Base):
-    """A stock article, made from one plate of one print file (Spec 5)."""
+    """A stock article (Spec 5). Since 0.4.0 (p341, Spec 5.6) one of three kinds:
+    `print` made from one plate of one print file, `assembled` made of parts (a bill of materials in
+    `article_components`, built on stock or on order), and `variant`, one variant of an assembled
+    article with choices: its own row under `parent_id`, keyed by its options, so stock, journal,
+    counts and order lines work for it as for any article."""
 
     __tablename__ = "articles"
     __table_args__ = (
@@ -127,6 +131,28 @@ class Article(Base):
             unique=True,
             sqlite_where=text("archived_at IS NULL"),
         ),
+        CheckConstraint("kind IN ('print', 'assembled', 'variant')", name="ck_articles_kind"),
+        CheckConstraint(
+            "kind <> 'print' OR (library_file_id IS NOT NULL AND plate_id IS NOT NULL AND file_name IS NOT NULL)",
+            name="ck_articles_print_has_plate",
+        ),
+        CheckConstraint(
+            "(kind = 'variant') = (parent_id IS NOT NULL AND variant_key IS NOT NULL)",
+            name="ck_articles_variant_parent",
+        ),
+        # COALESCE: a CHECK that comes out NULL passes, so a missing mode must compare as false.
+        CheckConstraint(
+            "(kind = 'assembled') = (COALESCE(assembly_mode, '') IN ('stock', 'order'))",
+            name="ck_articles_assembly_mode",
+        ),
+        # One active row per variant of an assembled article; an archived one keeps its number (Spec 5.6).
+        Index(
+            "uq_articles_variant_key",
+            "parent_id",
+            "variant_key",
+            unique=True,
+            sqlite_where=text("archived_at IS NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -134,9 +160,10 @@ class Article(Base):
     archived_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     sku: Mapped[str | None] = mapped_column(String, unique=True, default=None)
     label_text: Mapped[str | None] = mapped_column(String, default=None)  # free text for the label (Spec 5.2)
-    library_file_id: Mapped[int]
-    plate_id: Mapped[int]  # Plate.index, starting at 1
-    file_name: Mapped[str] = mapped_column(String)
+    # Only a print article has a plate (ck_articles_print_has_plate); NULL for assembled and variant rows.
+    library_file_id: Mapped[int | None]
+    plate_id: Mapped[int | None]  # Plate.index, starting at 1
+    file_name: Mapped[str | None] = mapped_column(String)
     file_fingerprint: Mapped[str | None] = mapped_column(String, default=None)
     units_per_print: Mapped[int] = _int(1)
     min_stock: Mapped[int] = _int(0)
@@ -156,6 +183,51 @@ class Article(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, server_default=text("CURRENT_TIMESTAMP")
     )
+    kind: Mapped[str] = mapped_column(String, default="print", server_default="print")
+    # "einzeln erhaeltlich" (Spec 5.2): may be ordered and booked on its own; assembled always are.
+    sold_alone: Mapped[bool] = mapped_column(default=True, server_default="1")
+    assembly_mode: Mapped[str | None] = mapped_column(String, default=None)  # 'stock' | 'order' (Spec 5.6)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("articles.id"), default=None)
+    variant_key: Mapped[str | None] = mapped_column(String, default=None)  # "<option1_id>[:<option2_id>]"
+
+
+class ArticleOption(Base):
+    """One option of a choice field of an assembled article (Spec 5.6): its field (1 or 2), its place
+    in the field and its suffix, which makes the variant number. Its articles are in
+    `article_components` with this `option_id`."""
+
+    __tablename__ = "article_options"
+    __table_args__ = (
+        CheckConstraint("field IN (1, 2)", name="ck_article_options_field"),
+        CheckConstraint("suffix <> ''", name="ck_article_options_suffix"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    article_id: Mapped[int] = mapped_column(ForeignKey("articles.id"))
+    field: Mapped[int]
+    sort: Mapped[int] = _int(0)
+    suffix: Mapped[str] = mapped_column(String)
+
+
+class ArticleComponent(Base):
+    """One row of the bill of materials of an assembled article (Spec 5.6): a print article and its
+    quantity, either a base part (`field` 0) or one article of an option (`field` 1 or 2)."""
+
+    __tablename__ = "article_components"
+    __table_args__ = (
+        CheckConstraint("qty >= 1", name="ck_article_components_qty"),
+        CheckConstraint("field IN (0, 1, 2)", name="ck_article_components_field"),
+        CheckConstraint("(field = 0) = (option_id IS NULL)", name="ck_article_components_option"),
+        Index("ix_article_components_part", "part_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    article_id: Mapped[int] = mapped_column(ForeignKey("articles.id"))
+    field: Mapped[int] = _int(0)
+    option_id: Mapped[int | None] = mapped_column(ForeignKey("article_options.id"), default=None)
+    part_id: Mapped[int] = mapped_column(ForeignKey("articles.id"))
+    qty: Mapped[int]
+    sort: Mapped[int] = _int(0)
 
 
 class ArticleFilament(Base):
@@ -316,6 +388,8 @@ class OrderLine(Base):
     set_id: Mapped[int | None] = mapped_column(ForeignKey("product_sets.id"), default=None)
     set_qty: Mapped[int | None] = mapped_column(default=None)
     variant_sku: Mapped[str | None] = mapped_column(String, default=None)  # as ordered (Spec 6.7, p340)
+    # The assembled article (built on order) this group of part lines stands for (Spec 6.7, 0.4.0 p341).
+    assembled_id: Mapped[int | None] = mapped_column(ForeignKey("articles.id"), default=None)
 
 
 def _booked_default(context) -> datetime:

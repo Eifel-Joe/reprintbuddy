@@ -19,8 +19,9 @@
 <section class="card section">
   <h2>{{ t('orders.items') }}</h2>
   {% for group in order.groups %}
-    {% if group.set_name %}
-    <p><strong>{{ group.set_name }}{% if group.variant_sku %} {{ group.variant_sku }}{% endif %} × {{ group.set_qty }}</strong></p>
+    {#- a set or an article made of parts built on order: its name, the variant number and the quantity (0.4.0) #}
+    {% if group.set_name or group.assembled_name %}
+    <p><strong>{{ group.set_name or group.assembled_name }}{% if group.variant_sku %} {{ group.variant_sku }}{% endif %} × {{ group.set_qty }}</strong></p>
     {% endif %}
     <ul class="plain-list">{% for name, qty in group.lines %}<li>{{ qty }} × {{ name }}</li>{% endfor %}</ul>
   {% endfor %}

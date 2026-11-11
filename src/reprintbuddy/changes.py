@@ -31,8 +31,10 @@ from reprintbuddy.models import (
     ActivityEntry,
     ActivityMark,
     Article,
+    ArticleComponent,
     ArticleFilament,
     ArticleFilamentSort,
+    ArticleOption,
     ArticlePart,
     Dispatch,
     FilamentSettings,
@@ -72,6 +74,8 @@ _KIND: dict[type, str] = {
     ArticleFilament: "article",
     ArticleFilamentSort: "article",
     ArticlePart: "article",
+    ArticleOption: "article",  # the bill of materials of an assembled article (Spec 5.6, 0.4.0)
+    ArticleComponent: "article",
     Part: "part",
     PartSupplier: "part",
     ProductSet: "set",
@@ -109,6 +113,9 @@ SETTINGS_COLUMNS: dict[type, frozenset[str]] = {
             "needs_assembly",
             "auto_enabled",
             "archived_at",
+            "sold_alone",
+            "assembly_mode",
+            "kind",
         }
     ),
     Part: frozenset(
@@ -145,11 +152,16 @@ def topics_of(obj: object, change: Change) -> set[str]:
         topics = {kind, f"{kind}:{obj.id}"}
         if _settings_changed(obj, change):
             topics.add(f"{kind}-settings:{obj.id}")
+        if cls is Article and obj.parent_id is not None:
+            # A variant row shows on the page of its article made of parts (Spec 5.6, 0.4.0 p341).
+            topics.add(f"article:{obj.parent_id}")
+            if _settings_changed(obj, change):
+                topics.add(f"article-settings:{obj.parent_id}")
         return topics
     if cls is PartSupplier:
         # The suppliers are part of the part's form (Spec 5.3).
         return {"part", f"part:{obj.part_id}", f"part-settings:{obj.part_id}"}
-    if cls in (ArticleFilament, ArticlePart):
+    if cls in (ArticleFilament, ArticlePart, ArticleOption, ArticleComponent):
         return {"article", f"article:{obj.article_id}", f"article-settings:{obj.article_id}"}
     if cls is ArticleFilamentSort:
         # The filament page lists the ticked spool sorts (Spec 9.3).

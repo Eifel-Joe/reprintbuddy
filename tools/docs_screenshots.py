@@ -70,7 +70,7 @@ from reprintbuddy import settings as st  # noqa: E402
 from reprintbuddy.activity import capture as activity_capture  # noqa: E402
 from reprintbuddy.bambuddy.fake import FakeBambuddy  # noqa: E402
 from reprintbuddy.bambuddy.types import FilamentRequirement  # noqa: E402
-from reprintbuddy.domain import catalog, filament, orders, pauses, reorder, stock, workqueue  # noqa: E402
+from reprintbuddy.domain import assembled, catalog, filament, orders, pauses, reorder, stock, workqueue  # noqa: E402
 from reprintbuddy.ops.context import OpsContext  # noqa: E402
 from reprintbuddy.ops.runner import CommandResult  # noqa: E402
 from reprintbuddy.web import app as web_app  # noqa: E402
@@ -98,6 +98,7 @@ ALL_NAMES = (
     "article-new-files", "article-new-plates", "article-new-form", "article-upload",
     "article-filaments", "article-detail", "queue", "inspection", "assembly", "label-preview",
     "reorder", "filament-page", "filament-settings", "orders", "parts", "sets", "set-form", "bookings", "journal",
+    "assembled-form", "assembled-detail",
     "settings-bambuddy", "settings-automation", "settings-notifications", "settings-labels",
     "settings-log", "settings-update", "articles-mobile",
 )
@@ -628,6 +629,9 @@ def fill_bambuddy(fake: ShotBambuddy, scn: Scenario) -> None:
     file("Spool holder.gcode.3mf", "holder", plates=2, reqs={1: [(1, 84.0, "PETG", black)], 2: [(1, 52.0, "PETG", black)]})
     file("Label holder.gcode.3mf", "label", reqs={1: [(1, 6.2, "PLA", white), (2, 1.1, "PLA", red)]})
     file("Hook.gcode.3mf", "hook", reqs={1: [(1, 14.0, "PLA", black)]})
+    # parts of articles made of parts (0.4.0, p341): ten panels of a box, the parts of a hose
+    file("Box panels.gcode.3mf", "label", plates=10, reqs={n: [(1, 9.5, "PLA", white)] for n in range(1, 11)})
+    file("Hose parts.gcode.3mf", "hook", plates=7, reqs={n: [(1, 7.0, "PLA", black)] for n in range(1, 8)})
     fake.add_printer("Printer 1", "A1")
     fake.add_printer("Printer 2", "A1")
     fake.add_printer("Printer 3", "P1S")
@@ -711,6 +715,40 @@ def build_catalog(server: Server, scn: Scenario) -> None:
     article("spool_holder", "Spool holder", 1, sku="EX-006", label_text=tr("Shelf C2", "Regal C2"),
             units_per_print=1, min_stock=2, buffer=0, auto_enabled=True)
 
+    # Articles made of parts (Spec 5.6, 0.4.0 p341): a storage box of ten panels built on stock, and a
+    # hose of twelve segments with four options of two parts each, built on order.
+    for n, letter in enumerate("ABCDEFGHIJ", start=1):
+        article(f"panel_{letter}", "Box panels", n, name=tr(f"Panel {letter}", f"Platte {letter}"), sku=None,
+                label_text=None, units_per_print=1)
+    for n, (key, en_name, de_name, alone) in enumerate((
+        ("segment", "Segment", "Segment", True),
+        ("side_l", "Side part L", "Seitenteil L", False), ("side_r", "Side part R", "Seitenteil R", False),
+        ("socket_l32", "Socket L32", "Anschluss L32", False), ("socket_l40", "Socket L40", "Anschluss L40", False),
+        ("socket_r32", "Socket R32", "Anschluss R32", False), ("socket_r40", "Socket R40", "Anschluss R40", False),
+    ), start=1):
+        article(key, "Hose parts", n, name=tr(en_name, de_name), sku=None, label_text=None, units_per_print=1,
+                sold_alone=alone)
+    with sm.begin() as s:
+        a = scn.articles
+        B = catalog.BaseInput
+        box = assembled.create_assembled(s, assembled.AssembledInput(
+            name=tr("Storage box", "Box"), sku="EX-B1", mode="stock",
+            base=[B(1, a[f"panel_{c}"]) for c in "ABCDEFGHIJ"], fields=[],
+            parts={scn.parts["Screw M4×8"]: 8}, label_text=tr("Shelf D1", "Regal D1"), min_stock=2, buffer=1,
+        ))
+        scn.articles["box"] = box.id
+
+        def option(suffix, side, socket):
+            return assembled.OptionInput(None, suffix, [B(1, a[side]), B(1, a[socket])])
+
+        hose = assembled.create_assembled(s, assembled.AssembledInput(
+            name=tr("Hose", "Schlauch"), sku="EX-H1", mode="order", base=[B(12, a["segment"])],
+            fields=[[option("-L32", "side_l", "socket_l32"), option("-L40", "side_l", "socket_l40"),
+                     option("-R32", "side_r", "socket_r32"), option("-R40", "side_r", "socket_r40")]],
+            parts={scn.parts["Rubber foot"]: 2},
+        ))
+        scn.articles["hose"] = hose.id
+
     with sm.begin() as s:
         a = scn.articles
         # Sets with base parts and choice parts (Spec 5.4, p340): the kit has a variant per bracket,
@@ -786,6 +824,10 @@ def build_history(server: Server, scn: Scenario) -> None:
             ("cable_guide", 9, tr("Counted shelf C1", "Regal C1 gezählt")), ("spool_holder", 2, tr("Counted shelf C2", "Regal C2 gezählt")),
         ):
             stock.count_article(s, a[key], "stock", counted, "user", note)
+        # the hose example of the documentation (Spec 5.6): together at most 4
+        for key, counted in (("segment", 60), ("side_l", 3), ("side_r", 1), ("socket_l32", 2), ("socket_l40", 2),
+                             ("socket_r40", 1), *((f"panel_{c}", 1 if c in "AB" else 2) for c in "ABCDEFGHIJ")):
+            stock.count_article(s, a[key], "stock", counted, "user", tr("Counted shelf D", "Regal D gezählt"))
     CLOCK.set(at(3, 14, 10))
     with sm.begin() as s:
         stock.receive_part(s, scn.parts["Insert M4"], 50, "user", tr("Delivery 2026-11-03", "Lieferung 03.11.2026"))
@@ -817,11 +859,18 @@ def build_history(server: Server, scn: Scenario) -> None:
     with sm.begin() as s:
         orders.create_order(
             s, reference=tr("Order 1002", "Bestellung 1002"), order_date=date(2026, 11, 8), actor="user",
-            items=[orders.ArticleItem(a["cable_guide"], 2), orders.ArticleItem(a["bracket_large"], 1)],
+            items=[orders.ArticleItem(a["cable_guide"], 2), orders.ArticleItem(a["bracket_large"], 1),
+                   orders.AssembledItem(a["hose"], 1, _hose_key(s, a["hose"], "-L32"))],
         )
         stock.count_article(s, a["cable_guide"], "awaiting_assembly", 6, "user", tr("Printed parts waiting for inserts", "Gedruckte Teile warten auf Einsätze"))
         pauses.pause_article(s, a["spool_holder"], "two_failures", "auto")
         pauses.pause_article(s, a["clip_blue"], "cancelled_in_bambuddy", "auto")
+
+
+def _hose_key(s, hose_id: int, suffix: str) -> str:
+    """The variant key of the option with `suffix` (the order form sends the same)."""
+    composite = s.get(models.Article, hose_id)
+    return next(str(o.id) for o in assembled.options(s, composite)[0] if o.suffix == suffix)
 
 
 def run_prints(server: Server, scn: Scenario) -> None:
@@ -1048,6 +1097,8 @@ def take_pages(shot: Shooter, scn: Scenario) -> None:
     shot.page("parts", "/parts")
     shot.page("sets", "/sets")
     shot.page("set-form", f"/sets/{scn.sets['Bracket kit']}/edit", cap=1300)
+    shot.page("assembled-form", f"/articles/{a['hose']}/assembled", cap=1500)
+    shot.page("assembled-detail", f"/articles/{a['hose']}", cap=1100)
     shot.page("bookings", "/bookings", cap=990)  # the four forms; the fifth would be cut
     shot.page("journal", "/journal", before=lambda b: keep_rows(b, 15))
     shot.page("settings-bambuddy", "/settings?tab=bambuddy")

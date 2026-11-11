@@ -5,11 +5,11 @@
 {% call ui.page_head("wrench", t('nav.assembly'), t('assembly.subtitle')) %}{% endcall %}
 {% call ui.region("list", "article part") %}
 {# An error for an article that has no row (unknown, archived, nothing waiting any more) shows on top. #}
-{% if error and not rows|selectattr('article_id', 'equalto', error_article)|list %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% if error and not rows|selectattr('article_id', 'equalto', error_article)|list and not build_rows|selectattr('holder_id', 'equalto', error_article)|list %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
 {% if article_filter %}<div class="toolbar">{{ ui.article_chip(article_filter) }}</div>{% endif %}
-{% if not rows %}
+{% if not rows and not build_rows and not order_rows %}
 <section class="card section"><p class="muted">{{ t('assembly.empty_article' if article_filter else 'assembly.empty') }}</p></section>
-{% else %}
+{% elif rows %}
 <div class="card line-list assembly-list">
   <div class="line-head assembly-cols" aria-hidden="true">
     <span>{{ t('assembly.col.article') }}</span><span class="num">{{ t('assembly.col.awaiting') }}</span><span>{{ t('assembly.col.qty') }}</span><span></span>
@@ -41,6 +41,67 @@
     </form>
   </div>
   {% endfor %}
+</div>
+{% endif %}
+{#- 0.4.0 (p341, Spec 8.3): articles made of parts. "From parts": each variant on stock below its target,
+    with what it misses, how often it can be built from the available parts and the parts; the
+    quantity starts at the smaller of the two. "For orders": open orders of articles built on order,
+    only to look at - shipping books them. -#}
+{% if build_rows %}
+<h2 class="list-title">{{ t('assembly.from_parts') }}</h2>
+<div class="card line-list assembly-list">
+  <div class="line-head assembly-cols" aria-hidden="true">
+    <span>{{ t('assembly.col.article') }}</span><span class="num">{{ t('assembly.col.missing') }}</span><span>{{ t('assembly.col.qty') }}</span><span></span>
+  </div>
+  {% for b in build_rows %}
+  {% set v = values if error_article == b.holder_id else {} %}
+  <div class="line-wrap">
+    {% if error_article == b.holder_id and error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+    <form method="post" action="/assembly/build/{{ b.holder_id }}" class="line assembly-line assembly-cols">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="form_token" value="{{ form_token() }}">
+      {% if article_filter %}<input type="hidden" name="article" value="{{ article_filter.id }}">{% endif %}
+      <div class="line-main">
+        {% if b.thumbnail_article_id %}<img class="thumb-sm" src="/articles/{{ b.thumbnail_article_id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb-placeholder">{{ ui.icon('package') }}</span>{% endif %}
+        <div class="line-title">
+          <a class="line-name" href="/articles/{{ b.article_id }}">{{ b.name }}</a>{% if b.sku %} <span class="mono muted">{{ b.sku }}</span>{% endif %}
+          <span class="muted">{{ t('assembly.buildable', n=b.buildable) }}</span>
+          <ul class="line-parts">
+            {% for p in b.parts %}<li{% if p.available < p.qty %} class="neg"{% endif %}>{{ p.name }}: {{ t('assembly.part_line_available', qty=p.qty, available=p.available) }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+      <div class="line-cell num"><span class="line-label">{{ t('assembly.col.missing') }}</span><span class="assembly-awaiting num">{{ b.missing }}</span></div>
+      {% if b.buildable >= 1 %}
+      <div class="line-cell"><label class="line-label" for="build-{{ b.holder_id }}">{{ t('assembly.col.qty') }}</label>
+        <input id="build-{{ b.holder_id }}" name="qty" type="number" inputmode="numeric" min="1" step="1" value="{{ v.get('qty', b.preset) }}" required></div>
+      <button class="btn" type="submit">{{ t('assembled.build') }}</button>
+      {% else %}
+      <div class="line-cell"><span class="badge tone-bad">{{ t('assembly.parts_missing') }}</span></div><span></span>
+      {% endif %}
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% if order_rows %}
+<h2 class="list-title">{{ t('assembly.for_orders') }}</h2>
+<p class="hint">{{ t('assembly.for_orders_hint') }}</p>
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>{{ t('orders.field.reference') }}</th><th>{{ t('assembly.col.article') }}</th><th class="num">{{ t('assembly.col.qty') }}</th><th>{{ t('list.col.status') }}</th></tr></thead>
+    <tbody>
+    {% for o in order_rows %}
+      <tr>
+        <td><a href="/orders/{{ o.order_id }}">{{ o.reference }}</a></td>
+        <td><a href="/articles/{{ o.article_id }}">{{ o.name }}</a>{% if o.variant_sku %} <span class="mono muted">{{ o.variant_sku }}</span>{% endif %}</td>
+        <td class="num">{{ o.qty }}</td>
+        <td>{{ ui.badge('order', 'ready' if o.ready else 'open') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
 </div>
 {% endif %}
 {% endcall %}

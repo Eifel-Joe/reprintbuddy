@@ -80,6 +80,7 @@ plugins:
             Use: Benutzen
             Overview: Übersicht
             Articles: Artikel
+            Assembled articles: Artikel aus Teilen
             Filament: Filament
             Automation: Automatik
             Queue: Warteschlange
@@ -117,6 +118,7 @@ nav:
   - Use:
     - Overview: use/overview.md
     - Articles: use/articles.md
+    - Assembled articles: use/assembled.md
     - Filament: use/filament.md
     - Automation: use/automation.md
     - Queue: use/queue.md

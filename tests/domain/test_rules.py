@@ -1,10 +1,14 @@
+import itertools
 import random
 from datetime import date
 
+from reprintbuddy.domain import rules
 from reprintbuddy.domain.rules import (
+    Bundle,
     ChoiceStock,
     SetStock,
     available,
+    bundle_availability,
     consumption_per_day,
     coverage,
     needs_reorder,
@@ -104,6 +108,112 @@ def test_together_is_the_most_sets_in_any_mix():  # Spec 5.4 "zusammen hoechsten
         ]
         assert set_availability(base, choices).total == _most_sets(base, choices), (base, choices)
 
+
+
+# 0.4.0 (p341): availability of bundles, the generalisation of set_availability for articles made of
+# parts, where one option may hold several articles and an article may sit in several options of a field.
+
+
+def test_bundles_without_shared_articles_match_set_availability():  # Spec 5.4, second example
+    result = bundle_availability(
+        [(1, 1)], [[Bundle(10, ((10, 1),)), Bundle(11, ((11, 1),)), Bundle(12, ((12, 1),))]],
+        {1: 3, 10: 2, 11: 0, 12: 1},
+    )
+    assert result == SetStock(3, {(10,): 2, (11,): 0, (12,): 1})
+    assert result.capped is False
+
+
+def _hose(segment: int):
+    return bundle_availability(
+        [(1, 12)],
+        [[
+            Bundle(11, ((2, 1), (4, 1))),
+            Bundle(12, ((2, 1), (5, 1))),
+            Bundle(13, ((3, 1), (6, 1))),
+            Bundle(14, ((3, 1), (7, 1))),
+        ]],
+        {1: segment, 2: 3, 3: 1, 4: 2, 5: 2, 6: 0, 7: 1},
+    )
+
+
+def test_hose_example_counts_shared_side_part_once():  # Spec 5.6 example
+    result = _hose(60)
+    assert result.variants == {(11,): 2, (12,): 2, (13,): 0, (14,): 1}
+    assert result.total == 4  # side part L only three times: -L32 and -L40 together 3, not 4
+
+
+def test_base_limits_the_hose_together():
+    assert _hose(24).total == 2
+
+
+def test_option_with_quantity_two():
+    result = bundle_availability([], [[Bundle(10, ((2, 2),))]], {2: 5})
+    assert result == SetStock(2, {(10,): 2})
+
+
+def test_two_fields_with_shared_articles_inside_each_field():
+    result = bundle_availability(
+        [(1, 1)],
+        [
+            [Bundle(21, ((2, 1), (3, 1))), Bundle(22, ((2, 1), (4, 1)))],
+            [Bundle(31, ((5, 1), (6, 1))), Bundle(32, ((5, 2), (7, 1)))],
+        ],
+        {1: 10, 2: 3, 3: 2, 4: 2, 5: 5, 6: 3, 7: 5},
+    )
+    assert result.variants == {(21, 31): 2, (21, 32): 2, (22, 31): 2, (22, 32): 2}
+    assert result.total == 3  # field 1 gives 3, field 2 gives 4
+
+
+def test_oversold_shared_article():  # Spec 6.4: Verfuegbar may be negative
+    result = bundle_availability(
+        [(1, 1)], [[Bundle(11, ((2, 1), (3, 1))), Bundle(12, ((2, 1), (4, 3)))]], {1: 9, 2: -1, 3: 5, 4: 5}
+    )
+    assert result == SetStock(-1, {(11,): -1, (12,): -1})
+
+
+def test_empty_field_or_nothing_gives_zero():
+    assert bundle_availability([(1, 1)], [[]], {1: 5}) == SetStock(0, {})
+    assert bundle_availability([], [], {}) == SetStock(0, {})
+
+
+def test_search_limit_returns_a_lower_bound(monkeypatch):
+    # five options in a ring, each sharing one article with the next: at most 2 together
+    ring = [Bundle(10 + i, ((i, 1), ((i + 1) % 5, 1))) for i in range(5)]
+    stock = {i: 1 for i in range(5)}
+    assert bundle_availability([], [ring], stock) == SetStock(2, {(10 + i,): 1 for i in range(5)})
+    monkeypatch.setattr(rules, "MAX_NODES", 2)
+    capped = bundle_availability([], [ring], stock)
+    assert capped.capped is True
+    assert 1 <= capped.total <= 2  # never below the best single option, never above the truth
+    assert capped.variants == {(10 + i,): 1 for i in range(5)}
+
+
+def _most_bundles(base, field, stock) -> int:
+    """Brute force: the largest n for which n articles in some mix of the options come from the stock."""
+    best = 0
+    limits = [max(0, min(stock[a] // q for a, q in b.needs)) for b in field]
+    for counts in itertools.product(*(range(limit + 1) for limit in limits)):
+        used = {}
+        for bundle, y in zip(field, counts):
+            for a, q in bundle.needs:
+                used[a] = used.get(a, 0) + y * q
+        if all(used[a] <= stock[a] for a in used):
+            best = max(best, sum(counts))
+    return min([best] + [stock[a] // q for a, q in base])
+
+
+def test_together_is_the_most_in_any_mix_with_shared_articles():  # Spec 5.6 "zusammen hoechstens"
+    rng = random.Random(341)
+    for _ in range(300):
+        stock = {a: rng.randint(0, 6) for a in range(1, 8)}
+        base = [(1, rng.randint(1, 2))] if rng.random() < 0.5 else []
+        field = [
+            Bundle(100 + i, tuple((a, rng.randint(1, 2)) for a in rng.sample(range(2, 8), rng.randint(1, 3))))
+            for i in range(rng.randint(1, 4))
+        ]
+        if not any(min(stock[a] // q for a, q in b.needs) > 0 for b in field):
+            continue  # all options at zero: covered by the oversold test
+        assert bundle_availability(base, [field], stock).total == _most_bundles(base, field, stock), (base, field, stock)
 
 
 def test_order_ready():  # Spec 6.7

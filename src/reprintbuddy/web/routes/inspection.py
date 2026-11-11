@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import inspection
+from reprintbuddy.domain import assembled, inspection
 from reprintbuddy.domain.errors import ConflictError, DomainError, NotFoundError, ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Article, Inspection
@@ -280,6 +280,9 @@ def _assembly_page(request: Request, db: Session, *, article: object = None,
         status_code=status,
         active_nav="assembly",
         rows=inspection.list_awaiting_assembly(db, article_id=flt.id if flt else None),
+        # 0.4.0 (p341): variants on stock below their target, and open orders built on order
+        build_rows=assembled.list_buildable(db, article_id=flt.id if flt else None),
+        order_rows=assembled.list_for_orders(db, article_id=flt.id if flt else None),
         article_filter=flt,
         error_article=error_article,
         error=error,
@@ -290,6 +293,37 @@ def _assembly_page(request: Request, db: Session, *, article: object = None,
 @router.get("/assembly")
 async def assembly_page(request: Request, db: Session = Depends(get_db)):
     return _assembly_page(request, db, article=request.query_params.get("article"))
+
+
+@router.post("/assembly/build/{holder_id:int}", dependencies=[Depends(verify_csrf)])
+async def build_from_parts(holder_id: int, request: Request, db: Session = Depends(get_db)):
+    """Montage aus Teilen of one variant (Spec 8.3): from the list or from the article's page."""
+    form = await request.form()
+    article = form.get("article")
+    next_url = str(form.get("next", ""))
+    back = next_url if next_url.startswith("/articles/") else listing.with_article(ASSEMBLY_URL, listing.article_id_of(article))
+    values = {k: str(v) for k, v in form.items() if k not in ("csrf_token", "form_token", "article", "next")}
+    try:
+        qty = parse_int(form.get("qty"), field="bookings.field.qty", min=1, max=MAX_QTY)
+        with form_transaction(request, str(form.get("form_token", ""))) as tx:
+            holder = tx.get(Article, holder_id)
+            label = (holder.sku or holder.name) if holder is not None else ""
+            shortages = assembled.build(tx, holder_id, qty, "user")
+            messages = _shortages(tx, shortages)
+    except FormTokenUsed:
+        return duplicate_redirect(request, back)
+    except (DomainError, FormTokenInvalid) as exc:
+        if next_url.startswith("/articles/"):
+            flash(request, "assembly.build_refused", warning=True, text=error_text(current_language(request), exc))
+            return RedirectResponse(back, status_code=303)
+        return _assembly_page(
+            request, db, article=article, error_article=holder_id,
+            error=error_text(current_language(request), exc), values=values, status=error_status(exc),
+        )
+    flash(request, "assembly.built", name=label, n=qty)
+    for key, message_params in messages:
+        flash(request, key, warning=key in WARNING_KEYS, **message_params)
+    return RedirectResponse(back, status_code=303)
 
 
 @router.post("/assembly/{article_id:int}", dependencies=[Depends(verify_csrf)])

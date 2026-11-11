@@ -47,7 +47,22 @@ def target_text(lang: str, article: Article) -> str | None:
     return translate(lang, "articles.target_printer_id", id=article.printer_id)
 
 
-def article_data(article: Article, lang: str) -> fields.LabelData:
+def article_data(article: Article, lang: str, *, has_choices: bool = False) -> fields.LabelData:
+    """What the label of an article shows. An article made of parts leaves units per print and print
+    target empty; minimum, buffer and target only without choices (Teil C 9, 0.4.0 p341)."""
+    if article.kind != "print":
+        own = not has_choices and article.assembly_mode == "stock"
+        return fields.LabelData(
+            name=article.name,
+            sku=article.sku,
+            min_stock=article.min_stock if own else None,
+            buffer=article.buffer if own else None,
+            target_qty=rules.target_quantity(article.min_stock, article.buffer) if own else None,
+            units_per_print=None,
+            print_target=None,
+            label_text=article.label_text,
+            date=today_text(lang),
+        )
     return fields.LabelData(
         name=article.name,
         sku=article.sku,

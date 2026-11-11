@@ -49,6 +49,19 @@ def article_status(*, available: int, min_stock: int, coverage: int) -> ArticleS
     return "ok"
 
 
+def assembled_status(*, available: int, min_stock: int, parts_covered: bool) -> ArticleStatus:
+    """A variant of an article made of parts built on stock (Spec 10.1, 0.4.0 p341): the article
+    rules, but "low" (yellow) means every part is covered by rule 7.1 and only the assembly is
+    missing; otherwise below the minimum is red."""
+    if available < 0:
+        return "overbooked"
+    if available < min_stock and not parts_covered:
+        return "below_min"
+    if available < min_stock:
+        return "low"
+    return "ok"
+
+
 def part_status(*, stock: int, min_stock: int) -> PartStatus:
     return "below_min" if stock < min_stock else "ok"
 

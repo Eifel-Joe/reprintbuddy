@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy import settings as st
 from reprintbuddy.domain import filament, reorder, rules, workqueue
+from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.engine import EngineStatus, collect_warnings
 from reprintbuddy.domain.status import article_status
 from reprintbuddy.i18n import translate, translate_count
@@ -179,7 +180,7 @@ def _paused_refs(session: Session) -> list[str]:
     ids = session.scalars(
         select(Article.id).where(
             Article.paused.is_(True),
-            Article.archived_at.is_(None),
+            articlesets.where_print(),
             (Article.pause_reason.is_(None)) | (Article.pause_reason != USER_PAUSE),
         )
     ).all()
@@ -198,13 +199,16 @@ def red_articles(session: Session) -> dict[int, str]:
     of a tick's detection with 500 articles (condition 2 of the plan's approval, measured in the
     report). tests/notify/test_events.py checks that both agree.
     """
+    from reprintbuddy.domain import assembled  # it builds on workqueue and catalog
+
     queued = workqueue.queued_prints(session)
     in_progress = workqueue.in_progress_units(session)
+    demand = assembled.assembly_demand(session)
     rows = session.execute(
         select(
             Article.id, Article.stock, Article.reserved, Article.min_stock, Article.units_per_print,
             Article.provisional, Article.awaiting_assembly,
-        ).where(Article.archived_at.is_(None))
+        ).where(articlesets.where_print())
     )
     red: dict[int, str] = {}
     for row in rows:
@@ -213,9 +217,21 @@ def red_articles(session: Session) -> dict[int, str]:
             available, queued.get(row.id, 0) * row.units_per_print, in_progress.get(row.id, 0),
             row.provisional, row.awaiting_assembly,
         )
-        state = article_status(available=available, min_stock=row.min_stock, coverage=coverage)
+        # A part counts with minimum + demand from assembly (Spec 7.1, 10.6; 0.4.0 p341).
+        state = article_status(available=available, min_stock=row.min_stock + demand.get(row.id, 0), coverage=coverage)
         if state in RED:
             red[row.id] = state
+    # Every variant (or article without choices) of an article made of parts built on stock (Teil C 8),
+    # with the status of its row (assembled.assembled_row, the same as the article list).
+    composites = session.scalars(
+        articlesets.assembled_articles().where(Article.assembly_mode == "stock").order_by(Article.id)
+    ).all()
+    if composites:
+        coverage_all = workqueue.coverage_all(session)
+        for composite in composites:
+            for holder in assembled.assembled_row(session, composite.id, demand=demand, coverage=coverage_all).holders:
+                if holder.status in RED:
+                    red[holder.article_id] = holder.status
     return red
 
 

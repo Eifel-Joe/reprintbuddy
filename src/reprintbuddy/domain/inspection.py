@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import stock, workqueue
+from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.domain.rules import prints_for_units
 from reprintbuddy.domain.stock import Actor, PartShortage, add_provisional
@@ -227,7 +228,7 @@ def list_awaiting_assembly(session: Session, article_id: int | None = None) -> l
     """
     query = (
         select(Article)
-        .where(Article.archived_at.is_(None), Article.awaiting_assembly > 0)
+        .where(articlesets.where_print(), Article.awaiting_assembly > 0)
         .order_by(Article.name, Article.id)
     )
     if article_id is not None:

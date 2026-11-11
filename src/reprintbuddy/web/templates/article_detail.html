@@ -10,7 +10,7 @@
   {%- if row.paused %} · {{ ui.badge('article', 'paused') }}{% endif -%}
   {%- if article.archived_at %} · {{ ui.badge('article', 'archived') }}{% endif -%}
 {% endset %}
-{% call ui.page_head("package", article.name, sub) %}{% if not article.archived_at %}<a class="btn" href="/articles/{{ article.id }}/edit">{{ ui.icon('pencil') }}{{ t('articles.edit') }}</a><a class="btn secondary" href="/articles/{{ article.id }}/relink">{{ ui.icon('refresh-cw') }}{{ t('articles.change_file') }}</a>{% endif %}{% endcall %}
+{% call ui.page_head("package", article.name, sub) %}{% if not article.archived_at %}<a class="btn" href="/articles/{{ article.id }}/edit">{{ ui.icon('pencil') }}{{ t('articles.edit') }}</a><a class="btn secondary" href="/articles/{{ article.id }}/relink">{{ ui.icon('refresh-cw') }}{{ t('articles.change_file') }}</a>{% if not used_in and not row.stock and not row.reserved %}<a class="btn secondary" href="/articles/{{ article.id }}/to-assembled">{{ ui.icon('package') }}{{ t('articles.to_assembled') }}</a>{% endif %}{% endif %}{% endcall %}
 <div class="toolbar">
   <div class="toolbar-actions">
     <a class="btn secondary" href="/journal?article={{ article.id }}">{{ ui.icon('history') }}{{ t('journal.title') }}</a>
@@ -153,6 +153,14 @@
   <p class="muted">{{ t('articles.filament_none') }}</p>
   {% endif %}
 </section>
+
+{% if used_in or demand %}
+<section class="card section wide">
+  <h2>{{ t('assembled.used_in') }}</h2>
+  {% if used_in %}<ul class="plain-list">{% for id, name in used_in %}<li><a href="/articles/{{ id }}">{{ name }}</a></li>{% endfor %}</ul>{% endif %}
+  {% if demand %}<p>{{ t('assembled.demand_line', n=demand) }}</p>{% endif %}
+</section>
+{% endif %}
 
 <section class="card section wide">
   <h2>{{ t('articles.parts_title') }}</h2>

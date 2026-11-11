@@ -51,6 +51,28 @@ def connection_state(status: EngineStatus) -> tuple[str, str]:
     return "connected", "ok"
 
 
+def table_rows(rows: Sequence[_Row]) -> list[_Row]:
+    """The rows of the overview table (Spec 10.2, 0.4.0 p341): an article made of parts built on stock
+    gives one row per variant (in progress and to check stay empty), one built on order none, as sets."""
+    from dataclasses import replace
+
+    result: list[_Row] = []
+    for row in rows:
+        assembled = getattr(row, "assembled", None)
+        if assembled is None:
+            result.append(row)
+            continue
+        if assembled.mode != "stock":
+            continue
+        for holder in assembled.holders:
+            result.append(replace(
+                row, sku=holder.sku or row.sku, stock=holder.stock, reserved=holder.reserved,
+                available=holder.available, min_stock=holder.min_stock, target=holder.target,
+                buffer=holder.buffer, coverage=holder.available, status=holder.status,
+            ))
+    return result
+
+
 def figures(
     lang: str, rows: Sequence[_Row], *, queued_prints: int, open_prints: int, suggestions: int
 ) -> list[Kpi]:

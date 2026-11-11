@@ -85,8 +85,12 @@ FIELDS: dict[str, str] = {
     "safety_unit": "safety",
     "supplier": "supplier",
     "order_url": "order_url",
-    "base": "base",  # the base parts of a set (Spec 5.4, p340)
+    "base": "base",  # the base parts of a set (Spec 5.4, p340) or of an article made of parts (5.6)
     "choices": "choices",  # its choice fields with their suffixes
+    "sold_alone": "sold_alone",  # "einzeln erhaeltlich" (Spec 5.2, 0.4.0 p341)
+    "assembly_mode": "assembly_mode",  # on stock / on order (Spec 5.6)
+    "kind": "kind",  # print article <-> article made of parts (Spec 5.6 "Wechsel")
+    "variant_targets": "variant_targets",  # minimum and buffer per variant (Spec 5.6)
     "positions": "positions",  # the positions of a set before p340; kept for the log lines written then
 }
 
