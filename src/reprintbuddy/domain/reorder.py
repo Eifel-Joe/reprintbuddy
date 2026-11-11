@@ -29,6 +29,8 @@ from reprintbuddy.models import (
     FilamentSort,
     FilamentSupplier,
     JournalEntry,
+    Order,
+    OrderLine,
     Part,
     PartSupplier,
     ReorderMark,
@@ -39,17 +41,45 @@ WINDOW_DAYS = 30
 MAX_PACKS = 1000
 
 
-def missing_to_target(article: Article, coverage_total: int) -> int:
-    """Units still missing up to the target quantity (never negative)."""
-    return max(0, rules.target_quantity(article.min_stock, article.buffer) - coverage_total)
+def missing_to_target(article: Article, coverage_total: int, demand: int = 0) -> int:
+    """Units still missing up to the target quantity, with the demand from assembly on top (Spec 9.2,
+    7.1); never negative."""
+    return max(0, rules.target_quantity(article.min_stock, article.buffer) + demand - coverage_total)
 
 
 def _missing_by_article(session: Session) -> tuple[dict[int, Article], dict[int, int]]:
+    """Print articles and what each still misses up to its target (with the demand from assembly)."""
+    from reprintbuddy.domain import assembled  # assembled builds on workqueue and catalog
+
     articles = {
         a.id: a for a in session.scalars(articlesets.print_articles())
     }
     coverage = workqueue.coverage_all(session)
-    return articles, {i: missing_to_target(a, coverage[i].total) for i, a in articles.items()}
+    demand = assembled.assembly_demand(session)
+    return articles, {i: missing_to_target(a, coverage[i].total, demand.get(i, 0)) for i, a in articles.items()}
+
+
+def _assembled_units(session: Session) -> dict[int, int]:
+    """Units of each active article made of parts its purchased parts are still needed for (Spec 9.2,
+    0.4.0): on stock the units its variants miss up to their target, on order the units ordered and
+    not shipped yet."""
+    from reprintbuddy.domain import assembled
+
+    units: dict[int, int] = defaultdict(int)
+    for composite in session.scalars(articlesets.assembled_articles()):
+        if composite.assembly_mode == "stock":
+            for holder in assembled.holders(session, composite):
+                gap = rules.target_quantity(holder.min_stock, holder.buffer) - rules.available(holder.stock, holder.reserved)
+                units[composite.id] += max(0, gap)
+    groups = session.execute(
+        select(OrderLine.order_id, OrderLine.group_no, OrderLine.assembled_id, OrderLine.set_qty)
+        .join(Order, Order.id == OrderLine.order_id)
+        .where(Order.status == "open", OrderLine.assembled_id.is_not(None))
+        .distinct()
+    ).all()
+    for _order_id, _group_no, assembled_id, qty in groups:
+        units[assembled_id] += qty or 0
+    return dict(units)
 
 
 def filament_demand(session: Session) -> dict[int, float]:
@@ -84,8 +114,12 @@ def part_demand(session: Session) -> dict[int, int]:
     articles, missing = _missing_by_article(session)
     queued = workqueue.queued_prints(session)
     units = workqueue.in_progress_units(session)
+    assembled_units = _assembled_units(session)
     demand: dict[int, int] = defaultdict(int)
     for link in session.scalars(select(ArticlePart)):
+        if link.article_id in assembled_units:
+            demand[link.part_id] += link.qty_per_unit * assembled_units[link.article_id]
+            continue
         article = articles.get(link.article_id)
         if article is None:
             continue
