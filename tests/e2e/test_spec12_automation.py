@@ -8,6 +8,7 @@ and the reprint for the pieces that were not good.
 """
 
 import asyncio
+import re
 
 from markupsafe import escape
 from sqlalchemy import select
@@ -38,7 +39,8 @@ def post_form(client, page, action, **fields):
         **fields,
     }
     response = client.post(action, data=data)
-    assert response.status_code == 303, (action, response.status_code)
+    alert = re.search(r'<p class="alert" role="alert">(.*?)</p>', response.text, re.S)
+    assert response.status_code == 303, (action, response.status_code, alert.group(1) if alert else None)
     return response
 
 
@@ -63,6 +65,7 @@ def create_article(client) -> int:
     response = post_form(
         client, FORM, FORM,
         name="Template A", sku="", units_per_print="1", min_stock="0", buffer="0", target="model:A1",
+        sold_alone="on",  # the box is ticked on the form (0.4.0); a browser sends it
     )
     location = response.headers["location"]
     assert location.startswith("/articles/"), location
@@ -75,6 +78,7 @@ def edit_article(client, article_id, **fields):
     data = {
         "csrf_token": csrf_of(client, path),
         "name": "Template A", "sku": "", "units_per_print": "1", "target": "model:A1",
+        "sold_alone": "on",  # ticked on the form since 0.4.0
         **fields,
     }
     response = client.post(path, data=data)
