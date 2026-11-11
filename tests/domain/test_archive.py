@@ -6,7 +6,7 @@ from sqlalchemy import select
 from factories import make_article, make_dispatch, make_entry, make_part
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate
 from reprintbuddy.domain import catalog, orders
-from reprintbuddy.domain.catalog import ArticleInput, PositionInput, SetInput
+from reprintbuddy.domain.catalog import ArticleInput, BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
 from reprintbuddy.domain.errors import ConflictError, ValidationError
 from reprintbuddy.domain.orders import ArticleItem, SetItem
 from reprintbuddy.models import Article, Dispatch, ArticleFilament, ArticlePart, JournalEntry, Part, ProductSet
@@ -231,8 +231,9 @@ def test_restore_article_with_archived_part_rejected(db):
 def test_archive_set_always(db):  # Spec 5.5
     with db.begin() as s:
         a = make_article(s, name="Template A", stock=3).id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a])])).id
-        order_id = new_order(s, [SetItem(set_id, 1, {})]).id
+        b = make_article(s, name="Template B", stock=3).id
+        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
+        order_id = new_order(s, [SetItem(set_id, 1)]).id
     with db.begin() as s:
         catalog.archive_set(s, set_id)
     with db.begin() as s:
@@ -243,7 +244,8 @@ def test_archive_set_always(db):  # Spec 5.5
 def test_restore_set(db):
     with db.begin() as s:
         a = make_article(s).id
-        set_id = catalog.create_set(s, SetInput("Starter Set", "S-1", [PositionInput(1, [a])])).id
+        b = make_article(s, name="Template B").id
+        set_id = catalog.create_set(s, SetInput("Starter Set", "S-1", [BaseInput(1, a), BaseInput(1, b)], [])).id
         catalog.archive_set(s, set_id)
     with db.begin() as s:
         catalog.restore_set(s, set_id)
@@ -268,13 +270,14 @@ def test_lists_hide_archived(db):
         make_article(s, name="Template B")
         p = make_part(s, name="Insert M4").id
         make_part(s, name="Hex key 2")
-        set_a = catalog.create_set(s, SetInput("Set A", None, [PositionInput(1, [a])])).id
-        catalog.create_set(s, SetInput("Set B", None, [PositionInput(1, [a])]))
+        b = make_article(s, name="Template C").id
+        set_a = catalog.create_set(s, SetInput("Set A", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
+        catalog.create_set(s, SetInput("Set B", None, [BaseInput(1, a), BaseInput(1, b)], []))
         catalog.archive_set(s, set_a)
         catalog.archive_part(s, p)
         archive_article(s, a)
     with db.begin() as s:
-        assert [r.name for r in catalog.list_articles(s)] == ["Template B"]
+        assert [r.name for r in catalog.list_articles(s)] == ["Template B", "Template C"]
         assert [r.name for r in catalog.list_articles(s, archived=True)] == ["Template A"]
         assert [p.name for p in catalog.list_parts(s)] == ["Hex key 2"]
         assert [p.name for p in catalog.list_parts(s, archived=True)] == ["Insert M4"]
@@ -287,11 +290,12 @@ def test_archived_not_allowed_as_new_reference(db):
         a = make_article(s, name="Template A", stock=5)
         b = make_article(s, name="Template B", stock=5)
         c = make_article(s, name="Template C", stock=5)
+        d = make_article(s, name="Template D", stock=5)
         p = make_part(s, name="Insert M4")
-        starter = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a.id])])).id
-        choice = catalog.create_set(s, SetInput("Choice Set", None, [PositionInput(1, [b.id, c.id])])).id
-        choice_position = [r for r in catalog.list_sets(s) if r.name == "Choice Set"][0].positions[0].id
-        ids = dict(a=a.id, b=b.id, c=c.id, p=p.id, starter=starter, choice=choice, cpos=choice_position)
+        starter = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a.id), BaseInput(1, d.id)], [])).id
+        options = [ChoiceOptionInput(b.id, "-B"), ChoiceOptionInput(c.id, "-C")]
+        choice = catalog.create_set(s, SetInput("Choice Set", "CS", [BaseInput(1, d.id)], [ChoiceInput(1, options)])).id
+        ids = dict(a=a.id, b=b.id, c=c.id, d=d.id, p=p.id, starter=starter, choice=choice)
     with db.begin() as s:
         catalog.archive_part(s, ids["p"])
         archive_article(s, ids["c"])
@@ -304,13 +308,13 @@ def test_archived_not_allowed_as_new_reference(db):
 
     with pytest.raises(ValidationError) as info:
         with db.begin() as s:
-            catalog.create_set(s, SetInput("New Set", None, [PositionInput(1, [ids["c"]])]))
+            catalog.create_set(s, SetInput("New Set", None, [BaseInput(1, ids["c"]), BaseInput(1, ids["a"])], []))
     assert info.value.key == "sets.article_archived"
 
     cases = [
         [ArticleItem(ids["c"], 1)],
-        [SetItem(ids["starter"], 1, {})],
-        [SetItem(ids["choice"], 1, {ids["cpos"]: ids["c"]})],
+        [SetItem(ids["starter"], 1)],
+        [SetItem(ids["choice"], 1, (ids["c"],))],
     ]
     for items in cases:
         with pytest.raises(ValidationError) as info:
@@ -324,27 +328,30 @@ def test_set_with_archived_option(db):
         a = make_article(s, name="Template A", stock=10).id
         b = make_article(s, name="Template B", stock=3).id
         c = make_article(s, name="Template C", stock=5).id
-        catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [a]), PositionInput(1, [b, c])]))
+        options = [ChoiceOptionInput(b, "-B"), ChoiceOptionInput(c, "-C")]
+        catalog.create_set(s, SetInput("Starter Set", "S", [BaseInput(1, a)], [ChoiceInput(1, options)]))
     with db.begin() as s:
-        assert catalog.list_sets(s)[0].available == 3  # the smallest option of the choice (p173)
+        assert catalog.list_sets(s)[0].available == 8  # together at most: 3 + 5 (p340)
         archive_article(s, c)
     with db.begin() as s:
         row = catalog.list_sets(s)[0]
         assert row.available == 3 and row.orderable is True
-        assert row.positions[1].article_ids == [b] and not row.positions[1].is_choice
+        assert [v.key for v in row.variants] == [(b,)]
         archive_article(s, a)
     with db.begin() as s:
         row = catalog.list_sets(s)[0]
         assert row.orderable is False and row.available == 0
 
 
-def test_order_with_remaining_single_active_option_needs_no_choice(db):
+def test_order_of_the_remaining_variant_after_an_archived_choice(db):
     with db.begin() as s:
+        a = make_article(s, name="Template A", stock=3).id
         b = make_article(s, name="Template B", stock=3).id
         c = make_article(s, name="Template C", stock=5).id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [PositionInput(1, [b, c])])).id
+        options = [ChoiceOptionInput(b, "-B"), ChoiceOptionInput(c, "-C")]
+        set_id = catalog.create_set(s, SetInput("Starter Set", "S", [BaseInput(1, a)], [ChoiceInput(1, options)])).id
         archive_article(s, c)
-        new_order(s, [SetItem(set_id, 1, {})])
+        new_order(s, [SetItem(set_id, 1, (b,))])
     with db.begin() as s:
         assert s.get(Article, b).reserved == 1
 

@@ -1,8 +1,8 @@
 """Orders: reserve, ship the whole order, cancel (Spec 6.7).
 
-Each order line stores the article that was chosen at order time, so a set that is
-changed afterwards does not alter an open order; shipping and cancelling use the
-lines only.
+Each order line stores the article that was chosen at order time, and for a set with
+choice parts the number of the variant (Spec 6.7, p340), so a set that is changed
+afterwards does not alter an open order; shipping and cancelling use the lines only.
 """
 
 from __future__ import annotations
@@ -16,8 +16,7 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import rules
-from reprintbuddy.domain.catalog import get_set
+from reprintbuddy.domain import catalog, rules
 from reprintbuddy.domain.errors import (
     ConflictError,
     NotFoundError,
@@ -37,8 +36,6 @@ from reprintbuddy.models import (
     Order,
     OrderLine,
     ProductSet,
-    SetPosition,
-    SetPositionOption,
     utcnow,
 )
 
@@ -56,7 +53,7 @@ class ArticleItem:
 class SetItem:
     set_id: int
     qty: int
-    choices: Mapping[int, int]  # position id -> chosen article id (positions with a choice only)
+    key: tuple[int, ...] = ()  # the variant: the chosen article per choice field; empty without choices
 
 
 @dataclass(frozen=True)
@@ -64,6 +61,7 @@ class OrderGroup:
     set_name: str | None
     set_qty: int | None
     lines: list[tuple[str, int]]  # (article name, quantity)
+    variant_sku: str | None = None  # the number of the variant as it was ordered (p340)
 
 
 @dataclass(frozen=True)
@@ -85,8 +83,9 @@ def _qty(value: object) -> int:
 
 
 def _resolve(session: Session, items: Sequence[ArticleItem | SetItem]):
-    """Turn the items into line specs (group_no, article_id, qty, set_id, set_qty), writing nothing."""
-    specs: list[tuple[int, int, int, int | None, int | None]] = []
+    """Turn the items into line specs (group_no, article_id, qty, set_id, set_qty, variant_sku),
+    writing nothing."""
+    specs: list[tuple[int, int, int, int | None, int | None, str | None]] = []
     for group_no, item in enumerate(items, start=1):
         qty = _qty(item.qty)
         if isinstance(item, ArticleItem):
@@ -95,42 +94,31 @@ def _resolve(session: Session, items: Sequence[ArticleItem | SetItem]):
                 raise NotFoundError("articles.not_found")
             if article.archived_at is not None:
                 raise ValidationError("orders.item_archived", name=article.name)
-            specs.append((group_no, item.article_id, qty, None, None))
+            specs.append((group_no, item.article_id, qty, None, None, None))
             continue
-        product_set = get_set(session, item.set_id)
-        if product_set.archived_at is not None:
-            raise ValidationError("orders.item_archived", name=product_set.name)
-        positions = session.scalars(
-            select(SetPosition)
-            .where(SetPosition.set_id == product_set.id)
-            .order_by(SetPosition.sort, SetPosition.id)
-        ).all()
-        for position in positions:
-            options = session.execute(
-                select(Article.id, Article.name, Article.archived_at)
-                .join(SetPositionOption, SetPositionOption.article_id == Article.id)
-                .where(SetPositionOption.position_id == position.id)
-                .order_by(Article.id)
-            ).all()
-            names = {a: n for a, n, _archived in options}
-            active = [a for a, _n, archived in options if archived is None]
-            if not active:
-                raise ValidationError("orders.item_archived", name=product_set.name)
-            if len(options) == 1:
-                article_id = active[0]
-            else:
-                chosen = item.choices.get(position.id)
-                if chosen is None:
-                    if len(active) > 1:
-                        raise ValidationError("orders.choice_required", set=product_set.name)
-                    article_id = active[0]  # only one article is left to choose from
-                elif chosen not in names:
-                    raise ValidationError("orders.choice_invalid", set=product_set.name)
-                elif chosen not in active:
-                    raise ValidationError("orders.item_archived", name=names[chosen])
-                else:
-                    article_id = chosen
-            specs.append((group_no, article_id, qty * position.qty, product_set.id, qty))
+        row = catalog.set_row(session, item.set_id)
+        if session.get(ProductSet, item.set_id).archived_at is not None:
+            raise ValidationError("orders.item_archived", name=row.name)
+        archived_base = next((part for part in row.base if part.archived), None)
+        if archived_base is not None:
+            raise ValidationError("orders.item_archived", name=archived_base.name)
+        if row.incomplete is not None:
+            raise ValidationError("orders.set_incomplete", set=row.name)
+        key = tuple(item.key)
+        if len(key) != len(row.choices) or any(
+            article_id not in {o.article_id for o in field.options} for article_id, field in zip(key, row.choices)
+        ):
+            raise ValidationError("orders.variant_invalid", set=row.name)
+        chosen = [next(o for o in field.options if o.article_id == a) for a, field in zip(key, row.choices)]
+        archived = next((option for option in chosen if option.archived), None)
+        if archived is not None:
+            raise ValidationError("orders.item_archived", name=archived.name)
+        variant = next((v for v in row.variants if v.key == key), None) if key else None
+        sku = variant.sku if variant is not None else None
+        for part in row.base:
+            specs.append((group_no, part.article_id, qty * part.qty, row.id, qty, sku))
+        for option, field in zip(chosen, row.choices):
+            specs.append((group_no, option.article_id, qty * field.qty, row.id, qty, sku))
     return specs
 
 
@@ -166,7 +154,7 @@ def create_order(
     order = Order(reference=reference, order_date=order_date, status="open", note=note)
     session.add(order)
     session.flush()
-    for group_no, article_id, qty, set_id, set_qty in specs:
+    for group_no, article_id, qty, set_id, set_qty, variant_sku in specs:
         session.add(
             OrderLine(
                 order_id=order.id,
@@ -175,6 +163,7 @@ def create_order(
                 qty=qty,
                 set_id=set_id,
                 set_qty=set_qty,
+                variant_sku=variant_sku,
             )
         )
     session.flush()
@@ -246,7 +235,7 @@ def _view(session: Session, order: Order) -> OrderView:
                 if line.set_id not in set_names:
                     set_names[line.set_id] = session.get(ProductSet, line.set_id).name
                 name = set_names[line.set_id]
-            group = OrderGroup(name, line.set_qty, [])
+            group = OrderGroup(name, line.set_qty, [], line.variant_sku)
             groups[line.group_no] = group
         group.lines.append((article_name, line.qty))
     needed = _needed(session, order.id)

@@ -193,6 +193,8 @@
   "orders.empty": "Eine Bestellung braucht mindestens einen Posten.",
   "orders.choice_required": "Bitte für jede Position mit Wahl im Set {set} einen Artikel wählen.",
   "orders.choice_invalid": "Der gewählte Artikel ist im Set {set} nicht erlaubt.",
+  "orders.variant_invalid": "Wähle eine der Varianten des Sets {set}.",
+  "orders.set_incomplete": "Das Set {set} lässt sich noch nicht bestellen: Artikelnummer oder eine Zusatznummer fehlen, oder es hat weniger als zwei Artikel.",
   "orders.not_open": "Diese Bestellung ist nicht mehr offen.",
   "orders.not_ready": "Nicht versandbereit: nicht alle Artikel sind im Bestand.",
   "orders.field.qty": "Menge",

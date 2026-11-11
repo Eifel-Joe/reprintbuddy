@@ -193,6 +193,8 @@
   "orders.empty": "An order needs at least one item.",
   "orders.choice_required": "Choose an article for each choice position of the set {set}.",
   "orders.choice_invalid": "The chosen article is not allowed in the set {set}.",
+  "orders.variant_invalid": "Choose one of the variants of the set {set}.",
+  "orders.set_incomplete": "The set {set} cannot be ordered yet: its article number or a suffix is missing, or it has fewer than two articles.",
   "orders.not_open": "This order is no longer open.",
   "orders.not_ready": "Not ready to ship: not all articles are in stock.",
   "orders.field.qty": "Quantity",
