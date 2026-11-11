@@ -41,6 +41,8 @@ The menu of an entry offers:
 !!! note "Reducing or deleting an entry of the rule pauses the article"
     If you reduce the prints of an entry with the origin **Minimum stock**, or delete it, the automation pauses for that article and says so. Otherwise the rule would simply put the entry back at its next run. Raising the number, holding and changing other entries pause nothing. If you want fewer prints for good, lower the minimum stock or the buffer of the article. To go on, use **Lift pause**, see [Pauses](automation.md#pauses).
 
+When an order is cancelled, Reprintbuddy itself shrinks the entries of the rule that are no longer needed, and takes such prints back from Bambuddy as long as they have not started. That pauses nothing; see [What a cancel takes back](inspection.md#what-a-cancel-takes-back).
+
 ## Print manually
 
 The card **Print manually** adds an entry yourself. Choose the **Article**, the number of **Prints** (1 to 1000) and the **Position in the queue**: **At the end**, **At the start** or before one of the entries. Then click **Add to the queue**.
@@ -57,7 +59,7 @@ If Bambuddy's answer to a print gets lost, Reprintbuddy does not send it again. 
 
 ## In progress
 
-The section **In progress** lists the prints that were handed over and are not finished: **Article**, **Origin**, **State**, **Handed over** and the **Bambuddy id**. The state is **being handed over**, **unclear**, **queued** or **printing**.
+The section **In progress** lists the prints that were handed over and are not finished: **Article**, **Origin**, **State**, **Handed over** and the **Bambuddy id**. The state is **being handed over**, **unclear**, **queued** or **printing**. A print taken back after a cancel leaves the list; on the article page it shows as **taken back (cancel)**.
 
 ## Bambuddy's queue
 

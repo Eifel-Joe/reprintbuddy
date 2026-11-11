@@ -70,7 +70,7 @@ What a finished, failed or vanished print does:
 
 - **Finished:** the units become provisional and wait on the list **To check**. A place under the limit is free again. See [To check and assembly](inspection.md).
 - **Failed:** the print no longer counts as in progress, and a replacement of one print goes to the front of the queue. Two failures in a row pause the article. A finished print resets the count.
-- **Cancelled, skipped or deleted in Bambuddy:** it no longer counts as in progress, and the automation pauses for this article, so that it does not work against what you did in Bambuddy.
+- **Cancelled, skipped or deleted in Bambuddy:** it no longer counts as in progress, and the automation pauses for this article, so that it does not work against what you did in Bambuddy. Prints Reprintbuddy deleted itself after a cancel are the exception: they pause nothing (see [What a cancel takes back](inspection.md#what-a-cancel-takes-back)).
 
 Prints you start directly in Bambuddy are unknown to Reprintbuddy. Book them under *Bookings* with **Stock in without print**.
 
@@ -117,5 +117,5 @@ Below the notices the page names the time of the last successful query of Bambud
 ## What Reprintbuddy never does
 
 - It never controls a printer; it does not start, stop or pause a print.
-- What lies in Bambuddy belongs to Bambuddy. Reprintbuddy does not take handed-over prints back, does not change them and never reorders entries that are already there. Reorder, bring forward or delete in Bambuddy's queue only in Bambuddy.
+- What lies in Bambuddy belongs to Bambuddy. Reprintbuddy does not change handed-over prints and never reorders entries that are already there. It takes back only its own prints that have not started, after a cancel (see [What a cancel takes back](inspection.md#what-a-cancel-takes-back)). Reorder, bring forward or delete otherwise in Bambuddy's queue only in Bambuddy.
 - It changes nothing in Bambuddy's print options: every print takes the *Default Print Options* set in Bambuddy. If Reprintbuddy cannot read them, it hands nothing over: when Bambuddy cannot be reached, the print stays in the queue for the next run; when Bambuddy refuses the read (for example the right *Read Settings* is missing), the print comes back with Bambuddy's message.

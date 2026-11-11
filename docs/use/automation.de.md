@@ -70,7 +70,7 @@ Was ein fertiger, fehlgeschlagener oder verschwundener Druck bewirkt:
 
 - **Fertig:** Die Einheiten werden vorläufig und warten in der Liste **Zu prüfen**. Ein Platz unter der Obergrenze wird frei. Siehe [Zu prüfen und Montage](inspection.md).
 - **Fehlgeschlagen:** Der Druck zählt nicht mehr als in Arbeit, und ein Ersatz über einen Druck kommt an den Anfang der Warteschlange. Zwei Fehlschläge hintereinander pausieren den Artikel. Ein fertiger Druck setzt die Zählung zurück.
-- **In Bambuddy abgebrochen, übersprungen oder gelöscht:** Er zählt nicht mehr als in Arbeit, und die Automatik pausiert für diesen Artikel, damit sie nicht gegen das arbeitet, was du in Bambuddy getan hast.
+- **In Bambuddy abgebrochen, übersprungen oder gelöscht:** Er zählt nicht mehr als in Arbeit, und die Automatik pausiert für diesen Artikel, damit sie nicht gegen das arbeitet, was du in Bambuddy getan hast. Ausgenommen sind Drucke, die Reprintbuddy nach einem Storno selbst gelöscht hat: Sie pausieren nichts (siehe [Was ein Storno zurücknimmt](inspection.md#was-ein-storno-zurucknimmt)).
 
 Drucke, die du direkt in Bambuddy startest, kennt Reprintbuddy nicht. Buche sie unter *Buchen* mit **Einbuchen ohne Druck**.
 
@@ -117,5 +117,5 @@ Unter den Hinweisen nennt die Seite den Zeitpunkt der letzten erfolgreichen Abfr
 ## Was Reprintbuddy nie tut
 
 - Es steuert nie einen Drucker; es startet, stoppt oder pausiert keinen Druck.
-- Was in Bambuddy liegt, gehört Bambuddy. Reprintbuddy nimmt übergebene Drucke nicht zurück, ändert sie nicht und sortiert vorhandene Einträge nie um. Umsortieren, Vorziehen und Löschen in Bambuddys Warteschlange machst du nur in Bambuddy.
+- Was in Bambuddy liegt, gehört Bambuddy. Reprintbuddy ändert übergebene Drucke nicht und sortiert vorhandene Einträge nie um. Zurück nimmt es nur eigene, noch nicht gestartete Drucke nach einem Storno (siehe [Was ein Storno zurücknimmt](inspection.md#was-ein-storno-zurucknimmt)). Umsortieren, Vorziehen und sonstiges Löschen in Bambuddys Warteschlange machst du nur in Bambuddy.
 - Es ändert nichts an Bambuddys Druckoptionen: Jeder Druck bekommt die in Bambuddy eingestellten *Standard-Druckoptionen*. Kann Reprintbuddy sie nicht lesen, übergibt es nichts: Ist Bambuddy nicht erreichbar, bleibt der Druck für den nächsten Lauf in der Warteschlange; lehnt Bambuddy das Lesen ab (zum Beispiel fehlt das Recht *Read Settings*), kommt der Druck mit Bambuddys Meldung zurück.

@@ -32,14 +32,15 @@ Reprintbuddy braucht in Bambuddy eine eigene Gruppe, weil keine Systemgruppe pas
 
 Bambuddy hängt an die Beschriftung von *Print Without Review* einen Hinweis an („else jobs wait for someone to start them“); es ist dasselbe Recht.
 
-Zwei weitere Rechte sind empfohlen, aber nicht nötig:
+Drei weitere Rechte sind empfohlen, aber nicht nötig:
 
 | Beschriftung in Bambuddy | Interner Name | Wofür |
 |---|---|---|
 | Upload Library | `library:upload` | nur zum Hochladen von Druckdateien aus Reprintbuddy |
 | Connect Websocket | `websocket:connect` | damit Bambuddy Änderungen sofort meldet; ohne es fragt Reprintbuddy nur im eingestellten Abstand ab |
+| Delete Own Queue | `queue:delete_own` | damit ein Storno noch nicht gestartete Drucke aus Bambuddy zurücknehmen kann |
 
-Ohne *Upload Library* geht alles andere; nur das Hochladen nicht. Ohne *Connect Websocket* läuft alles über die regelmäßige Abfrage, und unter *Einstellungen → Bambuddy* steht bei der Karte **Live-Kanal** „Recht fehlt“ (siehe [Automatik](../use/automation.md)). Am Schlüssel genügt *Read Status* („Status lesen“) für den Live-Kanal; mehr ist nicht einzustellen.
+Ohne *Upload Library* geht alles andere; nur das Hochladen nicht. Ohne *Delete Own Queue* verkleinert ein Storno nur Reprintbuddys eigene Warteschlange; schon übergebene Drucke bleiben in Bambuddy (siehe [Was ein Storno zurücknimmt](../use/inspection.md#was-ein-storno-zurucknimmt)). Am Schlüssel deckt es *Manage Queue* („Warteschlange verwalten“); ein neuer Schlüssel ist nicht nötig. Ohne *Connect Websocket* läuft alles über die regelmäßige Abfrage, und unter *Einstellungen → Bambuddy* steht bei der Karte **Live-Kanal** „Recht fehlt“ (siehe [Automatik](../use/automation.md)). Am Schlüssel genügt *Read Status* („Status lesen“) für den Live-Kanal; mehr ist nicht einzustellen.
 
 Zum Erzeugen des Schlüssels im nächsten Schritt braucht die Gruppe zusätzlich diese zwei Rechte. Reprintbuddy prüft sie nicht, und du kannst sie wieder entfernen, sobald der Schlüssel existiert:
 
