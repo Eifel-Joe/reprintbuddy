@@ -154,6 +154,14 @@
   {% endif %}
 </section>
 
+{% if used_in or demand %}
+<section class="card section wide">
+  <h2>{{ t('assembled.used_in') }}</h2>
+  {% if used_in %}<ul class="plain-list">{% for id, name in used_in %}<li><a href="/articles/{{ id }}">{{ name }}</a></li>{% endfor %}</ul>{% endif %}
+  {% if demand %}<p>{{ t('assembled.demand_line', n=demand) }}</p>{% endif %}
+</section>
+{% endif %}
+
 <section class="card section wide">
   <h2>{{ t('articles.parts_title') }}</h2>
   {% if parts %}

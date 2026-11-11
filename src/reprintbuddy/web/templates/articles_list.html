@@ -3,12 +3,14 @@
 {% block title %}{{ t('articles.title') }}{% endblock %}
 {% block content %}
 {#- Picture of a row or tile; the placeholder keeps the size when the article has none. -#}
+{#- An article made of parts shows the picture of its first part (Spec 5.6). -#}
 {% macro thumb(row) -%}
-{% if row.has_thumbnail %}<img class="thumb-sm" src="/articles/{{ row.id }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb-placeholder">{{ ui.icon('package') }}</span>{% endif %}
+{% set source = row.assembled.thumbnail_article_id if row.assembled else row.id %}
+{% if row.has_thumbnail %}<img class="thumb-sm" src="/articles/{{ source }}/thumbnail" alt="" loading="lazy">{% else %}<span class="thumb-placeholder">{{ ui.icon('package') }}</span>{% endif %}
 {%- endmacro %}
 {#- The state badge (in the archive: "archived" instead), plus "paused". -#}
 {% macro badges(row) -%}
-<span class="badges">{% if archived %}{{ ui.badge('article', 'archived') }}{% else %}{{ ui.badge('article', row.status) }}{% if row.paused %} {{ ui.badge('article', 'paused') }}{% endif %}{% endif %}</span>
+<span class="badges">{% if archived %}{{ ui.badge('article', 'archived') }}{% else %}{{ ui.badge('set' if row.status in ('deliverable', 'not_deliverable') else 'article', row.status) }}{% if row.paused %} {{ ui.badge('article', 'paused') }}{% endif %}{% endif %}{% if not row.sold_alone %} <span class="badge tone-neutral">{{ t('assembled.part_only') }}</span>{% endif %}</span>
 {%- endmacro %}
 {#- Fill bar towards the target quantity; grey in the archive. -#}
 {% macro target_bar(row) -%}
@@ -18,7 +20,10 @@
 {#- The target quantity as a field (Spec 10.1, p154): a form of its own in each row and tile, saved by enter
     or its button (no script needed); in the archive only the number. A refusal shows below the field. -#}
 {% macro target_field(row, kind) -%}
-{%- if archived -%}{{ row.target }}
+{#- An article made of parts has the field only on stock and without choices: its variants have
+    their own targets in its form (Spec 10.1, 0.4.0). -#}
+{%- if row.assembled and (row.assembled.mode != 'stock' or row.assembled.fields) -%}<span class="muted">–</span>
+{%- elif archived -%}{{ row.target }}
 {%- else -%}
 {%- set bad = target_error and target_error.id == row.id -%}
 {%- set error_id = 'target-error-' ~ kind ~ '-' ~ row.id -%}
@@ -28,6 +33,10 @@
 {%- endif -%}
 {%- endmacro %}
 
+{#- The variants of an article made of parts, under its name: number and available (Spec 10.1). -#}
+{% macro variant_lines(row) -%}
+{% if row.assembled and row.assembled.fields %}<ul class="variant-lines">{% for h in row.assembled.holders %}<li><span class="mono">{{ h.sku or '–' }}</span> · {{ h.available }}{% if row.assembled.mode == 'stock' %} / {{ h.target }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+{%- endmacro %}
 {% call ui.page_head("package", t('articles.title') ~ (' · ' ~ t('catalog.archived') if archived else ''), t('articles.subtitle')) %}<a class="btn" href="/articles/new">{{ ui.icon('plus') }}{{ t('articles.new') }}</a> <a class="btn secondary" href="/articles/new-assembled">{{ ui.icon('plus') }}{{ t('articles.new_assembled') }}</a>{% endcall %}
 {% if orphan_error %}<p class="alert" role="alert">{{ orphan_error }}</p>{% endif %}
 {% call ui.region("summary", "article") %}{{ ui.kpi_row(kpis) }}{% endcall %}
@@ -66,12 +75,12 @@
     <tbody>
     {% for row in rows %}
       <tr>
-        <td><div class="item">{{ thumb(row) }}<div><a href="/articles/{{ row.id }}">{{ row.name }}</a>{% if row.sku %}<br><span class="muted">{{ row.sku }}</span>{% endif %}</div></div></td>
+        <td><div class="item">{{ thumb(row) }}<div><a href="/articles/{{ row.id }}">{{ row.name }}</a>{% if row.sku %}<br><span class="muted">{{ row.sku }}</span>{% endif %}{{ variant_lines(row) }}</div></div></td>
         <td>{{ badges(row) }}{% if row.in_progress_prints and not archived %}<br><span class="muted">{{ t('tile.in_bambuddy', n=row.in_progress_prints) }}</span>{% endif %}</td>
         <td class="num">{{ row.stock }}</td>
         <td class="num{% if row.available < 0 %} neg{% endif %}">{{ row.available }}</td>
         <td class="num target">{{ target_field(row, 'row') }}{{ target_bar(row) }}</td>
-        {% if not archived %}<td class="auto-col">{{ ui.switch_post('/articles/' ~ row.id ~ '/auto', row.auto_enabled, t('articles.auto_switch', name=row.name), here) }}</td>{% endif %}
+        {% if not archived %}<td class="auto-col">{% if row.kind == 'print' %}{{ ui.switch_post('/articles/' ~ row.id ~ '/auto', row.auto_enabled, t('articles.auto_switch', name=row.name), here) }}{% endif %}</td>{% endif %}
         <td class="actions-col">{% call ui.row_actions() %}
           {%- if not archived %}{{ ui.icon_button('pencil', t('articles.edit'), '/articles/' ~ row.id ~ '/edit', row.name) }}{% endif %}
           {{- ui.icon_button('history', t('journal.title'), '/journal?article=' ~ row.id, row.name) }}
@@ -86,7 +95,7 @@
 <div class="tiles">
   {% for row in rows %}
   <div class="tile">
-    <div class="tile-head">{{ thumb(row) }}<div><a class="tile-link" href="/articles/{{ row.id }}">{{ row.name }}</a>{% if row.sku %}<br><span class="muted">{{ row.sku }}</span>{% endif %}</div>{{ badges(row) }}</div>
+    <div class="tile-head">{{ thumb(row) }}<div><a class="tile-link" href="/articles/{{ row.id }}">{{ row.name }}</a>{% if row.sku %}<br><span class="muted">{{ row.sku }}</span>{% endif %}{{ variant_lines(row) }}</div>{{ badges(row) }}</div>
     <div class="tile-stats">
       <span>{{ t('articles.col.stock') }} <strong>{{ row.stock }}</strong></span>
       <span>{{ t('articles.col.available') }} <strong{% if row.available < 0 %} class="neg"{% endif %}>{{ row.available }}</strong></span>
@@ -101,7 +110,7 @@
       {%- if row.in_progress_prints %}<span>{{ t('tile.in_bambuddy', n=row.in_progress_prints) }}</span>{% endif -%}
     </div>
     {% endif %}
-    {% if not archived %}<div class="tile-auto"><span>{{ t('articles.field.auto_enabled') }}</span>{{ ui.switch_post('/articles/' ~ row.id ~ '/auto', row.auto_enabled, t('articles.auto_switch', name=row.name), here) }}</div>{% endif %}
+    {% if not archived and row.kind == 'print' %}<div class="tile-auto"><span>{{ t('articles.field.auto_enabled') }}</span>{{ ui.switch_post('/articles/' ~ row.id ~ '/auto', row.auto_enabled, t('articles.auto_switch', name=row.name), here) }}</div>{% endif %}
   </div>
   {% endfor %}
 </div>

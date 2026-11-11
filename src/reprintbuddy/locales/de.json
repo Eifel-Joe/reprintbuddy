@@ -1419,5 +1419,13 @@
   "assembled.field.article": "Artikel",
   "articles.new_assembled": "Neuer Artikel aus Teilen",
   "articles.field.sold_alone": "Einzeln erhältlich",
-  "info.sold_alone": "Aus: Der Artikel ist ein Bauteil. Er steht nicht im Bestellformular und in keinem Set, nur in Artikeln aus Teilen. Nachdruck, Prüfung und Bestand laufen wie bei jedem Artikel."
+  "info.sold_alone": "Aus: Der Artikel ist ein Bauteil. Er steht nicht im Bestellformular und in keinem Set, nur in Artikeln aus Teilen. Nachdruck, Prüfung und Bestand laufen wie bei jedem Artikel.",
+  "assembled.together": "Zusammen höchstens",
+  "assembled.buildable": "Montierbar",
+  "assembled.build": "Montieren",
+  "assembled.build_qty": "Menge für {sku}",
+  "assembled.parts_list": "Stückliste",
+  "assembled.qr_hint": "Ein Scan öffnet die Liste „Montage“ mit diesem Artikel, wenn eine Variante unter ihrer Zielmenge liegt und sich montieren lässt, sonst diese Seite.",
+  "assembled.used_in": "Steckt in",
+  "assembled.demand_line": "Bedarf aus Montage: {n} Stück zusätzlich zum Mindestbestand."
 }

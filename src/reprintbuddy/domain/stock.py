@@ -181,11 +181,15 @@ def journal_page(
     part_id: int | None = None,
     limit: int = 100,
     offset: int = 0,
+    article_ids: list[int] | None = None,
 ) -> list[JournalEntry]:
-    """Newest first by the booking date: a booking dated back sorts in at its day (p172)."""
+    """Newest first by the booking date: a booking dated back sorts in at its day (p172).
+    `article_ids`: the rows of several articles, as an article made of parts and its variants (0.4.0)."""
     query = select(JournalEntry).order_by(JournalEntry.booked_at.desc(), JournalEntry.id.desc())
     if article_id is not None:
         query = query.where(JournalEntry.article_id == article_id)
+    if article_ids is not None:
+        query = query.where(JournalEntry.article_id.in_(article_ids))
     if part_id is not None:
         query = query.where(JournalEntry.part_id == part_id)
     return list(session.scalars(query.limit(limit).offset(offset)))

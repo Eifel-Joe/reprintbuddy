@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
-from reprintbuddy.domain import catalog, filament, pauses, workqueue
+from reprintbuddy.domain import assembled, catalog, filament, pauses, workqueue
 from reprintbuddy.domain import articlesets
 from reprintbuddy.domain import color as color_mod
 from reprintbuddy.domain.catalog import MAX_LABEL_TEXT, ArticleInput, TargetOption
@@ -286,7 +286,11 @@ async def articles_list(
     states = STATES["article"]
     status = None if archived else listing.pick(request.query_params.get("status"), states)
     every = catalog.list_articles(db, archived=archived)
-    found = [row for row in every if listing.matches(q, row.name, row.sku)]
+    # the search also finds a variant by its number (0.4.0, p341)
+    found = [
+        row for row in every
+        if listing.matches(q, row.name, row.sku, *(h.sku for h in (row.assembled.holders if row.assembled else ())))
+    ]
     counts = Counter(row.status for row in found)
     lang = current_language(request)
     t = lambda key: translate(lang, key)  # noqa: E731
@@ -647,8 +651,32 @@ def _target_label(lang: str, article: Article) -> str:
     return translate(lang, "articles.target_printer_id", id=article.printer_id)
 
 
+def _assembled_page(request: Request, db: Session, article: Article, error: str | None = None, status: int = 200):
+    """The page of an article made of parts (Spec 5.6, 10.3; 0.4.0 p341)."""
+    row = assembled.assembled_row(db, article.id)
+    ids = [article.id] + [h.article_id for h in row.holders if h.article_id != article.id]
+    entries = stock_mod.journal_page(db, article_ids=ids, limit=50)
+    picture = db.get(Article, row.thumbnail_article_id) if row.thumbnail_article_id else None
+    base = qr_view.base_address(request, db)
+    return render(
+        request,
+        "assembled_detail.html",
+        status_code=status,
+        active_nav="articles",
+        article=article,
+        row=row,
+        picture=bool(picture is not None and picture.thumbnail),
+        qr_address=qr_view.article_address(base, article.id),
+        **labels_view.article_card_context(db),
+        rows=journal_rows(db, entries),
+        error=error,
+    )
+
+
 def _detail_page(request: Request, db: Session, article: Article, error: str | None = None, status: int = 200,
                  relink_offer: bool = False):
+    if article.kind == "assembled":
+        return _assembled_page(request, db, article, error, status)
     lang = current_language(request)
     article_id = article.id
     filaments = db.scalars(
@@ -686,12 +714,13 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         .where(Dispatch.article_id == article_id, Dispatch.status.in_(workqueue.OPEN_STATES))
         .order_by(Dispatch.id)
     ).all()
-    # numbers and state, the same as in the list (full coverage, Spec 7.1 and 10.1)
+    # numbers and state, the same as in the list (full coverage, Spec 7.1 and 10.1; demand from assembly)
     row = catalog.article_row(
         article,
         queued_units=coverage.queued_units,
         in_progress_units=coverage.in_progress_units,
         in_progress_prints=len(open_prints),
+        demand=assembled.assembly_demand(db).get(article.id, 0),
     )
     base = qr_view.base_address(request, db)
     qr_address = qr_view.article_address(base, article_id)
@@ -719,12 +748,17 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         rows=journal_rows(db, entries),
         error=error,
         relink_offer=relink_offer,
+        used_in=assembled.used_in(db, article_id),  # Spec 10.3: the articles made of parts it is in
+        demand=assembled.assembly_demand(db).get(article_id, 0),
     )
 
 
 @router.get("/articles/{article_id:int}")
 async def article_detail(request: Request, article_id: int, db: Session = Depends(get_db)):
-    return _detail_page(request, db, _get_article(db, article_id))
+    article = _get_article(db, article_id)
+    if article.kind == "variant":  # a variant shows on the page of its article made of parts
+        return RedirectResponse(f"/articles/{article.parent_id}", status_code=303)
+    return _detail_page(request, db, article)
 
 
 @router.get("/articles/{article_id:int}/thumbnail")

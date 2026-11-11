@@ -1419,5 +1419,13 @@
   "assembled.field.article": "Article",
   "articles.new_assembled": "New assembled article",
   "articles.field.sold_alone": "Sold alone",
-  "info.sold_alone": "Off: the article is a part only. It is not in the order form or in any set, only in assembled articles. Reprints, checks and stock work as for any article."
+  "info.sold_alone": "Off: the article is a part only. It is not in the order form or in any set, only in assembled articles. Reprints, checks and stock work as for any article.",
+  "assembled.together": "Together at most",
+  "assembled.buildable": "Buildable",
+  "assembled.build": "Assemble",
+  "assembled.build_qty": "Quantity for {sku}",
+  "assembled.parts_list": "Parts list",
+  "assembled.qr_hint": "A scan opens the assembly list with this article when a variant is below its target and can be built, otherwise this page.",
+  "assembled.used_in": "Used in",
+  "assembled.demand_line": "Demand from assembly: {n} on top of the minimum stock."
 }
