@@ -1,16 +1,22 @@
-"""The overview page (Spec 10.2): key figures and all articles as a table, live regions, an empty start.
+"""The overview page (Spec 10.2, "Was ansteht" since 0.4.1): head line, warnings, seven cards of what is due.
 
-The numbers come from the article list's rows (`catalog.list_articles`), the queue and the reorder count;
-`test_overview_view.py` checks the counting, this file what the page shows of it.
+No lists and no numbers per article: each card is a number with a small line and leads to its page.
+`test_overview_view.py` checks what the cards make of the counts, `test_overview_head.py` the head line;
+this file checks that the page counts with the functions of the pages behind the cards.
 """
 
 import re
+from datetime import date
+from types import SimpleNamespace
 
 from markupsafe import escape
 
 from conftest import sm_of
-from factories import make_article, make_dispatch, make_entry, make_part
+from factories import make_article, make_assembled, make_dispatch, make_entry, make_part
 from reprintbuddy import settings as st
+from reprintbuddy.domain import orders
+from reprintbuddy.domain.orders import ArticleItem, AssembledItem
+from reprintbuddy.models import Inspection
 from reprintbuddy.web import regions
 from reprintbuddy.web.i18n import translate
 
@@ -26,42 +32,19 @@ def region(page, name):
 
 
 def card(part, key):
-    """The key figure card with the label of `key`: (href, value, note)."""
+    """The card with the label of `key`: (tone, href, value, small line as text, links in the small line)."""
     found = re.search(
-        r'<a class="kpi kpi-link" href="([^"]+)">(?:(?!</a>).)*?<span class="kpi-value">(\d+)</span>'
-        rf'<span class="kpi-label">{re.escape(en(key))}</span>(?:<span class="kpi-note">([^<]*)</span>)?',
+        r'<div class="kpi todo-card"><span class="kpi-icon tone-([a-z]+)">(?:(?!</div>).)*?'
+        r'<a class="todo-main" href="([^"]+)"><span class="kpi-value">([^<]*)</span>'
+        rf'<span class="kpi-label">{re.escape(en(key))}</span></a>(?:<span class="kpi-note">(.*?)</span></div>)?',
         part, re.S,
     )
     assert found, f"no card {key}"
-    return found.group(1), int(found.group(2)), found.group(3) or ""
-
-
-def table_row(part, name):
-    found = re.search(rf'<tr[^>]*>(?:(?!</tr>).)*?>{re.escape(name)}</a>.*?</tr>', part, re.S)
-    assert found, f"no row {name}"
-    return found.group(0)
-
-
-def cells(row_html):
-    return [re.sub(r"<[^>]+>", " ", c).split() for c in re.findall(r"<td[^>]*>(.*?)</td>", row_html, re.S)]
-
-
-def seed(client):
-    with sm_of(client).begin() as s:
-        ok = make_article(s, name="Bracket", sku="BR-1", stock=8, reserved=1, min_stock=4, buffer=2)
-        below = make_article(s, name="Clip", stock=1, min_stock=3, buffer=1, units_per_print=2)
-        over = make_article(s, name="Hook", stock=0, reserved=2, min_stock=1, buffer=1, provisional=3,
-                            awaiting_assembly=1, paused=True, pause_reason="two_failures")
-        make_article(s, name="Dowel", stock=0, min_stock=2)  # nothing planned: below the minimum
-        make_article(s, name="Old", stock=0, min_stock=5, archived_at=st_now())
-        make_entry(s, below.id, prints=2)
-        make_entry(s, ok.id, prints=1, held=True)
-        make_dispatch(s, below.id, status="printing", units=2)
-        make_dispatch(s, over.id, status="queued", units=1)
-        make_dispatch(s, ok.id, status="completed", units=5)  # finished: neither planned nor in progress
-        make_dispatch(s, ok.id, status="failed", units=5)
-        make_part(s, name="Insert", stock=0, min_stock=10)  # a part below its minimum: one suggestion
-        return ok.id, below.id, over.id
+    note = found.group(4) or ""
+    links = re.findall(r'href="([^"]+)"', note)
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", note)).strip()
+    value = found.group(3)
+    return found.group(1), found.group(2), int(value) if value.isdigit() else value, text, links
 
 
 def st_now():
@@ -70,125 +53,128 @@ def st_now():
     return utcnow()
 
 
-# ---- key figures ---------------------------------------------------------------------------
+def seed(client):
+    """Something on every card except filament (its stock is not known here)."""
+    with sm_of(client).begin() as s:
+        ok = make_article(s, name="Bracket", sku="BR-1", stock=8, reserved=0, min_stock=4, buffer=2)
+        below = make_article(s, name="Clip", stock=1, min_stock=3, buffer=1, units_per_print=2)
+        over = make_article(s, name="Hook", stock=0, reserved=2, min_stock=1, buffer=1, awaiting_assembly=1,
+                            paused=True, pause_reason="two_failures")
+        make_article(s, name="Dowel", stock=0, min_stock=2)  # nothing planned: below the minimum
+        make_article(s, name="Old", stock=0, min_stock=5, archived_at=st_now())
+        make_entry(s, below.id, prints=2)
+        make_entry(s, ok.id, prints=1, held=True)
+        make_dispatch(s, below.id, status="printing", units=2)
+        make_dispatch(s, over.id, status="queued", units=1)
+        done = make_dispatch(s, ok.id, status="completed", units=3)
+        s.add(Inspection(dispatch_id=done.id, article_id=ok.id, units=3))  # a print waiting for the check
+        make_dispatch(s, ok.id, status="failed", units=5)
+        make_part(s, name="Insert", stock=0, min_stock=10)  # a part below its minimum: one suggestion
+        # Assembly: built on order, 2 ordered; a variant on stock below its target is no assembly due.
+        segment = make_article(s, name="Segment")
+        hose = make_assembled(s, name="Hose", sku="EX-H1", mode="order", base=[(segment.id, 2)])
+        make_assembled(s, name="Box", sku="EX-B1", mode="stock", base=[(segment.id, 1)], min_stock=2, buffer=1)
+        shipped_soon = orders.create_order(
+            s, reference="R-1", order_date=date(2026, 11, 11), items=[ArticleItem(ok.id, 1)], actor="user")
+        st.set_setting(s, "orders_seen_id", shipped_soon.id, commit=False)  # R-1 seen, R-2 new
+        orders.create_order(
+            s, reference="R-2", order_date=date(2026, 11, 11), items=[AssembledItem(hose.id, 2)], actor="user")
 
 
-def test_four_key_figures_with_data(ready_client):
+def test_seven_cards_count_what_is_due(ready_client):
+    from reprintbuddy.domain import assembled
+
     seed(ready_client)
+    with sm_of(ready_client).begin() as s:
+        assert assembled.list_buildable(s)  # the stock variant waits there, and still does not count
     part = region(ready_client.get("/").text, "summary")
-    assert card(part, "overview.kpi.below_min") == ("/articles", 2, en("overview.kpi.overbooked_note", n=1))
-    # 2 + 1 prints in the queue (the held entry counts), 2 open prints in Bambuddy
-    assert card(part, "overview.kpi.planned") == ("/queue", 5, en("overview.kpi.planned_note", queued=3, open=2))
-    assert card(part, "overview.kpi.to_check") == ("/inspection", 4, en("overview.kpi.to_check_note", check=3, assembly=1))
-    assert card(part, "overview.kpi.reorder") == ("/reorder", 1, "")
+    assert card(part, "overview.todo.orders") == (
+        "warn", "/orders", 2, f'{en("overview.todo.new", n=1)} · {en("overview.todo.orders_ready", n=1)}',
+        ["/orders?status=ready"],
+    )
+    assert card(part, "overview.todo.inspection") == ("warn", "/inspection", 1, en("overview.todo.pieces", n=3), [])
+    assert card(part, "overview.todo.assembly") == ("warn", "/assembly", 1 + 2, "", [])
+    assert card(part, "overview.todo.reorder")[:3] == ("warn", "/reorder", 1)
+    # 1 printing; waiting: 2 + 1 (held) in Reprintbuddy's queue, 1 handed over and not started
+    assert card(part, "overview.todo.prints") == ("warn", "/queue", 1, en("overview.todo.waiting", n=4), [])
+    # red: Dowel, the box on stock below its target; overbooked: Hook, Segment (R-2 reserves 4 of 0)
+    assert card(part, "overview.todo.below_min") == (
+        "bad", "/articles?status=below_min", 4, en("overview.todo.overbooked", n=2), ["/articles?status=overbooked"],
+    )
 
 
-def test_summary_region_follows_what_it_counts(ready_client):
+def test_the_cards_follow_what_they_count(ready_client):
     page = ready_client.get("/").text
-    assert ('data-live-region="summary" data-live-topics="article queue inspection bambuddy filament reorder part journal"'
-            in page)
+    assert ('data-live-region="summary" '
+            'data-live-topics="article order queue inspection bambuddy filament reorder part journal settings"' in page)
+    assert "data-live-region=\"list\"" not in page
     only = ready_client.get("/", headers={regions.HEADER: "summary"})
-    assert 'class="kpis"' in only.text and "<table" not in only.text
+    assert 'class="todo-grid"' in only.text
 
 
-# ---- the table -----------------------------------------------------------------------------
-
-
-def test_table_has_the_columns_of_the_spec(ready_client):
-    seed(ready_client)
-    part = region(ready_client.get("/").text, "list")
-    heads = re.findall(r"<th(?:\s[^>]*)?>(.*?)</th>", part, re.S)
-    assert heads == [
-        en("articles.col.name"), en("articles.col.available"), en("overview.col.reserved"),
-        en("overview.col.min_target"), en("overview.col.in_progress"), en("overview.col.to_check"),
-        en("overview.col.fill"), en("list.col.status"),
-    ]
-
-
-def test_table_rows_show_the_numbers(ready_client):
-    ok, below, over = seed(ready_client)
-    part = region(ready_client.get("/").text, "list")
-    assert part.index(">Bracket<") < part.index(">Clip<") < part.index(">Dowel<") < part.index(">Hook<")  # by name
-    assert ">Old<" not in part  # archived
-    row = table_row(part, "Bracket")
-    assert f'href="/articles/{ok}"' in row and "BR-1" in row
-    assert cells(row)[1:7] == [["7"], ["1"], ["4", "/", "6"], ["0"], ["0"], []]
-    assert 'aria-valuenow="100"' in row  # 7 of 6
-    assert en("status.article.ok") in row
-    assert "Reprint running" not in row  # its prints in Bambuddy are finished or failed
-    row = table_row(part, "Clip")
-    # available 1 < 3, coverage 1 + 4 queued + 2 in progress = 7: yellow
-    assert cells(row)[1:6] == [["1"], ["0"], ["3", "/", "4"], ["2"], ["0"]]
-    assert en("status.article.low") in row
-    assert en("overview.reprint_running", n=1) in row
-    assert 'aria-valuenow="25"' in row
-    row = table_row(part, "Hook")
-    assert 'class="num neg"' in row  # available -2 in red
-    assert cells(row)[1:6] == [["-2"], ["2"], ["1", "/", "2"], ["1"], ["4"]]
-    assert en("status.article.overbooked") in row and en("status.paused") in row
-    assert en("overview.reprint_running", n=1) in row
-    assert 'aria-valuenow="0"' in row
-    row = table_row(part, "Dowel")
-    assert en("status.article.below_min") in row
-    assert en("overview.reprint_running", n=1).split("(")[0] not in row  # nothing in Bambuddy
-
-
-def test_list_region_follows_articles_queue_and_inspection(ready_client):
+def test_no_lists_and_no_numbers_per_article(ready_client):
     seed(ready_client)
     page = ready_client.get("/").text
-    assert 'data-live-region="list" data-live-topics="article queue inspection"' in page
-    only = ready_client.get("/", headers={regions.HEADER: "list"})
-    assert ">Clip<" in only.text and 'class="kpis"' not in only.text
+    assert "<table" not in page
+    assert "Clip" not in page and "Bracket" not in page
 
 
-def test_each_cell_has_its_label_for_the_phone(ready_client):
-    """At phone width each row is a card; the cells carry their column name (Spec 10.1: one column)."""
-    seed(ready_client)
-    row = table_row(region(ready_client.get("/").text, "list"), "Clip")
-    labels = re.findall(r'<td[^>]*data-label="([^"]*)"', row)
-    assert labels == [
-        en("articles.col.available"), en("overview.col.reserved"), en("overview.col.min_target"),
-        en("overview.col.in_progress"), en("overview.col.to_check"), en("overview.col.fill"),
-    ]
+def test_filament_short_counts_the_spool_sorts_with_a_suggestion(ready_client, monkeypatch):
+    from reprintbuddy.domain import reorder
+
+    found = [SimpleNamespace(item_type="filament", item_id=1), SimpleNamespace(item_type="filament", item_id=2),
+             SimpleNamespace(item_type="part", item_id=1)]
+    monkeypatch.setattr(reorder, "current", lambda *a, **k: reorder.Current({}, None, found))
+    part = region(ready_client.get("/").text, "summary")
+    assert card(part, "overview.todo.filament") == ("warn", "/filament", 2, "", [])
+    assert card(part, "overview.todo.reorder")[2] == 3
+    monkeypatch.setattr(reorder, "current", lambda *a, **k: reorder.Current(None, None, found[2:]))
+    part = region(ready_client.get("/").text, "summary")
+    assert card(part, "overview.todo.filament") == ("neutral", "/filament", en("overview.todo.stock_unknown"), "", [])
 
 
-# ---- a fresh database ----------------------------------------------------------------------
+def test_new_suggestions_since_the_reorder_page_was_loaded(ready_client):
+    with sm_of(ready_client).begin() as s:
+        make_part(s, name="Insert", stock=0, min_stock=10)
+    ready_client.get("/reorder")
+    with sm_of(ready_client).begin() as s:
+        make_part(s, name="Nut", stock=0, min_stock=10)
+    part = region(ready_client.get("/").text, "summary")
+    assert card(part, "overview.todo.reorder")[2:4] == (2, en("overview.todo.new", n=1))
+    ready_client.get("/")  # looking at the overview clears nothing
+    assert card(region(ready_client.get("/").text, "summary"), "overview.todo.reorder")[3] == en("overview.todo.new", n=1)
 
 
 def test_empty_database(ready_client):
     page = ready_client.get("/").text
-    summary = region(page, "summary")
-    for key in ("overview.kpi.below_min", "overview.kpi.planned", "overview.kpi.to_check", "overview.kpi.reorder"):
-        assert card(summary, key)[1] == 0
-    part = region(page, "list")
-    assert "<table" not in part
-    assert en("overview.no_articles") in part
-    assert '<a class="btn" href="/articles/new">' in part
+    part = region(page, "summary")
+    assert card(part, "overview.todo.orders") == ("neutral", "/orders", 0, "", [])
+    assert en("overview.no_articles") in page
+    assert 'href="/articles/new"' in page
 
 
 def test_only_archived_articles_count_as_empty(ready_client):
     with sm_of(ready_client).begin() as s:
         make_article(s, name="Old", archived_at=st_now())
-    assert en("overview.no_articles") in region(ready_client.get("/").text, "list")
+    assert en("overview.no_articles") in ready_client.get("/").text
+
+
+def test_with_an_article_no_empty_start(ready_client):
+    with sm_of(ready_client).begin() as s:
+        make_article(s, name="New")
+    assert en("overview.no_articles") not in ready_client.get("/").text
 
 
 def test_german(ready_client):
-    seed(ready_client)
-    with sm_of(ready_client)() as s:
-        st.set_setting(s, "language", "de")
-    page = ready_client.get("/").text
-    assert "Unter Mindestbestand" in page and "Geplant und in Arbeit" in page
-    assert "Nachdruck läuft (1)" in page
-    assert "Füllstand" in page
-
-
-def test_to_check_leads_to_assembly_when_only_assembly_waits(ready_client):
     with sm_of(ready_client).begin() as s:
-        make_article(s, name="Kit", awaiting_assembly=2)
-    assert card(region(ready_client.get("/").text, "summary"), "overview.kpi.to_check")[0] == "/assembly"
+        st.set_setting(s, "language", "de", commit=False)
+    page = ready_client.get("/").text
+    for text in ("Was ansteht", "Bestellungen", "Zu prüfen", "Montage", "Bestellvorschläge", "Drucke", "Filament",
+                 "Unter Mindestbestand"):
+        assert text in page
 
 
-# ---- what the page asks of Bambuddy and the database ---------------------------------------
+# ---- the spools: only the cards need them, never while Bambuddy is known to be down ------------------
 
 
 def spool_calls(monkeypatch):
@@ -204,13 +190,13 @@ def spool_calls(monkeypatch):
     return calls
 
 
-def test_only_the_key_figures_ask_for_the_spools(ready_client, monkeypatch):
+def test_only_the_cards_ask_for_the_spools(ready_client, monkeypatch):
     status = ready_client.app.state.ticker.status
     status.configured, status.reachable = True, True
     calls = spool_calls(monkeypatch)
     ready_client.get("/")
     assert len(calls) == 1
-    for name in ("status", "warnings", "list"):
+    for name in ("status", "warnings", "empty"):
         ready_client.get("/", headers={regions.HEADER: name})
     assert len(calls) == 1
     ready_client.get("/", headers={regions.HEADER: "summary"})
@@ -228,7 +214,7 @@ def test_no_spool_query_while_bambuddy_is_down_or_not_set_up(ready_client, monke
     status.configured, status.reachable = False, None
     ready_client.get("/")
     assert calls == []
-    assert card(region(page, "summary"), "overview.kpi.reorder")[1] == 1  # the part still counts
+    assert card(region(page, "summary"), "overview.todo.reorder")[2] == 1  # the part still counts
 
 
 def test_nothing_is_written_while_writes_are_paused(ready_client, monkeypatch):
@@ -237,13 +223,15 @@ def test_nothing_is_written_while_writes_are_paused(ready_client, monkeypatch):
 
     seed(ready_client)
     monkeypatch.setattr(ready_client.app.state.activity, "may_write", lambda: False)
+    real = reorder.current
 
-    def no_write(*args, **kwargs):
-        raise AssertionError("the overview wrote while writes are paused")
+    def read_only(*args, **kwargs):
+        assert kwargs.get("write") is False, "the overview wrote while writes are paused"
+        return real(*args, **kwargs)
 
-    monkeypatch.setattr(reorder, "current", no_write)
+    monkeypatch.setattr(reorder, "current", read_only)
     calls = spool_calls(monkeypatch)
     page = ready_client.get("/")
     assert page.status_code == 200
     assert calls == []
-    assert card(region(page.text, "summary"), "overview.kpi.reorder")[1] == 1
+    assert card(region(page.text, "summary"), "overview.todo.reorder")[2] == 1

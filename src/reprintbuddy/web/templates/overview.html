@@ -2,7 +2,7 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('overview.title') }}{% endblock %}
 {% block content %}
-{# The overview of Spec 10.2 (variant A), context from web/routes/overview.py. #}
+{# The overview of Spec 10.2 ("Was ansteht", 0.4.1), context from web/routes/overview.py. #}
 {% call ui.page_head("layout-dashboard", t('overview.title'), t('overview.subtitle')) %}{{ ui.poll_button("/") }}{% endcall %}
 
 {# Head line (Spec 10.2): connection to Bambuddy, the last successful query, the main switch (Spec 7.7). #}
@@ -17,45 +17,17 @@
 {# Pauses and warnings (Spec 7.7, 10.2). #}
 {% call ui.region("warnings", "bambuddy queue article settings notify") %}{% include "_warnings.html" %}{% endcall %}
 
-{# The four key figures (Spec 10.2), each a link to its page; always all four. #}
-{% call ui.region("summary", "article queue inspection bambuddy filament reorder part journal") %}{{ ui.kpi_row(cards) }}{% endcall %}
+{# What is due (Spec 10.2, 0.4.1): seven cards, each a number with a small line, leading to its page.
+   The whole card is the link (a stretched link); a part of the small line with a page of its own
+   (ready orders, overbooked articles) is a link above it, so no link sits inside another.
+   "settings" because the marks of "new" are settings (set when /orders or /reorder is loaded). #}
+{% call ui.region("summary", "article order queue inspection bambuddy filament reorder part journal settings") %}
+<h2 class="todo-title">{{ t('overview.todo.title') }}</h2>
+<div class="todo-grid">{% for card in cards %}<div class="kpi todo-card"><span class="kpi-icon tone-{{ card.tone }}">{{ ui.icon(card.icon) }}</span><div><a class="todo-main" href="{{ card.href }}"><span class="kpi-value">{{ card.value }}</span><span class="kpi-label">{{ card.label }}</span></a>{% if card.note %}<span class="kpi-note">{% for part in card.note %}{% if not loop.first %} · {% endif %}{% if part.href %}<a class="todo-sub" href="{{ part.href }}">{{ part.text }}</a>{% else %}<span>{{ part.text }}</span>{% endif %}{% endfor %}</span>{% endif %}</div></div>{% endfor %}</div>
+{% endcall %}
 
-{# All articles (Spec 10.2): numbers of Spec 6.1, fill level towards the target, state of Spec 10.1.
-   At phone width each row is a card; `data-label` names the number there. #}
-{% call ui.region("list", "article queue inspection") %}
-{% if not rows %}
-<div class="card empty-start"><p class="muted">{{ t('overview.no_articles') }}</p><a class="btn" href="/articles/new">{{ ui.icon('plus') }}{{ t('articles.new') }}</a></div>
-{% else %}
-<div class="card table-wrap table-card overview-card">
-  <table class="overview-table">
-    <thead>
-      <tr>
-        <th>{{ t('articles.col.name') }}</th>
-        <th class="num">{{ t('articles.col.available') }}</th>
-        <th class="num">{{ t('overview.col.reserved') }}</th>
-        <th class="num">{{ t('overview.col.min_target') }}</th>
-        <th class="num">{{ t('overview.col.in_progress') }}</th>
-        <th class="num">{{ t('overview.col.to_check') }}</th>
-        <th class="fill-col">{{ t('overview.col.fill') }}</th>
-        <th>{{ t('list.col.status') }}</th>
-      </tr>
-    </thead>
-    <tbody>
-    {% for row in rows %}
-      <tr class="overview-row">
-        <td class="ov-name"><a href="/articles/{{ row.id }}">{{ row.name }}</a>{% if row.sku %}<br><span class="muted">{{ row.sku }}</span>{% endif %}</td>
-        <td class="num{% if row.available < 0 %} neg{% endif %}" data-label="{{ t('articles.col.available') }}">{{ row.available }}</td>
-        <td class="num" data-label="{{ t('overview.col.reserved') }}">{{ row.reserved }}</td>
-        <td class="num" data-label="{{ t('overview.col.min_target') }}">{{ row.min_stock }} / {{ row.target }}</td>
-        <td class="num" data-label="{{ t('overview.col.in_progress') }}">{{ row.in_progress_units }}</td>
-        <td class="num" data-label="{{ t('overview.col.to_check') }}">{{ row.provisional + row.awaiting_assembly }}</td>
-        <td class="fill-col" data-label="{{ t('overview.col.fill') }}">{{ ui.bar(fill_percent(row.available, row.target), row.status) }}</td>
-        <td class="ov-status"><span class="badges">{{ ui.badge('article', row.status) }}{% if row.paused %} {{ ui.badge('article', 'paused') }}{% endif %}</span>{% if row.in_progress_prints %}<br><span class="muted">{{ t('overview.reprint_running', n=row.in_progress_prints) }}</span>{% endif %}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
+{# Without an active article: the hint and the way to the first one (decided 11.11.2026). #}
+{% call ui.region("empty", "article") %}
+{% if no_articles %}<div class="card empty-start"><p class="muted">{{ t('overview.no_articles') }}</p><a class="btn" href="/articles/new">{{ ui.icon('plus') }}{{ t('articles.new') }}</a></div>{% endif %}
 {% endcall %}
 {% endblock %}

@@ -91,11 +91,17 @@ def test_detail_of_print_article_shows_used_in(ready_client):
     assert f'href="/articles/{w["box"]}"' in page and f'href="/articles/{w["bracket"]}"' in page
 
 
-def test_overview_has_one_row_per_holder(ready_client):
-    world(ready_client)
+def test_overview_counts_each_variant_below_the_minimum(ready_client):
+    """Since 0.4.1 the overview has no table (Spec 10.2): the card "below minimum stock" counts the
+    variants of an article on stock one by one, as the table had a row per variant."""
+    w = world(ready_client)
+    with sm_of(ready_client).begin() as s:
+        for variant_id in w["variants"].values():
+            s.get(Article, variant_id).reserved = 1  # overbooked: available below 0
     page = ready_client.get("/").text
-    assert "EX-B1" in page and "EX-K1-A" in page and "EX-K1-B" in page
-    assert "EX-H1-L32" not in page  # built on order: not in the table, like sets
+    assert "EX-B1" not in page and "EX-K1-A" not in page  # no numbers per article any more
+    label = translate("en", "overview.todo.below_min")
+    assert re.search(rf'<span class="kpi-value">2</span><span class="kpi-label">{re.escape(label)}</span>', page)
 
 
 def test_edit_of_print_article_keeps_sold_alone_off(ready_client):

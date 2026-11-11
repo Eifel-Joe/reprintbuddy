@@ -1,8 +1,7 @@
 """The numbers of the overview (Spec 10.2): the state of the Bambuddy connection and the cards of what is due.
 
-Nothing is computed twice: the figures count the rows of `catalog.list_articles` (status after
-the rules of Spec 10.1, coverage after 7.1), the prints of `workqueue` and the suggestions of
-`reorder.count_suggestions`, the same functions the article list, the queue and the reorder page use.
+Nothing is computed twice: the route counts with the functions of the pages the cards lead to (orders,
+inspection, assembly, reorder, queue, filament, articles); this module only turns the counts into cards.
 """
 
 from __future__ import annotations
@@ -13,7 +12,6 @@ from typing import Protocol
 
 from reprintbuddy.domain.engine import EngineStatus
 from reprintbuddy.web.i18n import translate
-from reprintbuddy.web.kpis import Kpi
 
 # "Below minimum stock" means the red states, as Spec 10.6 (event 4) uses the term: "low" (yellow)
 # is below the minimum too, but its reprint is already planned.
@@ -29,10 +27,8 @@ CONNECTION_KEYS = {
 }
 
 
-class _Row(Protocol):  # the fields of catalog.ArticleRow the figures read
+class _Row(Protocol):  # the field of catalog.ArticleRow the count reads
     status: str
-    provisional: int
-    awaiting_assembly: int
 
 
 def connection_state(status: EngineStatus) -> tuple[str, str]:
@@ -52,9 +48,9 @@ def connection_state(status: EngineStatus) -> tuple[str, str]:
     return "connected", "ok"
 
 
-def table_rows(rows: Sequence[_Row]) -> list[_Row]:
-    """The rows of the overview table (Spec 10.2, 0.4.0 p341): an article made of parts built on stock
-    gives one row per variant (in progress and to check stay empty), one built on order none, as sets."""
+def status_rows(rows: Sequence[_Row]) -> list[_Row]:
+    """The rows whose state the card "below minimum stock" counts (Spec 10.2, 0.4.0 p341): an article
+    made of parts built on stock gives one row per variant, one built on order none, as sets."""
     from dataclasses import replace
 
     result: list[_Row] = []
@@ -72,46 +68,6 @@ def table_rows(rows: Sequence[_Row]) -> list[_Row]:
                 buffer=holder.buffer, coverage=holder.available, status=holder.status,
             ))
     return result
-
-
-def figures(
-    lang: str, rows: Sequence[_Row], *, queued_prints: int, open_prints: int, suggestions: int
-) -> list[Kpi]:
-    """The four key figures of Spec 10.2, always all four (a 0 is the news here).
-
-    `queued_prints`: prints in Reprintbuddy's queue, held entries included (they still count to
-    the coverage); `open_prints`: prints handed over to Bambuddy and not finished.
-    """
-
-    def t(key: str, **params: object) -> str:
-        return translate(lang, key, **params)
-
-    red = sum(1 for r in rows if r.status in RED_STATES)
-    overbooked = sum(1 for r in rows if r.status == "overbooked")
-    planned = queued_prints + open_prints
-    check = sum(r.provisional for r in rows)
-    assembly = sum(r.awaiting_assembly for r in rows)
-    return [
-        Kpi(
-            icon="triangle-alert", tone="bad" if red else "ok", value=red, label=t("overview.kpi.below_min"),
-            note=t("overview.kpi.overbooked_note", n=overbooked) if overbooked else "", href="/articles",
-        ),
-        Kpi(
-            icon="printer", tone="accent", value=planned, label=t("overview.kpi.planned"),
-            note=t("overview.kpi.planned_note", queued=queued_prints, open=open_prints) if planned else "",
-            href="/queue",
-        ),
-        Kpi(
-            icon="clipboard-check", tone="warn" if check + assembly else "neutral", value=check + assembly,
-            label=t("overview.kpi.to_check"),
-            note=t("overview.kpi.to_check_note", check=check, assembly=assembly) if check + assembly else "",
-            href="/assembly" if assembly and not check else "/inspection",  # where something waits
-        ),
-        Kpi(
-            icon="shopping-bag", tone="warn" if suggestions else "neutral", value=suggestions,
-            label=t("overview.kpi.reorder"), href="/reorder",
-        ),
-    ]
 
 
 # ---- "Was ansteht" (Spec 10.2 since 0.4.1) ------------------------------------------------------
