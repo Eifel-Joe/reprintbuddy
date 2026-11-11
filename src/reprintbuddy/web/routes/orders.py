@@ -150,7 +150,7 @@ def _set_options(db: Session) -> list[tuple[str, str]]:
     return options
 
 
-def _form_page(request, db, *, form_values, items, rows, error=None, status=200):
+def _form_page(request, db, *, form_values, items, rows, error=None, status=200, fresh=None):
     return render(
         request,
         "order_new.html",
@@ -159,6 +159,9 @@ def _form_page(request, db, *, form_values, items, rows, error=None, status=200)
         values=form_values,
         items=items,
         rows=rows,
+        fresh=fresh,  # number of the first row a "more rows" click added: the page jumps there (p380)
+        more_rows=MORE_ROWS,
+        max_rows=MAX_ROWS,
         articles=assembled_view.order_choices(db),  # sold alone, stock holders, variants on order (0.4.0)
         sets=_set_options(db),
         error=error,
@@ -185,8 +188,13 @@ async def orders_create(request: Request, db: Session = Depends(get_db)):
     items = _typed_items(form, rows)
     lang = current_language(request)
 
+    before = _rows_of(form, more=False)
+
     def page(error=None, status=200):
-        return _form_page(request, db, form_values=values, items=items, rows=rows, error=error, status=status)
+        return _form_page(
+            request, db, form_values=values, items=items, rows=rows, error=error, status=status,
+            fresh=before if more and rows > before else None,
+        )
 
     if more:  # show more rows; nothing is booked and the token stays unused
         return page()

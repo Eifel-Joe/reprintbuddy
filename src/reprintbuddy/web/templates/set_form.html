@@ -6,9 +6,11 @@
     and suffix per row), Spec 5.4 (p340). Every article is picked from a drop-down; one chosen in a
     row is not offered in the others (here on the server, set_form.js while choosing). Without
     JavaScript "more rows" and "add choice parts 2" send the form, which comes back with the rows
-    added and nothing saved. -#}
-{% macro article_select(name, chosen, label) -%}
-<select name="{{ name }}" aria-label="{{ label }}" data-set-article>
+    added and nothing saved; the page then jumps to the first new row (#more-new). With more_rows.js
+    the rows are added in place from the templates below: {i} is the number of a new row counted from
+    0, {i1} counted from 1, and the hidden counter of the part is kept in step (p380). -#}
+{% macro article_select(name, chosen, label, focus=false) -%}
+<select name="{{ name }}" aria-label="{{ label }}" data-set-article{% if focus %} autofocus{% endif %}>
   <option value="">{{ t('sets.article_choose') }}</option>
   {% for article in articles %}{% set elsewhere = article.id != chosen and article.id in taken %}
   {%- if not article.archived or article.id == chosen %}
@@ -17,21 +19,32 @@
   {% endfor %}
 </select>
 {%- endmacro %}
-{% macro choice_field(section, title) -%}
-<fieldset class="set-part">
+{% macro base_row(i, n, row, fresh=false) -%}
+<div class="set-row set-base"{% if fresh %} id="more-new"{% endif %} data-more-row>
+  <input name="base_{{ i }}_qty" inputmode="numeric" min="1" value="{{ row.qty }}" aria-label="{{ t('sets.field.qty') }} {{ n }}"{% if fresh %} autofocus{% endif %}>
+  {{ article_select('base_' ~ i ~ '_article', row.article, t('sets.field.article') ~ ' ' ~ n) }}
+</div>
+{%- endmacro %}
+{% macro choice_row(section, title, i, n, row, fresh=false) -%}
+<div class="set-row set-choice"{% if fresh %} id="more-new"{% endif %} data-more-row>
+  {{ article_select(section ~ '_' ~ i ~ '_article', row.article, title ~ ': ' ~ t('sets.field.article') ~ ' ' ~ n, fresh) }}
+  <input name="{{ section }}_{{ i }}_suffix" value="{{ row.suffix }}" maxlength="64" aria-label="{{ title }}: {{ t('sets.field.suffix') }} {{ n }}">
+</div>
+{%- endmacro %}
+{% macro choice_field(section, title, rows, fresh=false) -%}
+<fieldset class="set-part"{% if fresh %} id="more-new"{% endif %} data-more-group="{{ section }}_rows" data-more-step="{{ more_rows }}" data-more-max="{{ max_rows }}">
   <legend>{{ title }}</legend>
-  <input type="hidden" name="{{ section }}_rows" value="{{ values[section] | length }}">
+  {% if section == 'c2' %}<input type="hidden" name="c2_shown" value="1">{% endif %}
+  <input type="hidden" name="{{ section }}_rows" value="{{ rows | length }}">
   <label class="set-qty">{{ t('sets.field.choice_qty') }}
-    <input name="{{ section }}_qty" inputmode="numeric" min="1" value="{{ values[section ~ '_qty'] }}">
+    <input name="{{ section }}_qty" inputmode="numeric" min="1" value="{{ values[section ~ '_qty'] }}"{% if fresh %} autofocus{% endif %}>
   </label>
   <div class="set-head set-choice" aria-hidden="true"><span>{{ t('sets.field.article') }}</span><span>{{ t('sets.field.suffix') }}</span></div>
-  {% for row in values[section] %}{% set i = loop.index0 %}
-  <div class="set-row set-choice">
-    {{ article_select(section ~ '_' ~ i ~ '_article', row.article, title ~ ': ' ~ t('sets.field.article') ~ ' ' ~ loop.index) }}
-    <input name="{{ section }}_{{ i }}_suffix" value="{{ row.suffix }}" maxlength="64" aria-label="{{ title }}: {{ t('sets.field.suffix') }} {{ loop.index }}">
-  </div>
+  {% for row in rows %}
+  {{ choice_row(section, title, loop.index0, loop.index, row, values.fresh == section ~ ':' ~ loop.index0) }}
   {% endfor %}
-  <button class="btn secondary" type="submit" name="action" value="more_{{ section }}" formnovalidate>{{ ui.icon('plus') }}{{ t('sets.more_rows') }}</button>
+  <template data-more-template>{{ choice_row(section, title, '{i}', '{i1}', {"article": "", "suffix": ""}) }}</template>
+  {{ ui.more_button('more_' ~ section, t('sets.more_rows'), form_action) }}
 </fieldset>
 {%- endmacro %}
 {% set sub %}{{ t('sets.form_subtitle') }}{% if product_set and product_set.archived_at %} · {{ ui.badge('set', 'archived') }}{% endif %}{% endset %}
@@ -45,7 +58,7 @@
 {#- The form follows the articles it offers; the edit form also watches its set (Design 4.6). -#}
 {% call ui.region("form", ("set:" ~ product_set.id ~ " article") if product_set else "article") %}
 <section class="card section">
-  <form class="set-form" method="post" action="{% if product_set %}/sets/{{ product_set.id }}/edit{% else %}/sets/new{% endif %}"{% if product_set %} data-live-watch="set:{{ product_set.id }}"{% endif %} data-set-form>
+  <form class="set-form" method="post" action="{{ form_action }}"{% if product_set %} data-live-watch="set:{{ product_set.id }}"{% endif %} data-set-form>
     {% if product_set %}{{ ui.live_stale() }}{% endif %}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if not product_set %}<input type="hidden" name="form_token" value="{{ form_token() }}">{% endif %}
@@ -60,32 +73,34 @@
         <span class="hint">{{ t('sets.sku_hint') }}</span>
       </label>
     </div>
-    <fieldset class="set-part">
+    <fieldset class="set-part" data-more-group="base_rows" data-more-step="{{ more_rows }}" data-more-max="{{ max_rows }}">
       <legend>{{ t('sets.base') }}</legend>
       <p class="hint">{{ t('sets.base_hint') }}</p>
       <input type="hidden" name="base_rows" value="{{ values.base | length }}">
       <div class="set-head set-base" aria-hidden="true"><span>{{ t('sets.field.qty') }}</span><span>{{ t('sets.field.article') }}</span></div>
-      {% for row in values.base %}{% set i = loop.index0 %}
-      <div class="set-row set-base">
-        <input name="base_{{ i }}_qty" inputmode="numeric" min="1" value="{{ row.qty }}" aria-label="{{ t('sets.field.qty') }} {{ loop.index }}">
-        {{ article_select('base_' ~ i ~ '_article', row.article, t('sets.field.article') ~ ' ' ~ loop.index) }}
-      </div>
+      {% for row in values.base %}
+      {{ base_row(loop.index0, loop.index, row, values.fresh == 'base:' ~ loop.index0) }}
       {% endfor %}
-      <button class="btn secondary" type="submit" name="action" value="more_base" formnovalidate>{{ ui.icon('plus') }}{{ t('sets.more_rows') }}</button>
+      <template data-more-template>{{ base_row('{i}', '{i1}', {"qty": "1", "article": ""}) }}</template>
+      {{ ui.more_button('more_base', t('sets.more_rows'), form_action) }}
     </fieldset>
     <p class="hint">{{ t('sets.choices_hint') }}</p>
-    {{ choice_field('c1', t('sets.choices_1')) }}
+    {{ choice_field('c1', t('sets.choices_1'), values.c1, values.fresh == 'c1') }}
     {% if values.show_c2 %}
-    <input type="hidden" name="c2_shown" value="1">
-    {{ choice_field('c2', t('sets.choices_2')) }}
+    {{ choice_field('c2', t('sets.choices_2'), values.c2, values.fresh == 'c2') }}
     {% else %}
-    <p><button class="btn secondary" type="submit" name="action" value="add_c2" formnovalidate>{{ ui.icon('plus') }}{{ t('sets.add_choices_2') }}</button></p>
+    {% set blank_c2 = [] %}{% for k in range(default_rows) %}{% set _ = blank_c2.append({"article": "", "suffix": ""}) %}{% endfor %}
+    <div data-more-reveal>
+      <template data-more-template>{{ choice_field('c2', t('sets.choices_2'), blank_c2) }}</template>
+      <p>{{ ui.more_button('add_c2', t('sets.add_choices_2'), form_action, reveal=true) }}</p>
+    </div>
     {% endif %}
     <button class="btn" type="submit">{{ t('common.save') }}</button>
     <a class="btn-link" href="/sets">{{ t('common.cancel') }}</a>
   </form>
 </section>
 {% endcall %}
+<script src="/static/js/more_rows.js?v={{ app_version }}" defer></script>
 <script src="/static/js/set_form.js?v={{ app_version }}" defer></script>
 {% if product_set %}
 <div class="actions">

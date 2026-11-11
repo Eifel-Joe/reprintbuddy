@@ -2,6 +2,33 @@
 {% import "_ui.html" as ui with context %}
 {% block title %}{{ t('orders.new') }}{% endblock %}
 {% block content %}
+{#- One row of the order: how many, and which article or set. more_rows.js copies the template of the
+    rows ({i} is the number of the new row); without it "more rows" sends the form and the page
+    jumps to the first new row (#more-new, p380). -#}
+{% macro position(i, row, fresh=false) -%}
+<div class="position"{% if fresh %} id="more-new"{% endif %} data-more-row>
+  <label>{{ t('orders.field.qty') }}
+    <input name="qty_{{ i }}" inputmode="numeric" min="1" value="{{ row.qty }}"{% if fresh %} autofocus{% endif %}>
+  </label>
+  <label>{{ t('orders.item') }}
+    <select name="item_{{ i }}">
+      <option value=""{% if not row.item %} selected{% endif %}>–</option>
+      <optgroup label="{{ t('nav.articles') }}">
+        {#- sold alone, stock holders by number, variants built on order (0.4.0, p341) #}
+        {% for value, label in articles %}
+        <option value="{{ value }}"{% if row.item == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </optgroup>
+      <optgroup label="{{ t('nav.sets') }}">
+        {#- a set with choice parts once per variant (Spec 6.7, p340) #}
+        {% for value, label in sets %}
+        <option value="{{ value }}"{% if row.item == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </optgroup>
+    </select>
+  </label>
+</div>
+{%- endmacro %}
 {% call ui.page_head("receipt", t('orders.new'), t('orders.new_subtitle')) %}{% endcall %}
 {#- The lists follow new articles and sets. The form has no data of its own to watch: while
     something is typed it is not swapped, and no notice is shown (Design 4.6). -#}
@@ -11,7 +38,6 @@
   <form method="post" action="/orders/new">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="form_token" value="{{ form_token() }}">
-    <input type="hidden" name="rows" value="{{ rows }}">
     {# Enter in a text field presses the first submit button: that must place the order, not add rows. #}
     <button class="default-submit" type="submit" tabindex="-1" aria-hidden="true">{{ t('orders.create') }}</button>
     <div class="row">
@@ -27,37 +53,20 @@
       <input name="note" value="{{ values.note }}" maxlength="500">
     </label>
     <h3>{{ t('orders.items') }}</h3>
+    <div data-more-group="rows" data-more-step="{{ more_rows }}" data-more-max="{{ max_rows }}">
+    <input type="hidden" name="rows" value="{{ rows }}">
     {% for row in items %}
-    {% set i = loop.index0 %}
-    <div class="position">
-      <label>{{ t('orders.field.qty') }}
-        <input name="qty_{{ i }}" inputmode="numeric" min="1" value="{{ row.qty }}">
-      </label>
-      <label>{{ t('orders.item') }}
-        <select name="item_{{ i }}">
-          <option value=""{% if not row.item %} selected{% endif %}>–</option>
-          <optgroup label="{{ t('nav.articles') }}">
-            {#- sold alone, stock holders by number, variants built on order (0.4.0, p341) #}
-            {% for value, label in articles %}
-            <option value="{{ value }}"{% if row.item == value %} selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </optgroup>
-          <optgroup label="{{ t('nav.sets') }}">
-            {#- a set with choice parts once per variant (Spec 6.7, p340) #}
-            {% for value, label in sets %}
-            <option value="{{ value }}"{% if row.item == value %} selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </optgroup>
-        </select>
-      </label>
-    </div>
+    {{ position(loop.index0, row, fresh == loop.index0) }}
     {% endfor %}
+    <template data-more-template>{{ position('{i}', {"item": "", "qty": "1"}) }}</template>
     <p>
-      <button class="btn secondary" type="submit" name="action" value="more">{{ t('sets.more_rows') }}</button>
+      {{ ui.more_button('more', t('sets.more_rows'), '/orders/new') }}
     </p>
+    </div>
     <button class="btn" type="submit">{{ t('orders.create') }}</button>
     <a class="btn-link" href="/orders">{{ t('common.cancel') }}</a>
   </form>
 </section>
 {% endcall %}
+<script src="/static/js/more_rows.js?v={{ app_version }}" defer></script>
 {% endblock %}

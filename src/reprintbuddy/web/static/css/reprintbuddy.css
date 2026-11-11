@@ -987,6 +987,12 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .card.section .set-row select, .card.section .set-row input { margin-top: 0; min-height: 2.75rem; min-width: 0; max-width: none; width: 100%; }
 .set-qty { max-width: 16rem; }
 .set-part > .btn, .set-form .btn.secondary { display: inline-flex; gap: 0.4rem; align-items: center; justify-content: center; min-height: 2.75rem; margin-top: 0.25rem; }
+/* Rows the "more" buttons add (more_rows.js, p380) fade in. Without the script the server marks the
+   first new row (#more-new) and the page jumps there, a little below the phone's top bar. */
+.more-added { animation: more-in 0.25s ease-out; }
+@keyframes more-in { from { opacity: 0; transform: translateY(-0.4rem); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .more-added { animation: none; } }
+#more-new { scroll-margin-top: 6rem; }
 @media (max-width: 480px) {
   .set-base { grid-template-columns: 4.5rem minmax(0, 1fr); }
   .set-choice { grid-template-columns: minmax(0, 1fr) 6.5rem; }

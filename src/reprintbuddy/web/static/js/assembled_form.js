@@ -59,5 +59,13 @@
     }
   });
 
+  // Rows, options and choice parts 2 added in place (more_rows.js) follow the same rules.
+  document.addEventListener("more:added", function (event) {
+    var form = event.target.closest ? event.target.closest("[data-assembled-form]") : null;
+    if (form) {
+      refresh(form);
+    }
+  });
+
   each(document.querySelectorAll("[data-assembled-form]"), refresh);
 })();

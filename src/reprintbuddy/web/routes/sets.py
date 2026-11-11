@@ -74,6 +74,7 @@ def _typed(form) -> dict:
 
 
 def _empty(values: dict) -> dict:
+    values.setdefault("fresh", "")  # "section:index" of the first row a "more" button added, else ""
     values.setdefault("base", [])
     for section in SECTIONS[1:]:
         values.setdefault(f"{section}_qty", "1")
@@ -137,6 +138,10 @@ def _form_page(request, db, *, product_set, values, error=None, status=200):
         product_set=product_set,
         values=values,
         articles=_article_options(db, values),
+        form_action=f"/sets/{product_set.id}/edit" if product_set else "/sets/new",
+        default_rows=DEFAULT_ROWS,  # rows of choice parts 2 when it is added
+        more_rows=MORE_ROWS,
+        max_rows=MAX_ROWS,
         # an article chosen in one row is not offered in the others (Spec 5.4); set_form.js keeps it so
         taken=[row["article"] for section in SECTIONS for row in values[section] if row["article"]],
         error=error,
@@ -151,10 +156,14 @@ async def _post(request: Request, db: Session, product_set: ProductSet | None):
     if action == "add_c2":  # nothing is saved and the token stays unused
         values["show_c2"] = True
         _grow(values, "c2", DEFAULT_ROWS)
+        values["fresh"] = "c2"  # the page jumps to the new fieldset (p380)
         return _form_page(request, db, product_set=product_set, values=values)
     if action.startswith("more_") and action[5:] in SECTIONS:
         section = action[5:]
-        _grow(values, section, len(values[section]) + MORE_ROWS)
+        before = len(values[section])
+        _grow(values, section, before + MORE_ROWS)
+        if len(values[section]) > before:
+            values["fresh"] = f"{section}:{before}"  # the page jumps to the first new row (p380)
         return _form_page(request, db, product_set=product_set, values=values)
     try:
         data = _parse(values)

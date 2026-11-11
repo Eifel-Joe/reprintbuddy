@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_assembled
+from more_rows_support import without_templates
 from reprintbuddy.domain import assembled
 from reprintbuddy.models import Article
 from reprintbuddy.web.i18n import translate
@@ -51,7 +52,7 @@ def test_new_assembled_form_has_sections_and_mode(ready_client):
     for key in ("sets.base", "sets.choices_1", "assembled.mode.stock", "assembled.mode.order", "sets.add_choices_2"):
         assert en(key) in text
     assert 'name="c1_1_1_article"' in text and 'name="base_2_article"' in text  # 3 base rows, 2 options x 2 rows
-    assert 'name="c2_0_suffix"' not in text
+    assert 'name="c2_0_suffix"' not in without_templates(text)  # the script has them in a template
 
 
 def test_create_hose_from_the_form(ready_client):
