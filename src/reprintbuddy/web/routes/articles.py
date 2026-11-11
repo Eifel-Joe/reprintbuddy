@@ -176,6 +176,7 @@ def parse_article_form(form, parts: list[Part], *, default_target: str) -> Artic
         needs_assembly=parse_bool(form.get("needs_assembly")),
         auto_enabled=parse_bool(form.get("auto_enabled")),
         parts=parse_parts(form, parts),
+        sold_alone=parse_bool(form.get("sold_alone")),
     )
 
 
@@ -191,6 +192,7 @@ def typed_values(form) -> dict[str, object]:
         "target": str(form.get("target", "")),
         "needs_assembly": parse_bool(form.get("needs_assembly")),
         "auto_enabled": parse_bool(form.get("auto_enabled")),
+        "sold_alone": parse_bool(form.get("sold_alone")),
         "has_parts": parse_bool(form.get("has_parts")),
         "part_rows": part_rows(form),
         "focus": None,
@@ -209,6 +211,7 @@ def values_of_input(data: ArticleInput, parts: list[Part]) -> dict[str, object]:
         "target": catalog.target_value(data.target_model, data.printer_id),
         "needs_assembly": data.needs_assembly,
         "auto_enabled": data.auto_enabled,
+        "sold_alone": data.sold_alone,
         "has_parts": bool(in_use),
         "part_rows": [{"part": str(part.id), "qty": str(data.parts[part.id])} for part in in_use],
         "focus": None,
@@ -765,7 +768,7 @@ def _article_values(db: Session, article: Article, parts: list[Part]) -> dict[st
         units_per_print=article.units_per_print,
         min_stock=article.min_stock, buffer=article.buffer, target_model=article.target_model,
         printer_id=article.printer_id, needs_assembly=article.needs_assembly,
-        auto_enabled=article.auto_enabled, parts=links,
+        auto_enabled=article.auto_enabled, parts=links, sold_alone=article.sold_alone,
     )
     return values_of_input(data, parts)
 
@@ -780,6 +783,8 @@ def _edit_refused(request: Request, db: Session, article: Article):
 @router.get("/articles/{article_id:int}/edit")
 async def article_edit(request: Request, article_id: int, db: Session = Depends(get_db)):
     article = _get_article(db, article_id)
+    if article.kind == "assembled":  # an article made of parts has its own form (Spec 5.6, 0.4.0)
+        return RedirectResponse(f"/articles/{article.id}/assembled", status_code=303)
     if article.archived_at is not None:
         return _edit_refused(request, db, article)
     printers = await _printers_for_edit(request)

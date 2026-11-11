@@ -992,6 +992,19 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
   .set-choice { grid-template-columns: minmax(0, 1fr) 6.5rem; }
 }
 
+/* ---- articles made of parts (templates/assembled_form.html, assembled_detail.html; 0.4.0) ---- */
+.assembled-option { margin: 0.75rem 0 1rem; padding: 0.5rem 0 0.25rem 0.75rem; border-left: 3px solid var(--line); }
+.card.section .assembled-suffix input { max-width: 12rem; }
+.assembled-variant { grid-template-columns: minmax(0, 1fr) 4.5rem 6rem 6rem; }
+.variant-lines { list-style: none; margin: 0.2rem 0 0; padding: 0; font-size: 0.8rem; color: var(--text-2); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.build-form { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.build-form .qty-input { width: 4.5rem; min-height: 2.5rem; }
+@media (max-width: 480px) {
+  .assembled-option { padding-left: 0.5rem; }
+  .assembled-variant { grid-template-columns: minmax(0, 1fr) 3rem 4.5rem 4.5rem; }
+}
+
 /* ---- suppliers of a part (templates/part_form.html) ----------------------- */
 
 /* One block per supplier, a thin rule between them like the rows above; the fields keep the

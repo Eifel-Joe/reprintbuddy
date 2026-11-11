@@ -38,6 +38,12 @@
   <span>{{ t('articles.field.needs_assembly') }}</span>
 </label>
 {% endcall %}
+{% call ui.check_row(t('info.sold_alone'), t('articles.field.sold_alone')) %}
+<label class="check">
+  <input name="sold_alone" type="checkbox"{% if values.sold_alone %} checked{% endif %}>
+  <span>{{ t('articles.field.sold_alone') }}</span>
+</label>
+{% endcall %}
 {% call ui.check_row(t('info.auto_enabled'), t('articles.field.auto_enabled')) %}
 <label class="check">
   <input name="auto_enabled" type="checkbox"{% if values.auto_enabled %} checked{% endif %}{% if field_errors and field_errors.auto_enabled %} aria-invalid="true" aria-describedby="auto-enabled-error"{% endif %}>

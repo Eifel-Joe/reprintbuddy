@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui with context %}
+{% block title %}{% if composite %}{{ t('assembled.edit') }}{% else %}{{ t('assembled.new') }}{% endif %}{% endblock %}
+{% block content %}
+{#- An article made of parts (Spec 5.6, 0.4.0 p341): base parts (quantity and print article per row),
+    choice parts 1 and 2 (options with a suffix, each with rows of quantity and print article), the
+    purchased parts and, built on stock, minimum and buffer. An article chosen in the base parts is
+    offered in no option, one of choice parts 1 not in choice parts 2 and the other way round; inside
+    one field it may repeat over its options (here on the server, assembled_form.js while choosing).
+    Without JavaScript the "more" buttons send the form, which comes back with nothing saved. -#}
+{% macro article_select(name, chosen, label, place) -%}
+<select name="{{ name }}" aria-label="{{ label }}" data-assembled-article="{{ place }}">
+  <option value="">{{ t('sets.article_choose') }}</option>
+  {% for article in articles %}{% set elsewhere = article.id != chosen and (article.id in blocked[place] or (place == 'base' and article.id in taken.base)) %}
+  {%- if not article.archived or article.id == chosen %}
+  <option value="{{ article.id }}"{% if article.id == chosen %} selected{% endif %}{% if elsewhere %} disabled hidden{% endif %}>{{ article.name }}{% if article.part_only %} ({{ t('assembled.part_only') }}){% endif %}{% if article.archived %} ({{ t('catalog.archived_badge') }}){% endif %}</option>
+  {%- endif %}
+  {% endfor %}
+</select>
+{%- endmacro %}
+{% macro choice_field(section, title) -%}
+<fieldset class="set-part">
+  <legend>{{ title }}</legend>
+  <input type="hidden" name="{{ section }}_options" value="{{ values[section] | length }}">
+  {% for option in values[section] %}{% set i = loop.index0 %}{% set n = loop.index %}
+  <div class="assembled-option">
+    <input type="hidden" name="{{ section }}_{{ i }}_id" value="{{ option.id }}">
+    <input type="hidden" name="{{ section }}_{{ i }}_rows" value="{{ option.rows | length }}">
+    <label class="assembled-suffix">{{ t('sets.field.suffix') }} {{ n }}
+      <input name="{{ section }}_{{ i }}_suffix" value="{{ option.suffix }}" maxlength="64">
+    </label>
+    <div class="set-head set-base" aria-hidden="true"><span>{{ t('sets.field.qty') }}</span><span>{{ t('sets.field.article') }}</span></div>
+    {% for row in option.rows %}{% set j = loop.index0 %}
+    <div class="set-row set-base">
+      <input name="{{ section }}_{{ i }}_{{ j }}_qty" inputmode="numeric" min="1" value="{{ row.qty }}" aria-label="{{ title }} {{ n }}: {{ t('sets.field.qty') }} {{ loop.index }}">
+      {{ article_select(section ~ '_' ~ i ~ '_' ~ j ~ '_article', row.article, title ~ ' ' ~ n ~ ': ' ~ t('sets.field.article') ~ ' ' ~ loop.index, section) }}
+    </div>
+    {% endfor %}
+    <button class="btn secondary" type="submit" name="action" value="more_{{ section }}_{{ i }}" formnovalidate>{{ ui.icon('plus') }}{{ t('sets.more_rows') }}</button>
+  </div>
+  {% endfor %}
+  <button class="btn secondary" type="submit" name="action" value="more_{{ section }}" formnovalidate>{{ ui.icon('plus') }}{{ t('assembled.more_options') }}</button>
+</fieldset>
+{%- endmacro %}
+{% set sub %}{{ t('assembled.form_subtitle') }}{% if composite and composite.archived_at %} · {{ ui.badge('article', 'archived') }}{% endif %}{% endset %}
+{% call ui.page_head("package", composite.name if composite else t('assembled.new'), sub) %}{% endcall %}
+<div class="toolbar">
+  <div class="toolbar-actions">
+    <a class="btn secondary" href="{% if composite %}/articles/{{ composite.id }}{% else %}/articles{% endif %}">{{ ui.icon('package') }}{% if composite %}{{ composite.name }}{% else %}{{ t('articles.title') }}{% endif %}</a>
+  </div>
+</div>
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+{% call ui.region("form", ("article:" ~ composite.id ~ " article") if composite else "article") %}
+<section class="card section">
+  <form class="set-form" method="post" action="{% if composite %}/articles/{{ composite.id }}/assembled{% else %}/articles/new-assembled{% endif %}"{% if composite %} data-live-watch="article-settings:{{ composite.id }}"{% endif %} data-assembled-form>
+    {% if composite %}{{ ui.live_stale() }}{% endif %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if not composite %}<input type="hidden" name="form_token" value="{{ form_token() }}">{% endif %}
+    <button class="default-submit" type="submit" tabindex="-1" aria-hidden="true">{{ t('common.save') }}</button>
+    <div class="row">
+      <label>{{ t('articles.field.name') }}
+        <input name="name" value="{{ values.name }}" maxlength="200" required>
+      </label>
+      <label>{{ t('catalog.field.sku') }}
+        <input name="sku" value="{{ values.sku }}" maxlength="64">
+        <span class="hint">{{ t('assembled.sku_hint') }}</span>
+      </label>
+    </div>
+    <label>{{ t('articles.field.label_text') }}
+      <input name="label_text" value="{{ values.label_text }}" maxlength="60" placeholder="{{ t('articles.label_text_hint') }}">
+    </label>
+    <label>{{ t('assembled.field.mode') }}
+      <select name="mode">
+        <option value="stock"{% if values.mode == 'stock' %} selected{% endif %}>{{ t('assembled.mode.stock') }}</option>
+        <option value="order"{% if values.mode == 'order' %} selected{% endif %}>{{ t('assembled.mode.order') }}</option>
+      </select>
+      <span class="hint">{{ t('assembled.mode_hint') }}</span>
+    </label>
+    <fieldset class="set-part">
+      <legend>{{ t('sets.base') }}</legend>
+      <p class="hint">{{ t('assembled.base_hint') }}</p>
+      <input type="hidden" name="base_rows" value="{{ values.base | length }}">
+      <div class="set-head set-base" aria-hidden="true"><span>{{ t('sets.field.qty') }}</span><span>{{ t('sets.field.article') }}</span></div>
+      {% for row in values.base %}{% set i = loop.index0 %}
+      <div class="set-row set-base">
+        <input name="base_{{ i }}_qty" inputmode="numeric" min="1" value="{{ row.qty }}" aria-label="{{ t('sets.field.qty') }} {{ loop.index }}">
+        {{ article_select('base_' ~ i ~ '_article', row.article, t('sets.field.article') ~ ' ' ~ loop.index, 'base') }}
+      </div>
+      {% endfor %}
+      <button class="btn secondary" type="submit" name="action" value="more_base" formnovalidate>{{ ui.icon('plus') }}{{ t('sets.more_rows') }}</button>
+    </fieldset>
+    <p class="hint">{{ t('assembled.choices_hint') }}</p>
+    {{ choice_field('c1', t('sets.choices_1')) }}
+    {% if values.show_c2 %}
+    <input type="hidden" name="c2_shown" value="1">
+    {{ choice_field('c2', t('sets.choices_2')) }}
+    {% else %}
+    <p><button class="btn secondary" type="submit" name="action" value="add_c2" formnovalidate>{{ ui.icon('plus') }}{{ t('sets.add_choices_2') }}</button></p>
+    {% endif %}
+    {% if variants %}
+    <fieldset class="set-part">
+      <legend>{{ t('assembled.variants') }}</legend>
+      <p class="hint">{{ t('assembled.variants_hint') }}</p>
+      <div class="set-head assembled-variant" aria-hidden="true"><span>{{ t('catalog.field.sku') }}</span><span>{{ t('articles.col.stock') }}</span><span>{{ t('articles.field.min_stock') }}</span><span>{{ t('articles.field.buffer') }}</span></div>
+      {% for v in variants %}
+      <div class="set-row assembled-variant">
+        <span class="mono">{{ v.sku }}</span>
+        <span>{{ v.stock }}</span>
+        <input name="v_{{ v.id }}_min" inputmode="numeric" min="0" value="{{ v.min }}" aria-label="{{ v.sku }}: {{ t('articles.field.min_stock') }}">
+        <input name="v_{{ v.id }}_buffer" inputmode="numeric" min="0" value="{{ v.buffer }}" aria-label="{{ v.sku }}: {{ t('articles.field.buffer') }}">
+      </div>
+      {% endfor %}
+    </fieldset>
+    {% else %}
+    <div class="row">
+      <label>{{ t('articles.field.min_stock') }}
+        <input name="min_stock" inputmode="numeric" min="0" value="{{ values.min_stock }}">
+      </label>
+      <label>{{ t('articles.field.buffer') }}
+        <input name="buffer" inputmode="numeric" min="0" value="{{ values.buffer }}">
+      </label>
+    </div>
+    <p class="hint">{{ t('assembled.targets_hint') }}</p>
+    {% endif %}
+    {% if parts %}{% include "_article_parts.html" %}{% endif %}
+    <button class="btn" type="submit">{{ t('common.save') }}</button>
+    <a class="btn-link" href="{% if composite %}/articles/{{ composite.id }}{% else %}/articles{% endif %}">{{ t('common.cancel') }}</a>
+  </form>
+</section>
+{% endcall %}
+<script src="/static/js/assembled_form.js?v={{ app_version }}" defer></script>
+{% endblock %}
