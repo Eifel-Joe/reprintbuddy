@@ -1445,5 +1445,8 @@
   "assembled.to_print": "Zum Druckartikel machen",
   "permission.queue:delete_own": "damit ein Storno noch nicht gestartete Drucke aus Bambuddy zurücknehmen kann (optional)",
   "bambuddy.withdraw_right_ok": "Nach einem Storno kann Reprintbuddy noch nicht gestartete Drucke aus Bambuddy zurücknehmen.",
-  "bambuddy.withdraw_right_missing": "Nach einem Storno bleiben übergebene Drucke in Bambuddy: Der Gruppe fehlt dafür „Delete Own Queue“. Reprintbuddys eigene Warteschlange wird trotzdem verkleinert. Alles andere geht."
+  "bambuddy.withdraw_right_missing": "Nach einem Storno bleiben übergebene Drucke in Bambuddy: Der Gruppe fehlt dafür „Delete Own Queue“. Reprintbuddys eigene Warteschlange wird trotzdem verkleinert. Alles andere geht.",
+  "journal.kind.queue_entry_withdrawn": "Geplanter Druck zurückgenommen (Storno)",
+  "journal.kind.print_withdrawn": "Druck aus Bambuddy zurückgenommen (Storno)",
+  "journal.kind.print_withdraw_refused": "Rücknahme aus Bambuddy abgelehnt"
 }

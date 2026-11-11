@@ -1,8 +1,8 @@
 """What cancelling an order does to the prints planned because of it (p382).
 
 Prints are not tied to an order: rule 7.1 plans them from the coverage, and an order lowers the
-coverage through "available". These tests pin the behaviour of 0.4.0: cancelling only releases the
-reservation (Spec 6.2); entries in Reprintbuddy's work queue and prints handed to Bambuddy stay.
+coverage through "available". In 0.4.0 cancelling only released the reservation; since 0.4.1 (Spec
+7.2a) it takes back what is then planned over the target, end to end through the engine.
 """
 
 from datetime import date
@@ -59,7 +59,7 @@ async def test_cancel_leaves_handed_over_prints_in_bambuddy(engine_env):
         assert (art.reserved, art.paused) == (0, False)
 
 
-async def test_cancel_leaves_entries_in_reprintbuddys_queue(engine_env):
+async def test_cancel_takes_entries_out_of_reprintbuddys_queue(engine_env):
     env = engine_env
     with env.sm() as s:
         st.set_setting(s, "queue_running", False)  # nothing is handed over
@@ -72,10 +72,12 @@ async def test_cancel_leaves_entries_in_reprintbuddys_queue(engine_env):
     _cancel(env.sm, order_id)
     await env.engine.tick(poll=False)
 
-    # 0.4.0: the rule entry keeps its three prints although the demand is gone ...
-    assert _queue(env.sm) == [("rule", 3)]
+    # Since 0.4.1 the rule entry is gone with the demand (0.4.0 kept its three prints) ...
+    assert _queue(env.sm) == []
     with env.sm() as s:
         st.set_setting(s, "queue_running", True)
     await env.engine.tick(poll=False)
-    # ... and they are all handed over once the queue runs again.
-    assert len(env.fake.enqueued) == 3 and _queue(env.sm) == []
+    # ... so nothing is handed over once the queue runs again (0.4.0 handed over all three).
+    assert env.fake.enqueued == [] and _queue(env.sm) == []
+    with env.sm() as s:
+        assert s.get(Article, env.article_id).paused is False
