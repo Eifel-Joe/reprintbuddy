@@ -107,7 +107,7 @@ def test_live_script_reloads_only_where_the_page_has_a_get_address():
     guard = function_body(text, "reloadIfSafe")
     assert re.match(r"\s*if \(!source\) \{\s*return false;", guard), guard
     assert "window.location.reload();" in guard
-    assert "reloadIfSafe()" in function_body(text, "reloadOrNotice")
+    assert "reloadIfSafe(true)" in function_body(text, "reloadOrNotice")  # automatic (0.4.1, R4)
     click = re.search(r'addEventListener\("click", function \(event\) \{(.*?)\n  \}\);', text, re.S)
     assert click and "reloadIfSafe()" in click.group(1)
     hide = re.search(r"\n  if \(!source\) \{\n(.*?)\n  \}\n", text, re.S)

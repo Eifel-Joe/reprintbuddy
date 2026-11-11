@@ -36,7 +36,7 @@ Seven cards, always all seven. A card with nothing to do stays grey with 0; yell
 
 ### New
 
-**New** means: since you last opened the page **Orders** or **Reorder suggestions**, on any device. There is one account, so opening the orders on the phone clears "new" on the PC as well. An order is new when it was created after that; a suggestion is new when the page did not show it then. Looking at the Overview clears nothing, and neither does a page that only stays open and updates itself: only loading the page counts. Until a page has been opened once, nothing is new.
+**New** means: since you last opened the page **Orders** or **Reorder suggestions**, on any device. There is one account, so opening the orders on the phone clears "new" on the PC as well. An order is new when it was created after that; a suggestion is new when the page did not show it then. Looking at the Overview clears nothing, and neither does a page that only stays open and updates itself, nor a page that Reprintbuddy loads again by itself (after an update or a restart, when updating a part of it failed, or after you were signed out): only opening the page yourself counts, by a click, its address or reloading it by hand. Until a page has been opened once, nothing is new.
 
 On a phone the page is one column: the head line becomes rows of label and value, and the cards stand one below the other.
 

@@ -36,10 +36,19 @@ def requested(request: Request) -> list[str]:
     return names
 
 
+# Set by live.js right before it loads a page again by itself (new version, a failed refetch, signed
+# out); the next page clears it. Such a load is no opening (Spec 10.2, decided 11.11.2026).
+AUTO_RELOAD_COOKIE = "rb_auto_reload"
+
+
 def page_load(request: Request) -> bool:
-    """A GET of the whole page, not the live refetch of its regions: what "opening" a page means for
-    "new" on the overview (Spec 10.2, 0.4.1)."""
-    return request.method == "GET" and not requested(request)
+    """Opening a page for "new" on the overview (Spec 10.2, 0.4.1): a GET of the whole page by you,
+    not the live refetch of its regions and not a reload the live script does by itself."""
+    return (
+        request.method == "GET"
+        and not requested(request)
+        and request.cookies.get(AUTO_RELOAD_COOKIE) != "1"
+    )
 
 
 def extract(html: str, names: Sequence[str]) -> dict[str, str]:
