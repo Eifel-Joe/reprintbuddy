@@ -168,6 +168,7 @@ DNS names, are accepted only after setup.
    - Read Inventory (`inventory:read`): so that Reprintbuddy reads the filament stock
    - Read Filaments (`filaments:read`): to tell whether Bambuddy keeps the spools itself or in
      Spoolman
+   - Read Settings (`settings:read`): so that reprints run with the default print options set in Bambuddy
 
    Recommended, not required – only to upload print files from Reprintbuddy:
 
@@ -175,10 +176,9 @@ DNS names, are accepted only after setup.
 
    Without it everything else works; only uploading is not possible.
 
-   Only to create the key in the next step, the group also needs these three rights; Reprintbuddy
+   Only to create the key in the next step, the group also needs these two rights; Reprintbuddy
    does not check them, and they may be removed again afterwards: Read Api Keys
-   (`api_keys:read`), Create Api Keys (`api_keys:create`) and Read Settings (`settings:read`;
-   without it Bambuddy hides the Settings menu).
+   (`api_keys:read`) and Create Api Keys (`api_keys:create`).
 
    Then create the user `reprintbuddy` in this group. Its password is needed only once, to
    create the key; Reprintbuddy neither asks for it nor stores it. You can add a missing right

@@ -18,6 +18,7 @@ from reprintbuddy.bambuddy.types import (
     LibraryFile,
     LibraryFolder,
     Plate,
+    PrintOptions,
     Printer,
     QueueItem,
     Spool,
@@ -31,7 +32,7 @@ from reprintbuddy.bambuddy.types import (
 _EFFECT_METHODS = frozenset({"enqueue", "upload_file"})
 _FAILABLE_METHODS = _EFFECT_METHODS | {
     "list_folders", "list_files", "get_file", "list_plates", "plate_thumbnail", "file_thumbnail",
-    "filament_requirements", "list_printers", "spool_mode", "list_spools",
+    "filament_requirements", "list_printers", "spool_mode", "list_spools", "print_defaults",
     "get_queue_item", "list_queue", "list_all_items",
 }
 
@@ -74,6 +75,10 @@ class FakeBambuddy:
         # entry in time against `enqueue_sent_at` (Spec 7.6).
         self.now: Callable[[], datetime] = _utcnow
         self.enqueued: list[EnqueueRequest] = []
+        # Bambuddy's "Default print options" (p342, 0.4.0): its install defaults
+        # (`schemas/settings.py`) until a test sets others; `options` keeps what each entry got.
+        self.defaults = PrintOptions("auto", "auto", "auto", True, False, False)
+        self.options: dict[int, PrintOptions] = {}
         self.calls: list[str] = []
         self._folders: list[LibraryFolder] = []
         self._files: dict[int, LibraryFile] = {}
@@ -194,6 +199,10 @@ class FakeBambuddy:
     async def list_printers(self) -> list[Printer]:
         self._enter("list_printers")
         return list(self._printers)
+
+    async def print_defaults(self) -> PrintOptions:
+        self._enter("print_defaults")
+        return self.defaults
 
     async def spool_mode(self) -> SpoolMode:
         self._enter("spool_mode")
@@ -417,6 +426,7 @@ class FakeBambuddy:
             printer_name=printer.name if printer else None,
         )
         self.enqueued.append(req)
+        self.options[item.id] = req.print_options
         if failure:
             raise failure[0]
         return item

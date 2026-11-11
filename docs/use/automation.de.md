@@ -3,7 +3,7 @@
 Die Automatik druckt Artikel für dich nach. Wird ein Artikel knapp, legt Reprintbuddy einen Eintrag in [seiner eigenen Warteschlange](queue.md) an und übergibt die Drucke einzeln an Bambuddys Warteschlange. Es steuert nie einen Drucker: Bambuddy bleibt dein Drucksystem.
 
 !!! warning "Drucke starten ohne deine Freigabe"
-    Reprintbuddy übergibt Drucke so, dass sie starten, sobald Bambuddy einen passenden Drucker frei hat. An den Druckoptionen ändert es nichts; sie bleiben auf Bambuddys Vorgabe. Hält Bambuddy einen Druck trotzdem zur Freigabe zurück, sagt das ein Hinweis (siehe unten). Ein Drucker, der nicht drucken soll, kommt in Bambuddy in den Wartungsmodus. Nach der Installation ist der Hauptschalter aus. Schalte ihn ein, wenn du die Anbindung geprüft hast, zum Beispiel zuerst mit einem Artikel.
+    Reprintbuddy übergibt Drucke so, dass sie starten, sobald Bambuddy einen passenden Drucker frei hat. Jeder Druck bekommt die in Bambuddy eingestellten *Standard-Druckoptionen* (Bett-Nivellierung, Fluss-Kalibrierung und die übrigen); Reprintbuddy liest sie direkt vor jeder Übergabe und ändert an Bambuddys Einstellungen nichts. Hält Bambuddy einen Druck trotzdem zur Freigabe zurück, sagt das ein Hinweis (siehe unten). Ein Drucker, der nicht drucken soll, kommt in Bambuddy in den Wartungsmodus. Nach der Installation ist der Hauptschalter aus. Schalte ihn ein, wenn du die Anbindung geprüft hast, zum Beispiel zuerst mit einem Artikel.
 
 ## Die Regel
 
@@ -110,4 +110,4 @@ Unter den Hinweisen nennt die Seite den Zeitpunkt der letzten erfolgreichen Abfr
 
 - Es steuert nie einen Drucker; es startet, stoppt oder pausiert keinen Druck.
 - Was in Bambuddy liegt, gehört Bambuddy. Reprintbuddy nimmt übergebene Drucke nicht zurück, ändert sie nicht und sortiert vorhandene Einträge nie um. Umsortieren, Vorziehen und Löschen in Bambuddys Warteschlange machst du nur in Bambuddy.
-- Es ändert nichts an den Druckoptionen.
+- Es ändert nichts an Bambuddys Druckoptionen: Jeder Druck bekommt die in Bambuddy eingestellten *Standard-Druckoptionen*. Kann Reprintbuddy sie nicht lesen, übergibt es nichts: Ist Bambuddy nicht erreichbar, bleibt der Druck für den nächsten Lauf in der Warteschlange; lehnt Bambuddy das Lesen ab (zum Beispiel fehlt das Recht *Read Settings*), kommt der Druck mit Bambuddys Meldung zurück.

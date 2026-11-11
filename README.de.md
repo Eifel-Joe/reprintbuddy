@@ -172,6 +172,7 @@ Einrichtung akzeptiert.
    - Read Inventory (`inventory:read`): damit Reprintbuddy den Filamentbestand liest
    - Read Filaments (`filaments:read`): um zu erkennen, ob Bambuddy die Spulen selbst führt oder
      in Spoolman
+   - Read Settings (`settings:read`): damit Nachdrucke mit Bambuddys Standard-Druckoptionen laufen
 
    Empfohlen, nicht nötig – nur zum Hochladen von Druckdateien aus Reprintbuddy:
 
@@ -179,10 +180,9 @@ Einrichtung akzeptiert.
 
    Ohne dieses Recht geht alles andere; nur das Hochladen nicht.
 
-   Nur zum Erzeugen des Schlüssels im nächsten Schritt braucht die Gruppe zusätzlich diese drei
+   Nur zum Erzeugen des Schlüssels im nächsten Schritt braucht die Gruppe zusätzlich diese zwei
    Rechte; Reprintbuddy prüft sie nicht, und sie dürfen danach wieder weg: Read Api Keys
-   (`api_keys:read`), Create Api Keys (`api_keys:create`) und Read Settings (`settings:read`;
-   ohne es blendet Bambuddy das Menü Einstellungen aus).
+   (`api_keys:read`) und Create Api Keys (`api_keys:create`).
 
    Lege dann den Benutzer `reprintbuddy` in dieser Gruppe an. Sein Passwort brauchst du nur
    einmal, um den Schlüssel zu erzeugen; Reprintbuddy fragt es nicht ab und speichert es nicht.

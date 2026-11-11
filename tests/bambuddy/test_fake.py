@@ -10,7 +10,7 @@ from reprintbuddy.bambuddy.client import (
     HttpBambuddyClient,
 )
 from reprintbuddy.bambuddy.fake import FakeBambuddy
-from reprintbuddy.bambuddy.types import EnqueueRequest, FilamentRequirement, Printer
+from reprintbuddy.bambuddy.types import EnqueueRequest, FilamentRequirement, PrintOptions, Printer
 
 
 def test_fake_is_client():
@@ -25,6 +25,7 @@ def test_protocol_matches_master_plan():
         "get_queue_item", "list_queue", "list_all_items", "list_spools",
         "list_printers", "spool_mode", "file_thumbnail",
         "upload_file",  # v0.3.9 p20, Spec 5.1a
+        "print_defaults",  # p342, 0.4.0: Bambuddy's default print options (read)
     }
     for name in names:
         assert inspect.iscoroutinefunction(getattr(BambuddyClient, name)), name
@@ -537,3 +538,22 @@ async def test_files_come_back_sorted_by_name_like_bambuddys_listing():
     assert [f.filename for f in await fake.list_files(None)] == [
         "Template A.gcode.3mf", "Template B.gcode.3mf", "Template C.gcode.3mf",
     ]
+
+
+async def test_fake_print_defaults_and_options_per_entry():  # p342, 0.4.0
+    """The stand-in holds Bambuddy's default print options (its own install defaults until a
+    test sets others) and keeps the options each entry was made with."""
+    fake, fid = _ready()
+    assert await fake.print_defaults() == PrintOptions("auto", "auto", "auto", True, False, False)
+    fake.defaults = PrintOptions(bed_levelling="on", timelapse=True)
+    assert await fake.print_defaults() == PrintOptions(bed_levelling="on", timelapse=True)
+    plain = await fake.enqueue(_req(fid))
+    sent = PrintOptions("on", "on", "off", False, True, True)
+    with_options = await fake.enqueue(_req(fid, print_options=sent))
+    assert fake.options == {plain.id: PrintOptions(), with_options.id: sent}
+    fake.fail_next("print_defaults", BambuddyRejected("Missing permission", status=403))
+    with pytest.raises(BambuddyRejected):
+        await fake.print_defaults()
+    fake.unavailable = True
+    with pytest.raises(BambuddyUnavailable):
+        await fake.print_defaults()

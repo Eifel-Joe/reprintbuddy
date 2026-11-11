@@ -19,6 +19,7 @@ from reprintbuddy.bambuddy.types import (
     LibraryFile,
     LibraryFolder,
     Plate,
+    PrintOptions,
     Printer,
     QueueItem,
     Spool,
@@ -332,6 +333,42 @@ def parse_spool_mode(data: object) -> SpoolMode:
     enabled = _req(d, "enabled", bool)
     url = _opt(d, "url", str)
     return "spoolman" if enabled and url else "builtin"
+
+
+_TRI_STATE = ("on", "off", "auto")
+
+
+def _tri_state(value: object) -> str | bool | None:
+    """A calibration default: "on"/"off"/"auto" (any case), or a boolean from a Bambuddy
+    before v1.2.5, whose queue then also takes a boolean. Anything else is not known."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in _TRI_STATE:
+        return value.strip().lower()
+    return None
+
+
+def _flag(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
+def parse_print_defaults(data: object) -> PrintOptions:
+    """Bambuddy's "Default print options" from `GET /settings/` (p342, 0.4.0).
+
+    The six `default_*` fields of Bambuddy's `AppSettings` (`schemas/settings.py`), the same
+    ones its own "Add to queue" sends (`services/print_defaults.py`). A missing field (an older
+    Bambuddy) or a value of an unknown form is left out (`None`), so Bambuddy's own default for
+    the entry applies; the type of a known value is kept as Bambuddy gave it.
+    """
+    d = _object(data, "settings")
+    return PrintOptions(
+        bed_levelling=_tri_state(d.get("default_bed_levelling")),
+        flow_cali=_tri_state(d.get("default_flow_cali")),
+        nozzle_offset_cali=_tri_state(d.get("default_nozzle_offset_cali")),
+        vibration_cali=_flag(d.get("default_vibration_cali")),
+        layer_inspect=_flag(d.get("default_layer_inspect")),
+        timelapse=_flag(d.get("default_timelapse")),
+    )
 
 
 def parse_spools(data: object) -> list[Spool]:

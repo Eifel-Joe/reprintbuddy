@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -59,6 +60,28 @@ class FilamentRequirement:
 
 
 @dataclass(frozen=True)
+class PrintOptions:
+    """Bambuddy's "Default print options" (p342, 0.4.0), keyed like its queue entry.
+
+    Each value has the type Bambuddy's settings gave it: the three calibrations are "on",
+    "off" or "auto" (booleans before Bambuddy v1.2.5), the other three booleans. `None`:
+    not known (missing or an unknown value), so it is not sent and Bambuddy's own
+    default for the entry applies.
+    """
+
+    bed_levelling: str | bool | None = None
+    flow_cali: str | bool | None = None
+    nozzle_offset_cali: str | bool | None = None
+    vibration_cali: bool | None = None
+    layer_inspect: bool | None = None
+    timelapse: bool | None = None
+
+    def body(self) -> dict[str, str | bool]:
+        """The known values, as `POST /queue/` takes them."""
+        return {k: v for k, v in dataclasses.asdict(self).items() if v is not None}
+
+
+@dataclass(frozen=True)
 class EnqueueRequest:
     """One print as one single queue entry (Spec 7.6): no batch, no quantity."""
 
@@ -68,6 +91,8 @@ class EnqueueRequest:
     printer_id: int | None
     insert_at_top: bool
     insert_position: int | None
+    # Bambuddy's default print options, read right before the hand-over (p342, 0.4.0).
+    print_options: PrintOptions = PrintOptions()
 
 
 @dataclass(frozen=True)

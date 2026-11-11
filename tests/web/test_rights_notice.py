@@ -83,7 +83,7 @@ def test_update_adds_a_right_shows_dialog(rights_client, respx_mock):
     assert "Read Filaments" in html and "filaments:read" in html
     assert "Group right" in html  # where it can be added
     assert "Read Inventory" in html and "inventory:read" in html  # the others are listed, as granted
-    assert html.count('aria-label="missing"') == 1 and html.count('aria-label="granted"') == 6
+    assert html.count('aria-label="missing"') == 1 and html.count('aria-label="granted"') == 7
 
 
 def test_the_guide_links_of_the_dialog_lead_to_the_guide(missing_client):

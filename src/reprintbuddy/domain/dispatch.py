@@ -392,6 +392,15 @@ async def hand_over(
             with sm() as session:
                 own = own_item_ids(session)
             insert_at_top, insert_position = next_insert_position(queue, own)
+        # p342 (0.4.0): Bambuddy's `POST /queue/` does not apply its own "Default print
+        # options"; sent without them, the print ran with fixed defaults instead (no bed
+        # levelling, no flow calibration). So they are read right before each hand-over and
+        # sent along (Spec 7.3). A failed read never sends without them: unreachable puts
+        # the print back for the next run, refused (e.g. `settings:read` missing) puts it
+        # back as rejected with Bambuddy's message. Rejected: sending without options plus
+        # a notice (the reported fault, only quieter); reading once per run (a change in
+        # Bambuddy would hold only from the next run; one GET per print is cheap).
+        print_options = await client.print_defaults()
     except BambuddyRejected as exc:
         _put_back(sm, res, str(exc)[:MAX_MESSAGE])
         return "rejected"
@@ -414,6 +423,7 @@ async def hand_over(
         res.printer_id,
         insert_at_top,
         insert_position,
+        print_options,
     )
     try:
         item = await client.enqueue(request)

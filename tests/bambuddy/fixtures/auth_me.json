@@ -14,7 +14,8 @@
     "printers:read",
     "queue:create",
     "queue:read_all",
-    "queue:start_unreviewed"
+    "queue:start_unreviewed",
+    "settings:read"
   ],
   "created_at": "2026-11-05T08:55:31.204117"
 }
