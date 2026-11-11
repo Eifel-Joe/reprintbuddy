@@ -243,7 +243,8 @@ def test_full_backup_of_0_3_17_restores_with_0_4_0(tmp_path):
     assert _rows(restored_engine, "SELECT id, kind, sold_alone, stock, reserved FROM articles ORDER BY id") == [
         (1, "print", 1, 7, 2), (2, "print", 1, 3, 0),
     ]
-    assert _rows(restored_engine, "SELECT version_num FROM alembic_version") == [(REVISION,)]
+    [(version,)] = _rows(restored_engine, "SELECT version_num FROM alembic_version")
+    assert version >= REVISION  # the start runs every later revision too (0019 since 0.4.1)
     restored_engine.dispose()
     fresh = make_engine(tmp_path / "new.db")
     upgrade(fresh)
