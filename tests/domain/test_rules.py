@@ -16,6 +16,7 @@ from reprintbuddy.domain.rules import (
     set_availability,
     suggest_packs,
     target_quantity,
+    variant_number,
 )
 
 
@@ -202,3 +203,16 @@ def test_suggest_packs_float_safe():
         stock=0, demand=0, per_day=0, lead_days=0, safety=1000.0000000001, pack=1000, min_packs=1
     )
     assert result == 1
+
+
+def test_variant_number_writes_the_suffixes_behind_the_number():  # Spec 5.4: as they are, no separator
+    assert variant_number("EX-S10", ["-A", "-1"]) == "EX-S10-A-1"
+    assert variant_number("EX-S10", ["A"]) == "EX-S10A"
+    assert variant_number("EX-S10", []) == "EX-S10"
+
+
+def test_variant_number_is_none_while_a_part_is_missing():
+    assert variant_number(None, ["-A"]) is None
+    assert variant_number("", ["-A"]) is None
+    assert variant_number("EX-S10", ["-A", None]) is None
+    assert variant_number("EX-S10", ["-A", ""]) is None

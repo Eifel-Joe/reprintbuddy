@@ -661,13 +661,6 @@ class SetRow:
     status: SetStatus  # deliverable when at least one set comes together (Spec 10.1)
 
 
-def variant_number(sku: str | None, suffixes: Sequence[str | None]) -> str | None:
-    """Set number and suffixes written one after the other (Spec 5.4); None while one is missing."""
-    if not sku or any(not suffix for suffix in suffixes):
-        return None
-    return sku + "".join(str(suffix) for suffix in suffixes)
-
-
 def _fields_of(
     session: Session, set_id: int
 ) -> tuple[list[SetPosition], list[tuple[SetPosition, list[SetPositionOption]]]]:
@@ -699,7 +692,7 @@ def variant_numbers(session: Session, *, exclude_set_id: int | None = None) -> d
         if not fields:
             continue
         for combination in itertools.product(*(options for _position, options in fields)):
-            number = variant_number(sku, [option.suffix for option in combination])
+            number = rules.variant_number(sku, [option.suffix for option in combination])
             if number is not None:
                 numbers[number] = set_id
     return numbers
@@ -775,7 +768,7 @@ def _check_variant_numbers(
     taken = variant_numbers(session, exclude_set_id=set_id)
     own: set[str] = set()
     for combination in itertools.product(*fields):
-        number = variant_number(sku, combination)
+        number = rules.variant_number(sku, combination)
         assert number is not None  # set number and suffixes are checked before
         if len(number) > MAX_SKU:
             raise ValidationError("sets.variant_too_long", sku=number, max=MAX_SKU)
@@ -870,13 +863,13 @@ def _set_row(session: Session, product_set: ProductSet) -> SetRow:
         stocks.append(rules.ChoiceStock(position.qty, tuple(active)))
     stock = rules.set_availability(base_stock, stocks)
     variants = [
-        VariantRow(key, variant_number(product_set.sku, [suffixes[a] for a in key]), [names[a] for a in key], count)
+        VariantRow(key, rules.variant_number(product_set.sku, [suffixes[a] for a in key]), [names[a] for a in key], count)
         for key, count in stock.variants.items()
     ]
     incomplete = None
     if len(base) + len(choices) < 2:
         incomplete = "too_few"
-    elif choices and variant_number(product_set.sku, list(suffixes.values())) is None:
+    elif choices and rules.variant_number(product_set.sku, list(suffixes.values())) is None:
         incomplete = "suffixes_missing"
     orderable = (
         product_set.archived_at is None

@@ -63,6 +63,14 @@ def set_availability(base: Sequence[tuple[int, int]], choices: Sequence[ChoiceSt
     return SetStock(min(totals), variants)
 
 
+def variant_number(number: str | None, suffixes: Sequence[str | None]) -> str | None:
+    """The article number of a variant: the base number with the suffixes behind it, written as they
+    are, without a separator (Spec 5.4, p340). None while the base number or a suffix is missing."""
+    if not number or any(not suffix for suffix in suffixes):
+        return None
+    return number + "".join(str(suffix) for suffix in suffixes)
+
+
 def order_ready(needed: Mapping[int, int], stock: Mapping[int, int]) -> bool:
     """An order can ship when every article is in stock in the needed quantity (Spec 6.7)."""
     return all(stock.get(article_id, 0) >= qty for article_id, qty in needed.items())
