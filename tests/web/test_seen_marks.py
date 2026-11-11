@@ -57,3 +57,19 @@ def test_the_closed_orders_are_not_the_open_ones(ready_client):
         make_order(s)
     ready_client.get("/orders?view=closed")
     assert setting(ready_client, "orders_seen_id") is None
+
+
+def test_loading_orders_with_nothing_new_takes_no_write_lock(ready_client, monkeypatch):
+    """Review v0.4.1 B, R1: the open orders used to only read; with the mark unchanged they still do
+    (no BEGIN IMMEDIATE that would wait for the automation's writes)."""
+    from reprintbuddy.web.routes import orders as route
+
+    with sm_of(ready_client).begin() as s:
+        make_order(s)
+    ready_client.get("/orders")  # sets the mark once
+
+    def no_lock(request):
+        raise AssertionError("opened a write transaction with nothing to mark")
+
+    monkeypatch.setattr(route, "write_transaction", no_lock)
+    assert ready_client.get("/orders").status_code == 200

@@ -83,3 +83,12 @@ def test_the_marks_are_internal_settings(db):
     with db.begin() as s:
         assert st.get_setting(s, "reorder_seen") == ["filament:2", "part:3"]
         assert s.get(Setting, "reorder_seen") is not None
+
+
+def test_orders_mark_due_reads_only(db):
+    with db.begin() as s:
+        assert seen.orders_mark_due(s) is True  # never loaded
+        seen.mark_orders(s)
+        assert seen.orders_mark_due(s) is False
+        make_order(s)
+        assert seen.orders_mark_due(s) is True

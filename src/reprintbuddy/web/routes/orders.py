@@ -59,8 +59,9 @@ async def orders_list(
     if (redirect := listing.remember_layout(request, "orders")) is not None:
         return redirect  # ?layout=... only sets the cookie
     closed = view == "closed"
-    if not closed and regions.page_load(request) and may_write(request):
+    if not closed and regions.page_load(request) and may_write(request) and seen.orders_mark_due(db):
         # Opening the open orders clears "new" on the overview (Spec 10.2); a live refetch does not.
+        # The write lock only when the mark changes; inside, `mark_orders` looks again.
         with write_transaction(request) as tx:
             seen.mark_orders(tx)
     states = _CLOSED_STATES if closed else _OPEN_STATES

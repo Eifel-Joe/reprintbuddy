@@ -29,9 +29,19 @@ def _keys(suggestions: Iterable[_Suggestion]) -> list[str]:
     return sorted({f"{s.item_type}:{s.item_id}" for s in suggestions})
 
 
+def _highest_order(session: Session) -> int:
+    return int(session.scalar(select(func.max(Order.id))) or 0)
+
+
+def orders_mark_due(session: Session) -> bool:
+    """Would loading /orders change the mark? Read only: the page takes the write lock only then
+    (review v0.4.1 B, R1: the open orders used to only read)."""
+    return st.get_setting(session, "orders_seen_id") != _highest_order(session)
+
+
 def mark_orders(session: Session) -> bool:
     """/orders was loaded: every order so far is seen. True when the mark changed (and was written)."""
-    highest = int(session.scalar(select(func.max(Order.id))) or 0)
+    highest = _highest_order(session)
     if st.get_setting(session, "orders_seen_id") == highest:
         return False
     st.set_setting(session, "orders_seen_id", highest, commit=False)
