@@ -385,13 +385,13 @@ EDITOR = {
     "printers:read": "Read Printers",
     "inventory:read": "Read Inventory",
     "filaments:read": "Read Filaments",
+    "settings:read": "Read Settings",  # required since 0.4.0 (p342)
     "library:upload": "Upload Library",  # optional, for uploading print files (Spec 5.1a)
     "websocket:connect": "Connect Websocket",  # optional, for the live channel (p170)
 }
 KEY_CREATION = {
     "api_keys:read": "Read Api Keys",
     "api_keys:create": "Create Api Keys",
-    "settings:read": "Read Settings",
 }
 PURPOSE_DE = {
     "library:read_all": "damit Reprintbuddy deine Druckdateien sieht",
@@ -401,6 +401,7 @@ PURPOSE_DE = {
     "printers:read": "damit Reprintbuddy die Drucker und ihren Zustand sieht",
     "inventory:read": "damit Reprintbuddy den Filamentbestand liest",
     "filaments:read": "um zu erkennen, ob Bambuddy die Spulen selbst führt oder in Spoolman",
+    "settings:read": "damit Nachdrucke mit Bambuddys Standard-Druckoptionen laufen",
 }
 PURPOSE_EN = {
     "library:read_all": "so that Reprintbuddy sees your print files",
@@ -410,6 +411,7 @@ PURPOSE_EN = {
     "printers:read": "so that Reprintbuddy sees the printers and their state",
     "inventory:read": "so that Reprintbuddy reads the filament stock",
     "filaments:read": "to tell whether Bambuddy keeps the spools itself or in Spoolman",
+    "settings:read": "so that reprints run with the default print options set in Bambuddy",
 }
 
 
@@ -537,7 +539,7 @@ def test_guide_names_the_rights_for_creating_the_key(admin_client):
     for code, label in KEY_CREATION.items():
         assert f"<code>{code}</code>" in page, code
         assert label in page, code
-    assert page.lower().count("only to create the key") >= 4  # the sentence and one note per right
+    assert page.lower().count("only to create the key") >= 3  # the sentence and one note per right
     assert "may be removed again" in page and "does not need them" in page
 
 
@@ -546,13 +548,13 @@ def test_guide_names_the_rights_for_creating_the_key_in_german(admin_client):
     page = admin_client.get(USER_PAGE).text
     for code, label in KEY_CREATION.items():
         assert f"<code>{code}</code>" in page and label in page, code
-    assert page.lower().count("nur zum erzeugen des schlüssels") >= 4
-    assert "Nach dem Erzeugen des Schlüssels dürfen diese drei Rechte wieder weg; der Schlüssel braucht sie nicht." in page
+    assert page.lower().count("nur zum erzeugen des schlüssels") >= 3
+    assert "Nach dem Erzeugen des Schlüssels dürfen diese zwei Rechte wieder weg; der Schlüssel braucht sie nicht." in page
 
 
 def test_the_key_creation_rights_are_not_checked(admin_client, respx_mock):
     """A key without them passes: Reprintbuddy needs them only while the key is created."""
-    mock_auth_me(respx_mock)  # exactly the six required rights, no api_keys:*, no settings:read
+    mock_auth_me(respx_mock)  # exactly the required rights, no api_keys:*
     token = csrf_of(admin_client, CONNECT)
     response = admin_client.post(CONNECT, data=_form(token))
     assert response.status_code == 303  # saved: on to the page with the result
@@ -563,7 +565,7 @@ def test_the_key_creation_rights_are_not_in_the_result_list(admin_client, respx_
     mock_auth_me(respx_mock, permissions=[])
     token = csrf_of(admin_client, CONNECT)
     page = admin_client.post(CONNECT, data=_form(token)).text
-    assert "api_keys" not in page and "settings:read" not in page
+    assert "api_keys" not in page
 
 
 class _WakeRecorder:
