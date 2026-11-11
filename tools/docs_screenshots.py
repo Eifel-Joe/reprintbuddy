@@ -68,6 +68,7 @@ ROOT = Path(__file__).resolve().parents[1]
 from reprintbuddy import models  # noqa: E402
 from reprintbuddy import settings as st  # noqa: E402
 from reprintbuddy.activity import capture as activity_capture  # noqa: E402
+from reprintbuddy.bambuddy.connection import REQUIRED_PERMISSIONS  # noqa: E402
 from reprintbuddy.bambuddy.fake import FakeBambuddy  # noqa: E402
 from reprintbuddy.bambuddy.types import FilamentRequirement  # noqa: E402
 from reprintbuddy.domain import assembled, catalog, filament, orders, pauses, reorder, stock, workqueue  # noqa: E402
@@ -88,10 +89,9 @@ QR_ADDRESS = "http://reprintbuddy.example:8080"
 LABEL_PRINTER = "192.0.2.50"
 KEY_TEXT = "bb_example_key"  # typed into a password field: it shows as dots
 
-REQUIRED = (
-    "library:read_all", "queue:read_all", "queue:create", "queue:start_unreviewed",
-    "printers:read", "inventory:read", "filaments:read",
-)
+# The application's own list, not a copy: a copy missed `settings:read` when 0.4.0 made it required
+# (p342) and the connection check of the pictures failed (tests/test_docs_screenshots_rights.py).
+REQUIRED = REQUIRED_PERMISSIONS
 
 ALL_NAMES = (
     "setup-admin", "setup-group", "setup-key", "setup-connect", "overview", "articles-list",
