@@ -12,7 +12,7 @@ Every command takes `--db PATH`, the database file. The default is `/var/lib/rep
 
 | Command | What it does |
 |---|---|
-| `reprintbuddy --version` | Prints the installed version, for example `reprintbuddy 0.4.4`. |
+| `reprintbuddy --version` | Prints the installed version, for example `reprintbuddy 0.4.5`. |
 | `reprintbuddy set-password --username <name>` | Sets the password of the account. Asks for the new password twice on the terminal. |
 | `reprintbuddy set-port <port>` | Sets the port, 1 to 65535. |
 | `reprintbuddy set-host <address>` | Sets the listen address, for example `0.0.0.0`. Refused if this machine cannot listen on it. |
