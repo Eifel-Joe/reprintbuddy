@@ -229,3 +229,18 @@ def test_set_form_hides_parts_not_sold_alone(ready_client):
     assert f'value="{w["panel"]}"' in base and f'value="{w["box"]}"' in base
     for hidden in ("side", "bracket", "hose"):
         assert f'value="{w[hidden]}"' not in base, hidden
+
+
+def test_orders_section_shows_lines_not_a_table(ready_client):  # p367: at 375 px the table was wider than its card
+    w = world(ready_client)
+    with sm_of(ready_client).begin() as s:
+        orders.create_order(s, reference="R-77", order_date=date(2026, 11, 11),
+                            items=[AssembledItem(w["hose"], 1, w["keys"]["EX-H1-L32"])], actor="user")
+    page = ready_client.get("/assembly").text
+    section = page[page.index(en("assembly.for_orders")):]
+    assert "<table" not in section
+    assert '<div class="card line-list order-build-list">' in section
+    line = re.search(r'<div class="line order-build-cols">(.*?)\n  </div>', section, re.S).group(1)
+    for label in ("orders.field.reference", "assembly.col.article", "assembly.col.qty", "list.col.status"):
+        assert f'<span class="line-label">{en(label)}</span>' in line  # each value named on the phone
+    assert "R-77" in line and "EX-H1-L32" in line and en("status.order.ready") in line
