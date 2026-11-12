@@ -160,7 +160,9 @@ def test_mobile_css_turns_lanes_into_a_list():
     mobile = next((block for block in blocks if ".plan-track" in block), None)
     assert mobile, "no phone rules for the print plan"
     assert re.search(r"\.plan-track \{[^}]*display: block", mobile)
-    assert re.search(r"\.plan-bar \{[^}]*position: static", mobile)
+    # relative, not static: the progress fill of a running print stays inside its own row (review v0.4.2, 5)
+    assert re.search(r"\.plan-bar \{[^}]*position: relative", mobile)
+    assert re.search(r"\.plan-beyond \{[^}]*display: flex", mobile)  # the list shows every print
     assert re.search(r"\.ov-tiles \{[^}]*grid-template-columns: minmax\(0, 1fr\)", mobile)
     # on a wide screen the bar sits on the axis
     assert re.search(r"\.plan-bar \{ position: absolute;[^}]*left: var\(--start\); width: var\(--width\)", css)
@@ -186,3 +188,25 @@ def test_refused_queue_read_makes_the_plan_unknown(bb_client, fake_bambuddy):
     query(bb_client)
     part = plan_part(bb_client)
     assert en("overview.plan.unknown") in part and "plan-lane" not in part
+
+
+def test_the_whole_plan_leads_to_the_queue_css():
+    """The stretched link of the plan lies above the lanes and the axis, which have no links of their own
+    (Spec 10.2: the whole plan leads to the queue; review v0.4.2, 4)."""
+    css = CSS.read_text(encoding="utf-8")
+    assert re.search(r"\.plan-main::after \{[^}]*z-index: 1", css)
+
+
+def test_bars_beyond_the_axis_are_left_out_on_a_wide_screen(bb_client, fake_bambuddy):
+    """A print that starts after the end of the axis (24 hours) has no place on it: hidden on a wide screen,
+    listed on a phone; every bar carries its whole text as a tooltip (review v0.4.2, 8)."""
+    for n in range(40):
+        fake_bambuddy.add_foreign_item(f"Part {n}.gcode.3mf", target_model="A1", print_time_s=5400)
+    query(bb_client)
+    part = plan_part(bb_client)
+    tags = re.findall(r'<li class="(plan-bar[^"]*)"[^>]*title="([^"]+)"', part)
+    assert len(tags) == 40
+    beyond = [cls for cls, _title in tags if "plan-beyond" in cls]
+    assert beyond and len(beyond) < 40
+    css = CSS.read_text(encoding="utf-8")
+    assert re.search(r"\.plan-beyond \{ display: none; \}", css)

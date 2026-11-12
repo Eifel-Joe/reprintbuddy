@@ -58,6 +58,7 @@ class BarView:
     detail: str  # "63 % · 1 h 10 left", "paused", "Duration unknown"
     cut: str  # "→ until Fri 16:00" when the bar goes beyond the axis
     progress: float | None
+    beyond: bool = False  # starts after the end of the axis: no place on it (only the phone list shows it)
 
 
 @dataclass(frozen=True)
@@ -191,7 +192,7 @@ def _bar_view(bar: Bar, ax: Axis, now: datetime, lang: str) -> BarView:
         kind=bar.kind, kind_text=translate(lang, _KIND_KEYS[bar.kind]), label=bar.label, own=bar.own,
         left=round(left, 2), width=round(right - left, 2),
         start_text=_when(bar.start, now, lang), end_text=_when(bar.end, now, lang),
-        detail=" · ".join(parts), cut=cut, progress=bar.progress,
+        detail=" · ".join(parts), cut=cut, progress=bar.progress, beyond=bar.start >= ax.end,
     )
 
 
