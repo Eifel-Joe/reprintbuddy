@@ -10,14 +10,14 @@ The session functions never commit: the caller opens the transaction.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable
-from reprintbuddy.bambuddy.types import QueueItem
+from reprintbuddy.bambuddy.types import Printer, QueueItem
 from reprintbuddy.domain.inspection import open_inspection
 from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.pauses import pause_article
@@ -225,6 +225,9 @@ class ArticleCheck:
     # Articles whose target is only temporarily unavailable (printer in maintenance mode);
     # they are not paused, the engine skips them when handing over (assumption A9).
     waiting_for_printer: frozenset[int]
+    # Bambuddy's printer list as the check read it; the print plan uses it, so a regular query asks
+    # for the printers once (0.4.2). Empty when the check failed. Not part of the comparison.
+    printers: tuple[Printer, ...] = field(default=(), compare=False)
 
 
 async def check_articles(client: BambuddyClient, sm: sessionmaker) -> ArticleCheck:
@@ -307,4 +310,4 @@ async def check_articles(client: BambuddyClient, sm: sessionmaker) -> ArticleChe
                 ):
                     break
                 pause_article(session, row.id, reason, "auto", details=details)
-    return ArticleCheck(None, frozenset(waiting))
+    return ArticleCheck(None, frozenset(waiting), tuple(printers))

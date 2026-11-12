@@ -427,3 +427,12 @@ async def test_confirm_with_other_file_refused(db, fake_bambuddy):
                 s, a, file=file_b, requirements=[], thumbnail=None, actor="user"
             )
         assert err.value.key == "articles.confirm_other_file"
+
+
+async def test_article_check_returns_the_printers(fake_bambuddy, db):
+    """The print plan (0.4.2) uses the printer list the check reads anyway: no second request."""
+    fake_bambuddy.add_printer("Printer 9", "P1S", location="Shelf B")
+    result = await check_articles(fake_bambuddy, db)
+    assert [p.name for p in result.printers][-1] == "Printer 9"
+    assert result.printers[-1].location == "Shelf B"
+    assert fake_bambuddy.calls.count("list_printers") == 1

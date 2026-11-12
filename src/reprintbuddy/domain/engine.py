@@ -36,8 +36,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy import settings
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable
-from reprintbuddy.bambuddy.types import QueueItem
+from reprintbuddy.bambuddy.types import Printer, QueueItem
 from reprintbuddy.domain import dispatch, tracking, withdraw, workqueue
+from reprintbuddy.domain.printerboard import PrinterBoard
 from reprintbuddy.domain import articlesets
 from reprintbuddy.models import Article, Dispatch, Withdrawal, WorkQueueEntry, utcnow
 from reprintbuddy.i18n import translate
@@ -125,6 +126,9 @@ class Engine:
         self.now = now
         self.publish = publish
         self.status = EngineStatus()
+        # The printers' state for the print plan (Spec 7.6, 0.4.2): beside the status, not in it, so a
+        # live percent does not wake every page that follows "bambuddy".
+        self.board = PrinterBoard(publish)
         # Known before the first tick, so a page right after the start does not say
         # "not configured" wrongly. A provider that fails leaves it False; the tick tells.
         try:
@@ -324,6 +328,7 @@ class Engine:
         def cut_short() -> None:
             status.reachable = False
             status.bambuddy_queue_ok = False  # the list was not read again
+            self.board.forget()
             if error is not None:
                 status.poll_error = error
 
@@ -343,6 +348,7 @@ class Engine:
             return
         if check.error is not None:
             error = check.error
+            self.board.forget()
         else:
             status.waiting_for_printer = sorted(check.waiting_for_printer)
 
@@ -357,6 +363,8 @@ class Engine:
             status.bambuddy_queue_ok = False
             error = str(exc)
         status.poll_error = error  # the poll reached its end
+        if check.error is None:
+            await self._read_printers(client, check.printers)
 
         for name, hook in list(self.hooks.items()):
             try:
@@ -371,6 +379,22 @@ class Engine:
         status.rejected_name = None
         if status.poll_error is None:
             status.last_poll_at = self.now()
+
+    async def _read_printers(self, client: BambuddyClient, printers: tuple[Printer, ...]) -> None:
+        """The printers' state for the print plan (Spec 7.6, 0.4.2): one request for all printers and
+        Bambuddy's "shortest job first", once per regular query. Only shown: a failure makes the state
+        unknown and changes nothing else (no poll error, no warning, no `reachable`)."""
+        try:
+            statuses = await client.printer_statuses([p.id for p in printers])
+        except (BambuddyRejected, BambuddyUnavailable):
+            log.info("engine: the printers' state could not be read; the print plan shows it as unknown")
+            self.board.forget()
+            return
+        try:
+            shortest = await client.shortest_first()
+        except (BambuddyRejected, BambuddyUnavailable):
+            shortest = False  # the queue order, as Bambuddy's default
+        self.board.replace(printers, statuses, shortest_first=shortest)
 
     def _may_hand_over(self, poll: bool) -> bool:
         status = self.status
