@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import re
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Literal
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.activity.capture import quiet
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
-from reprintbuddy.domain import rules, suppliers, workqueue
+from reprintbuddy.domain import rules, setresolve, suppliers, workqueue
 from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.domain.workqueue import OPEN_STATES
@@ -35,6 +36,7 @@ from reprintbuddy.models import (
     ProductSet,
     SetPosition,
     SetPositionOption,
+    SetPositionSet,
     WorkQueueEntry,
     utcnow,
 )
@@ -675,8 +677,13 @@ CHOICE_FIELDS = 2
 
 @dataclass
 class BaseInput:
+    """A base row: an article, or an inner set in its fixed variant (0.4.3 p423; `key` holds the
+    chosen article per choice field of the inner set, empty without choices)."""
+
     qty: int
-    article_id: int
+    article_id: int | None
+    set_id: int | None = None
+    key: tuple[int, ...] = ()
 
 
 @dataclass
@@ -702,9 +709,14 @@ class SetInput:
 @dataclass(frozen=True)
 class BaseRow:
     qty: int
-    article_id: int
-    name: str
-    archived: bool
+    article_id: int | None  # None for an inner set
+    name: str  # of the article or of the inner set
+    archived: bool  # the article or the inner set itself is archived
+    set_id: int | None = None  # an inner set (0.4.3 p423)
+    key: tuple[int, ...] = ()  # its fixed variant: the chosen article per choice field
+    variant_sku: str | None = None  # the number of that variant now; None without choices or while missing
+    incomplete: bool = False  # the inner set is incomplete (plan approval v0.4.3, condition A2)
+    contents: tuple[tuple[int, str], ...] = ()  # inner set: (qty per piece of it, article), all levels
 
 
 @dataclass(frozen=True)
@@ -738,7 +750,7 @@ class SetRow:
     base: list[BaseRow]
     choices: list[ChoiceRow]
     variants: list[VariantRow]  # of the active choice articles only
-    incomplete: str | None  # "too_few" or "suffixes_missing" (sets the update to v0.4.0 rebuilt)
+    incomplete: str | None  # "too_few" or "suffixes_missing" (sets the update to v0.4.0 rebuilt), "broken" (0.4.3)
     orderable: bool
     status: SetStatus  # deliverable when at least one set comes together (Spec 10.1)
 
@@ -925,53 +937,146 @@ def update_set(session: Session, set_id: int, data: SetInput) -> ProductSet:
     return product_set
 
 
-def _set_row(session: Session, product_set: ProductSet) -> SetRow:
-    positions, fields = _fields_of(session, product_set.id)
-    base: list[BaseRow] = []
-    base_stock: list[tuple[int, int]] = []
+def load_defs(session: Session) -> dict[int, setresolve.SetDef]:
+    """All sets, archived ones too, as the snapshot setresolve reads (0.4.3 p423): four queries for
+    any number of sets, so a page resolves every set without a query per level."""
+    positions = session.scalars(
+        select(SetPosition).order_by(SetPosition.set_id, SetPosition.slot, SetPosition.sort, SetPosition.id)
+    ).all()
+    options: dict[int, list[SetPositionOption]] = defaultdict(list)
+    for option in session.scalars(
+        select(SetPositionOption).order_by(SetPositionOption.sort, SetPositionOption.article_id)
+    ):
+        options[option.position_id].append(option)
+    inner = {row.position_id: row for row in session.scalars(select(SetPositionSet))}
+    base: dict[int, list[setresolve.Base]] = defaultdict(list)
+    fields: dict[int, list[setresolve.Field]] = defaultdict(list)
     for position in positions:
-        article = session.scalar(
-            select(Article)
-            .join(SetPositionOption, SetPositionOption.article_id == Article.id)
-            .where(SetPositionOption.position_id == position.id)
+        if position.slot > 0:
+            found = options[position.id]
+            fields[position.set_id].append(setresolve.Field(
+                position.qty, tuple(o.article_id for o in found), tuple(o.suffix for o in found)
+            ))
+        elif position.id in inner:
+            row = inner[position.id]
+            base[position.set_id].append(setresolve.Base(position.qty, set_id=row.set_id, key=row.key))
+        elif options[position.id]:
+            base[position.set_id].append(setresolve.Base(position.qty, article_id=options[position.id][0].article_id))
+    return {
+        set_id: setresolve.SetDef(set_id, tuple(base[set_id]), tuple(fields[set_id]), name, sku)
+        for set_id, name, sku in session.execute(select(ProductSet.id, ProductSet.name, ProductSet.sku))
+    }
+
+
+def _incomplete_of(found: setresolve.SetDef) -> str | None:
+    """Too few rows, or a choice field without its numbers (sets the update to v0.4.0 rebuilt)."""
+    if len(found.base) + len(found.fields) < 2:
+        return "too_few"
+    if found.fields and any(
+        rules.variant_number(found.sku, [suffix]) is None for field in found.fields for suffix in field.suffixes
+    ):
+        return "suffixes_missing"
+    return None
+
+
+def sets_containing(session: Session, set_id: int) -> list[str]:
+    """Names of the active sets that hold this set in one of their own rows ("Steckt in", Spec 5.4)."""
+    parents = setresolve.direct_parents(load_defs(session), set_id)
+    return list(session.scalars(
+        select(ProductSet.name)
+        .where(ProductSet.id.in_(parents), ProductSet.archived_at.is_(None))
+        .order_by(ProductSet.name, ProductSet.id)
+    ))
+
+
+def _archived_sets(session: Session) -> set[int]:
+    return set(session.scalars(select(ProductSet.id).where(ProductSet.archived_at.is_not(None))))
+
+
+def _set_row(
+    session: Session,
+    product_set: ProductSet,
+    defs: dict[int, setresolve.SetDef] | None = None,
+    archived_sets: set[int] | None = None,
+) -> SetRow:
+    """A set as the list shows it. Its base parts count with their resolved articles (Spec 5.4: an
+    inner set counts as its articles, quantities multiplied); no article comes twice (Spec 5.4), so
+    the availability rule of 0.4.0 stays as it is. A set that cannot be resolved (a ring or a doubled
+    article left in the database) shows "broken" and is not orderable instead of hanging the page
+    (plan v0.4.3, decision 6). Tests: tests/domain/test_catalog_sets_nested.py."""
+    defs = load_defs(session) if defs is None else defs
+    archived_sets = _archived_sets(session) if archived_sets is None else archived_sets
+    own = defs[product_set.id]
+    try:
+        setresolve.check(defs, product_set.id)
+        lines = setresolve.resolve_base(defs, product_set.id)
+        broken = False
+    except setresolve.ResolveError:
+        lines, broken = (), True
+    wanted = {line.article_id for line in lines}
+    wanted |= {row.article_id for row in own.base if row.article_id is not None}
+    wanted |= {option for field in own.fields for option in field.options}
+    found = {a.id: a for a in session.scalars(select(Article).where(Article.id.in_(wanted)))}
+
+    def gone(line: setresolve.Line) -> bool:
+        """The article or an inner set on its way is archived, or an inner set is incomplete (Spec 5.4,
+        5.5; plan approval v0.4.3, condition A2): the set does not come together."""
+        return found[line.article_id].archived_at is not None or any(
+            step.set_id in archived_sets or _incomplete_of(defs[step.set_id]) is not None for step in line.path
         )
-        if article is None:
+
+    base: list[BaseRow] = []
+    for row in own.base:
+        if row.set_id is None:
+            article = found[row.article_id]
+            base.append(BaseRow(row.qty, article.id, article.name, article.archived_at is not None))
             continue
-        archived = article.archived_at is not None
-        base.append(BaseRow(position.qty, article.id, article.name, archived))
-        # An archived base part is missing: the set does not come together (Spec 5.5).
-        base_stock.append((position.qty, 0 if archived else rules.available(article.stock, article.reserved)))
+        child = defs.get(row.set_id)
+        if child is None:
+            continue
+        contents = tuple(
+            (line.qty // row.qty, found[line.article_id].name)
+            for line in lines
+            if line.path and line.path[0].set_id == row.set_id
+        )
+        base.append(BaseRow(
+            row.qty, None, child.name, row.set_id in archived_sets, set_id=row.set_id, key=row.key,
+            variant_sku=setresolve.variant_number(defs, row.set_id, row.key),
+            incomplete=_incomplete_of(child) is not None, contents=contents,
+        ))
+    # An archived or incomplete part counts 0: the set does not come together (Spec 5.5).
+    base_stock = [
+        (line.qty, 0 if gone(line) else rules.available(found[line.article_id].stock, found[line.article_id].reserved))
+        for line in lines
+    ]
     choices: list[ChoiceRow] = []
     stocks: list[rules.ChoiceStock] = []
     suffixes: dict[int, str | None] = {}
     names: dict[int, str] = {}
-    for position, options in fields:
+    for field in own.fields:
         rows = []
         active = []
-        for option in options:
-            article = session.get(Article, option.article_id)
+        for article_id, suffix in zip(field.options, field.suffixes):
+            article = found[article_id]
             archived = article.archived_at is not None
-            rows.append(ChoiceOptionRow(article.id, article.name, option.suffix, archived))
-            suffixes[article.id] = option.suffix
+            rows.append(ChoiceOptionRow(article.id, article.name, suffix, archived))
+            suffixes[article.id] = suffix
             names[article.id] = article.name
             if not archived:
                 active.append((article.id, rules.available(article.stock, article.reserved)))
-        choices.append(ChoiceRow(position.qty, rows))
-        stocks.append(rules.ChoiceStock(position.qty, tuple(active)))
-    stock = rules.set_availability(base_stock, stocks)
+        choices.append(ChoiceRow(field.qty, rows))
+        stocks.append(rules.ChoiceStock(field.qty, tuple(active)))
+    stock = rules.SetStock(0, {}) if broken else rules.set_availability(base_stock, stocks)
     variants = [
         VariantRow(key, rules.variant_number(product_set.sku, [suffixes[a] for a in key]), [names[a] for a in key], count)
         for key, count in stock.variants.items()
     ]
-    incomplete = None
-    if len(base) + len(choices) < 2:
-        incomplete = "too_few"
-    elif choices and rules.variant_number(product_set.sku, list(suffixes.values())) is None:
-        incomplete = "suffixes_missing"
+    incomplete = "broken" if broken else _incomplete_of(own)
     orderable = (
         product_set.archived_at is None
         and incomplete is None
-        and not any(row.archived for row in base)
+        and not any(row.archived or row.incomplete for row in base)
+        and not any(gone(line) for line in lines)
         and (not choices or bool(variants))
     )
     return SetRow(
@@ -995,7 +1100,8 @@ def set_row(session: Session, set_id: int) -> SetRow:
 def list_sets(session: Session, *, archived: bool = False) -> list[SetRow]:
     found = session.scalars(select(ProductSet).where(_archive_filter(ProductSet.archived_at, archived))).all()
     sets = sorted(found, key=lambda s: (s.name.casefold(), s.id))
-    return [_set_row(session, s) for s in sets]
+    defs, archived_sets = load_defs(session), _archived_sets(session)
+    return [_set_row(session, s, defs, archived_sets) for s in sets]
 
 
 # ---- archive instead of delete (Spec 5.5) ---------------------------------------------------
