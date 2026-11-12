@@ -86,4 +86,9 @@ def warnings_context(request: Request, session: Session, *, sets: bool = False) 
         for held in catalog.archived_in_sets(session):
             key = "sets.holds_archived_set" if held.kind == "set" else "sets.holds_archived_article"
             shown.append(ShownWarning(translate(lang, key, set=held.set_name, name=held.name), "warn", set_id=held.set_id))
+        # sets the update to 0.4.4 left out of the order form (plan v0.4.4, N1); no push, like the Altfall
+        mend_keys = {"number_missing": "sets.mend.number_missing", "twice": "sets.mend.twice", "broken": "sets.mend.broken"}
+        for mend in catalog.sets_to_mend(session):
+            text = translate(lang, mend_keys[mend.kind], set=mend.set_name, name=mend.name or "")
+            shown.append(ShownWarning(text, "warn", set_id=mend.set_id))
     return {"warnings": shown, "last_poll_at": status.last_poll_at}

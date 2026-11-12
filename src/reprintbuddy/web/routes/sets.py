@@ -92,22 +92,21 @@ def _article_id(raw: str) -> int:
     return parse_int(raw, field="sets.field.article", min=1, max=MAX_ID)
 
 
-def _set_value(set_id: int, key: tuple[int, ...]) -> str:
-    """The value of an inner set in the drop-down of base parts: "set:5", a variant "set:5:12"
-    (the chosen article per choice field), like the order form (0.4.3 p423)."""
-    return ":".join(["set", str(set_id), *(str(a) for a in key)])
+def _set_value(set_id: int) -> str:
+    """The value of an inner set in the drop-down of base parts: "set:5" (0.4.3 p423). Since 0.4.4 a
+    set is offered once; it brings its choice parts, chosen when ordering (p441)."""
+    return f"set:{set_id}"
 
 
-def _base_choice(raw: str) -> tuple[int | None, int | None, tuple[int, ...]]:
-    """What a base row holds: (article id, None, ()) or (None, set id, key)."""
+def _base_choice(raw: str) -> tuple[int | None, int | None]:
+    """What a base row holds: (article id, None) or (None, set id). A variant value of 0.4.3
+    ("set:5:12") is refused like any other wrong value."""
     field = "sets.field.article_or_set"  # a base row holds an article or a set (0.4.3)
     if not raw.startswith("set:"):
-        return parse_int(raw, field=field, min=1, max=MAX_ID), None, ()
-    parts = raw[4:].split(":")
-    if len(parts) > 1 + catalog.CHOICE_FIELDS:
+        return parse_int(raw, field=field, min=1, max=MAX_ID), None
+    if ":" in raw[4:]:
         raise ValidationError("form.invalid_number", field=field, min=1, max=MAX_ID)
-    numbers = [parse_int(part, field=field, min=1, max=MAX_ID) for part in parts]
-    return None, numbers[0], tuple(numbers[1:])
+    return None, parse_int(raw[4:], field=field, min=1, max=MAX_ID)
 
 
 def _parse(values: dict) -> SetInput:
@@ -116,8 +115,8 @@ def _parse(values: dict) -> SetInput:
         if not row["article"]:
             continue  # rows without an article are skipped
         qty = parse_int(row["qty"], field="sets.field.qty", min=1, max=1000)
-        article_id, set_id, key = _base_choice(row["article"])
-        base.append(BaseInput(qty, article_id, set_id, key))
+        article_id, set_id = _base_choice(row["article"])
+        base.append(BaseInput(qty, article_id, set_id))
     choices = []
     for section in ("c1", "c2") if values["show_c2"] else ("c1",):
         options = [ChoiceOptionInput(_article_id(row["article"]), row["suffix"]) for row in values[section] if row["article"]]
@@ -151,50 +150,53 @@ def _article_options(db: Session, values: dict) -> list[dict[str, object]]:
 
 def _set_options(db: Session, values: dict, product_set: ProductSet | None, lang: str) -> list[dict[str, object]]:
     """What the drop-down of base parts offers under "Sets" (Spec 5.4, 0.4.3 p423): each active,
-    complete set by "name · number", a set with choice parts once per variant, "name · variant
-    number (chosen articles)". Never the set itself or a set that holds it (a ring); an inner set the
-    form already holds stays, marked archived if it is. Each entry carries what it takes ("takes":
-    the set, the inner sets in it and its resolved articles), so that the form hides every entry
-    that would bring an article or a set twice, and the text "contains ..." shown under its row."""
+    complete set once, by "name · number", also a set with choice parts: it brings them (0.4.4 p441).
+    Never the set itself or a set that holds it (a ring); an inner set the form already holds stays,
+    marked archived if it is. Each entry carries what it takes ("takes": the set, the inner sets in
+    it, its resolved base articles and every option of every field), so that the form hides every
+    entry that would bring an article or a set twice, and the text "contains ...": the base articles,
+    then each field as "1 × Plate A / Plate B" (plan v0.4.4, E6, E7)."""
     defs = catalog.load_defs(db)
     own = product_set.id if product_set is not None else None
     holding = set(setresolve.containing(defs, own)) | {own} if own is not None else set()
     names = dict(db.execute(select(Article.id, Article.name)).all())
     options: dict[str, dict[str, object]] = {}
 
-    def add(set_id: int, key: tuple[int, ...], label: str, archived: bool) -> None:
+    def add(set_id: int, archived: bool) -> None:
         try:
-            lines = setresolve.resolve(defs, set_id, key)
+            try:
+                setresolve.check(defs, set_id)
+            except setresolve.Twice:
+                pass  # a broken set the form holds still shows; saving names the article
+            lines = setresolve.resolve_base(defs, set_id)
+            slots = setresolve.fields(defs, set_id)
+            inner = sorted(set(setresolve.inner_sets(defs, set_id)))
         except setresolve.ResolveError:
             return
-        inner = sorted({f"s{step.set_id}" for line in lines for step in line.path})
-        takes = [f"s{set_id}", *inner, *(f"a{line.article_id}" for line in lines)]
-        items = ", ".join(f"{line.qty} × {names[line.article_id]}" for line in lines)
-        options[_set_value(set_id, key)] = {
-            "id": _set_value(set_id, key), "name": label, "archived": archived,
-            "takes": " ".join(takes), "contains": translate(lang, "sets.contains", items=items),
+        found = defs[set_id]
+        possible = [line.article_id for line in lines] + [o for slot in slots for o in slot.options]
+        takes = [f"s{set_id}", *(f"s{i}" for i in inner), *(f"a{a}" for a in possible)]
+        items = [f"{line.qty} × {names[line.article_id]}" for line in lines]
+        items += [f"{slot.qty} × {' / '.join(names[o] for o in slot.options)}" for slot in slots]
+        options[_set_value(set_id)] = {
+            "id": _set_value(set_id), "name": f"{found.name} · {found.sku}" if found.sku else found.name,
+            "archived": archived, "takes": " ".join(takes),
+            "contains": translate(lang, "sets.contains", items=", ".join(items)),
         }
 
     for row in catalog.list_sets(db):
-        if row.id in holding or row.incomplete is not None:
-            continue
-        if not row.choices:
-            add(row.id, (), f"{row.name} · {row.sku}" if row.sku else row.name, False)
-        for variant in row.variants:
-            add(row.id, variant.key, f"{row.name} · {variant.sku} ({', '.join(variant.names)})", False)
+        if row.id not in holding and row.incomplete is None:
+            add(row.id, False)
     archived = set(db.scalars(select(ProductSet.id).where(ProductSet.archived_at.is_not(None))))
     for row in values["base"]:  # an inner set the form holds although it is not offered (plan v0.4.3, 7)
         if not row["article"].startswith("set:") or row["article"] in options:
             continue
         try:
-            _article_id_none, set_id, key = _base_choice(row["article"])
+            _article_id_none, set_id = _base_choice(row["article"])
         except ValidationError:
             continue
-        if set_id not in defs or set_id in holding:
-            continue
-        number = setresolve.variant_number(defs, set_id, key)
-        label = defs[set_id].name + (f" · {number}" if number else "")
-        add(set_id, key, label, set_id in archived)
+        if set_id in defs and set_id not in holding:
+            add(set_id, set_id in archived)
     return sorted(options.values(), key=lambda o: (str(o["name"]).casefold(), o["id"]))
 
 
@@ -372,7 +374,7 @@ def _edit_again(request, db, product_set, error, status):
         "sku": product_set.sku or "",
         "show_c2": len(row.choices) > 1,
         "base": [
-            {"qty": str(b.qty), "article": _set_value(b.set_id, b.key) if b.set_id is not None else str(b.article_id)}
+            {"qty": str(b.qty), "article": _set_value(b.set_id) if b.set_id is not None else str(b.article_id)}
             for b in row.base
         ],
     })

@@ -6,8 +6,9 @@
     and suffix per row), Spec 5.4 (p340). Every article is picked from a drop-down; one chosen in a
     row is not offered in the others (here on the server, set_form.js while choosing). Since 0.4.3
     (p423) a base row may hold a set instead, from the group "Sets" of its drop-down; an entry is
-    hidden when one of the things it takes (the set, its inner sets, its articles) is chosen in
-    another row already, and the row shows what the chosen set contains. Without
+    hidden when one of the things it takes (the set, its inner sets, its articles, every option of
+    the choice parts it brings, 0.4.4 p441) is chosen in another row already, and the row shows what
+    the chosen set contains. Each set is offered once; its choice parts are chosen when ordering. Without
     JavaScript "more rows" and "add choice parts 2" send the form, which comes back with the rows
     added and nothing saved; the page then jumps to the first new row (#more-new). With more_rows.js
     the rows are added in place from the templates below: {i} is the number of a new row counted from

@@ -5,15 +5,16 @@
 {#- The state badge; in the archive "archived" instead. -#}
 {#- A set the update rebuilt without its numbers shows a grey badge beside its state (p340). -#}
 {% macro badge(row) -%}
-<span class="badges">{{ ui.badge('set', 'archived' if archived else row.status) }}{% if row.incomplete and not archived %}<span class="badge tone-neutral">{% if row.incomplete == 'too_few' %}{{ t('sets.incomplete.too_few') }}{% elif row.incomplete == 'broken' %}{{ t('sets.incomplete.broken') }}{% else %}{{ t('sets.incomplete.suffixes_missing') }}{% endif %}</span>{% endif %}</span>
+<span class="badges">{{ ui.badge('set', 'archived' if archived else row.status) }}{% if row.incomplete and not archived %}<span class="badge tone-neutral">{% if row.incomplete == 'too_few' %}{{ t('sets.incomplete.too_few') }}{% elif row.incomplete == 'broken' %}{{ t('sets.incomplete.broken') }}{% elif row.incomplete == 'number_missing' %}{{ t('sets.incomplete.number_missing') }}{% else %}{{ t('sets.incomplete.suffixes_missing') }}{% endif %}</span>{% endif %}</span>
 {%- endmacro %}
 {#- What a set holds (Spec 5.4): the base parts "2 × Frame", then each variant with its number and
     how often it is available on its own, "EX-S10-A · 2"; without a number the chosen articles. An
-    inner set (0.4.3 p423) shows its fixed variant number and the grey badge "Set", and "Archived"
-    when an earlier version left it archived in the set (Spec 5.4 Altfall, 10.1). -#}
+    inner set (0.4.3 p423) shows its own number and the grey badge "Set", and "Archived" when an
+    earlier version left it archived in the set (Spec 5.4 Altfall, 10.1); the choice parts it brings
+    show in the variants of the outer set (0.4.4 p441). -#}
 {% macro contents(row) -%}
 {%- for part in row.base %}<span>{{ part.qty }} × {{ part.name }}
-  {%- if part.set_id %}{% if part.variant_sku %} {{ part.variant_sku }}{% endif %} <span class="badge tone-neutral">{{ t('sets.badge_set') }}</span>
+  {%- if part.set_id %}{% if part.sku %} {{ part.sku }}{% endif %} <span class="badge tone-neutral">{{ t('sets.badge_set') }}</span>
   {%- if part.archived %}<span class="badge tone-neutral">{{ t('catalog.archived_badge') }}</span>{% endif %}
   {%- endif %}</span>{% endfor -%}
 {#- what an earlier version left archived directly in the set (Spec 5.4 Altfall, 0.4.3) -#}
