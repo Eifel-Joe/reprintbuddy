@@ -123,7 +123,7 @@ Deleting in Bambuddy needs the recommended right **Delete Own Queue** in the gro
 
 A set is a bundle of articles sold together, with a name and an article number (required once the set has choice parts). It has no stock of its own.
 
-**Base parts** go into every set: per row a **Quantity** and an **Article** or another **Set**, chosen from a drop-down (groups **Articles** and **Sets**; see [Sets in sets](#sets-in-sets)). An article that is in one row already is not offered in the others; an article is only once in a set.
+**Base parts** go into every set: per row a **Quantity** and an **Article** or another **Set**, chosen from a drop-down (groups **Articles** and **Sets**; see [Sets in sets](#sets-in-sets)). What is in one row already, or in a set chosen in one, is not offered in the others; an article is only once in a set.
 
 **Choice parts** are optional: one of their articles goes into each set, for example the size of a plate. **Choice parts 1** holds any number of articles, each with a **Suffix**, and one **Quantity of the chosen article**. **Add choice parts 2** opens a second field of the same kind, for example the colour. Every combination is a **variant**. The article number of a variant is the set's number with the suffixes behind it, written as they are: set EX-S10 with choice parts 1 A `-A`, B `-B`, C `-C` and choice parts 2 D `-1`, E `-2` has the six variants EX-S10-A-1, EX-S10-A-2, EX-S10-B-1 … EX-S10-C-2; without choice parts 2 only EX-S10-A, EX-S10-B and EX-S10-C. Write the separator into the suffix yourself.
 
@@ -138,7 +138,7 @@ Rules when you save:
 
 ![The list of sets with base parts and variants](../assets/images/en/sets.png)
 
-Under **Sets** press **New set**. The form starts with three rows of base parts and of choice parts 1; **More rows** adds three to that part, and **Add choice parts 2** opens the second field. Rows without an article are ignored.
+Under **Sets** press **New set**. The form starts with three rows of base parts and of choice parts 1; **More rows** adds three to that part, and **Add choice parts 2** opens the second field. Empty rows are ignored.
 
 ![The form of a set with base parts and choice parts](../assets/images/en/set-form.png)
 

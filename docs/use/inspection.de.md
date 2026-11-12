@@ -123,7 +123,7 @@ Das Löschen in Bambuddy braucht das empfohlene Recht **Delete Own Queue** in de
 
 Ein Set ist eine Zusammenstellung von Artikeln, die zusammen verkauft werden, mit Namen und Artikelnummer (Pflicht, sobald das Set Wahlteile hat). Es hat keinen eigenen Bestand.
 
-**Basisteile** kommen in jedes Set: je Zeile eine **Menge** und ein **Artikel** oder ein anderes **Set** aus der Aufklappliste (Dropdown, Gruppen **Artikel** und **Sets**; siehe [Sets aus anderen Sets](#sets-aus-anderen-sets)). Ein Artikel, der schon in einer Zeile steht, wird in den anderen nicht mehr angeboten; ein Artikel steht nur einmal in einem Set.
+**Basisteile** kommen in jedes Set: je Zeile eine **Menge** und ein **Artikel** oder ein anderes **Set** aus der Aufklappliste (Dropdown, Gruppen **Artikel** und **Sets**; siehe [Sets aus anderen Sets](#sets-aus-anderen-sets)). Was schon in einer Zeile steht oder in einem dort gewählten Set steckt, wird in den anderen nicht mehr angeboten; ein Artikel steht nur einmal in einem Set.
 
 **Wahlteile** sind freiwillig: In jedes Set kommt einer ihrer Artikel, zum Beispiel die Größe einer Platte. **Wahlteile 1** nimmt beliebig viele Artikel auf, jeden mit einer **Zusatznummer**, dazu eine **Menge des gewählten Artikels**. **Wahlteile 2 hinzufügen** öffnet ein zweites Feld derselben Art, zum Beispiel für die Farbe. Jede Zusammenstellung ist eine **Variante**. Die Artikelnummer einer Variante ist die des Sets mit den Zusatznummern dahinter, so wie sie geschrieben sind: Set EX-S10 mit Wahlteilen 1 A `-A`, B `-B`, C `-C` und Wahlteilen 2 D `-1`, E `-2` hat die sechs Varianten EX-S10-A-1, EX-S10-A-2, EX-S10-B-1 … EX-S10-C-2; ohne Wahlteile 2 nur EX-S10-A, EX-S10-B und EX-S10-C. Den Trenner schreibst du selbst in die Zusatznummer.
 
@@ -138,7 +138,7 @@ Regeln beim Speichern:
 
 ![Die Liste der Sets mit Basisteilen und Varianten](../assets/images/de/sets.png)
 
-Klicke unter **Sets** auf **Neues Set**. Das Formular beginnt mit je drei Zeilen Basisteile und Wahlteile 1; **Mehr Zeilen** fügt dem Abschnitt drei hinzu, **Wahlteile 2 hinzufügen** öffnet das zweite Feld. Zeilen ohne Artikel werden übergangen.
+Klicke unter **Sets** auf **Neues Set**. Das Formular beginnt mit je drei Zeilen Basisteile und Wahlteile 1; **Mehr Zeilen** fügt dem Abschnitt drei hinzu, **Wahlteile 2 hinzufügen** öffnet das zweite Feld. Leere Zeilen werden übergangen.
 
 ![Das Formular eines Sets mit Basisteilen und Wahlteilen](../assets/images/de/set-form.png)
 
