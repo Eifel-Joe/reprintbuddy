@@ -178,7 +178,7 @@ def test_completed_twice_counts_once(db):
 
 
 def test_failed_replacement_at_start(db):
-    a, d = open_print(db)
+    a, d = open_print(db, min_stock=3)  # p411: a minimum stock, so the failure leaves the target short
     with db.begin() as s:
         b = make_article(s, name="Template B", library_file_id=2, plate_id=1).id
         first = entry(s, b).id
@@ -204,7 +204,7 @@ def test_failed_replacement_at_start(db):
 
 
 def test_two_failures_pause_and_still_replace(db):
-    a, d1 = open_print(db)
+    a, d1 = open_print(db, min_stock=3)  # p411: a minimum stock, so both failures leave the target short
     with db.begin() as s:
         d2 = make_dispatch(s, a, status="printing", bambuddy_item_id=8).id
     apply(db, d1, "failed", "failed")
@@ -453,3 +453,81 @@ async def test_poll_skips_unsettled_prints(db, fake_bambuddy):
     report = await tracking.poll_dispatches(fake_bambuddy, db)
     assert "get_queue_item" not in fake_bambuddy.calls
     assert report.reachable and report.changed == 0
+
+
+# ---- p411: a replacement only up to the target (Spec 7.5, 0.4.5) ------------------------
+
+
+def failed_with(db, *, origin="rule", **article_fields):
+    """One print of the article fails; returns the article id and the queue afterwards."""
+    with db.begin() as s:
+        a = article(s, **article_fields).id
+        d = make_dispatch(s, a, status="printing", units=1, origin=origin, bambuddy_item_id=7).id
+    apply(db, d, "failed", "failed")
+    with db.begin() as s:
+        return a, [(e.prints, e.origin) for e in entries_by_position(s)]
+
+
+def test_p411_a_print_over_the_target_gets_no_replacement(db):
+    """After a cancel a running print stayed although it was over the target (Spec 7.2a), and failed:
+    stock 7 >= target 6 (minimum 4 + buffer 2), so nothing is missing and nothing is printed again."""
+    a, queue = failed_with(db, stock=7, min_stock=4, buffer=2)
+    assert queue == []
+    with db.begin() as s:
+        (line,) = journal(s, "replacement_not_needed")
+        assert line.actor == "auto" and line.article_id == a and line.qty == 1
+        assert line.details["coverage"] == 7 and line.details["target"] == 6
+        assert journal(s, "print_failed")  # the failure itself is in the journal as before
+
+
+def test_p411_a_print_still_needed_is_replaced(db):
+    _, queue = failed_with(db, stock=5, min_stock=4, buffer=2)
+    assert queue == [(1, "failure")]
+
+
+def test_p411_the_replacement_is_cut_to_what_is_missing(db):
+    """Scrap of 3 prints (2 units each) but only one unit is missing to the target: one print."""
+    from reprintbuddy.domain import inspection
+
+    with db.begin() as s:
+        a = article(s, units_per_print=2, stock=5, min_stock=4, buffer=2).id
+        d = make_dispatch(s, a, status="completed", units=6, origin="rule").id
+        insp = Inspection(article_id=a, dispatch_id=d, units=6)
+        s.add(insp)
+        art = s.get(Article, a)
+        art.provisional = 6
+        s.flush()
+        insp_id = insp.id
+    with db.begin() as s:
+        result = inspection.resolve_scrap(s, insp_id, 6, "user")
+    with db.begin() as s:
+        assert [(e.prints, e.origin) for e in entries_by_position(s)] == [(1, "scrap")]
+        assert result.replacement_entry_id is not None
+
+
+@pytest.mark.parametrize("origin", ["manual", "failure", "scrap"])
+def test_p411_prints_by_hand_and_replacements_are_always_replaced(db, origin):
+    _, queue = failed_with(db, origin=origin, stock=9, min_stock=4, buffer=2)
+    assert queue == [(1, "failure")]
+
+
+def test_p411_a_part_counts_its_demand_from_assembly(db):
+    """A part of a stock variant: target = minimum + buffer + demand from assembly (Spec 7.1, 7.5)."""
+    from factories import make_assembled
+
+    with db.begin() as s:
+        clip = article(s, name="Clip", stock=3, min_stock=0, buffer=0).id
+        # box: minimum 1, available 0 -> missing 1 box -> demand 2 clips; clip coverage 3 >= 2
+        make_assembled(s, name="Storage box", sku="EX-B1", base=[(clip, 2)], min_stock=1, stock=0)
+        d = make_dispatch(s, clip, status="printing", units=1, origin="rule", bambuddy_item_id=7).id
+    apply(db, d, "failed", "failed")
+    with db.begin() as s:
+        assert entries_by_position(s) == []
+        (line,) = journal(s, "replacement_not_needed")
+        assert (line.details["coverage"], line.details["target"]) == (3, 2)
+    with db.begin() as s:
+        s.get(Article, clip).stock = 1  # now a clip is missing to the demand
+        d2 = make_dispatch(s, clip, status="printing", units=1, origin="rule", bambuddy_item_id=8).id
+    apply(db, d2, "failed", "failed")
+    with db.begin() as s:
+        assert [(e.prints, e.origin) for e in entries_by_position(s)] == [(1, "failure")]

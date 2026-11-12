@@ -40,7 +40,7 @@ Three more rights are recommended but not required:
 | Connect Websocket | `websocket:connect` | so that Bambuddy reports changes at once; without it Reprintbuddy only asks at the set interval |
 | Delete Own Queue | `queue:delete_own` | so that a cancel can take prints back from Bambuddy that have not started |
 
-Without *Upload Library* everything else works; only uploading is not possible. Without *Delete Own Queue* a cancel only shrinks Reprintbuddy's own queue; prints already handed over stay in Bambuddy (see [What a cancel takes back](../use/inspection.md#what-a-cancel-takes-back)). At the key, *Manage Queue* covers it; no new key is needed. Without *Connect Websocket* everything runs through the regular query, and the card **Live channel** under *Settings → Bambuddy* says "Right missing" (see [Automation](../use/automation.md)). At the key, *Read Status* is enough for the live channel; there is nothing more to set.
+Without *Upload Library* everything else works; only uploading is not possible. Without *Delete Own Queue* a cancel only shrinks Reprintbuddy's own queue; prints already handed over stay in Bambuddy (see [What a cancel takes back](../use/inspection.md#what-a-cancel-takes-back)). At the key, *Manage Queue* covers it; no new key is needed. A group that has *Delete All Queue* instead may withdraw as well, and the check counts it. Without *Connect Websocket* everything runs through the regular query, and the card **Live channel** under *Settings → Bambuddy* says "Right missing" (see [Automation](../use/automation.md)). At the key, *Read Status* is enough for the live channel; there is nothing more to set.
 
 To create the key in the next step, the group also needs these two rights. Reprintbuddy does not check them, and you can remove them again once the key exists:
 
@@ -128,6 +128,8 @@ A new version of Reprintbuddy may need a right that the key did not have before.
 
 - Press **Check again** after you fixed it. When every right is there, the dialog turns green; press **Continue**.
 - Press **Later** to carry on. A warning line stays at the top of every page, with the missing rights, **Check again** and a link to the settings, until the check succeeds.
+
+While a right is missing, Reprintbuddy hands no prints over to Bambuddy; they wait in Reprintbuddy's queue, and the journal stays quiet. Every regular query checks the key again: once the right is added in Bambuddy, dialog and warning line go away by themselves and the prints go out in the same run.
 
 To fix it:
 

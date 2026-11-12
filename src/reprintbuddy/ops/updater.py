@@ -18,7 +18,7 @@ import ssl
 import time
 import urllib.request
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
@@ -36,6 +36,15 @@ from reprintbuddy.ops.status import UpdateStatus, is_busy, mark_interrupted, rea
 from reprintbuddy.ops.versions import is_newer, local_tags, newest_release, parse_release_tag
 
 MAX_REASON = 300
+# p331 (v0.4.5): how old a "queued" may be for its target version to count. The button writes "queued" right
+# before it starts the unit (sudo up to 15 s, `QUEUE_GRACE`), and the helper reads it as its first act; the
+# window leaves room for a slow start. Root: the version was taken however old "queued" was, so a start left
+# behind (cut off, p123) chose the version of a `reprintbuddy update` typed days later - an old one, or one
+# deleted meanwhile ("unknown target"). Older than this, the update goes to the newest release, as typed by
+# hand it should. Rejected: `QUEUE_GRACE` itself (a sudo near its limit plus the start of the program would
+# miss it, and the update would then install something newer than the page offered); telling the unit from a
+# hand by systemd's environment (a shell may carry it too). Tests: test_updater.py "p331".
+QUEUED_TARGET_WINDOW = timedelta(minutes=2)
 
 
 def venv_python(install_dir: Path) -> Path:
@@ -91,6 +100,15 @@ def _reason(result: CommandResult, fallback: str) -> str:
         if line:
             return line[:MAX_REASON]
     return fallback or f"exit code {result.returncode}"
+
+
+def _fresh_queued(previous: UpdateStatus, now: datetime) -> bool:
+    """A start from the page that this run is picking up (p331): "queued", written within the window."""
+    return (
+        previous.state == "queued"
+        and previous.started_at is not None
+        and now - previous.started_at <= QUEUED_TARGET_WINDOW
+    )
 
 
 def run_update(
@@ -156,7 +174,7 @@ def _run_update(
     snapshot_taken: list[bool] = []  # only a snapshot of THIS run may be restored, never a leftover
     info: dict[str, str | None] = {
         "from_tag": None,
-        "to_tag": target or (previous.to_tag if previous.state == "queued" else None),
+        "to_tag": target or (previous.to_tag if _fresh_queued(previous, started) else None),
         "backup": None,
     }
 

@@ -56,6 +56,13 @@ LIVE_PERMISSION = "websocket:connect"
 WITHDRAW_PERMISSION = "queue:delete_own"
 _WITHDRAW_ALL = "queue:delete_all"  # an administrator's key may delete every entry, own ones included
 OPTIONAL_PERMISSIONS: tuple[str, ...] = (UPLOAD_PERMISSION, LIVE_PERMISSION, WITHDRAW_PERMISSION)
+# A recommended right counts as there when one of these is granted. p410 (v0.4.5): Bambuddy's
+# `DELETE /queue/{id}` asks for "delete all" or "delete own" (`require_ownership_permission`,
+# print_queue.py:2697-2731, auth.py:2825-2835 `require_any=True`); "all" includes the own entries.
+# A group built by hand with only "Delete All Queue" may withdraw, and the pages must say so.
+SATISFIED_BY: dict[str, tuple[str, ...]] = {WITHDRAW_PERMISSION: (WITHDRAW_PERMISSION, _WITHDRAW_ALL)}
+# What the page after a good check needs to know of the granted rights (kept in the session cookie).
+REMEMBERED_PERMISSIONS: tuple[str, ...] = (*OPTIONAL_PERMISSIONS, _WITHDRAW_ALL)
 
 # Assumption until the first live test shows the names Bambuddy really reports (Spec 14):
 # for the two "read all" rights, the older name without the suffix counts as well.
@@ -139,6 +146,10 @@ class ConnectionCheck:
     granted: frozenset[str] = field(default_factory=frozenset)
     missing: tuple[str, ...] = ()
 
+    def has(self, code: str) -> bool:
+        """Is the recommended right `code` there, by itself or by a right that includes it (`SATISFIED_BY`)?"""
+        return any(right in self.granted for right in SATISFIED_BY.get(code, (code,)))
+
     @property
     def can_upload(self) -> bool:
         """The key may upload print files (optional right, Spec 5.1a)."""
@@ -152,7 +163,7 @@ class ConnectionCheck:
     @property
     def can_withdraw(self) -> bool:
         """The key may delete Reprintbuddy's waiting entries after a cancel (optional right, p382)."""
-        return WITHDRAW_PERMISSION in self.granted or _WITHDRAW_ALL in self.granted
+        return self.has(WITHDRAW_PERMISSION)
 
 
 def _missing(granted: frozenset[str]) -> tuple[str, ...]:

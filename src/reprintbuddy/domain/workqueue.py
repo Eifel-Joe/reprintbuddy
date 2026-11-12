@@ -146,10 +146,50 @@ def add_replacement(
     origin: Literal["scrap", "failure"],
     actor: Actor,
     *,
+    print_origin: str | None = None,
+    units: int = 0,
     details: dict | None = None,
-) -> WorkQueueEntry:
-    """A replacement print goes to the front of the queue."""
+) -> WorkQueueEntry | None:
+    """A replacement print goes to the front of the queue (Spec 7.5).
+
+    p411 (0.4.5): for a print of the minimum stock (`print_origin` "rule") only what is missing to the
+    target is replaced: at most ceil((target - coverage) / units per print) prints, counted after the
+    scrap or failure. With nothing missing there is no entry (None) and the journal says so
+    (`replacement_not_needed`, `units` = the pieces lost). Root: a print that a cancel left over the
+    target (Bambuddy already printing it, Spec 7.2a) came back as a replacement when it failed. Prints
+    sent by hand and replacements are replaced in full, as before (Spec 7.5); so is a print whose
+    origin is not given. Rejected: leaving it to rule 7.1 (it runs only with the automation on and puts
+    the entry at the end, while a replacement goes first).
+    Tests: test_tracking.py "p411".
+    """
+    if print_origin == "rule":
+        article = session.get(Article, article_id)
+        if article is None:
+            raise NotFoundError("articles.not_found")
+        coverage, target = _coverage_and_target(session, article)
+        prints = min(prints, rules.prints_for_units(target - coverage, article.units_per_print))
+        if prints <= 0:
+            write_journal(
+                session,
+                kind="replacement_not_needed",
+                actor=actor,
+                qty=units,
+                article_id=article_id,
+                details={"origin": origin, "coverage": coverage, "target": target, **(details or {})},
+            )
+            return None
     return add_entry(session, article_id, prints, origin, actor, where="start", details=details)
+
+
+def _coverage_and_target(session: Session, article: Article) -> tuple[int, int]:
+    """The coverage of the article and its target (minimum + buffer, for a part plus its demand from
+    assembly, Spec 7.1), as the rule and the withdrawal after a cancel (7.2a) count them."""
+    from reprintbuddy.domain import assembled  # it builds on this module
+
+    session.flush()
+    demand = assembled.assembly_demand(session)
+    target = article.min_stock + demand.get(article.id, 0) + article.buffer
+    return coverage_of(session, article).total, target
 
 
 def move_entry(session: Session, entry_id: int, to: Literal["top", "bottom"] | int) -> None:

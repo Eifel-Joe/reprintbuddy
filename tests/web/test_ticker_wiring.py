@@ -110,3 +110,20 @@ def test_the_engine_is_told_cheaply_when_a_restore_or_an_update_has_just_begun(r
     app.state.restore.phase = "idle"
     write_status(app.state.db_path.parent, UpdateStatus(state="queued", step="start", started_at=datetime.now(UTC)))
     assert app.state.ticker.update_started() is True
+
+
+def test_p370_the_ticker_asks_the_rights_check(ready_client, respx_mock):
+    """The app's ticker hands nothing over while the stored key lacks a required right, and its regular
+    query checks the key again through the app's rights check (Spec 7.7, 11.3)."""
+    import asyncio
+
+    from conftest import mock_auth_me
+
+    rights = ready_client.app.state.rights
+    ticker = ready_client.app.state.ticker
+    rights.status = "missing"
+    assert ticker.rights_missing() is True
+    route = mock_auth_me(respx_mock)  # the right has been added in Bambuddy
+    asyncio.run(ticker.recheck_rights())
+    assert route.call_count == 1
+    assert rights.status == "ok" and ticker.rights_missing() is False

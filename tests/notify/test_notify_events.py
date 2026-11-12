@@ -164,7 +164,8 @@ def test_a_failed_print_reports_once_and_links_the_article(db):
     (out,) = send_round(db)
     assert out.kind == "print_failed"
     assert out.message.title == "Print failed"
-    assert out.message.text == "1 print failed in Bambuddy, a replacement is queued: Bracket"
+    # p411 (Spec 7.5, 10.6): a replacement is not always made any more, so the message does not promise one.
+    assert out.message.text == "1 print failed in Bambuddy: Bracket"
     assert out.message.link == f"{BASE}/articles/{article_id}"
     assert send_round(db) == []
 
@@ -510,3 +511,15 @@ def test_red_articles_agree_with_the_overview(db):
         expected = {r.id: r.status for r in catalog.list_articles(s) if r.status in ("below_min", "overbooked")}
         assert ev.red_articles(s) == expected
         assert set(expected) == {made[0].id, made[1].id, made[4].id}
+
+
+def test_p411_no_failure_message_promises_a_replacement():
+    """Spec 10.6 event 2 (0.4.5): "replacement after 7.5" - a print over the target gets none."""
+    from reprintbuddy.i18n import translate
+
+    for lang in ("de", "en"):
+        for form in ("named.one", "named.other", "count.one", "count.other"):
+            text = translate(lang, f"notify.print_failed.{form}", n=2, items="Bracket")
+            assert "Ersatz" not in text and "replacement" not in text, (lang, form, text)
+    assert translate("de", "notify.print_failed.named.other", n=2, items="A, B") == "2 Drucke sind in Bambuddy fehlgeschlagen: A, B"
+    assert translate("en", "notify.print_failed.count.one", n=1) == "1 print failed in Bambuddy."

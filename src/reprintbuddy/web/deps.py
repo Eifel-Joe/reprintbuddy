@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy import auth, links
 from reprintbuddy.bambuddy.client import BambuddyClient
-from reprintbuddy.bambuddy.connection import OPTIONAL_PERMISSIONS, ConnectionCheck
+from reprintbuddy.bambuddy.connection import REMEMBERED_PERMISSIONS, ConnectionCheck
 from reprintbuddy import settings as st
 from reprintbuddy.activity import capture as activity_capture
 from reprintbuddy.models import User
@@ -333,7 +333,8 @@ def store_connection_result(session: MutableMapping[str, object], check: Connect
     session[CONNECTION_RESULT_KEY] = {
         "owner": (check.owner or "")[:MAX_OWNER_LENGTH],  # a name from outside must not fill the cookie
         "admin": check.owner_is_admin,
-        "granted": sorted(code for code in OPTIONAL_PERMISSIONS if code in check.granted),
+        # p410: "Delete All Queue" too, which allows withdrawing as well (`ConnectionCheck.has`).
+        "granted": sorted(code for code in REMEMBERED_PERMISSIONS if code in check.granted),
     }
 
 
@@ -351,7 +352,7 @@ def take_connection_result(session: MutableMapping[str, object]) -> ConnectionCh
         "ok",
         owner=owner,
         owner_is_admin=admin,
-        granted=frozenset(code for code in granted if code in OPTIONAL_PERMISSIONS),
+        granted=frozenset(code for code in granted if code in REMEMBERED_PERMISSIONS),
     )
 
 

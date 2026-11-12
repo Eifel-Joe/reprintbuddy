@@ -140,7 +140,7 @@ def test_resolve_good_with_assembly(db):  # Spec 8.3
 
 def test_resolve_with_scrap_replaces_at_start(db):  # Spec 7.5, 12 step 6
     with db.begin() as s:
-        a = make_article(s)
+        a = make_article(s, min_stock=10)  # p411: a minimum stock, so the scrap leaves the target short
         existing = make_entry(s, a.id, 3, position=0)
         row, dispatch = finished_print(s, a.id, units=1)
         ids = (a.id, existing.id, row.id, dispatch.id)
@@ -168,7 +168,7 @@ def test_resolve_with_scrap_replaces_at_start(db):  # Spec 7.5, 12 step 6
 
 def test_scrap_rounds_up_to_prints(db):  # Review Focus 4
     with db.begin() as s:
-        a = make_article(s, units_per_print=4)
+        a = make_article(s, units_per_print=4, min_stock=10)  # p411: a minimum stock, so the scrap leaves the target short
         row, _ = finished_print(s, a.id, units=4)
         ids = (a.id, row.id)
     with db.begin() as s:
@@ -182,7 +182,7 @@ def test_scrap_rounds_up_to_prints(db):  # Review Focus 4
 
 def test_scrap_uses_current_units_per_print(db):  # plan B5 decision 2
     with db.begin() as s:
-        a = make_article(s, units_per_print=4)
+        a = make_article(s, units_per_print=4, min_stock=10)  # p411: a minimum stock, so the scrap leaves the target short
         row, _ = finished_print(s, a.id, units=4)
         ids = (a.id, row.id)
     with db.begin() as s:
@@ -196,7 +196,7 @@ def test_scrap_uses_current_units_per_print(db):  # plan B5 decision 2
 
 def test_scrap_replacement_when_automation_off_and_paused(db):  # Spec 7.5
     with db.begin() as s:
-        a = make_article(s, auto_enabled=False, paused=True, pause_reason="manual")
+        a = make_article(s, auto_enabled=False, paused=True, pause_reason="manual", min_stock=10)  # p411: a minimum stock, so the scrap leaves the target short
         row, _ = finished_print(s, a.id, units=1)
         ids = (a.id, row.id)
         assert s.get(Article, a.id).auto_enabled is False
@@ -355,7 +355,7 @@ def test_resolve_scrap_zero_means_all_good(db):
 
 def test_resolve_scrap_books_the_rest_as_good_and_replaces_the_scrap(db):
     with db.begin() as s:
-        a = make_article(s)
+        a = make_article(s, min_stock=10)  # p411: a minimum stock, so the scrap leaves the target short
         row, _ = finished_print(s, a.id, units=4)
         ids = (a.id, row.id)
     with db.begin() as s:

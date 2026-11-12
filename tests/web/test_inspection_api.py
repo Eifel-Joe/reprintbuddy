@@ -69,7 +69,7 @@ def test_api_resolve_scrap(ready_client):
     with sm_of(ready_client).begin() as s:
         other = make_article(s, name="Template Z").id
         make_entry(s, other, 1)
-    a, i = finished(ready_client, units=2)
+    a, i = finished(ready_client, units=2, min_stock=4)  # p411: a minimum stock, so the scrap leaves the target short
     response = api_post(ready_client, i, {"good_units": 0})
     assert response.status_code == 200
     body = response.json()
@@ -247,7 +247,7 @@ def test_api_resolve_by_scrap_units(ready_client):
     with sm_of(ready_client).begin() as s:
         other = make_article(s, name="Template Z").id
         make_entry(s, other, 1)
-    a, i = finished(ready_client, units=3)
+    a, i = finished(ready_client, units=3, min_stock=4)  # p411: a minimum stock, so the scrap leaves the target short
     response = api_post(ready_client, i, {"scrap_units": 2})
     assert response.status_code == 200
     body = response.json()

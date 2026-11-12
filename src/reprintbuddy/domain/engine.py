@@ -12,7 +12,8 @@ Safety:
   interleave, so a print in the middle of its hand-over is never taken for "never sent"
   by `resolve_pending` in a second tick (review focus 2).
 - Nothing new is handed over while a hand-over is unclear, Bambuddy is unreachable,
-  a poll was refused, or - until the next regular tick - Bambuddy rejected a print.
+  a poll was refused, the stored key lacks a required right (p370), or - until the
+  next regular tick - Bambuddy rejected a print.
 - During an update the tick does nothing at all: no Bambuddy call, no write.
 
 The runtime state lives only in memory (`EngineStatus`, decision 14); the first tick
@@ -117,6 +118,8 @@ class Engine:
         update_started: Callable[[], bool] = lambda: False,
         now: Callable[[], datetime] = utcnow,
         publish: Publish | None = None,
+        rights_missing: Callable[[], bool] = lambda: False,
+        recheck_rights: Callable[[], Awaitable[object]] | None = None,
     ) -> None:
         self.sm = sm
         self.client_provider = client_provider
@@ -125,6 +128,10 @@ class Engine:
         self.update_started = update_started
         self.now = now
         self.publish = publish
+        # p370 (Spec 7.7, 11.3): "the last check of the stored key found a required right missing", and the
+        # check made again by a regular tick while it is so. In the app both come from the rights check.
+        self.rights_missing = rights_missing
+        self.recheck_rights = recheck_rights
         self.status = EngineStatus()
         # The printers' state for the print plan (Spec 7.6, 0.4.2): beside the status, not in it, so a
         # live percent does not wake every page that follows "bambuddy".
@@ -261,6 +268,8 @@ class Engine:
             await self._settle(client)
             if poll and status.reachable:
                 await self._poll(client)
+                if status.reachable:  # a poll cut short: Bambuddy is gone, the check would only wait
+                    await self._recheck_rights()
         await self._withdraw(client)
 
         with self.sm.begin() as session:
@@ -380,6 +389,26 @@ class Engine:
         if status.poll_error is None:
             status.last_poll_at = self.now()
 
+    async def _recheck_rights(self) -> None:
+        """p370 (Spec 7.7, 11.3): while the stored key lacks a required right, a regular tick checks the key
+        again (one GET of `/auth/me`), so a right added in Bambuddy lets the same run hand over again.
+
+        Root: the engine did not ask the rights check. A right needed only at the hand-over (Read Settings for
+        the print options, Create Queue) made every regular tick reserve the top print, Bambuddy refuse it and
+        the journal say "print returned to the queue" again, until someone pressed "Check again". Now
+        `_may_hand_over` holds the prints while the right is missing, and this keeps that from lasting longer
+        than the right is missing. A failed check changes nothing (the check keeps what it knew).
+        Rejected: writing the journal line only once (the reservation and the refusal still ran each tick);
+        checking the key at every tick (a short tick after a booking must not ask Bambuddy).
+        Tests: test_engine.py "p370", test_rights_monitor.py "p370", test_ticker_wiring.py "p370".
+        """
+        if self.recheck_rights is None or not self.rights_missing():
+            return
+        try:
+            await self.recheck_rights()
+        except Exception:  # never let the check stop the tick; the next regular tick tries again
+            log.warning("engine: the check of the key's rights failed", exc_info=True)
+
     async def _read_printers(self, client: BambuddyClient, printers: tuple[Printer, ...]) -> None:
         """The printers' state for the print plan (Spec 7.6, 0.4.2): one request for all printers and
         Bambuddy's "shortest job first", once per regular query. Only shown: a failure makes the state
@@ -403,6 +432,7 @@ class Engine:
             and status.unresolved == 0
             and status.poll_error is None
             and not (status.rejected is not None and not poll)
+            and not self.rights_missing()  # p370: the prints wait; see `_recheck_rights`
         )
 
     async def _hand_over(self, client: BambuddyClient) -> int:

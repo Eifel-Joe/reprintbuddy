@@ -40,7 +40,7 @@ Drei weitere Rechte sind empfohlen, aber nicht nötig:
 | Connect Websocket | `websocket:connect` | damit Bambuddy Änderungen sofort meldet; ohne es fragt Reprintbuddy nur im eingestellten Abstand ab |
 | Delete Own Queue | `queue:delete_own` | damit ein Storno noch nicht gestartete Drucke aus Bambuddy zurücknehmen kann |
 
-Ohne *Upload Library* geht alles andere; nur das Hochladen nicht. Ohne *Delete Own Queue* verkleinert ein Storno nur Reprintbuddys eigene Warteschlange; schon übergebene Drucke bleiben in Bambuddy (siehe [Was ein Storno zurücknimmt](../use/inspection.md#was-ein-storno-zurucknimmt)). Am Schlüssel deckt es *Manage Queue* („Warteschlange verwalten“); ein neuer Schlüssel ist nicht nötig. Ohne *Connect Websocket* läuft alles über die regelmäßige Abfrage, und unter *Einstellungen → Bambuddy* steht bei der Karte **Live-Kanal** „Recht fehlt“ (siehe [Automatik](../use/automation.md)). Am Schlüssel genügt *Read Status* („Status lesen“) für den Live-Kanal; mehr ist nicht einzustellen.
+Ohne *Upload Library* geht alles andere; nur das Hochladen nicht. Ohne *Delete Own Queue* verkleinert ein Storno nur Reprintbuddys eigene Warteschlange; schon übergebene Drucke bleiben in Bambuddy (siehe [Was ein Storno zurücknimmt](../use/inspection.md#was-ein-storno-zurucknimmt)). Am Schlüssel deckt es *Manage Queue* („Warteschlange verwalten“); ein neuer Schlüssel ist nicht nötig. Hat die Gruppe stattdessen *Delete All Queue*, geht die Rücknahme ebenso, und die Prüfung zählt es mit. Ohne *Connect Websocket* läuft alles über die regelmäßige Abfrage, und unter *Einstellungen → Bambuddy* steht bei der Karte **Live-Kanal** „Recht fehlt“ (siehe [Automatik](../use/automation.md)). Am Schlüssel genügt *Read Status* („Status lesen“) für den Live-Kanal; mehr ist nicht einzustellen.
 
 Zum Erzeugen des Schlüssels im nächsten Schritt braucht die Gruppe zusätzlich diese zwei Rechte. Reprintbuddy prüft sie nicht, und du kannst sie wieder entfernen, sobald der Schlüssel existiert:
 
@@ -128,6 +128,8 @@ Eine neue Version von Reprintbuddy kann ein Recht brauchen, das der Schlüssel v
 
 - Drücke **Erneut prüfen**, nachdem du es behoben hast. Sind alle Rechte da, wird das Fenster grün; drücke **Weiter**.
 - Drücke **Später**, um weiterzuarbeiten. Oben auf jeder Seite bleibt dann eine Warnzeile mit den fehlenden Rechten, **Erneut prüfen** und einem Link zu den Einstellungen, bis die Prüfung gelingt.
+
+Solange ein Recht fehlt, übergibt Reprintbuddy keine Drucke an Bambuddy; sie warten in Reprintbuddys Warteschlange, und das Journal bleibt ruhig. Jede regelmäßige Abfrage prüft den Schlüssel erneut: Sobald das Recht in Bambuddy ergänzt ist, verschwinden Fenster und Warnzeile von selbst, und die Drucke gehen im selben Lauf hinaus.
 
 So behebst du es:
 

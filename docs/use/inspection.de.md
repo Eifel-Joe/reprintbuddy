@@ -28,7 +28,7 @@ Jede Zeile zeigt den Artikel, wann der Druck fertig gemeldet wurde, und das **So
 2. Trage die Stücke, die nicht gut sind, bei **Ausschuss** ein. Vorgabe ist 0, höchstens kannst du das Soll eintragen. Leer heißt 0; alles, was keine ganze Zahl von 0 bis zum Soll ist, wird mit einer Meldung abgelehnt, die diesen Bereich nennt.
 3. Klicke auf **Bestätigen**.
 
-Die guten Stücke sind das Soll minus Ausschuss. Sie werden **Bestand**, bei Handarbeit **Wartet auf Montage**. Der Ausschuss wird abgeschrieben, und Reprintbuddy stellt einen Ersatzdruck vorn in die Warteschlange, aufgerundet auf ganze Drucke. Der Ersatz kommt unabhängig vom Mindestbestand und auch dann, wenn die Automatik für den Artikel pausiert ist.
+Die guten Stücke sind das Soll minus Ausschuss. Sie werden **Bestand**, bei Handarbeit **Wartet auf Montage**. Der Ausschuss wird abgeschrieben, und Reprintbuddy stellt einen Ersatzdruck vorn in die Warteschlange, aufgerundet auf ganze Drucke. Der Ersatz kommt auch dann, wenn die Automatik für den Artikel pausiert ist. Bei einem Druck aus dem Mindestbestand wird nur ersetzt, was bis zur Zielmenge fehlt; fehlt nichts, sagt die Meldung **Kein Ersatz nötig** (siehe [Ersatz für Ausschuss und Fehlschläge](automation.md#ersatz-fur-ausschuss-und-fehlschlage)).
 
 Mehrere Drucke bestätigst du auf einmal so:
 

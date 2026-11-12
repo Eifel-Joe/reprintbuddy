@@ -89,6 +89,20 @@ class RightsMonitor:
         if remaining > 0:
             await asyncio.wait({self._task}, timeout=remaining)
 
+    async def recheck(
+        self,
+        read_credentials: Callable[[], tuple[str, str] | None],
+        client_factory: Callable[[], httpx.AsyncClient],
+    ) -> None:
+        """Check the stored key now and wait for the answer (p370, Spec 7.7): the regular query asks this
+        while a required right is missing, so a right added in Bambuddy is found without "Check again".
+        Like a check in the background: only a verdict about the rights counts, and a verdict taken from
+        outside meanwhile (settings, "Check again") is not undone."""
+        credentials = read_credentials()  # reads and closes its own database session
+        if credentials is None:
+            return
+        await self._run(credentials, client_factory, self._generation)
+
     async def _run(
         self,
         credentials: tuple[str, str],

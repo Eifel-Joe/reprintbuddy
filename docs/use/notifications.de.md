@@ -36,7 +36,7 @@ Sieben Ereignisse, jedes einzeln anhakbar. Zu Beginn sind alle an.
 | Ereignis | Meldet |
 |---|---|
 | **Druck fertig, wartet auf Prüfung** | Je Druck einmal, mit Artikel und Stückzahl. Nur Drucke, die nach dem Einschalten der Nachrichten fertig wurden und nicht älter als 7 Tage sind. |
-| **Druck in Bambuddy fehlgeschlagen** | Je Druck einmal. Der Ersatz ist schon eingeplant. |
+| **Druck in Bambuddy fehlgeschlagen** | Je Druck einmal. Ersatz kommt nach den Regeln unter [Automatik](automation.md#ersatz-fur-ausschuss-und-fehlschlage): bei einem Druck aus dem Mindestbestand nur, wenn die Zielmenge ihn braucht. |
 | **Artikel durch die Automatik pausiert** | Den Artikel und den Grund, zum Beispiel "zwei Fehlschläge hintereinander", "in Bambuddy abgebrochen", "Druckdatei geändert" oder "kein Druckziel". Eine Pause, die du selbst auslöst, indem du einen Eintrag der Warteschlange verringerst, wird nicht gemeldet. |
 | **Artikel unter Mindestbestand** | Einen Artikel im Zustand *unter Minimum* oder *überbucht*, gemessen, nachdem die Nachdruck-Regel gelaufen ist. *Knapp* (gelb) wird nicht gemeldet, weil der Nachdruck dann schon läuft. |
 | **Neuer Bestellvorschlag** | Einen neuen Vorschlag für Filament oder ein Zukaufteil, siehe [Bestellvorschläge](reorder.md). |

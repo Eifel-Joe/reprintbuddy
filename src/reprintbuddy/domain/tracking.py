@@ -149,7 +149,8 @@ def _failed(session: Session, row: Dispatch, article: Article) -> None:
     session.flush()
     _journal(session, "print_failed", row)
     add_replacement(
-        session, row.article_id, 1, "failure", "auto", details={"dispatch_id": row.id}
+        session, row.article_id, 1, "failure", "auto",
+        print_origin=row.origin, units=row.units, details={"dispatch_id": row.id},
     )
     if article.consecutive_failures >= FAILURES_TO_PAUSE:
         pause_article(

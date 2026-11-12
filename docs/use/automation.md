@@ -69,7 +69,7 @@ Reprintbuddy also listens to Bambuddy's **live channel**. When Bambuddy reports 
 What a finished, failed or vanished print does:
 
 - **Finished:** the units become provisional and wait on the list **To check**. A place under the limit is free again. See [To check and assembly](inspection.md).
-- **Failed:** the print no longer counts as in progress, and a replacement of one print goes to the front of the queue. Two failures in a row pause the article. A finished print resets the count.
+- **Failed:** the print no longer counts as in progress, and a replacement of one print goes to the front of the queue (for a print of the minimum stock only if the target needs it, see below). Two failures in a row pause the article. A finished print resets the count.
 - **Cancelled, skipped or deleted in Bambuddy:** it no longer counts as in progress, and the automation pauses for this article, so that it does not work against what you did in Bambuddy. Prints Reprintbuddy deleted itself after a cancel are the exception: they pause nothing (see [What a cancel takes back](inspection.md#what-a-cancel-takes-back)).
 
 Prints you start directly in Bambuddy are unknown to Reprintbuddy. Book them under *Bookings* with **Stock in without print**.
@@ -78,7 +78,9 @@ Prints you start directly in Bambuddy are unknown to Reprintbuddy. Book them und
 
 If you confirm fewer good units at the check than were printed, Reprintbuddy puts a replacement entry at the front of the queue at once. It holds the scrap rounded up to whole prints and is marked **Replacement for scrap**. A failed print gets an entry of one print, marked **Replacement for a failed print**.
 
-Replacements are always made, whatever the main switch, the article switch or the minimum stock say, and also for manual prints. They are handed over like every entry, so not while the article is paused or the queue is stopped.
+Replacements are made whatever the main switch or the article switch say. A manual print and a replacement print are always replaced in full. A print of the minimum stock is replaced only as far as the target (minimum stock + buffer, for a part plus the demand from assembly) is not reached without it, counted after the scrap or the failure: at most as many prints as are missing to the target. If nothing is missing, there is no replacement, and the journal says **No replacement needed (target reached)**. This happens when a cancel left a print over the target that was already printing (see [What a cancel takes back](inspection.md#what-a-cancel-takes-back)).
+
+Replacements are handed over like every entry, so not while the article is paused or the queue is stopped.
 
 ## Pauses
 
@@ -107,6 +109,7 @@ Besides pauses, the Overview and the Queue show what keeps the automation from w
 
 - Bambuddy is not set up, cannot be reached, or refuses the status query (a right of the key is missing). Nothing is handed over and no stock changes.
 - Bambuddy refused a print of an article. It is back in Reprintbuddy's queue and the next regular query tries again.
+- The stored key lacks a right Reprintbuddy needs (the dialog **Bambuddy right missing**, or after **Later** the warning line at the top). Nothing is handed over until the right is there; every regular query checks the key again, see [Missing rights later](../start/setup.md#missing-rights-later).
 - Prints wait for approval in Bambuddy. Start them in Bambuddy. So that later prints do not wait, the group of the key's owner needs **Print Without Review** (`queue:start_unreviewed`) or **Update All Queue** (`queue:update_all`).
 - The queue is stopped, or the limit of open prints is reached.
 - An article waits for a free printer because its printers are in maintenance mode. It is skipped, not paused.
