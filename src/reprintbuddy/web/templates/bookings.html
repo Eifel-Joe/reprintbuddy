@@ -4,10 +4,11 @@
 {% block content %}
 {% macro form_error(name) %}{% if error_form == name and error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}{% endmacro %}
 {#- `options`: (value, label) pairs; which articles depends on the booking (web/assembled_view.py). -#}
-{% macro article_select(name, selected, options) %}
+{#- `stock_only`: values of articles made of parts, which count only their stock (p362, inventory_field.js). -#}
+{% macro article_select(name, selected, options, stock_only=()) %}
   <select name="{{ name }}" required>
     <option value="">–</option>
-    {% for value, label in options %}<option value="{{ value }}"{% if selected == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    {% for value, label in options %}<option value="{{ value }}"{% if value in stock_only %} data-stock-only{% endif %}{% if selected == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
   </select>
 {% endmacro %}
 {% macro part_select(name, selected) %}
@@ -30,7 +31,7 @@
   <form method="post" action="/bookings/inventory">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="form_token" value="{{ form_token() }}">
-    <label>{{ t('bookings.field.article') }} {{ article_select('article_id', v.get('article_id'), count_options) }}</label>
+    <label>{{ t('bookings.field.article') }} {{ article_select('article_id', v.get('article_id'), count_options, stock_only) }}</label>
     <div class="row">
       <label>{{ t('bookings.inventory_field') }}
         <select name="field">
@@ -141,3 +142,4 @@
 {% endcall %}
 <div class="toolbar-actions"><a class="btn secondary" href="/journal">{{ ui.icon('history') }}{{ t('bookings.whole_journal') }}</a></div>
 {% endblock %}
+{% block scripts %}<script src="/static/js/inventory_field.js?v={{ app_version }}" defer></script>{% endblock %}

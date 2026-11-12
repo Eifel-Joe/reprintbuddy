@@ -62,6 +62,12 @@ def on_order_choices(session: Session) -> list[Choice]:
     return choices
 
 
+def stock_only_values(session: Session) -> set[str]:
+    """The count choices of articles made of parts: they count only their stock, nothing awaits
+    assembly (Spec 6.1, p362)."""
+    return {value for value, _label in holder_choices(session)}
+
+
 def count_choices(session: Session) -> list[Choice]:
     return _sorted(print_choices(session) + holder_choices(session))
 
