@@ -300,6 +300,8 @@
   "sets.more_rows": "More rows",
   "sets.incomplete.too_few": "incomplete",
   "sets.incomplete.suffixes_missing": "suffixes missing",
+  "sets.incomplete.broken": "faulty",
+  "sets.badge_set": "Set",
   "sets.contents": "Contents",
   "sets.choices2_without_1": "Choice parts 2 only go with choice parts 1. Fill in choice parts 1 first.",
   "sets.variant_too_long": "The variant number {sku} is longer than {max} characters.",

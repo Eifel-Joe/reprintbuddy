@@ -191,3 +191,55 @@ def test_breaks_parent_message_on_edit(ready_client):  # Spec 5.4 "Änderungen",
                                                 base_0_article=str(a["Holder"]), base_1_article=str(a["Manual"]),
                                                 base_2_article=str(a["Plate"])))
     assert en("sets.breaks_parent", names="Complete kit (archived)", name="Plate") in response.text
+
+
+# ---- the set list and its tiles (Spec 10.1) -------------------------------------------------
+
+SET_BADGE = '<span class="badge tone-neutral">{}</span>'
+
+
+def test_list_and_tile_show_inner_set_with_badge_and_variant_number(ready_client):
+    a, ids = kits(ready_client)
+    with sm_of(ready_client).begin() as s:
+        make_set(s, "Bundle", [(1, inner(ids["sizes"], a["Small"])), (2, inner(ids["extension"]))])
+    page = ready_client.get("/sets").text
+    badge = SET_BADGE.format(en("sets.badge_set"))
+    assert page.count(f"1 × Sizes EX-SZ-S {badge}") == 2  # list and tile
+    assert page.count(f"2 × Extension {badge}") == 2
+    assert page.count(f"1 × Basic kit EX-GA {badge}") == 0  # no choices: no variant number
+    assert page.count(f"1 × Basic kit {badge}") == 2
+
+
+def test_list_marks_archived_inner_set(ready_client):  # Spec 5.5
+    a, ids = kits(ready_client)
+    with sm_of(ready_client).begin() as s:
+        s.get(ProductSet, ids["basic"]).archived_at = ARCHIVED
+    page = ready_client.get("/sets").text
+    assert f'1 × Basic kit {SET_BADGE.format(en("sets.badge_set"))}{SET_BADGE.format(en("catalog.archived_badge"))}' in page
+
+
+def test_list_marks_incomplete_inner_set(ready_client):  # condition A2
+    a, ids = kits(ready_client)
+    with sm_of(ready_client).begin() as s:
+        lonely = make_set(s, "Lonely", [(1, a["Lid"])]).id
+        make_set(s, "Outer", [(1, inner(lonely)), (1, a["Frame"])])
+    page = ready_client.get("/sets").text
+    assert f'1 × Lonely {SET_BADGE.format(en("sets.badge_set"))}{SET_BADGE.format(en("sets.incomplete.too_few"))}' in page
+
+
+def test_broken_set_shows_its_badge(ready_client):  # decision 6
+    a, ids = kits(ready_client)
+    with sm_of(ready_client).begin() as s:
+        from reprintbuddy.models import SetPosition
+        position = SetPosition(set_id=ids["basic"], sort=5, qty=1, slot=0)
+        s.add(position)
+        s.flush()
+        s.add(SetPositionSet(position_id=position.id, set_id=ids["complete"]))
+    page = ready_client.get("/sets").text
+    assert SET_BADGE.format(en("sets.incomplete.broken")) in page
+
+
+def test_search_finds_the_outer_set(ready_client):
+    a, ids = kits(ready_client)
+    page = ready_client.get("/sets?q=EX-KP").text
+    assert "Complete kit" in page and "Sizes" not in page.split('class="tiles"')[-1]

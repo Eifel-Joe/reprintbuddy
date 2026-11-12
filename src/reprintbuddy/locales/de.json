@@ -300,6 +300,8 @@
   "sets.more_rows": "Mehr Zeilen",
   "sets.incomplete.too_few": "unvollständig",
   "sets.incomplete.suffixes_missing": "Zusatznummern fehlen",
+  "sets.incomplete.broken": "fehlerhaft",
+  "sets.badge_set": "Set",
   "sets.contents": "Inhalt",
   "sets.choices2_without_1": "Wahlteile 2 gehen nur zusammen mit Wahlteilen 1. Fülle zuerst Wahlteile 1.",
   "sets.variant_too_long": "Die Variantennummer {sku} ist länger als {max} Zeichen.",

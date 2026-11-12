@@ -558,7 +558,9 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
 /* On a narrow screen the table scrolls in its box instead of squeezing the name to one word per
    line; each set position stays on one line. */
 .table-card td.name { min-width: 9rem; }
-.table-card td.set-contents span { display: block; white-space: nowrap; }
+.table-card td.set-contents > span { display: block; white-space: nowrap; }
+/* an inner set carries the badge Set (and archived, incomplete) on its own line (0.4.3 p423) */
+.set-contents .badge { margin-left: 0.3rem; font-size: 0.75rem; }
 /* a variant line is muted beside the base parts; its count stays bright (Spec 5.4, p340) */
 .set-contents .variant { color: var(--text-2); font-variant-numeric: tabular-nums; }
 .set-contents .variant strong { color: var(--text); }

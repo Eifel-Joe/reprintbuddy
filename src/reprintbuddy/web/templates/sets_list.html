@@ -5,12 +5,18 @@
 {#- The state badge; in the archive "archived" instead. -#}
 {#- A set the update rebuilt without its numbers shows a grey badge beside its state (p340). -#}
 {% macro badge(row) -%}
-<span class="badges">{{ ui.badge('set', 'archived' if archived else row.status) }}{% if row.incomplete and not archived %}<span class="badge tone-neutral">{{ t('sets.incomplete.too_few') if row.incomplete == 'too_few' else t('sets.incomplete.suffixes_missing') }}</span>{% endif %}</span>
+<span class="badges">{{ ui.badge('set', 'archived' if archived else row.status) }}{% if row.incomplete and not archived %}<span class="badge tone-neutral">{% if row.incomplete == 'too_few' %}{{ t('sets.incomplete.too_few') }}{% elif row.incomplete == 'broken' %}{{ t('sets.incomplete.broken') }}{% else %}{{ t('sets.incomplete.suffixes_missing') }}{% endif %}</span>{% endif %}</span>
 {%- endmacro %}
 {#- What a set holds (Spec 5.4): the base parts "2 × Frame", then each variant with its number and
-    how often it is available on its own, "EX-S10-A · 2"; without a number the chosen articles. -#}
+    how often it is available on its own, "EX-S10-A · 2"; without a number the chosen articles. An
+    inner set (0.4.3 p423) shows its fixed variant number and the grey badge "Set", and whether it is
+    archived or incomplete: then the set cannot be ordered (Spec 5.4, 10.1). -#}
 {% macro contents(row) -%}
-{%- for part in row.base %}<span>{{ part.qty }} × {{ part.name }}</span>{% endfor -%}
+{%- for part in row.base %}<span>{{ part.qty }} × {{ part.name }}
+  {%- if part.set_id %}{% if part.variant_sku %} {{ part.variant_sku }}{% endif %} <span class="badge tone-neutral">{{ t('sets.badge_set') }}</span>
+  {%- if part.archived %}<span class="badge tone-neutral">{{ t('catalog.archived_badge') }}</span>{% endif %}
+  {%- if part.incomplete %}<span class="badge tone-neutral">{{ t('sets.incomplete.too_few') }}</span>{% endif %}
+  {%- endif %}</span>{% endfor -%}
 {%- for variant in row.variants %}<span class="variant">{{ variant.sku or variant.names|join(', ') }} · <strong{% if variant.available < 0 %} class="neg"{% endif %}>{{ variant.available }}</strong></span>{% endfor -%}
 {%- endmacro %}
 
