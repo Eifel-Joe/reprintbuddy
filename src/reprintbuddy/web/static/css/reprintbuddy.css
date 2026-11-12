@@ -1035,6 +1035,15 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
   .assembled-option { padding-left: 0.5rem; }
   .assembled-variant { grid-template-columns: minmax(0, 1fr) 3rem 4.5rem 4.5rem; }
 }
+/* A phone used with a finger: the arrows of a number field sit side by side and take 5.5rem (spinbox,
+   below). The quantity column of a row gets room for them and a four-digit number; the variant table
+   takes two lines per variant, number and stock above, minimum and buffer below (p390). Replaced:
+   4.5rem columns, where the field reached into the drop-down and the arrows covered the number.
+   Tests: tests/web/test_form_rows_phone.py. */
+@media (pointer: coarse) and (max-width: 480px) {
+  .set-base { grid-template-columns: 9rem minmax(0, 1fr); }
+  .assembled-variant { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 /* ---- suppliers of a part (templates/part_form.html) ----------------------- */
 
