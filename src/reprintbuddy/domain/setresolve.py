@@ -212,6 +212,15 @@ def resolve(defs: Mapping[int, SetDef], set_id: int, key: tuple[int, ...] = ()) 
     return _deep(lambda: tuple(_all(defs, set_id, tuple(key), 1, (), (set_id,))))
 
 
+def variant_count(defs: Mapping[int, SetDef], set_id: int) -> int:
+    """How many variants the set has: the options of every field multiplied, 1 without fields. Counted,
+    never listed, so a nesting that would give billions answers at once (Spec 5.4, p450)."""
+    count = 1
+    for slot in fields(defs, set_id):
+        count *= len(slot.options)
+    return count
+
+
 def _inner_sets(defs: Mapping[int, SetDef], set_id: int) -> Iterator[int]:
     """Every inner set row on every level, once per row (the ring check ran before)."""
     for row in _get(defs, set_id).base:

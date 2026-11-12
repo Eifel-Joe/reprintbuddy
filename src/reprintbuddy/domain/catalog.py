@@ -73,6 +73,15 @@ def _required_name(value: str | None, field_key: str) -> str:
     return name
 
 
+def same_number(sku: str) -> str:
+    """The form in which two article numbers are compared: case does not count, EX-S10-A and ex-s10-a
+    are the same number (Spec 5.4 "Artikelnummern", p350). Numbers are stored as typed; only the
+    comparison folds. Replaced: the exact comparison, which let a typo in case make a second number.
+    Pairs stored before stay; saving one of them is refused until one is renamed.
+    Tests: tests/domain/test_sku_case.py."""
+    return sku.casefold()
+
+
 def validate_sku(
     session: Session,
     sku: str | None,
@@ -81,30 +90,22 @@ def validate_sku(
     set_id: int | None = None,
     variants: dict[str, int] | None = None,
 ) -> str | None:
-    """Trimmed article number, unique over articles, sets and variants (all become SKUs later)."""
+    """Trimmed article number, unique over articles, sets and variants (all become SKUs later), case
+    not counted (p350). The refusal names the number that is taken, as it is stored."""
     sku = _text(sku, "catalog.field.sku", MAX_SKU)
     if sku is None:
         return None
-    taken_by_article = session.scalar(select(Article.id).where(Article.sku == sku))
-    taken_by_set = session.scalar(select(ProductSet.id).where(ProductSet.sku == sku))
-    if (
-        (taken_by_article is not None and taken_by_article != article_id)
-        or (taken_by_set is not None and taken_by_set != set_id)
+    wanted = same_number(sku)
+    stored = [
+        *((n, i != article_id) for i, n in session.execute(select(Article.id, Article.sku).where(Article.sku.is_not(None)))),
+        *((n, i != set_id) for i, n in session.execute(select(ProductSet.id, ProductSet.sku).where(ProductSet.sku.is_not(None)))),
         # a variant's number (Spec 5.4, p340); a set passes the numbers it already looked up
-        or sku in (variants if variants is not None else variant_numbers(session, exclude_set_id=set_id))
-    ):
-        raise ConflictError("catalog.sku_taken", sku=sku)
+        *((n, True) for n in (variants if variants is not None else variant_numbers(session, exclude_set_id=set_id))),
+    ]
+    for number, other in stored:
+        if other and same_number(number) == wanted:
+            raise ConflictError("catalog.sku_taken", sku=number)
     return sku
-
-
-def _sku_owner(session: Session, sku: str, *, besides_set: int | None = None) -> str | None:
-    """'article' or 'set' when an article or a set carries this number. `besides_set` leaves out the
-    set being saved: its old number is gone once it is saved (review of p340, I1)."""
-    if session.scalar(select(Article.id).where(Article.sku == sku)) is not None:
-        return "article"
-    if session.scalar(select(ProductSet.id).where(ProductSet.sku == sku, ProductSet.id != (besides_set or 0))) is not None:
-        return "set"
-    return None
 
 
 # ---- print target (decision 2) -----------------------------------------------------------
@@ -823,6 +824,7 @@ def _allowed_in_set(session: Session, article: Article) -> bool:
 
 BaseSpec = tuple[int, int | None, int | None]  # qty, article id, inner set id
 MAX_VARIANT_FIELDS = MAX_SKU - 1  # a number and each suffix have one character at least (Spec 5.4: 64)
+MAX_VARIANTS = 100  # variants of one set or one article made of parts (Spec 5.4, 5.6; p450)
 
 
 def _check_set_input(
@@ -1010,11 +1012,22 @@ def _check_brought(
     if lacking:
         raise ConflictError("sets.parent_sku_required", names=_marked_names(session, defs, lacking))
     affected = [own_id, *parents]
-    taken = {number: i for i, number_list in ((i, _numbers_of(defs, i)) for i in defs if i not in affected)
-             for number in number_list}
-    set_numbers = {d.sku: i for i, d in defs.items() if d.sku}
-    article_numbers = set(session.scalars(select(Article.sku).where(Article.sku.is_not(None))))
-    seen: set[str] = set()
+    # At most 100 variants (Spec 5.4, p450), counted before any number is listed: listing them was
+    # unbounded (two fields of 200 options, or inner sets on any level). A set stored with more since
+    # an earlier version stays orderable; it is refused here once it or an inner set is saved.
+    # Tests: tests/domain/test_catalog_variant_limit.py.
+    for i in affected:
+        count = setresolve.variant_count(defs, i)
+        if count > MAX_VARIANTS:
+            if i != own_id:
+                raise ValidationError("sets.parent_too_many_variants", names=_marked_names(session, defs, [i]),
+                                      count=count, max=MAX_VARIANTS)
+            raise ValidationError("sets.too_many_variants", count=count, max=MAX_VARIANTS)
+    # Every number already there, folded (case does not count, p350) -> as it is stored, for the message.
+    taken = {same_number(number): number for i in defs if i not in affected for number in _numbers_of(defs, i)}
+    taken.update((same_number(d.sku), d.sku) for d in defs.values() if d.sku)
+    taken.update((same_number(n), n) for n in session.scalars(select(Article.sku).where(Article.sku.is_not(None))))
+    seen: dict[str, str] = {}
     for i in affected:
         names = _marked_names(session, defs, [i]) if i != own_id else None
         for number in _numbers_of(defs, i):
@@ -1022,11 +1035,13 @@ def _check_brought(
                 if names:
                     raise ValidationError("sets.parent_variant_too_long", names=names, sku=number, max=MAX_SKU)
                 raise ValidationError("sets.variant_too_long", sku=number, max=MAX_SKU)
-            if number in seen or number in taken or number in set_numbers or number in article_numbers:
+            folded = same_number(number)
+            clash = seen.get(folded) or taken.get(folded)
+            if clash is not None:
                 if names:
-                    raise ConflictError("sets.parent_sku_taken", names=names, sku=number)
-                raise ConflictError("catalog.sku_taken", sku=number)
-            seen.add(number)
+                    raise ConflictError("sets.parent_sku_taken", names=names, sku=clash)
+                raise ConflictError("catalog.sku_taken", sku=clash)
+            seen[folded] = number
 
 
 def _write_positions(

@@ -30,6 +30,43 @@
     return select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
   }
 
+  // Every option of a drop-down as the page drew it, per group, also those taken out since (p351).
+  function drawn(node) {
+    if (!node.rbDrawn) {
+      node.rbDrawn = Array.prototype.slice.call(node.children);
+    }
+    return node.rbDrawn;
+  }
+
+  // Safari on the iPhone shows an option with `hidden` greyed instead of leaving it out, so an option
+  // another row holds is taken out of the drop-down and put back in its old place once it is free
+  // (p351). The chosen option of a row is never blocked, so it never moves and stays chosen.
+  // Replaced: `hidden` and `disabled` on the option. The same in assembled_form.js.
+  // Tests: tests/web/test_form_rows_scripts.py.
+  function offerOnly(node, blocked) {
+    var next = null;
+    var list = drawn(node);
+    for (var k = list.length - 1; k >= 0; k -= 1) {
+      var child = list[k];
+      if (child.tagName === "OPTION" && blocked(child)) {
+        if (child.parentNode === node) {
+          node.removeChild(child);
+        }
+        continue;
+      }
+      if (child.tagName === "OPTION") {
+        child.disabled = false;
+        child.hidden = false;
+      } else if (child.tagName === "OPTGROUP") {
+        offerOnly(child, blocked);
+      }
+      if (child.parentNode !== node) {
+        node.insertBefore(child, next);
+      }
+      next = child;
+    }
+  }
+
   function refresh(form) {
     var selects = form.querySelectorAll("select[data-set-article]");
     var counts = {};
@@ -40,15 +77,11 @@
     });
     each(selects, function (select) {
       var own = takes(chosen(select));
-      each(select.options, function (option) {
-        if (!option.value) {
-          return;
-        }
-        var elsewhere = option.value !== select.value && takes(option).some(function (token) {
+      var value = select.value;
+      offerOnly(select, function (option) {
+        return !!option.value && option.value !== value && takes(option).some(function (token) {
           return (counts[token] || 0) - (own.indexOf(token) >= 0 ? 1 : 0) > 0;
         });
-        option.disabled = elsewhere;
-        option.hidden = elsewhere;
       });
       var row = select.closest("[data-more-row]");
       var hint = row ? row.querySelector("[data-set-contains]") : null;
@@ -78,4 +111,22 @@
   });
 
   each(document.querySelectorAll("[data-set-form]"), refresh);
+
+  // A form the live channel swaps in (live.js) is drawn by the server with the options only hidden:
+  // they are taken out here as well (p351). Options this script puts back are no form, so nothing loops.
+  if (window.MutationObserver && document.body) {
+    new window.MutationObserver(function (records) {
+      records.forEach(function (record) {
+        each(record.addedNodes, function (node) {
+          if (node.nodeType !== 1) {
+            return;
+          }
+          if (node.matches("[data-set-form]")) {
+            refresh(node);
+          }
+          each(node.querySelectorAll("[data-set-form]"), refresh);
+        });
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
 })();

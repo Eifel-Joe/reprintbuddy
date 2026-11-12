@@ -222,10 +222,10 @@ def test_nothing_to_mend(db, spec):
         assert catalog.sets_to_mend(s) == []
 
 
-def test_many_fields_stay_fast(db):  # review focus 1: 3 ** 6 = 729 variants
+def test_many_fields_stay_fast(db):  # review focus 1; since p450 at most 100 variants: 3 ** 4 = 81
     with db.begin() as s:
         inner_ids = []
-        for n in range(6):
+        for n in range(4):
             a = articles(s, **{f"base_{n}": 5, f"one_{n}": 2, f"two_{n}": 2, f"three_{n}": 2})
             inner_ids.append(make_set(s, f"Part {n}", [(1, a[f"base_{n}"])], [(1, [
                 (a[f"one_{n}"], "-1"), (a[f"two_{n}"], "-2"), (a[f"three_{n}"], "-3"),
@@ -234,7 +234,7 @@ def test_many_fields_stay_fast(db):  # review focus 1: 3 ** 6 = 729 variants
     started = time.perf_counter()
     with db.begin() as s:
         rows = {r.name: r for r in catalog.list_sets(s)}
-    assert len(rows["Big"].variants) == 729 and rows["Big"].variants[0].sku == "EX-BIG-1-1-1-1-1-1"
+    assert len(rows["Big"].variants) == 81 and rows["Big"].variants[0].sku == "EX-BIG-1-1-1-1"
     assert time.perf_counter() - started < 5, "the list of sets must stay quick"
     assert big
 

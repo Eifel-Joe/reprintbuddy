@@ -28,7 +28,7 @@ Jede Variante enthält aus Teilen und Zukaufteilen zusammen mindestens zwei Einh
 
 ### Varianten und Nummern
 
-Wie bei Sets ist jede Zusammenstellung der Möglichkeiten eine **Variante**, und ihre Nummer ist die Artikelnummer mit den Zusatznummern dahinter: der Schlauch `EX-H1` mit `-L32`, `-L40`, `-R32`, `-R40` hat die Varianten EX-H1-L32 … EX-H1-R40. Nummern sind über alle Artikel, Sets und Varianten eindeutig. Änderst du eine Zusatznummer oder die Teile einer Möglichkeit, behält die Variante ihren Bestand. Eine Variante mit Bestand, Reservierung oder in einer offenen Bestellung kann nicht wegfallen; die Meldung nennt sie.
+Wie bei Sets ist jede Zusammenstellung der Möglichkeiten eine **Variante**, und ihre Nummer ist die Artikelnummer mit den Zusatznummern dahinter: der Schlauch `EX-H1` mit `-L32`, `-L40`, `-R32`, `-R40` hat die Varianten EX-H1-L32 … EX-H1-R40. Nummern sind über alle Artikel, Sets und Varianten eindeutig; Groß- und Kleinschreibung zählen nicht. Ein Artikel aus Teilen hat höchstens 100 Varianten; mehr lehnt das Speichern ab und nennt die Zahl. Änderst du eine Zusatznummer oder die Teile einer Möglichkeit, behält die Variante ihren Bestand. Eine Variante mit Bestand, Reservierung oder in einer offenen Bestellung kann nicht wegfallen; die Meldung nennt sie.
 
 ## Auf Vorrat oder erst bei Bestellung
 

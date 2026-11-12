@@ -132,7 +132,8 @@ Regeln beim Speichern:
 - Ein Set mit Wahlteilen braucht eine Artikelnummer, auch wenn nur ein inneres Set sie mitbringt; die Zusatznummern eines Feldes unterscheiden sich.
 - Jede Variante hat mindestens zwei verschiedene Artikel: zwei Basisteile, ein Basisteil und Wahlteile oder zwei Felder Wahlteile.
 - Wahlteile 2 gehen nur zusammen mit Wahlteilen 1.
-- Variantennummern sind höchstens 64 Zeichen lang und eindeutig: Kein Artikel, kein Set und keine andere Variante darf dieselbe Nummer haben, auch archivierte nicht.
+- Variantennummern sind höchstens 64 Zeichen lang und eindeutig: Kein Artikel, kein Set und keine andere Variante darf dieselbe Nummer haben, auch archivierte nicht. Groß- und Kleinschreibung zählen nicht: EX-S10-A und ex-s10-a sind dieselbe Nummer.
+- Ein Set hat höchstens 100 Varianten (die Möglichkeiten aller seiner Felder malgenommen, mitgebrachte eingeschlossen). Mehr lehnt das Speichern ab und nennt die Zahl. Ergäbe die Änderung eines inneren Sets in einem Set, in dem es steckt, mehr als 100, nennt die Meldung dieses Set.
 
 **Verfügbarkeit.** Ein Set ohne Wahlteile ist so oft verfügbar, wie alle seine Artikel gleichzeitig verfügbar sind. Mit Wahlteilen ist jede Variante so oft verfügbar wie ein Set aus ihren Artikeln, und die Liste zeigt für das ganze Set als **Verfügbar**, wie viele Sets in beliebiger Mischung der Varianten gleichzeitig aus dem verfügbaren Bestand gehen. Beispiel: Basisteile, A, B und C je 1: jede Variante 1, zusammen 1. Basisteile 3, A 2, B 0, C 1: Variante A 2, B 0, C 1, zusammen 3. Ein Set ist **lieferbar**, wenn mindestens ein Set zusammenkommt, sonst **nicht lieferbar**.
 
