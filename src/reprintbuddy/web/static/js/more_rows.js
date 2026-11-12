@@ -237,4 +237,20 @@
   });
 
   each(document.querySelectorAll("[data-more-group]"), refreshButton);
+
+  // A form the live channel swaps in (live.js) comes from the server with its button on, also when the
+  // part is full (p392): the button is set again for every part that comes in, as the number fields
+  // (spinbox.js) are. Replaced: setting it once at load only, which left the button of a swapped
+  // full part on, a click that did nothing. Tests: tests/web/test_form_rows_scripts.py.
+  if (window.MutationObserver && document.body) {
+    new window.MutationObserver(function (records) {
+      records.forEach(function (record) {
+        each(record.addedNodes, function (node) {
+          if (node.nodeType === 1) {
+            refreshAll(node);
+          }
+        });
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
 })();
