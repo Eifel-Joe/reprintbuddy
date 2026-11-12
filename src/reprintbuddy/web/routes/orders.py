@@ -127,13 +127,15 @@ def _typed_items(form, rows: int) -> list[dict[str, str]]:
 
 
 def _parse_item(raw: str) -> tuple[str, int, tuple[int, ...]]:
-    """"article:<id>", "set:<id>" or, for a variant, "set:<id>:<article id per choice field>"."""
+    """"article:<id>", "set:<id>" or, for a variant, "set:<id>:<article id per choice field>". A set
+    has a field per choice part its inner sets bring as well (0.4.4), so up to MAX_VARIANT_FIELDS."""
     kind, _, rest = raw.partition(":")
     numbers = [bounded_int(part) for part in rest.split(":")]
+    most = {"set": catalog.MAX_VARIANT_FIELDS, "assembled": catalog.CHOICE_FIELDS}.get(kind, 0)
     if (
         kind not in ("article", "set", "assembled")
         or any(number is None or number > MAX_ID for number in numbers)
-        or len(numbers) > (1 + catalog.CHOICE_FIELDS if kind in ("set", "assembled") else 1)
+        or len(numbers) > 1 + most
     ):
         raise ValidationError("orders.invalid_item")
     return kind, numbers[0], tuple(numbers[1:])  # type: ignore[arg-type]
@@ -148,7 +150,7 @@ def _set_options(db: Session) -> list[tuple[str, str]]:
     for row in catalog.list_sets(db):
         if not row.orderable:
             continue
-        if not row.choices:
+        if not row.variants:  # no choice parts, neither own nor brought (0.4.4)
             options.append((f"set:{row.id}", row.name))
             continue
         for variant in row.variants:

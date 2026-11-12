@@ -1,5 +1,6 @@
 """Orders of sets that hold other sets (Spec 5.4, 6.7; 0.4.3 p423): every article of every level is
-reserved, shipped and released; the order shows the articles under their inner sets as ordered."""
+reserved, shipped and released; the order shows the articles under their inner sets as ordered. Since
+0.4.4 (p441) the choice parts an inner set brings are chosen with the order."""
 
 import json
 from datetime import date, datetime
@@ -22,14 +23,14 @@ def new_order(s, items, reference="Order 2001"):
     return orders.create_order(s, reference=reference, order_date=TODAY, items=items, actor="user")
 
 
-def inner(set_id, *key):
-    return ("set", set_id, tuple(key))
+def inner(set_id):
+    return ("set", set_id)
 
 
 @pytest.fixture
 def kits(db):
     """Basic kit EX-GA with choice parts small/large around 2 holders + 1 manual, extension = 1 plate +
-    1 screw set, complete kit = basic kit in variant EX-GA-S + extension."""
+    1 screw set, complete kit EX-KP = basic kit + extension: it brings small/large (EX-KP-S, EX-KP-L)."""
     with db.begin() as s:
         a = {
             name: make_article(s, name=name, stock=stock).id
@@ -38,8 +39,13 @@ def kits(db):
         basic = make_set(s, "Basic kit", [(2, a["Holder"]), (1, a["Manual"])],
                          [(1, [(a["Small"], "-S"), (a["Large"], "-L")])], sku="EX-GA").id
         extension = make_set(s, "Extension", [(1, a["Plate"]), (1, a["Screw set"])]).id
-        complete = make_set(s, "Complete kit", [(1, inner(basic, a["Small"])), (1, inner(extension))], sku="EX-KP").id
+        complete = make_set(s, "Complete kit", [(1, inner(basic)), (1, inner(extension))], sku="EX-KP").id
     return a, basic, extension, complete
+
+
+def small(set_id, qty, a):
+    """The complete kit (or a set around it) ordered with the small choice of the basic kit."""
+    return SetItem(set_id, qty, (a["Small"],))
 
 
 def reserved(s, a):
@@ -49,15 +55,45 @@ def reserved(s, a):
 def test_order_of_a_set_of_sets_reserves_every_article(db, kits):  # Spec 5.4, 6.2
     a, _basic, _extension, complete = kits
     with db.begin() as s:
-        new_order(s, [SetItem(complete, 2)])
+        new_order(s, [small(complete, 2, a)])
     with db.begin() as s:
         assert reserved(s, a) == {"Holder": 4, "Manual": 2, "Small": 2, "Large": 0, "Plate": 2, "Screw set": 2}
+
+
+def test_order_chooses_the_brought_choice_and_keeps_both_numbers(db, kits):  # Spec 5.4, 6.7 (0.4.4)
+    a, basic, _extension, complete = kits
+    with db.begin() as s:
+        order_id = new_order(s, [SetItem(complete, 1, (a["Large"],))]).id
+    with db.begin() as s:
+        assert reserved(s, a)["Large"] == 1 and reserved(s, a)["Small"] == 0
+        group = orders.get_order(s, order_id).groups[0]
+        assert group.variant_sku == "EX-KP-L"
+        assert (group.inner[0].name, group.inner[0].variant_sku) == ("Basic kit", "EX-GA-L")
+
+
+def test_inner_set_with_quantity_two_gets_the_same_choice_twice(db, kits):  # Spec 5.4
+    a, basic, extension, _complete = kits
+    with db.begin() as s:
+        double = make_set(s, "Double", [(2, inner(basic)), (1, inner(extension))], sku="EX-DB").id
+        new_order(s, [SetItem(double, 1, (a["Large"],))])
+    with db.begin() as s:
+        assert reserved(s, a)["Large"] == 2 and reserved(s, a)["Holder"] == 4
+
+
+@pytest.mark.parametrize("key", [(), "both", "plate"])
+def test_order_with_a_wrong_brought_key_is_refused(db, kits, key):
+    a, _basic, _extension, complete = kits
+    key = {"both": (a["Small"], a["Large"]), "plate": (a["Plate"],)}.get(key, key)
+    with pytest.raises(ValidationError) as info:
+        with db.begin() as s:
+            new_order(s, [SetItem(complete, 1, key)])
+    assert info.value.key == "orders.variant_invalid"
 
 
 def test_lines_keep_the_way_through_the_inner_sets(db, kits):
     a, basic, extension, complete = kits
     with db.begin() as s:
-        new_order(s, [SetItem(complete, 2)])
+        new_order(s, [small(complete, 2, a)])
     with db.begin() as s:
         lines = s.scalars(select(OrderLine).order_by(OrderLine.id)).all()
         assert [(l.article_id, l.qty, l.set_id, l.set_qty) for l in lines][:2] == [
@@ -68,9 +104,9 @@ def test_lines_keep_the_way_through_the_inner_sets(db, kits):
 
 
 def test_view_groups_by_inner_set_with_variant_and_quantity(db, kits):  # Spec 6.7
-    _a, _basic, _extension, complete = kits
+    a, _basic, _extension, complete = kits
     with db.begin() as s:
-        order_id = new_order(s, [SetItem(complete, 2)]).id
+        order_id = new_order(s, [small(complete, 2, a)]).id
     with db.begin() as s:
         group = orders.get_order(s, order_id).groups[0]
         assert (group.set_name, group.set_qty, group.lines) == ("Complete kit", 2, [])
@@ -84,8 +120,8 @@ def test_view_three_levels_with_an_empty_middle_group(db, kits):
     a, _basic, _extension, complete = kits
     with db.begin() as s:
         lid = make_article(s, name="Lid", stock=3).id
-        wrapper = make_set(s, "Wrapper", [(1, inner(complete)), (1, lid)]).id
-        order_id = new_order(s, [SetItem(wrapper, 1)]).id
+        wrapper = make_set(s, "Wrapper", [(1, inner(complete)), (1, lid)], sku="EX-WR").id
+        order_id = new_order(s, [small(wrapper, 1, a)]).id
     with db.begin() as s:
         group = orders.get_order(s, order_id).groups[0]
         assert group.lines == [("Lid", 1)]  # the articles directly in the ordered set come first
@@ -99,8 +135,8 @@ def test_view_three_levels_with_an_empty_middle_group(db, kits):
 def test_ship_and_cancel_a_set_of_sets(db, kits):  # Spec 6.2
     a, _basic, _extension, complete = kits
     with db.begin() as s:
-        shipped = new_order(s, [SetItem(complete, 1)]).id
-        cancelled = new_order(s, [SetItem(complete, 1)], reference="Order 2002").id
+        shipped = new_order(s, [small(complete, 1, a)]).id
+        cancelled = new_order(s, [small(complete, 1, a)], reference="Order 2002").id
     with db.begin() as s:
         orders.ship_order(s, shipped, "user")
         orders.cancel_order(s, cancelled, "user")
@@ -112,7 +148,7 @@ def test_ship_and_cancel_a_set_of_sets(db, kits):  # Spec 6.2
 def test_order_keeps_its_articles_when_the_inner_set_changes_later(db, kits):  # review focus 1
     a, basic, extension, complete = kits
     with db.begin() as s:
-        order_id = new_order(s, [SetItem(complete, 1)]).id
+        order_id = new_order(s, [small(complete, 1, a)]).id
     with db.begin() as s:
         catalog.update_set(s, extension, SetInput("Extension XL", None, [BaseInput(3, a["Plate"]), BaseInput(1, a["Screw set"])], []))
     with db.begin() as s:
@@ -126,7 +162,7 @@ def test_order_keeps_its_articles_when_the_inner_set_changes_later(db, kits):  #
 def test_order_ships_after_the_inner_set_is_archived(db, kits):  # review focus 1, Spec 5.5
     a, basic, _extension, complete = kits
     with db.begin() as s:
-        order_id = new_order(s, [SetItem(complete, 1)]).id
+        order_id = new_order(s, [small(complete, 1, a)]).id
         catalog.archive_set(s, complete)  # first the set that holds it (Spec 5.5, 0.4.3)
         catalog.archive_set(s, basic)
     with db.begin() as s:
@@ -139,7 +175,7 @@ def test_set_with_archived_inner_set_is_ordered_and_reserves_it(db, kits):  # Sp
     with db.begin() as s:
         s.get(ProductSet, basic).archived_at = ARCHIVED
     with db.begin() as s:
-        new_order(s, [SetItem(complete, 1)])
+        new_order(s, [small(complete, 1, a)])
     with db.begin() as s:
         assert reserved(s, a)["Holder"] == 2
 
@@ -149,7 +185,7 @@ def test_set_with_archived_article_deep_inside_is_ordered_and_reserves_it(db, ki
     with db.begin() as s:
         s.get(Article, a["Small"]).archived_at = ARCHIVED
     with db.begin() as s:
-        new_order(s, [SetItem(complete, 1)])
+        new_order(s, [small(complete, 1, a)])
     with db.begin() as s:
         assert reserved(s, a)["Small"] == 1
 
@@ -181,9 +217,9 @@ def test_quantities_multiply_through_two_levels_in_the_order(db, kits):  # revie
         lid = make_article(s, name="Lid", stock=99).id
         for article_id in a.values():
             s.get(Article, article_id).stock = 99
-        complete = make_set(s, "Complete 3", [(1, inner(basic, a["Small"])), (3, inner(extension))]).id
-        wrapper = make_set(s, "Wrapper", [(2, inner(complete)), (1, lid)]).id
-        order_id = new_order(s, [SetItem(wrapper, 3)]).id
+        complete = make_set(s, "Complete 3", [(1, inner(basic)), (3, inner(extension))], sku="EX-K3").id
+        wrapper = make_set(s, "Wrapper", [(2, inner(complete)), (1, lid)], sku="EX-WR").id
+        order_id = new_order(s, [small(wrapper, 3, a)]).id
     with db.begin() as s:
         group = orders.get_order(s, order_id).groups[0]
         assert group.lines == [("Lid", 3)]

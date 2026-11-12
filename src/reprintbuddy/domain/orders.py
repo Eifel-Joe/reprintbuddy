@@ -58,7 +58,8 @@ class ArticleItem:
 class SetItem:
     set_id: int
     qty: int
-    key: tuple[int, ...] = ()  # the variant: the chosen article per choice field; empty without choices
+    # the variant: the chosen article per choice field, brought fields first (Spec 5.4, 0.4.4); () without
+    key: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -77,7 +78,7 @@ class InnerGroup:
 
     depth: int  # 1: directly in the ordered set
     name: str
-    variant_sku: str | None  # the number of its fixed variant when ordered
+    variant_sku: str | None  # the number of its variant as ordered (its part of the key; 0.4.3: fixed)
     qty: int  # pieces of this inner set in the order line
     lines: list[tuple[str, int]]  # the articles directly in this inner set: (name, quantity)
 
@@ -142,9 +143,10 @@ def _resolve_assembled(session: Session, group_no: int, item: AssembledItem, qty
 
 
 def _resolve_set_lines(session: Session, defs, group_no: int, set_id: int, key: tuple[int, ...], qty: int, sku):
-    """The lines of one ordered set through all its inner sets (Spec 5.4, 0.4.3 p423). An archived
-    article inside (left by an earlier version, Spec 5.4 Altfall) is reserved like any other; it is
-    printed again only once it is restored, since rule 7.1 leaves archived articles out."""
+    """The lines of one ordered set through all its inner sets (Spec 5.4, 0.4.3 p423), in the variant
+    `key`: each inner set takes its part of the key, so its variant number is kept as ordered (0.4.4).
+    An archived article inside (left by an earlier version, Spec 5.4 Altfall) is reserved like any
+    other; it is printed again only once it is restored, since rule 7.1 leaves archived articles out."""
     specs = []
     for line in setresolve.resolve(defs, set_id, key):
         path = None
@@ -182,11 +184,9 @@ def _resolve(session: Session, items: Sequence[ArticleItem | SetItem | Assembled
         if row.incomplete is not None:
             raise ValidationError("orders.set_incomplete", set=row.name)
         key = tuple(item.key)
-        if len(key) != len(row.choices) or any(
-            article_id not in {o.article_id for o in field.options} for article_id, field in zip(key, row.choices)
-        ):
+        variant = next((v for v in row.variants if v.key == key), None)  # every field, brought ones too (0.4.4)
+        if (variant is None) if row.variants else bool(key):
             raise ValidationError("orders.variant_invalid", set=row.name)
-        variant = next((v for v in row.variants if v.key == key), None) if key else None
         sku = variant.sku if variant is not None else None
         defs = catalog.load_defs(session) if defs is None else defs
         specs.extend(_resolve_set_lines(session, defs, group_no, row.id, key, qty, sku))
