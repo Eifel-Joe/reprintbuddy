@@ -296,7 +296,8 @@ async def articles_list(
     t = lambda key: translate(lang, key)  # noqa: E731
     # "enough" and "paused" get no card: the cards name what needs attention
     icon, label, named = ("archive", "kpi.articles_archived", []) if archived else (
-        "package", "kpi.articles", summarize((row.status for row in every), ("overbooked", "below_min", "low"))
+        "package", "kpi.articles",
+        summarize((row.status for row in every), ("overbooked", "below_min", "low", "not_deliverable")),  # p363
     )
     cards = kpis.state_cards(t, "article", icon, len(every), t(label), named)
     keep = (("status", status), ("view", "archived" if archived else None))

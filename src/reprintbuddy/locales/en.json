@@ -616,6 +616,8 @@
   "status.article.below_min": "below minimum",
   "status.article.low": "low",
   "status.article.ok": "enough",
+  "status.article.not_deliverable": "not deliverable",
+  "status.article.deliverable": "deliverable",
   "status.part.below_min": "below minimum",
   "status.part.ok": "enough",
   "status.set.deliverable": "deliverable",
