@@ -399,3 +399,46 @@ def test_restoring_a_set_whose_inner_set_was_archived_meanwhile(db, kits):  # Sp
     with db.begin() as s:
         assert s.get(Article, a["plate"]).reserved == 1  # archived, inside the archived inner set, still reserved
 
+
+def test_an_archived_set_warns_about_nothing(db, kits):  # review finding 1: the Altfall concerns active sets only
+    a, basic, _extension, complete = kits
+    with db.begin() as s:
+        catalog.archive_set(s, complete)
+        catalog.archive_set(s, basic)
+        catalog.archive_article(s, a["holder"])  # only the archived basic kit holds it
+    with db.begin() as s:
+        assert [r.held_archived for r in catalog.list_sets(s, archived=True)] == [(), ()]
+        assert catalog.archived_in_sets(s) == []
+
+
+def test_archiving_is_refused_on_every_level_of_an_active_set(db, kits):  # review finding 2, Spec 5.4
+    a, _basic, extension, complete = kits
+    with db.begin() as s:
+        catalog.archive_set(s, complete)
+        catalog.archive_set(s, extension)
+        catalog.restore_set(s, complete)  # now the active complete kit holds the archived extension
+    with pytest.raises(ConflictError) as info:
+        with db.begin() as s:
+            catalog.archive_article(s, a["plate"])  # level 2 of the active complete kit
+    assert (info.value.key, info.value.params) == ("articles.archive_in_set", {"names": "Complete kit"})
+
+
+def test_a_set_on_level_two_cannot_be_archived_either(db, kits):
+    a, basic, _extension, complete = kits
+    with db.begin() as s:
+        lid = articles(s, lid=1)["lid"]
+        middle = make_set(s, "Middle", [(1, inner(basic)), (1, lid)]).id
+        make_set(s, "Top", [(1, inner(middle)), (1, articles(s, cap=1)["cap"])])
+    with pytest.raises(ConflictError) as info:
+        with db.begin() as s:
+            catalog.archive_set(s, basic)  # held by middle (level 1) and top (level 2), complete kit too
+    assert info.value.params == {"names": "Complete kit, Middle, Top"}
+
+
+def test_inner_set_losing_all_its_choices_drops_the_fixed_variant(db):  # review finding 5
+    with db.begin() as s:
+        a = articles(s, frame=5, small=4, large=3, plate=9, lid=1)
+        sizes = make_set(s, "Sizes", [(1, a["frame"])], [(1, [(a["small"], "-S"), (a["large"], "-L")])], sku="EX-SZ").id
+        make_set(s, "Bundle", [(1, inner(sizes, a["small"])), (1, a["plate"])])
+    data = SetInput("Sizes", "EX-SZ", [BaseInput(1, a["frame"]), BaseInput(1, a["lid"])], [])
+    assert refused(db, data, "sets.variant_used", ConflictError, set_id=sizes).params["names"] == [("Bundle", False)]

@@ -1397,7 +1397,7 @@
   "orders.pick_variant": "{name} has choice parts: choose one of its variants.",
   "orders.choice_invalid": "This variant does not exist. Reload the page and choose again.",
   "articles.archive_in_assembled": "The article is a part of {names}. Take it out of the parts list first or archive the assembled article.",
-  "articles.archive_in_set": "The article is in the set {names}. Take it out of the set first or archive the set.",
+  "articles.archive_in_set": "The article is in {names}. Take it out of the set first or archive the set.",
   "sets.archive_in_set": "The set is part of {names}. Take it out there first or archive the other set first.",
   "sets.article_not_allowed": "{name} cannot go into a set: a set holds only articles sold alone, assembled articles only on stock and without choice parts.",
   "assembled.switch_busy": "{name} can only be switched when there is no stock, no reservation and no open order.",

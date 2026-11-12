@@ -95,6 +95,11 @@ class Unknown(ResolveError):
         self.set_id = set_id
 
 
+class TooDeep(ResolveError):
+    """Hundreds of levels exhaust Python's recursion: the set counts as broken instead of the page
+    failing (review finding 7). No form builds this; it guards against stored data."""
+
+
 def _get(defs: Mapping[int, SetDef], set_id: int) -> SetDef:
     found = defs.get(set_id)
     if found is None:
@@ -143,13 +148,19 @@ def _all(
 def resolve_base(defs: Mapping[int, SetDef], set_id: int) -> tuple[Line, ...]:
     """The articles of the base rows, inner sets resolved, per one piece of the set."""
     _get(defs, set_id)
-    return tuple(_base(defs, set_id, 1, (), (set_id,)))
+    try:
+        return tuple(_base(defs, set_id, 1, (), (set_id,)))
+    except RecursionError:
+        raise TooDeep() from None
 
 
 def resolve(defs: Mapping[int, SetDef], set_id: int, key: tuple[int, ...] = ()) -> tuple[Line, ...]:
     """All articles of one variant (`key`: the chosen article per own choice field; () without)."""
     _check_key(_get(defs, set_id), key)
-    return tuple(_all(defs, set_id, key, 1, (), (set_id,)))
+    try:
+        return tuple(_all(defs, set_id, key, 1, (), (set_id,)))
+    except RecursionError:
+        raise TooDeep() from None
 
 
 def _inner_sets(defs: Mapping[int, SetDef], set_id: int) -> Iterator[int]:
@@ -164,7 +175,11 @@ def check(defs: Mapping[int, SetDef], set_id: int) -> None:
     """Refuse a ring, an unknown inner set, a wrong fixed variant, an inner set twice and an article twice."""
     base = resolve_base(defs, set_id)
     seen_sets: set[int] = set()
-    for inner in _inner_sets(defs, set_id):
+    try:
+        inner_sets = list(_inner_sets(defs, set_id))
+    except RecursionError:
+        raise TooDeep() from None
+    for inner in inner_sets:
         if inner in seen_sets:
             raise Twice(set_id=inner)
         seen_sets.add(inner)

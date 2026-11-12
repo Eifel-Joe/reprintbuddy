@@ -49,6 +49,11 @@ def form(client, url="/sets/new", **rows):
     return data
 
 
+def sets_in_db(client):
+    with sm_of(client).begin() as s:
+        return list(s.scalars(select(ProductSet)))
+
+
 def select_html(page: str, name: str) -> str:
     return re.search(rf'<select name="{name}"[^>]*>(.*?)</select>', page, re.S).group(1)
 
@@ -170,9 +175,11 @@ def test_archived_inner_set_stays_in_the_form_marked(ready_client):  # decision 
 
 def test_bad_set_value_no_500(ready_client):
     a, ids = kits(ready_client)
+    before = len(sets_in_db(ready_client))
     for value in ("set:x", "set:", f"set:{ids['basic']}:x", "set:99999999999999", "set:1:2:3:4"):
         response = ready_client.post("/sets/new", data=form(ready_client, base_0_article=value, base_1_article=str(a["Lid"])))
-        assert response.status_code == 200, value
+        assert response.status_code == 200 and 'class="alert"' in response.text, value
+    assert len(sets_in_db(ready_client)) == before
     response = ready_client.post("/sets/new", data=form(ready_client, base_0_article="set:9999", base_1_article=str(a["Lid"])))
     assert response.status_code == 200 and en("sets.not_found") in response.text
 
@@ -278,3 +285,14 @@ def test_queue_page_does_not_repeat_the_set_warning(ready_client):
     a, ids = kits(ready_client)
     altfall(ready_client, ids, a)
     assert en("sets.holds_archived_article", set="Basic kit", name="Manual") not in ready_client.get("/queue").text
+
+
+def test_archive_view_shows_no_altfall_warning(ready_client):  # review finding 1
+    a, ids = kits(ready_client)
+    with sm_of(ready_client).begin() as s:
+        from reprintbuddy.domain import catalog
+        catalog.archive_set(s, ids["complete"])
+        catalog.archive_set(s, ids["basic"])
+        catalog.archive_article(s, a["Holder"])
+    page = ready_client.get("/sets?view=archived").text
+    assert en("sets.holds_archived_article", set="Basic kit", name="Holder") not in page

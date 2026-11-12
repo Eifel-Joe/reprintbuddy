@@ -8,6 +8,7 @@ from reprintbuddy.domain.setresolve import (
     Cycle,
     Field,
     Line,
+    ResolveError,
     SetDef,
     Step,
     Twice,
@@ -224,3 +225,12 @@ def test_variant_number_of_an_inner_variant():
     no_suffix = SetDef(1, (art(1, HOLDER),), (Field(1, (P, Q), ("-A", None)),), sku="EX-GA")
     assert variant_number(defs(no_suffix), 1, (Q,)) is None
     assert variant_number(defs(GA), 1, ()) is None  # without choices no variant number
+
+
+def test_absurdly_deep_nesting_is_a_resolve_error_not_a_crash():  # review finding 7
+    chain = {i: SetDef(i, (inner(1, i + 1), art(1, 1000 + i)), ()) for i in range(1, 2000)}
+    chain[2000] = SetDef(2000, (art(1, 5000), art(1, 5001)), ())
+    with pytest.raises(ResolveError):
+        resolve_base(chain, 1)
+    with pytest.raises(ResolveError):
+        check(chain, 1)

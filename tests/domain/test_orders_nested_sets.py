@@ -173,3 +173,23 @@ def test_old_order_without_path_shows_as_before(db, kits):
         groups = orders.get_order(s, order_id).groups
         assert groups[0].lines == [("Plate", 1), ("Screw set", 1)] and groups[0].inner == []
         assert groups[1].lines == [("Holder", 1)] and groups[1].inner == []
+
+
+def test_quantities_multiply_through_two_levels_in_the_order(db, kits):  # review finding 4
+    a, basic, extension, _complete = kits
+    with db.begin() as s:
+        lid = make_article(s, name="Lid", stock=99).id
+        for article_id in a.values():
+            s.get(Article, article_id).stock = 99
+        complete = make_set(s, "Complete 3", [(1, inner(basic, a["Small"])), (3, inner(extension))]).id
+        wrapper = make_set(s, "Wrapper", [(2, inner(complete)), (1, lid)]).id
+        order_id = new_order(s, [SetItem(wrapper, 3)]).id
+    with db.begin() as s:
+        group = orders.get_order(s, order_id).groups[0]
+        assert group.lines == [("Lid", 3)]
+        assert [(g.depth, g.name, g.qty, g.lines) for g in group.inner] == [
+            (1, "Complete 3", 6, []),
+            (2, "Basic kit", 6, [("Holder", 12), ("Manual", 6), ("Small", 6)]),
+            (2, "Extension", 18, [("Plate", 18), ("Screw set", 18)]),
+        ]
+        assert reserved(s, a)["Plate"] == 18 and s.get(Article, lid).reserved == 3

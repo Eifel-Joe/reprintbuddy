@@ -1174,8 +1174,10 @@ def _set_row(
     ]
     incomplete = "broken" if broken else _incomplete_of(own)
     orderable = product_set.archived_at is None and incomplete is None and (not choices or bool(variants))
-    held = [("set" if row.set_id is not None else "article", row.name) for row in base if row.archived]
-    held += [("article", option.name) for choice in choices for option in choice.options if option.archived]
+    held: list[tuple[str, str]] = []
+    if product_set.archived_at is None:  # the Altfall concerns active sets only (review finding 1)
+        held = [("set" if row.set_id is not None else "article", row.name) for row in base if row.archived]
+        held += [("article", option.name) for choice in choices for option in choice.options if option.archived]
     return SetRow(
         id=product_set.id,
         name=product_set.name,
@@ -1207,11 +1209,47 @@ def archived_in_sets(session: Session) -> list[ArchivedInSet]:
     or taken out; a set that holds it through an inner set is not named again. Since 0.4.3 nothing
     in an active set can be archived, so this is what an earlier version left, or what came back
     with a restored set. Tests: tests/domain/test_catalog_sets_nested.py."""
-    return [
-        ArchivedInSet(row.id, row.name, kind, name)  # type: ignore[arg-type]
-        for row in list_sets(session)
-        for kind, name in row.held_archived
-    ]
+    # From the snapshot alone, not from list_sets: the overview asks on every live refresh (review finding 6).
+    defs = load_defs(session)
+    archived_sets = _archived_sets(session)
+    archived = dict(session.execute(select(Article.id, Article.name).where(Article.archived_at.is_not(None))).all())
+    found: list[ArchivedInSet] = []
+    for held in sorted((d for d in defs.values() if d.id not in archived_sets), key=lambda d: (d.name.casefold(), d.id)):
+        for row in held.base:
+            if row.article_id in archived:
+                found.append(ArchivedInSet(held.id, held.name, "article", archived[row.article_id]))
+            elif row.set_id in archived_sets:
+                found.append(ArchivedInSet(held.id, held.name, "set", defs[row.set_id].name))
+        for field in held.fields:
+            found += [ArchivedInSet(held.id, held.name, "article", archived[o]) for o in field.options if o in archived]
+    return found
+
+
+def _active_holders(session: Session, defs: dict[int, setresolve.SetDef], direct: set[int]) -> list[str]:
+    """Names of the active sets that hold something on any level (Spec 5.4 "Archivieren und Sets"):
+    the sets that hold it directly and every set that holds one of those, archived ones passed
+    through, since a restored set may hold an archived set (Spec 5.4 Wiederherstellen; review finding 2)."""
+    ids = set(direct)
+    for set_id in direct:
+        ids.update(setresolve.containing(defs, set_id))
+    archived_sets = _archived_sets(session)
+    return sorted((defs[i].name for i in ids if i in defs and i not in archived_sets), key=str.casefold)
+
+
+def sets_holding_article(session: Session, article_id: int) -> list[str]:
+    """The active sets an article stands in on any level, as base part or choice (Spec 5.4, 5.5)."""
+    direct = set(session.scalars(
+        select(SetPosition.set_id)
+        .join(SetPositionOption, SetPositionOption.position_id == SetPosition.id)
+        .where(SetPositionOption.article_id == article_id)
+    ))
+    return _active_holders(session, load_defs(session), direct)
+
+
+def sets_holding_set(session: Session, set_id: int) -> list[str]:
+    """The active sets a set stands in on any level (Spec 5.4, 5.5)."""
+    defs = load_defs(session)
+    return _active_holders(session, defs, set(setresolve.direct_parents(defs, set_id)))
 
 
 def set_row(session: Session, set_id: int) -> SetRow:
@@ -1289,7 +1327,7 @@ def archive_article(session: Session, article_id: int) -> None:
     users = _assembled_users(session, article.id) if article.kind == articlesets.PRINT else []
     if users:
         raise ConflictError("articles.archive_in_assembled", names=", ".join(users))
-    sets = sets_using(session, article.id)
+    sets = sets_holding_article(session, article.id)
     if sets:  # Spec 5.4 "Archivieren und Sets", 5.5 (0.4.3): every active set stays orderable
         raise ConflictError("articles.archive_in_set", names=", ".join(sets))
     reasons = busy_reasons(session, article)
@@ -1585,13 +1623,13 @@ def restore_part(session: Session, part_id: int) -> Part:
 
 
 def archive_set(session: Session, set_id: int) -> None:
-    """A set can be archived unless an active set holds it (Spec 5.5, 0.4.3); checking the sets that
-    hold it directly is enough, since a set inside an active set cannot be archived itself. Open
-    orders keep their lines and still ship."""
+    """A set can be archived unless an active set holds it on any level (Spec 5.4, 5.5; 0.4.3): not
+    only directly, since a restored set may hold an archived one (review finding 2). Open orders keep
+    their lines and still ship."""
     product_set = get_set(session, set_id)
     if product_set.archived_at is not None:
         raise ConflictError("catalog.already_archived")
-    parents = sets_containing(session, set_id)
+    parents = sets_holding_set(session, set_id)
     if parents:
         raise ConflictError("sets.archive_in_set", names=", ".join(parents))
     product_set.archived_at = utcnow()
