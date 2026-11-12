@@ -107,6 +107,7 @@ Neben Pausen zeigen die Übersicht und die Warteschlange, was die Automatik am A
 
 - Bambuddy ist nicht eingerichtet, nicht erreichbar oder lehnt die Statusabfrage ab (ein Recht des Schlüssels fehlt). Es wird nichts übergeben und kein Bestand geändert.
 - Bambuddy hat einen Druck eines Artikels abgelehnt. Er liegt wieder in Reprintbuddys Warteschlange, und die nächste regelmäßige Abfrage versucht es erneut.
+- Dem gespeicherten Schlüssel fehlt ein Recht, das Reprintbuddy braucht (das Fenster **Bambuddy-Recht fehlt** oder nach **Später** die Warnzeile oben). Bis das Recht da ist, wird nichts übergeben; jede regelmäßige Abfrage prüft den Schlüssel erneut, siehe [Fehlende Rechte später](../start/setup.md#fehlende-rechte-spater).
 - Drucke warten in Bambuddy auf Freigabe. Starte sie in Bambuddy. Damit spätere Drucke nicht warten, braucht die Gruppe des Schlüssel-Besitzers das Recht **Print Without Review** (`queue:start_unreviewed`) oder **Update All Queue** (`queue:update_all`).
 - Die Warteschlange ist angehalten, oder die Obergrenze offener Drucke ist erreicht.
 - Ein Artikel wartet auf einen freien Drucker, weil seine Drucker im Wartungsmodus sind. Er wird übersprungen, nicht pausiert.

@@ -107,6 +107,7 @@ Besides pauses, the Overview and the Queue show what keeps the automation from w
 
 - Bambuddy is not set up, cannot be reached, or refuses the status query (a right of the key is missing). Nothing is handed over and no stock changes.
 - Bambuddy refused a print of an article. It is back in Reprintbuddy's queue and the next regular query tries again.
+- The stored key lacks a right Reprintbuddy needs (the dialog **Bambuddy right missing**, or after **Later** the warning line at the top). Nothing is handed over until the right is there; every regular query checks the key again, see [Missing rights later](../start/setup.md#missing-rights-later).
 - Prints wait for approval in Bambuddy. Start them in Bambuddy. So that later prints do not wait, the group of the key's owner needs **Print Without Review** (`queue:start_unreviewed`) or **Update All Queue** (`queue:update_all`).
 - The queue is stopped, or the limit of open prints is reached.
 - An article waits for a free printer because its printers are in maintenance mode. It is skipped, not paused.

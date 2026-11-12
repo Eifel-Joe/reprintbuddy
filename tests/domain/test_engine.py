@@ -10,7 +10,7 @@ import contextlib
 import time
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from factories import make_article, make_dispatch, make_entry
 from reprintbuddy import settings as st
@@ -1510,3 +1510,70 @@ async def test_refused_article_check_forgets_the_board(engine_env):
     env.fake.fail_next("list_printers", BambuddyRejected("Forbidden", status=403))
     await env.engine.tick(poll=True)
     assert env.engine.board.printers is None
+
+
+# ---- p370: a required right missing (Spec 7.7, 11.3) ------------------------------------
+
+
+def returned_lines(sm):
+    from reprintbuddy.models import JournalEntry
+
+    with sm() as s:
+        return s.scalar(select(func.count()).select_from(JournalEntry).where(JournalEntry.kind == "print_returned"))
+
+
+async def test_p370_nothing_is_handed_over_while_a_required_right_is_missing(engine_env):
+    """Root: the engine did not ask the rights check. A right needed only at the hand-over (Read Settings,
+    Create Queue) made every regular tick reserve the top print, Bambuddy refuse it and the journal say
+    "print returned to the queue" again. Now the prints wait, and each regular tick checks the key."""
+    env = engine_env
+    missing = [True]
+    rechecks: list[int] = []
+
+    async def recheck():
+        rechecks.append(1)
+
+    env.engine.rights_missing = lambda: missing[0]
+    env.engine.recheck_rights = recheck
+
+    result = await env.engine.tick(poll=True)
+    assert result == TickResult(None, 1, 0)  # the rule still makes its entry
+    assert env.fake.enqueued == [] and "print_defaults" not in env.fake.calls
+    assert statuses(env.sm) == [] and returned_lines(env.sm) == 0
+    assert env.engine.status.rejected is None
+    assert rechecks == [1]
+
+    await env.engine.tick(poll=False)  # a short tick (after a booking) does not ask Bambuddy again
+    assert rechecks == [1] and env.fake.enqueued == []
+
+    async def right_added():
+        rechecks.append(1)
+        missing[0] = False
+
+    env.engine.recheck_rights = right_added
+    result = await env.engine.tick(poll=True)  # the right is there again: handed over in the same run
+    assert result.dispatched == 1 and len(env.fake.enqueued) == 1
+    assert rechecks == [1, 1]
+    await env.engine.tick(poll=True)
+    assert rechecks == [1, 1]  # nothing missing: no more checks of the key
+
+
+async def test_p370_a_failed_recheck_leaves_the_tick_standing(engine_env):
+    env = engine_env
+
+    async def broken():
+        raise RuntimeError("boom")
+
+    env.engine.rights_missing = lambda: True
+    env.engine.recheck_rights = broken
+    result = await env.engine.tick(poll=True)
+    assert result == TickResult(None, 1, 0)
+    assert env.fake.enqueued == []
+
+
+async def test_p370_without_a_verdict_the_hand_over_stays_as_it_was(engine_env):
+    """Nothing checked yet (Bambuddy was down at the start): the prints go as before (Spec 7.7)."""
+    env = engine_env
+    assert env.engine.rights_missing() is False
+    result = await env.engine.tick(poll=True)
+    assert result.dispatched == 1

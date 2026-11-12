@@ -129,6 +129,8 @@ A new version of Reprintbuddy may need a right that the key did not have before.
 - Press **Check again** after you fixed it. When every right is there, the dialog turns green; press **Continue**.
 - Press **Later** to carry on. A warning line stays at the top of every page, with the missing rights, **Check again** and a link to the settings, until the check succeeds.
 
+While a right is missing, Reprintbuddy hands no prints over to Bambuddy; they wait in Reprintbuddy's queue, and the journal stays quiet. Every regular query checks the key again: once the right is added in Bambuddy, dialog and warning line go away by themselves and the prints go out in the same run.
+
 To fix it:
 
 - **A right of the group is missing:** add it to the group `Reprintbuddy` in Bambuddy (*Settings → Users*). The key stays.

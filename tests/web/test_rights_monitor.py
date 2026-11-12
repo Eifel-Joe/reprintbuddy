@@ -225,3 +225,40 @@ def test_every_required_right_has_label_place_and_purpose():
         assert KEY_RIGHT_FOR.get(code) in ("status", "queue"), code
         for lang, texts in locales.items():
             assert texts.get(f"permission.{code}"), (lang, code)
+
+
+# ---- p370: a check made by the regular query while a right is missing (Spec 7.7, 11.3) ----------
+
+
+def answers(respx_mock, *bodies):
+    return respx_mock.get(ME).mock(side_effect=[httpx.Response(200, json=body) for body in bodies])
+
+
+async def test_p370_recheck_finds_the_right_added_in_bambuddy(respx_mock):
+    without = [p for p in REQUIRED if p != "settings:read"]
+    route = answers(respx_mock, auth_me(permissions=without), auth_me(permissions=without), auth_me())
+    monitor = RightsMonitor()
+    await monitor.ensure(credentials, http_client_factory)
+    assert monitor.status == "missing"
+    await monitor.recheck(credentials, http_client_factory)  # still missing
+    assert monitor.status == "missing" and monitor.notice.missing == ("settings:read",)
+    await monitor.recheck(credentials, http_client_factory)  # added: the notice goes
+    assert monitor.status == "ok" and monitor.notice is None
+    assert route.call_count == 3
+
+
+async def test_p370_recheck_of_an_unreachable_bambuddy_keeps_what_is_known(respx_mock):
+    without = [p for p in REQUIRED if p != "queue:create"]
+    respx_mock.get(ME).mock(side_effect=[httpx.Response(200, json=auth_me(permissions=without)), httpx.ConnectError("down")])
+    monitor = RightsMonitor()
+    await monitor.ensure(credentials, http_client_factory)
+    await monitor.recheck(credentials, http_client_factory)
+    assert monitor.status == "missing"
+
+
+async def test_p370_recheck_without_a_finished_setup_does_nothing(respx_mock):
+    route = mock_auth_me(respx_mock)
+    monitor = RightsMonitor()
+    monitor.status = "missing"
+    await monitor.recheck(lambda: None, http_client_factory)
+    assert route.call_count == 0 and monitor.status == "missing"

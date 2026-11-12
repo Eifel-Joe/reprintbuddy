@@ -413,6 +413,12 @@ def create_app(
         or app.state.update_starting
         or update_just_started(db_path.parent, datetime.now(UTC)),
         publish=live.publish,
+        # p370 (Spec 7.7, 11.3): no hand-over while the stored key lacks a required right; the regular
+        # query checks the key again meanwhile.
+        rights_missing=lambda: app.state.rights.status == "missing",
+        recheck_rights=lambda: app.state.rights.recheck(
+            lambda: deps.stored_credentials(app), app.state.http_client_factory
+        ),
     )
     app.state.printer_board = app.state.ticker.board  # the printers' state for the print plan (Spec 7.6)
     app.state.ticker.add_poll_hook("filament", filament.poll_hook)  # the daily record and receipt check (B6)

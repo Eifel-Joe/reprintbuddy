@@ -129,6 +129,8 @@ Eine neue Version von Reprintbuddy kann ein Recht brauchen, das der Schlüssel v
 - Drücke **Erneut prüfen**, nachdem du es behoben hast. Sind alle Rechte da, wird das Fenster grün; drücke **Weiter**.
 - Drücke **Später**, um weiterzuarbeiten. Oben auf jeder Seite bleibt dann eine Warnzeile mit den fehlenden Rechten, **Erneut prüfen** und einem Link zu den Einstellungen, bis die Prüfung gelingt.
 
+Solange ein Recht fehlt, übergibt Reprintbuddy keine Drucke an Bambuddy; sie warten in Reprintbuddys Warteschlange, und das Journal bleibt ruhig. Jede regelmäßige Abfrage prüft den Schlüssel erneut: Sobald das Recht in Bambuddy ergänzt ist, verschwinden Fenster und Warnzeile von selbst, und die Drucke gehen im selben Lauf hinaus.
+
 So behebst du es:
 
 - **Ein Recht der Gruppe fehlt:** ergänze es in Bambuddy in der Gruppe `Reprintbuddy` (*Einstellungen → Benutzer*). Der Schlüssel bleibt.
