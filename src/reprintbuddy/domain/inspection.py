@@ -115,15 +115,19 @@ def _book(session: Session, row: Inspection, good: int, actor: Actor) -> Resolve
         # a replacement is wanted whatever the automation or a pause says (Spec 7.5).
         # An article with an open inspection is never archived (archiving refuses while units
         # are provisional), so add_replacement cannot refuse it here.
+        # p411 (Spec 7.5): a print of the minimum stock is replaced only as far as the target needs.
+        print_origin = session.get(Dispatch, row.dispatch_id).origin if row.dispatch_id is not None else None
         replacement = workqueue.add_replacement(
             session,
             row.article_id,
             prints_for_units(scrap, article.units_per_print),
             "scrap",
             actor,
+            print_origin=print_origin,
+            units=scrap,
             details=details,
         )
-        replacement_id = replacement.id
+        replacement_id = replacement.id if replacement is not None else None
     row.good_units = good
     row.resolved_at = utcnow()
     session.flush()

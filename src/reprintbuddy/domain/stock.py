@@ -66,6 +66,8 @@ KINDS: frozenset[str] = frozenset(
         "queue_entry_withdrawn",
         "print_withdrawn",
         "print_withdraw_refused",
+        # Spec 7.5 (0.4.5 p411): scrap or a failure with the target still reached, no replacement
+        "replacement_not_needed",
     }
 )
 

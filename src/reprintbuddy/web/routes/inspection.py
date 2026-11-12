@@ -143,6 +143,8 @@ async def resolve_inspection(inspection_id: int, request: Request, db: Session =
     flash(request, "inspections.done", name=name, good=result.good, scrap=result.scrap)
     if result.replacement_entry_id is not None:
         flash(request, "inspections.replacement_created")
+    elif result.scrap > 0:  # p411 (Spec 7.5): the target is reached without it
+        flash(request, "inspections.replacement_not_needed")
     for key, message_params in messages:
         flash(request, key, warning=key in WARNING_KEYS, **message_params)
     return RedirectResponse(_back(article), status_code=303)

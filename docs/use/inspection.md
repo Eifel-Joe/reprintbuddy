@@ -28,7 +28,7 @@ Each row shows the article, when the print was reported finished, and the **Targ
 2. Enter the pieces that are not good in **Scrap**. The default is 0, the most you can enter is the target. Empty means 0; anything that is not a whole number from 0 to the target is refused with a message that names this range.
 3. Press **Confirm**.
 
-The good pieces are the target minus the scrap. They become **Stock**, or **Awaiting assembly** if the article needs hand work. The scrap is written off, and Reprintbuddy puts a replacement print at the front of the queue, rounded up to whole prints. The replacement comes whatever the minimum stock says, and also if the automation is paused for that article.
+The good pieces are the target minus the scrap. They become **Stock**, or **Awaiting assembly** if the article needs hand work. The scrap is written off, and Reprintbuddy puts a replacement print at the front of the queue, rounded up to whole prints. The replacement comes also if the automation is paused for that article. For a print of the minimum stock only what is missing to the target is replaced; if nothing is missing, the message says **No replacement needed** (see [Replacement for scrap and failures](automation.md#replacement-for-scrap-and-failures)).
 
 To confirm several prints at once:
 

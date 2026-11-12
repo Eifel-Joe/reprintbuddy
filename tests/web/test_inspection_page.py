@@ -154,7 +154,7 @@ def test_confirm_scrap_creates_replacement(ready_client):  # Spec 12 step 6
     with sm_of(ready_client).begin() as s:
         other = make_article(s, name="Template Z").id
         make_entry(s, other, 1)
-    a, i = finished(ready_client, units=2)
+    a, i = finished(ready_client, units=2, min_stock=4)  # p411: a minimum stock, so the scrap leaves the target short
     response, _ = confirm(ready_client, i, scrap="2")
     assert response.status_code == 303
     assert count(ready_client, Article, a, "stock") == 0
@@ -409,3 +409,14 @@ def test_a_form_of_the_old_page_with_a_good_field_is_refused_not_misread(ready_c
     assert count(ready_client, Article, a, "stock") == 0
     assert count(ready_client, Article, a, "provisional") == 2
     assert open_count(ready_client) == 1
+
+
+def test_p411_scrap_with_the_target_reached_says_no_replacement_is_needed(ready_client):
+    """Spec 7.5 (0.4.5): a print of the minimum stock is replaced only up to the target."""
+    a, i = finished(ready_client, units=2, stock=9, min_stock=4, buffer=2)
+    response, _ = confirm(ready_client, i, scrap="2")
+    assert response.status_code == 303
+    page = ready_client.get(PAGE).text
+    assert en("inspections.replacement_not_needed") in page
+    assert en("inspections.replacement_created") not in page
+    assert en("queue.origin.scrap") not in ready_client.get("/queue").text

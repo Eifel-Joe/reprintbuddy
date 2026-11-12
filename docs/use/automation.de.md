@@ -69,7 +69,7 @@ Außerdem hört Reprintbuddy auf Bambuddys **Live-Kanal**. Meldet Bambuddy, dass
 Was ein fertiger, fehlgeschlagener oder verschwundener Druck bewirkt:
 
 - **Fertig:** Die Einheiten werden vorläufig und warten in der Liste **Zu prüfen**. Ein Platz unter der Obergrenze wird frei. Siehe [Zu prüfen und Montage](inspection.md).
-- **Fehlgeschlagen:** Der Druck zählt nicht mehr als in Arbeit, und ein Ersatz über einen Druck kommt an den Anfang der Warteschlange. Zwei Fehlschläge hintereinander pausieren den Artikel. Ein fertiger Druck setzt die Zählung zurück.
+- **Fehlgeschlagen:** Der Druck zählt nicht mehr als in Arbeit, und ein Ersatz über einen Druck kommt an den Anfang der Warteschlange (bei einem Druck aus dem Mindestbestand nur, wenn die Zielmenge ihn braucht, siehe unten). Zwei Fehlschläge hintereinander pausieren den Artikel. Ein fertiger Druck setzt die Zählung zurück.
 - **In Bambuddy abgebrochen, übersprungen oder gelöscht:** Er zählt nicht mehr als in Arbeit, und die Automatik pausiert für diesen Artikel, damit sie nicht gegen das arbeitet, was du in Bambuddy getan hast. Ausgenommen sind Drucke, die Reprintbuddy nach einem Storno selbst gelöscht hat: Sie pausieren nichts (siehe [Was ein Storno zurücknimmt](inspection.md#was-ein-storno-zurucknimmt)).
 
 Drucke, die du direkt in Bambuddy startest, kennt Reprintbuddy nicht. Buche sie unter *Buchen* mit **Einbuchen ohne Druck**.
@@ -78,7 +78,9 @@ Drucke, die du direkt in Bambuddy startest, kennt Reprintbuddy nicht. Buche sie 
 
 Bestätigst du bei der Prüfung weniger gute Einheiten, als gedruckt wurden, legt Reprintbuddy sofort einen Ersatz-Eintrag an den Anfang der Warteschlange. Er enthält den Ausschuss, aufgerundet auf ganze Drucke, und ist mit **Ersatz für Ausschuss** gekennzeichnet. Ein fehlgeschlagener Druck bekommt einen Eintrag über einen Druck, gekennzeichnet mit **Ersatz für Fehlschlag**.
 
-Ersatz entsteht immer, egal was Hauptschalter, Artikelschalter oder Mindestbestand sagen, und auch für Drucke von Hand. Übergeben wird er wie jeder Eintrag, also nicht bei pausiertem Artikel oder angehaltener Warteschlange.
+Ersatz entsteht unabhängig von Hauptschalter und Artikelschalter. Drucke von Hand und Ersatz-Drucke werden immer voll ersetzt. Ein Druck aus dem Mindestbestand wird nur ersetzt, soweit die Zielmenge (Mindestbestand + Puffer, bei Teilen plus Bedarf aus Montage) ohne ihn nicht erreicht ist, gerechnet nach dem Ausschuss bzw. Fehlschlag: höchstens so viele Drucke, wie bis zur Zielmenge fehlen. Fehlt nichts, entsteht kein Ersatz, und das Journal sagt **Kein Ersatz nötig (Zielmenge erreicht)**. Das kommt vor, wenn ein Storno einen Druck über der Zielmenge übrig ließ, der schon druckte (siehe [Was ein Storno zurücknimmt](inspection.md#was-ein-storno-zurucknimmt)).
+
+Übergeben wird Ersatz wie jeder Eintrag, also nicht bei pausiertem Artikel oder angehaltener Warteschlange.
 
 ## Pausen
 
