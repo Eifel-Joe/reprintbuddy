@@ -118,8 +118,8 @@ def make_set(
     *,
     sku: str | None = None,
 ) -> ProductSet:
-    """`base` is a list of (qty, article id) or (qty, ("set", set id, key)) for an inner set in its fixed
-    variant (0.4.3); `choices` up to two fields of (qty, [(article id, suffix)]).
+    """`base` is a list of (qty, article id) or (qty, ("set", set id)) for an inner set (0.4.3); it brings
+    its choice parts (0.4.4); `choices` up to two fields of (qty, [(article id, suffix)]).
     Nothing is checked: an update or an older version may have left a set like this (Spec 5.4)."""
     product_set = ProductSet(name=name, sku=sku)
     s.add(product_set)
@@ -129,10 +129,8 @@ def make_set(
         s.add(position)
         s.flush()
         if isinstance(what, tuple):
-            _kind, set_id, *key = what
-            key = list(key[0]) if key else []
-            s.add(SetPositionSet(position_id=position.id, set_id=set_id,
-                                 choice1_id=key[0] if key else None, choice2_id=key[1] if len(key) > 1 else None))
+            _kind, set_id = what
+            s.add(SetPositionSet(position_id=position.id, set_id=set_id))
         else:
             s.add(SetPositionOption(position_id=position.id, article_id=what))
     for slot, (qty, options) in enumerate(choices, start=1):

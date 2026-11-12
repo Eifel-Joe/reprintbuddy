@@ -135,7 +135,6 @@ def test_orders_stay_as_they_were(old_db):
     assert _rows(old_db, LINES) == before
 
 
-@pytest.mark.xfail(reason="the catalog follows in task 3 of plan v0.4.4", strict=True)
 def test_sets_read_with_brought_choices_after_the_update(old_db):
     upgrade(old_db, revision=REVISION)
     with make_sessionmaker(old_db)() as s:

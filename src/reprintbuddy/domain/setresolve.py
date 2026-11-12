@@ -220,6 +220,11 @@ def _inner_sets(defs: Mapping[int, SetDef], set_id: int) -> Iterator[int]:
             yield from _inner_sets(defs, row.set_id)
 
 
+def inner_sets(defs: Mapping[int, SetDef], set_id: int) -> list[int]:
+    """Every inner set on every level, once per row; run `check` first, a ring would not end."""
+    return _deep(lambda: list(_inner_sets(defs, set_id)))
+
+
 def _possible(defs: Mapping[int, SetDef], set_id: int) -> list[int]:
     base = resolve_base(defs, set_id)
     return [line.article_id for line in base] + [o for slot in fields(defs, set_id) for o in slot.options]

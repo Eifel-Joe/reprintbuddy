@@ -712,10 +712,9 @@ class BaseRow:
     article_id: int | None  # None for an inner set
     name: str  # of the article or of the inner set
     archived: bool  # the article or the inner set itself is archived
-    set_id: int | None = None  # an inner set (0.4.3 p423)
-    key: tuple[int, ...] = ()  # its fixed variant: the chosen article per choice field
-    variant_sku: str | None = None  # the number of that variant now; None without choices or while missing
-    contents: tuple[tuple[int, str], ...] = ()  # inner set: (qty per piece of it, article), all levels
+    set_id: int | None = None  # an inner set (0.4.3 p423); it brings its choice parts (0.4.4 p441)
+    sku: str | None = None  # the number of the inner set (Spec 10.1)
+    contents: tuple[tuple[int, str], ...] = ()  # inner set: (qty per piece of it, base article), all levels
 
 
 @dataclass(frozen=True)
@@ -747,9 +746,11 @@ class SetRow:
     sku: str | None
     available: int  # without choices: how often the set comes together; with them "together at most"
     base: list[BaseRow]
-    choices: list[ChoiceRow]
-    variants: list[VariantRow]  # of the active choice articles only
-    incomplete: str | None  # "too_few" or "suffixes_missing" (sets the update to v0.4.0 rebuilt), "broken" (0.4.3)
+    choices: list[ChoiceRow]  # the set's own choice fields 1 and 2, as the form edits them
+    variants: list[VariantRow]  # over every field, the brought ones first (Spec 5.4, 0.4.4)
+    # "too_few" or "suffixes_missing" (sets the update to v0.4.0 rebuilt), "broken" (0.4.3),
+    # "number_missing" (brings choice parts without a number of its own: the update to 0.4.4)
+    incomplete: str | None
     orderable: bool
     status: SetStatus  # deliverable when at least one set comes together (Spec 10.1)
     # what an earlier version left archived directly in this set: ("article" or "set", name), in the order
@@ -777,20 +778,36 @@ def _fields_of(
     return [p for p in positions if p.slot == 0], fields
 
 
-def variant_numbers(session: Session, *, exclude_set_id: int | None = None) -> dict[str, int]:
-    """Every variant number -> its set. Archived sets and archived choice articles count too, so that
-    restoring one never brings back a number that is taken meanwhile (plan approval p340)."""
+def _numbers_of(defs: dict[int, setresolve.SetDef], set_id: int) -> list[str]:
+    """The variant numbers of a set over every field, brought ones first (Spec 5.4, 0.4.4); none
+    without a number, a suffix, or for a set that cannot be resolved."""
+    if not defs[set_id].sku:
+        return []
+    try:
+        slots = setresolve.fields(defs, set_id)
+    except setresolve.ResolveError:
+        return []
+    if not slots:
+        return []
+    numbers = []
+    for suffixes in itertools.product(*(slot.suffixes for slot in slots)):
+        number = rules.variant_number(defs[set_id].sku, suffixes)
+        if number is not None:
+            numbers.append(number)
+    return numbers
+
+
+def variant_numbers(
+    session: Session, *, exclude_set_id: int | None = None, defs: dict[int, setresolve.SetDef] | None = None
+) -> dict[str, int]:
+    """Every variant number -> its set, brought choice parts included (0.4.4). Archived sets and
+    archived choice articles count too, so that restoring one never brings back a number that is
+    taken meanwhile (plan approval p340)."""
+    defs = load_defs(session) if defs is None else defs
     numbers: dict[str, int] = {}
-    for set_id, sku in session.execute(select(ProductSet.id, ProductSet.sku).where(ProductSet.sku.is_not(None))):
-        if set_id == exclude_set_id:
-            continue
-        _base, fields = _fields_of(session, set_id)
-        if not fields:
-            continue
-        for combination in itertools.product(*(options for _position, options in fields)):
-            number = rules.variant_number(sku, [option.suffix for option in combination])
-            if number is not None:
-                numbers[number] = set_id
+    for set_id in sorted(defs):
+        if set_id != exclude_set_id:
+            numbers.update((number, set_id) for number in _numbers_of(defs, set_id))
     return numbers
 
 
@@ -804,7 +821,8 @@ def _allowed_in_set(session: Session, article: Article) -> bool:
     return False
 
 
-BaseSpec = tuple[int, int | None, int | None, tuple[int, ...]]  # qty, article id, inner set id, its key
+BaseSpec = tuple[int, int | None, int | None]  # qty, article id, inner set id
+MAX_VARIANT_FIELDS = MAX_SKU - 1  # a number and each suffix have one character at least (Spec 5.4: 64)
 
 
 def _check_set_input(
@@ -852,7 +870,7 @@ def _check_set_input(
             raise ValidationError("sets.ring", path=f"{name} → {name}")
         if inner_id in seen_sets:
             raise ValidationError("sets.set_twice", name=found.name)
-        if inner_id not in kept_sets and (found.archived_at is not None or _incomplete_of(defs[inner_id]) is not None):
+        if inner_id not in kept_sets and (found.archived_at is not None or _incomplete_of(defs, inner_id) is not None):
             raise ValidationError("sets.set_not_allowed", name=found.name)
         seen_sets.add(inner_id)
         return found
@@ -861,9 +879,9 @@ def _check_set_input(
     for row in data.base:
         qty = _int_in(row.qty, "sets.field.qty", 1, 1000)
         if row.set_id is not None:
-            base.append((qty, None, inner_set(row.set_id).id, tuple(row.key)))
+            base.append((qty, None, inner_set(row.set_id).id))
         else:
-            base.append((qty, article(row.article_id).id, None, ()))
+            base.append((qty, article(row.article_id).id, None))
     fields = list(data.choices)
     while fields and not fields[-1].options:
         fields.pop()  # an empty last field is no field
@@ -890,12 +908,12 @@ def _check_set_input(
             if suffix in suffixes:
                 raise ValidationError("sets.suffix_twice", suffix=suffix)
             suffixes.add(suffix)
-    if choices:
-        _check_variant_numbers(
-            session, sku, [[suffix for _found, suffix in options] for _qty, options in choices], set_id, taken
-        )
     checked = [(qty, [(found.id, suffix) for found, suffix in options]) for qty, options in choices]
-    _check_nesting(session, defs, set_id, name, sku, base, checked)
+    before = dict(defs)
+    own_id = _check_nesting(session, defs, set_id, name, sku, base, checked)
+    if sku is None and setresolve.fields(defs, own_id):  # brought choice parts need a number too (0.4.4, E1)
+        raise ValidationError("sets.sku_required")
+    _check_brought(session, before, defs, own_id, set_id)
     return name, sku, base, checked
 
 
@@ -909,17 +927,18 @@ def _check_nesting(
     choices: list[tuple[int, list[tuple[int, str | None]]]],
 ) -> None:
     """The set as it would be saved, checked on every level (Spec 5.4, 0.4.3 p423): no ring, no
-    article and no inner set twice, a fixed variant that exists; then every set that holds it, on any
-    level and archived ones too (plan v0.4.3, decision 5), must stay whole: no article twice there and
-    no fixed variant of this set that falls away. The checks run on the snapshot with the new rows in
-    place of the stored ones, so nothing is written before they pass.
-    Tests: tests/domain/test_catalog_sets_nested.py."""
+    article and no inner set twice, every option of every field counted (0.4.4); then every set that
+    holds it, on any level and archived ones too (plan v0.4.3, decision 5), must stay whole: no
+    article twice there. The checks run on the snapshot with the new rows in place of the stored
+    ones (`defs` is changed so), so nothing is written before they pass. Returns the set's id in
+    `defs`. Replaced: the refusal "a fixed variant falls away" (0.4.3); there is none any more.
+    Tests: tests/domain/test_catalog_sets_nested.py, tests/domain/test_catalog_brought_choices.py."""
     own_id = set_id if set_id is not None else 0  # 0: a new set, no set has this id
     defs[own_id] = setresolve.SetDef(
         own_id,
         tuple(
-            setresolve.Base(qty, set_id=inner_id, key=key) if inner_id is not None else setresolve.Base(qty, article_id=a)
-            for qty, a, inner_id, key in base
+            setresolve.Base(qty, set_id=inner_id) if inner_id is not None else setresolve.Base(qty, article_id=a)
+            for qty, a, inner_id in base
         ),
         tuple(setresolve.Field(qty, tuple(a for a, _s in options), tuple(s for _a, s in options)) for qty, options in choices),
         name,
@@ -933,20 +952,15 @@ def _check_nesting(
         if error.article_id is not None:
             raise ValidationError("sets.article_twice", name=session.get(Article, error.article_id).name) from None
         raise ValidationError("sets.set_twice", name=defs[error.set_id].name) from None
-    except setresolve.BadVariant as error:
-        raise ValidationError("sets.variant_invalid", set=defs[error.set_id].name) from None
     except setresolve.Unknown:
         raise NotFoundError("sets.not_found") from None
     if set_id is None:
-        return  # a new set stands in no other set yet
+        return own_id  # a new set stands in no other set yet
     doubled: list[int] = []
-    dropped: list[int] = []
     twice_name = ""
     for parent in setresolve.containing(defs, set_id):
         try:
             setresolve.check(defs, parent)
-        except setresolve.BadVariant:
-            dropped.append(parent)
         except setresolve.Twice as error:
             doubled.append(parent)
             if not twice_name:
@@ -956,32 +970,59 @@ def _check_nesting(
                 )
         except setresolve.ResolveError:
             continue  # a ring left in the database elsewhere; the own check above passed
-    archived = _archived_sets(session)
-
-    def names(ids: list[int]) -> list[tuple[str, bool]]:
-        """Each set with whether it is archived: the message marks those (plan approval v0.4.3, A1)."""
-        return sorted(((defs[i].name, i in archived) for i in ids), key=lambda n: n[0].casefold())
-
-    if dropped:
-        raise ConflictError("sets.variant_used", names=names(dropped), set=name)
     if doubled:
-        raise ConflictError("sets.breaks_parent", names=names(doubled), name=twice_name)
+        raise ConflictError("sets.breaks_parent", names=_marked_names(session, defs, doubled), name=twice_name)
+    return own_id
 
 
-def _check_variant_numbers(
-    session: Session, sku: str | None, fields: list[list[str | None]], set_id: int | None, taken: dict[str, int]
+def _marked_names(session: Session, defs: dict[int, setresolve.SetDef], ids: list[int]) -> list[tuple[str, bool]]:
+    """Each set with whether it is archived: the message marks those (plan approval v0.4.3, A1)."""
+    archived = _archived_sets(session)
+    return sorted(((defs[i].name, i in archived) for i in ids), key=lambda n: n[0].casefold())
+
+
+def _check_brought(
+    session: Session,
+    before: dict[int, setresolve.SetDef],
+    defs: dict[int, setresolve.SetDef],
+    own_id: int,
+    set_id: int | None,
 ) -> None:
-    """Every variant number fits and is free: not an article's, another set's or another variant's
-    (p340, question 6). `taken` holds the variant numbers of the other sets."""
-    own: set[str] = set()
-    for combination in itertools.product(*fields):
-        number = rules.variant_number(sku, combination)
-        assert number is not None  # set number and suffixes are checked before
-        if len(number) > MAX_SKU:
-            raise ValidationError("sets.variant_too_long", sku=number, max=MAX_SKU)
-        if number in own or number in taken or _sku_owner(session, number, besides_set=set_id) is not None:
-            raise ConflictError("catalog.sku_taken", sku=number)
-        own.add(number)
+    """The numbers of the set and of every set that holds it, with the new rows (Spec 5.4, 0.4.4):
+    a choice part an inner set brings changes the variants of the sets around it at once.
+
+    A set that would start to bring choice parts into a set without a number is refused, naming
+    those sets (plan v0.4.4, F2): no set may fall out of the order form through a change made
+    elsewhere. Then every variant number of these sets fits (64 characters) and is free: not an
+    article's or a set's number and not another variant's, also not between these sets (p340,
+    question 6); the message names the number.
+    Tests: tests/domain/test_catalog_brought_choices.py."""
+    parents = setresolve.containing(defs, set_id) if set_id is not None else []
+
+    def has_fields(found: dict[int, setresolve.SetDef], i: int) -> bool:
+        try:
+            return bool(setresolve.fields(found, i))
+        except setresolve.ResolveError:
+            return False
+
+    lacking = [p for p in parents if not defs[p].sku and has_fields(defs, p) and not has_fields(before, p)]
+    if lacking:
+        raise ConflictError("sets.parent_sku_required", names=_marked_names(session, defs, lacking))
+    affected = [own_id, *parents]
+    taken = {number: i for i, number_list in ((i, _numbers_of(defs, i)) for i in defs if i not in affected)
+             for number in number_list}
+    set_numbers = {d.sku: i for i, d in defs.items() if d.sku}
+    seen: set[str] = set()
+    for i in affected:
+        for number in _numbers_of(defs, i):
+            if len(number) > MAX_SKU:
+                raise ValidationError("sets.variant_too_long", sku=number, max=MAX_SKU)
+            if (
+                number in seen or number in taken or number in set_numbers
+                or session.scalar(select(Article.id).where(Article.sku == number)) is not None
+            ):
+                raise ConflictError("catalog.sku_taken", sku=number)
+            seen.add(number)
 
 
 def _write_positions(
@@ -990,15 +1031,12 @@ def _write_positions(
     base: list[BaseSpec],
     choices: list[tuple[int, list[tuple[int, str | None]]]],
 ) -> None:
-    for sort, (qty, article_id, inner_id, key) in enumerate(base):
+    for sort, (qty, article_id, inner_id) in enumerate(base):
         position = SetPosition(set_id=set_id, sort=sort, qty=qty, slot=0)
         session.add(position)
         session.flush()
         if inner_id is not None:
-            session.add(SetPositionSet(
-                position_id=position.id, set_id=inner_id,
-                choice1_id=key[0] if key else None, choice2_id=key[1] if len(key) > 1 else None,
-            ))
+            session.add(SetPositionSet(position_id=position.id, set_id=inner_id))
         else:
             session.add(SetPositionOption(position_id=position.id, article_id=article_id))
     for slot, (qty, options) in enumerate(choices, start=1):
@@ -1064,7 +1102,7 @@ def load_defs(session: Session) -> dict[int, setresolve.SetDef]:
             ))
         elif position.id in inner:
             row = inner[position.id]
-            base[position.set_id].append(setresolve.Base(position.qty, set_id=row.set_id, key=row.key))
+            base[position.set_id].append(setresolve.Base(position.qty, set_id=row.set_id))
         elif options[position.id]:
             base[position.set_id].append(setresolve.Base(position.qty, article_id=options[position.id][0].article_id))
     return {
@@ -1073,15 +1111,67 @@ def load_defs(session: Session) -> dict[int, setresolve.SetDef]:
     }
 
 
-def _incomplete_of(found: setresolve.SetDef) -> str | None:
-    """Too few rows, or a choice field without its numbers (sets the update to v0.4.0 rebuilt)."""
+def _incomplete_of(defs: dict[int, setresolve.SetDef], set_id: int) -> str | None:
+    """Why a set is not orderable as it is stored, or None: too few rows, or a choice field without
+    its numbers (sets the update to v0.4.0 rebuilt); a ring, an article twice or an incomplete set
+    inside ("broken", 0.4.3); brought choice parts without a number of its own ("number_missing",
+    left by the update to 0.4.4). A row with an inner set counts as one (F8), a brought field does
+    not count again (plan v0.4.4, F1)."""
+    found = defs[set_id]
     if len(found.base) + len(found.fields) < 2:
         return "too_few"
     if found.fields and any(
         rules.variant_number(found.sku, [suffix]) is None for field in found.fields for suffix in field.suffixes
     ):
         return "suffixes_missing"
+    try:
+        setresolve.check(defs, set_id)
+        slots = setresolve.fields(defs, set_id)
+        inner = setresolve.inner_sets(defs, set_id)
+    except setresolve.ResolveError:
+        return "broken"
+    if any(_incomplete_of(defs, i) is not None for i in set(inner)):
+        return "broken"
+    if not found.sku and any(slot.path for slot in slots):
+        return "number_missing"
     return None
+
+
+@dataclass(frozen=True)
+class SetToMend:
+    """An active set that the update to 0.4.4 left out of the order form (plan v0.4.4, F3, N1)."""
+
+    set_id: int
+    set_name: str
+    kind: Literal["number_missing", "twice", "broken"]
+    name: str | None  # the article that stands twice
+
+
+def sets_to_mend(session: Session) -> list[SetToMend]:
+    """What the overview warns about besides the Altfall (plan v0.4.4, N1): active sets without a
+    number that bring choice parts, and broken ones, an article twice named. Since 0.4.4 every option
+    of an inner set counts against an article twice, so a set that 0.4.3 allowed may now be broken;
+    neither can be ordered until it is changed. From the snapshot alone, like archived_in_sets.
+    Tests: tests/domain/test_catalog_brought_choices.py."""
+    defs = load_defs(session)
+    archived = _archived_sets(session)
+    found: list[SetToMend] = []
+    for held in sorted((d for d in defs.values() if d.id not in archived), key=lambda d: (d.name.casefold(), d.id)):
+        state = _incomplete_of(defs, held.id)
+        if state == "number_missing":
+            found.append(SetToMend(held.id, held.name, "number_missing", None))
+        elif state == "broken":
+            try:
+                setresolve.check(defs, held.id)
+            except setresolve.Twice as error:
+                if error.article_id is not None:
+                    name = session.get(Article, error.article_id).name
+                    found.append(SetToMend(held.id, held.name, "twice", name))
+                    continue
+            except setresolve.ResolveError:
+                pass
+            found.append(SetToMend(held.id, held.name, "broken", None))
+    return found
 
 
 def sets_containing(session: Session, set_id: int) -> list[str]:
@@ -1119,15 +1209,17 @@ def _set_row(
     defs = load_defs(session) if defs is None else defs
     archived_sets = _archived_sets(session) if archived_sets is None else archived_sets
     own = defs[product_set.id]
-    try:
-        setresolve.check(defs, product_set.id)
+    incomplete = _incomplete_of(defs, product_set.id)
+    broken = incomplete == "broken"
+    lines: tuple[setresolve.Line, ...] = ()
+    slots: tuple[setresolve.Slot, ...] = ()
+    if not broken:
         lines = setresolve.resolve_base(defs, product_set.id)
-        broken = any(_incomplete_of(defs[step.set_id]) is not None for line in lines for step in line.path)
-    except setresolve.ResolveError:
-        lines, broken = (), True
+        slots = setresolve.fields(defs, product_set.id)
     wanted = {line.article_id for line in lines}
     wanted |= {row.article_id for row in own.base if row.article_id is not None}
     wanted |= {option for field in own.fields for option in field.options}
+    wanted |= {option for slot in slots for option in slot.options}
     found = {a.id: a for a in session.scalars(select(Article).where(Article.id.in_(wanted)))}
 
     base: list[BaseRow] = []
@@ -1145,35 +1237,31 @@ def _set_row(
             if line.path and line.path[0].set_id == row.set_id
         )
         base.append(BaseRow(
-            row.qty, None, child.name, row.set_id in archived_sets, set_id=row.set_id, key=row.key,
-            variant_sku=setresolve.variant_number(defs, row.set_id, row.key), contents=contents,
+            row.qty, None, child.name, row.set_id in archived_sets, set_id=row.set_id, sku=child.sku, contents=contents,
         ))
     base_stock = [
         (line.qty, rules.available(found[line.article_id].stock, found[line.article_id].reserved)) for line in lines
     ]
-    choices: list[ChoiceRow] = []
-    stocks: list[rules.ChoiceStock] = []
-    suffixes: dict[int, str | None] = {}
-    names: dict[int, str] = {}
-    for field in own.fields:
-        rows = []
-        active = []
-        for article_id, suffix in zip(field.options, field.suffixes):
-            article = found[article_id]
-            archived = article.archived_at is not None
-            rows.append(ChoiceOptionRow(article.id, article.name, suffix, archived))
-            suffixes[article.id] = suffix
-            names[article.id] = article.name
-            active.append((article.id, rules.available(article.stock, article.reserved)))  # archived too (0.4.3)
-        choices.append(ChoiceRow(field.qty, rows))
-        stocks.append(rules.ChoiceStock(field.qty, tuple(active)))
+    choices = [
+        ChoiceRow(field.qty, [
+            ChoiceOptionRow(a, found[a].name, suffix, found[a].archived_at is not None)
+            for a, suffix in zip(field.options, field.suffixes)
+        ])
+        for field in own.fields
+    ]
+    # every field, brought ones first, counts for availability and variants (Spec 5.4, 0.4.4); archived
+    # options too (0.4.3)
+    stocks = [
+        rules.ChoiceStock(slot.qty, tuple((a, rules.available(found[a].stock, found[a].reserved)) for a in slot.options))
+        for slot in slots
+    ]
+    suffixes = {a: suffix for slot in slots for a, suffix in zip(slot.options, slot.suffixes)}
     stock = rules.SetStock(0, {}) if broken else rules.set_availability(base_stock, stocks)
     variants = [
-        VariantRow(key, rules.variant_number(product_set.sku, [suffixes[a] for a in key]), [names[a] for a in key], count)
+        VariantRow(key, rules.variant_number(product_set.sku, [suffixes[a] for a in key]), [found[a].name for a in key], count)
         for key, count in stock.variants.items()
     ]
-    incomplete = "broken" if broken else _incomplete_of(own)
-    orderable = product_set.archived_at is None and incomplete is None and (not choices or bool(variants))
+    orderable = product_set.archived_at is None and incomplete is None and (not slots or bool(variants))
     held: list[tuple[str, str]] = []
     if product_set.archived_at is None:  # the Altfall concerns active sets only (review finding 1)
         held = [("set" if row.set_id is not None else "article", row.name) for row in base if row.archived]
