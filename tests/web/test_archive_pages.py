@@ -177,7 +177,7 @@ def test_archiving_what_stands_in_an_active_set_is_refused_with_its_names(bb_cli
     response = act(bb_client, f"/sets/{inner}", "archive", page=f"/sets/{inner}/edit")
     assert response.status_code == 200 and en("sets.archive_in_set", names="Outer Set") in response.text
     response = act(bb_client, f"/articles/{a}", "archive")
-    assert en("articles.archive_in_set", names="Inner Set") in response.text
+    assert en("articles.archive_in_set", names="Inner Set, Outer Set") in response.text  # every level (Spec 5.4)
     assert archived_at(bb_client, ProductSet, inner) is None and archived_at(bb_client, Article, a) is None
 
 
