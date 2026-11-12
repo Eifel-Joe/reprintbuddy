@@ -31,9 +31,9 @@ from reprintbuddy.domain.status import OrderStatus, order_status
 from reprintbuddy.domain.stock import (
     MAX_QTY,
     Actor,
-    consume_assembled_parts,
     release_for_order,
     reserve_for_order,
+    ship_assembled,
     ship_for_order,
 )
 from reprintbuddy.models import (
@@ -288,16 +288,24 @@ def ship_order(session: Session, order_id: int, actor: Actor, note: str | None =
     needed = _needed(session, order.id)
     if not rules.order_ready(needed, _stock_of(session, list(needed))):
         raise StockLimitError("orders.not_ready")
-    ship_for_order(session, order.id, needed, actor, note)
-    # Shipping an article made of parts built on order is its assembly: its purchased parts go too.
-    groups = session.execute(
-        select(OrderLine.group_no, OrderLine.assembled_id, OrderLine.set_qty, OrderLine.variant_sku)
+    # Shipping an article made of parts built on order is its assembly (p361): its parts are built in,
+    # each with a row "built in", and its purchased parts go too. The other lines ship as such.
+    groups: dict[int, tuple[int, int, str | None, dict[int, int]]] = {}
+    plain = dict(needed)
+    for group_no, assembled_id, units, variant_sku, article_id, qty in session.execute(
+        select(OrderLine.group_no, OrderLine.assembled_id, OrderLine.set_qty, OrderLine.variant_sku,
+               OrderLine.article_id, OrderLine.qty)
         .where(OrderLine.order_id == order.id, OrderLine.assembled_id.is_not(None))
-        .distinct()
-        .order_by(OrderLine.group_no)
-    ).all()
-    for _group_no, assembled_id, units, variant_sku in groups:
-        consume_assembled_parts(session, assembled_id, units, order.id, actor, variant_sku=variant_sku)
+        .order_by(OrderLine.group_no, OrderLine.id)
+    ).all():
+        group = groups.setdefault(group_no, (assembled_id, units, variant_sku, {}))
+        group[3][article_id] = group[3].get(article_id, 0) + qty
+        plain[article_id] -= qty
+    plain = {article_id: qty for article_id, qty in plain.items() if qty > 0}
+    if plain:
+        ship_for_order(session, order.id, plain, actor, note)
+    for _group_no, (assembled_id, units, variant_sku, parts) in sorted(groups.items()):
+        ship_assembled(session, order.id, assembled_id, units, parts, actor, note, variant_sku=variant_sku)
     order.status = "shipped"
     order.closed_at = utcnow()
     session.flush()

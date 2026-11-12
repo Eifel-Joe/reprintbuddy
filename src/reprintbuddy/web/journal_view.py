@@ -19,8 +19,17 @@ CHANGE_LABELS = {
 }
 
 
+def _into(entry: JournalEntry) -> int | None:
+    """The article a part of a row "built in" went into, if the row says."""
+    into = (entry.details or {}).get("into") if entry.kind == "built_in" else None
+    return into if isinstance(into, int) and not isinstance(into, bool) else None
+
+
 def journal_rows(db: Session, entries: Sequence[JournalEntry]) -> list[dict[str, Any]]:
     article_ids = {e.article_id for e in entries if e.article_id is not None}
+    # p361: a part built in names the article it went into (the variant row on stock, the article made
+    # of parts on order) with the variant number as booked
+    article_ids |= {into for e in entries if (into := _into(e)) is not None}
     part_ids = {e.part_id for e in entries if e.part_id is not None}
     order_ids = {e.order_id for e in entries if e.order_id is not None}
     articles = dict(db.execute(select(Article.id, Article.name).where(Article.id.in_(article_ids))).all()) if article_ids else {}
@@ -49,6 +58,10 @@ def journal_rows(db: Session, entries: Sequence[JournalEntry]) -> list[dict[str,
                 "order": (entry.order_id, orders.get(entry.order_id)) if entry.order_id else None,
                 "changes": changes,
                 "then": then if isinstance(then, list) and len(then) == 2 else None,
+                "into": (
+                    (into, articles.get(into), (entry.details or {}).get("variant_sku"))
+                    if (into := _into(entry)) is not None else None
+                ),
             }
         )
     return rows

@@ -1404,6 +1404,7 @@
   "bookings.print_only": "Einbuchen ohne Druck geht nur bei Druckartikeln. Ein Artikel aus Teilen kommt über die Montage oder die Inventur in den Bestand.",
   "journal.kind.assembled": "Montage aus Teilen",
   "journal.kind.built_in": "verbaut",
+  "journal.built_into": "verbaut in",
   "orders.not_sold_alone": "{name} ist nicht einzeln erhältlich und lässt sich nicht bestellen.",
   "orders.assembled_on_order": "{name} wird erst bei Bestellung montiert: Wähle im Bestellformular eine seiner Varianten.",
   "orders.pick_variant": "{name} hat Wahlteile: Wähle eine seiner Varianten.",

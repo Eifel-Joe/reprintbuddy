@@ -764,14 +764,33 @@ def sell_from_parts(
     return _consume_parts(session, plans, composite, "sale_assembled", actor, booked_at)
 
 
-def consume_assembled_parts(
-    session: Session, composite_id: int, units: int, order_id: int, actor: Actor, *, variant_sku: str | None = None,
+def ship_assembled(
+    session: Session,
+    order_id: int,
+    composite_id: int,
+    units: int,
+    parts: Mapping[int, int],
+    actor: Actor,
+    note: str | None = None,
+    *,
+    variant_sku: str | None = None,
 ) -> list[PartShortage]:
-    """Shipping an article made of parts built on order is its assembly (Spec 6.2, 6.6): its purchased
-    parts go with it. The parts themselves leave with the order lines (`ship_for_order`)."""
+    """Shipping an article made of parts built on order is its assembly (Spec 6.2, 6.6, 5.6 "Buchen und
+    Journal"): a row "shipped" at the article, its parts (`parts`: print article -> units, as ordered)
+    leave stock and reservation with a row "built in" each, naming the article and the order (p361;
+    before they shipped as plain order lines), and its purchased parts go with it."""
+    note = _clean_note(note)
     composite = _article(session, composite_id)
+    rows = [(_article(session, part_id), _qty(n)) for part_id, n in sorted(parts.items())]
+    planned = [(part, n, _plan_article(part, {"stock": -n, "reserved": -n})) for part, n in rows]
     write_journal(
         session, kind="order_shipped", actor=actor, qty=units, article_id=composite.id, order_id=order_id,
-        details={"variant_sku": variant_sku, "changes": {}},
+        note=note, details={"variant_sku": variant_sku, "changes": {}},
     )
+    for part, n, changes in planned:
+        _apply(part, changes)
+        write_journal(
+            session, kind="built_in", actor=actor, qty=n, article_id=part.id, order_id=order_id, note=note,
+            details={"into": composite.id, "composite_id": composite.id, "variant_sku": variant_sku, "changes": changes},
+        )
     return _consume_parts(session, _plan_parts(session, composite, units), composite, "shipped_assembled", actor)
