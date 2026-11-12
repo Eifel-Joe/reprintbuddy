@@ -333,7 +333,7 @@
   "sets.choices_2": "Choice parts 2",
   "sets.choices_1": "Choice parts 1",
   "sets.choices_hint": "Choice parts are optional: one of their articles goes into each set. Each article gets a suffix; the article number of a variant is the set's number with the suffixes behind it, written as they are, e.g. EX-S10 + -A + -1 = EX-S10-A-1.",
-  "sets.base_hint": "In every set. Per row a quantity and an article from the drop-down. An article that is in one row already is not offered in the others. Rows without an article are ignored.",
+  "sets.base_hint": "In every set. Per row a quantity and an article or set from the drop-down. What is in one row already, or in a chosen set, is not offered in the others. Empty rows are ignored.",
   "sets.base": "Base parts",
   "orders.title": "Orders",
   "orders.new": "New order",

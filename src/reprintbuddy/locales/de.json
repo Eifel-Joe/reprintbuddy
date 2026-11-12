@@ -333,7 +333,7 @@
   "sets.choices_2": "Wahlteile 2",
   "sets.choices_1": "Wahlteile 1",
   "sets.choices_hint": "Wahlteile sind freiwillig: In jedes Set kommt einer ihrer Artikel. Jeder Artikel bekommt eine Zusatznummer; die Artikelnummer einer Variante ist die des Sets mit den Zusatznummern dahinter, so wie sie geschrieben sind, z. B. EX-S10 + -A + -1 = EX-S10-A-1.",
-  "sets.base_hint": "In jedem Set. Je Zeile eine Menge und ein Artikel aus der Aufklappliste. Ein Artikel, der schon in einer Zeile steht, wird in den anderen nicht mehr angeboten. Zeilen ohne Artikel werden übergangen.",
+  "sets.base_hint": "In jedem Set. Je Zeile eine Menge und ein Artikel oder Set aus der Aufklappliste. Was schon in einer Zeile steht oder in einem gewählten Set steckt, wird in den anderen nicht mehr angeboten. Leere Zeilen werden übergangen.",
   "sets.base": "Basisteile",
   "orders.title": "Bestellungen",
   "orders.new": "Neue Bestellung",
