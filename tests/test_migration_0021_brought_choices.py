@@ -136,7 +136,7 @@ def test_orders_stay_as_they_were(old_db):
 
 
 def test_sets_read_with_brought_choices_after_the_update(old_db):
-    upgrade(old_db, revision=REVISION)
+    upgrade(old_db)  # the code of today reads the database of today (later revisions add columns)
     with make_sessionmaker(old_db)() as s:
         rows = {row.name: row for row in catalog.list_sets(s)}
         assert [v.sku for v in rows["Bundle"].variants] == ["EX-BU-A", "EX-BU-B"]

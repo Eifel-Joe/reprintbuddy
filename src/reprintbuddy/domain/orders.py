@@ -139,7 +139,8 @@ def _resolve_assembled(session: Session, group_no: int, item: AssembledItem, qty
         if part.archived_at is not None:
             raise ValidationError("orders.item_archived", name=part.name)
     # The parts as they are now: the order keeps them when the parts list changes later (Spec 5.6).
-    return [(group_no, part_id, qty * q, None, qty, row.sku, composite.id, None) for part_id, q in needs.items()]
+    # ... and the variant itself, whose number may change later (p360)
+    return [(group_no, part_id, qty * q, None, qty, row.sku, composite.id, None, row.id) for part_id, q in needs.items()]
 
 
 def _resolve_set_lines(session: Session, defs, group_no: int, set_id: int, key: tuple[int, ...], qty: int, sku):
@@ -155,14 +156,14 @@ def _resolve_set_lines(session: Session, defs, group_no: int, set_id: int, key: 
                 [step.set_id, setresolve.variant_number(defs, step.set_id, step.key), qty * step.units]
                 for step in line.path
             ])
-        specs.append((group_no, line.article_id, qty * line.qty, set_id, qty, sku, None, path))
+        specs.append((group_no, line.article_id, qty * line.qty, set_id, qty, sku, None, path, None))
     return specs
 
 
 def _resolve(session: Session, items: Sequence[ArticleItem | SetItem | AssembledItem]):
     """Turn the items into line specs (group_no, article_id, qty, set_id, set_qty, variant_sku,
-    assembled_id, inner_path), writing nothing."""
-    specs: list[tuple[int, int, int, int | None, int | None, str | None, int | None, str | None]] = []
+    assembled_id, inner_path, variant_id), writing nothing."""
+    specs: list[tuple[int, int, int, int | None, int | None, str | None, int | None, str | None, int | None]] = []
     defs = None
     for group_no, item in enumerate(items, start=1):
         qty = _qty(item.qty)
@@ -173,7 +174,7 @@ def _resolve(session: Session, items: Sequence[ArticleItem | SetItem | Assembled
             if article.archived_at is not None:
                 raise ValidationError("orders.item_archived", name=article.name)
             _check_orderable(session, article)
-            specs.append((group_no, item.article_id, qty, None, None, None, None, None))
+            specs.append((group_no, item.article_id, qty, None, None, None, None, None, None))
             continue
         if isinstance(item, AssembledItem):
             specs.extend(_resolve_assembled(session, group_no, item, qty))
@@ -225,7 +226,7 @@ def create_order(
     order = Order(reference=reference, order_date=order_date, status="open", note=note)
     session.add(order)
     session.flush()
-    for group_no, article_id, qty, set_id, set_qty, variant_sku, assembled_id, inner_path in specs:
+    for group_no, article_id, qty, set_id, set_qty, variant_sku, assembled_id, inner_path, variant_id in specs:
         session.add(
             OrderLine(
                 order_id=order.id,
@@ -237,6 +238,7 @@ def create_order(
                 variant_sku=variant_sku,
                 assembled_id=assembled_id,
                 inner_path=inner_path,
+                variant_id=variant_id,
             )
         )
     session.flush()
