@@ -359,6 +359,23 @@ class SetPositionOption(Base):
     sort: Mapped[int] = _int(0)
 
 
+class SetPositionSet(Base):
+    """An inner set of a base row (Spec 5.4, 0.4.3 p423): the set and its fixed variant, the chosen
+    article per choice field of the inner set (empty without choice parts). A base row holds either
+    this or one SetPositionOption with an article."""
+
+    __tablename__ = "set_position_sets"
+
+    position_id: Mapped[int] = mapped_column(ForeignKey("set_positions.id"), primary_key=True)
+    set_id: Mapped[int] = mapped_column(ForeignKey("product_sets.id"))
+    choice1_id: Mapped[int | None] = mapped_column(ForeignKey("articles.id"), default=None)
+    choice2_id: Mapped[int | None] = mapped_column(ForeignKey("articles.id"), default=None)
+
+    @property
+    def key(self) -> tuple[int, ...]:
+        return tuple(a for a in (self.choice1_id, self.choice2_id) if a is not None)
+
+
 class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (
@@ -390,6 +407,9 @@ class OrderLine(Base):
     variant_sku: Mapped[str | None] = mapped_column(String, default=None)  # as ordered (Spec 6.7, p340)
     # The assembled article (built on order) this group of part lines stands for (Spec 6.7, 0.4.0 p341).
     assembled_id: Mapped[int | None] = mapped_column(ForeignKey("articles.id"), default=None)
+    # The way through the inner sets of the ordered set, as ordered (Spec 6.7, 0.4.3 p423):
+    # JSON [[set_id, variant_sku, units], ...] from the outside in; None directly in the ordered set.
+    inner_path: Mapped[str | None] = mapped_column(String, default=None)
 
 
 def _booked_default(context) -> datetime:

@@ -54,6 +54,7 @@ from reprintbuddy.models import (
     ReorderMark,
     SetPosition,
     SetPositionOption,
+    SetPositionSet,
     Setting,
     User,
     WorkQueueEntry,
@@ -82,6 +83,7 @@ _KIND: dict[type, str] = {
     ProductSet: "set",
     SetPosition: "set",
     SetPositionOption: "set",
+    SetPositionSet: "set",  # an inner set of a base row (Spec 5.4, 0.4.3 p423)
     Order: "order",
     OrderLine: "order",
     JournalEntry: "journal",
