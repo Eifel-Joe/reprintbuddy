@@ -77,6 +77,23 @@ def test_a_good_check_with_it_says_prints_can_be_withdrawn(admin_client, respx_m
     assert en("bambuddy.withdraw_right_missing") not in response.text
 
 
+ALL = "queue:delete_all"  # Bambuddy permissions.py: deletes every entry, own ones included
+
+
+def test_p410_a_group_with_only_delete_all_may_withdraw_after_a_good_check(admin_client, respx_mock):
+    """p410: the page after the redirect knew only what was kept in the session, and only "Delete Own
+    Queue" was kept; Bambuddy lets either right delete (print_queue.py `require_ownership_permission`)."""
+    response = _post(admin_client, respx_mock, [*REQUIRED, ALL])
+    assert en("bambuddy.withdraw_right_ok") in response.text
+    assert en("bambuddy.withdraw_right_missing") not in response.text
+
+
+def test_p410_a_failed_check_ticks_the_right_for_delete_all_too(admin_client, respx_mock):
+    """Sister path: the list of recommended rights after a check that lacks a required right."""
+    without = [p for p in REQUIRED if p != "queue:create"]
+    assert _optional(_post(admin_client, respx_mock, [*without, ALL]).text)[WITHDRAW] == "ok"
+
+
 def test_the_settings_check_says_it_too(ready_client, respx_mock):
     def check(permissions):
         mock_auth_me(respx_mock, permissions=permissions)
@@ -89,6 +106,7 @@ def test_the_settings_check_says_it_too(ready_client, respx_mock):
 
     assert en("bambuddy.withdraw_right_missing") in check(list(REQUIRED))
     assert en("bambuddy.withdraw_right_ok") in check([*REQUIRED, WITHDRAW])
+    assert en("bambuddy.withdraw_right_ok") in check([*REQUIRED, ALL])  # p410
 
 
 def test_no_notice_after_an_update_when_only_this_right_is_missing(ready_client, respx_mock):

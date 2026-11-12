@@ -25,7 +25,7 @@
   <p>{{ t('bambuddy.result.optional') }}</p>
   <ul class="perms">
     {% for code in optional_permissions %}
-    {% set good = code in check.granted %}
+    {% set good = check.has(code) %}
     <li class="perm optional {{ 'ok' if good else 'bad' }}"><span class="mark" aria-label="{{ t('bambuddy.result.granted' if good else 'bambuddy.result.missing') }}">{{ '✓' if good else '✗' }}</span> {% include "_permission_label.html" %}</li>
     {% endfor %}
   </ul>
