@@ -101,6 +101,11 @@ def _describe(lang: str, entry: ActivityEntry) -> tuple[str, list[str], str | No
         extras.append(translate(lang, "activity.fields", fields=names))
     if kind == "set_migrated" and details.get("dropped"):
         extras.append(translate(lang, "activity.dropped", articles=", ".join(str(n) for n in details["dropped"])))
+    if kind == "set_choices_brought":  # the update to v0.4.4 (Spec 5.4, p441)
+        if details.get("inner"):
+            extras.append(translate(lang, "activity.brought", sets=", ".join(str(n) for n in details["inner"])))
+        if details.get("twice"):
+            extras.append(translate(lang, "activity.twice", articles=", ".join(str(n) for n in details["twice"])))
     if kind == "settings_changed":
         extras += [_setting_line(lang, change) for change in details.get("settings", []) if isinstance(change, dict)]
         if details.get("owner"):

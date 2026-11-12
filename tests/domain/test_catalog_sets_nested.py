@@ -1,4 +1,5 @@
-"""Sets that hold other sets (Spec 5.4, 0.4.3 p423): availability, rows of the list, saving."""
+"""Sets that hold other sets (Spec 5.4, 0.4.3 p423): availability, rows of the list, saving. Since 0.4.4
+an inner set brings its choice parts (tests/domain/test_catalog_brought_choices.py)."""
 
 from datetime import datetime
 
@@ -17,8 +18,8 @@ def articles(s, **stocks) -> dict[str, int]:
     return {name: make_article(s, name=name.replace("_", " ").capitalize(), stock=stock).id for name, stock in stocks.items()}
 
 
-def inner(set_id, *key):
-    return ("set", set_id, tuple(key))
+def inner(set_id):
+    return ("set", set_id)
 
 
 def row_of(s, set_id):
@@ -50,7 +51,7 @@ def test_spec_example_complete_kit_is_three(db, kits):  # Spec 5.4, Verfügbarke
             (1, "Basic kit", basic, None), (1, "Extension", extension, None),
         ]
         assert row.base[0].contents == ((2, "Holder"), (1, "Manual"))
-        assert row.base[0].variant_sku is None and not row.base[0].archived
+        assert row.base[0].sku == "EX-GA" and not row.base[0].archived
 
 
 def test_quantity_of_an_inner_set_multiplies(db, kits):
@@ -62,17 +63,15 @@ def test_quantity_of_an_inner_set_multiplies(db, kits):
         assert row.base[0].contents == ((2, "Holder"), (1, "Manual"))  # per piece of the inner set
 
 
-def test_inner_set_with_fixed_variant_counts_only_the_chosen_article(db):
+def test_inner_set_brings_its_choices_into_the_outer_variants(db):  # 0.4.4 p441
     with db.begin() as s:
         a = articles(s, frame=5, small=4, large=0, plate=9)
         sizes = make_set(s, "Sizes", [(1, a["frame"])], [(1, [(a["small"], "-S"), (a["large"], "-L")])], sku="EX-SZ").id
-        outer = make_set(s, "Bundle", [(1, inner(sizes, a["small"])), (1, a["plate"])]).id
+        outer = make_set(s, "Bundle", [(1, inner(sizes)), (1, a["plate"])], sku="EX-BU").id
         row = row_of(s, outer)
         assert row.available == 4 and row.orderable
-        assert row.base[0].variant_sku == "EX-SZ-S" and row.base[0].key == (a["small"],)
-        assert row.base[0].contents == ((1, "Frame"), (1, "Small"))
-        large = make_set(s, "Bundle L", [(1, inner(sizes, a["large"])), (1, a["plate"])]).id
-        assert row_of(s, large).available == 0
+        assert [(v.sku, v.available) for v in row.variants] == [("EX-BU-S", 4), ("EX-BU-L", 0)]
+        assert row.base[0].sku == "EX-SZ" and row.base[0].contents == ((1, "Frame"),)
 
 
 def test_outer_choices_on_top_of_inner_sets(db, kits):
@@ -112,15 +111,15 @@ def test_archived_article_deep_inside_keeps_the_outer_orderable(db, kits):  # Sp
         assert row_of(s, complete).orderable
 
 
-def test_archived_chosen_option_of_inner_variant_keeps_the_outer_orderable(db):  # review focus 3, Altfall
+def test_archived_option_of_inner_set_keeps_the_outer_orderable(db):  # review focus 3, Altfall
     with db.begin() as s:
         a = articles(s, frame=5, small=4, large=3, plate=9)
         sizes = make_set(s, "Sizes", [(1, a["frame"])], [(1, [(a["small"], "-S"), (a["large"], "-L")])], sku="EX-SZ").id
-        outer = make_set(s, "Bundle", [(1, inner(sizes, a["small"])), (1, a["plate"])]).id
+        outer = make_set(s, "Bundle", [(1, inner(sizes)), (1, a["plate"])], sku="EX-BU").id
         s.get(Article, a["small"]).archived_at = ARCHIVED
     with db.begin() as s:
         row = row_of(s, outer)
-        assert row.orderable and row.available == 4
+        assert row.orderable and [v.sku for v in row.variants] == ["EX-BU-S", "EX-BU-L"]
         assert [v.sku for v in row_of(s, sizes).variants] == ["EX-SZ-S", "EX-SZ-L"]  # every variant stays
 
 
@@ -128,7 +127,7 @@ def test_incomplete_inner_set_makes_the_outer_broken(db):  # plan v0.4.3, decisi
     with db.begin() as s:
         a = articles(s, frame=5, small=4, large=3, plate=9)
         sizes = make_set(s, "Sizes", [(1, a["frame"])], [(1, [(a["small"], None), (a["large"], "-L")])], sku="EX-SZ").id
-        outer = make_set(s, "Bundle", [(1, inner(sizes, a["large"])), (1, a["plate"])]).id
+        outer = make_set(s, "Bundle", [(1, inner(sizes)), (1, a["plate"])], sku="EX-BU").id
         row = row_of(s, outer)
         assert (row.incomplete, row.orderable) == ("broken", False)
 
@@ -162,8 +161,8 @@ def test_sets_containing_names_direct_active_parents(db, kits):
 # ---- saving --------------------------------------------------------------------------------
 
 
-def set_in(set_id, *key, qty=1):
-    return BaseInput(qty, None, set_id, tuple(key))
+def set_in(set_id, qty=1):
+    return BaseInput(qty, None, set_id)
 
 
 def refused(db, data, key, cls=ValidationError, set_id=None):
@@ -191,13 +190,14 @@ def test_set_from_two_inner_sets_is_saved(db, kits):  # the user's case (p423)
         assert row.available == 2 and row.orderable
 
 
-def test_inner_set_with_its_variant_and_an_article_is_saved(db):
+def test_inner_set_with_choices_and_an_article_is_saved(db):
     with db.begin() as s:
         a = articles(s, frame=5, small=4, large=3, plate=9)
         sizes = make_set(s, "Sizes", [(1, a["frame"])], [(1, [(a["small"], "-S"), (a["large"], "-L")])], sku="EX-SZ").id
-        new = catalog.create_set(s, SetInput("Bundle", None, [set_in(sizes, a["large"]), BaseInput(1, a["plate"])], [])).id
+        new = catalog.create_set(s, SetInput("Bundle", "EX-BU", [set_in(sizes), BaseInput(1, a["plate"])], [])).id
     with db.begin() as s:
-        assert row_of(s, new).base[0].variant_sku == "EX-SZ-L" and row_of(s, new).available == 3
+        assert row_of(s, new).base[0].sku == "EX-SZ" and row_of(s, new).available == 5
+        assert [v.sku for v in row_of(s, new).variants] == ["EX-BU-S", "EX-BU-L"]
 
 
 def test_one_inner_set_alone_is_too_few(db, kits):  # Spec 5.4: two of one inner set alone do not do
@@ -245,15 +245,6 @@ def test_same_inner_set_twice_is_refused(db, kits):  # review focus 5
     assert refused(db, data, "sets.set_twice").params["name"] == "Basic kit"
 
 
-def test_same_inner_set_as_two_variants_is_refused(db):
-    with db.begin() as s:
-        a = articles(s, small=4, large=3, red=1, blue=1)
-        colours = make_set(s, "Colours", [], [(1, [(a["small"], "-S"), (a["large"], "-L")]),
-                                              (1, [(a["red"], "-R"), (a["blue"], "-B")])], sku="EX-C").id
-    data = SetInput("Kit", None, [set_in(colours, a["small"], a["red"]), set_in(colours, a["large"], a["blue"])], [])
-    assert refused(db, data, "sets.set_twice").params["name"] == "Colours"
-
-
 def test_archived_or_incomplete_set_cannot_come_in(db, kits):
     a, basic, extension, _ = kits
     with db.begin() as s:
@@ -280,16 +271,6 @@ def test_unknown_inner_set(db, kits):
     refused(db, SetInput("Kit", None, [set_in(basic), set_in(9999)], []), "sets.not_found", NotFoundError)
 
 
-@pytest.mark.parametrize("key", [(), (9999,)])
-def test_wrong_variant_key_is_refused(db, key):
-    with db.begin() as s:
-        a = articles(s, frame=5, small=4, large=3, plate=9)
-        sizes = make_set(s, "Sizes", [(1, a["frame"])], [(1, [(a["small"], "-S"), (a["large"], "-L")])], sku="EX-SZ").id
-        plate = a["plate"]
-    data = SetInput("Bundle", None, [set_in(sizes, *key), BaseInput(1, plate)], [])
-    assert refused(db, data, "sets.variant_invalid").params["set"] == "Sizes"
-
-
 def test_change_of_inner_set_that_doubles_an_article_upstream_is_refused(db, kits):  # review focus 4
     a, basic, _extension, _ = kits
     error = refused(db, basic_input(a, BaseInput(1, a["plate"])), "sets.breaks_parent", ConflictError, set_id=basic)
@@ -313,36 +294,27 @@ def test_archived_parent_is_checked_and_marked(db, kits):  # decision 5, conditi
     assert error.params["names"] == [("Complete kit", True)]
 
 
-def test_inner_set_gaining_choices_drops_the_fixed_variant(db, kits):  # review focus 2
-    a, basic, _extension, _ = kits
+def test_inner_set_gaining_choices_brings_them_up(db, kits):  # 0.4.4: replaces "the fixed variant drops"
+    a, basic, _extension, complete = kits
     with db.begin() as s:
         b = articles(s, red=1, blue=1)
-    data = SetInput("Basic kit", "EX-GA", [BaseInput(2, a["holder"]), BaseInput(1, a["manual"])],
-                    [ChoiceInput(1, [ChoiceOptionInput(b["red"], "-R"), ChoiceOptionInput(b["blue"], "-B")])])
-    error = refused(db, data, "sets.variant_used", ConflictError, set_id=basic)
-    assert error.params == {"names": [("Complete kit", False)], "set": "Basic kit"}
+        catalog.update_set(s, basic, SetInput("Basic kit", "EX-GA", [BaseInput(2, a["holder"]), BaseInput(1, a["manual"])],
+                                              [ChoiceInput(1, [ChoiceOptionInput(b["red"], "-R"), ChoiceOptionInput(b["blue"], "-B")])]))
+    with db.begin() as s:
+        assert [v.sku for v in row_of(s, complete).variants] == ["EX-KP-R", "EX-KP-B"]
 
 
-def test_removing_the_chosen_option_is_refused(db):
+def test_changing_only_a_suffix_changes_the_outer_number(db):
     with db.begin() as s:
         a = articles(s, frame=5, small=4, large=3, plate=9)
         sizes = make_set(s, "Sizes", [(1, a["frame"])], [(1, [(a["small"], "-S"), (a["large"], "-L")])], sku="EX-SZ").id
-        make_set(s, "Bundle", [(1, inner(sizes, a["large"])), (1, a["plate"])])
-    data = SetInput("Sizes", "EX-SZ", [BaseInput(1, a["frame"])], [ChoiceInput(1, [ChoiceOptionInput(a["small"], "-S")])])
-    assert refused(db, data, "sets.variant_used", ConflictError, set_id=sizes).params["names"] == [("Bundle", False)]
-
-
-def test_changing_only_a_suffix_keeps_the_fixed_variant(db):  # decision 2 of the plan
-    with db.begin() as s:
-        a = articles(s, frame=5, small=4, large=3, plate=9)
-        sizes = make_set(s, "Sizes", [(1, a["frame"])], [(1, [(a["small"], "-S"), (a["large"], "-L")])], sku="EX-SZ").id
-        bundle = make_set(s, "Bundle", [(1, inner(sizes, a["large"])), (1, a["plate"])]).id
+        bundle = make_set(s, "Bundle", [(1, inner(sizes)), (1, a["plate"])], sku="EX-BU").id
     with db.begin() as s:
         catalog.update_set(s, sizes, SetInput("Sizes", "EX-SZ", [BaseInput(1, a["frame"])], [ChoiceInput(1, [
             ChoiceOptionInput(a["small"], "-S"), ChoiceOptionInput(a["large"], "-XL"),
         ])]))
     with db.begin() as s:
-        assert row_of(s, bundle).base[0].variant_sku == "EX-SZ-XL" and row_of(s, bundle).orderable
+        assert [v.sku for v in row_of(s, bundle).variants] == ["EX-BU-S", "EX-BU-XL"] and row_of(s, bundle).orderable
 
 
 def test_change_without_conflict_shows_in_the_outer_set_at_once(db, kits):  # Spec 5.4, changes
@@ -434,11 +406,3 @@ def test_a_set_on_level_two_cannot_be_archived_either(db, kits):
             catalog.archive_set(s, basic)  # held by middle (level 1) and top (level 2), complete kit too
     assert info.value.params == {"names": "Complete kit, Middle, Top"}
 
-
-def test_inner_set_losing_all_its_choices_drops_the_fixed_variant(db):  # review finding 5
-    with db.begin() as s:
-        a = articles(s, frame=5, small=4, large=3, plate=9, lid=1)
-        sizes = make_set(s, "Sizes", [(1, a["frame"])], [(1, [(a["small"], "-S"), (a["large"], "-L")])], sku="EX-SZ").id
-        make_set(s, "Bundle", [(1, inner(sizes, a["small"])), (1, a["plate"])])
-    data = SetInput("Sizes", "EX-SZ", [BaseInput(1, a["frame"]), BaseInput(1, a["lid"])], [])
-    assert refused(db, data, "sets.variant_used", ConflictError, set_id=sizes).params["names"] == [("Bundle", False)]

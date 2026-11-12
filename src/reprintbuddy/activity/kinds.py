@@ -39,6 +39,7 @@ KINDS: dict[str, str] = {
     "set_archived": "master",
     "set_restored": "master",
     "set_migrated": "master",  # the update to v0.4.0 rebuilt a set (Spec 5.4, p340)
+    "set_choices_brought": "master",  # the update to v0.4.4: inner sets bring their choices (Spec 5.4, p441)
     "filament_settings_changed": "master",
     "reorder_ordered": "master",
     "reorder_received": "master",

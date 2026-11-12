@@ -1,4 +1,5 @@
-"""Sets as base parts in the set form, and inner sets in the set list (Spec 5.4, 10.1; 0.4.3 p423)."""
+"""Sets as base parts in the set form, and inner sets in the set list (Spec 5.4, 10.1; 0.4.3 p423).
+Since 0.4.4 (p441) an inner set brings its choice parts: each set is offered once."""
 
 import re
 from datetime import datetime
@@ -17,8 +18,8 @@ def en(key, **params):
     return translate("en", key, **params)
 
 
-def inner(set_id, *key):
-    return ("set", set_id, tuple(key))
+def inner(set_id):
+    return ("set", set_id)
 
 
 def kits(client):
@@ -73,12 +74,21 @@ def test_base_drop_down_has_groups_articles_and_sets(ready_client):
     assert "set:" not in select_html(page, "c1_0_article") and "optgroup" not in select_html(page, "c1_0_article")
 
 
-def test_set_with_choices_is_offered_once_per_variant(ready_client):
+def test_drop_down_has_one_entry_per_set(ready_client):  # Spec 5.4 (0.4.4): no entry per variant
     a, ids = kits(ready_client)
     page = ready_client.get("/sets/new").text
-    assert ">Sizes · EX-SZ-S (Small)<" in option(page, "base_0_article", f"set:{ids['sizes']}:{a['Small']}")
-    assert ">Sizes · EX-SZ-L (Large)<" in option(page, "base_0_article", f"set:{ids['sizes']}:{a['Large']}")
-    assert option(page, "base_0_article", f"set:{ids['sizes']}") is None
+    assert ">Sizes · EX-SZ<" in option(page, "base_0_article", f"set:{ids['sizes']}")
+    assert option(page, "base_0_article", f"set:{ids['sizes']}:{a['Small']}") is None
+    assert select_html(page, "base_0_article").count(">Sizes") == 1
+
+
+def test_entry_takes_every_option(ready_client):  # plan v0.4.4, E6
+    a, ids = kits(ready_client)
+    page = ready_client.post("/sets/new", data=form(ready_client, base_0_article=f"set:{ids['sizes']}", action="more_base")).text
+    for name in ("base_1_article", "c1_0_article"):
+        for article in ("Small", "Large", "Frame"):
+            assert re.search(rf'<option value="{a[article]}" disabled hidden>', select_html(page, name)), (name, article)
+    assert f"a{a['Large']}" in option(page, "base_1_article", f"set:{ids['sizes']}")
 
 
 def test_own_set_and_sets_holding_it_are_not_offered(ready_client):
@@ -120,14 +130,19 @@ def test_contains_hint_under_a_chosen_set(ready_client):  # Spec 5.4
     assert f'data-contains="{hint}"' in option(page, "base_1_article", f"set:{ids['basic']}")
 
 
-def test_create_set_of_two_sets_through_the_form(ready_client):  # the user's case (p423)
+def test_create_set_of_two_sets_through_the_form(ready_client):  # the user's case (p423, p441)
     a, ids = kits(ready_client)
-    data = form(ready_client, base_0_article=f"set:{ids['basic']}", base_1_article=f"set:{ids['sizes']}:{a['Large']}")
+    data = form(ready_client, base_0_article=f"set:{ids['basic']}", base_1_article=f"set:{ids['sizes']}")
+    response = ready_client.post("/sets/new", data=data)
+    assert response.status_code == 200 and en("sets.sku_required") in response.text  # sizes brings choices
+    data = form(ready_client, sku="EX-WK", base_0_article=f"set:{ids['basic']}", base_1_article=f"set:{ids['sizes']}")
     response = ready_client.post("/sets/new", data=data)
     assert response.status_code == 303 and response.headers["location"] == "/sets"
     with sm_of(ready_client).begin() as s:
         rows = s.scalars(select(SetPositionSet).order_by(SetPositionSet.position_id)).all()
-        assert [(r.set_id, r.key) for r in rows][-2:] == [(ids["basic"], ()), (ids["sizes"], (a["Large"],))]
+        assert [r.set_id for r in rows][-2:] == [ids["basic"], ids["sizes"]]
+    listing = ready_client.get("/sets").text
+    assert "EX-WK-S" in listing and "EX-WK-L" in listing
 
 
 def test_doubled_article_without_script_names_it(ready_client):  # review focus 5
@@ -140,7 +155,7 @@ def test_doubled_article_without_script_names_it(ready_client):  # review focus 
 
 def test_same_set_twice_without_script(ready_client):
     a, ids = kits(ready_client)
-    data = form(ready_client, base_0_article=f"set:{ids['sizes']}:{a['Small']}", base_1_article=f"set:{ids['sizes']}:{a['Large']}")
+    data = form(ready_client, base_0_article=f"set:{ids['sizes']}", base_1_article=f"set:{ids['sizes']}")
     response = ready_client.post("/sets/new", data=data)
     assert response.status_code == 200 and en("sets.set_twice", name="Sizes") in response.text
 
@@ -151,13 +166,13 @@ def test_edit_form_names_sets_it_is_part_of(ready_client):  # Spec 5.4: "Steckt 
     assert en("sets.part_of", names="").split(":")[0] not in ready_client.get(f"/sets/{ids['complete']}/edit").text
 
 
-def test_edit_form_keeps_inner_set_and_variant_selected(ready_client):
+def test_edit_form_keeps_inner_set_selected_and_shows_its_fields(ready_client):  # plan v0.4.4, E7 (F4)
     a, ids = kits(ready_client)
     with sm_of(ready_client).begin() as s:
-        bundle = make_set(s, "Bundle", [(1, inner(ids["sizes"], a["Small"])), (1, a["Plate"])]).id
+        bundle = make_set(s, "Bundle", [(1, inner(ids["sizes"])), (1, a["Plate"])], sku="EX-BU").id
     page = ready_client.get(f"/sets/{bundle}/edit").text
-    assert "selected" in option(page, "base_0_article", f"set:{ids['sizes']}:{a['Small']}")
-    assert f">{en('sets.contains', items='1 × Frame, 1 × Small')}</p>" in page
+    assert "selected" in option(page, "base_0_article", f"set:{ids['sizes']}")
+    assert f">{en('sets.contains', items='1 × Frame, 1 × Small / Large')}</p>" in page
     page = ready_client.get(f"/sets/{ids['complete']}/edit").text
     assert "selected" in option(page, "base_0_article", f"set:{ids['basic']}")
     assert "selected" in option(page, "base_1_article", f"set:{ids['extension']}")
@@ -176,7 +191,8 @@ def test_archived_inner_set_stays_in_the_form_marked(ready_client):  # decision 
 def test_bad_set_value_no_500(ready_client):
     a, ids = kits(ready_client)
     before = len(sets_in_db(ready_client))
-    for value in ("set:x", "set:", f"set:{ids['basic']}:x", "set:99999999999999", "set:1:2:3:4"):
+    old_variant = f"set:{ids['sizes']}:{a['Small']}"  # the value of 0.4.3: no variant in the set form any more
+    for value in ("set:x", "set:", f"set:{ids['basic']}:x", "set:99999999999999", "set:1:2:3:4", old_variant):
         response = ready_client.post("/sets/new", data=form(ready_client, base_0_article=value, base_1_article=str(a["Lid"])))
         assert response.status_code == 200 and 'class="alert"' in response.text, value
     assert len(sets_in_db(ready_client)) == before
@@ -205,16 +221,25 @@ def test_breaks_parent_message_on_edit(ready_client):  # Spec 5.4 "Änderungen",
 SET_BADGE = '<span class="badge tone-neutral">{}</span>'
 
 
-def test_list_and_tile_show_inner_set_with_badge_and_variant_number(ready_client):
+def test_list_and_tile_show_inner_number_and_outer_variants(ready_client):  # Spec 10.1 (0.4.4)
     a, ids = kits(ready_client)
     with sm_of(ready_client).begin() as s:
-        make_set(s, "Bundle", [(1, inner(ids["sizes"], a["Small"])), (2, inner(ids["extension"]))])
+        make_set(s, "Bundle", [(1, inner(ids["sizes"])), (2, inner(ids["extension"]))], sku="EX-BU")
     page = ready_client.get("/sets").text
     badge = SET_BADGE.format(en("sets.badge_set"))
-    assert page.count(f"1 × Sizes EX-SZ-S {badge}") == 2  # list and tile
-    assert page.count(f"2 × Extension {badge}") == 2
-    assert page.count(f"1 × Basic kit EX-GA {badge}") == 0  # no choices: no variant number
-    assert page.count(f"1 × Basic kit {badge}") == 2
+    assert page.count(f"1 × Sizes EX-SZ {badge}") == 2  # list and tile: the number of the inner set
+    assert page.count(f"2 × Extension {badge}") == 2  # without a number
+    assert page.count(f"1 × Basic kit EX-GA {badge}") == 2
+    assert page.count('<span class="variant">EX-BU-S · ') == 2 and page.count('<span class="variant">EX-BU-L · ') == 2
+
+
+def test_number_missing_badge(ready_client):  # Spec 5.4 update paragraph (0.4.4)
+    a, ids = kits(ready_client)
+    with sm_of(ready_client).begin() as s:
+        make_set(s, "Lost number", [(1, inner(ids["sizes"])), (1, a["Plate"])])  # as the update leaves it
+    page = ready_client.get("/sets").text
+    assert page.count(SET_BADGE.format(en("sets.incomplete.number_missing"))) == 2
+    assert en("sets.incomplete.number_missing") == "Number missing"
 
 
 def test_list_marks_archived_inner_set(ready_client):  # Spec 5.5
@@ -222,7 +247,7 @@ def test_list_marks_archived_inner_set(ready_client):  # Spec 5.5
     with sm_of(ready_client).begin() as s:
         s.get(ProductSet, ids["basic"]).archived_at = ARCHIVED
     page = ready_client.get("/sets").text
-    assert f'1 × Basic kit {SET_BADGE.format(en("sets.badge_set"))}{SET_BADGE.format(en("catalog.archived_badge"))}' in page
+    assert f'1 × Basic kit EX-GA {SET_BADGE.format(en("sets.badge_set"))}{SET_BADGE.format(en("catalog.archived_badge"))}' in page
 
 
 def test_set_with_incomplete_inner_set_shows_faulty(ready_client):  # decision 6 (condition A2 withdrawn)
@@ -279,6 +304,31 @@ def test_overview_warns_and_links_to_the_set(ready_client):
     assert en("sets.holds_archived_article", set="Basic kit", name="Manual") in warnings
     assert f'href="/sets/{ids["basic"]}/edit">{en("warning.action.set")}</a>' in warnings
     assert 'data-live-region="warnings" data-live-topics="bambuddy queue article settings notify set"' in page
+
+
+def test_overview_warns_about_sets_the_update_left_to_mend(ready_client):  # plan v0.4.4, N1
+    a, ids = kits(ready_client)
+    with sm_of(ready_client).begin() as s:
+        lost = make_set(s, "Lost number", [(1, inner(ids["sizes"])), (1, a["Plate"])]).id
+        clash = make_set(s, "Clash", [(1, inner(ids["sizes"])), (1, a["Large"])], sku="EX-CL").id
+    page = ready_client.get("/").text
+    warnings = re.search(r"<!--live:warnings-->(.*?)<!--/live:warnings-->", page, re.S).group(1)
+    assert en("sets.mend.number_missing", set="Lost number") in warnings
+    assert en("sets.mend.twice", set="Clash", name="Large") in warnings
+    assert f'href="/sets/{lost}/edit">{en("warning.action.set")}</a>' in warnings
+    assert f'href="/sets/{clash}/edit">{en("warning.action.set")}</a>' in warnings
+    assert en("sets.mend.number_missing", set="Lost number") not in ready_client.get("/queue").text
+
+
+def test_inner_set_gaining_choices_refused_when_a_parent_lacks_its_number(ready_client):  # plan v0.4.4, F2
+    a, ids = kits(ready_client)
+    with sm_of(ready_client).begin() as s:
+        make_set(s, "No number", [(1, inner(ids["extension"])), (1, a["Lid"])])
+    url = f"/sets/{ids['extension']}/edit"
+    data = form(ready_client, url, name="Extension", sku="EX-ER", base_0_article=str(a["Plate"]),
+                base_1_article=str(a["Screw set"]), c1_0_article=str(a["Small"]), c1_0_suffix="-S")
+    response = ready_client.post(url, data=data)
+    assert response.status_code == 200 and en("sets.parent_sku_required", names="No number") in response.text
 
 
 def test_queue_page_does_not_repeat_the_set_warning(ready_client):
