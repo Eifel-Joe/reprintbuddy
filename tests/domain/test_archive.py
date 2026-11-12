@@ -228,7 +228,7 @@ def test_restore_article_with_archived_part_rejected(db):
     assert info.value.key == "parts.archived"
 
 
-def test_archive_set_always(db):  # Spec 5.5
+def test_archive_set_always(db):  # Spec 5.5: a set in no other set
     with db.begin() as s:
         a = make_article(s, name="Template A", stock=3).id
         b = make_article(s, name="Template B", stock=3).id
@@ -239,6 +239,48 @@ def test_archive_set_always(db):  # Spec 5.5
     with db.begin() as s:
         orders.ship_order(s, order_id, "user")  # the open order still ships
         assert s.get(Article, a).stock == 2
+
+
+def altfall(s, article_id):
+    """An archived article in an active set, as versions 0.4.0 to 0.4.2 could leave it (Spec 5.4 Altfall)."""
+    s.get(Article, article_id).archived_at = catalog.utcnow()
+
+
+@pytest.mark.parametrize("where", ["base", "choice"])
+def test_article_in_an_active_set_cannot_be_archived(db, where):  # Spec 5.4, 5.5 (0.4.3)
+    with db.begin() as s:
+        a, b, c = (make_article(s, name=f"Template {x}").id for x in "ABC")
+        options = [ChoiceOptionInput(b, "-B"), ChoiceOptionInput(c, "-C")]
+        catalog.create_set(s, SetInput("Starter Set", "S", [BaseInput(1, a)], [ChoiceInput(1, options)]))
+        catalog.create_set(s, SetInput("Gift Set", None, [BaseInput(1, a), BaseInput(1, b)], []))
+    with pytest.raises(ConflictError) as info:
+        with db.begin() as s:
+            archive_article(s, a if where == "base" else c)
+    expected = "Gift Set, Starter Set" if where == "base" else "Starter Set"
+    assert (info.value.key, info.value.params) == ("articles.archive_in_set", {"names": expected})
+
+
+def test_article_in_an_archived_set_can_be_archived(db):
+    with db.begin() as s:
+        a, b = (make_article(s, name=f"Template {x}").id for x in "AB")
+        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
+        catalog.archive_set(s, set_id)
+        archive_article(s, a)
+        assert s.get(Article, a).archived_at is not None
+
+
+def test_set_in_an_active_set_cannot_be_archived(db):  # Spec 5.5 (0.4.3)
+    with db.begin() as s:
+        a, b, c = (make_article(s, name=f"Template {x}").id for x in "ABC")
+        inner = catalog.create_set(s, SetInput("Inner", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
+        outer = catalog.create_set(s, SetInput("Outer", None, [BaseInput(1, None, inner), BaseInput(1, c)], [])).id
+    with pytest.raises(ConflictError) as info:
+        with db.begin() as s:
+            catalog.archive_set(s, inner)
+    assert (info.value.key, info.value.params) == ("sets.archive_in_set", {"names": "Outer"})
+    with db.begin() as s:
+        catalog.archive_set(s, outer)
+        catalog.archive_set(s, inner)  # the outer set is archived: nothing holds it any more
 
 
 def test_restore_set(db):
@@ -267,12 +309,12 @@ def test_sku_stays_reserved_while_archived(db):
 def test_lists_hide_archived(db):
     with db.begin() as s:
         a = make_article(s, name="Template A").id
-        make_article(s, name="Template B")
+        tb = make_article(s, name="Template B").id
         p = make_part(s, name="Insert M4").id
         make_part(s, name="Hex key 2")
         b = make_article(s, name="Template C").id
         set_a = catalog.create_set(s, SetInput("Set A", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
-        catalog.create_set(s, SetInput("Set B", None, [BaseInput(1, a), BaseInput(1, b)], []))
+        catalog.create_set(s, SetInput("Set B", None, [BaseInput(1, tb), BaseInput(1, b)], []))
         catalog.archive_set(s, set_a)
         catalog.archive_part(s, p)
         archive_article(s, a)
@@ -293,9 +335,7 @@ def test_archived_not_allowed_as_new_reference(db):
         d = make_article(s, name="Template D", stock=5)
         p = make_part(s, name="Insert M4")
         starter = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a.id), BaseInput(1, d.id)], [])).id
-        options = [ChoiceOptionInput(b.id, "-B"), ChoiceOptionInput(c.id, "-C")]
-        choice = catalog.create_set(s, SetInput("Choice Set", "CS", [BaseInput(1, d.id)], [ChoiceInput(1, options)])).id
-        ids = dict(a=a.id, b=b.id, c=c.id, d=d.id, p=p.id, starter=starter, choice=choice)
+        ids = dict(a=a.id, b=b.id, c=c.id, d=d.id, p=p.id, starter=starter)
     with db.begin() as s:
         catalog.archive_part(s, ids["p"])
         archive_article(s, ids["c"])
@@ -311,49 +351,44 @@ def test_archived_not_allowed_as_new_reference(db):
             catalog.create_set(s, SetInput("New Set", None, [BaseInput(1, ids["c"]), BaseInput(1, ids["a"])], []))
     assert info.value.key == "sets.article_archived"
 
-    cases = [
-        [ArticleItem(ids["c"], 1)],
-        [SetItem(ids["starter"], 1)],
-        [SetItem(ids["choice"], 1, (ids["c"],))],
-    ]
-    for items in cases:
+    for items in ([ArticleItem(ids["c"], 1)], [SetItem(ids["starter"], 1)]):
         with pytest.raises(ValidationError) as info:
             with db.begin() as s:
                 new_order(s, items)
         assert info.value.key == "orders.item_archived", items
 
 
-def test_set_with_archived_option(db):
+def test_altfall_set_with_archived_parts_stays_orderable_with_every_variant(db):  # Spec 5.4 Altfall (0.4.3)
     with db.begin() as s:
         a = make_article(s, name="Template A", stock=10).id
         b = make_article(s, name="Template B", stock=3).id
         c = make_article(s, name="Template C", stock=5).id
         options = [ChoiceOptionInput(b, "-B"), ChoiceOptionInput(c, "-C")]
         catalog.create_set(s, SetInput("Starter Set", "S", [BaseInput(1, a)], [ChoiceInput(1, options)]))
-    with db.begin() as s:
-        assert catalog.list_sets(s)[0].available == 8  # together at most: 3 + 5 (p340)
-        archive_article(s, c)
+        altfall(s, c)
     with db.begin() as s:
         row = catalog.list_sets(s)[0]
-        assert row.available == 3 and row.orderable is True
-        assert [v.key for v in row.variants] == [(b,)]
-        archive_article(s, a)
+        assert row.available == 8 and row.orderable is True  # together at most: 3 + 5 (p340)
+        assert [v.key for v in row.variants] == [(b,), (c,)]
+        altfall(s, a)
     with db.begin() as s:
         row = catalog.list_sets(s)[0]
-        assert row.orderable is False and row.available == 0
+        assert row.orderable is True and row.available == 8 and row.status == "deliverable"
 
 
-def test_order_of_the_remaining_variant_after_an_archived_choice(db):
+def test_altfall_order_reserves_the_archived_article_and_plans_no_print(db):  # Spec 5.4 Altfall
     with db.begin() as s:
         a = make_article(s, name="Template A", stock=3).id
         b = make_article(s, name="Template B", stock=3).id
-        c = make_article(s, name="Template C", stock=5).id
+        c = make_article(s, name="Template C", stock=0, min_stock=2, auto_enabled=True, target_model="A1").id
         options = [ChoiceOptionInput(b, "-B"), ChoiceOptionInput(c, "-C")]
         set_id = catalog.create_set(s, SetInput("Starter Set", "S", [BaseInput(1, a)], [ChoiceInput(1, options)])).id
-        archive_article(s, c)
-        new_order(s, [SetItem(set_id, 1, (b,))])
+        altfall(s, c)
+        new_order(s, [SetItem(set_id, 1, (c,))])
     with db.begin() as s:
-        assert s.get(Article, b).reserved == 1
+        assert s.get(Article, c).reserved == 1
+        from reprintbuddy.domain import articlesets
+        assert c not in set(s.scalars(select(Article.id).where(articlesets.where_print())))  # rule 7.1 leaves it out
 
 
 def test_archived_article_cannot_be_edited(db):

@@ -48,6 +48,7 @@ from reprintbuddy.models import (
     ReorderMark,
     SetPosition,
     SetPositionOption,
+    SetPositionSet,
     Setting,
     User,
 )
@@ -311,6 +312,21 @@ def _collect_row(session: Session, data: _Data, obj: object, change: str, actor:
             thing.old_rows.setdefault(name, Counter())[row] += 1
         else:
             thing.fields.add(name)
+    elif isinstance(obj, SetPositionSet):
+        # An inner set of a base row is part of the field "base" (Spec 5.4, 10.7; 0.4.3 p423): another
+        # set or another fixed variant in the same row is a change, the same content written again not.
+        set_id = _set_of_position(session, data, obj.position_id)
+        if set_id is None:
+            return
+        thing = _thing(data, "set", set_id, actor)
+        position = session.get(SetPosition, obj.position_id)
+        row = ("set", position.sort if position is not None else None, obj.set_id, obj.choice1_id, obj.choice2_id)
+        if change == "new":
+            thing.new_rows.setdefault("base", Counter())[row] += 1
+        elif change == "deleted":
+            thing.old_rows.setdefault("base", Counter())[row] += 1
+        else:
+            thing.fields.add("base")
     elif isinstance(obj, FilamentSettings):
         if (change == "new" and _differs_from_defaults(obj)) or (
             change == "dirty" and any(_history(obj, name)[0] for name in FILAMENT_COLUMNS)

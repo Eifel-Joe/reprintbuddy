@@ -78,6 +78,9 @@ def error_text(lang: str, err: DomainError | FormTokenInvalid) -> str:
     for name, value in params.items():
         if isinstance(value, datetime):  # naive UTC from the domain: shown as the local day (p210)
             params[name] = format_date(to_local(value).date(), lang)
+        elif isinstance(value, list):  # (name, archived) pairs: an archived one is marked (0.4.3, condition A1)
+            mark = translate(lang, "sets.archived_mark")
+            params[name] = ", ".join(f"{n} {mark}" if archived else n for n, archived in value)
     text = translate(lang, err.key, **params)
     if isinstance(params.get("supplier"), int):  # an error in one of several suppliers of a part (Spec 5.3)
         return translate(lang, "parts.supplier_error", n=params["supplier"], error=text)

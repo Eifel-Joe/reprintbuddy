@@ -558,7 +558,16 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
 /* On a narrow screen the table scrolls in its box instead of squeezing the name to one word per
    line; each set position stays on one line. */
 .table-card td.name { min-width: 9rem; }
-.table-card td.set-contents span { display: block; white-space: nowrap; }
+.table-card td.set-contents > span { display: block; white-space: nowrap; }
+/* an inner set carries the badge Set (and archived, incomplete) on its own line (0.4.3 p423) */
+.set-contents .badge { margin-left: 0.3rem; font-size: 0.75rem; }
+/* an archived part an earlier version left in the set (Spec 5.4 Altfall, 0.4.3): a yellow line, it may wrap */
+.table-card td.set-contents > span.set-warning, .tile-foot .set-warning { color: var(--warn); white-space: normal; }
+/* The inner sets of an ordered set (0.4.3 p423): a line on the left, indented by level, three at most. */
+.order-inner { margin: 0.35rem 0 0; padding-left: 0.75rem; border-left: 2px solid var(--line); }
+.order-inner.depth-2 { margin-left: 0.75rem; }
+.order-inner.depth-3 { margin-left: 1.5rem; }
+.order-inner-head { margin: 0.35rem 0 0; color: var(--text-2); font-weight: 600; }
 /* a variant line is muted beside the base parts; its count stays bright (Spec 5.4, p340) */
 .set-contents .variant { color: var(--text-2); font-variant-numeric: tabular-nums; }
 .set-contents .variant strong { color: var(--text); }
@@ -997,6 +1006,9 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .set-head { margin: 0.5rem 0 0.3rem; color: var(--text-2); font-size: 0.8rem; }
 .set-row { padding: 8px 0; border-top: 1px solid var(--surface-2); }
 .set-head + .set-row { border-top: 0; }
+/* What the set chosen in a base row contains (0.4.3 p423), under its drop-down; empty for an article. */
+.set-row .set-contains { grid-column: 2; margin: 0; }
+.set-row .set-contains:empty { display: none; }
 .card.section .set-row select, .card.section .set-row input { margin-top: 0; min-height: 2.75rem; min-width: 0; max-width: none; width: 100%; }
 .set-qty { max-width: 16rem; }
 .set-part > .btn, .set-form .btn.secondary { display: inline-flex; gap: 0.4rem; align-items: center; justify-content: center; min-height: 2.75rem; margin-top: 0.25rem; }

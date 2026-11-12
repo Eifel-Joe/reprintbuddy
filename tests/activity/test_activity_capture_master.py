@@ -159,6 +159,57 @@ def test_changing_a_base_quantity_logs_base_parts(db):
     assert since(db, last) == [("set_changed", {"id": product_set.id, "name": "Kit", "fields": ["base"]}, "system")]
 
 
+def _two_kits(s):
+    a = make_article(s, name="A")
+    b = make_article(s, name="B", plate_id=9)
+    c = make_article(s, name="C", plate_id=10)
+    d = make_article(s, name="D", plate_id=11)
+    first = make_set(s, "First", [(1, a.id), (1, b.id)])
+    second = make_set(s, "Second", [(1, c.id), (1, d.id)])
+    return a, b, c, d, first, second
+
+
+def test_adding_an_inner_set_logs_base_parts(db):  # Spec 10.7 group 3, 0.4.3 p423
+    with db.begin() as s:
+        a, b, c, d, first, second = _two_kits(s)
+        outer = make_set(s, "Outer", [(1, ("set", first.id, ())), (1, c.id)])
+    last = mark(db)
+    with db.begin() as s:
+        catalog.update_set(s, outer.id, SetInput("Outer", None, [BaseInput(1, None, first.id), BaseInput(1, None, second.id)], []))
+    assert since(db, last) == [("set_changed", {"id": outer.id, "name": "Outer", "fields": ["base"]}, "system")]
+
+
+def test_swapping_only_the_inner_set_logs_base_parts(db):
+    with db.begin() as s:
+        a, b, c, d, first, second = _two_kits(s)
+        e = make_article(s, name="E", plate_id=12)
+        outer = make_set(s, "Outer", [(1, ("set", first.id, ())), (1, e.id)])
+    last = mark(db)
+    with db.begin() as s:
+        catalog.update_set(s, outer.id, SetInput("Outer", None, [BaseInput(1, None, second.id), BaseInput(1, e.id)], []))
+    assert since(db, last) == [("set_changed", {"id": outer.id, "name": "Outer", "fields": ["base"]}, "system")]
+
+
+def test_inner_sets_written_again_with_the_same_content_are_no_change(db):
+    with db.begin() as s:
+        a, b, c, d, first, second = _two_kits(s)
+        outer = make_set(s, "Outer", [(1, ("set", first.id, ())), (2, ("set", second.id, ()))])
+    last = mark(db)
+    with db.begin() as s:
+        catalog.update_set(s, outer.id, SetInput("Outer", None, [BaseInput(1, None, first.id), BaseInput(2, None, second.id)], []))
+    assert since(db, last) == []
+
+
+def test_renaming_a_set_of_sets_names_only_the_name(db):
+    with db.begin() as s:
+        a, b, c, d, first, second = _two_kits(s)
+        outer = make_set(s, "Outer", [(1, ("set", first.id, ())), (1, ("set", second.id, ()))])
+    last = mark(db)
+    with db.begin() as s:
+        catalog.update_set(s, outer.id, SetInput("Outer kit", None, [BaseInput(1, None, first.id), BaseInput(1, None, second.id)], []))
+    assert since(db, last) == [("set_changed", {"id": outer.id, "name": "Outer kit", "fields": ["name"]}, "system")]
+
+
 def test_a_part_is_changed(db):
     with db.begin() as s:
         p = make_part(s, name="Insert")

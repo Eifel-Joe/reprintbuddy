@@ -223,7 +223,7 @@ def test_numbers_of_archived_choices_and_archived_sets_stay_taken(db):  # condit
             catalog.update_article(s, a["frame"], ArticleInput(name="Frame", sku="EX-S30-A"))
 
 
-def test_archived_choice_article_drops_its_variants(db):  # review focus 2
+def test_archived_choice_article_keeps_its_variants(db):  # Spec 5.4 Altfall (0.4.3; until 0.4.2 they dropped)
     with db.begin() as s:
         a = articles(s, frame=5, a=2, b=3)
         set_id = catalog.create_set(s, SetInput("Kit", "EX-S10", [BaseInput(1, a["frame"])],
@@ -231,8 +231,8 @@ def test_archived_choice_article_drops_its_variants(db):  # review focus 2
         s.get(catalog.Article, a["b"]).archived_at = catalog.utcnow()
     with db.begin() as s:
         row = catalog.list_sets(s)[0]
-        assert [v.sku for v in row.variants] == ["EX-S10-A"]
-        assert (row.available, row.orderable) == (2, True)
+        assert [v.sku for v in row.variants] == ["EX-S10-A", "EX-S10-B"]
+        assert (row.available, row.orderable) == (5, True)
         assert [(o.name, o.archived) for o in row.choices[0].options] == [("A", False), ("B", True)]
     with db.begin() as s:  # saving the set again keeps the archived article (Spec 5.5)
         catalog.update_set(s, set_id, SetInput("Kit", "EX-S10", [BaseInput(1, a["frame"])],
@@ -247,14 +247,14 @@ def test_an_archived_article_cannot_come_into_a_set(db):
             "sets.article_archived")
 
 
-def test_archived_base_part_makes_the_set_unorderable(db):
+def test_archived_base_part_keeps_the_set_orderable(db):  # Spec 5.4 Altfall (0.4.3; until 0.4.2 not orderable)
     with db.begin() as s:
         a = articles(s, frame=5, screw=5)
         catalog.create_set(s, SetInput("Kit", None, [BaseInput(1, a["frame"]), BaseInput(1, a["screw"])], []))
         s.get(catalog.Article, a["screw"]).archived_at = catalog.utcnow()
     with db.begin() as s:
         row = catalog.list_sets(s)[0]
-        assert (row.available, row.orderable, row.status) == (0, False, "not_deliverable")
+        assert (row.available, row.orderable, row.status) == (5, True, "deliverable")
 
 
 def test_migrated_set_without_suffixes_is_incomplete_and_not_orderable(db):  # review focus 5

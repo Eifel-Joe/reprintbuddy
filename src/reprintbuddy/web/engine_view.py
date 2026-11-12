@@ -11,6 +11,7 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 
 from reprintbuddy import settings as st
+from reprintbuddy.domain import catalog
 from reprintbuddy.domain.engine import EngineWarning, collect_warnings, warning_text
 from reprintbuddy.i18n import translate
 from reprintbuddy.web import notify_view
@@ -38,6 +39,7 @@ class ShownWarning:
     # "relink" or "edit" (links to where the pause is settled); None for every other warning.
     article_id: int | None = None
     action: str | None = None
+    set_id: int | None = None  # a set that holds something archived: the notice links to its form (0.4.3)
 
 
 def pause_action(reason: object, has_target: object) -> str:
@@ -61,11 +63,13 @@ def _shown(lang: str, warning: EngineWarning) -> ShownWarning:
     return ShownWarning(text, tone, article_id=int(warning.params["article_id"]), action=action)  # type: ignore[call-overload]
 
 
-def warnings_context(request: Request, session: Session) -> dict[str, object]:
+def warnings_context(request: Request, session: Session, *, sets: bool = False) -> dict[str, object]:
     """`warnings` and `last_poll_at` for `_warnings.html`.
 
     `last_poll_at` is the end of the last regular poll that Bambuddy did not refuse
-    (EngineStatus); the template says "last successful query".
+    (EngineStatus); the template says "last successful query". With `sets` (the overview) the
+    warnings about archived parts in active sets follow (Spec 5.4 Altfall, 0.4.3); they are not the
+    engine's, so the queue page and the push messages leave them out.
     """
     status = request.app.state.ticker.status
     lang = str(st.get_setting(session, "language"))
@@ -78,4 +82,8 @@ def warnings_context(request: Request, session: Session) -> dict[str, object]:
     elif problem is not None:
         reason = translate(lang, f"notify.outcome.{problem}")
         shown.append(ShownWarning(translate(lang, "warning.ha_unreachable", reason=reason), "bad"))
+    if sets:
+        for held in catalog.archived_in_sets(session):
+            key = "sets.holds_archived_set" if held.kind == "set" else "sets.holds_archived_article"
+            shown.append(ShownWarning(translate(lang, key, set=held.set_name, name=held.name), "warn", set_id=held.set_id))
     return {"warnings": shown, "last_poll_at": status.last_poll_at}

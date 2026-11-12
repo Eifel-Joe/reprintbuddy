@@ -142,7 +142,8 @@ def _parse_item(raw: str) -> tuple[str, int, tuple[int, ...]]:
 def _set_options(db: Session) -> list[tuple[str, str]]:
     """What the form offers under "Sets": a set without choices by its name, a set with choice parts
     once per variant, "Starter Set · EX-S10-A (Plate A)" (Spec 6.7, p340). Sets that cannot be
-    ordered and variants of archived choice parts are left out."""
+    ordered (incomplete or faulty) are left out; since 0.4.3 every variant stays, also of an archived
+    choice part (Spec 5.4 "Archivieren und Sets")."""
     options = []
     for row in catalog.list_sets(db):
         if not row.orderable:

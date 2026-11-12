@@ -751,7 +751,8 @@ def test_overview_shows_warnings(ready_client):
     page = ready_client.get("/").text
     part = region(page, "warnings")
     assert esc(en("warning.queue_stopped")) in part
-    assert 'data-live-region="warnings" data-live-topics="bambuddy queue article settings notify"' in page
+    # 0.4.3: "set" too, the overview warns about archived parts in active sets (Spec 5.4 Altfall)
+    assert 'data-live-region="warnings" data-live-topics="bambuddy queue article settings notify set"' in page
     assert en("overview.no_articles") in page
 
 

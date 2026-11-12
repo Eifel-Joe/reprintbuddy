@@ -138,7 +138,8 @@ Use **Archive** on the article page or the archive icon in the list. It works on
 - the article is in no open order,
 - it has no provisional units and none awaiting assembly,
 - it has no entry in Reprintbuddy's queue (remove them first),
-- no print of it is still open in Bambuddy.
+- no print of it is still open in Bambuddy,
+- it stands in no active [set](inspection.md#sets) (the message names the sets).
 
 Otherwise Reprintbuddy says which of these stops it. An archived article cannot be edited.
 

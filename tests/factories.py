@@ -28,6 +28,7 @@ from reprintbuddy.models import (
     ProductSet,
     SetPosition,
     SetPositionOption,
+    SetPositionSet,
     WorkQueueEntry,
     utcnow,
 )
@@ -112,21 +113,28 @@ def make_part(s: Session, *, name: str = "Insert M4", **fields) -> Part:
 def make_set(
     s: Session,
     name: str,
-    base: list[tuple[int, int]],
+    base: list[tuple[int, int | tuple]],
     choices: Sequence[tuple[int, list[tuple[int, str | None]]]] = (),
     *,
     sku: str | None = None,
 ) -> ProductSet:
-    """`base` is a list of (qty, article id); `choices` up to two fields of (qty, [(article id, suffix)]).
+    """`base` is a list of (qty, article id) or (qty, ("set", set id, key)) for an inner set in its fixed
+    variant (0.4.3); `choices` up to two fields of (qty, [(article id, suffix)]).
     Nothing is checked: an update or an older version may have left a set like this (Spec 5.4)."""
     product_set = ProductSet(name=name, sku=sku)
     s.add(product_set)
     s.flush()
-    for sort, (qty, article_id) in enumerate(base):
+    for sort, (qty, what) in enumerate(base):
         position = SetPosition(set_id=product_set.id, sort=sort, qty=qty, slot=0)
         s.add(position)
         s.flush()
-        s.add(SetPositionOption(position_id=position.id, article_id=article_id))
+        if isinstance(what, tuple):
+            _kind, set_id, *key = what
+            key = list(key[0]) if key else []
+            s.add(SetPositionSet(position_id=position.id, set_id=set_id,
+                                 choice1_id=key[0] if key else None, choice2_id=key[1] if len(key) > 1 else None))
+        else:
+            s.add(SetPositionOption(position_id=position.id, article_id=what))
     for slot, (qty, options) in enumerate(choices, start=1):
         position = SetPosition(set_id=product_set.id, sort=0, qty=qty, slot=slot)
         s.add(position)

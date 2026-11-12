@@ -4,25 +4,38 @@
 {% block content %}
 {#- A set: base parts (quantity and article per row) and up to two fields of choice parts (article
     and suffix per row), Spec 5.4 (p340). Every article is picked from a drop-down; one chosen in a
-    row is not offered in the others (here on the server, set_form.js while choosing). Without
+    row is not offered in the others (here on the server, set_form.js while choosing). Since 0.4.3
+    (p423) a base row may hold a set instead, from the group "Sets" of its drop-down; an entry is
+    hidden when one of the things it takes (the set, its inner sets, its articles) is chosen in
+    another row already, and the row shows what the chosen set contains. Without
     JavaScript "more rows" and "add choice parts 2" send the form, which comes back with the rows
     added and nothing saved; the page then jumps to the first new row (#more-new). With more_rows.js
     the rows are added in place from the templates below: {i} is the number of a new row counted from
     0, {i1} counted from 1, and the hidden counter of the part is kept in step (p380). -#}
-{% macro article_select(name, chosen, label, focus=false) -%}
+{% macro article_select(name, chosen, label, focus=false, with_sets=false) -%}
 <select name="{{ name }}" aria-label="{{ label }}" data-set-article{% if focus %} autofocus{% endif %}>
   <option value="">{{ t('sets.article_choose') }}</option>
-  {% for article in articles %}{% set elsewhere = article.id != chosen and article.id in taken %}
+  {% if with_sets %}<optgroup label="{{ t('sets.group_articles') }}">{% endif %}
+  {% for article in articles %}{% set elsewhere = blocked(article.id, chosen) %}
   {%- if not article.archived or article.id == chosen %}
   <option value="{{ article.id }}"{% if article.id == chosen %} selected{% endif %}{% if elsewhere %} disabled hidden{% endif %}>{{ article.name }}{% if article.archived %} ({{ t('catalog.archived_badge') }}){% endif %}</option>
   {%- endif %}
   {% endfor %}
+  {% if with_sets %}</optgroup>
+  {% if sets %}<optgroup label="{{ t('sets.group_sets') }}">
+  {% for entry in sets %}{% set elsewhere = blocked(entry.id, chosen) %}
+  {%- if not entry.archived or entry.id == chosen %}
+  <option value="{{ entry.id }}"{% if entry.id == chosen %} selected{% endif %}{% if elsewhere %} disabled hidden{% endif %} data-takes="{{ entry.takes }}" data-contains="{{ entry.contains }}">{{ entry.name }}{% if entry.archived %} ({{ t('catalog.archived_badge') }}){% endif %}</option>
+  {%- endif %}
+  {% endfor %}
+  </optgroup>{% endif %}{% endif %}
 </select>
 {%- endmacro %}
 {% macro base_row(i, n, row, fresh=false) -%}
 <div class="set-row set-base"{% if fresh %} id="more-new"{% endif %} data-more-row>
   <input name="base_{{ i }}_qty" inputmode="numeric" min="1" value="{{ row.qty }}" aria-label="{{ t('sets.field.qty') }} {{ n }}"{% if fresh %} autofocus{% endif %}>
-  {{ article_select('base_' ~ i ~ '_article', row.article, t('sets.field.article') ~ ' ' ~ n) }}
+  {{ article_select('base_' ~ i ~ '_article', row.article, t('sets.field.article') ~ ' ' ~ n, with_sets=true) }}
+  <p class="hint set-contains" data-set-contains>{{ contains.get(row.article, '') }}</p>
 </div>
 {%- endmacro %}
 {% macro choice_row(section, title, i, n, row, fresh=false) -%}
@@ -47,7 +60,7 @@
   {{ ui.more_button('more_' ~ section, t('sets.more_rows'), form_action) }}
 </fieldset>
 {%- endmacro %}
-{% set sub %}{{ t('sets.form_subtitle') }}{% if product_set and product_set.archived_at %} · {{ ui.badge('set', 'archived') }}{% endif %}{% endset %}
+{% set sub %}{{ t('sets.form_subtitle') }}{% if part_of %} · {{ t('sets.part_of', names=part_of) }}{% endif %}{% if product_set and product_set.archived_at %} · {{ ui.badge('set', 'archived') }}{% endif %}{% endset %}
 {% call ui.page_head("boxes", product_set.name if product_set else t('sets.new'), sub) %}{% endcall %}
 <div class="toolbar">
   <div class="toolbar-actions">

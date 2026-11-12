@@ -1,10 +1,13 @@
-/* The set form (Spec 5.4, p340), templates/set_form.html.
+/* The set form (Spec 5.4, p340; sets in sets 0.4.3 p423), templates/set_form.html.
 
-   An article is only once in a set: one chosen in a row of the base parts or of the choice parts
-   is not offered in any other drop-down of the form. The server renders the form that way; this
-   script keeps it so while the user chooses. A row always keeps its own choice (a disabled
-   selected option would not be sent). Without this script the server still refuses an article
-   chosen twice, with its name.
+   An article is only once in a set, on every level: what one row takes is not offered in any other
+   drop-down of the form. An article takes itself ("a<id>"); a set from the group "Sets" of the base
+   parts takes what its data-takes lists: the set, the sets inside it and all its articles. An entry
+   is hidden when one of the things it takes is chosen in another row already. The server renders
+   the form that way (routes/sets.py, _blocker); this script keeps it so while the user chooses, and
+   shows under a base row what the chosen set contains (data-contains). A row always keeps its own
+   choice (a disabled selected option would not be sent). Without this script the server still
+   refuses an article or a set chosen twice, with its name.
 
    The handler sits on the document, so a form swapped in by the live channel (live.js) works
    without binding anything again. */
@@ -15,23 +18,44 @@
     Array.prototype.forEach.call(list, fn);
   }
 
+  function takes(option) {
+    if (!option || !option.value) {
+      return [];
+    }
+    var listed = option.getAttribute("data-takes");
+    return listed ? listed.split(" ") : ["a" + option.value];
+  }
+
+  function chosen(select) {
+    return select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
+  }
+
   function refresh(form) {
     var selects = form.querySelectorAll("select[data-set-article]");
-    var taken = {};
+    var counts = {};
     each(selects, function (select) {
-      if (select.value) {
-        taken[select.value] = (taken[select.value] || 0) + 1;
-      }
+      takes(chosen(select)).forEach(function (token) {
+        counts[token] = (counts[token] || 0) + 1;
+      });
     });
     each(selects, function (select) {
+      var own = takes(chosen(select));
       each(select.options, function (option) {
         if (!option.value) {
           return;
         }
-        var elsewhere = option.value !== select.value && (taken[option.value] || 0) > 0;
+        var elsewhere = option.value !== select.value && takes(option).some(function (token) {
+          return (counts[token] || 0) - (own.indexOf(token) >= 0 ? 1 : 0) > 0;
+        });
         option.disabled = elsewhere;
         option.hidden = elsewhere;
       });
+      var row = select.closest("[data-more-row]");
+      var hint = row ? row.querySelector("[data-set-contains]") : null;
+      if (hint) {
+        var option = chosen(select);
+        hint.textContent = option ? option.getAttribute("data-contains") || "" : "";
+      }
     });
   }
 

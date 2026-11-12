@@ -91,7 +91,7 @@ Open the page **Orders** and press **New order**.
 4. Under **Items**, pick an article or a set for each row and enter the **Quantity**. A [set with choice parts](#sets) is listed once per variant, with its number and the chosen articles, for example **Bracket kit · EX-S01-S (Bracket small)**: pick the variant. **More rows** adds rows.
 5. Press **Place order**.
 
-The ordered pieces become **Reserved**. An order of a variant keeps its number as it was when you ordered, even if the set changes later. **Available** may go below zero if you order more than you have. An order cannot be edited afterwards; cancel it and enter it again.
+The ordered pieces become **Reserved**; for a set of sets, every article of every level. An order of a variant keeps its number as it was when you ordered, even if the set changes later. The page of an order shows under a set first the articles directly in it, then, indented, each inner set with its variant number and quantity as ordered and its articles below; the list of orders shows the head only. **Available** may go below zero if you order more than you have. An order cannot be edited afterwards; cancel it and enter it again.
 
 ![The list of open orders](../assets/images/en/orders.png)
 
@@ -123,7 +123,7 @@ Deleting in Bambuddy needs the recommended right **Delete Own Queue** in the gro
 
 A set is a bundle of articles sold together, with a name and an article number (required once the set has choice parts). It has no stock of its own.
 
-**Base parts** go into every set: per row a **Quantity** and an **Article**, chosen from a drop-down. An article that is in one row already is not offered in the others; an article is only once in a set.
+**Base parts** go into every set: per row a **Quantity** and an **Article** or another **Set**, chosen from a drop-down (groups **Articles** and **Sets**; see [Sets in sets](#sets-in-sets)). An article that is in one row already is not offered in the others; an article is only once in a set.
 
 **Choice parts** are optional: one of their articles goes into each set, for example the size of a plate. **Choice parts 1** holds any number of articles, each with a **Suffix**, and one **Quantity of the chosen article**. **Add choice parts 2** opens a second field of the same kind, for example the colour. Every combination is a **variant**. The article number of a variant is the set's number with the suffixes behind it, written as they are: set EX-S10 with choice parts 1 A `-A`, B `-B`, C `-C` and choice parts 2 D `-1`, E `-2` has the six variants EX-S10-A-1, EX-S10-A-2, EX-S10-B-1 … EX-S10-C-2; without choice parts 2 only EX-S10-A, EX-S10-B and EX-S10-C. Write the separator into the suffix yourself.
 
@@ -142,7 +142,24 @@ Under **Sets** press **New set**. The form starts with three rows of base parts 
 
 ![The form of a set with base parts and choice parts](../assets/images/en/set-form.png)
 
-An order for a set reserves the single articles. A set cannot be ordered while one of its base parts is archived; a variant whose choice part is archived is not offered. Sets are archived, not deleted; an order that already exists keeps the articles and the variant number it was entered with. Small and large versions of a bundle are separate sets.
+An order for a set reserves the single articles. An article or set that stands in an active set (as a base part, a choice part or an inner set) cannot be archived; the message names the sets. So every active set is offered in the order form with all its variants, and an incoming order can always be entered. Sets are archived, not deleted; an order that already exists keeps the articles and the variant number it was entered with. Small and large versions of a bundle are separate sets.
+
+### Sets in sets
+
+A set can hold other sets, for example a **Complete kit** made of a **Basic kit** and an **Extension**. Such an *inner set* stands only among the base parts, with a quantity, never among the choice parts. The drop-down of the base parts shows it in the group **Sets**; a set with choice parts is listed there once per variant, for example **Basic kit · EX-GA-S (Plate small)**. So you choose a fixed variant; the number of the outer set stays its own. If you need a version with another variant, create a second set for it.
+
+- An inner set may hold sets itself, to any depth. A set never holds itself, not even through other sets; the message names the way round, such as "Complete kit → Basic kit → Complete kit".
+- No article comes twice in a set, on any level: an article of an inner set is neither a base part nor a choice part of the outer set nor in a second inner set, and each inner set is in it only once. The drop-down hides what would bring an article twice; without JavaScript, saving refuses it and names the article.
+- Not offered are the set itself, sets that hold it already, archived and incomplete sets.
+- Under a row with a set, a small line says what it contains, for example "contains 2 × Holder, 1 × Manual". When a set is part of others, its form names them on top under **Part of**.
+- A row with an inner set counts as one: "2 × Basic kit" alone is no set, "Basic kit + Extension" or "Basic kit + Holder" is.
+
+**Availability.** An inner set counts as its articles, the quantities of the levels multiplied. Example: basic kit = 2 × holder + 1 × manual, extension = 1 × plate + 1 × screw set, complete kit = both; available holder 10, manual 3, plate 5, screw set 4: basic kit 3, extension 4, complete kit 3. In the list an inner set stands among the base parts with quantity, name, its variant number if it has one and the grey badge **Set**.
+
+**Changing and archiving.** Changes of a set apply at once in the sets that hold it, and to future orders; open orders keep their articles. Refused is what would bring an article twice into a set that holds it, or would remove a variant that is fixed there; the message names those sets, archived ones with "(archived)". When only a suffix changes, the variant stays chosen and carries the new number. A set that stands in another active set cannot be archived; archive the outer set first or take it out there.
+
+!!! note "Archived articles from an earlier version"
+    Up to version 0.4.2 an article could be archived while it stood in a set. Such a set stays in the order form with all its variants. The set list and the warnings of the [Overview](overview.md) say **Set X contains the archived article Y – restore it or take it out.**, with a link to the set. An order reserves Y too; Y is printed again only once you restore it. The same warning names an archived set that came back inside a restored set.
 
 !!! note "Sets from an earlier version"
     Sets from version 0.3.17 or earlier are rebuilt by the update: a position with one article becomes a base part, the first and second position with a choice become choice parts 1 and 2. They have no suffixes yet, so the set shows **suffixes missing** and cannot be ordered until you add them (and an article number, if it has none). What the new form cannot hold, such as a third position with a choice, is dropped; the articles that can no longer be chosen are named under **Settings → Log** ([Log](../operate/log.md)). Orders entered before the update stay as they were.

@@ -142,6 +142,20 @@ def test_set_update_reports_the_set(db, published):
     assert {"set", f"set:{set_id}"} <= published[0]
 
 
+def test_inner_set_rows_report_the_set(db, published):  # 0.4.3 p423
+    with db.begin() as s:
+        a = make_article(s).id
+        b = make_article(s, name="Template B").id
+        inner_id = make_set(s, "Inner", [(1, a), (1, b)]).id
+        c = make_article(s, name="Template C").id
+        set_id = make_set(s, "Outer", [(1, c)]).id
+    published.clear()
+    with db.begin() as s:
+        catalog.update_set(s, set_id, SetInput("Outer", None, [BaseInput(1, c), BaseInput(1, None, inner_id)], []))
+    assert len(published) == 1
+    assert {"set", f"set:{set_id}"} <= published[0]
+
+
 def test_part_receipt_reports_part_and_journal(db, published):
     with db.begin() as s:
         p = make_part(s).id

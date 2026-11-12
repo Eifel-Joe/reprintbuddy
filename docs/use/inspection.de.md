@@ -91,7 +91,7 @@ Eine Bestellung reserviert Bestand, bis du sie versendest oder stornierst. Repri
 4. Wähle unter **Posten** je Zeile einen Artikel oder ein Set und trage die **Menge** ein. Ein [Set mit Wahlteilen](#sets) steht einmal je Variante in der Liste, mit ihrer Nummer und den gewählten Artikeln, zum Beispiel **Bracket kit · EX-S01-S (Bracket small)**: Wähle die Variante. **Mehr Zeilen** fügt Zeilen hinzu.
 5. Klicke auf **Bestellung anlegen**.
 
-Die bestellten Stücke werden **Reserviert**. Die Bestellung einer Variante behält deren Nummer, wie sie beim Bestellen war, auch wenn sich das Set später ändert. **Verfügbar** kann unter null fallen, wenn du mehr bestellst, als du hast. Eine Bestellung lässt sich danach nicht ändern; storniere sie und lege sie neu an.
+Die bestellten Stücke werden **Reserviert**, bei einem Set aus anderen Sets alle Artikel aller Ebenen. Die Bestellung einer Variante behält deren Nummer, wie sie beim Bestellen war, auch wenn sich das Set später ändert. Die Seite einer Bestellung zeigt unter einem Set erst die Artikel, die direkt darin stehen, dann eingerückt jedes innere Set mit Variantennummer und Menge, wie bestellt, und darunter seine Artikel; die Liste der Bestellungen zeigt nur den Kopf. **Verfügbar** kann unter null fallen, wenn du mehr bestellst, als du hast. Eine Bestellung lässt sich danach nicht ändern; storniere sie und lege sie neu an.
 
 ![Die Liste der offenen Bestellungen](../assets/images/de/orders.png)
 
@@ -123,7 +123,7 @@ Das Löschen in Bambuddy braucht das empfohlene Recht **Delete Own Queue** in de
 
 Ein Set ist eine Zusammenstellung von Artikeln, die zusammen verkauft werden, mit Namen und Artikelnummer (Pflicht, sobald das Set Wahlteile hat). Es hat keinen eigenen Bestand.
 
-**Basisteile** kommen in jedes Set: je Zeile eine **Menge** und ein **Artikel** aus der Aufklappliste (Dropdown). Ein Artikel, der schon in einer Zeile steht, wird in den anderen nicht mehr angeboten; ein Artikel steht nur einmal in einem Set.
+**Basisteile** kommen in jedes Set: je Zeile eine **Menge** und ein **Artikel** oder ein anderes **Set** aus der Aufklappliste (Dropdown, Gruppen **Artikel** und **Sets**; siehe [Sets aus anderen Sets](#sets-aus-anderen-sets)). Ein Artikel, der schon in einer Zeile steht, wird in den anderen nicht mehr angeboten; ein Artikel steht nur einmal in einem Set.
 
 **Wahlteile** sind freiwillig: In jedes Set kommt einer ihrer Artikel, zum Beispiel die Größe einer Platte. **Wahlteile 1** nimmt beliebig viele Artikel auf, jeden mit einer **Zusatznummer**, dazu eine **Menge des gewählten Artikels**. **Wahlteile 2 hinzufügen** öffnet ein zweites Feld derselben Art, zum Beispiel für die Farbe. Jede Zusammenstellung ist eine **Variante**. Die Artikelnummer einer Variante ist die des Sets mit den Zusatznummern dahinter, so wie sie geschrieben sind: Set EX-S10 mit Wahlteilen 1 A `-A`, B `-B`, C `-C` und Wahlteilen 2 D `-1`, E `-2` hat die sechs Varianten EX-S10-A-1, EX-S10-A-2, EX-S10-B-1 … EX-S10-C-2; ohne Wahlteile 2 nur EX-S10-A, EX-S10-B und EX-S10-C. Den Trenner schreibst du selbst in die Zusatznummer.
 
@@ -142,7 +142,24 @@ Klicke unter **Sets** auf **Neues Set**. Das Formular beginnt mit je drei Zeilen
 
 ![Das Formular eines Sets mit Basisteilen und Wahlteilen](../assets/images/de/set-form.png)
 
-Die Bestellung eines Sets reserviert die einzelnen Artikel. Ein Set lässt sich nicht bestellen, solange eines seiner Basisteile archiviert ist; eine Variante mit archiviertem Wahlteil wird nicht angeboten. Sets werden archiviert, nicht gelöscht; eine bestehende Bestellung behält die Artikel und die Variantennummer, mit denen sie angelegt wurde. Kleine und große Ausführungen sind getrennte Sets.
+Die Bestellung eines Sets reserviert die einzelnen Artikel. Ein Artikel oder Set, das in einem aktiven Set steckt (als Basisteil, Wahlteil oder inneres Set), lässt sich nicht archivieren; die Meldung nennt die Sets. So steht jedes aktive Set mit allen Varianten im Bestellformular, und eine hereinkommende Bestellung lässt sich immer eintragen. Sets werden archiviert, nicht gelöscht; eine bestehende Bestellung behält die Artikel und die Variantennummer, mit denen sie angelegt wurde. Kleine und große Ausführungen sind getrennte Sets.
+
+### Sets aus anderen Sets
+
+Ein Set kann andere Sets enthalten, zum Beispiel ein **Komplett**-Set aus **Grundausstattung** und **Erweiterung**. Ein solches *inneres Set* steht nur unter den Basisteilen, mit Menge, nie unter den Wahlteilen. Die Aufklappliste der Basisteile zeigt es in der Gruppe **Sets**; ein Set mit Wahlteilen steht dort einmal je Variante, zum Beispiel **Grundausstattung · EX-GA-S (Platte klein)**. Du wählst also eine feste Variante; die Nummer des äußeren Sets bleibt seine eigene. Brauchst du eine Ausführung mit einer anderen Variante, lege dafür ein zweites Set an.
+
+- Ein inneres Set darf selbst Sets enthalten, beliebig tief. Ein Set enthält nie sich selbst, auch nicht über Umwege; die Meldung nennt den Weg, etwa „Komplett → Grundausstattung → Komplett“.
+- Kein Artikel kommt in einem Set doppelt vor, über alle Ebenen: Ein Artikel aus einem inneren Set steht weder als Basisteil noch unter den Wahlteilen des äußeren Sets noch in einem zweiten inneren Set, und jedes innere Set steht nur einmal darin. Die Aufklappliste blendet aus, was einen Artikel doppelt ergäbe; ohne JavaScript lehnt das Speichern es ab und nennt den Artikel.
+- Nicht angeboten werden das Set selbst, Sets, die es schon enthalten, archivierte und unvollständige Sets.
+- Unter einer Zeile mit Set steht klein, was es enthält, zum Beispiel „enthält 2 × Halter, 1 × Anleitung“. Steckt ein Set in anderen, nennt sein Formular sie oben unter **Steckt in**.
+- Eine Zeile mit innerem Set zählt als eine: „2 × Grundausstattung“ allein ist kein Set, „Grundausstattung + Erweiterung“ oder „Grundausstattung + Halter“ schon.
+
+**Verfügbarkeit.** Ein inneres Set zählt wie seine Artikel, die Mengen der Ebenen malgenommen. Beispiel: Grundausstattung = 2 × Halter + 1 × Anleitung, Erweiterung = 1 × Platte + 1 × Schraubensatz, Komplett = beide; verfügbar Halter 10, Anleitung 3, Platte 5, Schraubensatz 4: Grundausstattung 3, Erweiterung 4, Komplett 3. In der Liste steht ein inneres Set unter den Basisteilen mit Menge, Name, gegebenenfalls Variantennummer und der grauen Plakette **Set**.
+
+**Ändern und Archivieren.** Änderungen an einem Set gelten sofort auch in den Sets, in denen es steckt, und für künftige Bestellungen; offene Bestellungen behalten ihre Artikel. Abgelehnt wird, was in einem Set, in dem es steckt, einen Artikel doppelt ergäbe oder eine dort fest gewählte Variante wegfallen ließe; die Meldung nennt diese Sets, archivierte mit „(archiviert)“. Ändert sich nur eine Zusatznummer, bleibt die Variante gewählt und trägt die neue Nummer. Ein Set, das in einem anderen aktiven Set steckt, lässt sich nicht archivieren; archiviere zuerst das äußere Set oder nimm es dort heraus.
+
+!!! note "Archivierte Artikel aus einer früheren Version"
+    Bis Version 0.4.2 ließ sich ein Artikel archivieren, während er in einem Set stand. Ein solches Set bleibt mit allen Varianten im Bestellformular. Die Liste der Sets und die Warnungen der [Übersicht](overview.md) sagen **Set X enthält den archivierten Artikel Y – wiederherstellen oder herausnehmen.**, mit einem Link zum Set. Eine Bestellung reserviert auch Y; nachgedruckt wird Y erst, wenn du ihn wiederherstellst. Dieselbe Warnung nennt ein archiviertes Set, das mit einem wiederhergestellten Set wieder in einem aktiven Set steht.
 
 !!! note "Sets aus einer früheren Version"
     Sets aus Version 0.3.17 oder früher baut das Update um: Eine Position mit einem Artikel wird ein Basisteil, die erste und zweite Position mit Wahl werden Wahlteile 1 und 2. Sie haben noch keine Zusatznummern; das Set zeigt deshalb **Zusatznummern fehlen** und lässt sich erst bestellen, wenn du sie einträgst (und eine Artikelnummer, falls es keine hat). Was das neue Formular nicht fassen kann, etwa eine dritte Position mit Wahl, entfällt; die Artikel, die nicht mehr wählbar sind, stehen unter **Einstellungen → Protokoll** ([Protokoll](../operate/log.md)). Bestellungen von vor dem Update bleiben, wie sie waren.
