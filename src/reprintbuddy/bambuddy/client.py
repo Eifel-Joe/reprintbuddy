@@ -303,25 +303,16 @@ class HttpBambuddyClient:
     async def printer_statuses(self, printer_ids: Sequence[int]) -> dict[int, PrinterStatus]:
         """The state of these printers for the print plan (Spec 7.6, 10.2, 0.4.2), by printer id.
 
-        One request for all (`GET /bulk/printer-statuses`, Bambuddy `api/routes/bulk.py:61-74`, since
-        1.3.0); Bambuddy answers from memory without asking the printers (`printer_manager.get_status`).
-        A Bambuddy without that route answers 404 and is asked printer by printer
-        (`GET /printers/{id}/status`, already in 1.2.5); a printer it does not know is left out.
-        Nothing is remembered between calls: a 404 costs one request per query, and a Bambuddy
-        that old is below the supported version anyway (Spec 3.1).
+        One request for all (`GET /bulk/printer-statuses`, Bambuddy `api/routes/bulk.py:61-74`, since 1.3.0,
+        the version Reprintbuddy needs); Bambuddy answers from memory without asking the printers
+        (`printer_manager.get_status`). A printer it does not know is left out. Any refusal, a 404
+        included, raises `BambuddyRejected`: nothing is asked printer by printer (decided 12.11.2026).
         """
         ids = [int(i) for i in printer_ids]
         if not ids:
             return {}
-        data = await self._get("/bulk/printer-statuses", {"ids": ",".join(map(str, ids))}, none_on_404=True)
-        if data is not None:
-            return {s.printer_id: s for s in _parse.parse_printer_statuses(data)}
-        found: dict[int, PrinterStatus] = {}
-        for printer_id in ids:
-            one = await self._get(f"/printers/{printer_id}/status", none_on_404=True)
-            if one is not None:
-                found[printer_id] = _parse.parse_printer_status(one, printer_id)
-        return found
+        data = await self._get("/bulk/printer-statuses", {"ids": ",".join(map(str, ids))})
+        return {s.printer_id: s for s in _parse.parse_printer_statuses(data)}
 
     async def shortest_first(self) -> bool:
         """Bambuddy's "shortest job first" for the order of the print plan (`queue_shortest_first`,

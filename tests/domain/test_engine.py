@@ -1467,7 +1467,8 @@ async def test_a_short_tick_does_not_read_printer_states(engine_env):
     assert env.engine.board.printers is None
 
 
-@pytest.mark.parametrize("exc", [BambuddyRejected("Forbidden", status=403), BambuddyUnavailable("timeout")])
+@pytest.mark.parametrize("exc", [BambuddyRejected("Forbidden", status=403), BambuddyRejected("Not Found", status=404),
+                                 BambuddyUnavailable("timeout")])
 async def test_refused_status_leaves_poll_untouched(engine_env, exc):
     """The printers' state is only shown (Spec 7.6): a refused or lost read makes it unknown and
     changes nothing else - no poll error, no warning, the hand-over goes on."""

@@ -1,7 +1,7 @@
 """The state of the printers for the print plan (Spec 7.6 "Druckerzustand für den Druckplan", 10.2).
 
-One request for all printers (`GET /bulk/printer-statuses`, Bambuddy 1.3.0 and later); a Bambuddy
-without it answers 404 and is asked printer by printer (`GET /printers/{id}/status`).
+One request for all printers (`GET /bulk/printer-statuses`, Bambuddy 1.3.0 and later, the version Reprintbuddy
+needs). Any refusal, a 404 included, leaves the state unknown; the engine takes care of that.
 """
 
 import httpx
@@ -35,13 +35,16 @@ async def test_bulk_asks_once_for_all_printers(respx_mock):
     assert found[2].state == "IDLE"
 
 
-async def test_bulk_404_falls_back_to_single_requests(respx_mock):
+async def test_bulk_404_is_a_refusal_without_single_requests(respx_mock):
+    """Reprintbuddy needs Bambuddy 1.3 or newer, which has the one request for all printers. A Bambuddy that
+    answers 404 is refused like any other (the print plan says "state unknown"); nothing is asked printer by
+    printer (decided 12.11.2026)."""
     respx_mock.get(f"{API}/bulk/printer-statuses").respond(404, json={"detail": "Not Found"})
-    one = respx_mock.get(f"{API}/printers/1/status").respond(200, json=_row(1))
-    gone = respx_mock.get(f"{API}/printers/2/status").respond(404, json={"detail": "Printer not found"})
-    found = await client().printer_statuses([1, 2])
-    assert one.called and gone.called
-    assert list(found) == [1]
+    single = respx_mock.get(url__regex=rf"{API}/printers/\d+/status").respond(200, json=_row(1))
+    with pytest.raises(BambuddyRejected) as caught:
+        await client().printer_statuses([1, 2])
+    assert caught.value.status == 404
+    assert not single.called
 
 
 @pytest.mark.parametrize("status", [401, 403])
