@@ -1395,6 +1395,7 @@
   "assembled.sku_required": "Ein Artikel aus Teilen mit Wahlteilen braucht eine Artikelnummer: Mit ihr beginnen die Nummern der Varianten.",
   "assembled.suffix_required": "Die Möglichkeit mit {name} braucht eine Zusatznummer.",
   "assembled.suffix_twice": "Die Zusatznummer {suffix} steht zweimal in einem Feld Wahlteile.",
+  "assembled.too_many_variants": "Der Artikel hätte so {count} Varianten, erlaubt sind höchstens {max}. Nimm Möglichkeiten aus den Wahlteilen heraus.",
   "assembled.variant_too_long": "Die Variantennummer {sku} ist länger als {max} Zeichen.",
   "assembled.variant_in_use": "Die Variante {sku} hat Bestand, ist reserviert oder steht in einer offenen Bestellung und kann deshalb nicht wegfallen. Buche ihren Bestand per Inventur auf 0 und versende oder storniere die Bestellungen.",
   "assembled.mode_switch_busy": "Die Montage von {name} lässt sich nur wechseln, wenn keine Variante Bestand oder eine Reservierung hat und keine offene Bestellung läuft.",

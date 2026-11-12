@@ -251,6 +251,11 @@ def _check(session: Session, data: AssembledInput, *, article_id: int | None = N
             checked_options.append((option.option_id, suffix, rows))
         fields.append(checked_options)
 
+    count = 1
+    for options in fields:
+        count *= len(options)
+    if count > catalog.MAX_VARIANTS:  # as for sets, before any variant is listed (Spec 5.6, p450)
+        raise ValidationError("assembled.too_many_variants", count=count, max=catalog.MAX_VARIANTS)
     purchased_units = sum(purchased.values())
     base_units = sum(q for _a, q in base)
     for combination in itertools.product(*fields) if fields else [()]:

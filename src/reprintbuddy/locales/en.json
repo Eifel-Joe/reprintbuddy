@@ -1395,6 +1395,7 @@
   "assembled.sku_required": "An assembled article with choice parts needs an article number: the variant numbers start with it.",
   "assembled.suffix_required": "The option with {name} needs a suffix.",
   "assembled.suffix_twice": "The suffix {suffix} is twice in one field of choice parts.",
+  "assembled.too_many_variants": "The article would have {count} variants this way; at most {max} are allowed. Take options out of the choice parts.",
   "assembled.variant_too_long": "The variant number {sku} is longer than {max} characters.",
   "assembled.variant_in_use": "The variant {sku} has stock, is reserved or is in an open order, so it cannot go. Count its stock to 0 and ship or cancel the orders first.",
   "assembled.mode_switch_busy": "The assembly mode of {name} can only change when no variant has stock or a reservation and no order is open.",
