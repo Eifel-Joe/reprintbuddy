@@ -100,7 +100,7 @@ ALL_NAMES = (
     "reorder", "filament-page", "filament-settings", "orders", "parts", "sets", "set-form", "bookings", "journal",
     "assembled-form", "assembled-detail",
     "settings-bambuddy", "settings-automation", "settings-notifications", "settings-labels",
-    "settings-log", "settings-update", "articles-mobile",
+    "settings-log", "settings-update", "articles-mobile", "overview-mobile",
 )
 
 
@@ -615,15 +615,16 @@ def fill_bambuddy(fake: ShotBambuddy, scn: Scenario) -> None:
     folder = fake.add_folder("Examples")
     scn.folder = folder.id
 
-    def file(name, kind, model="A1", plates=1, reqs=None):
-        made = fake.add_file(name, folder.id, kind=kind, printer_model=model, plates=plates)
+    def file(name, kind, model="A1", plates=1, reqs=None, minutes=60):
+        # the slicer's print time, which Bambuddy puts on every queue entry (the print plan, 0.4.2)
+        made = fake.add_file(name, folder.id, kind=kind, printer_model=model, plates=plates, print_time_s=minutes * 60)
         for plate, req in (reqs or {}).items():
             fake.set_requirements(made.id, plate, [FilamentRequirement(*r) for r in req])
         scn.files[name.removesuffix(".gcode.3mf")] = made.id
 
     white, black, red, blue = "#FFFFFF", "#000000", "#D32F2F", "#1E5AA8"
-    file("Bracket small.gcode.3mf", "bracket", reqs={1: [(1, 18.4, "PLA", white)]})
-    file("Bracket large.gcode.3mf", "bracket-large", reqs={1: [(1, 42.0, "PLA", white)]})
+    file("Bracket small.gcode.3mf", "bracket", reqs={1: [(1, 18.4, "PLA", white)]}, minutes=50)
+    file("Bracket large.gcode.3mf", "bracket-large", reqs={1: [(1, 42.0, "PLA", white)]}, minutes=110)
     file("Clip set.gcode.3mf", "clip", plates=2, reqs={1: [(1, 36.5, "PETG", black)], 2: [(1, 36.5, "PETG", blue)]})
     file("Cable guide.gcode.3mf", "guide", model="P1S", reqs={1: [(1, 11.2, "PLA", black), (2, 1.8, "PLA", red)]})
     file("Spool holder.gcode.3mf", "holder", plates=2, reqs={1: [(1, 84.0, "PETG", black)], 2: [(1, 52.0, "PETG", black)]})
@@ -899,13 +900,19 @@ def run_prints(server: Server, scn: Scenario) -> None:
             done.add(item.id)
     printing = first("Bracket large")
     if printing is not None:
-        fake.set_status(printing.id, "printing", printer_id=2)
+        fake.set_status(printing.id, "printing", printer_id=1)
         done.add(printing.id)
+    # The print plan (0.4.2): Printer 1 prints the large bracket, 63 % done, 70 minutes left; Printer 2 has an
+    # entry Bambuddy assigned to it (somebody else's); the rest of the queue is expected on the free printers.
+    fake.set_printer_status(1, state="RUNNING", progress=63.0, remaining_min=70, subtask_name="Bracket large")
+    fake.add_foreign_item(tr("Spare knob", "Ersatzknauf"), status="pending", created_by="admin", printer_id=2,
+                          print_time_s=35 * 60)
     CLOCK.set(at(9, 10, 5))
     server.tick(poll=True)
 
     # somebody else's entry in Bambuddy; wanted prints that wait for a free place in Reprintbuddy's own queue
-    fake.add_foreign_item(tr("Calibration cube", "Kalibrierwürfel"), status="pending", created_by="admin", library_file_id=scn.files["Hook"], plate_id=1)
+    fake.add_foreign_item(tr("Calibration cube", "Kalibrierwürfel"), status="pending", created_by="admin", library_file_id=scn.files["Hook"], plate_id=1,
+                          target_model="A1", print_time_s=25 * 60)
     CLOCK.set(at(9, 10, 30))
     server.tick(poll=True)
     with sm.begin() as s:
@@ -1118,6 +1125,7 @@ def take_pages(shot: Shooter, scn: Scenario) -> None:
         "articles-mobile", "/articles?layout=tiles", cap=1250,  # two tiles: none is cut at the lower edge
         before=lambda b: b.evaluate("document.querySelectorAll('.tiles .tile').forEach((r,i)=>{if(i>=2)r.remove()})"),
     )
+    shot.mobile("overview-mobile", "/", cap=1900)  # the print plan as a list per printer (Spec 10.2, 0.4.2)
     # last: a found update puts a bar at the top of every page after it
     shot.page("settings-update", "/settings?tab=maintenance", before=check_for_updates, cap=1300)
 
@@ -1139,6 +1147,9 @@ def run_language(lang: str, out: Path, only: set[str]) -> dict[str, int]:
         run_prints(server, scn)
         prepare_settings(server)
         CLOCK.set(at(9, 11, 30))
+        # The printers' state as a live message would have brought it just now: the print plan of the
+        # pictures shows no "as of" hint (Spec 10.2, 0.4.2).
+        server.app.state.printer_board.at = CLOCK()
         take_pages(shot, scn)
         return shot.sizes
     finally:

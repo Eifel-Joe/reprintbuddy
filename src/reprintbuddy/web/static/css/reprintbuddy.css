@@ -1294,19 +1294,106 @@ td.target .target-form { display: inline-block; }
 /* A fresh database: the hint and the way to the first article. */
 .empty-start { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .empty-start p { margin: 0; }
-/* What is due (Spec 10.2, 0.4.1): as many cards side by side as fit, one column on a phone. */
-.todo-title { margin: 0 0 0.6rem; font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; }
-.todo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 12px; margin: 0 0 1rem; }
-.todo-card { position: relative; }
-.todo-card:hover { border-color: var(--accent); }
-/* The keyboard focus shows where it is: on the card for its link, on the small link for that one. */
-.todo-card:has(.todo-main:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
-.todo-main { display: flex; flex-direction: column; color: inherit; text-decoration: none; }
-.todo-main:focus-visible { outline: none; }
-.todo-main::after { content: ""; position: absolute; inset: 0; border-radius: 10px; } /* the whole card */
-.todo-sub { position: relative; z-index: 1; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
-.todo-sub:hover { color: var(--accent-text); }
-.todo-sub:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+/* Four tiles (Spec 10.2, 0.4.2): side by side on a PC, two by two in between, one column on a phone (below). */
+.ov-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 12px; }
+.ov-tile { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 14px 16px; }
+.ov-tile:has(.ov-main):hover { border-color: var(--accent); }
+.ov-main, .ov-head { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; text-decoration: none; }
+.ov-main .icon, .ov-head .icon { width: 16px; height: 16px; }
+.ov-main::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius); } /* the whole tile */
+.ov-main:focus-visible { outline: none; }
+.ov-tile:has(.ov-main:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ov-number { font-size: 28px; font-weight: 700; line-height: 1.1; color: var(--muted); }
+.ov-number.tone-warn { color: var(--warn-text); }
+.ov-number.tone-bad { color: var(--danger-text); }
+.ov-figure { display: flex; align-items: baseline; gap: 6px; }
+.ov-unit { color: var(--text-2); font-size: 13px; }
+.ov-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--surface-2); }
+.ov-bar-big { height: 12px; margin: 6px 0 2px; }
+.ov-bar i { display: block; height: 100%; width: var(--w); }
+.ov-bar .tone-ok { background: var(--accent); }
+.ov-bar .tone-warn { background: var(--warn); }
+.ov-bar .tone-bad { background: var(--danger); }
+.ov-bar .ov-over { background: repeating-linear-gradient(135deg, var(--danger), var(--danger) 4px, #991b1b 4px, #991b1b 8px); }
+.ov-note { margin: 0; color: var(--text-2); font-size: 12.5px; line-height: 1.5; }
+.ov-sub { position: relative; z-index: 1; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.ov-sub.tone-ok { color: var(--accent-text); }
+.ov-sub.tone-warn { color: var(--warn-text); }
+.ov-sub.tone-bad { color: var(--danger-text); }
+.ov-sub:hover { color: var(--text); }
+.ov-sub:focus-visible, .ov-line:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.ov-rows { list-style: none; margin: 0; padding: 0; }
+.ov-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.ov-row:last-child { border-bottom: 0; }
+.ov-row > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-row > span:last-child { flex: none; white-space: nowrap; }
+.ov-row.tone-warn > span:last-child { color: var(--warn-text); }
+.ov-row.tone-ok > span:last-child { color: var(--accent-text); }
+.ov-hint { margin: 0; color: var(--muted); font-size: 11.5px; }
+.ov-lines { display: flex; flex-direction: column; }
+.ov-line { display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; }
+.ov-line:last-child { border-bottom: 0; }
+.ov-line:hover .ov-line-label { color: var(--accent-text); }
+.ov-line .ov-number { font-size: 17px; }
+.ov-line-note { grid-column: 1 / -1; color: var(--muted); font-size: 11.5px; }
+.ov-line-note:empty { display: none; }
+
+/* The print plan (Spec 10.2, 0.4.2): a lane per printer on a time axis. Filled: printing; outlined: assigned by
+   Bambuddy; dashed: probably assigned; italic: not from Reprintbuddy. The kind and the times stand in words in
+   every bar: hidden on a wide screen, where the place on the axis shows them, and shown on a phone. */
+.plan { position: relative; padding: 14px 16px; }
+.plan-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; margin-bottom: 4px; }
+.plan-main { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; text-decoration: none; }
+.plan-main .icon { width: 16px; height: 16px; }
+/* the whole card; above the lanes and the axis, which have no links (review v0.4.2, 4) */
+.plan-main::after { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: var(--radius); }
+.plan-main:focus-visible { outline: none; }
+.plan:has(.plan-main:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.plan:hover { border-color: var(--accent); }
+.plan-sum { color: var(--text-2); font-size: 12.5px; }
+.plan-lane { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+.plan-name { flex: 0 0 9rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12.5px; }
+.plan-name .badge { font-size: 10.5px; }
+.plan-track { position: relative; flex: 1; min-width: 0; height: 26px; margin: 0; padding: 0; list-style: none; background: var(--bg); border-radius: 5px; }
+.plan-bar { position: absolute; top: 2px; bottom: 2px; left: var(--start); width: var(--width); display: flex; align-items: center; gap: 4px; padding: 0 6px; overflow: hidden; white-space: nowrap; border-radius: 4px; font-size: 11px; }
+.plan-kind, .plan-when { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.plan-label, .plan-detail, .plan-cut { position: relative; }
+.plan-detail, .plan-cut { color: var(--text-2); }
+.plan-running { background: #1d5a35; color: #d9fbe6; }
+.plan-fill { position: absolute; inset: 0 auto 0 0; width: var(--done); background: rgba(34, 197, 94, 0.3); }
+.plan-fixed { background: #173b27; color: #bff0d2; border: 1px solid var(--accent); }
+.plan-planned { background: repeating-linear-gradient(45deg, #2a3240, #2a3240 6px, #232a35 6px, #232a35 12px); color: #c9d3e3; border: 1px dashed #4a5568; }
+.plan-foreign { color: #a9b0bb; }
+.plan-beyond { display: none; } /* starts after the end of the axis: only in the list on a phone */
+.plan-foreign .plan-label { font-style: italic; }
+.plan-waiting { position: absolute; inset: 0; display: flex; align-items: center; padding: 0 8px; color: var(--muted); font-size: 11px; }
+.plan-offline .plan-track, .plan-maintenance .plan-track, .plan-error .plan-track { background: var(--surface-2); }
+.plan-axis { position: relative; height: 16px; margin-left: calc(9rem + 10px); color: var(--muted); font-size: 10.5px; }
+.plan-axis span { position: absolute; left: var(--at); top: 2px; transform: translateX(-50%); }
+.plan-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 8px 0 0; color: var(--text-2); font-size: 11.5px; }
+.plan-key { display: inline-block; width: 22px; height: 10px; border-radius: 3px; margin-left: 8px; }
+.plan-key:first-child { margin-left: 0; }
+.plan-key-running { background: #1d5a35; }
+.plan-key-fixed { background: #173b27; border: 1px solid var(--accent); }
+.plan-key-planned { background: repeating-linear-gradient(45deg, #2a3240, #2a3240 4px, #232a35 4px, #232a35 8px); border: 1px dashed #4a5568; }
+.plan-legend em { margin-left: 8px; }
+
+@media (max-width: 1100px) {
+  .ov-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* A phone: the tiles in one column; each lane becomes a list with times and the kind as a badge. */
+@media (max-width: 699px) {
+  .ov-tiles { grid-template-columns: minmax(0, 1fr); }
+  .plan-lane { display: block; }
+  .plan-name { display: block; margin-bottom: 4px; color: var(--text); }
+  .plan-track { display: block; height: auto; background: none; }
+  .plan-bar { position: relative; top: auto; bottom: auto; left: auto; display: flex; flex-wrap: wrap; width: auto; margin: 0 0 4px; padding: 5px 8px; white-space: normal; }
+  .plan-beyond { display: flex; }
+  .plan-kind { position: static; width: auto; height: auto; clip-path: none; padding: 0 6px; border-radius: 999px; background: rgba(0, 0, 0, 0.25); font-size: 10.5px; }
+  .plan-when { position: static; width: auto; height: auto; clip-path: none; font-variant-numeric: tabular-nums; }
+  .plan-waiting { position: static; padding: 2px 0; }
+  .plan-axis { display: none; }
+}
 
 @media (max-width: 599px) {
   /* One column: the head line as rows of label and value. */
@@ -1315,5 +1402,4 @@ td.target .target-form { display: inline-block; }
   .status-item:last-child { border-bottom: 0; }
   .status-label { margin-right: auto; }
   .status-switch { margin-left: 0; }
-  .todo-grid { grid-template-columns: minmax(0, 1fr); }
 }

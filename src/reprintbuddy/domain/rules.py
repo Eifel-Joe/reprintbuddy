@@ -239,6 +239,14 @@ def consumption_per_day(
     return used / span, span
 
 
+def reach_days(*, stock: float, coming: float, demand: float, per_day: float) -> int | None:
+    """Reichweite in whole days (Spec 10.2, 0.4.2): what is there and on its way, less what the planned
+    prints need, divided by the usage per day (Spec 9.2); rounded down, never below 0. No usage: None."""
+    if per_day <= 0:
+        return None
+    return max(0, math.floor((stock + coming - demand) / per_day))
+
+
 def safety_amount(value: float, unit: str, per_day: float) -> float:
     """Sicherheitspolster: unit "days" -> Verbrauch je Tag x value, else the value itself (Spec 9.3)."""
     if unit == "days":

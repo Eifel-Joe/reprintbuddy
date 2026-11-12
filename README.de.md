@@ -27,6 +27,8 @@ Bambuddy stellt. Fertige Drucke prüfst
 du in Reprintbuddy, und es zeigt dir, was nachzubestellen ist. Es läuft als
 kleine Webanwendung im lokalen Netzwerk (LAN) und ist von außen nur über ein VPN erreichbar.
 
+![Übersicht: vier Kacheln und der Druckplan je Drucker auf einen Blick](docs/assets/images/de/overview.png)
+
 > **Stand:** in Entwicklung, noch nicht einsatzbereit.
 
 Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu Lab verbunden.
@@ -45,8 +47,6 @@ Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu L
 ## Bildschirmfotos
 
 Erfundene Beispieldaten. Weitere Bilder stehen auf den [Doku-Seiten](https://eifel-joe.github.io/reprintbuddy/).
-
-![Übersicht: Verbindung, Warnungen und was ansteht auf einen Blick](docs/assets/images/de/overview.png)
 
 ![Artikel: Bestand, verfügbarer Bestand und Soll je Artikel](docs/assets/images/de/articles-list.png)
 

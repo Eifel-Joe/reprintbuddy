@@ -1440,3 +1440,73 @@ async def test_a_failing_listener_neither_stops_the_tick_nor_the_others(engine_e
     assert result.skipped is None
     assert heard == [False]
     assert "listener broke" in caplog.text
+
+
+# ---- printers' state for the print plan (Spec 7.6, 10.2, 0.4.2) ------------------------------
+
+
+async def test_poll_reads_printer_states_once(engine_env):
+    env = engine_env  # the fake has Printer 1, 2 (A1) and 3 (P1S)
+    env.fake.set_printer_status(1, state="RUNNING", progress=63.0, remaining_min=70)
+    env.fake.shortest = True
+
+    await env.engine.tick(poll=True)
+
+    board = env.engine.board
+    assert [p.id for p in board.printers] == [1, 2, 3]
+    assert board.statuses[1].remaining_min == 70 and board.statuses[2].state == "IDLE"
+    assert board.at is not None and board.shortest_first is True
+    assert env.fake.calls.count("printer_statuses") == 1
+    assert env.fake.calls.count("shortest_first") == 1
+
+
+async def test_a_short_tick_does_not_read_printer_states(engine_env):
+    env = engine_env
+    await env.engine.tick(poll=False)
+    assert "printer_statuses" not in env.fake.calls
+    assert env.engine.board.printers is None
+
+
+@pytest.mark.parametrize("exc", [BambuddyRejected("Forbidden", status=403), BambuddyRejected("Not Found", status=404),
+                                 BambuddyUnavailable("timeout")])
+async def test_refused_status_leaves_poll_untouched(engine_env, exc):
+    """The printers' state is only shown (Spec 7.6): a refused or lost read makes it unknown and
+    changes nothing else - no poll error, no warning, the hand-over goes on."""
+    env = engine_env
+    await env.engine.tick(poll=True)
+    env.fake.fail_next("printer_statuses", exc)
+
+    result = await env.engine.tick(poll=True)
+
+    status = env.engine.status
+    assert status.poll_error is None and status.reachable is True
+    assert status.last_poll_at is not None
+    assert env.engine.board.printers is None
+    assert result.skipped is None
+    assert keys(env.sm, status) == []
+
+
+async def test_unreadable_setting_keeps_the_queue_order(engine_env):
+    env = engine_env
+    env.fake.shortest = True
+    env.fake.fail_next("shortest_first", BambuddyRejected("Forbidden", status=403))
+    await env.engine.tick(poll=True)
+    assert env.engine.board.printers is not None
+    assert env.engine.board.shortest_first is False
+
+
+async def test_unreachable_poll_forgets_the_board(engine_env):
+    env = engine_env
+    await env.engine.tick(poll=True)
+    assert env.engine.board.printers is not None
+    env.fake.unavailable = True
+    await env.engine.tick(poll=True)
+    assert env.engine.board.printers is None
+
+
+async def test_refused_article_check_forgets_the_board(engine_env):
+    env = engine_env
+    await env.engine.tick(poll=True)
+    env.fake.fail_next("list_printers", BambuddyRejected("Forbidden", status=403))
+    await env.engine.tick(poll=True)
+    assert env.engine.board.printers is None

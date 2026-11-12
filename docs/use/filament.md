@@ -41,7 +41,7 @@ An archived article's assignment is read-only. After you change an article's pri
 
 | Column | Meaning |
 |---|---|
-| **Spool sort** | Brand, material, subtype and colour. The badge says whether the sort is reordered and, if so, whether its settings are **configured** or **not configured**; otherwise **not reordered**. A yellow **low** stands next to it while the sort has a reorder suggestion (see [Reorder suggestions](reorder.md)); the card **Filament** of the [Overview](overview.md) counts these sorts. |
+| **Spool sort** | Brand, material, subtype and colour. The badge says whether the sort is reordered and, if so, whether its settings are **configured** or **not configured**; otherwise **not reordered**. A yellow **low** stands next to it while the sort has a reorder suggestion (see [Reorder suggestions](reorder.md)); the tile **Filament** of the [Overview](overview.md) counts these sorts and names how many days the reordered sorts last. Use per day and reach rest on the last 30 days and become reliable only after some time of operation. |
 | **Material** | The material of the sort. |
 | **Stock** | Sum of the remaining weights in grams. |
 | **Spools** | The number of spools of this sort. |

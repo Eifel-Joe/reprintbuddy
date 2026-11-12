@@ -603,3 +603,18 @@ async def test_may_send_may_be_async_and_decides_the_same(db, fake_bambuddy, ans
     result = await dispatch.hand_over(fake_bambuddy, db, res, insert_next=False, may_send=may_send)
     assert result == outcome
     assert bool(fake_bambuddy.enqueued) == answer
+
+
+def test_article_names_by_item(db):
+    """The overview's print plan names an own entry after its article (0.4.2); only open prints count."""
+    from factories import make_article, make_dispatch
+    from reprintbuddy.domain.dispatch import article_names_by_item
+
+    with db.begin() as s:
+        a = make_article(s, name="Bracket")
+        make_dispatch(s, a.id, status="queued", bambuddy_item_id=7)
+        make_dispatch(s, a.id, status="printing", bambuddy_item_id=8)
+        make_dispatch(s, a.id, status="completed", bambuddy_item_id=9)
+        make_dispatch(s, a.id, status="sending")
+    with db() as s:
+        assert article_names_by_item(s) == {7: "Bracket", 8: "Bracket"}

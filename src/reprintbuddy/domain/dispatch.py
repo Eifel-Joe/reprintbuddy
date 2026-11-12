@@ -180,6 +180,16 @@ def foreign_ahead(rows: Sequence[tuple[QueueItem, bool]]) -> bool:
     return False
 
 
+def article_names_by_item(session: Session) -> dict[int, str]:
+    """Bambuddy queue id -> article name of every open print, for the overview's print plan (0.4.2)."""
+    rows = session.execute(
+        select(Dispatch.bambuddy_item_id, Article.name)
+        .join(Article, Article.id == Dispatch.article_id)
+        .where(Dispatch.status.in_(OPEN_STATES), Dispatch.bambuddy_item_id.is_not(None))
+    )
+    return {item_id: name for item_id, name in rows}
+
+
 def own_item_ids(session: Session) -> set[int]:
     """Bambuddy queue ids of all open prints."""
     return set(

@@ -197,3 +197,24 @@ def test_log_page_names_the_retention_of_the_code(name):
     from reprintbuddy.activity import writer
 
     assert f"{writer.KEEP.days} " in (DOCS / name).read_text(encoding="utf-8"), name
+
+
+@pytest.mark.parametrize(("name", "lang", "status"), [("README.md", "en", "> **Status:**"),
+                                                      ("README.de.md", "de", "> **Stand:**")])
+def test_readme_shows_the_overview_right_after_the_intro(name, lang, status):
+    """p424 (0.4.2): the picture of the overview stands right under the introduction, once."""
+    text = (ROOT / name).read_text(encoding="utf-8")
+    picture = f"(docs/assets/images/{lang}/overview.png)"
+    assert text.count(picture) == 1, name
+    at = text.index(picture)
+    assert at < text.index(status) < text.index("\n## "), name
+    intro_end = text.index("LAN")  # the last sentence of the introduction
+    assert intro_end < at, name
+
+
+@pytest.mark.parametrize(("page", "words"), [("overview.md", "30 days"), ("overview.de.md", "30 Tage")])
+def test_overview_page_explains_reach_needs_time(page, words):
+    """The reach and the forecasts rest on the last 30 days of use and need time (decided 12.11.2026)."""
+    text = (DOCS / "use" / page).read_text(encoding="utf-8")
+    assert words in text
+    assert ("Druckplan" if page.endswith(".de.md") else "Print plan") in text

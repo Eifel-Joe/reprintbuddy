@@ -184,3 +184,26 @@ class Refusing:
 
     async def __aexit__(self, *exc):
         return None
+
+
+async def test_live_printer_status_updates_the_board(db_path):
+    """`printer_status` from Bambuddy's live channel keeps the print plan's printer state current between
+    queries (Spec 7.6, 0.4.2), without asking for a poll."""
+    from reprintbuddy.bambuddy.types import Printer, PrinterStatus
+
+    message = (
+        '{"type": "printer_status", "printer_id": 1, "data": {"connected": true, "state": "RUNNING",'
+        ' "progress": 64.0, "remaining_time": 69, "hms_errors": []}}'
+    )
+    connect = Connect(message)
+    app = make_app(db_path, connect)
+    board = app.state.printer_board
+    assert board is app.state.ticker.board
+    board.replace([Printer(1, "Printer 1", "A1")], {1: PrinterStatus(1, True, "RUNNING", 63.0, 70, None, False, False)})
+    polls = polls_of(app)
+    async with app.router.lifespan_context(app):
+        await asyncio.wait_for(polls.get(), 5)  # "connected"
+        await wait_for(lambda: board.statuses[1].progress == 64.0)
+        assert board.statuses[1].remaining_min == 69
+        await asyncio.sleep(0.05)
+        assert polls.empty()

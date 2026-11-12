@@ -26,6 +26,8 @@ handing print jobs to Bambuddy's queue,
 lets you check finished prints, and tells you what to reorder. It runs as a
 small web application on your local network (LAN), reachable from outside only through a VPN.
 
+![Overview: four tiles and the print plan per printer at a glance](docs/assets/images/en/overview.png)
+
 > **Status:** under development, not ready for real use yet.
 
 Reprintbuddy is an independent project and is not affiliated with Bambuddy or Bambu Lab.
@@ -44,8 +46,6 @@ Reprintbuddy is an independent project and is not affiliated with Bambuddy or Ba
 ## Screenshots
 
 Invented example data. More pictures are on the [documentation pages](https://eifel-joe.github.io/reprintbuddy/).
-
-![Overview: connection, warnings and what is due at a glance](docs/assets/images/en/overview.png)
 
 ![Articles: stock, available stock and target per article](docs/assets/images/en/articles-list.png)
 

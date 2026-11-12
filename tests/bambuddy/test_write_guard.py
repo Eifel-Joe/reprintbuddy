@@ -104,7 +104,11 @@ LIVE_IMPORTS = {
     "urllib.parse": {"urlsplit"},
     "websockets.asyncio.client": {"connect"},
     "websockets.exceptions": {"ConnectionClosed", "InvalidStatus"},
-    "reprintbuddy.bambuddy.client": {"BambuddyRejected"},
+    "reprintbuddy.bambuddy.client": {"BambuddyRejected", "BambuddyUnexpected"},
+    # 0.4.2: a `printer_status` message is read with the parser of the printers' state; both only turn
+    # JSON into a data class and open nothing (Spec 7.6, the print plan).
+    "reprintbuddy.bambuddy.parse": {"parse_printer_status"},
+    "reprintbuddy.bambuddy.types": {"PrinterStatus"},
 }
 
 # What the live channel may call on the client.
