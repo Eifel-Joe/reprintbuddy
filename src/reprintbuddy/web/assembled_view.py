@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import articlesets, assembled
+from reprintbuddy.domain import articlesets, assembled, workqueue
 from reprintbuddy.models import Article
 
 Choice = tuple[str, str]
@@ -42,10 +42,15 @@ def holder_choices(session: Session) -> list[Choice]:
 
 
 def on_order_choices(session: Session) -> list[Choice]:
-    """Every variant of the active articles made of parts built on order."""
+    """Every variant of the active articles made of parts built on order. Demand and coverage of all
+    articles are computed once for the page, not once per article (p365)."""
     choices = []
-    for composite in session.scalars(articlesets.assembled_articles().where(Article.assembly_mode == "order")):
-        row = assembled.assembled_row(session, composite.id)
+    composites = list(session.scalars(articlesets.assembled_articles().where(Article.assembly_mode == "order")))
+    if not composites:
+        return choices
+    demand, coverage = assembled.assembly_demand(session), workqueue.coverage_all(session)
+    for composite in composites:
+        row = assembled.assembled_row(session, composite.id, demand=demand, coverage=coverage)
         for holder in row.holders:
             value = "assembled:" + str(composite.id) + (":" + holder.key if holder.key else "")
             label = composite.name
