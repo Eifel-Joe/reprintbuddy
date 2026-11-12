@@ -139,7 +139,8 @@ Use **Archive** on the article page or the archive icon in the list. It works on
 - it has no provisional units and none awaiting assembly,
 - it has no entry in Reprintbuddy's queue (remove them first),
 - no print of it is still open in Bambuddy,
-- it stands in no active [set](inspection.md#sets) (the message names the sets).
+- it stands in no active [set](inspection.md#sets) (the message names the sets),
+- it is not a part of an active assembled article (the message names it; take it out of the parts list first or archive the assembled article).
 
 Otherwise Reprintbuddy says which of these stops it. An archived article cannot be edited.
 

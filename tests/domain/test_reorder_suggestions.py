@@ -298,11 +298,11 @@ def test_part_floor_with_safety_in_days(db):
         assert reorder.suggestions(s, sorts=None, today=TODAY) == []
 
 
-def test_count_suggestions_counts_part_under_min_stock(db):
+def test_current_counts_part_under_min_stock(db):
     with db.begin() as s:
         make_part(s, stock=18, min_stock=20, pack_size=50, safety_value=0, safety_unit="qty")
         make_part(s, name="Fine", stock=50, min_stock=20, pack_size=50)
-        assert reorder.count_suggestions(s, None, NOW) == 1
+        assert len(reorder.current(s, None, NOW).suggestions) == 1
 
 
 def test_count_without_writing_uses_the_record_and_writes_nothing(db):
@@ -310,7 +310,7 @@ def test_count_without_writing_uses_the_record_and_writes_nothing(db):
     with db.begin() as s:
         make_part(s, stock=18, min_stock=20, pack_size=50, safety_value=0, safety_unit="qty")
     with db() as s:
-        assert reorder.count_suggestions(s, None, NOW, write=False) == 1
+        assert len(reorder.current(s, None, NOW, write=False).suggestions) == 1
         assert not s.new and not s.dirty and not s.deleted
 
 
@@ -318,10 +318,8 @@ def test_count_without_writing_uses_the_record_and_writes_nothing(db):
 
 
 def _count_and_page(s, spools):
-    count = reorder.count_suggestions(s, spools, NOW)
     page = reorder.current(s, spools, NOW)
-    assert count == len(page.suggestions)
-    return count, page
+    return len(page.suggestions), page
 
 
 def test_count_matches_the_page_live(db):

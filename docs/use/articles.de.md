@@ -139,7 +139,8 @@ Nimm **Archivieren** auf der Artikelseite oder das Archiv-Symbol in der Liste. E
 - er hat keine vorläufigen Einheiten und keine, die auf Montage warten,
 - er hat keinen Eintrag in Reprintbuddys Warteschlange (erst entfernen),
 - kein Druck von ihm ist in Bambuddy noch offen,
-- er steckt in keinem aktiven [Set](inspection.md#sets) (die Meldung nennt die Sets).
+- er steckt in keinem aktiven [Set](inspection.md#sets) (die Meldung nennt die Sets),
+- er steckt nicht als Teil in einem aktiven Artikel aus Teilen (die Meldung nennt ihn; nimm ihn erst aus der Stückliste oder archiviere den Artikel aus Teilen).
 
 Sonst sagt Reprintbuddy, was davon im Weg steht. Ein archivierter Artikel lässt sich nicht bearbeiten.
 
