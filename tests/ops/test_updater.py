@@ -491,6 +491,37 @@ def test_update_goes_to_the_version_the_page_offered(update_env):
     assert ("git", "-C", e.d, "checkout", "--quiet", "--detach", "v0.2.0") in e.runner.calls
 
 
+def test_p331_a_start_left_behind_does_not_pick_the_version_of_a_later_update_by_hand(update_env):
+    """p331: "queued" stayed (the start was cut off). A `reprintbuddy update` typed days later goes to the
+    newest release, not to the one the page offered back then (which may even be gone by now)."""
+    e = update_env
+    e.runner.on(("git", "-C", e.d, "tag", "--list"), CommandResult(0, "v0.1.0\nv0.2.0\nv0.3.0\n"))
+    e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.3.0\n"))
+    write_status(
+        e.data,
+        UpdateStatus(state="queued", step="start", from_tag="v0.1.0", to_tag="v0.2.0", started_at=NOW - timedelta(days=2)),
+    )
+    result = e.update()
+    assert result.state == "succeeded" and result.to_tag == "v0.3.0"
+
+
+def test_p331_the_offered_version_holds_within_the_start_window_only(update_env):
+    """The unit started by the button reads "queued" within seconds; the window has room for a slow sudo."""
+    from reprintbuddy.ops.updater import QUEUED_TARGET_WINDOW
+
+    e = update_env
+    e.runner.on(("git", "-C", e.d, "tag", "--list"), CommandResult(0, "v0.1.0\nv0.2.0\nv0.3.0\n"))
+    e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.3.0\n"))
+    write_status(
+        e.data,
+        UpdateStatus(
+            state="queued", step="start", from_tag="v0.1.0", to_tag="v0.2.0",
+            started_at=NOW - QUEUED_TARGET_WINDOW - timedelta(seconds=1),
+        ),
+    )
+    assert e.update().to_tag == "v0.3.0"
+
+
 def test_an_explicit_target_wins_over_the_queued_one(update_env):
     e = update_env
     e.runner.on(("git", "-C", e.d, "tag", "--list"), CommandResult(0, "v0.1.0\nv0.2.0\nv0.3.0\n"))
