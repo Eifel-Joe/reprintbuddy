@@ -802,13 +802,18 @@ def _allowed_in_set(session: Session, article: Article) -> bool:
     return False
 
 
+BaseSpec = tuple[int, int | None, int | None, tuple[int, ...]]  # qty, article id, inner set id, its key
+
+
 def _check_set_input(
     session: Session, data: SetInput, *, set_id: int | None = None
-) -> tuple[str, str | None, list[tuple[int, int]], list[tuple[int, list[tuple[int, str | None]]]]]:
+) -> tuple[str, str | None, list[BaseSpec], list[tuple[int, list[tuple[int, str | None]]]]]:
     name = _required_name(data.name, "sets.field.name")
     taken = variant_numbers(session, exclude_set_id=set_id)  # looked up once per save
     sku = validate_sku(session, data.sku, set_id=set_id, variants=taken)
+    defs = load_defs(session)
     kept: set[int] = set()  # archived articles that are already part of this set may stay
+    kept_sets: set[int] = set()  # so may inner sets that became archived or incomplete (plan v0.4.3, 7)
     if set_id is not None:
         kept = set(
             session.scalars(
@@ -817,7 +822,9 @@ def _check_set_input(
                 .where(SetPosition.set_id == set_id)
             )
         )
+        kept_sets = {row.set_id for row in defs[set_id].base if row.set_id is not None}
     seen: set[int] = set()
+    seen_sets: set[int] = set()
 
     def article(article_id: int) -> Article:
         """The article of a row; each article is only once in a set (p340, question 5)."""
@@ -833,10 +840,28 @@ def _check_set_input(
         seen.add(article_id)
         return found
 
-    base: list[tuple[int, int]] = []
+    def inner_set(inner_id: int) -> ProductSet:
+        """An inner set of a base row (Spec 5.4, 0.4.3 p423): never the set itself, only once, and
+        only an active and complete one, unless it is in the set already."""
+        found = session.get(ProductSet, inner_id)
+        if found is None:
+            raise NotFoundError("sets.not_found")
+        if inner_id == set_id:
+            raise ValidationError("sets.ring", path=f"{name} → {name}")
+        if inner_id in seen_sets:
+            raise ValidationError("sets.set_twice", name=found.name)
+        if inner_id not in kept_sets and (found.archived_at is not None or _incomplete_of(defs[inner_id]) is not None):
+            raise ValidationError("sets.set_not_allowed", name=found.name)
+        seen_sets.add(inner_id)
+        return found
+
+    base: list[BaseSpec] = []
     for row in data.base:
         qty = _int_in(row.qty, "sets.field.qty", 1, 1000)
-        base.append((qty, article(row.article_id).id))
+        if row.set_id is not None:
+            base.append((qty, None, inner_set(row.set_id).id, tuple(row.key)))
+        else:
+            base.append((qty, article(row.article_id).id, None, ()))
     fields = list(data.choices)
     while fields and not fields[-1].options:
         fields.pop()  # an empty last field is no field
@@ -852,7 +877,7 @@ def _check_set_input(
         ]
         choices.append((qty, options))
     if len(base) + len(choices) < 2:  # every variant has two different articles (p340, question 3)
-        raise ValidationError("sets.too_few_articles")
+        raise ValidationError("sets.too_few_articles")  # a row with an inner set counts as one (F8)
     if choices and sku is None:
         raise ValidationError("sets.sku_required")
     for _qty, options in choices:
@@ -867,7 +892,78 @@ def _check_set_input(
         _check_variant_numbers(
             session, sku, [[suffix for _found, suffix in options] for _qty, options in choices], set_id, taken
         )
-    return name, sku, base, [(qty, [(found.id, suffix) for found, suffix in options]) for qty, options in choices]
+    checked = [(qty, [(found.id, suffix) for found, suffix in options]) for qty, options in choices]
+    _check_nesting(session, defs, set_id, name, sku, base, checked)
+    return name, sku, base, checked
+
+
+def _check_nesting(
+    session: Session,
+    defs: dict[int, setresolve.SetDef],
+    set_id: int | None,
+    name: str,
+    sku: str | None,
+    base: list[BaseSpec],
+    choices: list[tuple[int, list[tuple[int, str | None]]]],
+) -> None:
+    """The set as it would be saved, checked on every level (Spec 5.4, 0.4.3 p423): no ring, no
+    article and no inner set twice, a fixed variant that exists; then every set that holds it, on any
+    level and archived ones too (plan v0.4.3, decision 5), must stay whole: no article twice there and
+    no fixed variant of this set that falls away. The checks run on the snapshot with the new rows in
+    place of the stored ones, so nothing is written before they pass.
+    Tests: tests/domain/test_catalog_sets_nested.py."""
+    own_id = set_id if set_id is not None else 0  # 0: a new set, no set has this id
+    defs[own_id] = setresolve.SetDef(
+        own_id,
+        tuple(
+            setresolve.Base(qty, set_id=inner_id, key=key) if inner_id is not None else setresolve.Base(qty, article_id=a)
+            for qty, a, inner_id, key in base
+        ),
+        tuple(setresolve.Field(qty, tuple(a for a, _s in options), tuple(s for _a, s in options)) for qty, options in choices),
+        name,
+        sku,
+    )
+    try:
+        setresolve.check(defs, own_id)
+    except setresolve.Cycle as error:
+        raise ValidationError("sets.ring", path=" → ".join(defs[i].name for i in error.path)) from None
+    except setresolve.Twice as error:
+        if error.article_id is not None:
+            raise ValidationError("sets.article_twice", name=session.get(Article, error.article_id).name) from None
+        raise ValidationError("sets.set_twice", name=defs[error.set_id].name) from None
+    except setresolve.BadVariant as error:
+        raise ValidationError("sets.variant_invalid", set=defs[error.set_id].name) from None
+    except setresolve.Unknown:
+        raise NotFoundError("sets.not_found") from None
+    if set_id is None:
+        return  # a new set stands in no other set yet
+    doubled: list[int] = []
+    dropped: list[int] = []
+    twice_name = ""
+    for parent in setresolve.containing(defs, set_id):
+        try:
+            setresolve.check(defs, parent)
+        except setresolve.BadVariant:
+            dropped.append(parent)
+        except setresolve.Twice as error:
+            doubled.append(parent)
+            if not twice_name:
+                twice_name = (
+                    session.get(Article, error.article_id).name if error.article_id is not None
+                    else defs[error.set_id].name
+                )
+        except setresolve.ResolveError:
+            continue  # a ring left in the database elsewhere; the own check above passed
+    archived = _archived_sets(session)
+
+    def names(ids: list[int]) -> list[tuple[str, bool]]:
+        """Each set with whether it is archived: the message marks those (plan approval v0.4.3, A1)."""
+        return sorted(((defs[i].name, i in archived) for i in ids), key=lambda n: n[0].casefold())
+
+    if dropped:
+        raise ConflictError("sets.variant_used", names=names(dropped), set=name)
+    if doubled:
+        raise ConflictError("sets.breaks_parent", names=names(doubled), name=twice_name)
 
 
 def _check_variant_numbers(
@@ -889,14 +985,20 @@ def _check_variant_numbers(
 def _write_positions(
     session: Session,
     set_id: int,
-    base: list[tuple[int, int]],
+    base: list[BaseSpec],
     choices: list[tuple[int, list[tuple[int, str | None]]]],
 ) -> None:
-    for sort, (qty, article_id) in enumerate(base):
+    for sort, (qty, article_id, inner_id, key) in enumerate(base):
         position = SetPosition(set_id=set_id, sort=sort, qty=qty, slot=0)
         session.add(position)
         session.flush()
-        session.add(SetPositionOption(position_id=position.id, article_id=article_id))
+        if inner_id is not None:
+            session.add(SetPositionSet(
+                position_id=position.id, set_id=inner_id,
+                choice1_id=key[0] if key else None, choice2_id=key[1] if len(key) > 1 else None,
+            ))
+        else:
+            session.add(SetPositionOption(position_id=position.id, article_id=article_id))
     for slot, (qty, options) in enumerate(choices, start=1):
         position = SetPosition(set_id=set_id, sort=0, qty=qty, slot=slot)
         session.add(position)
@@ -928,8 +1030,9 @@ def update_set(session: Session, set_id: int, data: SetInput) -> ProductSet:
     name, sku, base, choices = _check_set_input(session, data, set_id=set_id)
     old = session.scalars(select(SetPosition.id).where(SetPosition.set_id == set_id)).all()
     if old:
-        # Options first: they point at their position.
+        # Options and inner sets first: they point at their position.
         _delete_rows(session, select(SetPositionOption).where(SetPositionOption.position_id.in_(old)))
+        _delete_rows(session, select(SetPositionSet).where(SetPositionSet.position_id.in_(old)))
         _delete_rows(session, select(SetPosition).where(SetPosition.id.in_(old)))
     product_set.name = name
     product_set.sku = sku

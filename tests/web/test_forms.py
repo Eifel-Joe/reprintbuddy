@@ -57,3 +57,10 @@ def test_error_text_translates_field():
     assert "Bestelleinheit" in error_text("de", err)
     assert "ganze Zahl" in error_text("de", err)
     assert "whole number" in error_text("en", err)
+
+
+def test_error_text_lists_names_and_marks_archived_ones():  # plan approval v0.4.3, condition A1
+    from reprintbuddy.domain.errors import ConflictError
+    err = ConflictError("sets.breaks_parent", names=[("Complete kit", True), ("Top", False)], name="Plate")
+    assert error_text("de", err) == "Geht nicht: In Complete kit (archiviert), Top stünde Plate dann doppelt."
+    assert error_text("en", err) == "Not possible: Plate would then be in Complete kit (archived), Top twice."
