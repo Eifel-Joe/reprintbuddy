@@ -351,17 +351,23 @@ def _check_numbers(session: Session, composite_id: int | None, plan: _Plan) -> N
     own = {r.id for _n, r in plan.wanted.values() if r is not None}
     by_number = {}
     if composite_id is not None:
-        by_number = {r.sku: r.id for r in _all_variant_rows(session, composite_id) if r.sku is not None and r.id in own}
-    seen: set[str] = set()
+        by_number = {
+            catalog.same_number(r.sku): r.id
+            for r in _all_variant_rows(session, composite_id) if r.sku is not None and r.id in own
+        }
+    seen: dict[str, str] = {}  # case does not count (p350): folded -> as built
     taken = catalog.variant_numbers(session)
     for number, _row in plan.wanted.values():
         assert number is not None  # base number and suffixes are checked before
         if len(number) > catalog.MAX_SKU:
             raise ValidationError("assembled.variant_too_long", sku=number, max=catalog.MAX_SKU)
-        if number in seen:
-            raise ConflictError("catalog.sku_taken", sku=number)
-        seen.add(number)
-        catalog.validate_sku(session, number, article_id=by_number.get(number), variants=taken)
+        folded = catalog.same_number(number)
+        if folded in seen:
+            raise ConflictError("catalog.sku_taken", sku=seen[folded])
+        seen[folded] = number
+        # An own row that carries this number now is no other owner (suffixes may swap), also when only
+        # the case of the number changes.
+        catalog.validate_sku(session, number, article_id=by_number.get(folded), variants=taken)
 
 
 def _check_drops(session: Session, composite: Article, plan: _Plan) -> None:
