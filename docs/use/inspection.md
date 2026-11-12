@@ -142,7 +142,7 @@ Under **Sets** press **New set**. The form starts with three rows of base parts 
 
 ![The form of a set with base parts and choice parts](../assets/images/en/set-form.png)
 
-An order for a set reserves the single articles. A set cannot be ordered while one of its base parts is archived; a variant whose choice part is archived is not offered. Sets are archived, not deleted; an order that already exists keeps the articles and the variant number it was entered with. Small and large versions of a bundle are separate sets.
+An order for a set reserves the single articles. An article or set that stands in an active set (as a base part, a choice part or an inner set) cannot be archived; the message names the sets. So every active set is offered in the order form with all its variants, and an incoming order can always be entered. Sets are archived, not deleted; an order that already exists keeps the articles and the variant number it was entered with. Small and large versions of a bundle are separate sets.
 
 ### Sets in sets
 
@@ -156,7 +156,10 @@ A set can hold other sets, for example a **Complete kit** made of a **Basic kit*
 
 **Availability.** An inner set counts as its articles, the quantities of the levels multiplied. Example: basic kit = 2 × holder + 1 × manual, extension = 1 × plate + 1 × screw set, complete kit = both; available holder 10, manual 3, plate 5, screw set 4: basic kit 3, extension 4, complete kit 3. In the list an inner set stands among the base parts with quantity, name, its variant number if it has one and the grey badge **Set**.
 
-**Changing and archiving.** Changes of a set apply at once in the sets that hold it, and to future orders; open orders keep their articles. Refused is what would bring an article twice into a set that holds it, or would remove a variant that is fixed there; the message names those sets, archived ones with "(archived)". When only a suffix changes, the variant stays chosen and carries the new number. Archiving is always possible: the sets that hold the set show it as **Archived** and cannot be ordered until it is restored or removed from them. The same holds when an inner set is incomplete or an article in it is archived.
+**Changing and archiving.** Changes of a set apply at once in the sets that hold it, and to future orders; open orders keep their articles. Refused is what would bring an article twice into a set that holds it, or would remove a variant that is fixed there; the message names those sets, archived ones with "(archived)". When only a suffix changes, the variant stays chosen and carries the new number. A set that stands in another active set cannot be archived; archive the outer set first or take it out there.
+
+!!! note "Archived articles from an earlier version"
+    Up to version 0.4.2 an article could be archived while it stood in a set. Such a set stays in the order form with all its variants. The set list and the warnings of the [Overview](overview.md) say **Set X contains the archived article Y – restore it or take it out.**, with a link to the set. An order reserves Y too; Y is printed again only once you restore it. The same warning names an archived set that came back inside a restored set.
 
 !!! note "Sets from an earlier version"
     Sets from version 0.3.17 or earlier are rebuilt by the update: a position with one article becomes a base part, the first and second position with a choice become choice parts 1 and 2. They have no suffixes yet, so the set shows **suffixes missing** and cannot be ordered until you add them (and an article number, if it has none). What the new form cannot hold, such as a third position with a choice, is dropped; the articles that can no longer be chosen are named under **Settings → Log** ([Log](../operate/log.md)). Orders entered before the update stay as they were.
