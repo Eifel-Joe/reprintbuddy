@@ -360,20 +360,14 @@ class SetPositionOption(Base):
 
 
 class SetPositionSet(Base):
-    """An inner set of a base row (Spec 5.4, 0.4.3 p423): the set and its fixed variant, the chosen
-    article per choice field of the inner set (empty without choice parts). A base row holds either
-    this or one SetPositionOption with an article."""
+    """An inner set of a base row (Spec 5.4, 0.4.3 p423). It brings its choice parts into the outer
+    set, chosen when ordering (0.4.4 p441; the fixed variant of 0.4.3 went with revision 0021). A
+    base row holds either this or one SetPositionOption with an article."""
 
     __tablename__ = "set_position_sets"
 
     position_id: Mapped[int] = mapped_column(ForeignKey("set_positions.id"), primary_key=True)
     set_id: Mapped[int] = mapped_column(ForeignKey("product_sets.id"))
-    choice1_id: Mapped[int | None] = mapped_column(ForeignKey("articles.id"), default=None)
-    choice2_id: Mapped[int | None] = mapped_column(ForeignKey("articles.id"), default=None)
-
-    @property
-    def key(self) -> tuple[int, ...]:
-        return tuple(a for a in (self.choice1_id, self.choice2_id) if a is not None)
 
 
 class Order(Base):
