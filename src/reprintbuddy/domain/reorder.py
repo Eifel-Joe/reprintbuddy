@@ -455,6 +455,17 @@ def _part_suggestions(
 
 
 @dataclass(frozen=True)
+class Reach:
+    """How long a reordered spool sort lasts, for the overview's filament tile (Spec 10.2, 0.4.2)."""
+
+    sort_id: int
+    label: str
+    days: int | None  # None: no usage in the last 30 days
+    short: bool  # it has a reorder suggestion ("knapp", Spec 9.4)
+    young: bool  # less than 30 days of usage known: the reach is still rough
+
+
+@dataclass(frozen=True)
 class Current:
     """What the reorder page shows, computed in one place for the page and its key figure (p64)."""
 
@@ -474,6 +485,37 @@ def current(session: Session, spools: Sequence[Spool] | None, now: datetime, *, 
     sorts, day = filament.known_sorts(session, spools)
     close_arrived_marks(session, spools, now)
     return Current(sorts, day, suggestions(session, sorts=sorts, today=now.date(), spools=spools))
+
+
+def filament_reach(
+    session: Session, current: Current, today: date, spools: Sequence[Spool] | None = None
+) -> list[Reach]:
+    """Every reordered spool sort with its reach (Spec 10.2, 0.4.2), shortest first, no usage last,
+    the short ones first among equals, then by name.
+
+    The same sums as the suggestions (`suggestions`): the stock and usage of every sort ticked in the
+    slots where the sort is reordered, what is on its way, the planned demand; nothing is counted twice.
+    Unknown stock (`current.sorts` None): nothing. `spools` as for `on_way`.
+    """
+    if current.sorts is None:
+        return []
+    sorts = current.sorts
+    demand = filament_demand(session)
+    coming = on_way(session, spools)
+    short = {s.item_id for s in current.suggestions if s.item_type == "filament"}
+    labels = {row.id: row.label for row in session.execute(select(FilamentSort.id, FilamentSort.label))}
+    found: list[Reach] = []
+    for sort_id, group in filament.reorder_groups(session).items():
+        members = group.members
+        per_day, span = filament.consumption(session, members, today)
+        days = rules.reach_days(
+            stock=sum(sorts[m].stock_g for m in members if m in sorts),
+            coming=sum(coming.get(("filament", m), 0.0) for m in members),
+            demand=demand.get(sort_id, 0.0),
+            per_day=per_day,
+        )
+        found.append(Reach(sort_id, labels.get(sort_id, ""), days, sort_id in short, span < filament.WINDOW_DAYS))
+    return sorted(found, key=lambda r: (r.days is None, r.days or 0, not r.short, r.label.casefold(), r.sort_id))
 
 
 def count_suggestions(
