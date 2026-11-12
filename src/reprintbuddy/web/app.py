@@ -414,6 +414,7 @@ def create_app(
         or update_just_started(db_path.parent, datetime.now(UTC)),
         publish=live.publish,
     )
+    app.state.printer_board = app.state.ticker.board  # the printers' state for the print plan (Spec 7.6)
     app.state.ticker.add_poll_hook("filament", filament.poll_hook)  # the daily record and receipt check (B6)
     # Push messages through Home Assistant (Spec 10.6): after every tick, in a task of their own.
     app.state.notifier = Notifier(
@@ -443,6 +444,8 @@ def create_app(
         lambda kind: app.state.ticker.request_poll(),
         # The settings page shows the state of the channel live (v0.3.6 p86).
         on_state=lambda state: live.publish(frozenset({LIVE_CHANNEL_TOPIC})),
+        # Printer states between queries, for the overview's print plan (Spec 7.6, 0.4.2).
+        on_printer=lambda status: app.state.printer_board.update(status),
         **live_options,
     )
     app.state.live_task = None

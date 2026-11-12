@@ -1027,3 +1027,63 @@ async def test_a_silent_bambuddy_does_not_hold_the_shutdown_longer_than_the_clos
         finally:
             finished.set()
             await stop(task)
+
+
+# ---- printer states for the print plan (Spec 7.6, 0.4.2) --------------------------------
+
+
+def _printer_status(printer_id=1, **data):
+    body = {"connected": True, "state": "RUNNING", "progress": 63.0, "remaining_time": 70,
+            "subtask_name": "Clip", "hms_errors": [], "awaiting_plate_clear": False}
+    body.update(data)
+    return json.dumps({"type": "printer_status", "printer_id": printer_id, "data": body})
+
+
+async def test_printer_status_reaches_on_printer(respx_mock):
+    tokens(respx_mock, "t1")
+    states = []
+    connect = FakeConnect([_printer_status(2, progress=64.0), closed(1006)])
+    subject = live.LiveListener(quick_client(), Events(), connect=connect, sleep=Sleeps(1), now=Clock(),
+                                on_printer=states.append)
+    await run_until_stopped(subject)
+    assert [(s.printer_id, s.progress, s.remaining_min) for s in states] == [(2, 64.0, 70)]
+
+
+async def test_printer_status_does_not_trigger_a_poll(respx_mock):
+    tokens(respx_mock, "t1")
+    events = Events()
+    connect = FakeConnect([_printer_status(), closed(1006)])
+    subject = live.LiveListener(quick_client(), events, connect=connect, sleep=Sleeps(1), now=Clock(),
+                                on_printer=lambda status: None)
+    await run_until_stopped(subject)
+    assert events.kinds == ["connected"]
+
+
+async def test_broken_printer_status_is_dropped(respx_mock):
+    tokens(respx_mock, "t1")
+    states = []
+    connect = FakeConnect([
+        json.dumps({"type": "printer_status", "data": {"connected": True}}),  # no printer id
+        json.dumps({"type": "printer_status", "printer_id": 1, "data": []}),
+        json.dumps({"type": "printer_status", "printer_id": "1", "data": {"connected": True}}),
+        json.dumps({"type": "printer_status", "printer_id": 1, "data": {"connected": "yes"}}),
+        _printer_status(3),
+        closed(1006),
+    ])
+    subject = live.LiveListener(quick_client(), Events(), connect=connect, sleep=Sleeps(1), now=Clock(),
+                                on_printer=states.append)
+    await run_until_stopped(subject)
+    assert [s.printer_id for s in states] == [3]
+
+
+async def test_printer_callback_error_does_not_stop(respx_mock):
+    tokens(respx_mock, "t1")
+    events = Events()
+
+    def boom(_status):
+        raise RuntimeError("no")
+
+    connect = FakeConnect([_printer_status(), json.dumps({"type": "print_start"}), closed(1006)])
+    subject = live.LiveListener(quick_client(), events, connect=connect, sleep=Sleeps(1), now=Clock(), on_printer=boom)
+    await run_until_stopped(subject)
+    assert events.kinds == ["connected", "print_start"]

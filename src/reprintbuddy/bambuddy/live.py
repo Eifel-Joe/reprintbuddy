@@ -36,7 +36,9 @@ from urllib.parse import urlsplit
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
-from reprintbuddy.bambuddy.client import BambuddyRejected
+from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnexpected
+from reprintbuddy.bambuddy.parse import parse_printer_status
+from reprintbuddy.bambuddy.types import PrinterStatus
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +59,10 @@ LIBRARY_LOG.addFilter(_warnings_only)
 # Messages after which the queue may have changed. `queue_item_*` go to the entry's user
 # only; a socket opened with a key carries no user, so they probably never arrive.
 TRIGGER_TYPES = frozenset({"print_start", "print_complete", "queue_item_acked", "queue_item_failed"})
+# A printer's state (`{"type": "printer_status", "printer_id": N, "data": {...}}`, Bambuddy `main.py:2425-2554`,
+# sent on every change of state, percent or temperature): no trigger, it only keeps the print plan current
+# between queries (Spec 7.6, 0.4.2).
+PRINTER_STATUS = "printer_status"
 
 TOKEN_MAX_AGE = 55 * 60  # seconds; Bambuddy's token lives 60 minutes, 5 minutes to spare
 RETRY_DELAYS = (5, 15, 60, 300)  # seconds between attempts; then always the last one
@@ -91,16 +97,32 @@ def _without_query(url: str) -> str:
     return f"{parts.scheme}://{host}{parts.path}"
 
 
-def _kind(message: Any) -> str | None:
-    """The `type` of a message that is a JSON object, else None."""
+def _message(message: Any) -> tuple[str | None, dict | None]:
+    """The `type` of a message that is a JSON object and the object, else (None, None)."""
     try:
         data = json.loads(message)
     except (ValueError, TypeError, RecursionError):
-        return None
+        return None, None
     if not isinstance(data, dict):
-        return None
+        return None, None
     kind = data.get("type")
-    return kind if isinstance(kind, str) else None
+    return (kind if isinstance(kind, str) else None), data
+
+
+def _kind(message: Any) -> str | None:
+    """The `type` of a message that is a JSON object, else None."""
+    return _message(message)[0]
+
+
+def _printer_status(data: dict) -> PrinterStatus | None:
+    """The state in a `printer_status` message, or None when it is not of Bambuddy's form."""
+    printer_id = data.get("printer_id")
+    if isinstance(printer_id, bool) or not isinstance(printer_id, int):
+        return None
+    try:
+        return parse_printer_status(data.get("data"), printer_id)
+    except BambuddyUnexpected:
+        return None
 
 
 class LiveListener:
@@ -128,6 +150,7 @@ class LiveListener:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         now: Callable[[], float] = time.monotonic,
         on_state: Callable[[str], None] | None = None,
+        on_printer: Callable[[PrinterStatus], None] | None = None,
     ) -> None:
         self._client = client
         self._on_event = on_event
@@ -135,6 +158,7 @@ class LiveListener:
         self._sleep = sleep
         self._now = now
         self._on_state = on_state
+        self._on_printer = on_printer
         self._state = "idle"
         self._token: str | None = None
         self._token_at = 0.0
@@ -252,9 +276,11 @@ class LiveListener:
                 try:
                     await self._emit("connected")
                     while True:
-                        kind = _kind(await connection.recv())
+                        kind, data = _message(await connection.recv())
                         if kind in TRIGGER_TYPES:
                             await self._emit(kind)
+                        elif kind == PRINTER_STATUS and data is not None and self._on_printer is not None:
+                            self._printer(data)
                 except asyncio.CancelledError:
                     # Stopped (shutdown) or restarted (`wake(reconnect=True)`): close as a finished
                     # connection. Left to the `async with`, the library closes a connection that
@@ -288,6 +314,17 @@ class LiveListener:
             self._token = await self._client.ws_token()
             self._token_at = fetched_at
         return self._token
+
+    def _printer(self, data: dict) -> None:
+        """Hand a printer's state to `on_printer`; a broken message or a failing callback is logged only."""
+        status = _printer_status(data)
+        if status is None:
+            log.debug("Bambuddy live channel: a printer state of unexpected form was dropped")
+            return
+        try:
+            self._on_printer(status)  # type: ignore[misc]
+        except Exception:
+            log.warning("Bambuddy live channel: handling a printer state failed", exc_info=True)
 
     async def _emit(self, kind: str) -> None:
         try:
