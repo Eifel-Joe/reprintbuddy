@@ -88,20 +88,21 @@
 {% if order_rows %}
 <h2 class="list-title">{{ t('assembly.for_orders') }}</h2>
 <p class="hint">{{ t('assembly.for_orders_hint') }}</p>
-<div class="card table-wrap">
-  <table>
-    <thead><tr><th>{{ t('orders.field.reference') }}</th><th>{{ t('assembly.col.article') }}</th><th class="num">{{ t('assembly.col.qty') }}</th><th>{{ t('list.col.status') }}</th></tr></thead>
-    <tbody>
-    {% for o in order_rows %}
-      <tr>
-        <td><a href="/orders/{{ o.order_id }}">{{ o.reference }}</a></td>
-        <td><a href="/articles/{{ o.article_id }}">{{ o.name }}</a>{% if o.variant_sku %} <span class="mono muted">{{ o.variant_sku }}</span>{% endif %}</td>
-        <td class="num">{{ o.qty }}</td>
-        <td>{{ ui.badge('order', 'ready' if o.ready else 'open') }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+{#- p367: lines like the lists above, not a table; on a phone the values stand under the name. -#}
+<div class="card line-list order-build-list">
+  <div class="line-head order-build-cols" aria-hidden="true">
+    <span>{{ t('orders.field.reference') }}</span><span>{{ t('assembly.col.article') }}</span><span class="num">{{ t('assembly.col.qty') }}</span><span>{{ t('list.col.status') }}</span>
+  </div>
+  {% for o in order_rows %}
+  <div class="line-wrap">
+  <div class="line order-build-cols">
+    <div class="line-cell order-build-ref"><span class="line-label">{{ t('orders.field.reference') }}</span><a href="/orders/{{ o.order_id }}">{{ o.reference }}</a></div>
+    <div class="line-cell order-build-article"><span class="line-label">{{ t('assembly.col.article') }}</span><a href="/articles/{{ o.article_id }}">{{ o.name }}</a>{% if o.variant_sku %} <span class="mono muted">{{ o.variant_sku }}</span>{% endif %}</div>
+    <div class="line-cell num order-build-qty"><span class="line-label">{{ t('assembly.col.qty') }}</span>{{ o.qty }}</div>
+    <div class="line-cell order-build-state"><span class="line-label">{{ t('list.col.status') }}</span>{{ ui.badge('order', 'ready' if o.ready else 'open') }}</div>
+  </div>
+  </div>
+  {% endfor %}
 </div>
 {% endif %}
 {% endcall %}

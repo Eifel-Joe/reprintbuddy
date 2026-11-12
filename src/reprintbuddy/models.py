@@ -404,6 +404,10 @@ class OrderLine(Base):
     # The way through the inner sets of the ordered set, as ordered (Spec 6.7, 0.4.3 p423):
     # JSON [[set_id, variant_sku, units], ...] from the outside in; None directly in the ordered set.
     inner_path: Mapped[str | None] = mapped_column(String, default=None)
+    # The variant of `assembled_id` as ordered, by its row (the article itself without choices): its
+    # number may change later, the row stays (Spec 5.6, 0.4.5 p360; revision 0022). Empty for lines
+    # of 0.4.4 whose variant was renamed before the update: they are matched by `variant_sku`.
+    variant_id: Mapped[int | None] = mapped_column(ForeignKey("articles.id"), default=None)
 
 
 def _booked_default(context) -> datetime:

@@ -290,9 +290,15 @@ def in_use(session: Session, composite: Article, row: Article) -> bool:
         return True
     if session.scalar(_open_order_lines(session).where(OrderLine.article_id == row.id).limit(1)) is not None:
         return True
+    # p360: an order line names its variant row, whose number may have changed since; a line of 0.4.4
+    # whose variant was renamed before the update has none (revision 0022) and is matched by its number.
+    if session.scalar(
+        _open_order_lines(session).where(OrderLine.assembled_id == composite.id, OrderLine.variant_id == row.id).limit(1)
+    ) is not None:
+        return True
     if row.sku is not None and session.scalar(
         _open_order_lines(session)
-        .where(OrderLine.assembled_id == composite.id, OrderLine.variant_sku == row.sku)
+        .where(OrderLine.assembled_id == composite.id, OrderLine.variant_id.is_(None), OrderLine.variant_sku == row.sku)
         .limit(1)
     ) is not None:
         return True

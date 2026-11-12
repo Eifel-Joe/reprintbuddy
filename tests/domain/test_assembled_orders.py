@@ -138,3 +138,28 @@ def test_ready_when_all_parts_in_stock(db):
             s.get(type(composite), ids[name]).stock = qty
         s.flush()
         assert orders.get_order(s, placed.id).ready
+
+
+def test_shipping_a_hose_books_its_parts_as_built_in(db):  # p361 (Spec 5.6 "Buchen und Journal")
+    """Shipping an article built on order is its assembly: each part gets a row "built in" naming the
+    article and its variant, like the assembly on stock; a part also ordered on its own ships as such."""
+    with db.begin() as s:
+        composite, ids, keys = hose(s, stock=2)
+        placed = order(s, AssembledItem(composite.id, 1, keys["EX-H1-L32"]), ArticleItem(ids["Segment"], 3))
+        orders.ship_order(s, placed.id, "user")
+        rows = s.scalars(
+            select(JournalEntry).where(JournalEntry.order_id == placed.id, JournalEntry.part_id.is_(None),
+                                       JournalEntry.kind != "order_created")
+            .order_by(JournalEntry.id)
+        ).all()
+        got = sorted((r.kind, r.article_id, r.qty, (r.details or {}).get("into"), (r.details or {}).get("variant_sku"))
+                     for r in rows)
+        assert got == sorted([
+            ("order_shipped", composite.id, 1, None, "EX-H1-L32"),  # the article itself, as before
+            ("order_shipped", ids["Segment"], 3, None, None),  # ordered on its own
+            ("built_in", ids["Segment"], 12, composite.id, "EX-H1-L32"),
+            ("built_in", ids["Side part L"], 1, composite.id, "EX-H1-L32"),
+            ("built_in", ids["Socket L32"], 1, composite.id, "EX-H1-L32"),
+        ])
+        segment = s.get(type(composite), ids["Segment"])
+        assert (segment.stock, segment.reserved) == (24 - 15, 0)

@@ -90,6 +90,8 @@ Die Status-Plakette folgt der ersten Zeile, die zutrifft:
 | **reicht** | Verfügbar ist mindestens der Mindestbestand | grün |
 | **pausiert** | Die Automatik ist für diesen Artikel pausiert (zusätzlich gezeigt) | grau |
 
+Ein [Artikel aus Teilen](assembled.md) erst bei Bestellung ist **lieferbar** oder **nicht lieferbar** wie ein Set; die Filter kennen diese beiden Zustände auch, und eine Karte zählt die nicht lieferbaren. Die Lager-Kachel der Übersicht lässt sie weg.
+
 Die Zielmenge setzt du gleich in der Liste oder auf einer Kachel. Tippe eine Zahl und drücke Enter oder klicke auf den Haken. Die Pfeile des Feldes ändern nur die Zahl; gespeichert wird erst mit Enter oder dem Haken. Reprintbuddy setzt den Mindestbestand auf die neue Zielmenge minus Puffer, der Puffer bleibt. Eine Zielmenge unter dem Puffer wird abgelehnt. Genauso geht der Schalter **Automatik** eines Artikels; zum Einschalten braucht der Artikel ein Druckziel.
 
 ## Die Artikelseite

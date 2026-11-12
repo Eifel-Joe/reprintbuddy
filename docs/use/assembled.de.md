@@ -28,13 +28,13 @@ Jede Variante enthält aus Teilen und Zukaufteilen zusammen mindestens zwei Einh
 
 ### Varianten und Nummern
 
-Wie bei Sets ist jede Zusammenstellung der Möglichkeiten eine **Variante**, und ihre Nummer ist die Artikelnummer mit den Zusatznummern dahinter: der Schlauch `EX-H1` mit `-L32`, `-L40`, `-R32`, `-R40` hat die Varianten EX-H1-L32 … EX-H1-R40. Nummern sind über alle Artikel, Sets und Varianten eindeutig; Groß- und Kleinschreibung zählen nicht. Ein Artikel aus Teilen hat höchstens 100 Varianten; mehr lehnt das Speichern ab und nennt die Zahl. Änderst du eine Zusatznummer oder die Teile einer Möglichkeit, behält die Variante ihren Bestand. Eine Variante mit Bestand, Reservierung oder in einer offenen Bestellung kann nicht wegfallen; die Meldung nennt sie.
+Wie bei Sets ist jede Zusammenstellung der Möglichkeiten eine **Variante**, und ihre Nummer ist die Artikelnummer mit den Zusatznummern dahinter: der Schlauch `EX-H1` mit `-L32`, `-L40`, `-R32`, `-R40` hat die Varianten EX-H1-L32 … EX-H1-R40. Nummern sind über alle Artikel, Sets und Varianten eindeutig; Groß- und Kleinschreibung zählen nicht. Ein Artikel aus Teilen hat höchstens 100 Varianten; mehr lehnt das Speichern ab und nennt die Zahl. Änderst du eine Zusatznummer oder die Teile einer Möglichkeit, behält die Variante ihren Bestand. Eine Variante mit Bestand, Reservierung oder in einer offenen Bestellung kann nicht wegfallen, auch wenn sich ihre Nummer seit der Bestellung geändert hat; die Meldung nennt sie.
 
 ## Auf Vorrat oder erst bei Bestellung
 
 **Auf Vorrat**: Fertige Stücke liegen im Regal. Jede Variante hat Bestand, Reserviert, Verfügbar, Mindestbestand und Puffer. Montiert wird auf der Seite Montage, gedruckt werden nur die Teile.
 
-**Erst bei Bestellung**: Es wird nichts vorab montiert. Der Artikel hat keinen Bestand; eine Bestellung reserviert seine Teile, und der Versand bucht Teile und Zukaufteile ab. Ein Verkauf ohne Bestellung auf der Seite Buchen macht dasselbe sofort.
+**Erst bei Bestellung**: Es wird nichts vorab montiert. Der Artikel hat keinen Bestand; eine Bestellung reserviert seine Teile, und der Versand bucht Teile und Zukaufteile ab. Der Versand ist seine Montage: Im Journal jedes Teils steht **verbaut in** Schlauch · EX-H1-L32, mit der Bestellung, wie bei der Montage auf Vorrat. Ein Verkauf ohne Bestellung auf der Seite Buchen bucht sie sofort ab und bleibt im Journal ein **Verkauf**.
 
 ## Verfügbarkeit
 
@@ -60,7 +60,9 @@ Der Abschnitt **Für Bestellungen** zeigt die offenen Bestellungen mit Artikeln 
 
 Das Bestellformular bietet einzeln erhältliche Druckartikel, jede Variante auf Vorrat mit ihrer Nummer und jede Variante erst bei Bestellung als eigenen Eintrag („Schlauch · EX-H1-L32 (Seitenteil L, Anschluss L32)“). Bauteile stehen nicht darin. Eine Bestellung behält Teile und Nummer vom Bestellzeitpunkt, auch wenn sich die Stückliste später ändert.
 
-Auf der Seite **Buchen** nehmen Inventur und Verkauf eine Variante auf Vorrat; der Verkauf nimmt auch eine Variante erst bei Bestellung, die ihre Teile sofort abbucht. Einbuchen ohne Druck gibt es nur für Druckartikel.
+Auf der Seite **Buchen** nehmen Inventur und Verkauf eine Variante auf Vorrat; der Verkauf nimmt auch eine Variante erst bei Bestellung, die ihre Teile sofort abbucht. Die Inventur eines Artikels aus Teilen zählt nur seinen Bestand; **Wartet auf Montage** wird dafür nicht angeboten. Einbuchen ohne Druck gibt es nur für Druckartikel.
+
+Das **Journal** eines Artikels aus Teilen, von seiner Seite oder aus der Artikelliste, zeigt seine eigenen Einträge und die aller seiner Varianten.
 
 ## Umstellen und Archivieren
 

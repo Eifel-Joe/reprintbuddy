@@ -70,7 +70,7 @@ def test_sets_and_orders_keep_their_rows(old_db):
 
 
 def test_existing_sets_and_orders_read_as_before(old_db):
-    upgrade(old_db, revision=REVISION)
+    upgrade(old_db)  # the code of today reads the database of today (later revisions add columns)
     sm = make_sessionmaker(old_db)
     with sm() as s:
         row = catalog.list_sets(s)[0]

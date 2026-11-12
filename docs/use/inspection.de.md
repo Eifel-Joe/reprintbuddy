@@ -207,7 +207,7 @@ Ein Teil lässt sich nur archivieren, wenn kein aktiver Artikel es braucht. Arch
 
 Jede Buchung steht im Journal mit Zeit, Auslöser (**Von Hand** oder **Automatik**), Artikel, Teil oder Bestellung, Menge, den Zählern davor und danach und der Notiz. Auch die Aktionen der Automatik stehen dort, etwa dass ein Eintrag der Warteschlange an Bambuddy übergeben wurde.
 
-Du erreichst es mit dem Knopf **Journal** in der Artikelliste und auf einem Artikel, mit dem Verlaufssymbol in den Listen und mit **Ganzes Journal** auf der Seite Buchen. Die Seite zeigt 100 Einträge, die neuesten zuerst nach dem Tag, an dem sie zählen; eine zurückdatierte Buchung zeigt ihr Datum und darunter **gespeichert …** mit der Zeit, zu der sie eingegeben wurde; **Älter** und **Neuer** blättern. Ein Journal, das für einen Artikel oder ein Teil geöffnet wurde, zeigt nur dessen Einträge.
+Du erreichst es mit dem Knopf **Journal** in der Artikelliste und auf einem Artikel, mit dem Verlaufssymbol in den Listen und mit **Ganzes Journal** auf der Seite Buchen. Die Seite zeigt 100 Einträge, die neuesten zuerst nach dem Tag, an dem sie zählen; eine zurückdatierte Buchung zeigt ihr Datum und darunter **gespeichert …** mit der Zeit, zu der sie eingegeben wurde; **Älter** und **Neuer** blättern. Ein Journal, das für einen Artikel oder ein Teil geöffnet wurde, zeigt nur dessen Einträge, bei einem Artikel aus Teilen auch die seiner Varianten. Ein Teil, das in einen Artikel aus Teilen verbaut wurde, zeigt **verbaut in** mit dem Artikel und seiner Variantennummer.
 
 Einträge werden nie gelöscht oder geändert. Einen Fehler korrigierst du mit einer weiteren Buchung, zum Beispiel einer Inventur.
 

@@ -356,3 +356,59 @@ def test_sold_alone_defaults_to_on_for_print_articles(db, parts):
         assert ArticleInput(name="x").sold_alone is True
         catalog.update_article(s, parts["Holder"], ArticleInput(name="Holder", sold_alone=False))
         assert s.get(Article, parts["Holder"]).sold_alone is False
+
+
+def _edit_on_order(parts, option_ids, **kw):
+    data = _edit_input(parts, option_ids, **kw)
+    return AssembledInput(name=data.name, sku=data.sku, mode="order", base=data.base, fields=data.fields, parts={})
+
+
+def test_renamed_variant_in_an_open_order_cannot_be_removed(db, parts):  # p360 (Spec 5.6)
+    """The order keeps the number as ordered; a later suffix change must not hide it from the check."""
+    from datetime import date
+
+    from reprintbuddy.domain import orders
+    from reprintbuddy.domain.orders import AssembledItem
+
+    with db.begin() as s:
+        hose = assembled.create_assembled(s, hose_input(parts))
+        keys = {r.sku: r.variant_key for r in assembled.variants(s, hose)}
+        option_ids = [o.id for o in assembled.options(s, hose)[0]]
+        orders.create_order(
+            s, reference="R-1", order_date=date(2026, 11, 12),
+            items=[AssembledItem(hose.id, 1, keys["EX-H1-R40"])], actor="user",
+        )
+        hose_id = hose.id
+    with db.begin() as s:  # the number changes; the order keeps EX-H1-R40
+        assembled.update_assembled(s, hose_id, _edit_on_order(parts, option_ids, suffixes=("-L32", "-L40", "-R32", "-R41")))
+    with pytest.raises(ConflictError) as err, db.begin() as s:
+        assembled.update_assembled(s, hose_id, _edit_on_order(parts, option_ids, suffixes=("-L32", "-L40", "-R32", "-R41"), keep=(0, 1, 2)))
+    assert (err.value.key, err.value.params["sku"]) == ("assembled.variant_in_use", "EX-H1-R41")
+
+
+def test_renamed_base_number_keeps_an_ordered_variant(db, parts):  # p360, sister path: the base number
+    from datetime import date
+
+    from reprintbuddy.domain import orders
+    from reprintbuddy.domain.orders import AssembledItem
+
+    with db.begin() as s:
+        hose = assembled.create_assembled(s, hose_input(parts))
+        keys = {r.sku: r.variant_key for r in assembled.variants(s, hose)}
+        rows = {r.sku: r.id for r in assembled.variants(s, hose)}
+        option_ids = [o.id for o in assembled.options(s, hose)[0]]
+        placed = orders.create_order(
+            s, reference="R-1", order_date=date(2026, 11, 12),
+            items=[AssembledItem(hose.id, 1, keys["EX-H1-R40"])], actor="user",
+        )
+        assert {line.variant_id for line in s.scalars(select(OrderLine).where(OrderLine.order_id == placed.id))} == {rows["EX-H1-R40"]}
+        hose_id = hose.id
+    renamed = _edit_on_order(parts, option_ids)
+    renamed = AssembledInput(name="Hose", sku="EX-H2", mode="order", base=renamed.base, fields=renamed.fields, parts={})
+    with db.begin() as s:
+        assembled.update_assembled(s, hose_id, renamed)
+    dropped = _edit_on_order(parts, option_ids, keep=(0, 1, 2))
+    dropped = AssembledInput(name="Hose", sku="EX-H2", mode="order", base=dropped.base, fields=dropped.fields, parts={})
+    with pytest.raises(ConflictError) as err, db.begin() as s:
+        assembled.update_assembled(s, hose_id, dropped)
+    assert (err.value.key, err.value.params["sku"]) == ("assembled.variant_in_use", "EX-H2-R40")

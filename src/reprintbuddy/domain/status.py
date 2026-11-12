@@ -16,7 +16,8 @@ Tone = Literal["ok", "warn", "bad", "neutral"]
 
 # The order is the one used for the short summary and for filters.
 STATES: dict[str, tuple[str, ...]] = {
-    "article": ("overbooked", "below_min", "low", "ok"),
+    # an article made of parts built on order is deliverable or not, like a set (Spec 10.1, p363)
+    "article": ("overbooked", "below_min", "low", "ok", "not_deliverable", "deliverable"),
     "part": ("below_min", "ok"),
     "set": ("not_deliverable", "deliverable"),
     "order": ("open", "ready", "shipped", "cancelled"),

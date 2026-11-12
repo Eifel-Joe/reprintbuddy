@@ -18,7 +18,7 @@
       <tr>
         <td class="nowrap">{% if row.saved_at %}{{ row.day|local_date }}<span class="col-note">{{ t('journal.saved_at', at=row.saved_at|local_dt) }}</span>{% else %}{{ row.at|local_dt }}{% endif %}</td>
         <td>{{ t(row.actor_key) }}</td>
-        <td>{{ t(row.kind_key) }}</td>
+        <td>{% if row.into %}{{ t('journal.built_into') }} <a href="/articles/{{ row.into[0] }}">{{ row.into[1] }}</a>{% if row.into[2] %} · <span class="mono">{{ row.into[2] }}</span>{% endif %}{% else %}{{ t(row.kind_key) }}{% endif %}</td>
         <td>
           {% if row.article %}<a href="/articles/{{ row.article[0] }}">{{ row.article[1] }}</a>{% endif %}
           {% if row.part %}{{ row.part[1] }}{% endif %}

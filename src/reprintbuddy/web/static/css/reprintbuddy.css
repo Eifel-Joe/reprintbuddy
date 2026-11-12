@@ -1149,6 +1149,11 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .line .btn { min-height: 2.75rem; margin: 0; white-space: nowrap; }
 .inspect-cols { grid-template-columns: 2.75rem minmax(0, 1fr) 5rem 7rem 8.5rem; }
 .assembly-cols { grid-template-columns: minmax(0, 1fr) 7rem 7rem 11rem; }
+/* The orders with articles built on order on the montage page, read only (p367). */
+.order-build-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 5rem 9rem; }
+.order-build-cols.line { min-height: 2.75rem; }
+.order-build-cols.line a { color: var(--accent); text-decoration: none; } /* as the links of a table */
+.order-build-cols.line a:hover { text-decoration: underline; }
 /* The bought parts of an article, small under its name; red where the stock does not cover the wait. */
 .line-parts { display: flex; flex-wrap: wrap; gap: 0 14px; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 12px; }
 .line-parts .neg { color: var(--danger); }
@@ -1182,6 +1187,12 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
   .assembly-line .line-cell.num { grid-area: awaiting; text-align: left; }
   .assembly-line .line-cell:not(.num) { grid-area: qty; }
   .assembly-line .btn { grid-area: btn; width: 100%; }
+  .order-build-cols.line { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "article article" "ref ref" "qty state"; }
+  .order-build-article { grid-area: article; }
+  .order-build-ref { grid-area: ref; }
+  .order-build-qty { grid-area: qty; }
+  .order-build-cols .line-cell.num { text-align: left; }
+  .order-build-state { grid-area: state; }
   .line-label { display: block; }
 }
 

@@ -40,6 +40,7 @@ def _page(request: Request, db: Session, *, error_form: str | None = None, error
         # 0.4.0 (p341): count and sale take stock holders, sale also variants built on order,
         # stock in only print articles (web/assembled_view.py)
         count_options=assembled_view.count_choices(db),
+        stock_only=assembled_view.stock_only_values(db),  # p362: no "awaiting assembly" for these
         sale_options=assembled_view.sale_choices(db),
         stock_in_options=assembled_view.stock_in_choices(db),
         parts=catalog.list_parts(db),

@@ -1,3 +1,5 @@
+import re
+
 from conftest import sm_of
 from factories import make_article, make_part
 from reprintbuddy import settings as st
@@ -82,3 +84,50 @@ def test_journal_german(ready_client):
     page = ready_client.get("/journal").text
     assert "Von Hand" in page and "Inventur" in page
     assert "Zeit" in page
+
+
+def test_journal_filter_article_made_of_parts_takes_its_variants(ready_client):  # p364 (Spec 6.3, 5.6)
+    """The journal of an article made of parts shows the rows of its variants too, as its page does."""
+    from factories import make_assembled
+    from reprintbuddy.domain import assembled
+
+    with sm_of(ready_client).begin() as s:
+        side = make_article(s, name="Side part L", stock=5).id
+        other = make_article(s, name="Side part R", stock=5).id
+        box = make_assembled(s, name="Bracket", sku="EX-K1", fields=[[("-L", [(side, 1)]), ("-R", [(other, 1)])]])
+        variant = assembled.variants(s, box)[0].id
+        stock.count_article(s, variant, "stock", 2, "user", note="count-of-variant")
+        stock.sell_unreserved(s, variant, 1, "user", note="sale-of-variant")
+        stock.sell_unreserved(s, side, 1, "user", note="sale-of-part")
+        box_id = box.id
+    page = ready_client.get(f"/journal?article={box_id}").text
+    assert "count-of-variant" in page and "sale-of-variant" in page
+    assert "sale-of-part" not in page  # a part keeps its own journal
+
+
+def test_built_in_rows_name_the_article_and_its_variant(ready_client):  # p361 (Spec 5.6 "Buchen und Journal")
+    """A part built in, on stock by the assembly or on order by the shipping, reads "Built into <article> ·
+    <variant number>" with a link to the article."""
+    from datetime import date
+
+    from factories import make_assembled
+    from reprintbuddy.domain import assembled, orders
+    from reprintbuddy.domain.orders import AssembledItem
+
+    with sm_of(ready_client).begin() as s:
+        side = make_article(s, name="Side part L", stock=5).id
+        other = make_article(s, name="Side part R", stock=5).id
+        bracket = make_assembled(s, name="Bracket", sku="EX-K1", fields=[[("-L", [(side, 1)]), ("-R", [(other, 1)])]])
+        holder = assembled.variants(s, bracket)[0]
+        stock.build_from_parts(s, holder.id, 1, assembled.needs_of(s, holder), bracket.id, "user")
+        hose = make_assembled(s, name="Hose", sku="EX-H1", mode="order", fields=[[("-R", [(other, 2)])]])
+        key = assembled.variants(s, hose)[0].variant_key
+        placed = orders.create_order(s, reference="R-9", order_date=date(2026, 11, 12),
+                                     items=[AssembledItem(hose.id, 1, key)], actor="user")
+        orders.ship_order(s, placed.id, "user")
+        holder_id, hose_id = holder.id, hose.id
+    page = ready_client.get(f"/journal?article={side}").text
+    assert re.search(rf'{en("journal.built_into")} <a href="/articles/{holder_id}">Bracket</a> · <span class="mono">EX-K1-L</span>', page)
+    page = ready_client.get(f"/journal?article={other}").text
+    assert re.search(rf'{en("journal.built_into")} <a href="/articles/{hose_id}">Hose</a> · <span class="mono">EX-H1-R</span>', page)
+    assert "R-9" in page
