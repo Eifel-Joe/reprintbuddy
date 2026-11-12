@@ -86,15 +86,15 @@ Invented example data. More pictures are on the [documentation pages](https://ei
 ## Installation
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.4.2/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.4.3/install/install.sh)"
 ```
 
 Run it as root on that system. Fresh Debian systems often come without curl; the first part installs it.
-The installer puts the release in place whose tag is in the address (`v0.4.2` here): script and release are one
+The installer puts the release in place whose tag is in the address (`v0.4.3` here): script and release are one
 version. To skip the language question, add the language:
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.4.2/install/install.sh)" _ --language de
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.4.3/install/install.sh)" _ --language de
 ```
 
 To install another version, put its tag in the address in place of `<tag>` (from v0.3.14 on; the scripts of earlier
