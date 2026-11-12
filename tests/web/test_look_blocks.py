@@ -151,14 +151,15 @@ def test_css_kpis_two_columns_on_phone(ready_client):
     assert media, "no two-column .kpis rule inside the phone query"
 
 
-def test_css_overview_cards_show_which_link_has_focus(ready_client):
-    """The overview's card is one link with a link of its own in its small line (Spec 10.2, 0.4.1):
-    the keyboard focus shows on the card for the card's link and on the small link for that one
-    (review v0.4.1 B, R3); a click does not draw it."""
+def test_css_overview_tiles_show_which_link_has_focus(ready_client):
+    """A tile of the overview is one link with links of their own in its small line (Spec 10.2, 0.4.2), like the
+    cards of 0.4.1: the keyboard focus shows on the tile for the tile's link and on the small link for that one
+    (review v0.4.1 B, R3); a click does not draw it. The same for the print plan, which leads to the queue."""
     css = ready_client.get(CSS).text
-    assert re.search(r"\.todo-card:has\(\.todo-main:focus-visible\) \{[^}]*outline: 2px solid", css)
-    assert re.search(r"\.todo-sub:focus-visible \{[^}]*outline: 2px solid", css)
-    assert ":focus-within" not in css.split(".todo-card", 1)[1].split("@media", 1)[0]
+    assert re.search(r"\.ov-tile:has\(\.ov-main:focus-visible\) \{[^}]*outline: 2px solid", css)
+    assert re.search(r"\.ov-sub:focus-visible, \.ov-line:focus-visible \{[^}]*outline: 2px solid", css)
+    assert re.search(r"\.plan:has\(\.plan-main:focus-visible\) \{[^}]*outline: 2px solid", css)
+    assert ":focus-within" not in css.split(".ov-tiles", 1)[1].split("@media", 1)[0]
 
 
 def test_css_tap_targets(ready_client):

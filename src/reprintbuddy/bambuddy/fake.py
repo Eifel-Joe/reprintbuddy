@@ -330,6 +330,7 @@ class FakeBambuddy:
         created_at: datetime | None = None,
         undated: bool = False,
         printer_id: int | None = None,
+        target_model: str | None = None,
         print_time_s: int | None = 3600,
         target_location: str | None = None,
         scheduled_time: datetime | None = None,
@@ -346,6 +347,7 @@ class FakeBambuddy:
         return self._new_item(
             printer_id=printer_id,
             printer_name=printer.name if printer else None,
+            target_model=target_model,
             print_time_seconds=print_time_s,
             target_location=target_location,
             scheduled_time=scheduled_time,

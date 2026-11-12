@@ -82,3 +82,9 @@ async def test_fail_next(method):
     fake.unavailable = True
     with pytest.raises(BambuddyUnavailable):
         await (fake.printer_statuses([1]) if method == "printer_statuses" else fake.shortest_first())
+
+
+async def test_foreign_item_for_any_printer_of_a_model():
+    fake = FakeBambuddy()
+    item = fake.add_foreign_item("Spare part", target_model="A1")
+    assert (item.printer_id, item.target_model) == (None, "A1")

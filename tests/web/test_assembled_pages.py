@@ -91,17 +91,20 @@ def test_detail_of_print_article_shows_used_in(ready_client):
     assert f'href="/articles/{w["box"]}"' in page and f'href="/articles/{w["bracket"]}"' in page
 
 
-def test_overview_counts_each_variant_below_the_minimum(ready_client):
-    """Since 0.4.1 the overview has no table (Spec 10.2): the card "below minimum stock" counts the
-    variants of an article on stock one by one, as the table had a row per variant."""
+def test_overview_counts_an_article_of_parts_once_like_the_articles_page(ready_client):
+    """Since 0.4.2 (Spec 10.2, p420) the stock tile counts per article like the articles page: an article
+    on stock with two overbooked variants is one overbooked article, and the filter it leads to lists it."""
     w = world(ready_client)
     with sm_of(ready_client).begin() as s:
         for variant_id in w["variants"].values():
             s.get(Article, variant_id).reserved = 1  # overbooked: available below 0
     page = ready_client.get("/").text
-    assert "EX-B1" not in page and "EX-K1-A" not in page  # no numbers per article any more
-    label = translate("en", "overview.todo.below_min")
-    assert re.search(rf'<span class="kpi-value">2</span><span class="kpi-label">{re.escape(label)}</span>', page)
+    assert "EX-B1" not in page and "EX-K1-A" not in page  # no numbers per article
+    link = re.search(r'<a class="ov-sub[^"]*" href="/articles\?status=overbooked">(\d+) ', page)
+    assert link, "no overbooked part on the stock tile"
+    listed = set(re.findall(r'href="/articles/(\d+)"', ready_client.get("/articles?status=overbooked").text.split("<!--live:list-->")[1]))
+    assert int(link.group(1)) == len(listed) == 1
+    assert listed == {str(w["bracket"])}  # the article on stock with the two variants, counted once
 
 
 def test_edit_of_print_article_keeps_sold_alone_off(ready_client):
