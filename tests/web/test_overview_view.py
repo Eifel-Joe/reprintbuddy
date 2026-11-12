@@ -1,26 +1,23 @@
-"""The overview's numbers (Spec 10.2, "Was ansteht" since 0.4.1): the state of the Bambuddy connection
-and the seven cards of what is due.
+"""The overview's tiles (Spec 10.2, since 0.4.2): orders, stock, filament, to do; and the state of the
+Bambuddy connection in the head line.
 
-Pure: no app, no database. The route fills `Todo` from the same functions the pages behind the cards
-use; this file checks what the cards make of it (order, numbers, small line, tone, where they lead).
+Pure: no app, no database. The route counts with the functions of the pages the tiles lead to; this file
+checks what the tiles make of the counts (order, numbers, texts, tone, where each part leads).
 """
-
-from dataclasses import replace
 
 import pytest
 
 from reprintbuddy.domain.engine import EngineStatus
-from reprintbuddy.domain.status import article_status
-from reprintbuddy.web.i18n import translate
-from reprintbuddy.web.overview_view import CONNECTION_KEYS, Todo, connection_state, red_counts, todo_cards
-
-
-def row(name="A", *, available=5, min_stock=2, coverage=None):
-    """A stand-in for a row of catalog.list_articles (one per variant) with the field the count reads."""
-    from types import SimpleNamespace
-
-    coverage = available if coverage is None else coverage
-    return SimpleNamespace(name=name, status=article_status(available=available, min_stock=min_stock, coverage=coverage))
+from reprintbuddy.domain.reorder import Reach
+from reprintbuddy.web.overview_view import (
+    CONNECTION_KEYS,
+    STOCK_STATES,
+    connection_state,
+    filament_tile,
+    orders_tile,
+    stock_tile,
+    todo_lines,
+)
 
 
 # ---- connection ---------------------------------------------------------------------------
@@ -43,116 +40,112 @@ def test_connection_state(status, state, tone):
     assert CONNECTION_KEYS[state] == f"overview.connection.{state}"
 
 
-# ---- the cards of what is due -------------------------------------------------------------
-
-EMPTY = Todo(
-    orders_open=0, orders_new=0, orders_ready=0, checks=0, check_units=0, assembly_units=0,
-    suggestions=0, suggestions_new=0, under_way=0, printing=0, waiting=0, filament_short=0,
-    below_min=0, overbooked=0,
-)
+# ---- orders -------------------------------------------------------------------------------
 
 
-def en(key, **params):
-    return translate("en", key, **params)
-
-
-def card(cards, key, lang="en"):
-    label = translate(lang, key)
-    found = [c for c in cards if c.label == label]
-    assert len(found) == 1, f"no card {key}"
-    return found[0]
-
-
-def note(c):
-    """The small line as plain text and the links in it."""
-    return " · ".join(part.text for part in c.note), [part.href for part in c.note if part.href]
-
-
-def test_seven_cards_in_the_order_of_the_spec_grey_at_zero():
-    cards = todo_cards("en", EMPTY)
-    assert [c.label for c in cards] == [
-        en("overview.todo.orders"), en("overview.todo.inspection"), en("overview.todo.assembly"),
-        en("overview.todo.reorder"), en("overview.todo.prints"), en("overview.todo.filament"),
-        en("overview.todo.below_min"),
+def test_orders_parts_lead_to_their_filters():
+    tile = orders_tile("en", open_count=5, ready=2, new=1)
+    assert (tile.count, tile.tone) == (5, "warn")
+    assert [(p.key, p.count, p.text, p.href, p.tone) for p in tile.parts] == [
+        ("ready", 2, "2 ready to ship", "/orders?status=ready", "ok"),
+        ("waiting", 3, "3 waiting for stock", "/orders?status=open", "warn"),
     ]
-    assert [c.value for c in cards] == [0] * 7
-    assert [c.href for c in cards] == [
-        "/orders", "/inspection", "/assembly", "/reorder", "/queue", "/filament", "/articles?status=below_min",
+    assert tile.new == "1 new"
+
+
+def test_orders_at_zero_are_grey_without_parts():
+    tile = orders_tile("en", open_count=0, ready=0, new=0)
+    assert (tile.count, tile.tone, tile.parts, tile.new) == (0, "neutral", (), "")
+
+
+# ---- stock (p420, p421) -------------------------------------------------------------------
+
+
+def test_stock_counts_per_article_like_the_articles_page():
+    """One status per row of the articles page; an article made of parts built on order (deliverable /
+    not deliverable) has no stock to count. Each part leads to the filter of exactly its state (p420)."""
+    tile = stock_tile("en", ["ok", "ok", "low", "below_min", "overbooked", "deliverable", "not_deliverable"])
+    assert tile.total == 5
+    assert tile.title == "Stock · 5 articles"
+    assert [(p.key, p.count, p.href, p.tone) for p in tile.parts] == [
+        ("ok", 2, "/articles?status=ok", "ok"),
+        ("low", 1, "/articles?status=low", "warn"),
+        ("below_min", 1, "/articles?status=below_min", "bad"),
+        ("overbooked", 1, "/articles?status=overbooked", "bad"),
     ]
-    assert [c.tone for c in cards] == ["neutral"] * 7  # a 0 stays, grey (Spec 10.2)
-    assert [c.note for c in cards] == [()] * 7
+    assert [p.text for p in tile.parts] == ["2 enough", "1 low (reprint running)", "1 below minimum", "1 overbooked"]
+    assert STOCK_STATES == ("ok", "low", "below_min", "overbooked")
 
 
-def test_orders_new_and_ready_the_ready_ones_lead_to_their_filter():
-    c = card(todo_cards("en", replace(EMPTY, orders_open=5, orders_new=2, orders_ready=1)), "overview.todo.orders")
-    assert (c.value, c.tone, c.href) == (5, "warn", "/orders")
-    assert note(c) == (
-        f'{en("overview.todo.new", n=2)} · {en("overview.todo.orders_ready", n=1)}', ["/orders?status=ready"],
-    )
+def test_stock_leaves_out_states_that_are_not_there():
+    tile = stock_tile("en", ["ok", "low"])
+    assert [p.key for p in tile.parts] == ["ok", "low"]  # p421: low is shown
 
 
-def test_a_part_at_zero_is_left_out_of_the_small_line():
-    c = card(todo_cards("en", replace(EMPTY, orders_open=3, orders_ready=2)), "overview.todo.orders")
-    assert note(c) == (en("overview.todo.orders_ready", n=2), ["/orders?status=ready"])
-    c = card(todo_cards("en", replace(EMPTY, orders_open=3, orders_new=3)), "overview.todo.orders")
-    assert note(c) == (en("overview.todo.new", n=3), [])
+def test_stock_without_articles():
+    tile = stock_tile("en", [])
+    assert (tile.total, tile.parts, tile.title) == (0, (), "Stock · 0 articles")
 
 
-def test_inspection_counts_prints_and_names_the_pieces():
-    c = card(todo_cards("en", replace(EMPTY, checks=3, check_units=12)), "overview.todo.inspection")
-    assert (c.value, c.tone) == (3, "warn")
-    assert note(c) == (en("overview.todo.pieces", n=12), [])
+# ---- filament -----------------------------------------------------------------------------
 
 
-def test_assembly_counts_pieces():
-    c = card(todo_cards("en", replace(EMPTY, assembly_units=4)), "overview.todo.assembly")
-    assert (c.value, c.tone, c.note) == (4, "warn", ())
+def reach(sort_id, days, *, short=False, young=False, label=None):
+    return Reach(sort_id, label or f"Sort {sort_id}", days, short, young)
 
 
-def test_reorder_new_and_under_way():
-    c = card(todo_cards("en", replace(EMPTY, suggestions=3, suggestions_new=1, under_way=2)), "overview.todo.reorder")
-    assert (c.value, c.tone) == (3, "warn")
-    assert note(c) == (f'{en("overview.todo.new", n=1)} · {en("overview.todo.under_way", n=2)}', [])
-    # under way alone: nothing to order, the card is grey but says what is coming
-    c = card(todo_cards("en", replace(EMPTY, under_way=2)), "overview.todo.reorder")
-    assert (c.value, c.tone) == (0, "neutral")
-    assert note(c) == (en("overview.todo.under_way", n=2), [])
-
-
-def test_prints_running_and_waiting():
-    c = card(todo_cards("en", replace(EMPTY, printing=1, waiting=4)), "overview.todo.prints")
-    assert (c.value, c.tone, c.href) == (1, "warn", "/queue")
-    assert note(c) == (en("overview.todo.waiting", n=4), [])
-
-
-def test_filament_short_and_unknown():
-    c = card(todo_cards("en", replace(EMPTY, filament_short=2)), "overview.todo.filament")
-    assert (c.value, c.tone, c.href) == (2, "warn", "/filament")
-    c = card(todo_cards("en", replace(EMPTY, filament_short=None)), "overview.todo.filament")
-    assert (c.value, c.tone) == (en("overview.todo.stock_unknown"), "neutral")
-
-
-def test_below_min_is_red_and_overbooked_leads_to_its_filter():
-    c = card(todo_cards("en", replace(EMPTY, below_min=1, overbooked=2)), "overview.todo.below_min")
-    assert (c.value, c.tone, c.href) == (3, "bad", "/articles?status=below_min")
-    assert note(c) == (en("overview.todo.overbooked", n=2), ["/articles?status=overbooked"])
-
-
-def test_red_counts_counts_rows_red_states_not_low():
-    rows = [
-        row("ok", available=5, min_stock=2),
-        row("low", available=1, min_stock=2, coverage=4),  # yellow: the reprint covers it
-        row("below", available=1, min_stock=2, coverage=1),
-        row("over", available=-1, min_stock=0),
-        row("over2", available=-2, min_stock=3),
+def test_filament_lists_the_three_shortest():
+    rows = [reach(1, 5, short=True), reach(2, 23), reach(3, 40), reach(4, None)]
+    tile = filament_tile("en", short=1, reach=rows)
+    assert (tile.count, tile.tone) == (1, "warn")
+    assert [(r.label, r.text, r.tone) for r in tile.rows] == [
+        ("Sort 1", "lasts 5 days", "warn"), ("Sort 2", "lasts 23 days", "ok"), ("Sort 3", "lasts 40 days", "ok"),
     ]
-    assert [r.status for r in rows] == ["ok", "low", "below_min", "overbooked", "overbooked"]
-    assert red_counts(rows) == (1, 2)
+    assert tile.young is False
 
 
-def test_german_labels():
-    cards = todo_cards("de", replace(EMPTY, filament_short=None))
-    assert [c.label for c in cards] == [
-        "Bestellungen", "Zu prüfen", "Montage", "Bestellvorschläge", "Drucke", "Filament", "Unter Mindestbestand",
+def test_filament_one_day_no_usage_and_young_hint():
+    tile = filament_tile("en", short=0, reach=[reach(1, 1, young=True), reach(2, None)])
+    assert [r.text for r in tile.rows] == ["lasts 1 day", "no usage"]
+    assert (tile.count, tile.tone, tile.young) == (0, "neutral", True)
+
+
+def test_filament_stock_unknown():
+    tile = filament_tile("en", short=None, reach=[])
+    assert tile.count == "Stock unknown" and tile.rows == () and tile.tone == "neutral"
+
+
+# ---- to do --------------------------------------------------------------------------------
+
+
+def test_todo_always_three_lines_grey_at_zero():
+    lines = todo_lines("en", checks=0, check_units=0, assembly_units=0, suggestions=0, suggestions_new=0, under_way=0)
+    assert [(line.label, line.count, line.href, line.tone, line.note) for line in lines] == [
+        ("To check", 0, "/inspection", "neutral", ""),
+        ("Assembly", 0, "/assembly", "neutral", ""),
+        ("Reorder suggestions", 0, "/reorder", "neutral", ""),
     ]
-    assert card(cards, "overview.todo.filament", "de").value == "Bestand unbekannt"
+
+
+def test_todo_lines_name_pieces_new_and_under_way():
+    lines = todo_lines("en", checks=2, check_units=3, assembly_units=4, suggestions=2, suggestions_new=1, under_way=1)
+    assert [(line.count, line.tone, line.note) for line in lines] == [
+        (2, "warn", "3 pieces"), (4, "warn", ""), (2, "warn", "1 new · 1 on the way"),
+    ]
+
+
+def test_german_texts():
+    assert [p.text for p in orders_tile("de", open_count=4, ready=1, new=0).parts] == ["1 versandbereit", "3 warten auf Ware"]
+    assert orders_tile("de", open_count=1, ready=0, new=0).parts[0].text == "1 wartet auf Ware"
+    stock = stock_tile("de", ["ok", "ok", "low", "below_min", "overbooked"])
+    assert stock.title == "Lager · 5 Artikel"
+    assert [p.text for p in stock.parts] == ["2 reichen", "1 knapp (Nachdruck läuft)", "1 unter Minimum", "1 überbucht"]
+    assert stock_tile("de", ["ok"]).parts[0].text == "1 reicht"
+    fil = filament_tile("de", short=1, reach=[reach(1, 5, short=True, young=True), reach(2, 1)])
+    assert [r.text for r in fil.rows] == ["reicht 5 Tage", "reicht 1 Tag"]
+    assert fil.young_text == "Reichweite noch ungenau: weniger als 30 Tage Verbrauch bekannt"
+    assert filament_tile("de", short=None, reach=[]).count == "Bestand unbekannt"
+    lines = todo_lines("de", checks=1, check_units=1, assembly_units=0, suggestions=1, suggestions_new=1, under_way=2)
+    assert [(line.label, line.note) for line in lines] == [
+        ("Zu prüfen", "1 Stück"), ("Montage", ""), ("Bestellvorschläge", "1 neu · 2 unterwegs"),
+    ]
