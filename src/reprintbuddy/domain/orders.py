@@ -143,18 +143,10 @@ def _resolve_assembled(session: Session, group_no: int, item: AssembledItem, qty
 
 def _resolve_set_lines(session: Session, defs, group_no: int, set_id: int, key: tuple[int, ...], qty: int, sku):
     """The lines of one ordered set through all its inner sets (Spec 5.4, 0.4.3 p423). An archived
-    inner set or article anywhere inside, or an incomplete inner set, refuses the order with its name."""
+    article inside (left by an earlier version, Spec 5.4 Altfall) is reserved like any other; it is
+    printed again only once it is restored, since rule 7.1 leaves archived articles out."""
     specs = []
     for line in setresolve.resolve(defs, set_id, key):
-        for step in line.path:
-            inner = session.get(ProductSet, step.set_id)
-            if inner.archived_at is not None:
-                raise ValidationError("orders.item_archived", name=inner.name)
-            if catalog._incomplete_of(defs[step.set_id]) is not None:
-                raise ValidationError("orders.set_incomplete", set=inner.name)
-        article = session.get(Article, line.article_id)
-        if article.archived_at is not None:
-            raise ValidationError("orders.item_archived", name=article.name)
         path = None
         if line.path:  # as ordered: the numbers of the inner variants now, the pieces of this order
             path = json.dumps([
@@ -187,9 +179,6 @@ def _resolve(session: Session, items: Sequence[ArticleItem | SetItem | Assembled
         row = catalog.set_row(session, item.set_id)
         if session.get(ProductSet, item.set_id).archived_at is not None:
             raise ValidationError("orders.item_archived", name=row.name)
-        archived_base = next((part for part in row.base if part.archived), None)
-        if archived_base is not None:
-            raise ValidationError("orders.item_archived", name=archived_base.name)
         if row.incomplete is not None:
             raise ValidationError("orders.set_incomplete", set=row.name)
         key = tuple(item.key)
@@ -197,14 +186,8 @@ def _resolve(session: Session, items: Sequence[ArticleItem | SetItem | Assembled
             article_id not in {o.article_id for o in field.options} for article_id, field in zip(key, row.choices)
         ):
             raise ValidationError("orders.variant_invalid", set=row.name)
-        chosen = [next(o for o in field.options if o.article_id == a) for a, field in zip(key, row.choices)]
-        archived = next((option for option in chosen if option.archived), None)
-        if archived is not None:
-            raise ValidationError("orders.item_archived", name=archived.name)
         variant = next((v for v in row.variants if v.key == key), None) if key else None
         sku = variant.sku if variant is not None else None
-        if row.incomplete is None and any(part.incomplete for part in row.base):
-            raise ValidationError("orders.set_incomplete", set=next(p.name for p in row.base if p.incomplete))
         defs = catalog.load_defs(session) if defs is None else defs
         specs.extend(_resolve_set_lines(session, defs, group_no, row.id, key, qty, sku))
     return specs

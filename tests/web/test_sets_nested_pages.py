@@ -218,13 +218,14 @@ def test_list_marks_archived_inner_set(ready_client):  # Spec 5.5
     assert f'1 × Basic kit {SET_BADGE.format(en("sets.badge_set"))}{SET_BADGE.format(en("catalog.archived_badge"))}' in page
 
 
-def test_list_marks_incomplete_inner_set(ready_client):  # condition A2
+def test_set_with_incomplete_inner_set_shows_faulty(ready_client):  # decision 6 (condition A2 withdrawn)
     a, ids = kits(ready_client)
     with sm_of(ready_client).begin() as s:
         lonely = make_set(s, "Lonely", [(1, a["Lid"])]).id
         make_set(s, "Outer", [(1, inner(lonely)), (1, a["Frame"])])
     page = ready_client.get("/sets").text
-    assert f'1 × Lonely {SET_BADGE.format(en("sets.badge_set"))}{SET_BADGE.format(en("sets.incomplete.too_few"))}' in page
+    assert f'1 × Lonely {SET_BADGE.format(en("sets.badge_set"))}</span>' in page
+    assert SET_BADGE.format(en("sets.incomplete.broken")) in page
 
 
 def test_broken_set_shows_its_badge(ready_client):  # decision 6

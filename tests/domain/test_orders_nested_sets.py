@@ -127,30 +127,31 @@ def test_order_ships_after_the_inner_set_is_archived(db, kits):  # review focus 
     a, basic, _extension, complete = kits
     with db.begin() as s:
         order_id = new_order(s, [SetItem(complete, 1)]).id
+        catalog.archive_set(s, complete)  # first the set that holds it (Spec 5.5, 0.4.3)
         catalog.archive_set(s, basic)
     with db.begin() as s:
         assert orders.get_order(s, order_id).groups[0].inner[0].name == "Basic kit"
         orders.ship_order(s, order_id, "user")
 
 
-def test_set_with_archived_inner_set_cannot_be_ordered(db, kits):
-    _a, basic, _extension, complete = kits
+def test_set_with_archived_inner_set_is_ordered_and_reserves_it(db, kits):  # Spec 5.4 Altfall (0.4.3)
+    a, basic, _extension, complete = kits
     with db.begin() as s:
         s.get(ProductSet, basic).archived_at = ARCHIVED
-    with pytest.raises(ValidationError) as info:
-        with db.begin() as s:
-            new_order(s, [SetItem(complete, 1)])
-    assert (info.value.key, info.value.params) == ("orders.item_archived", {"name": "Basic kit"})
+    with db.begin() as s:
+        new_order(s, [SetItem(complete, 1)])
+    with db.begin() as s:
+        assert reserved(s, a)["Holder"] == 2
 
 
-def test_set_with_archived_article_deep_inside_cannot_be_ordered(db, kits):  # review focus 3
+def test_set_with_archived_article_deep_inside_is_ordered_and_reserves_it(db, kits):  # review focus 3, Altfall
     a, _basic, _extension, complete = kits
     with db.begin() as s:
         s.get(Article, a["Small"]).archived_at = ARCHIVED
-    with pytest.raises(ValidationError) as info:
-        with db.begin() as s:
-            new_order(s, [SetItem(complete, 1)])
-    assert (info.value.key, info.value.params) == ("orders.item_archived", {"name": "Small"})
+    with db.begin() as s:
+        new_order(s, [SetItem(complete, 1)])
+    with db.begin() as s:
+        assert reserved(s, a)["Small"] == 1
 
 
 def test_set_with_incomplete_inner_set_cannot_be_ordered(db, kits):  # condition A2

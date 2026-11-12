@@ -50,7 +50,7 @@ def test_spec_example_complete_kit_is_three(db, kits):  # Spec 5.4, Verfügbarke
             (1, "Basic kit", basic, None), (1, "Extension", extension, None),
         ]
         assert row.base[0].contents == ((2, "Holder"), (1, "Manual"))
-        assert row.base[0].variant_sku is None and not row.base[0].archived and not row.base[0].incomplete
+        assert row.base[0].variant_sku is None and not row.base[0].archived
 
 
 def test_quantity_of_an_inner_set_multiplies(db, kits):
@@ -92,27 +92,27 @@ def test_reservations_of_an_inner_article_lower_the_outer_set(db, kits):
         assert row_of(s, complete).available == 1
 
 
-def test_archived_inner_set_makes_the_outer_unorderable(db, kits):  # Spec 5.4, 5.5
+def test_archived_inner_set_keeps_the_outer_orderable(db, kits):  # Spec 5.4 Altfall (0.4.3)
     _a, basic, _extension, complete = kits
     with db.begin() as s:
-        s.get(ProductSet, basic).archived_at = ARCHIVED
+        s.get(ProductSet, basic).archived_at = ARCHIVED  # only an earlier state can leave it like this
     with db.begin() as s:
         row = row_of(s, complete)
         assert row.base[0].archived and not row.base[1].archived
-        assert (row.orderable, row.available, row.status) == (False, 0, "not_deliverable")
+        assert (row.orderable, row.available, row.status) == (True, 3, "deliverable")
 
 
-def test_archived_article_deep_inside_makes_the_outer_unorderable(db, kits):
+def test_archived_article_deep_inside_keeps_the_outer_orderable(db, kits):  # Spec 5.4 Altfall
     a, basic, extension, complete = kits
     with db.begin() as s:
         top = make_set(s, "Top", [(1, inner(complete)), (1, articles(s, lid=3)["lid"])]).id
         s.get(Article, a["screw_set"]).archived_at = ARCHIVED
     with db.begin() as s:
-        assert not row_of(s, top).orderable and row_of(s, top).available == 0
-        assert not row_of(s, complete).orderable
+        assert row_of(s, top).orderable and row_of(s, top).available == 3
+        assert row_of(s, complete).orderable
 
 
-def test_archived_chosen_option_of_inner_variant_makes_the_outer_unorderable(db):  # review focus 3
+def test_archived_chosen_option_of_inner_variant_keeps_the_outer_orderable(db):  # review focus 3, Altfall
     with db.begin() as s:
         a = articles(s, frame=5, small=4, large=3, plate=9)
         sizes = make_set(s, "Sizes", [(1, a["frame"])], [(1, [(a["small"], "-S"), (a["large"], "-L")])], sku="EX-SZ").id
@@ -120,18 +120,17 @@ def test_archived_chosen_option_of_inner_variant_makes_the_outer_unorderable(db)
         s.get(Article, a["small"]).archived_at = ARCHIVED
     with db.begin() as s:
         row = row_of(s, outer)
-        assert not row.orderable and row.available == 0
-        assert row_of(s, sizes).orderable  # the inner set keeps its other variant
+        assert row.orderable and row.available == 4
+        assert [v.sku for v in row_of(s, sizes).variants] == ["EX-SZ-S", "EX-SZ-L"]  # every variant stays
 
 
-def test_incomplete_inner_set_makes_the_outer_unorderable(db):  # condition A2 of the plan approval
+def test_incomplete_inner_set_makes_the_outer_broken(db):  # plan v0.4.3, decision 6 (A2 withdrawn)
     with db.begin() as s:
         a = articles(s, frame=5, small=4, large=3, plate=9)
         sizes = make_set(s, "Sizes", [(1, a["frame"])], [(1, [(a["small"], None), (a["large"], "-L")])], sku="EX-SZ").id
         outer = make_set(s, "Bundle", [(1, inner(sizes, a["large"])), (1, a["plate"])]).id
         row = row_of(s, outer)
-        assert row.base[0].incomplete and not row.base[0].archived
-        assert not row.orderable and row.incomplete is None
+        assert (row.incomplete, row.orderable) == ("broken", False)
 
 
 def test_stored_ring_shows_broken_and_does_not_hang(db):  # decision 6 of the plan
@@ -273,7 +272,7 @@ def test_archived_inner_set_already_there_may_stay(db, kits):  # decision 7 of t
     with db.begin() as s:
         catalog.update_set(s, complete, SetInput("Complete kit", "EX-KP2", [set_in(basic), set_in(extension)], []))
     with db.begin() as s:
-        assert row_of(s, complete).sku == "EX-KP2" and not row_of(s, complete).orderable
+        assert row_of(s, complete).sku == "EX-KP2" and row_of(s, complete).orderable  # Spec 5.4 Altfall
 
 
 def test_unknown_inner_set(db, kits):

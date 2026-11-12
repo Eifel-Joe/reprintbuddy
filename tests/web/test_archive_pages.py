@@ -9,7 +9,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog, orders
 from reprintbuddy.domain.catalog import BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
 from reprintbuddy.domain.orders import ArticleItem
-from reprintbuddy.models import Article, ArticlePart, Part, ProductSet
+from reprintbuddy.models import Article, ArticlePart, Part, ProductSet, utcnow
 from reprintbuddy.web.i18n import translate
 
 
@@ -167,6 +167,20 @@ def test_archive_restore_set(bb_client):
     assert archived_at(bb_client, ProductSet, set_id) is None
 
 
+def test_archiving_what_stands_in_an_active_set_is_refused_with_its_names(bb_client):  # Spec 5.4, 5.5 (0.4.3)
+    with sm_of(bb_client).begin() as s:
+        a = make_article(s, name="Template A", library_file_id=1, plate_id=1).id
+        z = make_article(s, name="Template Z", library_file_id=2, plate_id=1).id
+        c = make_article(s, name="Template C", library_file_id=3, plate_id=1).id
+        inner = catalog.create_set(s, SetInput("Inner Set", None, [BaseInput(1, a), BaseInput(1, z)], [])).id
+        catalog.create_set(s, SetInput("Outer Set", None, [BaseInput(1, None, inner), BaseInput(1, c)], []))
+    response = act(bb_client, f"/sets/{inner}", "archive", page=f"/sets/{inner}/edit")
+    assert response.status_code == 200 and en("sets.archive_in_set", names="Outer Set") in response.text
+    response = act(bb_client, f"/articles/{a}", "archive")
+    assert en("articles.archive_in_set", names="Inner Set") in response.text
+    assert archived_at(bb_client, ProductSet, inner) is None and archived_at(bb_client, Article, a) is None
+
+
 def test_double_archive_click_is_one_action(bb_client):
     a = make(bb_client)
     page = f"/articles/{a}"
@@ -209,16 +223,16 @@ def test_archived_absent_from_selections(bb_client):
     assert f'<option value="{insert}"' in bookings and f'<option value="{hex_key}"' not in bookings
 
 
-def test_set_with_archived_article_is_not_orderable_in_form(bb_client):
+def test_set_with_archived_article_stays_orderable_in_form(bb_client):  # Spec 5.4 Altfall (0.4.3)
     with sm_of(bb_client).begin() as s:
         a = make_article(s, name="Template A", library_file_id=1, plate_id=1).id
         z = make_article(s, name="Template Z", library_file_id=2, plate_id=1).id
         set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, z)], [])).id
-        catalog.archive_article(s, a)
-    assert f'value="set:{set_id}"' not in bb_client.get("/orders/new").text
+        s.get(Article, a).archived_at = utcnow()  # archiving it is refused now; an earlier version left it so
+    assert f'value="set:{set_id}"' in bb_client.get("/orders/new").text
 
 
-def test_order_form_offers_only_variants_of_active_choices(bb_client):  # Spec 5.5, p340
+def test_order_form_offers_every_variant_also_of_archived_choices(bb_client):  # Spec 5.4 Altfall (0.4.3)
     with sm_of(bb_client).begin() as s:
         a = make_article(s, name="Template A", library_file_id=1, plate_id=1).id
         b = make_article(s, name="Template B", library_file_id=2, plate_id=1).id
@@ -226,10 +240,10 @@ def test_order_form_offers_only_variants_of_active_choices(bb_client):  # Spec 5
         z = make_article(s, name="Template Z", library_file_id=4, plate_id=1).id
         options = [ChoiceOptionInput(x, f"-{n}") for x, n in ((a, "A"), (b, "B"), (c, "C"))]
         set_id = catalog.create_set(s, SetInput("Starter Set", "S", [BaseInput(1, z)], [ChoiceInput(1, options)])).id
-        catalog.archive_article(s, c)
+        s.get(Article, c).archived_at = utcnow()  # archiving it is refused now; an earlier version left it so
     page = bb_client.get("/orders/new").text
     assert f'value="set:{set_id}:{a}"' in page and f'value="set:{set_id}:{b}"' in page
-    assert f'value="set:{set_id}:{c}"' not in page
+    assert f'value="set:{set_id}:{c}"' in page
 
 
 def test_archived_booking_post_rejected(bb_client):

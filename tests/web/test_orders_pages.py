@@ -111,12 +111,12 @@ def test_variant_not_of_the_set_is_rejected(ready_client):
         "/orders/new", data=order_fields(ready_client, item_0=f"set:{set_id}:{a}", qty_0="1")).text
 
 
-def test_order_form_hides_variants_of_archived_choices(ready_client):  # review focus 2
+def test_order_form_keeps_variants_of_archived_choices(ready_client):  # Spec 5.4 Altfall (0.4.3)
     with sm_of(ready_client).begin() as s:
         set_id, _a, b, c = variant_set(s)
         s.get(Article, c).archived_at = date(2026, 1, 1)
     page = ready_client.get("/orders/new").text
-    assert f'value="set:{set_id}:{b}"' in page and f'value="set:{set_id}:{c}"' not in page
+    assert f'value="set:{set_id}:{b}"' in page and f'value="set:{set_id}:{c}"' in page
 
 
 def test_order_form_leaves_out_incomplete_sets(ready_client):

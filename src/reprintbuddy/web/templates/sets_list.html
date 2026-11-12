@@ -9,13 +9,12 @@
 {%- endmacro %}
 {#- What a set holds (Spec 5.4): the base parts "2 × Frame", then each variant with its number and
     how often it is available on its own, "EX-S10-A · 2"; without a number the chosen articles. An
-    inner set (0.4.3 p423) shows its fixed variant number and the grey badge "Set", and whether it is
-    archived or incomplete: then the set cannot be ordered (Spec 5.4, 10.1). -#}
+    inner set (0.4.3 p423) shows its fixed variant number and the grey badge "Set", and "Archived"
+    when an earlier version left it archived in the set (Spec 5.4 Altfall, 10.1). -#}
 {% macro contents(row) -%}
 {%- for part in row.base %}<span>{{ part.qty }} × {{ part.name }}
   {%- if part.set_id %}{% if part.variant_sku %} {{ part.variant_sku }}{% endif %} <span class="badge tone-neutral">{{ t('sets.badge_set') }}</span>
   {%- if part.archived %}<span class="badge tone-neutral">{{ t('catalog.archived_badge') }}</span>{% endif %}
-  {%- if part.incomplete %}<span class="badge tone-neutral">{{ t('sets.incomplete.too_few') }}</span>{% endif %}
   {%- endif %}</span>{% endfor -%}
 {%- for variant in row.variants %}<span class="variant">{{ variant.sku or variant.names|join(', ') }} · <strong{% if variant.available < 0 %} class="neg"{% endif %}>{{ variant.available }}</strong></span>{% endfor -%}
 {%- endmacro %}

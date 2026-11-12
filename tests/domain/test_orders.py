@@ -100,17 +100,16 @@ def test_variant_number_is_stored_on_the_order(db):  # Spec 6.7: as it was when 
         assert [(l.article_id, l.variant_sku) for l in lines] == [(a, "S-1-B"), (b, "S-1-B"), (c, None)]
 
 
-def test_order_of_an_archived_choice_is_refused(db):
+def test_order_of_an_archived_choice_reserves_it(db):  # Spec 5.4 Altfall (0.4.3; until 0.4.2 refused)
     with db.begin() as s:
         a, b, c = (make_article(s, name=f"Template {x}").id for x in "ABC")
         set_id = variant_set(s, a, b, c).id
         s.get(Article, c).archived_at = date(2026, 1, 1)
-    with pytest.raises(ValidationError) as info:
-        with db.begin() as s:
-            new_order(s, [SetItem(set_id, 1, (c,))])
-    assert info.value.key == "orders.item_archived"
     with db.begin() as s:
-        new_order(s, [SetItem(set_id, 1, (b,))])  # the other variant still goes
+        new_order(s, [SetItem(set_id, 1, (c,))])
+        new_order(s, [SetItem(set_id, 1, (b,))], reference="Order 1002")
+    with db.begin() as s:
+        assert (s.get(Article, c).reserved, s.get(Article, b).reserved) == (2, 2)
 
 
 def test_incomplete_set_cannot_be_ordered(db):  # a set the update rebuilt without suffixes

@@ -715,7 +715,6 @@ class BaseRow:
     set_id: int | None = None  # an inner set (0.4.3 p423)
     key: tuple[int, ...] = ()  # its fixed variant: the chosen article per choice field
     variant_sku: str | None = None  # the number of that variant now; None without choices or while missing
-    incomplete: bool = False  # the inner set is incomplete (plan approval v0.4.3, condition A2)
     contents: tuple[tuple[int, str], ...] = ()  # inner set: (qty per piece of it, article), all levels
 
 
@@ -1105,28 +1104,28 @@ def _set_row(
     """A set as the list shows it. Its base parts count with their resolved articles (Spec 5.4: an
     inner set counts as its articles, quantities multiplied); no article comes twice (Spec 5.4), so
     the availability rule of 0.4.0 stays as it is. A set that cannot be resolved (a ring or a doubled
-    article left in the database) shows "broken" and is not orderable instead of hanging the page
-    (plan v0.4.3, decision 6). Tests: tests/domain/test_catalog_sets_nested.py."""
+    article left in the database), or that holds an incomplete set, shows "broken" and is not
+    orderable instead of hanging the page (plan v0.4.3, decision 6).
+
+    Archived parts no longer take a set or a variant out of the order form (Spec 5.4 "Archivieren und
+    Sets", 0.4.3): what stands in an active set cannot be archived any more, and an archived article
+    left in one by 0.4.0-0.4.2 (the "Altfall") counts with its available stock like any other, so an
+    incoming order can always be entered; the list warns about it (archived_in_sets). Replaced: an
+    archived choice dropped its variants and an archived base part made the set unorderable (0.4.0).
+    Tests: tests/domain/test_catalog_sets_nested.py, tests/domain/test_archive.py."""
     defs = load_defs(session) if defs is None else defs
     archived_sets = _archived_sets(session) if archived_sets is None else archived_sets
     own = defs[product_set.id]
     try:
         setresolve.check(defs, product_set.id)
         lines = setresolve.resolve_base(defs, product_set.id)
-        broken = False
+        broken = any(_incomplete_of(defs[step.set_id]) is not None for line in lines for step in line.path)
     except setresolve.ResolveError:
         lines, broken = (), True
     wanted = {line.article_id for line in lines}
     wanted |= {row.article_id for row in own.base if row.article_id is not None}
     wanted |= {option for field in own.fields for option in field.options}
     found = {a.id: a for a in session.scalars(select(Article).where(Article.id.in_(wanted)))}
-
-    def gone(line: setresolve.Line) -> bool:
-        """The article or an inner set on its way is archived, or an inner set is incomplete (Spec 5.4,
-        5.5; plan approval v0.4.3, condition A2): the set does not come together."""
-        return found[line.article_id].archived_at is not None or any(
-            step.set_id in archived_sets or _incomplete_of(defs[step.set_id]) is not None for step in line.path
-        )
 
     base: list[BaseRow] = []
     for row in own.base:
@@ -1144,13 +1143,10 @@ def _set_row(
         )
         base.append(BaseRow(
             row.qty, None, child.name, row.set_id in archived_sets, set_id=row.set_id, key=row.key,
-            variant_sku=setresolve.variant_number(defs, row.set_id, row.key),
-            incomplete=_incomplete_of(child) is not None, contents=contents,
+            variant_sku=setresolve.variant_number(defs, row.set_id, row.key), contents=contents,
         ))
-    # An archived or incomplete part counts 0: the set does not come together (Spec 5.5).
     base_stock = [
-        (line.qty, 0 if gone(line) else rules.available(found[line.article_id].stock, found[line.article_id].reserved))
-        for line in lines
+        (line.qty, rules.available(found[line.article_id].stock, found[line.article_id].reserved)) for line in lines
     ]
     choices: list[ChoiceRow] = []
     stocks: list[rules.ChoiceStock] = []
@@ -1165,8 +1161,7 @@ def _set_row(
             rows.append(ChoiceOptionRow(article.id, article.name, suffix, archived))
             suffixes[article.id] = suffix
             names[article.id] = article.name
-            if not archived:
-                active.append((article.id, rules.available(article.stock, article.reserved)))
+            active.append((article.id, rules.available(article.stock, article.reserved)))  # archived too (0.4.3)
         choices.append(ChoiceRow(field.qty, rows))
         stocks.append(rules.ChoiceStock(field.qty, tuple(active)))
     stock = rules.SetStock(0, {}) if broken else rules.set_availability(base_stock, stocks)
@@ -1175,13 +1170,7 @@ def _set_row(
         for key, count in stock.variants.items()
     ]
     incomplete = "broken" if broken else _incomplete_of(own)
-    orderable = (
-        product_set.archived_at is None
-        and incomplete is None
-        and not any(row.archived or row.incomplete for row in base)
-        and not any(gone(line) for line in lines)
-        and (not choices or bool(variants))
-    )
+    orderable = product_set.archived_at is None and incomplete is None and (not choices or bool(variants))
     return SetRow(
         id=product_set.id,
         name=product_set.name,
@@ -1271,6 +1260,9 @@ def archive_article(session: Session, article_id: int) -> None:
     users = _assembled_users(session, article.id) if article.kind == articlesets.PRINT else []
     if users:
         raise ConflictError("articles.archive_in_assembled", names=", ".join(users))
+    sets = sets_using(session, article.id)
+    if sets:  # Spec 5.4 "Archivieren und Sets", 5.5 (0.4.3): every active set stays orderable
+        raise ConflictError("articles.archive_in_set", names=", ".join(sets))
     reasons = busy_reasons(session, article)
     if reasons:
         raise ConflictError(reasons[0])
@@ -1564,10 +1556,15 @@ def restore_part(session: Session, part_id: int) -> Part:
 
 
 def archive_set(session: Session, set_id: int) -> None:
-    """A set can always be archived; open orders keep their lines and still ship."""
+    """A set can be archived unless an active set holds it (Spec 5.5, 0.4.3); checking the sets that
+    hold it directly is enough, since a set inside an active set cannot be archived itself. Open
+    orders keep their lines and still ship."""
     product_set = get_set(session, set_id)
     if product_set.archived_at is not None:
         raise ConflictError("catalog.already_archived")
+    parents = sets_containing(session, set_id)
+    if parents:
+        raise ConflictError("sets.archive_in_set", names=", ".join(parents))
     product_set.archived_at = utcnow()
     session.flush()
 

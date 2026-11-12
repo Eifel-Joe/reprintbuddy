@@ -9,6 +9,7 @@ from factories import make_article
 from reprintbuddy.domain import catalog
 from reprintbuddy.domain.catalog import BaseInput, SetInput
 from reprintbuddy.domain.errors import ValidationError
+from reprintbuddy.models import Article, utcnow
 from reprintbuddy.web.i18n import translate
 
 
@@ -21,7 +22,7 @@ def test_set_edit_keeps_base_parts_with_archived_articles(ready_client):
         a = make_article(s, name="Template A").id
         b = make_article(s, name="Template B").id
         set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(2, b)], [])).id
-        catalog.archive_article(s, b)
+        s.get(Article, b).archived_at = utcnow()  # archiving it is refused now (0.4.3); an earlier version left it so
     page = ready_client.get(f"/sets/{set_id}/edit").text
     assert re.search(rf'<option value="{b}" selected>', page)  # still offered, and selected
     assert en("catalog.archived_badge") in page
@@ -34,7 +35,7 @@ def test_set_edit_keeps_base_parts_with_archived_articles(ready_client):
     with sm_of(ready_client).begin() as s:
         row = catalog.list_sets(s)[0]
         assert row.name == "Renamed" and len(row.base) == 2
-        assert row.orderable is False  # a base part is archived, as before
+        assert row.orderable is True  # Spec 5.4 Altfall (0.4.3): an archived part no longer takes it out
 
 
 def test_update_set_may_keep_but_not_add_archived_articles(db):
@@ -43,7 +44,7 @@ def test_update_set_may_keep_but_not_add_archived_articles(db):
         b = make_article(s, name="Template B").id
         c = make_article(s, name="Template C").id
         set_id = catalog.create_set(s, SetInput("S", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
-        catalog.archive_article(s, b)
+        s.get(Article, b).archived_at = utcnow()  # archiving it is refused now (0.4.3); an earlier version left it so
         catalog.archive_article(s, c)
     with db.begin() as s:
         catalog.update_set(s, set_id, SetInput("S2", None, [BaseInput(1, a), BaseInput(1, b)], []))  # b was already there
