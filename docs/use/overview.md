@@ -59,6 +59,8 @@ The printers' state comes with every regular query, in one request for all print
 
 On a phone the page is one column: the head line becomes rows of label and value, the tiles stand one below the other, and each lane of the print plan becomes a list with times and the kind of each bar.
 
+![The Overview on a phone: the tiles one below the other, the print plan as a list per printer](../assets/images/en/overview-mobile.png){ width="320" }
+
 ## A fresh installation
 
 Right after the first setup there are no articles yet. The tiles show 0, and below them the page says so and offers **New article from print file**. Until Reprintbuddy has reached Bambuddy, the head line says **not queried yet** and the print plan **Printer state unknown**.

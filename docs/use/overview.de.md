@@ -59,6 +59,8 @@ Den Druckerzustand liest Reprintbuddy bei jeder regulären Abfrage mit einer Anf
 
 Am Handy ist die Seite einspaltig: Die Kopfzeile wird zu Zeilen aus Bezeichnung und Wert, die Kacheln stehen untereinander, und jede Spur des Druckplans wird zu einer Liste mit Uhrzeiten und der Art jedes Balkens.
 
+![Die Übersicht am Handy: die Kacheln untereinander, der Druckplan als Liste je Drucker](../assets/images/de/overview-mobile.png){ width="320" }
+
 ## Eine frische Installation
 
 Gleich nach der Ersteinrichtung gibt es noch keine Artikel. Die Kacheln zeigen 0, und darunter sagt die Seite das und bietet **Neuer Artikel aus Druckdatei** an. Bis Reprintbuddy Bambuddy erreicht hat, steht in der Kopfzeile **noch nicht abgefragt** und im Druckplan **Druckerzustand unbekannt**.
