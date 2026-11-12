@@ -40,6 +40,19 @@
   --overlay: rgba(0, 0, 0, 0.6); /* dimmed page behind a dialog */
   --shadow-lift: 0 8px 24px rgba(0, 0, 0, 0.45); /* a row being dragged, the info popover */
   --shadow-menu: 0 10px 28px rgba(0, 0, 0, 0.5); /* the menu of a row */
+  /* The overview (Spec 10.2, 0.4.2): the second red of an overbooked part, the bars of the print plan. */
+  --danger-deep: #991b1b; /* the stripes of "overbooked" in the stock bar */
+  --plan-running: #1d5a35; /* a printer prints now */
+  --plan-running-text: #d9fbe6;
+  --plan-done: rgba(34, 197, 94, 0.3); /* the progress inside a running bar */
+  --plan-fixed: #173b27; /* assigned by Bambuddy */
+  --plan-fixed-text: #bff0d2;
+  --plan-stripe: #2a3240; /* probably assigned: the two stripes */
+  --plan-stripe-2: #232a35;
+  --plan-planned-text: #c9d3e3;
+  --plan-planned-edge: #4a5568;
+  --plan-foreign-text: #a9b0bb; /* not from Reprintbuddy */
+  --plan-kind-bg: rgba(0, 0, 0, 0.25); /* the kind as a badge in the phone list */
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -1310,11 +1323,11 @@ td.target .target-form { display: inline-block; }
 .ov-unit { color: var(--text-2); font-size: 13px; }
 .ov-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--surface-2); }
 .ov-bar-big { height: 12px; margin: 6px 0 2px; }
-.ov-bar i { display: block; height: 100%; width: var(--w); }
+.ov-bar i { --w: 0%; display: block; height: 100%; width: var(--w); }
 .ov-bar .tone-ok { background: var(--accent); }
 .ov-bar .tone-warn { background: var(--warn); }
 .ov-bar .tone-bad { background: var(--danger); }
-.ov-bar .ov-over { background: repeating-linear-gradient(135deg, var(--danger), var(--danger) 4px, #991b1b 4px, #991b1b 8px); }
+.ov-bar .ov-over { background: repeating-linear-gradient(135deg, var(--danger), var(--danger) 4px, var(--danger-deep) 4px, var(--danger-deep) 8px); }
 .ov-note { margin: 0; color: var(--text-2); font-size: 12.5px; line-height: 1.5; }
 .ov-sub { position: relative; z-index: 1; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .ov-sub.tone-ok { color: var(--accent-text); }
@@ -1355,27 +1368,27 @@ td.target .target-form { display: inline-block; }
 .plan-name { flex: 0 0 9rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12.5px; }
 .plan-name .badge { font-size: 10.5px; }
 .plan-track { position: relative; flex: 1; min-width: 0; height: 26px; margin: 0; padding: 0; list-style: none; background: var(--bg); border-radius: 5px; }
-.plan-bar { position: absolute; top: 2px; bottom: 2px; left: var(--start); width: var(--width); display: flex; align-items: center; gap: 4px; padding: 0 6px; overflow: hidden; white-space: nowrap; border-radius: 4px; font-size: 11px; }
+.plan-bar { --start: 0%; --width: 0%; position: absolute; top: 2px; bottom: 2px; left: var(--start); width: var(--width); display: flex; align-items: center; gap: 4px; padding: 0 6px; overflow: hidden; white-space: nowrap; border-radius: 4px; font-size: 11px; }
 .plan-kind, .plan-when { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .plan-label, .plan-detail, .plan-cut { position: relative; }
 .plan-detail, .plan-cut { color: var(--text-2); }
-.plan-running { background: #1d5a35; color: #d9fbe6; }
-.plan-fill { position: absolute; inset: 0 auto 0 0; width: var(--done); background: rgba(34, 197, 94, 0.3); }
-.plan-fixed { background: #173b27; color: #bff0d2; border: 1px solid var(--accent); }
-.plan-planned { background: repeating-linear-gradient(45deg, #2a3240, #2a3240 6px, #232a35 6px, #232a35 12px); color: #c9d3e3; border: 1px dashed #4a5568; }
-.plan-foreign { color: #a9b0bb; }
+.plan-running { background: var(--plan-running); color: var(--plan-running-text); }
+.plan-fill { --done: 0%; position: absolute; inset: 0 auto 0 0; width: var(--done); background: var(--plan-done); }
+.plan-fixed { background: var(--plan-fixed); color: var(--plan-fixed-text); border: 1px solid var(--accent); }
+.plan-planned { background: repeating-linear-gradient(45deg, var(--plan-stripe), var(--plan-stripe) 6px, var(--plan-stripe-2) 6px, var(--plan-stripe-2) 12px); color: var(--plan-planned-text); border: 1px dashed var(--plan-planned-edge); }
+.plan-foreign { color: var(--plan-foreign-text); }
 .plan-beyond { display: none; } /* starts after the end of the axis: only in the list on a phone */
 .plan-foreign .plan-label { font-style: italic; }
 .plan-waiting { position: absolute; inset: 0; display: flex; align-items: center; padding: 0 8px; color: var(--muted); font-size: 11px; }
 .plan-offline .plan-track, .plan-maintenance .plan-track, .plan-error .plan-track { background: var(--surface-2); }
 .plan-axis { position: relative; height: 16px; margin-left: calc(9rem + 10px); color: var(--muted); font-size: 10.5px; }
-.plan-axis span { position: absolute; left: var(--at); top: 2px; transform: translateX(-50%); }
+.plan-axis span { --at: 0%; position: absolute; left: var(--at); top: 2px; transform: translateX(-50%); }
 .plan-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 8px 0 0; color: var(--text-2); font-size: 11.5px; }
 .plan-key { display: inline-block; width: 22px; height: 10px; border-radius: 3px; margin-left: 8px; }
 .plan-key:first-child { margin-left: 0; }
-.plan-key-running { background: #1d5a35; }
-.plan-key-fixed { background: #173b27; border: 1px solid var(--accent); }
-.plan-key-planned { background: repeating-linear-gradient(45deg, #2a3240, #2a3240 4px, #232a35 4px, #232a35 8px); border: 1px dashed #4a5568; }
+.plan-key-running { background: var(--plan-running); }
+.plan-key-fixed { background: var(--plan-fixed); border: 1px solid var(--accent); }
+.plan-key-planned { background: repeating-linear-gradient(45deg, var(--plan-stripe), var(--plan-stripe) 4px, var(--plan-stripe-2) 4px, var(--plan-stripe-2) 8px); border: 1px dashed var(--plan-planned-edge); }
 .plan-legend em { margin-left: 8px; }
 
 @media (max-width: 1100px) {
@@ -1389,7 +1402,7 @@ td.target .target-form { display: inline-block; }
   .plan-track { display: block; height: auto; background: none; }
   .plan-bar { position: relative; top: auto; bottom: auto; left: auto; display: flex; flex-wrap: wrap; width: auto; margin: 0 0 4px; padding: 5px 8px; white-space: normal; }
   .plan-beyond { display: flex; }
-  .plan-kind { position: static; width: auto; height: auto; clip-path: none; padding: 0 6px; border-radius: 999px; background: rgba(0, 0, 0, 0.25); font-size: 10.5px; }
+  .plan-kind { position: static; width: auto; height: auto; clip-path: none; padding: 0 6px; border-radius: 999px; background: var(--plan-kind-bg); font-size: 10.5px; }
   .plan-when { position: static; width: auto; height: auto; clip-path: none; font-variant-numeric: tabular-nums; }
   .plan-waiting { position: static; padding: 2px 0; }
   .plan-axis { display: none; }

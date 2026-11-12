@@ -165,7 +165,7 @@ def test_mobile_css_turns_lanes_into_a_list():
     assert re.search(r"\.plan-beyond \{[^}]*display: flex", mobile)  # the list shows every print
     assert re.search(r"\.ov-tiles \{[^}]*grid-template-columns: minmax\(0, 1fr\)", mobile)
     # on a wide screen the bar sits on the axis
-    assert re.search(r"\.plan-bar \{ position: absolute;[^}]*left: var\(--start\); width: var\(--width\)", css)
+    assert re.search(r"\.plan-bar \{[^}]*position: absolute;[^}]*left: var\(--start\); width: var\(--width\)", css)
 
 
 def test_tile_bars_are_hidden_from_screen_readers(bb_client):
