@@ -208,3 +208,11 @@ def test_shortest_first_like_bambuddy():
     assert [b[1] for b in bars(plain, 1)] == ["Long", "Unknown", "Short", "Jumped", "Short too"]
     sjf = build_plan([printer(1)], queue, NOW, shortest_first=True)
     assert [b[1] for b in bars(sjf, 1)] == ["Jumped", "Short", "Short too", "Long", "Unknown"]
+
+
+def test_rest_is_never_negative():
+    """Progress above 100 without a remaining time gives no rest below 0 (review v0.4.2, 2)."""
+    over = printer(1, st=status(1, "RUNNING", progress=120.0, remaining_min=None))
+    printing = item("Clip", minutes=60, state="printing", printer_id=1)
+    (bar,) = build_plan([over], [printing], NOW).lanes[0].bars
+    assert bar.end >= NOW

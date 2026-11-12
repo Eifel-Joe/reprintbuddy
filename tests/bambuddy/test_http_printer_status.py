@@ -109,3 +109,15 @@ async def test_shortest_first_from_the_settings(respx_mock):
 async def test_shortest_first_missing_is_off(respx_mock):
     respx_mock.get(f"{API}/settings/").respond(200, json={"default_timelapse": False})
     assert await client().shortest_first() is False
+
+
+@pytest.mark.parametrize("minutes", [-5, 7 * 24 * 60 + 1, 4294967295])
+def test_impossible_remaining_time_is_unknown(minutes):
+    """A remaining time below 0 or beyond 7 days is no estimate (a sensor glitch, `uint32` max): unknown,
+    so the print plan neither draws into the past nor fails on a date out of range (review v0.4.2, 2)."""
+    assert parse_printer_status(_row(1, remaining_time=minutes)).remaining_min is None
+
+
+def test_progress_is_kept_between_0_and_100():
+    assert parse_printer_status(_row(1, progress=140.0)).progress == 100.0
+    assert parse_printer_status(_row(1, progress=-3.0)).progress == 0.0

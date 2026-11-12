@@ -158,7 +158,7 @@ def build_plan(
         if status.remaining_min:
             rest = timedelta(minutes=status.remaining_min)
         elif entry is not None and entry.duration is not None:
-            rest = entry.duration * (1 - (status.progress or 0.0) / 100)
+            rest = entry.duration * max(0.0, 1 - (status.progress or 0.0) / 100)
         known = rest is not None
         if rest is None:
             rest = UNKNOWN_DURATION

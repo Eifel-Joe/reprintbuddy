@@ -120,8 +120,15 @@ def _shown(d: dict, key: str, types: _Types) -> Any:
         return None
 
 
+# A print time or a remaining time beyond a week is no estimate of one plate (a sensor glitch, `uint32` max):
+# unknown, so the print plan neither fails on a date out of range nor draws nonsense (review v0.4.2, 2).
+MAX_PLAUSIBLE_MINUTES = 7 * 24 * 60
+
+
 def _shown_seconds(value: object) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    if not 0 <= value <= MAX_PLAUSIBLE_MINUTES * 60:
         return None
     return int(value)
 
@@ -368,7 +375,11 @@ def parse_printer_status(data: object, printer_id: int | None = None) -> Printer
         raise BambuddyUnexpected("field 'hms_errors' is not a list")
     stopped = any(isinstance(e, dict) and e.get("severity") == 1 for e in errors)
     progress = _opt(d, "progress", float)
+    if progress is not None:
+        progress = min(100.0, max(0.0, progress))
     remaining = _opt(d, "remaining_time", int)
+    if remaining is not None and not 0 <= remaining <= MAX_PLAUSIBLE_MINUTES:
+        remaining = None
     state = _opt(d, "state", str) or None
     if not connected:
         state, progress, remaining = None, None, None

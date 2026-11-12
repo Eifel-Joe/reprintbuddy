@@ -189,3 +189,9 @@ def test_plan_fields_of_an_odd_form_do_not_break_the_entry(field, value):
 
 def test_print_time_as_a_float_is_whole_seconds():
     assert parse_queue_item(_q4(print_time_seconds=3720.6)).print_time_seconds == 3720
+
+
+@pytest.mark.parametrize("seconds", [7 * 24 * 3600 + 1, 10**12])
+def test_impossible_print_time_is_unknown(seconds):
+    """More than 7 days is no slicer estimate of one plate: shown as unknown (review v0.4.2, 2)."""
+    assert parse_queue_item(_q4(print_time_seconds=seconds)).print_time_seconds is None
