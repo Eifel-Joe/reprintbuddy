@@ -315,6 +315,8 @@
   "sets.parent_sku_required": "Not possible: {names} lacks the article number the variants would then need. Enter it there first.",
   "sets.parent_sku_taken": "Not possible: in {names} this would give the number {sku}, which is taken already.",
   "sets.parent_variant_too_long": "Not possible: in {names} this would give the variant number {sku}, longer than {max} characters.",
+  "sets.too_many_variants": "The set would have {count} variants this way; at most {max} are allowed. Take options out of the choice parts.",
+  "sets.parent_too_many_variants": "Not possible: {names} would get {count} variants this way; at most {max} are allowed.",
   "sets.too_few_articles": "Every variant needs at least two different articles: two base parts, a base part and choice parts, or two fields of choice parts.",
   "sets.article_twice": "{name} is in the set more than once. An article can be in a set only once.",
   "sets.ring": "A set cannot hold itself, not even through other sets: {path}.",

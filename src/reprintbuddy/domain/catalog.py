@@ -823,6 +823,7 @@ def _allowed_in_set(session: Session, article: Article) -> bool:
 
 BaseSpec = tuple[int, int | None, int | None]  # qty, article id, inner set id
 MAX_VARIANT_FIELDS = MAX_SKU - 1  # a number and each suffix have one character at least (Spec 5.4: 64)
+MAX_VARIANTS = 100  # variants of one set or one article made of parts (Spec 5.4, 5.6; p450)
 
 
 def _check_set_input(
@@ -1010,7 +1011,18 @@ def _check_brought(
     if lacking:
         raise ConflictError("sets.parent_sku_required", names=_marked_names(session, defs, lacking))
     affected = [own_id, *parents]
-    taken = {number: i for i, number_list in ((i, _numbers_of(defs, i)) for i in defs if i not in affected)
+    # At most 100 variants (Spec 5.4, p450), counted before any number is listed: listing them was
+    # unbounded (two fields of 200 options, or inner sets on any level). A set stored with more since
+    # an earlier version stays orderable; it is refused here once it or an inner set is saved.
+    # Tests: tests/domain/test_catalog_variant_limit.py.
+    for i in affected:
+        count = setresolve.variant_count(defs, i)
+        if count > MAX_VARIANTS:
+            if i != own_id:
+                raise ValidationError("sets.parent_too_many_variants", names=_marked_names(session, defs, [i]),
+                                      count=count, max=MAX_VARIANTS)
+            raise ValidationError("sets.too_many_variants", count=count, max=MAX_VARIANTS)
+    taken ={number: i for i, number_list in ((i, _numbers_of(defs, i)) for i in defs if i not in affected)
              for number in number_list}
     set_numbers = {d.sku: i for i, d in defs.items() if d.sku}
     article_numbers = set(session.scalars(select(Article.sku).where(Article.sku.is_not(None))))
