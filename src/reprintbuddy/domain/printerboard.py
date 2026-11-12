@@ -40,11 +40,12 @@ class PrinterBoard:
         self,
         publish: Publish | None,
         *,
-        now: Callable[[], datetime] = utcnow,
+        now: Callable[[], datetime] | None = None,
         call_later: CallLater | None = None,
     ) -> None:
         self._publish = publish
-        self._now = now
+        # Looked up at each call, not bound at import: a fixed clock set later (the picture tool) holds here too.
+        self._now = now or (lambda: utcnow())
         self._call_later = call_later
         self.printers: tuple[Printer, ...] | None = None  # None: unknown
         self.statuses: dict[int, PrinterStatus] = {}

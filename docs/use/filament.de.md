@@ -41,7 +41,7 @@ Die Zuordnung eines archivierten Artikels lässt sich nur ansehen. Nach **Druckd
 
 | Spalte | Bedeutung |
 |---|---|
-| **Spulensorte** | Marke, Material, Untertyp und Farbe. Die Plakette sagt, ob die Sorte nachgekauft wird und ob ihre Einstellungen dann **eingestellt** oder **nicht eingestellt** sind; sonst **nicht nachgekauft**. Ein gelbes **knapp** steht daneben, solange die Sorte einen Bestellvorschlag hat (siehe [Bestellvorschläge](reorder.md)); die Karte **Filament** der [Übersicht](overview.md) zählt diese Sorten. |
+| **Spulensorte** | Marke, Material, Untertyp und Farbe. Die Plakette sagt, ob die Sorte nachgekauft wird und ob ihre Einstellungen dann **eingestellt** oder **nicht eingestellt** sind; sonst **nicht nachgekauft**. Ein gelbes **knapp** steht daneben, solange die Sorte einen Bestellvorschlag hat (siehe [Bestellvorschläge](reorder.md)); die Kachel **Filament** der [Übersicht](overview.md) zählt diese Sorten und nennt, wie viele Tage die nachgekauften Sorten reichen. Verbrauch je Tag und Reichweite beruhen auf den letzten 30 Tagen und werden erst nach einiger Zeit Betrieb zuverlässig. |
 | **Material** | Das Material der Sorte. |
 | **Bestand** | Summe der Restgewichte in Gramm. |
 | **Spulen** | Die Zahl der Spulen dieser Sorte. |

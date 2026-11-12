@@ -1306,6 +1306,7 @@ td.target .target-form { display: inline-block; }
 .ov-number { font-size: 28px; font-weight: 700; line-height: 1.1; color: var(--muted); }
 .ov-number.tone-warn { color: var(--warn-text); }
 .ov-number.tone-bad { color: var(--danger-text); }
+.ov-figure { display: flex; align-items: baseline; gap: 6px; }
 .ov-unit { color: var(--text-2); font-size: 13px; }
 .ov-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--surface-2); }
 .ov-bar-big { height: 12px; margin: 6px 0 2px; }
@@ -1325,6 +1326,7 @@ td.target .target-form { display: inline-block; }
 .ov-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
 .ov-row:last-child { border-bottom: 0; }
 .ov-row > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-row > span:last-child { flex: none; white-space: nowrap; }
 .ov-row.tone-warn > span:last-child { color: var(--warn-text); }
 .ov-row.tone-ok > span:last-child { color: var(--accent-text); }
 .ov-hint { margin: 0; color: var(--muted); font-size: 11.5px; }

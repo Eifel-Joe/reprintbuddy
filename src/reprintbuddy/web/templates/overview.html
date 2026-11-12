@@ -33,7 +33,7 @@
 <p class="ov-note">{% for p in stock_tile.parts %}{% if not loop.first %} · {% endif %}<a class="ov-sub tone-{{ p.tone }}" href="{{ p.href }}">{{ p.text }}</a>{% endfor %}</p>
 </section>
 <section class="card ov-tile" data-tile="filament"><a class="ov-main" href="/filament">{{ ui.icon('disc-3') }}{{ t('overview.tile.filament') }}</a>
-<span class="ov-number tone-{{ filament_tile.tone }}">{{ filament_tile.count }}</span>{% if filament_tile.count is number %} <span class="ov-unit">{{ t('overview.tile.filament_low') }}</span>{% endif %}
+<div class="ov-figure"><span class="ov-number tone-{{ filament_tile.tone }}">{{ filament_tile.count }}</span>{% if filament_tile.count is number %} <span class="ov-unit">{{ t('overview.tile.filament_low') }}</span>{% endif %}</div>
 {% if filament_tile.rows %}<ul class="ov-rows">{% for r in filament_tile.rows %}<li class="ov-row tone-{{ r.tone }}"><span>{{ r.label }}</span><span>{{ r.text }}</span></li>{% endfor %}</ul>{% endif %}
 {% if filament_tile.young %}<p class="ov-hint">{{ filament_tile.young_text }}</p>{% endif %}
 </section>
