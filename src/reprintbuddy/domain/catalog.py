@@ -752,6 +752,9 @@ class SetRow:
     incomplete: str | None  # "too_few" or "suffixes_missing" (sets the update to v0.4.0 rebuilt), "broken" (0.4.3)
     orderable: bool
     status: SetStatus  # deliverable when at least one set comes together (Spec 10.1)
+    # what an earlier version left archived directly in this set: ("article" or "set", name), in the order
+    # of the form (Spec 5.4 Altfall, 0.4.3): the list and the overview warn about it
+    held_archived: tuple[tuple[str, str], ...] = ()
 
 
 def _fields_of(
@@ -1171,6 +1174,8 @@ def _set_row(
     ]
     incomplete = "broken" if broken else _incomplete_of(own)
     orderable = product_set.archived_at is None and incomplete is None and (not choices or bool(variants))
+    held = [("set" if row.set_id is not None else "article", row.name) for row in base if row.archived]
+    held += [("article", option.name) for choice in choices for option in choice.options if option.archived]
     return SetRow(
         id=product_set.id,
         name=product_set.name,
@@ -1182,7 +1187,31 @@ def _set_row(
         incomplete=incomplete,
         orderable=orderable,
         status=set_status(available=stock.total),
+        held_archived=tuple(held),
     )
+
+
+@dataclass(frozen=True)
+class ArchivedInSet:
+    """An archived article or set that an active set holds directly (Spec 5.4 Altfall, 0.4.3)."""
+
+    set_id: int
+    set_name: str
+    kind: Literal["article", "set"]
+    name: str
+
+
+def archived_in_sets(session: Session) -> list[ArchivedInSet]:
+    """What the set list and the overview warn about (Spec 5.4 Altfall): per active set, by name, the
+    archived articles and sets it holds directly. Only there, because that is where it is restored
+    or taken out; a set that holds it through an inner set is not named again. Since 0.4.3 nothing
+    in an active set can be archived, so this is what an earlier version left, or what came back
+    with a restored set. Tests: tests/domain/test_catalog_sets_nested.py."""
+    return [
+        ArchivedInSet(row.id, row.name, kind, name)  # type: ignore[arg-type]
+        for row in list_sets(session)
+        for kind, name in row.held_archived
+    ]
 
 
 def set_row(session: Session, set_id: int) -> SetRow:

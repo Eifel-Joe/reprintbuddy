@@ -561,6 +561,8 @@ td.target .bar { min-width: 4rem; margin-top: 0.35rem; }
 .table-card td.set-contents > span { display: block; white-space: nowrap; }
 /* an inner set carries the badge Set (and archived, incomplete) on its own line (0.4.3 p423) */
 .set-contents .badge { margin-left: 0.3rem; font-size: 0.75rem; }
+/* an archived part an earlier version left in the set (Spec 5.4 Altfall, 0.4.3): a yellow line, it may wrap */
+.table-card td.set-contents > span.set-warning, .tile-foot .set-warning { color: var(--warn); white-space: normal; }
 /* The inner sets of an ordered set (0.4.3 p423): a line on the left, indented by level, three at most. */
 .order-inner { margin: 0.35rem 0 0; padding-left: 0.75rem; border-left: 2px solid var(--line); }
 .order-inner.depth-2 { margin-left: 0.75rem; }

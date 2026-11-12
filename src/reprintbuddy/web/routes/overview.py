@@ -118,5 +118,5 @@ async def overview(request: Request):
         **tiles,
         no_articles=not articles,
         hide_last_poll=True,  # the head line says it; the warnings below do not repeat it
-        **warnings_context(request, db),
+        **warnings_context(request, db, sets=True),
     )

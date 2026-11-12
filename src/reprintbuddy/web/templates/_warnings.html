@@ -23,6 +23,8 @@
 {%- endif %}
 <a class="warning-link" href="/articles/{{ warning.article_id }}">{{ t('warning.action.article') }}</a>
 </div>
+{%- elif warning.set_id %}
+<div class="warning-actions"><a class="warning-link" href="/sets/{{ warning.set_id }}/edit">{{ t('warning.action.set') }}</a></div>
 {%- endif %}
 </div>
 {%- endfor %}

@@ -244,3 +244,37 @@ def test_search_finds_the_outer_set(ready_client):
     a, ids = kits(ready_client)
     page = ready_client.get("/sets?q=EX-KP").text
     assert "Complete kit" in page and "Sizes" not in page.split('class="tiles"')[-1]
+
+
+# ---- Altfall warning (Spec 5.4, 0.4.3) ------------------------------------------------------
+
+
+def altfall(client, ids, a):
+    with sm_of(client).begin() as s:
+        from reprintbuddy.models import Article
+        s.get(Article, a["Manual"]).archived_at = ARCHIVED  # an earlier version could leave it so
+
+
+def test_set_list_warns_about_an_archived_article(ready_client):
+    a, ids = kits(ready_client)
+    altfall(ready_client, ids, a)
+    page = ready_client.get("/sets").text
+    text = en("sets.holds_archived_article", set="Basic kit", name="Manual")
+    assert page.count(text) == 2  # list and tile
+    assert en("sets.holds_archived_article", set="Complete kit", name="Manual") not in page  # only where it is fixed
+
+
+def test_overview_warns_and_links_to_the_set(ready_client):
+    a, ids = kits(ready_client)
+    altfall(ready_client, ids, a)
+    page = ready_client.get("/").text
+    warnings = re.search(r"<!--live:warnings-->(.*?)<!--/live:warnings-->", page, re.S).group(1)
+    assert en("sets.holds_archived_article", set="Basic kit", name="Manual") in warnings
+    assert f'href="/sets/{ids["basic"]}/edit">{en("warning.action.set")}</a>' in warnings
+    assert 'data-live-region="warnings" data-live-topics="bambuddy queue article settings notify set"' in page
+
+
+def test_queue_page_does_not_repeat_the_set_warning(ready_client):
+    a, ids = kits(ready_client)
+    altfall(ready_client, ids, a)
+    assert en("sets.holds_archived_article", set="Basic kit", name="Manual") not in ready_client.get("/queue").text

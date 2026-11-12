@@ -16,6 +16,8 @@
   {%- if part.set_id %}{% if part.variant_sku %} {{ part.variant_sku }}{% endif %} <span class="badge tone-neutral">{{ t('sets.badge_set') }}</span>
   {%- if part.archived %}<span class="badge tone-neutral">{{ t('catalog.archived_badge') }}</span>{% endif %}
   {%- endif %}</span>{% endfor -%}
+{#- what an earlier version left archived directly in the set (Spec 5.4 Altfall, 0.4.3) -#}
+{%- for kind, name in row.held_archived %}<span class="set-warning">{% if kind == 'set' %}{{ t('sets.holds_archived_set', set=row.name, name=name) }}{% else %}{{ t('sets.holds_archived_article', set=row.name, name=name) }}{% endif %}</span>{% endfor -%}
 {%- for variant in row.variants %}<span class="variant">{{ variant.sku or variant.names|join(', ') }} · <strong{% if variant.available < 0 %} class="neg"{% endif %}>{{ variant.available }}</strong></span>{% endfor -%}
 {%- endmacro %}
 
@@ -75,7 +77,7 @@
     <div class="tile-stats">
       <span>{{ t('articles.col.available') }} <strong{% if row.available < 0 %} class="neg"{% endif %}>{{ row.available }}</strong></span>
     </div>
-    {% if row.base or row.variants %}
+    {% if row.base or row.variants or row.held_archived %}
     <div class="tile-foot">{{ contents(row) }}</div>
     {% endif %}
   </a>

@@ -352,3 +352,31 @@ def test_change_without_conflict_shows_in_the_outer_set_at_once(db, kits):  # Sp
     with db.begin() as s:
         assert row_of(s, complete).available == 2  # 10 holders for 4 per piece
         assert row_of(s, complete).base[0].contents == ((4, "Holder"), (1, "Manual"))
+
+
+# ---- Altfall: archived parts in active sets (Spec 5.4, 0.4.3) --------------------------------
+
+
+def test_archived_in_sets_names_the_set_that_holds_it_directly(db, kits):
+    a, basic, extension, complete = kits
+    with db.begin() as s:
+        b = articles(s, red=1, blue=1)
+        make_set(s, "Colours", [(1, a["plate"])], [(1, [(b["red"], "-R"), (b["blue"], "-B")])], sku="EX-CO")
+        gone = make_set(s, "Gone", [(1, a["holder"]), (1, b["red"])])
+        gone.archived_at = ARCHIVED  # an archived set warns about nothing
+        s.get(Article, a["manual"]).archived_at = ARCHIVED  # in basic kit, deep inside complete kit
+        s.get(Article, b["blue"]).archived_at = ARCHIVED  # a choice of colours
+        s.get(ProductSet, extension).archived_at = ARCHIVED  # an inner set of complete kit (restored outer set)
+    with db.begin() as s:
+        found = [(w.set_name, w.kind, w.name) for w in catalog.archived_in_sets(s)]
+        assert found == [
+            ("Basic kit", "article", "Manual"),
+            ("Colours", "article", "Blue"),
+            ("Complete kit", "set", "Extension"),
+        ]
+        assert catalog.archived_in_sets(s)[0].set_id == basic
+
+
+def test_nothing_archived_nothing_to_warn(db, kits):
+    with db.begin() as s:
+        assert catalog.archived_in_sets(s) == []
