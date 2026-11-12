@@ -28,11 +28,10 @@
     });
     each(selects, function (select) {
       var place = select.getAttribute("data-assembled-article");
-      each(select.options, function (option) {
-        if (!option.value || option.value === select.value) {
-          option.disabled = false;
-          option.hidden = false;
-          return;
+      var value = select.value;
+      offerOnly(select, function (option) {
+        if (!option.value || option.value === value) {
+          return false;
         }
         var blocked = false;
         Object.keys(chosen).forEach(function (other) {
@@ -43,10 +42,41 @@
         if (place === "base" && chosen.base[option.value]) {
           blocked = true; // a base part stands in one row only
         }
-        option.disabled = blocked;
-        option.hidden = blocked;
+        return blocked;
       });
     });
+  }
+
+  // Every option of a drop-down as the page drew it, also those taken out since (p351).
+  function drawn(node) {
+    if (!node.rbDrawn) {
+      node.rbDrawn = Array.prototype.slice.call(node.children);
+    }
+    return node.rbDrawn;
+  }
+
+  // Safari on the iPhone shows an option with `hidden` greyed instead of leaving it out, so a blocked
+  // option is taken out of the drop-down and put back in its old place once it is free (p351). The
+  // chosen option of a row is never blocked, so it never moves and stays chosen. Replaced: `hidden`
+  // and `disabled` on the option. The same in set_form.js. Tests: tests/web/test_form_rows_scripts.py.
+  function offerOnly(select, blocked) {
+    var next = null;
+    var list = drawn(select);
+    for (var k = list.length - 1; k >= 0; k -= 1) {
+      var option = list[k];
+      if (blocked(option)) {
+        if (option.parentNode === select) {
+          select.removeChild(option);
+        }
+        continue;
+      }
+      option.disabled = false;
+      option.hidden = false;
+      if (option.parentNode !== select) {
+        select.insertBefore(option, next);
+      }
+      next = option;
+    }
   }
 
   document.addEventListener("change", function (event) {
@@ -68,4 +98,22 @@
   });
 
   each(document.querySelectorAll("[data-assembled-form]"), refresh);
+
+  // A form the live channel swaps in (live.js) is drawn by the server with the options only hidden:
+  // they are taken out here as well (p351). Options this script puts back are no form, so nothing loops.
+  if (window.MutationObserver && document.body) {
+    new window.MutationObserver(function (records) {
+      records.forEach(function (record) {
+        each(record.addedNodes, function (node) {
+          if (node.nodeType !== 1) {
+            return;
+          }
+          if (node.matches("[data-assembled-form]")) {
+            refresh(node);
+          }
+          each(node.querySelectorAll("[data-assembled-form]"), refresh);
+        });
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
 })();
