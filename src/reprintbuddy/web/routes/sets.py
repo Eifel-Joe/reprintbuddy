@@ -100,12 +100,13 @@ def _set_value(set_id: int, key: tuple[int, ...]) -> str:
 
 def _base_choice(raw: str) -> tuple[int | None, int | None, tuple[int, ...]]:
     """What a base row holds: (article id, None, ()) or (None, set id, key)."""
+    field = "sets.field.article_or_set"  # a base row holds an article or a set (0.4.3)
     if not raw.startswith("set:"):
-        return _article_id(raw), None, ()
+        return parse_int(raw, field=field, min=1, max=MAX_ID), None, ()
     parts = raw[4:].split(":")
     if len(parts) > 1 + catalog.CHOICE_FIELDS:
-        raise ValidationError("form.invalid_number", field="sets.field.article", min=1, max=MAX_ID)
-    numbers = [_article_id(part) for part in parts]
+        raise ValidationError("form.invalid_number", field=field, min=1, max=MAX_ID)
+    numbers = [parse_int(part, field=field, min=1, max=MAX_ID) for part in parts]
     return None, numbers[0], tuple(numbers[1:])
 
 
