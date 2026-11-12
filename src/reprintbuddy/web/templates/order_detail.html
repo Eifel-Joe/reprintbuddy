@@ -23,7 +23,15 @@
     {% if group.set_name or group.assembled_name %}
     <p><strong>{{ group.set_name or group.assembled_name }}{% if group.variant_sku %} {{ group.variant_sku }}{% endif %} × {{ group.set_qty }}</strong></p>
     {% endif %}
-    <ul class="plain-list">{% for name, qty in group.lines %}<li>{{ qty }} × {{ name }}</li>{% endfor %}</ul>
+    {% if group.lines or not group.inner %}<ul class="plain-list">{% for name, qty in group.lines %}<li>{{ qty }} × {{ name }}</li>{% endfor %}</ul>{% endif %}
+    {#- the inner sets of a set (0.4.3 p423, Spec 6.7): each with its variant number as ordered and its
+        pieces, indented by its level, its own articles below; a deeper set follows the one holding it #}
+    {% for inner in group.inner %}
+    <div class="order-inner depth-{{ [inner.depth, 3] | min }}">
+      <p class="order-inner-head">{{ inner.name }}{% if inner.variant_sku %} {{ inner.variant_sku }}{% endif %} × {{ inner.qty }}</p>
+      {% if inner.lines %}<ul class="plain-list">{% for name, qty in inner.lines %}<li>{{ qty }} × {{ name }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+    {% endfor %}
   {% endfor %}
 </section>
 {% endcall %}
