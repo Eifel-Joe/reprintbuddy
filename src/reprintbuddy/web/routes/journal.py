@@ -5,7 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import stock
+from reprintbuddy.domain import assembled, stock
+from reprintbuddy.models import Article
 from reprintbuddy.web.deps import get_db, render
 from reprintbuddy.web.forms import bounded_int
 from reprintbuddy.web.journal_view import journal_rows
@@ -31,8 +32,12 @@ async def journal_page(
 ):
     article_id, part_id = _opt_int(article), _opt_int(part)
     page_no = _opt_int(page) or 1
+    # An article made of parts takes the rows of its variants too, as its page does (p364).
+    chosen = db.get(Article, article_id) if article_id is not None else None
+    article_ids = assembled.journal_ids(db, chosen) if chosen is not None and chosen.kind == "assembled" else None
     entries = stock.journal_page(
-        db, article_id=article_id, part_id=part_id, limit=PAGE_SIZE + 1, offset=(page_no - 1) * PAGE_SIZE
+        db, article_id=None if article_ids else article_id, article_ids=article_ids, part_id=part_id,
+        limit=PAGE_SIZE + 1, offset=(page_no - 1) * PAGE_SIZE,
     )
     query = "".join(
         f"&{name}={value}" for name, value in (("article", article_id), ("part", part_id)) if value

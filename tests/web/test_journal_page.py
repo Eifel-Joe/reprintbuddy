@@ -82,3 +82,22 @@ def test_journal_german(ready_client):
     page = ready_client.get("/journal").text
     assert "Von Hand" in page and "Inventur" in page
     assert "Zeit" in page
+
+
+def test_journal_filter_article_made_of_parts_takes_its_variants(ready_client):  # p364 (Spec 6.3, 5.6)
+    """The journal of an article made of parts shows the rows of its variants too, as its page does."""
+    from factories import make_assembled
+    from reprintbuddy.domain import assembled
+
+    with sm_of(ready_client).begin() as s:
+        side = make_article(s, name="Side part L", stock=5).id
+        other = make_article(s, name="Side part R", stock=5).id
+        box = make_assembled(s, name="Bracket", sku="EX-K1", fields=[[("-L", [(side, 1)]), ("-R", [(other, 1)])]])
+        variant = assembled.variants(s, box)[0].id
+        stock.count_article(s, variant, "stock", 2, "user", note="count-of-variant")
+        stock.sell_unreserved(s, variant, 1, "user", note="sale-of-variant")
+        stock.sell_unreserved(s, side, 1, "user", note="sale-of-part")
+        box_id = box.id
+    page = ready_client.get(f"/journal?article={box_id}").text
+    assert "count-of-variant" in page and "sale-of-variant" in page
+    assert "sale-of-part" not in page  # a part keeps its own journal
