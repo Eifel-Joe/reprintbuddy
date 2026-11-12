@@ -385,7 +385,7 @@ def page_tiles(client):
 
 def counted(client, spools):
     with sm_of(client).begin() as s:
-        return reorder.count_suggestions(s, spools, utcnow())
+        return len(reorder.current(s, spools, utcnow()).suggestions)
 
 
 @pytest.mark.parametrize("case", ["live", "record", "nothing", "part_received"])
