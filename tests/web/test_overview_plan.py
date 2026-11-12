@@ -210,3 +210,14 @@ def test_bars_beyond_the_axis_are_left_out_on_a_wide_screen(bb_client, fake_bamb
     assert beyond and len(beyond) < 40
     css = CSS.read_text(encoding="utf-8")
     assert re.search(r"\.plan-beyond \{ display: none; \}", css)
+
+
+def test_no_bars_still_names_the_printers_out_of_service(bb_client, fake_bambuddy):
+    """Only an entry waiting for a printer that is offline: no bar, but the head says which printer
+    (review v0.4.2, 11)."""
+    fake_bambuddy.set_printer_status(3, connected=False)
+    fake_bambuddy.add_foreign_item("Guide.gcode.3mf", printer_id=3)
+    query(bb_client)
+    part = plan_part(bb_client)
+    assert en("overview.plan.none") in part
+    assert en("overview.plan.without", names="Printer 3") in part

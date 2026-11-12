@@ -51,7 +51,7 @@
 <div class="plan-head"><a class="plan-main" href="/queue">{{ ui.icon('printer') }}{{ t('overview.plan.title') }}</a>
 <span class="plan-sum">{% if not plan.known %}{{ t('overview.plan.unknown') }}{% else %}
 {%- set parts = [] %}
-{%- if plan.finish %}{% set _ = parts.append(t('overview.plan.finish_minimum' if plan.minimum else 'overview.plan.finish', time=plan.finish) ~ ((' ' ~ t('overview.plan.without', names=plan.without|join(', '))) if plan.without else '')) %}{% else %}{% set _ = parts.append(t('overview.plan.none')) %}{% endif %}
+{%- if plan.finish %}{% set _ = parts.append(t('overview.plan.finish_minimum' if plan.minimum else 'overview.plan.finish', time=plan.finish) ~ ((' ' ~ t('overview.plan.without', names=plan.without|join(', '))) if plan.without else '')) %}{% else %}{% set _ = parts.append(t('overview.plan.none') ~ ((' ' ~ t('overview.plan.without', names=plan.without|join(', '))) if plan.without else '')) %}{% endif %}
 {%- if plan.unplaced %}{% set _ = parts.append(tc('overview.plan.unplaced', plan.unplaced)) %}{% endif %}
 {%- if plan.manual %}{% set _ = parts.append(tc('overview.plan.manual', plan.manual)) %}{% endif %}
 {%- if plan.waiting_here %}{% set _ = parts.append(tc('overview.plan.waiting_here', plan.waiting_here)) %}{% endif %}
