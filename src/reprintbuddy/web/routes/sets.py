@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import catalog
+from reprintbuddy.domain import catalog, setresolve
 from reprintbuddy.domain.catalog import BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
-from reprintbuddy.domain.errors import DomainError
+from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.models import Article, ProductSet
 from reprintbuddy.web import kpis, listing
@@ -92,12 +92,31 @@ def _article_id(raw: str) -> int:
     return parse_int(raw, field="sets.field.article", min=1, max=MAX_ID)
 
 
+def _set_value(set_id: int, key: tuple[int, ...]) -> str:
+    """The value of an inner set in the drop-down of base parts: "set:5", a variant "set:5:12"
+    (the chosen article per choice field), like the order form (0.4.3 p423)."""
+    return ":".join(["set", str(set_id), *(str(a) for a in key)])
+
+
+def _base_choice(raw: str) -> tuple[int | None, int | None, tuple[int, ...]]:
+    """What a base row holds: (article id, None, ()) or (None, set id, key)."""
+    if not raw.startswith("set:"):
+        return _article_id(raw), None, ()
+    parts = raw[4:].split(":")
+    if len(parts) > 1 + catalog.CHOICE_FIELDS:
+        raise ValidationError("form.invalid_number", field="sets.field.article", min=1, max=MAX_ID)
+    numbers = [_article_id(part) for part in parts]
+    return None, numbers[0], tuple(numbers[1:])
+
+
 def _parse(values: dict) -> SetInput:
-    base = [
-        BaseInput(parse_int(row["qty"], field="sets.field.qty", min=1, max=1000), _article_id(row["article"]))
-        for row in values["base"]
-        if row["article"]  # rows without an article are skipped
-    ]
+    base = []
+    for row in values["base"]:
+        if not row["article"]:
+            continue  # rows without an article are skipped
+        qty = parse_int(row["qty"], field="sets.field.qty", min=1, max=1000)
+        article_id, set_id, key = _base_choice(row["article"])
+        base.append(BaseInput(qty, article_id, set_id, key))
     choices = []
     for section in ("c1", "c2") if values["show_c2"] else ("c1",):
         options = [ChoiceOptionInput(_article_id(row["article"]), row["suffix"]) for row in values[section] if row["article"]]
@@ -129,7 +148,79 @@ def _article_options(db: Session, values: dict) -> list[dict[str, object]]:
     return sorted(options.values(), key=lambda o: (str(o["name"]).casefold(), o["id"]))
 
 
+def _set_options(db: Session, values: dict, product_set: ProductSet | None, lang: str) -> list[dict[str, object]]:
+    """What the drop-down of base parts offers under "Sets" (Spec 5.4, 0.4.3 p423): each active,
+    complete set by "name · number", a set with choice parts once per variant, "name · variant
+    number (chosen articles)". Never the set itself or a set that holds it (a ring); an inner set the
+    form already holds stays, marked archived if it is. Each entry carries what it takes ("takes":
+    the set, the inner sets in it and its resolved articles), so that the form hides every entry
+    that would bring an article or a set twice, and the text "contains ..." shown under its row."""
+    defs = catalog.load_defs(db)
+    own = product_set.id if product_set is not None else None
+    holding = set(setresolve.containing(defs, own)) | {own} if own is not None else set()
+    names = dict(db.execute(select(Article.id, Article.name)).all())
+    options: dict[str, dict[str, object]] = {}
+
+    def add(set_id: int, key: tuple[int, ...], label: str, archived: bool) -> None:
+        try:
+            lines = setresolve.resolve(defs, set_id, key)
+        except setresolve.ResolveError:
+            return
+        inner = sorted({f"s{step.set_id}" for line in lines for step in line.path})
+        takes = [f"s{set_id}", *inner, *(f"a{line.article_id}" for line in lines)]
+        items = ", ".join(f"{line.qty} × {names[line.article_id]}" for line in lines)
+        options[_set_value(set_id, key)] = {
+            "id": _set_value(set_id, key), "name": label, "archived": archived,
+            "takes": " ".join(takes), "contains": translate(lang, "sets.contains", items=items),
+        }
+
+    for row in catalog.list_sets(db):
+        if row.id in holding or row.incomplete is not None:
+            continue
+        if not row.choices:
+            add(row.id, (), f"{row.name} · {row.sku}" if row.sku else row.name, False)
+        for variant in row.variants:
+            add(row.id, variant.key, f"{row.name} · {variant.sku} ({', '.join(variant.names)})", False)
+    archived = set(db.scalars(select(ProductSet.id).where(ProductSet.archived_at.is_not(None))))
+    for row in values["base"]:  # an inner set the form holds although it is not offered (plan v0.4.3, 7)
+        if not row["article"].startswith("set:") or row["article"] in options:
+            continue
+        try:
+            _article_id_none, set_id, key = _base_choice(row["article"])
+        except ValidationError:
+            continue
+        if set_id not in defs or set_id in holding:
+            continue
+        number = setresolve.variant_number(defs, set_id, key)
+        label = defs[set_id].name + (f" · {number}" if number else "")
+        add(set_id, key, label, set_id in archived)
+    return sorted(options.values(), key=lambda o: (str(o["name"]).casefold(), o["id"]))
+
+
+def _blocker(set_options: list[dict[str, object]], values: dict):
+    """Whether an entry is hidden in a drop-down: one of the things it takes is chosen in another
+    row already (Spec 5.4: no article and no inner set twice, on any level). An article takes itself.
+    set_form.js does the same while choosing; this is the page without the script."""
+    takes = {str(o["id"]): str(o["takes"]).split() for o in set_options}
+
+    def tokens(value: str) -> list[str]:
+        return takes.get(value) or ([f"a{value}"] if value.isdigit() else [])
+
+    counts = Counter(tok for section in SECTIONS for row in values[section] if row["article"] for tok in tokens(row["article"]))
+
+    def blocked(value: str, chosen: str) -> bool:
+        if value == chosen:
+            return False
+        mine = set(tokens(chosen))
+        return any(counts[tok] - (1 if tok in mine else 0) > 0 for tok in tokens(value))
+
+    return blocked
+
+
 def _form_page(request, db, *, product_set, values, error=None, status=200):
+    lang = current_language(request)
+    set_options = _set_options(db, values, product_set, lang)
+    part_of = catalog.sets_containing(db, product_set.id) if product_set is not None else []
     return render(
         request,
         "set_form.html",
@@ -138,12 +229,14 @@ def _form_page(request, db, *, product_set, values, error=None, status=200):
         product_set=product_set,
         values=values,
         articles=_article_options(db, values),
+        sets=set_options,  # inner sets for the base parts (0.4.3 p423)
+        contains={str(o["id"]): o["contains"] for o in set_options},
+        blocked=_blocker(set_options, values),
+        part_of=", ".join(part_of),
         form_action=f"/sets/{product_set.id}/edit" if product_set else "/sets/new",
         default_rows=DEFAULT_ROWS,  # rows of choice parts 2 when it is added
         more_rows=MORE_ROWS,
         max_rows=MAX_ROWS,
-        # an article chosen in one row is not offered in the others (Spec 5.4); set_form.js keeps it so
-        taken=[row["article"] for section in SECTIONS for row in values[section] if row["article"]],
         error=error,
     )
 
@@ -277,7 +370,10 @@ def _edit_again(request, db, product_set, error, status):
         "name": product_set.name,
         "sku": product_set.sku or "",
         "show_c2": len(row.choices) > 1,
-        "base": [{"qty": str(b.qty), "article": str(b.article_id)} for b in row.base],
+        "base": [
+            {"qty": str(b.qty), "article": _set_value(b.set_id, b.key) if b.set_id is not None else str(b.article_id)}
+            for b in row.base
+        ],
     })
     for section, field in zip(("c1", "c2"), row.choices):
         values[f"{section}_qty"] = str(field.qty)
