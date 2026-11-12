@@ -172,3 +172,17 @@ def test_tile_bars_are_hidden_from_screen_readers(bb_client):
     page = bb_client.get("/").text
     for bar in re.findall(r'<div class="ov-bar"[^>]*>', page):
         assert 'aria-hidden="true"' in bar
+
+
+def test_refused_queue_read_makes_the_plan_unknown(bb_client, fake_bambuddy):
+    """Without a current read of Bambuddy's queue the plan would show an old or empty queue as current
+    (review v0.4.2, 3): it says the state is unknown instead."""
+    from reprintbuddy.bambuddy.client import BambuddyRejected
+
+    fake_bambuddy.add_foreign_item("Spare part.gcode.3mf", target_model="A1")
+    query(bb_client)
+    assert "plan-lane" in plan_part(bb_client)
+    fake_bambuddy.fail_next("list_queue", BambuddyRejected("Forbidden", status=403))
+    query(bb_client)
+    part = plan_part(bb_client)
+    assert en("overview.plan.unknown") in part and "plan-lane" not in part

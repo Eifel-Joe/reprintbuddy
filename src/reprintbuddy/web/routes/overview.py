@@ -102,7 +102,8 @@ async def overview(request: Request):
     tiles = _tiles(request, db, lang, articles, state, under_way) if state is not None else {}
     plan = printplan_view.plan_view(
         db, ticker.board, status.bambuddy_queue, utcnow(), lang,
-        known=status.configured and status.reachable is not False,
+        # the queue of the last query must be current too, or an old one would pass for today (review v0.4.2, 3)
+        known=status.configured and status.reachable is not False and status.bambuddy_queue_ok,
     ) if not wanted or "plan" in wanted else None
     return render(
         request,
