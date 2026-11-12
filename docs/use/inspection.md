@@ -206,7 +206,7 @@ A part can be archived only when no active article needs it. Archived parts leav
 
 Every booking is written to the journal with the time, who triggered it (**Manual** or **Automation**), the article, part or order, the quantity, the counters before and after, and the note. The automation also writes its actions there, such as a queue entry being handed to Bambuddy.
 
-You reach it with the **Journal** button on the article list and on an article, with the history icon in the lists, and with **Whole journal** on the Bookings page. The page shows 100 entries, newest first by the day they count; a booking dated back shows its date and, below it, **saved …** with the time it was entered; **Older** and **Newer** page through them. A journal opened for one article or part shows only its entries.
+You reach it with the **Journal** button on the article list and on an article, with the history icon in the lists, and with **Whole journal** on the Bookings page. The page shows 100 entries, newest first by the day they count; a booking dated back shows its date and, below it, **saved …** with the time it was entered; **Older** and **Newer** page through them. A journal opened for one article or part shows only its entries; for an assembled article also those of its variants. A part built into an assembled article reads **Built into** with the article and its variant number.
 
 Entries are never deleted or changed. Correct a mistake with another booking, for example an inventory booking.
 

@@ -28,13 +28,13 @@ Every variant holds at least two units of parts and purchased parts together, at
 
 ### Variants and numbers
 
-As with sets, each combination of the options is a **variant**, and its number is the article number with the suffixes behind it: the hose `EX-H1` with `-L32`, `-L40`, `-R32`, `-R40` has the variants EX-H1-L32 … EX-H1-R40. Numbers are unique over all articles, sets and variants. When you change a suffix or the parts of an option, the variant keeps its stock. A variant with stock, a reservation or in an open order cannot be removed; the message names it.
+As with sets, each combination of the options is a **variant**, and its number is the article number with the suffixes behind it: the hose `EX-H1` with `-L32`, `-L40`, `-R32`, `-R40` has the variants EX-H1-L32 … EX-H1-R40. Numbers are unique over all articles, sets and variants. When you change a suffix or the parts of an option, the variant keeps its stock. A variant with stock, a reservation or in an open order cannot be removed, even when its number has changed since the order; the message names it.
 
 ## On stock or on order
 
 **On stock**: finished pieces wait on the shelf. Each variant has stock, reserved, available, minimum stock and buffer. You assemble them on the assembly page, and only the parts get printed.
 
-**On order**: nothing is assembled ahead. The article has no stock; an order reserves its parts, and shipping takes the parts and the purchased parts off. A sale without an order on the page Bookings does the same at once.
+**On order**: nothing is assembled ahead. The article has no stock; an order reserves its parts, and shipping takes the parts and the purchased parts off. Shipping is its assembly: in the journal of each part the row reads **Built into** Hose · EX-H1-L32, with the order, as at the assembly on stock. A sale without an order on the page Bookings takes them off at once and stays a **Sale** in the journal.
 
 ## Availability
 
@@ -60,7 +60,9 @@ The section **For orders** lists the open orders with articles built on order, o
 
 The order form offers print articles sold alone, each variant on stock by its number, and each variant built on order once ("Hose · EX-H1-L32 (Side part L, Socket L32)"). Parts only are not offered. An order keeps the parts and the number of its time, even when the parts list changes later.
 
-On the page **Bookings**, inventory and sale take a variant on stock; a sale also takes a variant built on order, which takes its parts off at once. Stock in without a print is only for print articles.
+On the page **Bookings**, inventory and sale take a variant on stock; a sale also takes a variant built on order, which takes its parts off at once. The inventory of an assembled article counts its stock only; **Awaiting assembly** is not offered for it. Stock in without a print is only for print articles.
+
+The **Journal** of an assembled article, from its page or from the article list, shows its own rows and those of all its variants.
 
 ## Switch and archive
 

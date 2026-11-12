@@ -90,6 +90,8 @@ The status badge follows the first line that applies:
 | **enough** | Available is at least the minimum stock | green |
 | **paused** | The automation is paused for this article (shown in addition) | grey |
 
+An [assembled article](assembled.md) built on order is **deliverable** or **not deliverable**, like a set; the filters have these two states too, and a card counts the ones not deliverable. The stock tile of the overview leaves them out.
+
 You can set the target quantity right in the list or on a tile. Type a number and press Enter or click the check button. The arrows of the field only change the number; nothing is saved until you press Enter or the button. Reprintbuddy sets the minimum stock to the new target minus the buffer, the buffer stays. A target below the buffer is refused. The same works for the switch **Automation** of an article; switching it on needs a print target.
 
 ## The article page
