@@ -3,20 +3,24 @@
 Each order line stores the article that was chosen at order time, and for a set with
 choice parts the number of the variant (Spec 6.7, p340), so a set that is changed
 afterwards does not alter an open order; shipping and cancelling use the lines only.
+A set that holds other sets is resolved through setresolve; each line keeps its way through
+the inner sets (`inner_path`), so the order shows its articles under their inner sets as
+ordered (Spec 6.7, 0.4.3 p423).
 """
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.domain import articlesets, assembled, catalog, rules, withdraw
+from reprintbuddy.domain import articlesets, assembled, catalog, rules, setresolve, withdraw
 from reprintbuddy.domain.errors import (
     ConflictError,
     NotFoundError,
@@ -68,12 +72,24 @@ class AssembledItem:
 
 
 @dataclass(frozen=True)
+class InnerGroup:
+    """An inner set of an ordered set, as ordered (Spec 6.7, 0.4.3 p423)."""
+
+    depth: int  # 1: directly in the ordered set
+    name: str
+    variant_sku: str | None  # the number of its fixed variant when ordered
+    qty: int  # pieces of this inner set in the order line
+    lines: list[tuple[str, int]]  # the articles directly in this inner set: (name, quantity)
+
+
+@dataclass(frozen=True)
 class OrderGroup:
     set_name: str | None
     set_qty: int | None
-    lines: list[tuple[str, int]]  # (article name, quantity)
+    lines: list[tuple[str, int]]  # (article name, quantity); for a set the articles directly in it
     variant_sku: str | None = None  # the number of the variant as it was ordered (p340)
     assembled_name: str | None = None  # a group of an article made of parts built on order (0.4.0)
+    inner: list[InnerGroup] = field(default_factory=list)  # its inner sets, in order (0.4.3 p423)
 
 
 @dataclass(frozen=True)
@@ -122,13 +138,38 @@ def _resolve_assembled(session: Session, group_no: int, item: AssembledItem, qty
         if part.archived_at is not None:
             raise ValidationError("orders.item_archived", name=part.name)
     # The parts as they are now: the order keeps them when the parts list changes later (Spec 5.6).
-    return [(group_no, part_id, qty * q, None, qty, row.sku, composite.id) for part_id, q in needs.items()]
+    return [(group_no, part_id, qty * q, None, qty, row.sku, composite.id, None) for part_id, q in needs.items()]
+
+
+def _resolve_set_lines(session: Session, defs, group_no: int, set_id: int, key: tuple[int, ...], qty: int, sku):
+    """The lines of one ordered set through all its inner sets (Spec 5.4, 0.4.3 p423). An archived
+    inner set or article anywhere inside, or an incomplete inner set, refuses the order with its name."""
+    specs = []
+    for line in setresolve.resolve(defs, set_id, key):
+        for step in line.path:
+            inner = session.get(ProductSet, step.set_id)
+            if inner.archived_at is not None:
+                raise ValidationError("orders.item_archived", name=inner.name)
+            if catalog._incomplete_of(defs[step.set_id]) is not None:
+                raise ValidationError("orders.set_incomplete", set=inner.name)
+        article = session.get(Article, line.article_id)
+        if article.archived_at is not None:
+            raise ValidationError("orders.item_archived", name=article.name)
+        path = None
+        if line.path:  # as ordered: the numbers of the inner variants now, the pieces of this order
+            path = json.dumps([
+                [step.set_id, setresolve.variant_number(defs, step.set_id, step.key), qty * step.units]
+                for step in line.path
+            ])
+        specs.append((group_no, line.article_id, qty * line.qty, set_id, qty, sku, None, path))
+    return specs
 
 
 def _resolve(session: Session, items: Sequence[ArticleItem | SetItem | AssembledItem]):
     """Turn the items into line specs (group_no, article_id, qty, set_id, set_qty, variant_sku,
-    assembled_id), writing nothing."""
-    specs: list[tuple[int, int, int, int | None, int | None, str | None, int | None]] = []
+    assembled_id, inner_path), writing nothing."""
+    specs: list[tuple[int, int, int, int | None, int | None, str | None, int | None, str | None]] = []
+    defs = None
     for group_no, item in enumerate(items, start=1):
         qty = _qty(item.qty)
         if isinstance(item, ArticleItem):
@@ -138,7 +179,7 @@ def _resolve(session: Session, items: Sequence[ArticleItem | SetItem | Assembled
             if article.archived_at is not None:
                 raise ValidationError("orders.item_archived", name=article.name)
             _check_orderable(session, article)
-            specs.append((group_no, item.article_id, qty, None, None, None, None))
+            specs.append((group_no, item.article_id, qty, None, None, None, None, None))
             continue
         if isinstance(item, AssembledItem):
             specs.extend(_resolve_assembled(session, group_no, item, qty))
@@ -162,10 +203,10 @@ def _resolve(session: Session, items: Sequence[ArticleItem | SetItem | Assembled
             raise ValidationError("orders.item_archived", name=archived.name)
         variant = next((v for v in row.variants if v.key == key), None) if key else None
         sku = variant.sku if variant is not None else None
-        for part in row.base:
-            specs.append((group_no, part.article_id, qty * part.qty, row.id, qty, sku, None))
-        for option, field in zip(chosen, row.choices):
-            specs.append((group_no, option.article_id, qty * field.qty, row.id, qty, sku, None))
+        if row.incomplete is None and any(part.incomplete for part in row.base):
+            raise ValidationError("orders.set_incomplete", set=next(p.name for p in row.base if p.incomplete))
+        defs = catalog.load_defs(session) if defs is None else defs
+        specs.extend(_resolve_set_lines(session, defs, group_no, row.id, key, qty, sku))
     return specs
 
 
@@ -201,7 +242,7 @@ def create_order(
     order = Order(reference=reference, order_date=order_date, status="open", note=note)
     session.add(order)
     session.flush()
-    for group_no, article_id, qty, set_id, set_qty, variant_sku, assembled_id in specs:
+    for group_no, article_id, qty, set_id, set_qty, variant_sku, assembled_id, inner_path in specs:
         session.add(
             OrderLine(
                 order_id=order.id,
@@ -212,6 +253,7 @@ def create_order(
                 set_qty=set_qty,
                 variant_sku=variant_sku,
                 assembled_id=assembled_id,
+                inner_path=inner_path,
             )
         )
     session.flush()
@@ -286,21 +328,36 @@ def _view(session: Session, order: Order) -> OrderView:
         .order_by(OrderLine.group_no, OrderLine.id)
     ).all()
     groups: dict[int, OrderGroup] = {}
+    inner: dict[tuple[int, tuple[int, ...]], InnerGroup] = {}
     set_names: dict[int, str] = {}
+
+    def set_name(set_id: int) -> str:
+        if set_id not in set_names:
+            set_names[set_id] = session.get(ProductSet, set_id).name
+        return set_names[set_id]
+
     for line, article_name in lines:
         group = groups.get(line.group_no)
         if group is None:
-            name = None
-            if line.set_id is not None:
-                if line.set_id not in set_names:
-                    set_names[line.set_id] = session.get(ProductSet, line.set_id).name
-                name = set_names[line.set_id]
+            name = set_name(line.set_id) if line.set_id is not None else None
             assembled_name = None
             if line.assembled_id is not None:
                 assembled_name = session.get(Article, line.assembled_id).name
             group = OrderGroup(name, line.set_qty, [], line.variant_sku, assembled_name)
             groups[line.group_no] = group
-        group.lines.append((article_name, line.qty))
+        if not line.inner_path:
+            group.lines.append((article_name, line.qty))
+            continue
+        # Each level of the way gets its group once, in the order the lines were written (depth
+        # first, so a set comes before the sets inside it); a level without own articles stays empty.
+        path = json.loads(line.inner_path)
+        for depth in range(1, len(path) + 1):
+            prefix = (line.group_no, tuple(step[0] for step in path[:depth]))
+            if prefix not in inner:
+                step_set, step_sku, step_units = path[depth - 1]
+                inner[prefix] = InnerGroup(depth, set_name(step_set), step_sku, step_units, [])
+                group.inner.append(inner[prefix])
+        inner[prefix].lines.append((article_name, line.qty))
     needed = _needed(session, order.id)
     ready = order.status == "open" and rules.order_ready(needed, _stock_of(session, list(needed)))
     return OrderView(

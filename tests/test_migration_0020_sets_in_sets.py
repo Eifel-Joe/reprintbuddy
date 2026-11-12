@@ -74,10 +74,10 @@ def test_existing_sets_and_orders_read_as_before(old_db):
     sm = make_sessionmaker(old_db)
     with sm() as s:
         row = catalog.list_sets(s)[0]
-        assert [(b.qty, b.name) for b in row.base] == [(2, "Frame")]
+        assert [(b.qty, b.name, b.set_id) for b in row.base] == [(2, "Frame", None)]
         assert [v.sku for v in row.variants] == ["EX-S1-A", "EX-S1-B"]
         view = orders.list_orders(s, "open")[0]
-        assert view.groups[0].lines == [("Frame", 2), ("Plate A", 1)]
+        assert view.groups[0].lines == [("Frame", 2), ("Plate A", 1)] and view.groups[0].inner == []
 
 
 def test_inner_set_row_points_at_set_and_articles(old_db):
