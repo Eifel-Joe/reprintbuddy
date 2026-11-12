@@ -1486,5 +1486,17 @@
   "overview.tile.reorder": "Reorder suggestions",
   "overview.tile.pieces.one": "{n} piece",
   "overview.tile.pieces.other": "{n} pieces",
-  "overview.tile.under_way": "{n} on the way"
+  "overview.tile.under_way": "{n} on the way",
+  "overview.plan.kind_running": "printing",
+  "overview.plan.kind_fixed": "assigned by Bambuddy",
+  "overview.plan.kind_planned": "probably assigned",
+  "overview.plan.condition_offline": "offline",
+  "overview.plan.condition_maintenance": "maintenance",
+  "overview.plan.condition_error": "error",
+  "overview.plan.condition_plate": "waiting for the plate to be cleared",
+  "overview.plan.rest": "{time} left",
+  "overview.plan.paused": "paused",
+  "overview.plan.unknown_duration": "Duration unknown",
+  "overview.plan.cut": "→ until {time}",
+  "overview.plan.weekdays": "Mon,Tue,Wed,Thu,Fri,Sat,Sun"
 }

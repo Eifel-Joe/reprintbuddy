@@ -1486,5 +1486,17 @@
   "overview.tile.reorder": "Bestellvorschläge",
   "overview.tile.pieces.one": "{n} Stück",
   "overview.tile.pieces.other": "{n} Stück",
-  "overview.tile.under_way": "{n} unterwegs"
+  "overview.tile.under_way": "{n} unterwegs",
+  "overview.plan.kind_running": "druckt",
+  "overview.plan.kind_fixed": "von Bambuddy fest zugeteilt",
+  "overview.plan.kind_planned": "voraussichtlich zugeteilt",
+  "overview.plan.condition_offline": "offline",
+  "overview.plan.condition_maintenance": "Wartung",
+  "overview.plan.condition_error": "Fehler",
+  "overview.plan.condition_plate": "wartet auf Platte freigeben",
+  "overview.plan.rest": "noch {time}",
+  "overview.plan.paused": "pausiert",
+  "overview.plan.unknown_duration": "Dauer unbekannt",
+  "overview.plan.cut": "→ bis {time}",
+  "overview.plan.weekdays": "Mo,Di,Mi,Do,Fr,Sa,So"
 }
