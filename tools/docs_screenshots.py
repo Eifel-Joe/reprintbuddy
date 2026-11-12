@@ -764,6 +764,14 @@ def build_catalog(server: Server, scn: Scenario) -> None:
             [catalog.ChoiceInput(2, [catalog.ChoiceOptionInput(a["clip_blue"], "-B")]),
              catalog.ChoiceInput(1, [catalog.ChoiceOptionInput(a["spool_holder"], "-1")])],
         )).id
+        # A set of two sets, each in a fixed variant (Spec 5.4, 0.4.3 p423): the list shows the inner
+        # sets with their numbers and the badge "Set", the open order 1003 shows them indented.
+        scn.sets["Workshop bundle"] = catalog.create_set(s, catalog.SetInput(
+            "Workshop bundle", "EX-S03",
+            [catalog.BaseInput(1, None, scn.sets["Bracket kit"], (a["bracket_small"],)),
+             catalog.BaseInput(1, None, scn.sets["Clip assortment"], (a["clip_blue"], a["spool_holder"]))],
+            [],
+        )).id
 
 
     # the spool sorts of the stand-in are entered the way the filament page does it
@@ -862,6 +870,10 @@ def build_history(server: Server, scn: Scenario) -> None:
             s, reference=tr("Order 1002", "Bestellung 1002"), order_date=date(2026, 11, 8), actor="user",
             items=[orders.ArticleItem(a["cable_guide"], 2), orders.ArticleItem(a["bracket_large"], 1),
                    orders.AssembledItem(a["hose"], 1, _hose_key(s, a["hose"], "-L32"))],
+        )
+        orders.create_order(
+            s, reference=tr("Order 1003", "Bestellung 1003"), order_date=date(2026, 11, 8), actor="user",
+            items=[orders.SetItem(scn.sets["Workshop bundle"], 1)],
         )
         stock.count_article(s, a["cable_guide"], "awaiting_assembly", 6, "user", tr("Printed parts waiting for inserts", "Gedruckte Teile warten auf Einsätze"))
         pauses.pause_article(s, a["spool_holder"], "two_failures", "auto")
