@@ -764,12 +764,13 @@ def build_catalog(server: Server, scn: Scenario) -> None:
             [catalog.ChoiceInput(2, [catalog.ChoiceOptionInput(a["clip_blue"], "-B")]),
              catalog.ChoiceInput(1, [catalog.ChoiceOptionInput(a["spool_holder"], "-1")])],
         )).id
-        # A set of two sets, each in a fixed variant (Spec 5.4, 0.4.3 p423): the list shows the inner
-        # sets with their numbers and the badge "Set", the open order 1003 shows them indented.
+        # A set of two sets (Spec 5.4, 0.4.3 p423) that bring their choice parts (0.4.4 p441): the list
+        # shows the inner sets with their numbers and the badge "Set" and the variants EX-S03-S-B-1 and
+        # EX-S03-L-B-1; the open order 1003 shows the inner sets indented with their variant numbers.
         scn.sets["Workshop bundle"] = catalog.create_set(s, catalog.SetInput(
             "Workshop bundle", "EX-S03",
-            [catalog.BaseInput(1, None, scn.sets["Bracket kit"], (a["bracket_small"],)),
-             catalog.BaseInput(1, None, scn.sets["Clip assortment"], (a["clip_blue"], a["spool_holder"]))],
+            [catalog.BaseInput(1, None, scn.sets["Bracket kit"]),
+             catalog.BaseInput(1, None, scn.sets["Clip assortment"])],
             [],
         )).id
 
@@ -873,7 +874,7 @@ def build_history(server: Server, scn: Scenario) -> None:
         )
         orders.create_order(
             s, reference=tr("Order 1003", "Bestellung 1003"), order_date=date(2026, 11, 8), actor="user",
-            items=[orders.SetItem(scn.sets["Workshop bundle"], 1)],
+            items=[orders.SetItem(scn.sets["Workshop bundle"], 1, (a["bracket_small"], a["clip_blue"], a["spool_holder"]))],
         )
         stock.count_article(s, a["cable_guide"], "awaiting_assembly", 6, "user", tr("Printed parts waiting for inserts", "Gedruckte Teile warten auf Einsätze"))
         pauses.pause_article(s, a["spool_holder"], "two_failures", "auto")
