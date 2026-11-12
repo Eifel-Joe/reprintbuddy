@@ -53,6 +53,7 @@ class PrinterBoard:
         self.shortest_first = False  # Bambuddy's "shortest job first", read with the query
         self._published_at: datetime | None = None
         self._pending = False
+        self._handle: object | None = None  # the held-back publish, cancelled by any earlier one
 
     # ---- writes ---------------------------------------------------------------------------
 
@@ -92,7 +93,8 @@ class PrinterBoard:
             return
         self._pending = True
         schedule = self._call_later or _loop_call_later
-        if schedule(THROTTLE_SECONDS - elapsed, self._flush) is None and self._call_later is None:
+        self._handle = schedule(THROTTLE_SECONDS - elapsed, self._flush)
+        if self._handle is None and self._call_later is None:
             self._flush()  # no running loop (a script, a test without background tasks): at once
 
     # ---- publishing -----------------------------------------------------------------------
@@ -102,6 +104,12 @@ class PrinterBoard:
             self._send()
 
     def _send(self) -> None:
+        # A publish held back for a live message is superseded: without the cancel it would fire early
+        # for a later message, less than a minute after this one (review v0.4.2, 9).
+        handle, self._handle = self._handle, None
+        cancel = getattr(handle, "cancel", None)
+        if cancel is not None:
+            cancel()
         self._pending = False
         self._published_at = self._now()
         if self._publish is None:

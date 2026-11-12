@@ -120,3 +120,36 @@ def test_without_publish_nothing_breaks():
     board.replace(PRINTERS, {1: status()})
     board.update(status(progress=50.0))
     board.forget()
+
+
+class Handle:
+    def __init__(self, later, callback):
+        self.later, self.callback, self.cancelled = later, callback, False
+
+    def cancel(self):
+        self.cancelled = True
+
+
+def test_a_query_cancels_a_held_back_publish():
+    """update at 10 s, query at 20 s, update at 30 s: the publish held back at 10 s must not fire early for
+    the update at 30 s - the next publish comes 60 s after the query (review v0.4.2, 9)."""
+    published: list = []
+    clock = Clock()
+    handles: list[Handle] = []
+
+    def later(delay, callback):
+        handle = Handle(delay, callback)
+        handles.append(handle)
+        return handle
+
+    board = PrinterBoard(published.append, now=clock, call_later=later)
+    board.replace(PRINTERS, {1: status(progress=1.0)})
+    clock.now = T0 + timedelta(seconds=10)
+    board.update(status(progress=2.0))
+    first = handles[-1]
+    clock.now = T0 + timedelta(seconds=20)
+    board.replace(PRINTERS, {1: status(progress=3.0)})
+    assert first.cancelled
+    clock.now = T0 + timedelta(seconds=30)
+    board.update(status(progress=4.0))
+    assert handles[-1] is not first and handles[-1].later == THROTTLE_SECONDS - 10
