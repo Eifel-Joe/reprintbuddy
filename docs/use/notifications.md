@@ -36,7 +36,7 @@ Seven events, each ticked on its own. All are on at the start.
 | Event | Reports |
 |---|---|
 | **Print finished, waits for inspection** | Once for every print, with the article and the number of pieces. Only prints that finished after you switched messages on, and not older than 7 days. |
-| **Print failed in Bambuddy** | Once for every print. The replacement is already queued. |
+| **Print failed in Bambuddy** | Once for every print. A replacement follows the rules in [Automation](automation.md#replacement-for-scrap-and-failures): for a print of the minimum stock only if the target needs it. |
 | **Article paused by the automation** | The article and the reason, for example "two failures in a row", "cancelled in Bambuddy", "print file changed" or "no print target". A pause you cause yourself by reducing a queue entry is not reported. |
 | **Article below minimum stock** | An article in the state *below minimum* or *overbooked*, checked after the reprint rule has run. *Low* (yellow) is not reported, because the reprint is already under way. |
 | **New reorder suggestion** | A new suggestion for filament or a bought part, see [Reorder suggestions](reorder.md). |
