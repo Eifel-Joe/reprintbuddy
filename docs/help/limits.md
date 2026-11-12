@@ -36,6 +36,8 @@ To be safe, keep your print files in Bambuddy's own file manager. If an article 
 
 - An article has **exactly one plate** of one print file. A product made of several different plates is not represented as one article.
 - A plate belongs to **at most one article**. Reprintbuddy refuses a second article on the same plate ("This plate already belongs to the article …").
+- A set or an article made of parts has **at most 100 variants**. See [Sets](../use/inspection.md#sets) and [Assembled articles](../use/assembled.md).
+- Article numbers are compared **without regard to case**. Two numbers that differ only in case and come from an earlier version stay as they are and can still be ordered; one of the two can be saved again only after you rename one.
 
 ## Labels
 

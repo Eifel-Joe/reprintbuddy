@@ -32,7 +32,7 @@ The same form opens under **Edit settings** on the article page. An info button 
 | Field | Meaning | Default |
 |---|---|---|
 | **Name** | Free text, up to 200 characters. | The file name without its ending (`.gcode.3mf` or `.3mf`) |
-| **Article number** | Optional, up to 64 characters. Must be unique among all articles and sets. | empty |
+| **Article number** | Optional, up to 64 characters. Must be unique among all articles, sets and variants; case does not count (EX-1 and ex-1 are the same number). Stored as you type it. | empty |
 | **Label text** | Optional text for the [label](labels.md), for example the shelf compartment (up to 60 characters). | empty |
 | **Units per print** | How many units one print of this plate yields, 1 to 1000. Reprintbuddy uses it to work out how many prints a reprint needs. | 1 |
 | **Print target** | Where Bambuddy sends the print: **Any** followed by a printer model (any free printer of that model prints it), one particular printer, or **No print target**. A printer in maintenance mode is not offered anew. | The printer model the file was sliced for |

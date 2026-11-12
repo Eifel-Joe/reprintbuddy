@@ -132,7 +132,8 @@ Rules when you save:
 - A set with choice parts needs an article number, also when only an inner set brings them; the suffixes in one field differ.
 - Every variant has at least two different articles: two base parts, a base part and choice parts, or two fields of choice parts.
 - Choice parts 2 only go with choice parts 1.
-- Variant numbers are at most 64 characters long and unique: no article, set or other variant may have the same number, archived ones included.
+- Variant numbers are at most 64 characters long and unique: no article, set or other variant may have the same number, archived ones included. Case does not count: EX-S10-A and ex-s10-a are the same number.
+- A set has at most 100 variants (the options of all its fields multiplied, brought ones included). Saving refuses more and names the number. If a change to an inner set would give one of the sets it is in more than 100, the message names that set.
 
 **Availability.** A set without choice parts is available as often as all of its articles are available at the same time. With choice parts, each variant is available as often as a set of its own articles, and the list shows the whole set as **Available**: how many sets in any mix of the variants come from the available pieces at the same time. Example: base parts, A, B and C one each: every variant 1, together 1. Base parts 3, A 2, B 0, C 1: variant A 2, B 0, C 1, together 3. A set is **deliverable** when at least one set can be made, otherwise **not deliverable**.
 

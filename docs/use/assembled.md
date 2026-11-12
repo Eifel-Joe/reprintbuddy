@@ -28,7 +28,7 @@ Every variant holds at least two units of parts and purchased parts together, at
 
 ### Variants and numbers
 
-As with sets, each combination of the options is a **variant**, and its number is the article number with the suffixes behind it: the hose `EX-H1` with `-L32`, `-L40`, `-R32`, `-R40` has the variants EX-H1-L32 … EX-H1-R40. Numbers are unique over all articles, sets and variants. When you change a suffix or the parts of an option, the variant keeps its stock. A variant with stock, a reservation or in an open order cannot be removed; the message names it.
+As with sets, each combination of the options is a **variant**, and its number is the article number with the suffixes behind it: the hose `EX-H1` with `-L32`, `-L40`, `-R32`, `-R40` has the variants EX-H1-L32 … EX-H1-R40. Numbers are unique over all articles, sets and variants; case does not count. An article made of parts has at most 100 variants; saving refuses more and names the number. When you change a suffix or the parts of an option, the variant keeps its stock. A variant with stock, a reservation or in an open order cannot be removed; the message names it.
 
 ## On stock or on order
 
