@@ -380,3 +380,22 @@ def test_archived_in_sets_names_the_set_that_holds_it_directly(db, kits):
 def test_nothing_archived_nothing_to_warn(db, kits):
     with db.begin() as s:
         assert catalog.archived_in_sets(s) == []
+
+
+def test_restoring_a_set_whose_inner_set_was_archived_meanwhile(db, kits):  # Spec 5.4 Wiederherstellen (a)
+    a, basic, extension, complete = kits
+    with db.begin() as s:
+        catalog.archive_set(s, complete)
+        catalog.archive_set(s, extension)  # nothing active holds it any more
+        catalog.archive_article(s, a["plate"])  # only the archived extension holds it
+        catalog.restore_set(s, complete)  # restoring always goes
+    with db.begin() as s:
+        row = row_of(s, complete)
+        assert (row.orderable, row.available, row.held_archived) == (True, 3, (("set", "Extension"),))
+        assert [(w.set_name, w.kind, w.name) for w in catalog.archived_in_sets(s)] == [("Complete kit", "set", "Extension")]
+        from reprintbuddy.domain.orders import SetItem, create_order
+        from datetime import date
+        create_order(s, reference="R-1", order_date=date(2026, 11, 12), items=[SetItem(complete, 1)], actor="user")
+    with db.begin() as s:
+        assert s.get(Article, a["plate"]).reserved == 1  # archived, inside the archived inner set, still reserved
+
