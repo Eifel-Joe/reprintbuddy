@@ -150,13 +150,6 @@ def test_inner_suffix_change_changes_outer_variants(db, spec):
         assert catalog.set_row(s, ids["k2"]).variants[2].sku == "EX-K2-QQ-X"
 
 
-def test_inner_suffix_change_that_gives_taken_number_is_refused(db, spec):  # Spec 5.4 "Änderungen"
-    a, ids = spec
-    with db.begin() as s:
-        make_article(s, name="Taken", sku="EX-K1-W")
-    error = refused(db, bath_input(a, (("plate_p", "-P"), ("plate_q", "-W"), ("plate_z", "-Z"))),
-                    "catalog.sku_taken", ConflictError, set_id=ids["bath"])
-    assert error.params["sku"] == "EX-K1-W"
 
 
 def test_inner_suffix_change_that_gives_another_variants_number_is_refused(db, spec):
@@ -166,17 +159,10 @@ def test_inner_suffix_change_that_gives_another_variants_number_is_refused(db, s
         make_set(s, "Other", [(1, a["socket"])], [(1, [(other, "-Z9")])], sku="EX-K2-P")  # variant EX-K2-P-Z9
     data = SetInput("Bath 2", "EX-A2", [set_in(ids["bath"])],
                     [ChoiceInput(1, [option(a["valve_x"], "-X"), option(a["valve_y"], "-Z9")])])
-    error = refused(db, data, "catalog.sku_taken", ConflictError, set_id=ids["bath2"])
-    assert error.params["sku"] == "EX-K2-P-Z9"  # K2 = plate p of bath, then valve y of bath 2
+    error = refused(db, data, "sets.parent_sku_taken", ConflictError, set_id=ids["bath2"])
+    assert error.params == {"names": [("K2", False)], "sku": "EX-K2-P-Z9"}  # K2 = plate p of bath, then valve y
 
 
-def test_inner_suffix_change_too_long_in_outer_is_refused(db, spec):
-    a, ids = spec
-    with db.begin() as s:
-        s.get(ProductSet, ids["k1"]).sku = "EX-" + "K" * 58  # 61 characters, the variants 63
-    error = refused(db, bath_input(a, (("plate_p", "-P"), ("plate_q", "-QQQ"), ("plate_z", "-Z"))),
-                    "sets.variant_too_long", ValidationError, set_id=ids["bath"])
-    assert error.params["sku"] == "EX-" + "K" * 58 + "-QQQ"
 
 
 def test_article_equal_to_an_unchosen_option_of_an_inner_set_is_refused(db, spec):  # plan E4
@@ -251,3 +237,85 @@ def test_many_fields_stay_fast(db):  # review focus 1: 3 ** 6 = 729 variants
     assert len(rows["Big"].variants) == 729 and rows["Big"].variants[0].sku == "EX-BIG-1-1-1-1-1-1"
     assert time.perf_counter() - started < 5, "the list of sets must stay quick"
     assert big
+
+
+# ---- review of v0.4.4 ----------------------------------------------------------------------
+
+
+def test_deep_chain_stays_quick(db):  # review finding 1: _incomplete_of went exponential with depth
+    with db.begin() as s:
+        a = articles(s, **{f"x{n}": 1 for n in range(32)})
+        below = make_set(s, "Level 0", [(1, a["x0"]), (1, a["x1"])]).id
+        for n in range(1, 30):
+            below = make_set(s, f"Level {n}", [(1, inner(below)), (1, a[f"x{n + 1}"])]).id
+    started = time.perf_counter()
+    with db.begin() as s:
+        rows = catalog.list_sets(s)
+        assert catalog.sets_to_mend(s) == []
+    assert all(r.incomplete is None for r in rows)
+    assert time.perf_counter() - started < 5, "a chain of 30 levels must not hang the set list"
+
+
+def test_three_levels_after_the_update_show_number_missing_not_broken(db, spec):  # review finding 2
+    _a, ids = spec
+    with db.begin() as s:
+        middle = make_set(s, "Middle", [(1, inner(ids["bath"])), (1, inner(ids["power"]))]).id  # no number
+        hook = articles(s, hook=1)["hook"]
+        top = make_set(s, "Top", [(1, inner(middle)), (1, hook)]).id  # no number either
+        numbered = make_set(s, "Numbered", [(1, inner(middle)), (1, articles(s, cap=1)["cap"])], sku="EX-NB").id
+    with db.begin() as s:
+        assert catalog.set_row(s, middle).incomplete == "number_missing"
+        assert catalog.set_row(s, top).incomplete == "number_missing"  # Spec 5.4 update paragraph
+        row = catalog.set_row(s, numbered)
+        assert row.incomplete is None and row.orderable and row.variants[0].sku == "EX-NB-P"
+        assert [(m.set_name, m.kind) for m in catalog.sets_to_mend(s)] == [
+            ("Middle", "number_missing"), ("Top", "number_missing"),
+        ]
+
+
+def test_taken_number_in_a_containing_set_names_that_set(db, spec):  # review finding 3, Spec 5.4 "Änderungen"
+    a, ids = spec
+    with db.begin() as s:
+        make_article(s, name="Taken", sku="EX-K1-W")
+    error = refused(db, bath_input(a, (("plate_p", "-P"), ("plate_q", "-W"), ("plate_z", "-Z"))),
+                    "sets.parent_sku_taken", ConflictError, set_id=ids["bath"])
+    assert error.params == {"names": [("K1", False)], "sku": "EX-K1-W"}
+
+
+def test_too_long_number_in_a_containing_set_names_that_set(db, spec):  # review finding 3
+    a, ids = spec
+    with db.begin() as s:
+        s.get(ProductSet, ids["k1"]).sku = "EX-" + "K" * 58
+    error = refused(db, bath_input(a, (("plate_p", "-P"), ("plate_q", "-QQQ"), ("plate_z", "-Z"))),
+                    "sets.parent_variant_too_long", ValidationError, set_id=ids["bath"])
+    assert error.params == {"names": [("K1", False)], "sku": "EX-" + "K" * 58 + "-QQQ", "max": 64}
+
+
+def test_stored_ring_inside_a_set_with_too_few_rows_shows_broken(db):  # review finding 4
+    from reprintbuddy.models import SetPosition, SetPositionSet
+    with db.begin() as s:
+        x = articles(s, x=1)["x"]
+        first = make_set(s, "First", [(1, x)]).id  # too few rows
+        second = make_set(s, "Second", [(1, inner(first)), (1, articles(s, y=1)["y"])]).id
+        position = SetPosition(set_id=first, sort=1, qty=1, slot=0)
+        s.add(position)
+        s.flush()
+        s.add(SetPositionSet(position_id=position.id, set_id=second))  # first holds second: a ring
+        first_alone = make_set(s, "Alone", [(1, inner(second))]).id  # one row only: too few, ring inside
+    with db.begin() as s:
+        rows = {r.name: r for r in catalog.list_sets(s)}  # no error page
+        assert rows["Alone"].incomplete == "broken" and not rows["Alone"].orderable
+        assert first_alone
+
+
+def test_parent_without_number_refused_also_when_archived(db, spec):  # plan F2, archived parents count too
+    a, ids = spec
+    with db.begin() as s:
+        lid = articles(s, lid=1, red=1)
+        plain = make_set(s, "Plain", [(1, a["socket"]), (1, lid["lid"])], sku="EX-PL").id
+        gone = make_set(s, "Gone", [(1, inner(plain)), (1, a["cable"])])
+        gone.archived_at = datetime(2026, 11, 12, 8, 0)
+    data = SetInput("Plain", "EX-PL", [BaseInput(1, a["socket"]), BaseInput(1, lid["lid"])],
+                    [ChoiceInput(1, [option(lid["red"], "-R")])])
+    error = refused(db, data, "sets.parent_sku_required", ConflictError, set_id=plain)
+    assert error.params["names"] == [("Gone", True)]

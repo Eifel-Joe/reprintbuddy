@@ -995,8 +995,9 @@ def _check_brought(
     those sets (plan v0.4.4, F2): no set may fall out of the order form through a change made
     elsewhere. Then every variant number of these sets fits (64 characters) and is free: not an
     article's or a set's number and not another variant's, also not between these sets (p340,
-    question 6); the message names the number.
-    Tests: tests/domain/test_catalog_brought_choices.py."""
+    question 6); the message names the number, and the set when it is one that holds this one
+    (Spec 5.4 "Änderungen", review of v0.4.4 finding 3). Article numbers are read once, not per
+    number (finding 5). Tests: tests/domain/test_catalog_brought_choices.py."""
     parents = setresolve.containing(defs, set_id) if set_id is not None else []
 
     def has_fields(found: dict[int, setresolve.SetDef], i: int) -> bool:
@@ -1012,15 +1013,18 @@ def _check_brought(
     taken = {number: i for i, number_list in ((i, _numbers_of(defs, i)) for i in defs if i not in affected)
              for number in number_list}
     set_numbers = {d.sku: i for i, d in defs.items() if d.sku}
+    article_numbers = set(session.scalars(select(Article.sku).where(Article.sku.is_not(None))))
     seen: set[str] = set()
     for i in affected:
+        names = _marked_names(session, defs, [i]) if i != own_id else None
         for number in _numbers_of(defs, i):
             if len(number) > MAX_SKU:
+                if names:
+                    raise ValidationError("sets.parent_variant_too_long", names=names, sku=number, max=MAX_SKU)
                 raise ValidationError("sets.variant_too_long", sku=number, max=MAX_SKU)
-            if (
-                number in seen or number in taken or number in set_numbers
-                or session.scalar(select(Article.id).where(Article.sku == number)) is not None
-            ):
+            if number in seen or number in taken or number in set_numbers or number in article_numbers:
+                if names:
+                    raise ConflictError("sets.parent_sku_taken", names=names, sku=number)
                 raise ConflictError("catalog.sku_taken", sku=number)
             seen.add(number)
 
@@ -1111,26 +1115,44 @@ def load_defs(session: Session) -> dict[int, setresolve.SetDef]:
     }
 
 
-def _incomplete_of(defs: dict[int, setresolve.SetDef], set_id: int) -> str | None:
-    """Why a set is not orderable as it is stored, or None: too few rows, or a choice field without
-    its numbers (sets the update to v0.4.0 rebuilt); a ring, an article twice or an incomplete set
-    inside ("broken", 0.4.3); brought choice parts without a number of its own ("number_missing",
+def _incomplete_of(
+    defs: dict[int, setresolve.SetDef], set_id: int, memo: dict[int, str | None] | None = None
+) -> str | None:
+    """Why a set is not orderable as it is stored, or None: a ring, an article twice or an incomplete
+    set inside ("broken", 0.4.3); too few rows, or a choice field without its numbers (sets the
+    update to v0.4.0 rebuilt); brought choice parts without a number of its own ("number_missing",
     left by the update to 0.4.4). A row with an inner set counts as one (F8), a brought field does
-    not count again (plan v0.4.4, F1)."""
+    not count again (plan v0.4.4, F1).
+
+    An inner set that only lacks its number does not break the sets around it: their variant numbers
+    start with their own number, so each of them shows "number_missing" itself or stays orderable
+    (Spec 5.4 update paragraph; review of v0.4.4 finding 2). Only the direct inner sets are asked,
+    since each answers for its own, and `memo` keeps every answer of one page; asking every level
+    again took twice as long per level (finding 1). The resolve runs first, so a stored ring inside a
+    set with too few rows shows "broken" instead of failing the page (finding 4).
+    Tests: tests/domain/test_catalog_brought_choices.py."""
+    memo = {} if memo is None else memo
+    if set_id not in memo:
+        memo[set_id] = "broken"  # while it is asked: a stored ring through it is broken
+        memo[set_id] = _state_of(defs, set_id, memo)
+    return memo[set_id]
+
+
+def _state_of(defs: dict[int, setresolve.SetDef], set_id: int, memo: dict[int, str | None]) -> str | None:
     found = defs[set_id]
+    try:
+        setresolve.check(defs, set_id)
+        slots = setresolve.fields(defs, set_id)
+    except setresolve.ResolveError:
+        return "broken"
     if len(found.base) + len(found.fields) < 2:
         return "too_few"
     if found.fields and any(
         rules.variant_number(found.sku, [suffix]) is None for field in found.fields for suffix in field.suffixes
     ):
         return "suffixes_missing"
-    try:
-        setresolve.check(defs, set_id)
-        slots = setresolve.fields(defs, set_id)
-        inner = setresolve.inner_sets(defs, set_id)
-    except setresolve.ResolveError:
-        return "broken"
-    if any(_incomplete_of(defs, i) is not None for i in set(inner)):
+    direct = {row.set_id for row in found.base if row.set_id is not None}
+    if any(_incomplete_of(defs, i, memo) not in (None, "number_missing") for i in direct):
         return "broken"
     if not found.sku and any(slot.path for slot in slots):
         return "number_missing"
@@ -1156,8 +1178,9 @@ def sets_to_mend(session: Session) -> list[SetToMend]:
     defs = load_defs(session)
     archived = _archived_sets(session)
     found: list[SetToMend] = []
+    memo: dict[int, str | None] = {}
     for held in sorted((d for d in defs.values() if d.id not in archived), key=lambda d: (d.name.casefold(), d.id)):
-        state = _incomplete_of(defs, held.id)
+        state = _incomplete_of(defs, held.id, memo)
         if state == "number_missing":
             found.append(SetToMend(held.id, held.name, "number_missing", None))
         elif state == "broken":
@@ -1193,6 +1216,7 @@ def _set_row(
     product_set: ProductSet,
     defs: dict[int, setresolve.SetDef] | None = None,
     archived_sets: set[int] | None = None,
+    memo: dict[int, str | None] | None = None,
 ) -> SetRow:
     """A set as the list shows it. Its base parts count with their resolved articles (Spec 5.4: an
     inner set counts as its articles, quantities multiplied); no article comes twice (Spec 5.4), so
@@ -1209,7 +1233,7 @@ def _set_row(
     defs = load_defs(session) if defs is None else defs
     archived_sets = _archived_sets(session) if archived_sets is None else archived_sets
     own = defs[product_set.id]
-    incomplete = _incomplete_of(defs, product_set.id)
+    incomplete = _incomplete_of(defs, product_set.id, memo)
     broken = incomplete == "broken"
     lines: tuple[setresolve.Line, ...] = ()
     slots: tuple[setresolve.Slot, ...] = ()
@@ -1348,7 +1372,8 @@ def list_sets(session: Session, *, archived: bool = False) -> list[SetRow]:
     found = session.scalars(select(ProductSet).where(_archive_filter(ProductSet.archived_at, archived))).all()
     sets = sorted(found, key=lambda s: (s.name.casefold(), s.id))
     defs, archived_sets = load_defs(session), _archived_sets(session)
-    return [_set_row(session, s, defs, archived_sets) for s in sets]
+    memo: dict[int, str | None] = {}  # one answer per set for the whole page (review of v0.4.4, finding 1)
+    return [_set_row(session, s, defs, archived_sets, memo) for s in sets]
 
 
 # ---- archive instead of delete (Spec 5.5) ---------------------------------------------------

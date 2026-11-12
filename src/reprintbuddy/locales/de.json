@@ -313,6 +313,8 @@
   "sets.suffix_required": "{name} braucht eine Zusatznummer.",
   "sets.sku_required": "Ein Set mit Wahlteilen, auch mitgebrachten aus einem inneren Set, braucht eine Artikelnummer: Mit ihr beginnen die Nummern der Varianten.",
   "sets.parent_sku_required": "Geht nicht: In {names} fehlt die Artikelnummer, die die Varianten dann brauchen. Trag sie dort zuerst ein.",
+  "sets.parent_sku_taken": "Geht nicht: In {names} ergäbe das die Nummer {sku}, und die ist schon vergeben.",
+  "sets.parent_variant_too_long": "Geht nicht: In {names} ergäbe das die Variantennummer {sku}, länger als {max} Zeichen.",
   "sets.too_few_articles": "Jede Variante braucht mindestens zwei verschiedene Artikel: zwei Basisteile, ein Basisteil und Wahlteile oder zwei Felder Wahlteile.",
   "sets.article_twice": "{name} steht mehrmals im Set. Ein Artikel darf nur einmal in einem Set stehen.",
   "sets.ring": "Ein Set darf sich nicht selbst enthalten, auch nicht über andere Sets: {path}.",
