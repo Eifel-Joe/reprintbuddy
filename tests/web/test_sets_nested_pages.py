@@ -296,3 +296,16 @@ def test_archive_view_shows_no_altfall_warning(ready_client):  # review finding 
         catalog.archive_article(s, a["Holder"])
     page = ready_client.get("/sets?view=archived").text
     assert en("sets.holds_archived_article", set="Basic kit", name="Holder") not in page
+
+
+def test_base_parts_say_article_or_set_and_choice_parts_article(ready_client):  # Spec 5.4 (0.4.3)
+    kits(ready_client)
+    page = ready_client.get("/sets/new").text
+    base_head = re.search(r'<div class="set-head set-base"[^>]*>(.*?)</div>', page, re.S).group(1)
+    choice_head = re.search(r'<div class="set-head set-choice"[^>]*>(.*?)</div>', page, re.S).group(1)
+    assert en("sets.field.article_or_set") in base_head and en("sets.field.article") in choice_head
+    assert f'<option value="">{en("sets.article_or_set_choose")}</option>' in select_html(page, "base_0_article")
+    assert f'<option value="">{en("sets.article_choose")}</option>' in select_html(page, "c1_0_article")
+    assert f'aria-label="{en("sets.field.article_or_set")} 1"' in page
+    assert en("sets.field.article_or_set") == "Article or set" and en("sets.article_or_set_choose") == "Choose an article or set"
+

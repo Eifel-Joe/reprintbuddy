@@ -14,7 +14,7 @@
     0, {i1} counted from 1, and the hidden counter of the part is kept in step (p380). -#}
 {% macro article_select(name, chosen, label, focus=false, with_sets=false) -%}
 <select name="{{ name }}" aria-label="{{ label }}" data-set-article{% if focus %} autofocus{% endif %}>
-  <option value="">{{ t('sets.article_choose') }}</option>
+  <option value="">{{ t('sets.article_or_set_choose') if with_sets else t('sets.article_choose') }}</option>
   {% if with_sets %}<optgroup label="{{ t('sets.group_articles') }}">{% endif %}
   {% for article in articles %}{% set elsewhere = blocked(article.id, chosen) %}
   {%- if not article.archived or article.id == chosen %}
@@ -34,7 +34,7 @@
 {% macro base_row(i, n, row, fresh=false) -%}
 <div class="set-row set-base"{% if fresh %} id="more-new"{% endif %} data-more-row>
   <input name="base_{{ i }}_qty" inputmode="numeric" min="1" value="{{ row.qty }}" aria-label="{{ t('sets.field.qty') }} {{ n }}"{% if fresh %} autofocus{% endif %}>
-  {{ article_select('base_' ~ i ~ '_article', row.article, t('sets.field.article') ~ ' ' ~ n, with_sets=true) }}
+  {{ article_select('base_' ~ i ~ '_article', row.article, t('sets.field.article_or_set') ~ ' ' ~ n, with_sets=true) }}
   <p class="hint set-contains" data-set-contains>{{ contains.get(row.article, '') }}</p>
 </div>
 {%- endmacro %}
@@ -90,7 +90,7 @@
       <legend>{{ t('sets.base') }}</legend>
       <p class="hint">{{ t('sets.base_hint') }}</p>
       <input type="hidden" name="base_rows" value="{{ values.base | length }}">
-      <div class="set-head set-base" aria-hidden="true"><span>{{ t('sets.field.qty') }}</span><span>{{ t('sets.field.article') }}</span></div>
+      <div class="set-head set-base" aria-hidden="true"><span>{{ t('sets.field.qty') }}</span><span>{{ t('sets.field.article_or_set') }}</span></div>
       {% for row in values.base %}
       {{ base_row(loop.index0, loop.index, row, values.fresh == 'base:' ~ loop.index0) }}
       {% endfor %}

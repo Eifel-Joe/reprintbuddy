@@ -329,6 +329,8 @@
   "sets.field.choice_qty": "Menge des gewählten Artikels",
   "sets.field.article": "Artikel",
   "sets.article_choose": "Artikel wählen",
+  "sets.field.article_or_set": "Artikel oder Set",
+  "sets.article_or_set_choose": "Artikel oder Set wählen",
   "sets.add_choices_2": "Wahlteile 2 hinzufügen",
   "sets.choices_2": "Wahlteile 2",
   "sets.choices_1": "Wahlteile 1",
