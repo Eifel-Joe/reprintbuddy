@@ -21,6 +21,7 @@ from reprintbuddy.bambuddy.types import (
     Plate,
     PrintOptions,
     Printer,
+    PrinterStatus,
     QueueItem,
     Spool,
     SpoolMode,
@@ -109,6 +110,29 @@ def _label(item_id: int, file_name: str | None, archive_name: str | None, plate_
     return label
 
 
+# Fields only the print plan shows (Spec 10.2, 0.4.2). The same entry is read to hand over and to follow
+# prints (Spec 7.3, 7.6): a value of an unexpected form there must not stop that, so it is shown as
+# unknown instead of failing the whole answer.
+def _shown(d: dict, key: str, types: _Types) -> Any:
+    try:
+        return _opt(d, key, types)
+    except BambuddyUnexpected:
+        return None
+
+
+def _shown_seconds(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        return None
+    return int(value)
+
+
+def _shown_time(value: object) -> datetime | None:
+    try:
+        return _utc(value)
+    except BambuddyUnexpected:
+        return None
+
+
 def parse_queue_item(data: object) -> QueueItem:
     """One entry of `PrintQueueItemResponse` (Bambuddy `schemas/print_queue.py:215-325`)."""
     d = _object(data, "queue entry")
@@ -117,6 +141,7 @@ def parse_queue_item(data: object) -> QueueItem:
     if not status.strip():
         raise BambuddyUnexpected("field 'status' is empty")
     plate_id = _opt(d, "plate_id", int)
+    file_name = _opt(d, "library_file_name", str) or _opt(d, "archive_name", str)
     return QueueItem(
         id=item_id,
         status=status,
@@ -135,6 +160,11 @@ def parse_queue_item(data: object) -> QueueItem:
         completed_at=_utc(d.get("completed_at")),
         error_message=_opt(d, "error_message", str),
         created_at=_utc(d.get("created_at")),
+        print_time_seconds=_shown_seconds(d.get("print_time_seconds")),
+        target_location=_shown(d, "target_location", str) or None,
+        scheduled_time=_shown_time(d.get("scheduled_time")),
+        been_jumped=bool(_shown(d, "been_jumped", bool)),
+        file_name=file_name or None,
     )
 
 
@@ -318,8 +348,51 @@ def parse_printers(data: object) -> list[Printer]:
         active = _req(d, "is_active", bool)
         if not model:
             continue
-        out.append(Printer(printer_id, name, model, active))
+        out.append(Printer(printer_id, name, model, active, _opt(d, "location", str) or None))
     return out
+
+
+def parse_printer_status(data: object, printer_id: int | None = None) -> PrinterStatus:
+    """One printer's state (`PrinterStatus`, Bambuddy `schemas/printer.py:448-560`), from
+    `GET /printers/{id}/status`, a row of `GET /bulk/printer-statuses` or the `data` of a live
+    message `printer_status` (which carries the id beside it: `printer_id`).
+
+    A printer that is not connected keeps its last state, progress and remaining time in Bambuddy
+    (`bambu_mqtt.py:1878`); here they become None, so nothing stale is shown as printing.
+    """
+    d = _object(data, "printer status")
+    pid = printer_id if printer_id is not None else _req(d, "id", int)
+    connected = _req(d, "connected", bool)
+    errors = d.get("hms_errors") or []
+    if not isinstance(errors, list):
+        raise BambuddyUnexpected("field 'hms_errors' is not a list")
+    stopped = any(isinstance(e, dict) and e.get("severity") == 1 for e in errors)
+    progress = _opt(d, "progress", float)
+    remaining = _opt(d, "remaining_time", int)
+    state = _opt(d, "state", str) or None
+    if not connected:
+        state, progress, remaining = None, None, None
+    return PrinterStatus(
+        printer_id=pid,
+        connected=connected,
+        state=state,
+        progress=progress,
+        remaining_min=remaining,
+        subtask_name=_opt(d, "subtask_name", str) or None,
+        awaiting_plate_clear=bool(_opt(d, "awaiting_plate_clear", bool)),
+        stopped_error=stopped,
+    )
+
+
+def parse_printer_statuses(data: object) -> list[PrinterStatus]:
+    """The answer of `GET /bulk/printer-statuses` (Bambuddy `api/routes/bulk.py:61-74`)."""
+    return [parse_printer_status(entry) for entry in _list(data, "printer status list")]
+
+
+def parse_shortest_first(data: object) -> bool:
+    """Bambuddy's setting "shortest job first" (`queue_shortest_first`, `schemas/settings.py:490`)
+    from `GET /settings/`; missing (an older Bambuddy) is off, its default."""
+    return bool(_opt(_object(data, "settings"), "queue_shortest_first", bool))
 
 
 def parse_spool_mode(data: object) -> SpoolMode:

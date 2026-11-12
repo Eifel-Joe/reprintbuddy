@@ -103,6 +103,29 @@ class Printer:
     # False: Bambuddy's maintenance mode (`is_active: false`). Such a printer is only
     # temporarily unavailable; it stays a known print target but is not offered anew.
     active: bool = True
+    # Bambuddy's free text "location": an entry with a location goes only to printers there
+    # (`print_scheduler.py:3310`); the print plan follows that (Spec 10.2, 0.4.2).
+    location: str | None = None
+
+
+@dataclass(frozen=True)
+class PrinterStatus:
+    """What the print plan reads of a printer's state (`PrinterStatus`, Bambuddy `schemas/printer.py:448`).
+
+    Only for display (Spec 7.6, 0.4.2); never stored. `remaining_min` is in minutes as the printer
+    sends it (`bambu_mqtt.py:4780`), 0 or None while unknown. When the printer is not connected,
+    Bambuddy keeps its last values (`bambu_mqtt.py:1878`); the parser drops them then.
+    `stopped_error`: one of its HMS messages has severity 1, "error (stopped)" (`schemas/printer.py:250`).
+    """
+
+    printer_id: int
+    connected: bool
+    state: str | None  # Bambuddy's raw `gcode_state`: IDLE, PREPARE, RUNNING, PAUSE, FINISH, FAILED, ...
+    progress: float | None  # 0-100
+    remaining_min: int | None
+    subtask_name: str | None
+    awaiting_plate_clear: bool
+    stopped_error: bool
 
 
 # The states of a queue entry as Bambuddy names them (PrintQueueItemResponse.status).
@@ -134,6 +157,12 @@ class QueueItem:
     # Last, with a default: every earlier construction stays valid. Used to find an entry
     # after an unclear hand-over (Spec 7.6).
     created_at: datetime | None = None  # naive UTC
+    # For the print plan (Spec 10.2, 0.4.2), Bambuddy `schemas/print_queue.py:214-344`:
+    print_time_seconds: int | None = None  # the slicer's estimate; None when Bambuddy has none
+    target_location: str | None = None
+    scheduled_time: datetime | None = None  # naive UTC; a later start
+    been_jumped: bool = False  # Bambuddy's guard against starving under "shortest first"
+    file_name: str | None = None  # library file name, else archive name, without the plate
 
 
 # Which spool management Bambuddy runs: its own ("builtin") or Spoolman ("spoolman").

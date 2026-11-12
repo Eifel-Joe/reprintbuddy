@@ -7,7 +7,7 @@ import dataclasses
 import hashlib
 import io
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import BinaryIO
 from datetime import UTC, datetime
 
@@ -20,6 +20,7 @@ from reprintbuddy.bambuddy.types import (
     Plate,
     PrintOptions,
     Printer,
+    PrinterStatus,
     QueueItem,
     Spool,
     SpoolMode,
@@ -33,7 +34,7 @@ _EFFECT_METHODS = frozenset({"enqueue", "upload_file", "delete_queue_item"})
 _FAILABLE_METHODS = _EFFECT_METHODS | {
     "list_folders", "list_files", "get_file", "list_plates", "plate_thumbnail", "file_thumbnail",
     "filament_requirements", "list_printers", "spool_mode", "list_spools", "print_defaults",
-    "get_queue_item", "list_queue", "list_all_items",
+    "get_queue_item", "list_queue", "list_all_items", "printer_statuses", "shortest_first",
 }
 
 
@@ -85,6 +86,12 @@ class FakeBambuddy:
         self._plates: dict[int, int] = {}
         self._reqs: dict[tuple[int, int], list[FilamentRequirement]] = {}
         self._printers: list[Printer] = []
+        # The print plan (0.4.2): each printer's state (Bambuddy `PrinterStatus`), each file's print
+        # time in seconds (the slicer's estimate on the entry, `print_queue.py:575-645`) and
+        # Bambuddy's setting "shortest job first".
+        self._statuses: dict[int, PrinterStatus] = {}
+        self._print_times: dict[int, int | None] = {}
+        self.shortest = False
         self._next_folder = 1
         self._next_file = 1
         self._items: dict[int, QueueItem] = {}
@@ -125,6 +132,7 @@ class FakeBambuddy:
         fingerprint: str = "v1",
         has_thumbnail: bool = True,
         sliced: bool = True,
+        print_time_s: int | None = 3600,
     ) -> LibraryFile:
         file = LibraryFile(
             self._next_file, filename, folder_id, fingerprint, printer_model, has_thumbnail, sliced
@@ -132,6 +140,7 @@ class FakeBambuddy:
         self._next_file += 1
         self._files[file.id] = file
         self._plates[file.id] = plates
+        self._print_times[file.id] = print_time_s
         return file
 
     def set_requirements(
@@ -143,10 +152,19 @@ class FakeBambuddy:
         self._files.pop(file_id, None)
         self._plates.pop(file_id, None)
 
-    def add_printer(self, name: str, model: str, *, active: bool = True) -> Printer:
-        printer = Printer(len(self._printers) + 1, name, model, active)
+    def add_printer(self, name: str, model: str, *, active: bool = True, location: str | None = None) -> Printer:
+        printer = Printer(len(self._printers) + 1, name, model, active, location)
         self._printers.append(printer)
+        self._statuses[printer.id] = PrinterStatus(printer.id, True, "IDLE", None, None, None, False, False)
         return printer
+
+    def set_printer_status(self, printer_id: int, **fields: object) -> None:
+        """Change what Bambuddy reports of a printer (fields of `PrinterStatus`). Not connected drops
+        state, progress and remaining time, as the parser does with Bambuddy's stale values."""
+        status = dataclasses.replace(self._statuses[printer_id], **fields)  # type: ignore[arg-type]
+        if not status.connected:
+            status = dataclasses.replace(status, state=None, progress=None, remaining_min=None)
+        self._statuses[printer_id] = status
 
     # ---- the interface -----------------------------------------------------
     def _enter(self, name: str) -> None:
@@ -207,6 +225,14 @@ class FakeBambuddy:
     async def print_defaults(self) -> PrintOptions:
         self._enter("print_defaults")
         return self.defaults
+
+    async def printer_statuses(self, printer_ids: Sequence[int]) -> dict[int, PrinterStatus]:
+        self._enter("printer_statuses")
+        return {i: self._statuses[i] for i in printer_ids if i in self._statuses}
+
+    async def shortest_first(self) -> bool:
+        self._enter("shortest_first")
+        return self.shortest
 
     async def spool_mode(self) -> SpoolMode:
         self._enter("spool_mode")
@@ -303,6 +329,10 @@ class FakeBambuddy:
         plate_id: int | None = None,
         created_at: datetime | None = None,
         undated: bool = False,
+        printer_id: int | None = None,
+        print_time_s: int | None = 3600,
+        target_location: str | None = None,
+        scheduled_time: datetime | None = None,
     ) -> QueueItem:
         """An entry made in Bambuddy without `enqueue`, at the end of the queue.
 
@@ -312,7 +342,14 @@ class FakeBambuddy:
         leaves it empty, as an answer without the field would.
         """
         position = self._highest() + 1 if status == "pending" else 0  # Bambuddy defaults to 0
+        printer = next((p for p in self._printers if p.id == printer_id), None)
         return self._new_item(
+            printer_id=printer_id,
+            printer_name=printer.name if printer else None,
+            print_time_seconds=print_time_s,
+            target_location=target_location,
+            scheduled_time=scheduled_time,
+            file_name=label,
             label=label,
             status=status,
             created_by=created_by,
@@ -428,6 +465,8 @@ class FakeBambuddy:
             library_file_id=req.library_file_id,
             plate_id=req.plate_id,
             printer_name=printer.name if printer else None,
+            print_time_seconds=self._print_times.get(file.id),
+            file_name=file.filename,
         )
         self.enqueued.append(req)
         self.options[item.id] = req.print_options

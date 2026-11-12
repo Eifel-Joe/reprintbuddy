@@ -153,3 +153,39 @@ def test_created_at_missing_or_null_is_none():
 def test_created_at_with_offset_becomes_utc():
     item = parse_queue_item(dict(load("q4.json"), created_at="2026-11-05T10:12:44+01:00"))
     assert item.created_at == datetime(2026, 11, 5, 9, 12, 44)
+
+
+def test_queue_item_reads_print_time_location_schedule():
+    """What the print plan needs of an entry (Spec 10.2, 0.4.2): the slicer's print time in seconds,
+    the place, a later start and whether Bambuddy already let it be jumped (`schemas/print_queue.py:214-344`)."""
+    item = parse_queue_item(_q4(
+        print_time_seconds=5400, target_location="Shelf B", scheduled_time="2026-11-12T15:00:00Z",
+        been_jumped=True,
+    ))
+    assert item.print_time_seconds == 5400
+    assert item.target_location == "Shelf B"
+    assert item.scheduled_time == datetime(2026, 11, 12, 15, 0)
+    assert item.been_jumped is True
+    assert item.file_name == "Template A.gcode.3mf"  # without " / plate n"
+    archive = parse_queue_item(_q4(library_file_name=None, archive_name="Template C"))
+    assert archive.file_name == "Template C"
+    bare = parse_queue_item({k: v for k, v in load("q4.json").items()
+                             if k not in ("print_time_seconds", "target_location", "scheduled_time", "been_jumped")})
+    assert bare.print_time_seconds is None and bare.target_location is None
+    assert bare.scheduled_time is None and bare.been_jumped is False
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("print_time_seconds", "long"), ("print_time_seconds", -5), ("print_time_seconds", True),
+    ("target_location", 7), ("scheduled_time", "soon"), ("been_jumped", "yes"),
+])
+def test_plan_fields_of_an_odd_form_do_not_break_the_entry(field, value):
+    """The plan's fields are only shown; the same entry is read to hand over and to follow prints
+    (Spec 7.3, 7.6), so an odd value is shown as unknown instead of refusing the answer."""
+    item = parse_queue_item(_q4(**{field: value}))
+    assert item.status == "pending"
+    assert getattr(item, field) in (None, False)
+
+
+def test_print_time_as_a_float_is_whole_seconds():
+    assert parse_queue_item(_q4(print_time_seconds=3720.6)).print_time_seconds == 3720

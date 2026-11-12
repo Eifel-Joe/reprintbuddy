@@ -43,7 +43,7 @@ async def test_printer_answer_has_no_secret(respx_mock):
     printers = await client().list_printers()
     assert printers
     for printer in printers:
-        assert [f.name for f in dataclasses.fields(printer)] == ["id", "name", "model", "active"]
+        assert [f.name for f in dataclasses.fields(printer)] == ["id", "name", "model", "active", "location"]
         text = repr(printer)
         assert "203.0.113" not in text and "SERIAL" not in text
 
@@ -104,3 +104,14 @@ async def test_printers_server_error(respx_mock):
     respx_mock.get(f"{API}/printers/").respond(500)
     with pytest.raises(BambuddyUnavailable):
         await client().list_printers()
+
+
+async def test_printer_location_is_read(respx_mock):
+    """The place of a printer (Bambuddy `schemas/printer.py` `location`): an entry with a place goes
+    only to printers there (`print_scheduler.py:3310`), so the print plan needs it (0.4.2)."""
+    data = load("printers.json")
+    data[1]["location"] = "Shelf B"
+    respx_mock.get(f"{API}/printers/").respond(200, json=data)
+    printers = {p.id: p for p in await client().list_printers()}
+    assert printers[1].location is None
+    assert printers[2].location == "Shelf B"

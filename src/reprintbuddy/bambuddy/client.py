@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import AbstractAsyncContextManager
+from collections.abc import Sequence
 from typing import BinaryIO, Callable, Literal, Protocol, runtime_checkable
 from urllib.parse import quote
 
@@ -19,6 +20,7 @@ from reprintbuddy.bambuddy.types import (
     Plate,
     PrintOptions,
     Printer,
+    PrinterStatus,
     QueueItem,
     Spool,
     SpoolMode,
@@ -127,6 +129,10 @@ class BambuddyClient(Protocol):
     async def spool_mode(self) -> SpoolMode: ...
 
     async def print_defaults(self) -> PrintOptions: ...
+
+    async def printer_statuses(self, printer_ids: Sequence[int]) -> dict[int, PrinterStatus]: ...
+
+    async def shortest_first(self) -> bool: ...
 
 
 BambuddyFactory = Callable[[], BambuddyClient | None]
@@ -293,6 +299,34 @@ class HttpBambuddyClient:
     async def list_printers(self) -> list[Printer]:
         """Every printer with a model; `active` is False for one in maintenance."""
         return _parse.parse_printers(await self._get("/printers/"))
+
+    async def printer_statuses(self, printer_ids: Sequence[int]) -> dict[int, PrinterStatus]:
+        """The state of these printers for the print plan (Spec 7.6, 10.2, 0.4.2), by printer id.
+
+        One request for all (`GET /bulk/printer-statuses`, Bambuddy `api/routes/bulk.py:61-74`, since
+        1.3.0); Bambuddy answers from memory without asking the printers (`printer_manager.get_status`).
+        A Bambuddy without that route answers 404 and is asked printer by printer
+        (`GET /printers/{id}/status`, already in 1.2.5); a printer it does not know is left out.
+        Nothing is remembered between calls: a 404 costs one request per query, and a Bambuddy
+        that old is below the supported version anyway (Spec 3.1).
+        """
+        ids = [int(i) for i in printer_ids]
+        if not ids:
+            return {}
+        data = await self._get("/bulk/printer-statuses", {"ids": ",".join(map(str, ids))}, none_on_404=True)
+        if data is not None:
+            return {s.printer_id: s for s in _parse.parse_printer_statuses(data)}
+        found: dict[int, PrinterStatus] = {}
+        for printer_id in ids:
+            one = await self._get(f"/printers/{printer_id}/status", none_on_404=True)
+            if one is not None:
+                found[printer_id] = _parse.parse_printer_status(one, printer_id)
+        return found
+
+    async def shortest_first(self) -> bool:
+        """Bambuddy's "shortest job first" for the order of the print plan (`queue_shortest_first`,
+        `print_scheduler.py:1700-1711`), read from `GET /settings/` (`settings:read`, Spec 11.3)."""
+        return _parse.parse_shortest_first(await self._get("/settings/"))
 
     async def spool_mode(self) -> SpoolMode:
         """Which spool management Bambuddy runs right now (Decision 17)."""

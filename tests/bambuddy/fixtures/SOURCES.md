@@ -49,3 +49,9 @@ No new fixture file. The tests read two fields that `files_root.json` and `file.
 | `thumbnail_path` (text or `null`) | D5 `backend/app/api/routes/library.py:2486`; `backend/app/schemas/library.py` `FileListResponse.thumbnail_path`, `FileResponse.thumbnail_path` | `LibraryFile.has_thumbnail` is true for a non-empty text. |
 | `GET /api/v1/library/files/{id}/thumbnail` | D5 `backend/app/api/routes/library.py:5794-5831` | 404 `{"detail": "Thumbnail not found"}` without a thumbnail; media type from the extension (`png`, `jpg`/`jpeg`, `gif`, `webp`, default `image/png`). No JSON fixture: the answer is an image, the tests send small byte strings with the magic bytes. |
 | `file_type` | D5 `backend/app/schemas/library.py:227` (`FileListResponse.file_type: str`), `library.py:2484`; `classify_file_type` `library.py:249-280` (same at the tags 20261104 and 20261105) | `LibraryFile.sliced`: `gcode.3mf` is sliced (judged by the zip content, #2993, #3435); `3mf` with a `.gcode.3mf` name (old entries, before #1600) and a missing type follow the name; `gcode` is not sliced (cannot be queued for Bambu printers in network mode, `library.py:338-368`). |
+
+## v0.4.2 (print plan of the overview)
+
+| File | Route | Source | Notes |
+|---|---|---|---|
+| `printer_status.json` | `GET /api/v1/printers/{id}/status`, one row of `GET /api/v1/bulk/printer-statuses` | Bambuddy 9712ab942 `backend/app/schemas/printer.py:448-560` (`PrinterStatus`), `backend/app/api/routes/printers.py:711`, `backend/app/api/routes/bulk.py:61-74` | `remaining_time` in minutes as the printer sends it (`backend/app/services/bambu_mqtt.py:4780-4781`, `:6147`). `hms_errors` rows carry `severity` (1 error/stopped, 2 warning, 3 notification; `schemas/printer.py:246-252`). Offline: `connected` false while `state`, `progress`, `remaining_time` keep their last values (`bambu_mqtt.py:1878`). |
