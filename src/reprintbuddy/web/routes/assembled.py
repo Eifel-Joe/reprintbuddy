@@ -46,8 +46,17 @@ FIELDS = ("c1", "c2")
 
 
 def _count(form, name: str, default: int, maximum: int) -> int:
+    """How many rows or options the form sent. Above the limit it takes the limit (p391): falling back to
+    the default dropped every saved row past it without a message."""
     value = bounded_int(str(form.get(name, "")).strip())
-    return value if value is not None and 1 <= value <= maximum else default
+    if value is None or value < 1:
+        return default
+    return min(value, maximum)
+
+
+def _one_more(rows: list, blank, limit: int) -> list:
+    """The saved rows and one empty row to type into, as long as the limit leaves room (p391, as the set form)."""
+    return rows + [blank()] if len(rows) < limit else rows
 
 
 def _blank_row() -> dict[str, str]:
@@ -290,18 +299,18 @@ def values_of(db: Session, composite: Article) -> dict:
         "name": composite.name, "sku": composite.sku or "", "label_text": composite.label_text or "",
         "mode": composite.assembly_mode or "stock", "min_stock": str(composite.min_stock), "buffer": str(composite.buffer),
         "show_c2": len(row.fields) > 1,
-        "base": [{"qty": str(p.qty), "article": str(p.article_id)} for p in row.base] + [_blank_row()],
+        "base": _one_more([{"qty": str(p.qty), "article": str(p.article_id)} for p in row.base], _blank_row, MAX_ROWS),
         "c1": [], "c2": [],
         "has_parts": bool(links),
         "part_rows": [{"part": str(p), "qty": str(q)} for p, q in links.items()],
         "focus": None, "fresh": "", "targets": {},
     }
     for field, options in zip(FIELDS, row.fields):
-        values[field] = [
+        values[field] = _one_more([
             {"id": str(o.option_id), "suffix": o.suffix,
-             "rows": [{"qty": str(p.qty), "article": str(p.article_id)} for p in o.rows] + [_blank_row()]}
+             "rows": _one_more([{"qty": str(p.qty), "article": str(p.article_id)} for p in o.rows], _blank_row, MAX_ROWS)}
             for o in options
-        ] + [_blank_option()]
+        ], _blank_option, MAX_OPTIONS)
     if not row.fields:
         values["c1"] = [_blank_option() for _ in range(DEFAULT_OPTIONS)]
     return values
