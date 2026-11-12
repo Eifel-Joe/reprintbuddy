@@ -143,3 +143,18 @@ def test_german_texts(db):
     with db() as s:
         view = pv.plan_view(s, board(idle(1), idle(2)), [long], NOW, "de", known=True)
     assert view.lanes[0].bars[0].cut == "→ bis Fr 16:00"
+
+
+def test_no_stale_hint_while_the_live_channel_is_connected(db):
+    """Connected, Bambuddy reports every change of a printer; quiet printers send nothing, so the age of
+    the last message says nothing about the state (review v0.4.2, 10)."""
+    b = board(idle(1))
+    with db() as s:
+        assert pv.plan_view(s, b, [], NOW + timedelta(hours=1), "en", known=True, live=True).stale == ""
+        assert pv.plan_view(s, b, [], NOW + timedelta(hours=1), "en", known=True, live=False).stale == "10:00"
+
+
+def test_stale_hint_names_the_day_when_older(db):
+    b = board(idle(1))
+    with db() as s:
+        assert pv.plan_view(s, b, [], NOW + timedelta(days=1), "en", known=True).stale == "Thu 10:00"

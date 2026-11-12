@@ -176,7 +176,7 @@ def test_tiles_and_plan_follow_what_they_show(ready_client):
     page = ready_client.get("/").text
     assert ('data-live-region="tiles" '
             'data-live-topics="article order queue inspection bambuddy filament reorder part journal settings"' in page)
-    assert 'data-live-region="plan" data-live-topics="printers bambuddy queue article settings"' in page
+    assert 'data-live-region="plan" data-live-topics="printers bambuddy queue article settings live-channel"' in page
     assert 'data-live-region="summary"' not in page
     only = ready_client.get("/", headers={regions.HEADER: "tiles"})
     assert 'class="ov-tiles"' in only.text

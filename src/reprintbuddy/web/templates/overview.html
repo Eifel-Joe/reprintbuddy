@@ -46,7 +46,7 @@
 {# The print plan (Spec 10.2, 0.4.2): one lane per printer; filled = printing, outlined = assigned by Bambuddy,
    dashed = probably assigned (shown only, nothing is assigned in Bambuddy), italic = not from Reprintbuddy.
    Each bar names its kind and times in words (hidden on a wide screen, shown in the list on a phone). #}
-{% call ui.region("plan", "printers bambuddy queue article settings") %}
+{% call ui.region("plan", "printers bambuddy queue article settings live-channel") %}
 {% if plan %}<section class="card plan">
 <div class="plan-head"><a class="plan-main" href="/queue">{{ ui.icon('printer') }}{{ t('overview.plan.title') }}</a>
 <span class="plan-sum">{% if not plan.known %}{{ t('overview.plan.unknown') }}{% else %}

@@ -87,10 +87,6 @@ class PlanView:
 # ---- times --------------------------------------------------------------------------------------
 
 
-def _clock(moment: datetime) -> str:
-    return to_local(moment).strftime("%H:%M")
-
-
 def _when(moment: datetime, now: datetime, lang: str) -> str:
     """Clock time; on another day than today with the short weekday ("Fri 16:00")."""
     local = to_local(moment)
@@ -197,10 +193,12 @@ def _bar_view(bar: Bar, ax: Axis, now: datetime, lang: str) -> BarView:
 
 
 def plan_view(
-    db: Session, board: PrinterBoard, queue: Sequence[QueueItem] | None, now: datetime, lang: str, *, known: bool
+    db: Session, board: PrinterBoard, queue: Sequence[QueueItem] | None, now: datetime, lang: str, *, known: bool,
+    live: bool = False,
 ) -> PlanView:
     """The print plan for the page. `known` False (Bambuddy not set up or not answering) or a board
-    without printers: "Druckerzustand unbekannt"."""
+    without printers: "Druckerzustand unbekannt". `live`: Bambuddy's live channel is connected; it reports
+    every change of a printer, so the state is current however old its last message is (no "as of")."""
     printers = plan_printers(board)
     if not known or printers is None:
         return PlanView(known=False)
@@ -214,7 +212,7 @@ def plan_view(
         )
         for lane in plan.lanes
     )
-    stale = _clock(board.at) if board.at is not None and now - board.at > STALE_AFTER else ""
+    stale = _when(board.at, now, lang) if board.at is not None and not live and now - board.at > STALE_AFTER else ""
     return PlanView(
         known=True, lanes=lanes, ticks=ax.ticks,
         finish=_when(plan.finish, now, lang) if plan.finish is not None else "",

@@ -104,6 +104,7 @@ async def overview(request: Request):
         db, ticker.board, status.bambuddy_queue, utcnow(), lang,
         # the queue of the last query must be current too, or an old one would pass for today (review v0.4.2, 3)
         known=status.configured and status.reachable is not False and status.bambuddy_queue_ok,
+        live=request.app.state.live_listener.state == "connected",
     ) if not wanted or "plan" in wanted else None
     return render(
         request,
