@@ -28,7 +28,7 @@ from typing import Any
 
 from reprintbuddy import __version__
 from reprintbuddy.ops.runner import CommandRunner
-from reprintbuddy.ops.versions import VersionInfo, is_newer, parse_release_tag
+from reprintbuddy.ops.versions import VersionInfo, is_newer, parse_version
 
 log = logging.getLogger(__name__)
 
@@ -161,7 +161,7 @@ def select_notes(releases: Any, *, installed: str, newest: str) -> tuple[Release
         if not isinstance(item, dict) or not isinstance(item.get("tag_name"), str):
             raise NotesError("not a release")
         tag = item["tag_name"]
-        number = parse_release_tag(tag)
+        number = parse_version(tag)
         if number is None or item.get("draft") is True or item.get("prerelease") is True:
             continue
         if not is_newer(tag, installed) or is_newer(tag, newest):
@@ -219,7 +219,7 @@ def fetch_notes(
 def with_notes(info: VersionInfo, install_dir: Path, runner: CommandRunner, http_get: HttpGet) -> VersionInfo:
     """`info` with the notes of the newer versions, when there is one and the installed version is a
     release (a development build has no place to start from). Never raises."""
-    if not info.update_available or info.newest is None or parse_release_tag(info.installed or "") is None:
+    if not info.update_available or info.newest is None or parse_version(info.installed or "") is None:
         return info
     try:
         notes = fetch_notes(install_dir, runner, http_get, installed=info.installed or "", newest=info.newest)

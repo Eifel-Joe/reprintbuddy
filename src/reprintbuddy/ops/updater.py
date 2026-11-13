@@ -33,7 +33,7 @@ from reprintbuddy.ops.oplock import LOCK_NAME, Held, acquire
 from reprintbuddy.ops.runner import CommandResult, CommandRunner
 from reprintbuddy.ops.service import RESTART_WAIT_CMD, START_CMD, STOP_CMD
 from reprintbuddy.ops.status import UpdateStatus, is_busy, mark_interrupted, read_status, write_status
-from reprintbuddy.ops.versions import is_newer, local_tags, newest_release, parse_release_tag
+from reprintbuddy.ops.versions import is_newer, local_tags, newest_release, parse_version
 
 MAX_REASON = 300
 # p331 (v0.4.5): how old a "queued" may be for its target version to count. The button writes "queued" right
@@ -246,7 +246,7 @@ def _run_update(
     goal = wanted or newest_release(tags)
     if goal is None:
         return finish("failed", "fetch", "fetch: no newer release", "no_newer")
-    if parse_release_tag(goal) is None or goal not in tags:
+    if parse_version(goal) is None or goal not in tags:
         return finish("failed", "fetch", f"fetch: unknown target {goal}", "unknown_target", {"detail": goal})
     info["to_tag"] = goal
     if not is_newer(goal, info["from_tag"]):

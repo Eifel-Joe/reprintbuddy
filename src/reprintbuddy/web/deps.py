@@ -19,7 +19,7 @@ from reprintbuddy.bambuddy.connection import REMEMBERED_PERMISSIONS, ConnectionC
 from reprintbuddy import settings as st
 from reprintbuddy.activity import capture as activity_capture
 from reprintbuddy.models import User
-from reprintbuddy.ops.versions import parse_release_tag
+from reprintbuddy.ops.versions import parse_version
 from reprintbuddy.web import regions
 from reprintbuddy.web.csrf import csrf_token
 from reprintbuddy.web.i18n import translate, translate_count
@@ -171,7 +171,7 @@ def _add_update_notice(request: Request, context: dict[str, object], session) ->
     """
     context["update_version"] = None
     info = getattr(request.app.state, "version_info", None)
-    if info is None or not info.update_available or parse_release_tag(info.installed or "") is None:
+    if info is None or not info.update_available or parse_version(info.installed or "") is None:
         return
     if st.get_setting(session, "update_check"):
         context["update_version"] = info.newest
