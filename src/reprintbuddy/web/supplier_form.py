@@ -87,7 +87,7 @@ def _default_index(form, rows: list[dict[str, str]]) -> str:
 def change_rows(form, values: dict[str, object], pack_size: int) -> bool:
     """'Add supplier' and 'remove' sent without JavaScript: change the rows, save nothing.
 
-    The form comes back with the change, as the parts of an article do (routes/articles.py);
+    The form comes back with the change, as the parts of an article do (routes/articles/form.py);
     suppliers.js does the same in place. The last supplier stays, the eleventh is not added.
     """
     rows = values["supplier_rows"]
