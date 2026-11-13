@@ -12,8 +12,8 @@ from fastapi.testclient import TestClient
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from conftest import make_client
-from reprintbuddy.web import server as web_server
 from reprintbuddy import cli
+from reprintbuddy.web import server as web_server
 from reprintbuddy.web.app import SESSION_COOKIE
 
 FORWARDED_HTTPS = {"X-Forwarded-Proto": "https", "X-Forwarded-For": "192.0.2.7"}

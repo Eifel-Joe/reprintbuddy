@@ -80,4 +80,5 @@ from reprintbuddy.domain.catalog.archive import (
     same_filament_kind,
     slots_losing_group,
 )
-from reprintbuddy.models import Article, utcnow
+# Kept for code that took these through the catalog before it became a package (catalog.Article, catalog.utcnow).
+from reprintbuddy.models import Article, utcnow  # noqa: F401

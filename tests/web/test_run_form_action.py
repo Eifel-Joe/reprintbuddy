@@ -47,7 +47,9 @@ def _routes() -> APIRouter:
         async def answer(result):
             return PlainTextResponse(f"async {result}")
 
-        return await run_form_action(request, work=lambda tx: 7, done=answer, on_error=_refused)
+        return await run_form_action(
+            request, work=lambda tx: 7, done=answer, duplicate_url="/test-form/list", on_error=_refused
+        )
 
     @router.post("/test-form/plain")
     async def plain(request: Request):
@@ -127,8 +129,21 @@ def test_a_validation_error_in_work_is_refused_too(form_client):
         def work(tx):
             raise ValidationError("form.required", field="orders.field.qty")
 
-        return await run_form_action(request, work=work, done=PlainTextResponse, on_error=_refused)
+        return await run_form_action(
+            request, work=work, done=PlainTextResponse, duplicate_url="/test-form/list", on_error=_refused
+        )
 
     form_client.app.add_api_route("/test-form/refused", route, methods=["POST"])
     response = form_client.post("/test-form/refused", data=_fields(form_client))
     assert response.status_code == 200 and response.text.startswith("refused 200: ")
+
+
+def test_a_one_time_form_needs_somewhere_to_send_a_repeat(form_client):
+    """With `done` and neither `duplicate_url` nor `success_url`, a repeat would go to "None"."""
+
+    async def route(request: Request):
+        return await run_form_action(request, work=lambda tx: 1, done=PlainTextResponse, on_error=_refused)
+
+    form_client.app.add_api_route("/test-form/nowhere", route, methods=["POST"])
+    with pytest.raises(TypeError, match="duplicate_url"):
+        form_client.post("/test-form/nowhere", data=_fields(form_client))

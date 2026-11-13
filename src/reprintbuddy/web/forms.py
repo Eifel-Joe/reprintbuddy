@@ -148,6 +148,8 @@ async def run_form_action(
 
     if done is None and (success_url is None or flash_key is None):
         raise TypeError("run_form_action needs `done`, or `success_url` and `flash_key`")
+    if once and duplicate_url is None and success_url is None:
+        raise TypeError("a one-time form needs `duplicate_url` or `success_url` for a repeat")
     form = await request.form()
     try:
         checked = check() if check is not None else None

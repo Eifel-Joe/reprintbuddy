@@ -114,11 +114,11 @@ def _run(ready_client, server: uvicorn.Server) -> None:
 
                 stopped_at = time.monotonic()
                 server.should_exit = True
-                try:  # the stream must end now: cleanly or aborted
+                try:  # the stream must end now, cleanly: the server ends it, uvicorn does not cut it off (p535)
                     for _ in lines:
                         pass
-                except (httpx.RemoteProtocolError, httpx.ReadError):
-                    pass
+                except (httpx.RemoteProtocolError, httpx.ReadError) as exc:
+                    raise AssertionError(f"the stream was cut off instead of ending: {exc!r}") from None
                 except httpx.ReadTimeout:
                     raise AssertionError(
                         f"the stream stayed open {STREAM_ENDS_WITHIN} s after the stop; server thread:\n{_stack(thread)}"

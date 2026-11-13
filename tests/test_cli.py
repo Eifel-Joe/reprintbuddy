@@ -4,11 +4,11 @@ import sys
 
 import pytest
 
-from reprintbuddy.web import server as web_server
 from reprintbuddy import auth
 from reprintbuddy import settings as st
 from reprintbuddy.cli import main
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
+from reprintbuddy.web import server as web_server
 
 CERT = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
 KEY = "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n"

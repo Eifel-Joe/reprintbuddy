@@ -48,7 +48,7 @@ def _switch_form(client, lamp, clip, **over):
     return data
 
 
-def test_switch_sent_twice_goes_to_the_article_and_a_bad_input_keeps_the_form(ready_client):
+def test_switch_sent_twice_answers_not_found_and_a_bad_input_keeps_the_form(ready_client):
     """0.4.8 (R9): held before the save moved into the shared double-submit helper."""
     with sm_of(ready_client).begin() as s:
         lamp = make_article(s, name="Lamp", sku="EX-L1").id

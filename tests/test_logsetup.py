@@ -7,9 +7,8 @@ checked in a fresh interpreter: pytest puts handlers of its own on the root logg
 import subprocess
 import sys
 
-
-from reprintbuddy.web import server as web_server
 from reprintbuddy import cli
+from reprintbuddy.web import server as web_server
 
 SCRIPT = """
 import logging
