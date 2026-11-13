@@ -365,13 +365,16 @@ def installed_package(dest: Path, tag: str = "v0.4.9", venv: str = "3.13") -> No
 
 
 def test_rerun_of_a_package_installation_keeps_its_version(bash, tmp_path):
-    installed_package(tmp_path)
+    # An installed version that is never the script's own: with "v0.4.9" the test broke the day the script
+    # itself became v0.4.9, because the script then rightly says only "keeping version." (install.sh).
+    older = "v0.0.1"
+    installed_package(tmp_path, tag=older)
     result = run(bash, tmp_path, "--repo", REPO)
     assert result.returncode == 0, result.stderr
     out = lines(result)
-    assert f"Existing installation found, keeping version v0.4.9 (this script is {PINNED};" in out
+    assert f"Existing installation found, keeping version {older} (this script is {PINNED};" in out
     assert "Existing database kept." in out
-    assert "-m pip install --no-cache-dir --upgrade /opt/reprintbuddy/releases/v0.4.9" in out
+    assert f"-m pip install --no-cache-dir --upgrade /opt/reprintbuddy/releases/{older}" in out
     for forbidden in ("curl -fsSL", "init --db", "-m venv", " git "):
         assert forbidden not in out, forbidden
 
