@@ -21,19 +21,14 @@ from reprintbuddy.web.deps import current_language, get_db, get_or_404, render
 from reprintbuddy.web.formatting import canonical_unit, fill_percent
 from reprintbuddy.web.i18n import translate
 from reprintbuddy.web.forms import (
-    duplicate_redirect,
     error_status,
     error_text,
     parse_int,
     parse_text,
+    run_form_action,
     saved_redirect,
 )
-from reprintbuddy.web.formtoken import (
-    FormTokenInvalid,
-    FormTokenUsed,
-    form_transaction,
-    write_transaction,
-)
+from reprintbuddy.web.formtoken import write_transaction
 
 router = APIRouter()
 
@@ -156,21 +151,22 @@ async def parts_create(request: Request, db: Session = Depends(get_db)):
     values = _typed(form)
     if supplier_form.change_rows(form, values, PACK_SIZE):
         return _form_page(request, db, part=None, values=values)
-    try:
+
+    def check():
         data = _parse(form)
-        initial = parse_int(
-            form.get("initial_stock"), field="parts.field.initial_stock", min=0, max=MAX_QTY
-        )
-        with form_transaction(request, str(form.get("form_token", ""))) as db:
-            catalog.create_part(db, data, initial, "user")
-    except FormTokenUsed:
-        return duplicate_redirect(request, "/parts")
-    except (DomainError, FormTokenInvalid) as exc:
-        return _form_page(
-            request, db, part=None, values=values,
-            error=error_text(current_language(request), exc), status=error_status(exc),
-        )
-    return saved_redirect(request, "/parts", "parts.created", name=data.name)
+        return data, parse_int(form.get("initial_stock"), field="parts.field.initial_stock", min=0, max=MAX_QTY)
+
+    def save(tx, checked):
+        data, initial = checked
+        catalog.create_part(tx, data, initial, "user")
+        return {"name": data.name}
+
+    return await run_form_action(
+        request, check=check, work=save, success_url="/parts", flash_key="parts.created",
+        on_error=lambda text, status, exc: _form_page(
+            request, db, part=None, values=values, error=text, status=status
+        ),
+    )
 
 
 @router.get("/parts/{part_id:int}/edit")

@@ -19,8 +19,8 @@ from reprintbuddy.web import listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.flash import flash
-from reprintbuddy.web.forms import duplicate_redirect, error_status, error_text, parse_int
-from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
+from reprintbuddy.web.forms import error_text, parse_int, run_form_action
+from reprintbuddy.web.formtoken import write_transaction
 from reprintbuddy.web.i18n import translate
 from reprintbuddy.web.kpis import Kpi
 from reprintbuddy.web.routes.bookings import WARNING_KEYS, _active_article, _shortages
@@ -78,6 +78,13 @@ def _back(article: object) -> str:
     return listing.with_article(INSPECTION_URL, listing.article_id_of(article))
 
 
+def _with_shortages(request: Request, messages: list[tuple[str, dict]], url: str) -> RedirectResponse:
+    """Back to `url` with the shortage messages of a booking (warnings among them as warnings)."""
+    for key, message_params in messages:
+        flash(request, key, warning=key in WARNING_KEYS, **message_params)
+    return RedirectResponse(url, status_code=303)
+
+
 @router.get("/inspection")
 async def inspection_page(request: Request, db: Session = Depends(get_db)):
     return _inspection_page(request, db, article=request.query_params.get("article"))
@@ -91,27 +98,26 @@ async def resolve_all_good(request: Request, db: Session = Depends(get_db)):
     article_id = listing.article_id_of(article)
     # Words that are no id are dropped; the same id twice counts once.
     ids = list(dict.fromkeys(int(v) for v in form.getlist("ids") if _ID.fullmatch(str(v))))
-    try:
-        if not ids:
-            return _inspection_page(
-                request, db, article=article,
-                error=translate(current_language(request), "inspections.none_selected"), status=200,
-            )
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            # With a filter the server takes only the prints of that article, whatever ids came in.
-            result = inspection.resolve_all_good(tx, ids, "user", article_id=article_id)
-            messages = _shortages(tx, result.shortages)
-    except FormTokenUsed:
-        return duplicate_redirect(request, _back(article))
-    except (DomainError, FormTokenInvalid) as exc:
+    if not ids:
         return _inspection_page(
-            request, db, article=article, error=error_text(current_language(request), exc),
-            status=error_status(exc),
+            request, db, article=article,
+            error=translate(current_language(request), "inspections.none_selected"), status=200,
         )
-    flash(request, "inspections.all_done", resolved=result.resolved, skipped=result.skipped)
-    for key, message_params in messages:
-        flash(request, key, warning=key in WARNING_KEYS, **message_params)
-    return RedirectResponse(_back(article), status_code=303)
+
+    def save(tx):
+        # With a filter the server takes only the prints of that article, whatever ids came in.
+        result = inspection.resolve_all_good(tx, ids, "user", article_id=article_id)
+        return result, _shortages(tx, result.shortages)
+
+    def done(outcome):
+        result, messages = outcome
+        flash(request, "inspections.all_done", resolved=result.resolved, skipped=result.skipped)
+        return _with_shortages(request, messages, _back(article))
+
+    return await run_form_action(
+        request, work=save, done=done, duplicate_url=_back(article),
+        on_error=lambda text, status, exc: _inspection_page(request, db, article=article, error=text, status=status),
+    )
 
 
 @router.post("/inspection/{inspection_id:int}", dependencies=[Depends(verify_csrf)])
@@ -119,35 +125,38 @@ async def resolve_inspection(inspection_id: int, request: Request, db: Session =
     form = await request.form()
     article = form.get("article")
     values = {k: str(v) for k, v in form.items() if k not in ("csrf_token", "form_token", "article")}
-    try:
+
+    def check():
         # A page opened before the update still posts the old field `good`. Reading only `scrap`
         # (default 0) would book every unit as good and lose the scrap: refuse, book nothing.
         if "good" in form:
             raise ValidationError("inspections.form_outdated")
         # "Ausschuss", default 0 (Spec 8.2): good units are the units of the print minus the scrap.
-        scrap = _scrap_value(form.get("scrap"))
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            result = inspection.resolve_scrap(tx, inspection_id, scrap, "user")
-            name = tx.scalar(
-                select(Article.name).join(Inspection, Inspection.article_id == Article.id)
-                .where(Inspection.id == inspection_id)
-            )
-            messages = _shortages(tx, result.shortages)
-    except FormTokenUsed:
-        return duplicate_redirect(request, _back(article))
-    except (DomainError, FormTokenInvalid) as exc:
-        return _inspection_page(
-            request, db, article=article, error_inspection=inspection_id,
-            error=error_text(current_language(request), exc), values=values, status=error_status(exc),
+        return _scrap_value(form.get("scrap"))
+
+    def save(tx, scrap):
+        result = inspection.resolve_scrap(tx, inspection_id, scrap, "user")
+        name = tx.scalar(
+            select(Article.name).join(Inspection, Inspection.article_id == Article.id)
+            .where(Inspection.id == inspection_id)
         )
-    flash(request, "inspections.done", name=name, good=result.good, scrap=result.scrap)
-    if result.replacement_entry_id is not None:
-        flash(request, "inspections.replacement_created")
-    elif result.scrap > 0:  # p411 (Spec 7.5): the target is reached without it
-        flash(request, "inspections.replacement_not_needed")
-    for key, message_params in messages:
-        flash(request, key, warning=key in WARNING_KEYS, **message_params)
-    return RedirectResponse(_back(article), status_code=303)
+        return result, name, _shortages(tx, result.shortages)
+
+    def done(outcome):
+        result, name, messages = outcome
+        flash(request, "inspections.done", name=name, good=result.good, scrap=result.scrap)
+        if result.replacement_entry_id is not None:
+            flash(request, "inspections.replacement_created")
+        elif result.scrap > 0:  # p411 (Spec 7.5): the target is reached without it
+            flash(request, "inspections.replacement_not_needed")
+        return _with_shortages(request, messages, _back(article))
+
+    return await run_form_action(
+        request, check=check, work=save, done=done, duplicate_url=_back(article),
+        on_error=lambda text, status, exc: _inspection_page(
+            request, db, article=article, error_inspection=inspection_id, error=text, values=values, status=status
+        ),
+    )
 
 
 # ---- JSON interface (Spec 8.2): the same domain functions as the page, for a shelf display ----------
@@ -305,27 +314,30 @@ async def build_from_parts(holder_id: int, request: Request, db: Session = Depen
     next_url = str(form.get("next", ""))
     back = next_url if next_url.startswith("/articles/") else listing.with_article(ASSEMBLY_URL, listing.article_id_of(article))
     values = {k: str(v) for k, v in form.items() if k not in ("csrf_token", "form_token", "article", "next")}
-    try:
-        qty = parse_int(form.get("qty"), field="bookings.field.qty", min=1, max=MAX_QTY)
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            holder = tx.get(Article, holder_id)
-            label = (holder.sku or holder.name) if holder is not None else ""
-            shortages = assembled.build(tx, holder_id, qty, "user")
-            messages = _shortages(tx, shortages)
-    except FormTokenUsed:
-        return duplicate_redirect(request, back)
-    except (DomainError, FormTokenInvalid) as exc:
-        if next_url.startswith("/articles/"):
-            flash(request, "assembly.build_refused", warning=True, text=error_text(current_language(request), exc))
+
+    def save(tx, qty):
+        holder = tx.get(Article, holder_id)
+        label = (holder.sku or holder.name) if holder is not None else ""
+        shortages = assembled.build(tx, holder_id, qty, "user")
+        return label, qty, _shortages(tx, shortages)
+
+    def done(outcome):
+        label, qty, messages = outcome
+        flash(request, "assembly.built", name=label, n=qty)
+        return _with_shortages(request, messages, back)
+
+    def refused(text, status, exc):
+        if next_url.startswith("/articles/"):  # from the article's page: back there, as a warning
+            flash(request, "assembly.build_refused", warning=True, text=text)
             return RedirectResponse(back, status_code=303)
         return _assembly_page(
-            request, db, article=article, error_article=holder_id,
-            error=error_text(current_language(request), exc), values=values, status=error_status(exc),
+            request, db, article=article, error_article=holder_id, error=text, values=values, status=status
         )
-    flash(request, "assembly.built", name=label, n=qty)
-    for key, message_params in messages:
-        flash(request, key, warning=key in WARNING_KEYS, **message_params)
-    return RedirectResponse(back, status_code=303)
+
+    return await run_form_action(
+        request, check=lambda: parse_int(form.get("qty"), field="bookings.field.qty", min=1, max=MAX_QTY),
+        work=save, done=done, duplicate_url=back, on_error=refused,
+    )
 
 
 @router.post("/assembly/{article_id:int}", dependencies=[Depends(verify_csrf)])
@@ -334,21 +346,21 @@ async def book_assembly(article_id: int, request: Request, db: Session = Depends
     article = form.get("article")
     back = listing.with_article(ASSEMBLY_URL, listing.article_id_of(article))
     values = {k: str(v) for k, v in form.items() if k not in ("csrf_token", "form_token", "article")}
-    try:
-        qty = parse_int(form.get("qty"), field="bookings.field.qty", min=1, max=MAX_QTY)
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            article_row = _active_article(tx, article_id)
-            name = article_row.name
-            shortages = inspection.assemble(tx, article_id, qty, "user")
-            messages = _shortages(tx, shortages)
-    except FormTokenUsed:
-        return duplicate_redirect(request, back)
-    except (DomainError, FormTokenInvalid) as exc:
-        return _assembly_page(
-            request, db, article=article, error_article=article_id,
-            error=error_text(current_language(request), exc), values=values, status=error_status(exc),
-        )
-    flash(request, "assembly.done", name=name, n=qty)
-    for key, message_params in messages:
-        flash(request, key, warning=key in WARNING_KEYS, **message_params)
-    return RedirectResponse(back, status_code=303)
+
+    def save(tx, qty):
+        name = _active_article(tx, article_id).name
+        shortages = inspection.assemble(tx, article_id, qty, "user")
+        return name, qty, _shortages(tx, shortages)
+
+    def done(outcome):
+        name, qty, messages = outcome
+        flash(request, "assembly.done", name=name, n=qty)
+        return _with_shortages(request, messages, back)
+
+    return await run_form_action(
+        request, check=lambda: parse_int(form.get("qty"), field="bookings.field.qty", min=1, max=MAX_QTY),
+        work=save, done=done, duplicate_url=back,
+        on_error=lambda text, status, exc: _assembly_page(
+            request, db, article=article, error_article=article_id, error=text, values=values, status=status
+        ),
+    )

@@ -6,18 +6,16 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import reorder, seen
-from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
+from reprintbuddy.domain.errors import NotFoundError, ValidationError
 from reprintbuddy.models import ReorderMark, utcnow
 from reprintbuddy.web import kpis, regions
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.filament_view import COLOR, may_write, page_spools
 from reprintbuddy.web.formatting import format_date, to_local, unit_label
-from reprintbuddy.web.forms import (
-    bounded_int, duplicate_redirect, error_status, error_text, saved_redirect,
-)
+from reprintbuddy.web.forms import bounded_int, run_form_action
 from reprintbuddy.web.i18n import translate
-from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
+from reprintbuddy.web.formtoken import write_transaction
 
 router = APIRouter()
 
@@ -135,18 +133,18 @@ async def reorder_page(request: Request, db: Session = Depends(get_db)):
 
 async def _act(request: Request, db: Session, work, flash_key: str, typed_keys: bool = False, form=None):
     form = await request.form() if form is None else form
-    try:
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            item = work(tx, form)
-    except FormTokenUsed:
-        return duplicate_redirect(request, "/reorder")
-    except (DomainError, FormTokenInvalid) as exc:
-        return await _page(
-            request, db, error=error_text(current_language(request), exc), status=error_status(exc),
+
+    def refused(text, status, exc):
+        return _page(
+            request, db, error=text, status=status,
             typed={key: str(form.get(key, "")) for key in ("item_type", "item_id", "packs", "supplier_id")}
             if typed_keys else None,
         )
-    return saved_redirect(request, "/reorder", flash_key, item=item)
+
+    return await run_form_action(
+        request, work=lambda tx: {"item": work(tx, form)}, success_url="/reorder", flash_key=flash_key,
+        on_error=refused,
+    )
 
 
 @router.post("/reorder/mark", dependencies=[Depends(verify_csrf)])

@@ -140,6 +140,38 @@ def test_build_refused_shows_the_short_part(ready_client):
     assert en("assembled.part_short", name="Panel A", available=5, needed=9) in page.text
 
 
+def test_build_sent_twice_books_once_and_a_forged_form_is_refused(ready_client):
+    """0.4.8 (R9): held before the save moved into the shared double-submit helper."""
+    w = world(ready_client)
+    path = f"/assembly/build/{w['box']}"
+    forged = {"csrf_token": csrf_of(ready_client, "/assembly"), "form_token": "forged", "qty": "1"}
+    page = ready_client.post(path, data=forged)
+    assert page.status_code == 400 and en("form.expired") in page.text
+    data = {"csrf_token": csrf_of(ready_client, "/assembly"),
+            "form_token": form_token_of(ready_client, "/assembly", path), "qty": "1"}
+    assert ready_client.post(path, data=data, follow_redirects=False).status_code == 303
+    again = ready_client.post(path, data=data, follow_redirects=False)
+    assert again.status_code == 303 and again.headers["location"] == "/assembly"
+    assert en("form.duplicate") in ready_client.get("/assembly").text
+    with sm_of(ready_client).begin() as s:
+        assert s.get(Article, w["box"]).stock == 1
+
+
+def test_build_refused_from_the_article_page_goes_back_there_with_the_reason(ready_client):
+    """0.4.8 (R9): a build sent from the article's page answers a refusal there, as a warning."""
+    w = world(ready_client)
+    variant = w["variants"]["EX-K1-A"]
+    back = f"/articles/{w['bracket']}"
+    path = f"/assembly/build/{variant}"
+    data = {"csrf_token": csrf_of(ready_client, back), "form_token": form_token_of(ready_client, back, path),
+            "qty": "999", "next": back}
+    response = ready_client.post(path, data=data, follow_redirects=False)
+    assert response.status_code == 303 and response.headers["location"] == back
+    page = ready_client.get(back).text
+    short = en("assembled.part_short", name="Panel A", available=5, needed=999)
+    assert f'<p class="alert" role="alert">{en("assembly.build_refused", text=short)}</p>' in page
+
+
 def test_orders_section_is_read_only(ready_client):
     w = world(ready_client)
     with sm_of(ready_client).begin() as s:

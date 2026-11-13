@@ -42,7 +42,6 @@ from reprintbuddy.web.deps import (
 )
 from reprintbuddy.web.forms import (
     bounded_int,
-    duplicate_redirect,
     run_form_action,
     error_status,
     error_text,
@@ -53,7 +52,7 @@ from reprintbuddy.web.forms import (
 )
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.formatting import format_date
-from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
+from reprintbuddy.web.formtoken import FormTokenInvalid, write_transaction
 from reprintbuddy.web.filament_view import BAMBUDDY_ERRORS, COLOR, may_write, page_spools
 from reprintbuddy.web.journal_view import journal_rows
 from reprintbuddy.web.routes.queue import DISPATCH_TONES
@@ -594,33 +593,38 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
             request, action=action, file=file, plate=plate, requirements=requirements,
             printers=await _printers(client), parts=parts, values=values,
         )
-    try:
-        data = parse_article_form(
-            form, parts, default_target=catalog.target_value(file.printer_model, None)
+
+    def save(tx, data):
+        article = catalog.create_article(
+            tx, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail, data=data
         )
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            article = catalog.create_article(
-                tx, file=file, plate=plate, requirements=requirements, thumbnail=thumbnail, data=data
-            )
-            article_id, article_name, has_slots = article.id, article.name, bool(requirements)
-    except FormTokenUsed:
-        return duplicate_redirect(request, "/articles")
-    except (DomainError, FormTokenInvalid) as exc:
+        return article.id, article.name
+
+    def created(result):
+        article_id, article_name = result
+        # p153: a new article has no spool sorts ticked yet, and it is easy to forget (the article would
+        # show "not assigned" for good): the filament page comes first, its save leads to the article.
+        # A plate without filament slots has nothing to assign. A new article is never archived.
+        if not requirements:
+            return saved_redirect(request, f"/articles/{article_id}", "articles.created", name=article_name)
+        flash(request, "articles.created", name=article_name)
+        flash(request, "articles.created_filament")
+        return RedirectResponse(f"/articles/{article_id}/filaments{NEW_ARTICLE}", status_code=303)
+
+    async def refused(text, status, exc):
         printers = await _printers(client)
         error, field_errors = form_error(lang, exc)
         return _plate_form(
             request, action=action, file=file, plate=plate, requirements=requirements,
             printers=printers, parts=parts, values=values,
-            error=error, field_errors=field_errors, status=error_status(exc),
+            error=error, field_errors=field_errors, status=status,
         )
-    # p153: a new article has no spool sorts ticked yet, and it is easy to forget (the article would
-    # show "not assigned" for good): the filament page comes first, its save leads to the article.
-    # A plate without filament slots has nothing to assign. A new article is never archived.
-    if not has_slots:
-        return saved_redirect(request, f"/articles/{article_id}", "articles.created", name=article_name)
-    flash(request, "articles.created", name=article_name)
-    flash(request, "articles.created_filament")
-    return RedirectResponse(f"/articles/{article_id}/filaments{NEW_ARTICLE}", status_code=303)
+
+    return await run_form_action(
+        request,
+        check=lambda: parse_article_form(form, parts, default_target=catalog.target_value(file.printer_model, None)),
+        work=save, done=created, duplicate_url="/articles", on_error=refused,
+    )
 
 
 # ---- detail, thumbnail, settings -------------------------------------------------------------

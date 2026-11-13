@@ -14,7 +14,7 @@ from fastapi.responses import RedirectResponse
 from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.formatting import format_date, to_local
-from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
+from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
 from reprintbuddy.web.i18n import translate
 
 MAX_ID = 2**31 - 1  # the largest record number a form may name; was written out in four route modules
@@ -115,25 +115,54 @@ def saved_redirect(request: Request, url: str, key: str, **params: object) -> Re
 async def run_form_action(
     request: Request,
     *,
-    work: Callable[[Any], dict[str, object]],
-    success_url: str | Callable[[], str],
-    flash_key: str,
+    work: Callable[..., Any],
     on_error: Callable[[str, int, Exception], Any],
+    success_url: str | Callable[[], str] | None = None,
+    flash_key: str | None = None,
+    check: Callable[[], Any] | None = None,
+    once: bool = True,
+    done: Callable[[Any], Any] | None = None,
+    duplicate_url: str | None = None,
 ):
-    """A one-time form with one action (archive, restore, ...): `work(tx)` runs in the write
-    transaction and returns the parameters of the success message. A second submission of
-    the same form is reported as such; a rejected action shows `on_error(text, status, exc)`
-    (which may be a coroutine). `success_url` may be a function: it is called once `work` is
-    done (or was skipped as a repeat), for an address that depends on what the work found."""
+    """Save a form once, however often it is sent (the double-submit guard of every form that books
+    or creates something).
+
+    `work(tx)` runs in the write transaction; with `check` it is `work(tx, check())`: `check` reads
+    and checks the input *before* the transaction, which uses the one-time token up first thing, so
+    a rejected input is shown even when the form was sent twice. `once=False` saves without a token
+    (editing a saved record). A rejected input or action shows `on_error(text, status, exc)`: status
+    200 to show the form again, 400 for an expired or forged form.
+
+    The answer to a success is `done(result)` with what `work` returned, or else the message
+    `flash_key` (with `work`'s result as its parameters) and a redirect to `success_url`. A form sent
+    again goes to `duplicate_url`, or else to `success_url`, with "already saved". `success_url` may
+    be a function, called once `work` is done (or was skipped as a repeat). `on_error` and `done` may
+    be coroutines.
+
+    0.4.8 (R9): the forms that show their input again run through here too. Not here, on purpose:
+    the forms that only use their token up before a call to the outside (sample label, article label,
+    test message, the switch of the update check, "poll now"); they answer a repeat and an expired
+    form with a message on the same page. Tests: tests/web/test_run_form_action.py.
+    """
     from reprintbuddy.web.deps import current_language
 
+    if done is None and (success_url is None or flash_key is None):
+        raise TypeError("run_form_action needs `done`, or `success_url` and `flash_key`")
     form = await request.form()
     try:
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            params = work(tx)
+        checked = check() if check is not None else None
+        transaction = form_transaction(request, str(form.get("form_token", ""))) if once else write_transaction(request)
+        with transaction as tx:
+            result = work(tx) if check is None else work(tx, checked)
     except FormTokenUsed:
-        return duplicate_redirect(request, success_url() if callable(success_url) else success_url)
+        target = duplicate_url if duplicate_url is not None else success_url
+        return duplicate_redirect(request, target() if callable(target) else target)
     except (DomainError, FormTokenInvalid) as exc:
-        result = on_error(error_text(current_language(request), exc), error_status(exc), exc)
-        return await result if inspect.isawaitable(result) else result
-    return saved_redirect(request, success_url() if callable(success_url) else success_url, flash_key, **params)
+        return await _answer(on_error(error_text(current_language(request), exc), error_status(exc), exc))
+    if done is not None:
+        return await _answer(done(result))
+    return saved_redirect(request, success_url() if callable(success_url) else success_url, flash_key, **result)
+
+
+async def _answer(result: Any) -> Any:
+    return await result if inspect.isawaitable(result) else result
