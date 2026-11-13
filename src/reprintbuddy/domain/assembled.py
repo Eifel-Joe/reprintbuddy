@@ -22,6 +22,8 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate
 from reprintbuddy.domain import articlesets, catalog, inputs, rules, stock, workqueue
+from reprintbuddy.domain.catalog import archive as catalog_archive
+from reprintbuddy.domain.catalog import articles as catalog_articles
 from reprintbuddy.domain.catalog import BaseInput
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.domain.status import assembled_status, set_status
@@ -189,7 +191,7 @@ def _bom_articles(session: Session, composite_id: int | None) -> set[int]:
 def _check(session: Session, data: AssembledInput, *, article_id: int | None = None) -> _Checked:
     if data.mode not in MODES:
         raise ValueError(f"unknown assembly mode {data.mode!r}")
-    name = catalog._required_name(data.name, "articles.field.name")
+    name = catalog_articles._required_name(data.name, "articles.field.name")
     sku = catalog.validate_sku(session, data.sku, article_id=article_id, required=True)  # p533
     label_text = inputs.text(data.label_text, "articles.field.label_text", catalog.MAX_LABEL_TEXT)
     min_stock = inputs.int_in(data.min_stock, "articles.field.min_stock", 0, MAX_QTY)
@@ -467,7 +469,7 @@ def create_assembled(session: Session, data: AssembledInput) -> Article:
     _apply(composite, checked)
     session.add(composite)
     session.flush()
-    catalog._set_parts(session, composite.id, checked.parts)
+    catalog_articles._set_parts(session, composite.id, checked.parts)
     _write_bom(session, composite, checked)
     sync_variants(session, composite)
     return composite
@@ -518,7 +520,7 @@ def update_assembled(session: Session, article_id: int, data: AssembledInput) ->
         # The article itself was its only variant; with choices it holds no stock any more.
         raise ConflictError("assembled.variant_in_use", sku=composite.sku or composite.name)
     _apply(composite, checked)
-    catalog._set_parts(session, composite.id, checked.parts)
+    catalog_articles._set_parts(session, composite.id, checked.parts)
     _write_bom(session, composite, checked)
     sync_variants(session, composite, data.variant_targets)
     return composite
@@ -821,7 +823,7 @@ def convert_to_assembled(session: Session, article_id: int, data: AssembledInput
     article.sold_alone = True
     _apply(article, checked)
     session.flush()
-    catalog._set_parts(session, article.id, checked.parts)
+    catalog_articles._set_parts(session, article.id, checked.parts)
     _write_bom(session, article, checked)
     sync_variants(session, article)
     return article
@@ -849,7 +851,7 @@ def convert_to_print(
     sets = catalog.sets_using(session, composite.id)
     if sets:
         raise ConflictError("assembled.in_set", names=", ".join(sets))
-    holder = catalog._plate_holder(session, file.id, plate.index, besides=composite.id)
+    holder = catalog_archive._plate_holder(session, file.id, plate.index, besides=composite.id)
     if holder is not None:
         raise ConflictError("articles.plate_taken", name=holder.name)
     for row in components(session, composite):
@@ -868,7 +870,7 @@ def convert_to_print(
     composite.file_fingerprint = file.fingerprint
     composite.thumbnail = thumbnail
     session.flush()
-    catalog._take_over_filaments(session, composite.id, requirements)
+    catalog_archive._take_over_filaments(session, composite.id, requirements)
     stock.write_journal(
         session, kind="article_relinked", actor=actor, article_id=composite.id,
         details={"old_file_id": None, "old_plate": None, "new_file_id": file.id, "new_plate": plate.index},
