@@ -135,7 +135,7 @@ What the installer does:
 account exists, anyone in your network can create it.
 
 Running the installer again is safe: the installed version and the database stay as they
-are; it repairs packages, user, permissions, units and the service. Versions change only
+are; it repairs packages, user, permissions, units and the service. If the unpacked folder of the installed version (`/opt/reprintbuddy/releases/<tag>`) is missing, the installer of that version downloads its package again, checked as at the installation; the installer of another version stops and names the command of the installed one. Versions change only
 through the update (see *Update*). `--dry-run` shows what it would do without changing anything.
 
 For development:

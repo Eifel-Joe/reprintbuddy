@@ -376,3 +376,10 @@ def test_v049_versions_are_releases_with_a_package_not_git_tags(name):
 def test_v049_the_start_page_no_longer_plans_pre_releases(name):
     text = read(name)
     assert "pre-releases to choose from" not in text and "Vorabversionen, die sich im Updater" not in text
+
+
+@pytest.mark.parametrize("name", ["README.md", "README.de.md", "docs/start/install.md", "docs/start/install.de.md"])
+def test_p553_the_repair_of_a_missing_folder_is_described(name):
+    text = read(name).replace("\n", " ")
+    assert "/opt/reprintbuddy/releases/<tag>" in text
+    assert ("downloads its package again" in text) or ("lädt das Skript dieser Version ihr Paket wieder" in text)

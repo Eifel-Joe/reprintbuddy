@@ -355,10 +355,17 @@ keep_installed() {
             die 1 "${INSTALL_DIR}/release.json does not name a version. Run the install command of the installed version again, or set Reprintbuddy up again and restore a backup."
         SOURCE_DIR="${INSTALL_DIR}/releases/${INSTALLED_TAG}"
         # p553 (v0.4.10): without its unpacked folder the comparison of the system files below said "does not
-        # match the installed version"; the missing folder is what to name.
+        # match the installed version". A re-run repairs: the script's own version comes again from its
+        # package (checked as at the installation); for another version the command of exactly that version
+        # does it. Version and database stay either way. Tests: test_install_script.py "p553".
         if [ ! -d "${tree}/releases/${INSTALLED_TAG}" ]; then
-            die 1 "The folder of the installed version ${INSTALLED_TAG} is missing: ${SOURCE_DIR}" \
-                "Nothing was changed; the database and the settings are kept."
+            if [ "${INSTALLED_TAG}" != "${RELEASE_TAG}" ]; then
+                die 1 "The folder of the installed version ${INSTALLED_TAG} is missing: ${SOURCE_DIR}" \
+                    "Run the install command of ${INSTALLED_TAG} to put it back; the version, the database and the settings are kept:" \
+                    "  bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/${REPO_SLUG}/${INSTALLED_TAG}/install/install.sh)\""
+            fi
+            say "The folder of the installed version ${INSTALLED_TAG} is missing: ${SOURCE_DIR}; putting it back from its package."
+            download_release
         fi
     else
         INSTALLED_TAG="$(capture_as_service_user git -C "${INSTALL_DIR}" describe --tags --exact-match HEAD 2>/dev/null || true)"

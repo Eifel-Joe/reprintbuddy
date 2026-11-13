@@ -139,7 +139,7 @@ Das Skript
 Admin-Konto existiert, kann es jeder in deinem Netz anlegen.
 
 Das Skript erneut auszuführen ist sicher: Version und Datenbank bleiben, es repariert Pakete,
-Benutzer, Rechte, Einheiten und den Dienst. Die Version wechselt nur das Update (siehe
+Benutzer, Rechte, Einheiten und den Dienst. Fehlt der entpackte Ordner der installierten Version (`/opt/reprintbuddy/releases/<tag>`), lädt das Skript dieser Version ihr Paket wieder, geprüft wie bei der Installation; das Skript einer anderen Version bricht ab und nennt den Befehl der installierten. Die Version wechselt nur das Update (siehe
 *Update*). Mit `--dry-run` zeigt das Skript, was es täte, ohne etwas zu ändern.
 
 Für die Entwicklung:
