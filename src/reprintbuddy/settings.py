@@ -43,6 +43,7 @@ DEFAULTS: dict[str, object] = {
     "automation": False,
     "queue_running": True,
     "update_check": True,  # the automatic check for new versions (Spec 11.3a)
+    "update_channel": "stable",  # v0.4.9: "stable" releases only, or "prerelease"s too (Spec 11.3a)
     "qr_base_url": None,  # the start of the address inside the QR codes (Spec 8.4); none = the server's own network address (found by Reprintbuddy)
     "label_printer_host": None,  # the Brother label printer in the network (Spec 8.5); none = not set up
     "label_roll": DEFAULT_ROLL,  # the roll in it (Spec 8.5)
@@ -101,6 +102,15 @@ def _int_range(low: int, high: int) -> Callable[[Any], int]:
         return value
 
     return check
+
+
+UPDATE_CHANNELS = ("stable", "prerelease")
+
+
+def _update_channel(value: Any) -> str:
+    if value not in UPDATE_CHANNELS:
+        raise ValueError("unknown choice of versions")
+    return value
 
 
 def _language(value: Any) -> str:
@@ -328,6 +338,7 @@ _VALIDATORS: dict[str, Callable[[Any], object]] = {
     "automation": _bool,
     "queue_running": _bool,
     "update_check": _bool,
+    "update_channel": _update_channel,
     "qr_base_url": _qr_base_url,
     "label_printer_host": _label_printer_host,
     "label_roll": _label_roll,

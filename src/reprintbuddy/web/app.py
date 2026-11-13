@@ -192,7 +192,9 @@ def _install_auto_check(app: FastAPI) -> None:
     def check() -> VersionInfo:  # blocking (GitHub); `AutoCheck` runs it in a thread
         ops = app.state.ops
         # v0.4.9: one request to GitHub's release list gives the versions and the notes (Spec 11.3a).
-        return check_versions(ops.install_dir, ops.runner, ops.http_get, channel="stable", now=datetime.now(UTC))
+        with app.state.sessionmaker() as session:
+            channel = st.get_setting(session, "update_channel")
+        return check_versions(ops.install_dir, ops.runner, ops.http_get, channel=channel, now=datetime.now(UTC))
 
     app.state.auto_check = AutoCheck(
         enabled=enabled,

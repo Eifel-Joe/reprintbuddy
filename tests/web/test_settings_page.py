@@ -472,6 +472,7 @@ def test_all_settings_posts_require_csrf(ready_client):
         "/settings/server",
         "/settings/update",
         "/settings/update/auto",
+        "/settings/update/channel",  # v0.4.9: stable releases only / pre-releases too
         "/settings/update/check",
         "/settings/update/dismiss",  # p503: hides the card of a failed update
     ]

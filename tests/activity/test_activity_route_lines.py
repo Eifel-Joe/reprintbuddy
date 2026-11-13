@@ -350,6 +350,25 @@ def test_the_automatic_check_for_versions_switched_on_the_page(ops_env):
     assert item["new"] is False
 
 
+def test_the_choice_of_versions_offered_on_the_page(ops_env):
+    """v0.4.9 (Spec 11.3a "Vorabversionen"): the choice is a setting; the log says it changed."""
+    from reprintbuddy.ops.installation import write_marker
+
+    ops_env.install_dir.mkdir(parents=True, exist_ok=True)
+    write_marker(ops_env.install_dir, tag="v0.1.0", repo=("owner", "repo"), sha256="0" * 64)
+    use_github(ops_env, FakeGitHub(("v0.1.0",)))
+    client = ops_env.client
+    page = "/settings?tab=maintenance"
+    before = len(lines_of(client, "settings_changed"))
+    response = client.post(
+        "/settings/update/channel",
+        data={"csrf_token": csrf_of(client, page), "form_token": form_token_of(client, page, "/settings/update/channel"),
+              "channel": "prerelease"},
+    )
+    assert response.status_code == 303
+    assert setting_names(new_settings_line(client, before))["update_channel"] == {"setting": "update_channel", "change": "changed"}
+
+
 def test_the_bambuddy_connection_of_the_setup(admin_client, respx_mock):
     from conftest import mock_auth_me
 

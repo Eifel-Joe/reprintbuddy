@@ -44,7 +44,7 @@ from reprintbuddy.ops.status import (
     read_status,
     write_status,
 )
-from reprintbuddy.ops.versions import UpdateCheckError, VersionInfo
+from reprintbuddy.ops.versions import UpdateCheckError, VersionInfo, is_prerelease_tag
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render
 from reprintbuddy.web.flash import flash
@@ -102,6 +102,7 @@ class OpsView:
     message_card: str | None = None  # the card that shows it ("update", "backup", …)
     git_install: bool = False
     installed: str | None = None
+    installed_prerelease: bool = False  # v0.4.9: a pre-release runs while only stable ones are offered
     dev_version: str = __version__
     version_info: VersionInfo | None = None
     update: UpdateStatus = UpdateStatus()
@@ -192,6 +193,9 @@ def ops_view(request: Request, session: Session, busy: bool | None = None) -> Op
     if view.git_install:
         view.installed = _installed(request)
         view.version_info = getattr(app.state, "version_info", None)
+        view.installed_prerelease = is_prerelease_tag(view.installed or "") and (
+            st.get_setting(session, "update_channel") != "prerelease"
+        )
     view.update = read_status(_data_dir(request))
     if not request.app.state.restore.active:
         # Uploads nobody confirmed and downloads that were cut off hold every secret.
@@ -424,14 +428,47 @@ async def update_check(request: Request):
     ops = app.state.ops
     if not is_installation(ops.install_dir):
         return _back("not_git")
+    return await _check(request)
+
+
+async def _check(request: Request):
+    """The check for new versions, for the button and for a new choice of versions (Spec 11.3a)."""
+    app = request.app
+    ops = app.state.ops
+    with app.state.sessionmaker() as session:
+        channel = st.get_setting(session, "update_channel")
     try:
         # v0.4.9: one request to GitHub's release list gives versions and notes (Spec 11.3a); in a thread.
-        info = await in_thread(check_versions, ops.install_dir, ops.runner, ops.http_get, channel="stable", now=_utc_now())
+        info = await in_thread(check_versions, ops.install_dir, ops.runner, ops.http_get, channel=channel, now=_utc_now())
     except UpdateCheckError as error:
         log.warning("update check failed: %s", str(error)[:300])  # not shown on the page
         return _back("check_failed")
     store_versions(app.state, info, actor="user")
     return _back()
+
+
+@router.post("/settings/update/channel", dependencies=[Depends(verify_csrf)])
+async def update_channel(request: Request):
+    """The choice "stable releases only" / "pre-releases too" (v0.4.9, Spec 11.3a "Vorabversionen"):
+    `channel` is the wanted value, never a toggle. Saved, then checked at once with the new choice, also
+    when the automatic check is off ("wirkt sofort und löst eine neue Prüfung aus"). A value that is
+    neither changes nothing and asks nobody; a form sent again or an expired one changes nothing, as on
+    the switch of the automatic check (p99)."""
+    form = await request.form()
+    wanted = str(form.get("channel", ""))
+    if wanted not in st.UPDATE_CHANNELS:
+        return _back()
+    try:
+        with form_transaction(request, str(form.get("form_token", ""))) as tx:
+            st.set_setting(tx, "update_channel", wanted, commit=False)
+    except FormTokenUsed:
+        return duplicate_redirect(request, _back().headers["location"])
+    except FormTokenInvalid:
+        flash(request, "form.expired", warning=True)
+        return _back()
+    if not is_installation(request.app.state.ops.install_dir):
+        return _back()
+    return await _check(request)
 
 
 @router.post("/settings/update/auto", dependencies=[Depends(verify_csrf)])

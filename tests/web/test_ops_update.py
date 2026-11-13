@@ -1140,3 +1140,102 @@ def test_v049_a_git_installation_from_elsewhere_fails_the_check_without_asking(o
     response = check(ops_env)
     assert response.headers["location"] == "/settings?tab=maintenance&ops=check_failed#ops-update"
     assert github_of(ops_env).calls == []
+
+
+# --- v0.4.9 p15: "stable releases only" / "pre-releases too" (Spec 11.3a "Vorabversionen") -----
+
+
+def choose(env, value, *, form_token=None):
+    from conftest import form_token_of
+
+    page = "/settings?tab=maintenance"
+    token = form_token or form_token_of(env.client, page, "/settings/update/channel")
+    return env.client.post(
+        "/settings/update/channel",
+        data={"csrf_token": csrf_of(env.client, page), "form_token": token, "channel": value},
+    )
+
+
+def stored_channel(env):
+    from conftest import sm_of
+
+    with sm_of(env.client)() as s:
+        return st.get_setting(s, "update_channel")
+
+
+def test_v049_the_choice_is_stable_releases_by_default(ops_env):
+    package_env(ops_env)
+    assert stored_channel(ops_env) == "stable"
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    form = page.split('action="/settings/update/channel"', 1)[1].split("</form>", 1)[0]
+    assert 'value="stable"' in form and 'value="prerelease"' in form
+    assert re.search(r'value="stable"[^>]*aria-pressed="true"', form)
+    assert re.search(r'value="prerelease"[^>]*aria-pressed="false"', form)
+
+
+def test_v049_choosing_pre_releases_offers_the_beta_at_once_with_marked_notes(ops_env):
+    github = package_env(ops_env, remote=("v0.2.0-beta.1", "v0.1.0"))
+    check(ops_env)
+    assert "Update to" not in ops_env.client.get("/settings?tab=maintenance").text
+    response = choose(ops_env, "prerelease")
+    assert response.status_code == 303
+    assert response.headers["location"] == "/settings?tab=maintenance#ops-update"
+    assert stored_channel(ops_env) == "prerelease"
+    assert len(github.calls) == 2  # the choice checked at once
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    assert "Update to v0.2.0-beta.1" in page
+    notes = page.split('id="ops-notes"', 1)[1].split("</details>", 1)[0]
+    assert "pre-release" in notes
+
+
+def test_v049_back_on_stable_an_installed_pre_release_stays_until_a_newer_stable_one(ops_env):
+    package_env(ops_env, installed="v0.2.0-beta.2", remote=("v0.2.0-beta.2", "v0.1.0"))
+    choose(ops_env, "prerelease")
+    choose(ops_env, "stable")
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    assert "A pre-release is installed." in page
+    assert "Reprintbuddy is up to date." in page and "Update to" not in page  # nothing older is offered
+    use_github(ops_env, FakeGitHub(("v0.2.0", "v0.2.0-beta.2", "v0.1.0")))
+    check(ops_env)
+    assert "Update to v0.2.0" in ops_env.client.get("/settings?tab=maintenance").text
+
+
+def test_v049_the_choice_checks_even_with_the_automatic_check_off(ops_env):
+    from conftest import sm_of
+
+    github = package_env(ops_env)
+    with sm_of(ops_env.client).begin() as s:
+        st.set_setting(s, "update_check", False)
+    choose(ops_env, "prerelease")
+    assert len(github.calls) == 1
+
+
+@pytest.mark.parametrize("value", ["beta", "", "PRERELEASE"])
+def test_v049_an_unknown_choice_changes_nothing(ops_env, value):
+    github = package_env(ops_env)
+    choose(ops_env, value)
+    assert stored_channel(ops_env) == "stable"
+    assert github.calls == []
+
+
+def test_v049_a_form_sent_twice_changes_nothing_the_second_time(ops_env):
+    from conftest import form_token_of
+
+    package_env(ops_env)
+    token = form_token_of(ops_env.client, "/settings?tab=maintenance", "/settings/update/channel")
+    choose(ops_env, "prerelease", form_token=token)
+    choose(ops_env, "stable")
+    choose(ops_env, "prerelease", form_token=token)  # an old tab sends it again
+    assert stored_channel(ops_env) == "stable"
+
+
+def test_v049_the_german_page_says_it_in_german(ops_env):
+    package_env(ops_env, installed="v0.2.0-beta.2", remote=("v0.2.0-beta.3", "v0.2.0-beta.2", "v0.1.0"))
+    _set_language(ops_env, "de")
+    choose(ops_env, "prerelease")
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    assert "Angebotene Versionen" in page and "Nur stabile Versionen" in page and "Auch Vorabversionen" in page
+    notes = page.split('id="ops-notes"', 1)[1].split("</details>", 1)[0]
+    assert "Vorabversion" in notes
+    choose(ops_env, "stable")
+    assert "Installiert ist eine Vorabversion." in ops_env.client.get("/settings?tab=maintenance").text

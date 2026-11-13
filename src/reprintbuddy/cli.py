@@ -28,6 +28,7 @@ from reprintbuddy.ops.runner import subprocess_runner
 from reprintbuddy.ops.server import base_url, connect_host, effective_from_settings
 from reprintbuddy.ops.service import INSTALL_DIR
 from reprintbuddy.ops.package import urllib_download, urllib_get
+from reprintbuddy.ops.versions import is_prerelease_tag
 from reprintbuddy.ops.updater import http_health_waiter, interrupt_handler, run_update
 from reprintbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upgrade
 from reprintbuddy.web import server as web_server
@@ -121,8 +122,15 @@ def _migrate(args: argparse.Namespace) -> int:
 
 
 def _init(args: argparse.Namespace) -> int:
+    import reprintbuddy  # read at the call: the version of the code that runs
+
+    new = not args.db.exists()
     with _session(args.db) as session:
         st.set_setting(session, "language", args.language)
+        # v0.4.9 (Spec 11.3a): a new installation of a pre-release offers pre-releases from the start;
+        # an existing database keeps its choice.
+        if new and is_prerelease_tag("v" + reprintbuddy.__version__):
+            st.set_setting(session, "update_channel", "prerelease")
     return 0
 
 
