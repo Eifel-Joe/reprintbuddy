@@ -30,6 +30,8 @@ UPDATE_REASONS = (
     "interrupted_untouched", "interrupted_partial",
 )
 BUSY_STATES = frozenset({"queued", "running"})
+# The results that count as a failure: their card stays until the user hides it (p503, Spec 11.3a).
+FAILED_STATES = frozenset({"failed", "rolled_back", "rollback_failed"})
 # An update older than this is taken for stuck (for example the container was restarted midway).
 STALE_AFTER = timedelta(minutes=30)
 
@@ -46,6 +48,9 @@ class UpdateStatus:
     backup: str | None = None
     reason: str = ""
     params: dict[str, str] = field(default_factory=dict)
+    # p503 (Spec 11.3a): the card of this result was seen (success) or hidden by the user (failure).
+    # The record itself stays; only the card goes. Each new update writes a fresh state without it.
+    acknowledged: bool = False
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -59,6 +64,7 @@ class UpdateStatus:
             "backup": self.backup,
             "reason": self.reason,
             "params": dict(self.params),
+            "acknowledged": self.acknowledged,
         }
 
     @classmethod
@@ -91,6 +97,7 @@ class UpdateStatus:
             backup=text("backup"),
             reason=reason if reason in UPDATE_REASONS else "",
             params=params,
+            acknowledged=data.get("acknowledged") is True,
         )
 
 

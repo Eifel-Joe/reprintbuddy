@@ -28,7 +28,7 @@ from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.routes.auth import password_confirmed
-from reprintbuddy.web.routes.ops import ops_ready, ops_view
+from reprintbuddy.web.routes.ops import mark_result_seen, ops_ready, ops_view
 from reprintbuddy.web.deps import (
     get_db,
     logged_in_user,
@@ -121,6 +121,9 @@ def _page(
     # check instead, another tab leaves it for the Bambuddy tab, and a region fetch (another browser tab, Spec 10.5.3)
     # uses nothing up.
     connection_result = take_connection_result(request.session) if current_tab == "bambuddy" and error is None and not regions.requested(request) else None
+    ops = ops_view(request, db, busy)
+    if current_tab == "maintenance":
+        mark_result_seen(request, ops)  # the card of a successful update is shown once (p503)
     return render(
         request,
         "settings.html",
@@ -132,7 +135,7 @@ def _page(
         api_key_mask=st.display_value("bambuddy_api_key", st.get_setting(db, "bambuddy_api_key")),
         tls_key_mask=st.display_value("tls_key", st.get_setting(db, "tls_key")),
         tls_cert_set=bool(st.get_setting(db, "tls_cert")),
-        ops=ops_view(request, db, busy),
+        ops=ops,
         update_check=bool(st.get_setting(db, "update_check")),  # the switch of the automatic check
         # The live channel row: only with a stored address (without one there is nothing to connect to).
         # The stored setting decides, not `values`: a typed address that was refused is no address.
