@@ -20,6 +20,7 @@ EXPECTED_DEFAULTS = {
     "tls_cert": None,
     "tls_key": None,
     "update_check": True,  # v0.3.6, Spec 11.3a: the automatic check for new versions is on
+    "update_channel": "stable",  # v0.4.9, Spec 11.3a: stable releases only, pre-releases on choice
     "label_printer_host": None,  # v0.3.8, Spec 8.5: the label printer; none = not set up
     "label_roll": "DK-11209",
     "label_fields": ["name", "sku", "label_text"],
