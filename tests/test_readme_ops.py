@@ -101,7 +101,7 @@ def test_readme_explains_the_emergency_restore_on_the_command_line(name):
 def test_install_points_at_the_published_repository(name):
     """Published: README and installer name the real repository, no placeholder."""
     assert "<owner>" not in read(name)
-    assert 'REPO_URL_DEFAULT="https://github.com/Eifel-Joe/reprintbuddy.git"' in (ROOT / "install" / "install.sh").read_text(encoding="utf-8")
+    assert 'REPO_URL_DEFAULT="https://github.com/Eifel-Joe/reprintbuddy"' in (ROOT / "install" / "install.sh").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("name", READMES)

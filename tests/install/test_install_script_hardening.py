@@ -137,11 +137,21 @@ def test_wrapper_keeps_the_terminal_for_the_password_prompt(bash, tmp_path, comm
 INSTALL_DIR_FILES = ("reprintbuddy.sudoers", "reprintbuddy.service", "reprintbuddy-update.service", "reprintbuddy-cli.sh")
 
 
-def installed_tree(dest: Path, *, change: str | None = None) -> None:
-    """An existing installation whose install/ files are those of the repository (or one changed)."""
+def installed_tree(dest: Path, *, change: str | None = None, kind: str = "git") -> None:
+    """An existing installation (a database, and the code of an installation made with git or, since v0.4.9,
+    an unpacked package) whose install/ files are those of the repository (or one changed)."""
     tree = dest / "opt/reprintbuddy"
-    (tree / ".git").mkdir(parents=True)
-    (tree / "install").mkdir()
+    if kind == "git":
+        (tree / ".git").mkdir(parents=True)
+        source = tree
+    else:
+        source = tree / "releases" / "v0.4.9"
+        source.mkdir(parents=True)
+        (tree / "release.json").write_text('{"tag": "v0.4.9", "repo": "owner/reprintbuddy"}', encoding="utf-8")
+    (dest / "var/lib/reprintbuddy").mkdir(parents=True, exist_ok=True)
+    (dest / "var/lib/reprintbuddy/reprintbuddy.db").write_bytes(b"x")
+    (source / "install").mkdir()
+    tree = source
     for name in INSTALL_DIR_FILES:
         text = (INSTALL_SH.parent / name).read_text(encoding="utf-8")
         if name == change:
@@ -156,16 +166,19 @@ def test_matching_installer_and_code_go_on(bash, tmp_path):
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.parametrize("kind", ["git", "package"])
 @pytest.mark.parametrize("changed", INSTALL_DIR_FILES)
-def test_an_installer_that_does_not_match_the_installed_code_stops(bash, tmp_path, changed):
+def test_an_installer_that_does_not_match_the_installed_code_stops(bash, tmp_path, changed, kind):
     os_release(tmp_path)
-    installed_tree(tmp_path, change=changed)
+    installed_tree(tmp_path, change=changed, kind=kind)
     result = run(bash, tmp_path, "--repo", REPO)
     assert result.returncode == 1
     message = result.stderr + result.stdout
     assert "The installer does not match the installed version" in message
     assert changed in message
     assert "Use the install.sh of the tag" in message
+    if kind == "package":
+        assert "/v0.4.9/install/install.sh" in message  # the tag comes from release.json
     out = lines(result)
     assert "visudo" not in out and "/etc/sudoers.d/" not in out, "nothing may be installed before the check"
 

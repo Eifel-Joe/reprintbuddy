@@ -17,9 +17,13 @@ import reprintbuddy
 ROOT = Path(__file__).resolve().parents[2]
 INSTALL_SH = ROOT / "install" / "install.sh"
 CLI_SH = ROOT / "install" / "reprintbuddy-cli.sh"
-REPO = "https://example.invalid/reprintbuddy.git"
+REPO = "https://github.com/owner/reprintbuddy.git"  # v0.4.9: a GitHub address (the package comes from its releases)
+REPO_BASE = "https://github.com/owner/reprintbuddy"
 RUNUSER = "+ setsid --wait runuser -u reprintbuddy -- env HOME=/var/lib/reprintbuddy"
 PINNED = "v" + reprintbuddy.__version__  # the release the script belongs to and installs (v0.3.14 p168)
+PACKAGE = f"reprintbuddy-{PINNED}.tar.gz"
+WORK = "/opt/reprintbuddy/releases/.download"
+SOURCE = f"/opt/reprintbuddy/releases/{PINNED}"
 
 
 @pytest.fixture
@@ -104,14 +108,22 @@ def test_dry_run_fresh(bash, tmp_path):
     out = lines(result)
     expected = [
         "+ apt-get update",
-        "apt-get install -y --no-install-recommends python3 python3-venv git curl sudo ca-certificates",
+        "apt-get install -y --no-install-recommends python3 python3-venv curl sudo ca-certificates",
         "useradd --system",
         "chmod 700 /var/lib/reprintbuddy",
-        "git clone https://example.invalid/reprintbuddy.git /opt/reprintbuddy",
-        "checkout --quiet --detach " + PINNED,
+        # v0.4.9 p500: the package of the release of this script, checked against its checksum
+        f"mkdir -p {WORK}",
+        f"curl -fsSL --proto =https --proto-redir =https --max-filesize 50000000 -o {WORK}/{PACKAGE} "
+        f"{REPO_BASE}/releases/download/{PINNED}/{PACKAGE}",
+        f"-o {WORK}/{PACKAGE}.sha256 {REPO_BASE}/releases/download/{PINNED}/{PACKAGE}.sha256",
+        f"sha256sum -c --strict --quiet {PACKAGE}.sha256",
+        f"tar -xzf {WORK}/{PACKAGE} -C {WORK}",
+        f"mv {WORK}/reprintbuddy-{PINNED} {SOURCE}",
+        "release.json",
+        f"rm -rf {WORK}",
         "python3 -m venv /opt/reprintbuddy/.venv",
-        "rm -rf /opt/reprintbuddy/build",
-        "-m pip install --no-cache-dir --upgrade /opt/reprintbuddy",
+        f"rm -rf {SOURCE}/build",
+        f"-m pip install --no-cache-dir --upgrade {SOURCE}",
         "reprintbuddy init --db /var/lib/reprintbuddy/reprintbuddy.db --language de",
         "visudo -cf ",
         "reprintbuddy.sudoers",
@@ -130,10 +142,13 @@ def test_dry_run_fresh(bash, tmp_path):
         assert found >= 0, f"{part!r} missing or out of order in:\n{out}"
         position = found + len(part)
     assert "anyone in your network" in out
+    assert not [line for line in out.splitlines() if " git " in line or "git clone" in line]  # v0.4.9: no git at all
     for line in out.splitlines():
-        if any(word in line for word in ("git clone", "-m venv", "-m pip", "reprintbuddy init", "checkout --quiet")):
+        if line.startswith("+ rm -rf ") and line.endswith("/build"):
+            continue  # build leftovers are removed by root, as before
+        if any(word in line for word in ("curl -fsSL", "sha256sum", "tar -x", "-m venv", "-m pip", "reprintbuddy init", "/releases/")):
             assert line.startswith(RUNUSER), line
-        assert not line.startswith(("+ git", "+ python3 ", "+ /opt/reprintbuddy/.venv")), line
+        assert not line.startswith(("+ git", "+ python3 ", "+ /opt/reprintbuddy/.venv", "+ curl", "+ tar")), line
 
 
 def test_dry_run_changes_nothing(bash, tmp_path):
@@ -256,18 +271,33 @@ def test_placeholder_repo_refused(bash, tmp_path):
 
 
 def test_default_repo_is_the_published_one(bash, tmp_path):
-    """Published: without --repo the script clones the public repository."""
+    """Published: without --repo the script loads the package from the public repository's releases."""
     os_release(tmp_path)
     result = run(bash, tmp_path)
     assert result.returncode == 0, result.stderr
-    assert "git clone https://github.com/Eifel-Joe/reprintbuddy.git /opt/reprintbuddy" in lines(result)
+    assert f"https://github.com/Eifel-Joe/reprintbuddy/releases/download/{PINNED}/{PACKAGE}" in lines(result)
 
 
-def test_repo_from_environment(bash, tmp_path):
+@pytest.mark.parametrize("given", [REPO, REPO_BASE, REPO_BASE + "/"])
+def test_repo_from_environment(bash, tmp_path, given):
     os_release(tmp_path)
-    result = run(bash, tmp_path, env_extra={"REPRINTBUDDY_REPO": REPO})
+    result = run(bash, tmp_path, env_extra={"REPRINTBUDDY_REPO": given})
     assert result.returncode == 0
-    assert f"git clone {REPO} /opt/reprintbuddy" in lines(result)
+    assert f"{REPO_BASE}/releases/download/{PINNED}/{PACKAGE}" in lines(result)
+
+
+@pytest.mark.parametrize(
+    "given",
+    ["git@github.com:owner/reprintbuddy.git", "http://github.com/owner/reprintbuddy", "https://gitlab.com/owner/reprintbuddy",
+     "https://github.com/owner", "https://github.com/owner/repo/extra", "https://github.com/../x"],
+)
+def test_a_repository_that_is_no_github_address_is_refused(bash, tmp_path, given):
+    """v0.4.9: the package comes from the GitHub releases of the repository."""
+    os_release(tmp_path)
+    result = run(bash, tmp_path, "--repo", given)
+    assert result.returncode == 1
+    assert "Repository URL must be https://github.com/<owner>/<name>" in result.stderr + result.stdout
+    assert "apt-get" not in lines(result)
 
 
 def test_destdir_requires_dry_run(bash, tmp_path):
@@ -318,9 +348,44 @@ def test_rerun_keeps_database(bash, tmp_path):
     assert "Existing installation found, keeping version." in out
     assert "Existing database kept." in out
     assert "systemctl restart reprintbuddy.service" in out
-    for forbidden in ("git clone", "checkout", "init --db", "-m venv", "rm -rf /opt/reprintbuddy/.venv"):
+    for forbidden in ("git clone", "checkout", "init --db", "-m venv", "rm -rf /opt/reprintbuddy/.venv", "curl -fsSL"):
+        assert forbidden not in out, forbidden
+    assert "-m pip install --no-cache-dir --upgrade /opt/reprintbuddy\n" in out  # a git installation: its own tree
+
+
+def installed_package(dest: Path, tag: str = "v0.4.9", venv: str = "3.13") -> None:
+    """A finished installation from a package (v0.4.9 on): release.json, the unpacked version, a database."""
+    os_release(dest)
+    tree = dest / "opt/reprintbuddy"
+    (tree / "releases" / tag).mkdir(parents=True, exist_ok=True)
+    (tree / "release.json").write_text(
+        '{"tag": "%s", "repo": "owner/reprintbuddy", "sha256": "%s"}\n' % (tag, "0" * 64), encoding="utf-8"
+    )
+    (dest / "var/lib/reprintbuddy").mkdir(parents=True, exist_ok=True)
+    fake_venv(dest, venv)
+    (dest / "var/lib/reprintbuddy/reprintbuddy.db").write_bytes(b"x")
+
+
+def test_rerun_of_a_package_installation_keeps_its_version(bash, tmp_path):
+    installed_package(tmp_path)
+    result = run(bash, tmp_path, "--repo", REPO)
+    assert result.returncode == 0, result.stderr
+    out = lines(result)
+    assert f"Existing installation found, keeping version v0.4.9 (this script is {PINNED};" in out
+    assert "Existing database kept." in out
+    assert "-m pip install --no-cache-dir --upgrade /opt/reprintbuddy/releases/v0.4.9" in out
+    for forbidden in ("curl -fsSL", "init --db", "-m venv", " git "):
         assert forbidden not in out, forbidden
 
+
+@pytest.mark.parametrize("marker", ['{"tag": "../../etc"}', "not json", '{"tag": "v1.0.0; rm -rf /"}'])
+def test_rerun_with_a_marker_that_names_no_version_is_refused(bash, tmp_path, marker):
+    installed_package(tmp_path)
+    (tmp_path / "opt/reprintbuddy/release.json").write_text(marker, encoding="utf-8")
+    result = run(bash, tmp_path, "--repo", REPO)
+    assert result.returncode == 1
+    assert "does not name a version" in result.stderr + result.stdout
+    assert "pip install" not in lines(result)
 
 REBUILT = {
     # (system python, python the environment was built with, options): why the environment is of no use
@@ -394,6 +459,14 @@ def test_the_environment_floor_is_3_13_even_when_the_system_python_is_unknown(ba
     assert ("-m venv" in out) is rebuilt, out
 
 
+def test_a_folder_with_release_json_is_an_installation(bash, tmp_path):
+    os_release(tmp_path)
+    (tmp_path / "opt/reprintbuddy").mkdir(parents=True)
+    (tmp_path / "opt/reprintbuddy/release.json").write_text('{"tag": "v0.4.9"}', encoding="utf-8")
+    result = run(bash, tmp_path, "--repo", REPO)
+    assert result.returncode == 0, result.stderr
+
+
 def test_refuses_foreign_install_dir(bash, tmp_path):
     os_release(tmp_path)
     (tmp_path / "opt/reprintbuddy").mkdir(parents=True)
@@ -419,7 +492,7 @@ def test_not_root_refused(bash, tmp_path):
 
 def test_messages_are_english_only_and_neutral():
     text = INSTALL_SH.read_text(encoding="utf-8")
-    assert 'REPO_URL_DEFAULT="https://github.com/Eifel-Joe/reprintbuddy.git"' in text
+    assert 'REPO_URL_DEFAULT="https://github.com/Eifel-Joe/reprintbuddy"' in text
 
 
 # --- root must not install anything from a place the service user can write to ---------
@@ -465,27 +538,37 @@ def test_sudoers_is_checked_before_it_is_installed(bash, tmp_path):
     assert out.index("visudo -cf ") < out.index("/etc/sudoers.d/reprintbuddy")
 
 
-def test_rerun_after_an_aborted_first_install_switches_to_the_release(bash, tmp_path):
-    """First run died after the clone (no release yet): no database, default branch checked out."""
+def test_rerun_after_an_aborted_first_install_puts_the_release_in_place(bash, tmp_path):
+    """A first run (of an older script, by git) died after the clone: no database. Nothing is installed, so
+    the git copy goes and the package of this script's release is put in place (v0.4.9)."""
     os_release(tmp_path)
     (tmp_path / "opt/reprintbuddy/.git").mkdir(parents=True)
     out = lines(run(bash, tmp_path, "--repo", REPO))
     assert "Unfinished installation found" in out
-    assert "git -C /opt/reprintbuddy fetch --prune --prune-tags --force --tags origin" in out
-    assert "checkout --quiet --detach " + PINNED in out
-    assert "git clone" not in out
-    assert "Existing installation found, keeping version." not in out
+    # (a dry run prints the command quoted for the shell: `\!` is `!`)
+    assert r"find /opt/reprintbuddy -mindepth 1 -maxdepth 1 \! -name .venv \! -name releases \! -name release.json -exec rm -rf" in out
+    assert f"{REPO_BASE}/releases/download/{PINNED}/{PACKAGE}" in out
+    assert "git clone" not in out and "Existing installation found" not in out
     for line in out.splitlines():
-        if "fetch --tags" in line or "checkout --quiet" in line:
+        if "-maxdepth 1" in line:
             assert line.startswith(RUNUSER), line
 
 
-def test_script_and_python_use_the_same_release_tag_rule():
-    from reprintbuddy.ops.versions import RELEASE_TAG
+VERSION_SAMPLES = (
+    "v0.4.9", "v1.0.0", "v10.20.30", "v1.0.1-beta.1", "v1.0.1-beta.12",
+    "v01.0.0", "v1.0", "1.0.0", "v1.0.0-beta.0", "v1.0.0-beta.01", "v1.0.0-beta", "v1.0.0-rc.1", "--force", "v1.0.0 ",
+)
 
-    number = "(0|[1-9][0-9]*)"
-    assert rf"'^v{number}\.{number}\.{number}$'" in INSTALL_SH.read_text(encoding="utf-8")
-    assert RELEASE_TAG.pattern == rf"^v{number}\.{number}\.{number}$"
+
+def test_script_and_python_use_the_same_version_rule():
+    """v0.4.9: the script's pattern (grep -E) accepts exactly the tags Python's `parse_version` does."""
+    from reprintbuddy.ops.versions import parse_version
+
+    found = re.findall(r"VERSION_PATTERN='([^']*)'", INSTALL_SH.read_text(encoding="utf-8"))
+    assert len(found) == 1
+    pattern = re.compile(found[0])
+    for tag in VERSION_SAMPLES:
+        assert bool(pattern.fullmatch(tag)) is (parse_version(tag) is not None), tag
 
 
 # --- v0.3.14 p168: the script installs the release it belongs to (the tag in its address) --------------
@@ -498,35 +581,13 @@ def test_the_release_in_the_script_is_the_version_of_this_code():
     assert found == [PINNED]
 
 
-def test_dry_run_checks_out_the_release_of_the_script_not_the_newest(bash, tmp_path):
+def test_dry_run_loads_the_release_of_the_script_not_the_newest(bash, tmp_path):
     os_release(tmp_path)
     out = lines(run(bash, tmp_path, "--repo", REPO))
-    assert "checkout --quiet --detach " + PINNED in out
-    assert "vX.Y.Z" not in out
+    assert f"/releases/download/{PINNED}/{PACKAGE}" in out
+    assert "/releases/latest/" not in out and "vX.Y.Z" not in out
 
 
-@pytest.fixture
-def tagged_repo(tmp_path):
-    """A repository with an older release, the one of the script and a much newer one."""
-    git = shutil.which("git")
-    if not git:
-        pytest.skip("git is not installed")
-    repo = tmp_path / "repo"
-
-    def g(*args):
-        subprocess.run(
-            [git, "-C", repo.as_posix(), "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
-            check=True, capture_output=True,
-        )
-
-    repo.mkdir()
-    subprocess.run([git, "init", "-q", repo.as_posix()], check=True, capture_output=True)
-    for tag in ("v0.0.1", PINNED, "v99.0.0"):
-        (repo / "version.txt").write_text(tag, encoding="utf-8")
-        g("add", "version.txt")
-        g("commit", "-q", "-m", tag)
-        g("tag", tag)
-    return repo
 
 
 SHIM = """#!/bin/bash
@@ -539,42 +600,12 @@ exec "${args[@]}"
 """
 
 
-def _call_checkout(bash, tmp_path, repo, release):
-    """`checkout_release` of the script on a real repository: the functions are loaded without `main`, and
-    the stand-in for `setsid ... runuser` runs git on the test repository instead of /opt/reprintbuddy."""
-    text = INSTALL_SH.read_text(encoding="utf-8").replace("\r\n", "\n").rstrip()
-    assert text.endswith('main "$@"')
-    text = text.removesuffix('main "$@"').replace(f'RELEASE_TAG="{PINNED}"', f'RELEASE_TAG="{release}"')
-    functions = tmp_path / "functions.sh"
-    functions.write_text(text, encoding="utf-8", newline="\n")
-    shims = tmp_path / "shims"
-    shims.mkdir()
-    (shims / "setsid").write_text(SHIM, encoding="utf-8", newline="\n")
-    (shims / "setsid").chmod(0o755)
-    env = dict(os.environ, FAKE_INSTALL=repo.as_posix(), PATH=f"{shims.as_posix()}{os.pathsep}{os.environ['PATH']}")
-    command = f'source "{functions.as_posix()}"; checkout_release && git -C "{repo.as_posix()}" describe --tags'
-    return subprocess.run(
-        [bash, "-c", command], capture_output=True, text=True, encoding="utf-8", env=env,
-        stdin=subprocess.DEVNULL, timeout=60,
-    )
 
 
-def test_checkout_takes_the_release_of_the_script_even_when_a_newer_one_exists(bash, tmp_path, tagged_repo):
-    done = _call_checkout(bash, tmp_path, tagged_repo, PINNED)
-    assert done.returncode == 0, done.stderr
-    assert done.stdout.strip() == PINNED
 
 
-def test_checkout_stops_when_the_release_of_the_script_is_not_in_the_repository(bash, tmp_path, tagged_repo):
-    done = _call_checkout(bash, tmp_path, tagged_repo, "v9.9.9")
-    assert done.returncode == 1
-    assert "v9.9.9" in done.stderr and "not found" in done.stderr
 
 
-def test_checkout_refuses_a_release_that_is_no_version_tag(bash, tmp_path, tagged_repo):
-    done = _call_checkout(bash, tmp_path, tagged_repo, "--force")
-    assert done.returncode == 1
-    assert "not a version tag" in done.stderr
 
 
 # --- review of p168: the re-run paths of fetch_code on a real clone -------------------------------------
@@ -632,15 +663,6 @@ def origin_repo(tmp_path):
     return repo
 
 
-def test_a_rerun_without_database_moves_to_the_release_of_the_script_even_when_head_is_on_another_tag(
-    bash, tmp_path, origin_repo
-):
-    """The first run stopped after the clone: the default branch stands on the newest release (a tag too).
-    Nothing is installed, so the re-run must still go to the release of this script."""
-    done = _run_fetch_code(bash, tmp_path, origin_repo, checked_out="v99.0.0", database=False)
-    assert done.returncode == 0, done.stderr
-    assert "Unfinished installation found" in done.stdout
-    assert done.stdout.strip().splitlines()[-1] == PINNED
 
 
 def test_a_rerun_with_database_keeps_the_installed_version_and_says_which(bash, tmp_path, origin_repo):
@@ -655,3 +677,142 @@ def test_a_rerun_with_database_on_the_release_of_the_script_says_nothing_more(ba
     done = _run_fetch_code(bash, tmp_path, origin_repo, checked_out=PINNED, database=True)
     assert done.returncode == 0, done.stderr
     assert "Existing installation found, keeping version." in done.stdout
+
+
+# --- v0.4.9 p500: the package of the release, downloaded and checked for real ---------------------------
+
+
+CURL_STUB = """#!/bin/bash
+# Stands in for curl: hands over the file of the test folder named like the last part of the address.
+out=""
+while [ "$#" -gt 1 ]; do
+    if [ "$1" = "-o" ]; then out="$2"; shift 2; continue; fi
+    shift
+done
+name="${1##*/}"
+echo "$1" >> "$FIXTURES/asked.txt"
+[ -f "$FIXTURES/$name" ] || exit 22
+cp "$FIXTURES/$name" "$out"
+"""
+
+
+def msys(path: Path) -> str:
+    """A path as bash on Windows (MSYS) and on Linux both read it without a drive colon (GNU tar
+    would take `D:` for a remote host)."""
+    text = path.as_posix()
+    if len(text) > 1 and text[1] == ":":
+        return "/" + text[0].lower() + text[2:]
+    return text
+
+
+def package_fixture(folder: Path, tag: str = PINNED, *, extra: str | None = None, checksum: str | None = None) -> Path:
+    """The package of `tag` as the release workflow builds it, and its checksum file."""
+    import hashlib
+    import io
+    import tarfile
+
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"reprintbuddy-{tag}.tar.gz"
+    top = f"reprintbuddy-{tag}"
+    with tarfile.open(folder / name, "w:gz") as archive:
+        entries = [(f"{top}/pyproject.toml", b"[project]\n"), (f"{top}/install/install.sh", b"#!/bin/sh\n")]
+        if extra:
+            entries.append((extra, b"x"))
+        for member, data in entries:
+            info = tarfile.TarInfo(member)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    digest = checksum or hashlib.sha256((folder / name).read_bytes()).hexdigest()
+    (folder / f"{name}.sha256").write_text(f"{digest}  {name}\n", encoding="utf-8", newline="\n")
+    return folder
+
+
+def _call(bash, tmp_path, command: str, fixtures: Path, *, git_clone_of: Path | None = None, database: bool = False):
+    """Functions of the script (without `main`) on a test folder: the stand-in for `setsid ... runuser`
+    runs the command on the test folder, `curl` hands over the fixture files, `python3` is this Python."""
+    import sys
+
+    root = tmp_path / "root"
+    install = root / "opt" / "reprintbuddy"
+    install.mkdir(parents=True)
+    if git_clone_of is not None:
+        subprocess.run([shutil.which("git"), "clone", "-q", git_clone_of.as_posix(), install.as_posix()], check=True, capture_output=True)
+    if database:
+        db = root / "var" / "lib" / "reprintbuddy" / "reprintbuddy.db"
+        db.parent.mkdir(parents=True)
+        db.write_bytes(b"")
+    text = INSTALL_SH.read_text(encoding="utf-8").replace("\r\n", "\n").rstrip()
+    functions = tmp_path / "functions.sh"
+    functions.write_text(text.removesuffix('main "$@"'), encoding="utf-8", newline="\n")
+    shims = tmp_path / "shims"
+    shims.mkdir()
+    for name, body in (
+        ("setsid", SHIM),
+        ("curl", CURL_STUB),
+        ("python3", f'#!/bin/bash\nexec "{msys(Path(sys.executable))}" "$@"\n'),
+    ):
+        (shims / name).write_text(body, encoding="utf-8", newline="\n")
+        (shims / name).chmod(0o755)
+    env = dict(
+        os.environ,
+        FAKE_INSTALL=msys(install),
+        REPRINTBUDDY_DESTDIR=msys(root),
+        FIXTURES=msys(fixtures),
+        PATH=f"{shims.as_posix()}{os.pathsep}{os.environ['PATH']}",
+    )
+    env.pop("REPRINTBUDDY_REPO", None)
+    script = f'source "{msys(functions)}"; REPO_URL="{REPO}"; require_repo_url; {command}'
+    done = subprocess.run(
+        [bash, "-c", script], capture_output=True, text=True, encoding="utf-8", env=env,
+        stdin=subprocess.DEVNULL, timeout=120,
+    )
+    return done, install
+
+
+def test_the_package_is_downloaded_checked_and_put_in_place(bash, tmp_path):
+    import hashlib
+    import json
+
+    fixtures = package_fixture(tmp_path / "fixtures")
+    done, install = _call(bash, tmp_path, "fetch_code", fixtures)
+    assert done.returncode == 0, done.stderr
+    assert (install / "releases" / PINNED / "pyproject.toml").is_file()
+    assert (install / "releases" / PINNED / "install" / "install.sh").is_file()
+    assert not (install / "releases" / ".download").exists()
+    marker = json.loads((install / "release.json").read_text(encoding="utf-8"))
+    digest = hashlib.sha256((fixtures / PACKAGE).read_bytes()).hexdigest()
+    assert marker == {"tag": PINNED, "repo": "owner/reprintbuddy", "sha256": digest}
+    asked = (fixtures / "asked.txt").read_text(encoding="utf-8").split()
+    assert asked == [f"{REPO_BASE}/releases/download/{PINNED}/{PACKAGE}", f"{REPO_BASE}/releases/download/{PINNED}/{PACKAGE}.sha256"]
+
+
+@pytest.mark.parametrize(
+    "fixture, words",
+    [
+        ({"checksum": "0" * 64}, "checksum"),
+        ({"extra": "stray.txt"}, "more than the folder"),
+        ({"extra": f"reprintbuddy-{PINNED}/../../evil"}, "more than the folder"),
+        ({"tag": "v0.0.1"}, "could not be downloaded"),  # no package of this script's release
+    ],
+)
+def test_a_package_that_does_not_check_out_installs_nothing(bash, tmp_path, fixture, words):
+    fixtures = package_fixture(tmp_path / "fixtures", **fixture)
+    done, install = _call(bash, tmp_path, "fetch_code", fixtures)
+    assert done.returncode == 1
+    assert words in done.stderr, done.stderr
+    assert not (install / "release.json").exists()
+    assert not (install / "releases" / PINNED).exists()
+    assert not (tmp_path / "root" / "evil").exists() and not (install / "evil").exists()
+
+
+def test_an_unfinished_git_installation_gives_way_to_the_package(bash, tmp_path, origin_repo):
+    """v0.4.9: a first run of an older script died after its clone (no database). The git copy goes, the
+    package of this script's release comes; nothing of git is used."""
+    import json
+
+    fixtures = package_fixture(tmp_path / "fixtures")
+    done, install = _call(bash, tmp_path, "fetch_code", fixtures, git_clone_of=origin_repo)
+    assert done.returncode == 0, done.stderr
+    assert "Unfinished installation found" in done.stdout
+    assert sorted(path.name for path in install.iterdir()) == ["release.json", "releases"]
+    assert json.loads((install / "release.json").read_text(encoding="utf-8"))["tag"] == PINNED
