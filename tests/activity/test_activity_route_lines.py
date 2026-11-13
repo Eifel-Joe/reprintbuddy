@@ -13,6 +13,7 @@ import re
 from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
+from github_support import ORIGIN, FakeGitHub, use_github
 from factories import make_article, make_filament_settings, make_part, make_set, make_sort
 from reprintbuddy.models import ActivityEntry, Article, ArticleFilament, ArticlePart, FilamentSort, ReorderMark, utcnow
 
@@ -334,7 +335,8 @@ def test_the_automatic_check_for_versions_switched_on_the_page(ops_env):
     (ops_env.install_dir / ".git").mkdir(parents=True, exist_ok=True)
     d = str(ops_env.install_dir)
     ops_env.runner.on(("git", "-C", d, "describe"), CommandResult(0, "v0.1.0\n"))
-    ops_env.runner.on(("git", "-C", d, "ls-remote"), CommandResult(0, "abc\trefs/tags/v0.1.0\n"))
+    ops_env.runner.on(("git", "-C", d, "remote", "get-url", "origin"), CommandResult(0, ORIGIN + "\n"))
+    use_github(ops_env, FakeGitHub(("v0.1.0",)))
     client = ops_env.client
     page = "/settings?tab=maintenance"
     before = len(lines_of(client, "settings_changed"))

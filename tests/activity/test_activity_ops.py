@@ -12,6 +12,7 @@ from sqlalchemy import select
 from reprintbuddy.models import ActivityEntry
 
 from conftest import csrf_of
+from github_support import ORIGIN, FakeGitHub, use_github
 from reprintbuddy.ops.runner import CommandResult
 
 # The helpers of the tests of the backup page, as they are (that module imports only conftest).
@@ -20,7 +21,6 @@ _spec = importlib.util.spec_from_file_location("_activity_backup_helpers", _HERE
 backup_tests = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(backup_tests)
 
-REMOTE_TWO = CommandResult(0, "abc\trefs/tags/v0.1.0\ndef\trefs/tags/v0.2.0\n")
 
 
 def git_env(env, *, describe="v0.1.0\n"):
@@ -28,7 +28,8 @@ def git_env(env, *, describe="v0.1.0\n"):
     (env.install_dir / ".git").mkdir(parents=True, exist_ok=True)
     d = str(env.install_dir)
     env.runner.on(("git", "-C", d, "describe"), CommandResult(0, describe))
-    env.runner.on(("git", "-C", d, "ls-remote"), REMOTE_TWO)
+    env.runner.on(("git", "-C", d, "remote", "get-url", "origin"), CommandResult(0, ORIGIN + "\n"))
+    use_github(env, FakeGitHub(("v0.2.0", "v0.1.0")))
 
 
 def post(env, path):

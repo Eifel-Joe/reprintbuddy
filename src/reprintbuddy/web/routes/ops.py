@@ -1,7 +1,7 @@
 """Restart, update and export from the settings page.
 
 Commands run only on a POST with a CSRF token. The one command a GET route may run
-is the local `git describe` (once per process); GitHub is asked only on a button press.
+is `release.json` or the local `git describe` (once per process); GitHub is asked only by the check.
 """
 
 from __future__ import annotations
@@ -22,7 +22,8 @@ from reprintbuddy.activity.kinds import Actor
 from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.backup import backup_dir_for, update_backup_since
 from reprintbuddy.ops.export import export_bytes
-from reprintbuddy.ops.releasenotes import with_notes
+from reprintbuddy.ops.installation import installed_version, is_installation
+from reprintbuddy.ops.releases import check_versions
 from reprintbuddy.ops.server import (
     EffectiveServer,
     address_changed,
@@ -43,13 +44,7 @@ from reprintbuddy.ops.status import (
     read_status,
     write_status,
 )
-from reprintbuddy.ops.versions import (
-    UpdateCheckError,
-    VersionInfo,
-    check_versions,
-    installed_tag,
-    is_git_install,
-)
+from reprintbuddy.ops.versions import UpdateCheckError, VersionInfo
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render
 from reprintbuddy.web.flash import flash
@@ -143,15 +138,15 @@ def _installed(request: Request) -> str | None:
     app = request.app
     ops = app.state.ops
     if not hasattr(app.state, "installed_tag"):
-        app.state.installed_tag = installed_tag(ops.install_dir, ops.runner)
+        app.state.installed_tag = installed_version(ops.install_dir, ops.runner)
     return app.state.installed_tag
 
 
 async def warm_installed(request: Request) -> None:
-    """Ask for the installed tag (`git describe`, once per process) in a worker thread, so the page that
+    """Ask for the installed tag (`release.json` or `git describe`, once per process) in a worker thread, so the page that
     needs it does not run git in the event loop (v0.3.8 p96, same family)."""
     app = request.app
-    if is_git_install(app.state.ops.install_dir) and not hasattr(app.state, "installed_tag"):
+    if is_installation(app.state.ops.install_dir) and not hasattr(app.state, "installed_tag"):
         await in_thread(_installed, request)
 
 
@@ -193,7 +188,7 @@ def ops_view(request: Request, session: Session, busy: bool | None = None) -> Op
     view = OpsView(running_url=running_url, restart_pending=pending, message=message)
     view.message_card = OPS_MESSAGES.get(code or "")
     view.dev_version = __version__  # read now, so it is the version of the running code
-    view.git_install = is_git_install(ops.install_dir)
+    view.git_install = is_installation(ops.install_dir)  # (name kept: also a package installation, v0.4.9)
     if view.git_install:
         view.installed = _installed(request)
         view.version_info = getattr(app.state, "version_info", None)
@@ -427,16 +422,14 @@ def _back(code: str | None = None) -> RedirectResponse:
 async def update_check(request: Request):
     app = request.app
     ops = app.state.ops
-    if not is_git_install(ops.install_dir):
+    if not is_installation(ops.install_dir):
         return _back("not_git")
     try:
-        # In a thread that can be stopped: a shutdown kills the git command instead of waiting for it.
-        info = await in_thread(check_versions, ops.install_dir, ops.runner, now=_utc_now())
+        # v0.4.9: one request to GitHub's release list gives versions and notes (Spec 11.3a); in a thread.
+        info = await in_thread(check_versions, ops.install_dir, ops.runner, ops.http_get, channel="stable", now=_utc_now())
     except UpdateCheckError as error:
         log.warning("update check failed: %s", str(error)[:300])  # not shown on the page
         return _back("check_failed")
-    # p143: the notes of the newer versions in the same round (one request to GitHub, never raises).
-    info = await in_thread(with_notes, info, ops.install_dir, ops.runner, ops.http_get)
     store_versions(app.state, info, actor="user")
     return _back()
 
@@ -479,7 +472,7 @@ async def update_start(request: Request):
     """
     app = request.app
     ops = app.state.ops
-    if not is_git_install(ops.install_dir):
+    if not is_installation(ops.install_dir):
         return _back("not_git")
     # A restore that is replacing the database (or waits for its restart) counts as busy, and so does
     # another click that is still on its way.

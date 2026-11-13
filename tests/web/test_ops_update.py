@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from conftest import STREAM_PATHS, api_routes, csrf_of
+from github_support import ORIGIN, FakeGitHub, github_of, use_github
 
 from reprintbuddy import settings as st
 from reprintbuddy.ops.runner import CommandResult
@@ -11,18 +12,33 @@ from reprintbuddy.ops.service import START_UPDATE_CMD
 from reprintbuddy.ops.status import UPDATE_STEPS, UpdateState, UpdateStatus, read_status, write_status
 from reprintbuddy.web import i18n
 
-LS_REMOTE = ("git", "-C")  # prefix; the directory differs per test
-REMOTE_TWO = CommandResult(0, "abc\trefs/tags/v0.1.0\ndef\trefs/tags/v0.2.0\n")
-REMOTE_ONE = CommandResult(0, "abc\trefs/tags/v0.1.0\n")
+# v0.4.9: what GitHub offers comes from its release list (a fake), no longer from `git ls-remote`.
+REMOTE_TWO = ("v0.2.0", "v0.1.0")
+REMOTE_ONE = ("v0.1.0",)
 
 
 def git_env(env, *, describe="v0.1.0\n", remote=REMOTE_TWO):
-    """Make the fake install dir a git installation and script git's answers."""
+    """Make the fake install dir a git installation (up to v0.4.9) and let GitHub offer `remote` (tags or a
+    `FakeGitHub`)."""
     (env.install_dir / ".git").mkdir(parents=True, exist_ok=True)
     d = str(env.install_dir)
     env.runner.on(("git", "-C", d, "describe"), CommandResult(0, describe) if describe else CommandResult(128))
-    env.runner.on(("git", "-C", d, "ls-remote"), remote)
+    env.runner.on(("git", "-C", d, "remote", "get-url", "origin"), CommandResult(0, ORIGIN + "\n"))
+    github = remote if isinstance(remote, FakeGitHub) else FakeGitHub(remote)
+    if hasattr(env, "client"):
+        use_github(env, github)
     return env
+
+
+def package_env(env, *, installed="v0.1.0", remote=REMOTE_TWO):
+    """Make the fake install dir a package installation (v0.4.9 on) and let GitHub offer `remote`."""
+    from reprintbuddy.ops.installation import write_marker
+
+    env.install_dir.mkdir(parents=True, exist_ok=True)
+    write_marker(env.install_dir, tag=installed, repo=("owner", "repo"), sha256="0" * 64)
+    github = remote if isinstance(remote, FakeGitHub) else FakeGitHub(remote)
+    use_github(env, github)
+    return github
 
 
 def post(env, path, token=None, **data):
@@ -97,7 +113,7 @@ def test_check_up_to_date(ops_env):
 
 
 def test_check_failure_message(ops_env):
-    git_env(ops_env, remote=CommandResult(128, "", "fatal: unable to access 'https://example.invalid/x'"))
+    git_env(ops_env, remote=FakeGitHub(status=500, error=OSError("unable to access")))
     response = check(ops_env)
     assert response.headers["location"] == "/settings?tab=maintenance&ops=check_failed#ops-update"
     page = ops_env.client.get("/settings?tab=maintenance&ops=check_failed").text
@@ -356,7 +372,7 @@ def test_update_posts_require_csrf(ops_env):
     for path in ("/settings/update/check", "/settings/update"):
         assert ops_env.client.post(path, data={}).status_code == 403
         assert ops_env.client.post(path, data={"csrf_token": "forged"}).status_code == 403
-    assert not calls_with(ops_env, "ls-remote")
+    assert github_of(ops_env).calls == []
     assert START_UPDATE_CMD not in ops_env.runner.calls
 
 
@@ -857,7 +873,7 @@ def test_p144_a_start_that_never_began_without_a_check_offers_the_check(ops_env)
     assert "The update did not start. Please check for updates, then start it again." in page
     notice = page.split("The update did not start.", 1)[1].split("</section>", 1)[0]
     assert 'action="/settings/update/check"' in notice  # the check is offered right at the notice
-    assert calls_with(ops_env, "ls-remote") == []  # the page asked GitHub nothing
+    assert github_of(ops_env).calls == []  # the page asked GitHub nothing
 
 
 def test_p144_a_start_that_never_began_with_nothing_newer_says_so(ops_env):
@@ -1084,3 +1100,43 @@ def test_new_update_shows_its_own_card_again(ops_env):
     ops_env.client.get(MAINTENANCE)
     write_status(data_dir(ops_env), _finished("failed"))  # what the next update writes
     assert "/var/lib/reprintbuddy/backups/x.db" in ops_env.client.get(MAINTENANCE).text
+
+
+# --- v0.4.9 p500: the check reads GitHub's release list (Spec 11.3a) ---------------------------
+
+
+def test_v049_a_package_installation_shows_its_version_and_is_offered_the_newest(ops_env):
+    github = package_env(ops_env)
+    assert "Installed version: v0.1.0" in ops_env.client.get("/settings?tab=maintenance").text
+    check(ops_env)
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    assert "Update to v0.2.0" in page
+    assert len(github.calls) == 1  # one request for versions and notes
+    assert github.calls[0] == "https://api.github.com/repos/owner/repo/releases?per_page=30"
+    assert not [c for c in ops_env.runner.calls if c and c[0] == "git"]
+
+
+def test_v049_a_release_without_its_checksum_is_not_offered(ops_env):
+    from github_support import release_item
+
+    package_env(ops_env, remote=FakeGitHub([release_item("v0.2.0", checksum=False), "v0.1.0"]))
+    check(ops_env)
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    assert "Reprintbuddy is up to date." in page
+    assert "Update to" not in page
+
+
+@pytest.mark.parametrize("github", [FakeGitHub(status=403), FakeGitHub(error=TimeoutError()), FakeGitHub([{"x": 1}])])
+def test_v049_a_failed_request_is_a_failed_check(ops_env, github):
+    package_env(ops_env, remote=github)
+    response = check(ops_env)
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=check_failed#ops-update"
+
+
+def test_v049_a_git_installation_from_elsewhere_fails_the_check_without_asking(ops_env):
+    git_env(ops_env)
+    d = str(ops_env.install_dir)
+    ops_env.runner.on(("git", "-C", d, "remote", "get-url", "origin"), CommandResult(0, "https://example.org/x.git\n"))
+    response = check(ops_env)
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=check_failed#ops-update"
+    assert github_of(ops_env).calls == []

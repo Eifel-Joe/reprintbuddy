@@ -392,7 +392,7 @@ def test_update_start_says_busy_while_a_restore_runs(ops_env, monkeypatch):
     from reprintbuddy.web.routes import ops as routes
 
     state = ops_env.client.app.state
-    monkeypatch.setattr(routes, "is_git_install", lambda _dir: True)
+    monkeypatch.setattr(routes, "is_installation", lambda _dir: True)
     state.restore.phase = "running"
     monkeypatch.setattr(routes, "restore_blocks", lambda _request: False)  # past the guard
     token = csrf_of(ops_env.client, "/settings")

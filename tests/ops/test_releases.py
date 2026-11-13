@@ -173,3 +173,83 @@ def test_a_failed_check_is_an_update_check_error():
     from reprintbuddy.ops.versions import UpdateCheckError
 
     assert issubclass(rl.ReleaseCheckError, UpdateCheckError)
+
+
+# --- the check (the button and the automatic check) ----------------------------------------------
+
+NOW = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
+
+
+def package_installation(tmp_path, tag="v1.0.0"):
+    from reprintbuddy.ops.installation import write_marker
+
+    folder = tmp_path / "opt"
+    folder.mkdir()
+    write_marker(folder, tag=tag, repo=("owner", "repo"), sha256="0" * 64)
+    return folder
+
+
+def test_check_offers_the_newest_with_its_notes_in_one_request(tmp_path, fake_runner):
+    http = answering(release("v1.1.0", body="New."), release("v1.0.1"), release("v1.0.0"))
+    info = rl.check_versions(package_installation(tmp_path), fake_runner, http, channel="stable", now=NOW)
+    assert (info.installed, info.newest, info.checked_at) == ("v1.0.0", "v1.1.0", NOW)
+    assert info.update_available
+    assert [entry.tag for entry in info.notes.entries] == ["v1.1.0", "v1.0.1"]
+    assert info.notes.page_url == "https://github.com/owner/repo/releases"
+    assert len(http.calls) == 1
+    assert fake_runner.calls == []
+
+
+def test_check_up_to_date_has_no_notes(tmp_path, fake_runner):
+    info = rl.check_versions(package_installation(tmp_path), fake_runner, answering(release("v1.0.0")), channel="stable", now=NOW)
+    assert not info.update_available
+    assert info.notes is None
+
+
+def test_check_offers_pre_releases_only_on_their_channel(tmp_path, fake_runner):
+    http = answering(release("v1.0.1-beta.1"), release("v1.0.0"))
+    folder = package_installation(tmp_path)
+    assert rl.check_versions(folder, fake_runner, http, channel="stable", now=NOW).newest == "v1.0.0"
+    found = rl.check_versions(folder, fake_runner, http, channel="prerelease", now=NOW)
+    assert found.newest == "v1.0.1-beta.1"
+    assert [entry.prerelease for entry in found.notes.entries] == [True]
+
+
+def test_check_keeps_an_installed_pre_release_on_the_stable_channel(tmp_path, fake_runner):
+    """Spec 11.3a: back on "stable", nothing older is offered; the next newer stable release is."""
+    folder = package_installation(tmp_path, tag="v1.0.1-beta.2")
+    info = rl.check_versions(folder, fake_runner, answering(release("v1.0.1-beta.2"), release("v1.0.0")), channel="stable", now=NOW)
+    assert (info.newest, info.update_available) == ("v1.0.0", False)
+    info = rl.check_versions(folder, fake_runner, answering(release("v1.0.1"), release("v1.0.1-beta.2")), channel="stable", now=NOW)
+    assert (info.newest, info.update_available) == ("v1.0.1", True)
+
+
+def test_check_without_installation_asks_nobody(tmp_path, fake_runner):
+    http = answering(release("v1.0.0"))
+    with pytest.raises(rl.ReleaseCheckError):
+        rl.check_versions(tmp_path / "none", fake_runner, http, channel="stable", now=NOW)
+    assert http.calls == []
+
+
+def test_check_of_a_git_copy_from_elsewhere_asks_nobody(tmp_path, fake_runner):
+    from reprintbuddy.ops.runner import CommandResult
+
+    folder = tmp_path / "opt"
+    (folder / ".git").mkdir(parents=True)
+    fake_runner.on(("git", "-C", str(folder), "describe"), CommandResult(0, "v0.4.9\n"))
+    fake_runner.on(("git", "-C", str(folder), "remote", "get-url", "origin"), CommandResult(0, "https://example.org/x.git\n"))
+    http = answering(release("v1.0.0"))
+    with pytest.raises(rl.ReleaseCheckError):
+        rl.check_versions(folder, fake_runner, http, channel="stable", now=NOW)
+    assert http.calls == []
+
+
+def test_check_of_a_git_copy_without_tag_offers_the_newest_without_notes(tmp_path, fake_runner):
+    from reprintbuddy.ops.runner import CommandResult
+
+    folder = tmp_path / "opt"
+    (folder / ".git").mkdir(parents=True)
+    fake_runner.on(("git", "-C", str(folder), "describe"), CommandResult(128))
+    fake_runner.on(("git", "-C", str(folder), "remote", "get-url", "origin"), CommandResult(0, "https://github.com/owner/repo.git\n"))
+    info = rl.check_versions(folder, fake_runner, answering(release("v1.0.0")), channel="stable", now=NOW)
+    assert (info.installed, info.newest, info.update_available, info.notes) == (None, "v1.0.0", True, None)

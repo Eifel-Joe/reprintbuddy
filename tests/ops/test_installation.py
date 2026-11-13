@@ -101,3 +101,18 @@ def test_an_empty_folder_is_no_installation(d, fake_runner):
     assert inst.read_installation(d, fake_runner) is None
     assert not inst.is_installation(d)
     assert not inst.is_installation(d / "missing")
+
+
+def test_installed_version_asks_git_only_for_the_tag(d, fake_runner):
+    """The page needs the version only; one `git describe` per process, as before v0.4.9."""
+    (d / ".git").mkdir()
+    git_answers(fake_runner, d)
+    assert inst.installed_version(d, fake_runner) == "v0.4.9"
+    assert [call[3] for call in fake_runner.calls] == ["describe"]
+
+
+def test_installed_version_of_a_package_installation_and_of_none(d, fake_runner):
+    assert inst.installed_version(d, fake_runner) is None
+    inst.write_marker(d, tag="v1.0.0", repo=("o", "r"), sha256="c" * 64)
+    assert inst.installed_version(d, fake_runner) == "v1.0.0"
+    assert fake_runner.calls == []

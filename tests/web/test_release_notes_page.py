@@ -1,19 +1,20 @@
 """v0.3.13 p143: the update card shows what the newer versions bring (Spec 11.3a "Neuerungen").
 
 GitHub is a fake HTTP function on `OpsContext.http_get`; it counts every request, so the tests show
-that only the check asks and a page view never does.
+that only the check asks and a page view never does. Since v0.4.9 the check and the notes are one
+request to the release list (Spec 11.3a).
 """
 
 from __future__ import annotations
 
 import dataclasses
-import json
 import re
 from datetime import date
 
 import pytest
 from conftest import sm_of
-from test_ops_update import REMOTE_ONE, check, git_env
+from github_support import FakeGitHub, release_item
+from test_ops_update import check, git_env
 from test_update_banner import banner, check_now
 
 from reprintbuddy import settings as st
@@ -24,28 +25,14 @@ from reprintbuddy.web.i18n import translate
 ORIGIN = "https://github.com/owner/repo.git\n"
 PAGE_URL = "https://github.com/owner/repo/releases"
 NOTES = [
-    {"tag_name": "v0.2.0", "body": "New **thing** and <script>alert(1)</script>.", "draft": False,
-     "prerelease": False, "published_at": "2026-11-09T15:19:00Z"},
-    {"tag_name": "v0.1.0", "body": "Old.", "draft": False, "prerelease": False, "published_at": "2026-11-05T10:00:00Z"},
+    release_item("v0.2.0", body="New **thing** and <script>alert(1)</script>.", published="2026-11-09T15:19:00Z"),
+    release_item("v0.1.0", body="Old.", published="2026-11-05T10:00:00Z"),
 ]
 
 
-class FakeGitHub:
-    def __init__(self, status=200, releases=NOTES):
-        self.status = status
-        self.body = json.dumps(releases).encode()
-        self.calls: list[str] = []
-
-    def __call__(self, url, headers):
-        self.calls.append(url)
-        return self.status, self.body
-
-
 def with_github(env, github=None, origin=ORIGIN):
-    github = github or FakeGitHub()
-    app = env.client.app
-    app.state.ops = dataclasses.replace(app.state.ops, http_get=github)
-    git_env(env)
+    github = github or FakeGitHub(NOTES)
+    git_env(env, remote=github)
     env.runner.on(("git", "-C", str(env.install_dir), "remote", "get-url", "origin"), CommandResult(0, origin))
     return github
 
@@ -92,17 +79,25 @@ def test_a_page_view_never_asks_github(ops_env):
     assert len(github.calls) == 1  # only the check asked
 
 
-def test_nothing_newer_no_notes_and_no_request(ops_env):
-    github = with_github(ops_env)
-    ops_env.runner.on(("git", "-C", str(ops_env.install_dir), "ls-remote"), REMOTE_ONE)
+def test_nothing_newer_no_notes_and_one_request(ops_env):
+    github = with_github(ops_env, FakeGitHub([NOTES[1]]))
     check(ops_env)
-    assert github.calls == []
+    assert len(github.calls) == 1
     assert notes_block(maintenance(ops_env)) is None
 
 
 @pytest.mark.parametrize("status", [403, 429, 500])
-def test_a_failure_keeps_the_version_and_the_button_and_says_so(ops_env, status):
+def test_a_failed_request_is_a_failed_check_without_notes(ops_env, status):
+    """v0.4.9: check and notes are one request; it fails as a whole (Spec 11.3a)."""
     with_github(ops_env, FakeGitHub(status=status))
+    response = check(ops_env)
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=check_failed#ops-update"
+    assert notes_block(maintenance(ops_env)) is None
+
+
+@pytest.mark.parametrize("body", [None, 5])
+def test_notes_without_usable_text_keep_the_version_and_the_button_and_say_so(ops_env, body):
+    with_github(ops_env, FakeGitHub([release_item("v0.2.0", body=body), NOTES[1]]))
     check(ops_env)
     page = maintenance(ops_env)
     block = notes_block(page)
@@ -111,18 +106,17 @@ def test_a_failure_keeps_the_version_and_the_button_and_says_so(ops_env, status)
     assert 'action="/settings/update"' in page  # the update never depends on the notes
 
 
-def test_without_a_github_origin_no_request_and_no_link(ops_env):
+def test_without_a_github_origin_no_request_and_a_failed_check(ops_env):
     github = with_github(ops_env, origin="https://git.example.invalid/owner/repo.git\n")
-    check(ops_env)
+    response = check(ops_env)
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=check_failed#ops-update"
     assert github.calls == []
-    block = notes_block(maintenance(ops_env))
-    assert translate("en", "ops.notes.failed") in block
-    assert "<a " not in block
+    assert notes_block(maintenance(ops_env)) is None
 
 
 def test_a_cut_note_is_marked(ops_env):
-    long = [dict(NOTES[0], body="x" * 25_000)]
-    with_github(ops_env, FakeGitHub(releases=long))
+    long = [dict(NOTES[0], body="x" * 25_000), NOTES[1]]
+    with_github(ops_env, FakeGitHub(long))
     check(ops_env)
     assert translate("en", "ops.notes.cut") in notes_block(maintenance(ops_env))
 
@@ -154,7 +148,7 @@ def test_without_notes_the_bar_leads_to_the_card(ops_env):
 
 
 def test_the_date_is_the_local_one(ops_env):
-    late = [dict(NOTES[0], published_at="2026-11-09T23:30:00Z")]  # already 10 November in Berlin
-    with_github(ops_env, FakeGitHub(releases=late))
+    late = [dict(NOTES[0], published_at="2026-11-09T23:30:00Z"), NOTES[1]]  # already 10 November in Berlin
+    with_github(ops_env, FakeGitHub(late))
     check(ops_env)
     assert format_date(date(2026, 11, 10), "en") in notes_block(maintenance(ops_env))

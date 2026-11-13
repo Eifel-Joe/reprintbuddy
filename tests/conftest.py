@@ -140,10 +140,12 @@ def make_client(db_path, **create_kwargs) -> TestClient:
     # No background tick loop unless a test asks for it (`with client:` would start it).
     create_kwargs.setdefault("run_engine", False)
     # Never the system's install directory: with the engine on, the automatic check for new
-    # versions would run a real `git ls-remote` wherever that is a git copy (a container, CI).
+    # versions would ask GitHub wherever that is an installation (a container, CI).
     from reprintbuddy.ops.context import OpsContext
 
-    create_kwargs.setdefault("ops", OpsContext(install_dir=db_path.parent / "no-install"))
+    from github_support import offline_github
+
+    create_kwargs.setdefault("ops", OpsContext(install_dir=db_path.parent / "no-install", http_get=offline_github))
     create_kwargs.setdefault("http_client_factory", http_client_factory)
     dbtemplate.copy_to(db_path)  # a new database starts as the migrated template (R1)
     app = create_app(db_path, **create_kwargs)
@@ -230,7 +232,7 @@ def fixed_display_zone(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_release_notes_request(monkeypatch):
-    """p143: the release notes never come from the real GitHub. `with_notes` swallows every error, so a
+    """p143: the release list never comes from the real GitHub. A failed check shows little, so a
     request that slipped through would go unnoticed; it is refused here and fails the test. Tests of the
     HTTP function itself hand in an httpx transport and pass."""
     from reprintbuddy.ops import releasenotes
@@ -395,10 +397,13 @@ def ops_env(tmp_path, fake_runner):
 
     db = tmp_path / "ops.db"
     install_dir = tmp_path / "opt"
+    from github_support import offline_github
+
     ops = OpsContext(
         install_dir=install_dir,
         runner=fake_runner,
         effective=EffectiveServer("0.0.0.0", 8080, None),
+        http_get=offline_github,  # v0.4.9: the check asks GitHub's API; a test that wants it sets a fake
     )
     client = make_client(db, ops=ops)
     finish_bambuddy_setup(finish_admin_setup(client))

@@ -97,6 +97,18 @@ def read_installation(install_dir: Path, runner: CommandRunner) -> Installation 
     return None
 
 
+def installed_version(install_dir: Path, runner: CommandRunner) -> str | None:
+    """Only the installed version, for the pages: `release.json`, else one `git describe` (no other git
+    question on a page view)."""
+    data = _read_marker(install_dir) if (install_dir / MARKER).is_file() else None
+    if data is not None:
+        return _package(install_dir, data).tag
+    if (install_dir / ".git").exists():
+        described = runner(("git", "-C", str(install_dir), "describe", "--tags", "--exact-match", "HEAD"))
+        return described.stdout.strip() if described.ok and described.stdout.strip() else None
+    return None
+
+
 def write_marker(install_dir: Path, *, tag: str, repo: tuple[str, str], sha256: str) -> None:
     """Write `release.json` at once or not at all (a temporary file, then a rename)."""
     text = json.dumps({"tag": tag, "repo": f"{repo[0]}/{repo[1]}", "sha256": sha256}) + "\n"

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 from conftest import csrf_of, form_token_of, make_client, sm_of
+from github_support import FakeGitHub, github_of, use_github
 from test_ops_update import REMOTE_TWO, git_env
 
 from reprintbuddy import settings as st
@@ -88,7 +89,7 @@ async def test_without_git_nothing_is_asked_and_no_bar(ops_env):
 
 
 async def test_a_failed_first_check_shows_nothing(ops_env):
-    git_env(ops_env, remote=CommandResult(128, "", "fatal: unable to access 'https://example.invalid/x'"))
+    git_env(ops_env, remote=FakeGitHub(status=500, error=OSError("unable to access")))
     await check_now(ops_env)
     page = ops_env.client.get("/").text
     assert banner(page) is None
@@ -99,7 +100,7 @@ async def test_a_failed_first_check_shows_nothing(ops_env):
 async def test_a_later_failure_keeps_an_earlier_result(ops_env):
     git_env(ops_env)
     await check_now(ops_env)
-    ops_env.runner.on(("git", "-C", str(ops_env.install_dir), "ls-remote"), CommandResult(128, "", "fatal: down"))
+    use_github(ops_env, FakeGitHub(status=500))
     assert await ops_env.client.app.state.auto_check.run_once() == 3600
     assert banner(ops_env.client.get("/").text) is not None
 
@@ -110,9 +111,9 @@ async def test_switched_off_there_is_no_check_and_no_bar(ops_env):
     with sm_of(ops_env.client).begin() as s:
         st.set_setting(s, "update_check", False)
     assert banner(ops_env.client.get("/").text) is None
-    ops_env.runner.calls.clear()
+    github_of(ops_env).calls.clear()
     await check_now(ops_env)
-    assert [c for c in ops_env.runner.calls if "ls-remote" in c] == []
+    assert github_of(ops_env).calls == []
 
 
 def test_the_check_is_on_by_default(ops_env):
@@ -202,7 +203,8 @@ async def _never_sleep(_seconds: float) -> None:
 async def test_the_app_runs_the_check_at_start(tmp_path, fake_runner):
     """Through the real start-up: the lifespan starts the loop, which checks at once."""
     install = tmp_path / "opt"
-    ops = OpsContext(install_dir=install, runner=fake_runner)
+    github = FakeGitHub(REMOTE_TWO)
+    ops = OpsContext(install_dir=install, runner=fake_runner, http_get=github)
     client = make_client(tmp_path / "w.db", ops=ops, run_engine=True, live_sleep=_never_sleep)
     app = client.app
     app.state.bambuddy_factory = lambda: None
@@ -218,7 +220,8 @@ async def test_the_app_runs_the_check_at_start(tmp_path, fake_runner):
 async def test_the_real_pause_ends_when_the_switch_wakes_it(tmp_path, fake_runner):
     """The pause of the real loop (app.py) ends by the wake event: switched on, the check runs now."""
     install = tmp_path / "opt"
-    ops = OpsContext(install_dir=install, runner=fake_runner)
+    github = FakeGitHub(REMOTE_TWO)
+    ops = OpsContext(install_dir=install, runner=fake_runner, http_get=github)
     client = make_client(tmp_path / "x.db", ops=ops, run_engine=True, live_sleep=_never_sleep)
     app = client.app
     app.state.bambuddy_factory = lambda: None
@@ -227,7 +230,7 @@ async def test_the_real_pause_ends_when_the_switch_wakes_it(tmp_path, fake_runne
         st.set_setting(s, "update_check", False)
 
     def asked() -> int:
-        return len([c for c in fake_runner.calls if "ls-remote" in c])
+        return len(github.calls)
 
     async with app.router.lifespan_context(app):
         await asyncio.sleep(0.2)  # the loop has had its round: switched off, it asks nothing
@@ -253,12 +256,12 @@ async def test_a_running_update_skips_the_round(ops_env):
     started = datetime.now(UTC) - timedelta(minutes=1)
     write_status(ops_env.db_path.parent, UpdateStatus(state="running", step="install", started_at=started))
     assert await ops_env.client.app.state.auto_check.run_once() == UPDATE_RETRY  # p105: within seconds
-    assert [c for c in ops_env.runner.calls if "ls-remote" in c] == []
+    assert github_of(ops_env).calls == []
 
 
 def test_a_test_app_never_looks_at_the_systems_install_dir(tmp_path):
-    """With the engine on, the check would run a real `git ls-remote` wherever the default install
-    directory is a git copy (a container, Linux CI); the test apps get an install dir of their own."""
+    """With the engine on, the check would ask GitHub wherever the default install directory is an
+    installation (a container, Linux CI); the test apps get an install dir of their own."""
     from reprintbuddy.ops.service import INSTALL_DIR
 
     assert make_client(tmp_path / "d.db").app.state.ops.install_dir != INSTALL_DIR

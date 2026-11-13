@@ -20,8 +20,20 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
-from reprintbuddy.ops.releasenotes import API, MAX_RESPONSE_BYTES, HttpGet, api_headers, published_at
-from reprintbuddy.ops.versions import UpdateCheckError, is_prerelease_tag, parse_version
+from pathlib import Path
+
+from reprintbuddy.ops.installation import read_installation
+from reprintbuddy.ops.releasenotes import (
+    API,
+    MAX_RESPONSE_BYTES,
+    HttpGet,
+    api_headers,
+    notes_for,
+    published_at,
+    releases_page,
+)
+from reprintbuddy.ops.runner import CommandRunner
+from reprintbuddy.ops.versions import UpdateCheckError, VersionInfo, is_newer, is_prerelease_tag, parse_version
 
 log = logging.getLogger(__name__)
 
@@ -135,3 +147,26 @@ def fetch_releases(repo: tuple[str, str], http_get: HttpGet) -> list[Release]:
     except ValueError:
         raise ReleaseCheckError("no JSON") from None
     return parse_releases(data)
+
+
+def check_versions(
+    install_dir: Path, runner: CommandRunner, http_get: HttpGet, *, channel: Channel, now: datetime
+) -> VersionInfo:
+    """The check for new versions (the button and the automatic check): one request to GitHub's release
+    list gives the newest version the channel offers and, when it is newer, the notes up to it (Spec 11.3a).
+
+    Raises `UpdateCheckError` when there is no installation, its repository is unknown (a git copy from
+    elsewhere, a broken `release.json`) or GitHub cannot be asked; nothing is asked then without a
+    repository."""
+    found = read_installation(install_dir, runner)
+    if found is None:
+        raise ReleaseCheckError("no installation")
+    if found.repo is None:
+        raise ReleaseCheckError("no GitHub repository")
+    releases = fetch_releases(found.repo, http_get)
+    newest = newest_offered(releases, channel)
+    info = VersionInfo(installed=found.tag, newest=newest.tag if newest else None, checked_at=now)
+    if newest is None or found.tag is None or not is_newer(newest.tag, found.tag):
+        return info
+    notes = notes_for(releases, installed=found.tag, newest=newest.tag, channel=channel, page_url=releases_page(*found.repo))
+    return VersionInfo(installed=info.installed, newest=info.newest, checked_at=now, notes=notes)
