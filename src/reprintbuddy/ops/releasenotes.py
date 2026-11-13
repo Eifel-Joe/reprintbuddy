@@ -24,11 +24,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from reprintbuddy import __version__
 from reprintbuddy.ops.runner import CommandRunner
 from reprintbuddy.ops.versions import VersionInfo, is_newer, parse_version
+
+if TYPE_CHECKING:
+    from reprintbuddy.ops.releases import Channel, Release
 
 log = logging.getLogger(__name__)
 
@@ -62,6 +65,7 @@ class ReleaseNote:
     published: datetime | None  # UTC; the page shows the local day
     body: str  # Markdown as GitHub keeps it; rendered escaped by the page
     cut: bool = False
+    prerelease: bool = False  # v0.4.9: marked "pre-release" on the card
 
 
 @dataclass(frozen=True)
@@ -69,6 +73,16 @@ class ReleaseNotes:
     entries: tuple[ReleaseNote, ...] = ()
     page_url: str | None = None  # GitHub's page of all releases; None without a GitHub origin
     failed: bool = False
+
+
+def api_headers() -> dict[str, str]:
+    """The headers of every request to GitHub: no cookie, no token, no address of the installation."""
+    return {
+        "Accept": "application/vnd.github+json",
+        "Accept-Encoding": "identity",
+        "User-Agent": f"Reprintbuddy/{__version__}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
 
 
 def github_repo(url: str) -> tuple[str, str] | None:
@@ -138,7 +152,7 @@ def _get(url: str, headers: Mapping[str, str], transport: Any) -> tuple[int, byt
             return response.status_code, bytes(data)
 
 
-def _published(value: Any) -> datetime | None:
+def published_at(value: Any) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
@@ -169,7 +183,7 @@ def select_notes(releases: Any, *, installed: str, newest: str) -> tuple[Release
         body = item.get("body")
         body = body if isinstance(body, str) else ""
         cut = len(body) > MAX_NOTE_CHARS
-        found.append((number, ReleaseNote(tag, _published(item.get("published_at")), body[:MAX_NOTE_CHARS], cut)))
+        found.append((number, ReleaseNote(tag, published_at(item.get("published_at")), body[:MAX_NOTE_CHARS], cut)))
     found.sort(key=lambda pair: pair[0], reverse=True)
     return tuple(note for _, note in found[:MAX_VERSIONS])
 
@@ -191,14 +205,8 @@ def fetch_notes(
     # 30, not 100 (review): only `MAX_VERSIONS` are shown, and GitHub lists the newest first; a page of
     # 100 releases with all their fields could pass the size limit one day and fail every time.
     url = f"{API}/repos/{repo[0]}/{repo[1]}/releases?per_page=30"
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "Accept-Encoding": "identity",
-        "User-Agent": f"Reprintbuddy/{__version__}",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
     try:
-        status, body = http_get(url, headers)
+        status, body = http_get(url, api_headers())
         if status != 200:
             raise NotesError(f"HTTP {status}")
         if len(body) > MAX_RESPONSE_BYTES:
@@ -227,3 +235,30 @@ def with_notes(info: VersionInfo, install_dir: Path, runner: CommandRunner, http
         log.info("release notes could not be loaded: %s", type(error).__name__)
         notes = ReleaseNotes(failed=True)
     return dataclasses.replace(info, notes=notes)
+
+
+def notes_for(
+    releases: "list[Release]", *, installed: str, newest: str, channel: "Channel", page_url: str | None
+) -> ReleaseNotes:
+    """v0.4.9: the notes of the versions after `installed` up to `newest`, from the release list the check
+    already has (one request for both, Spec 11.3a). Pre-releases only on their channel, marked; the newest
+    first, at most `MAX_VERSIONS`, each cut at `MAX_NOTE_CHARS`. `failed` only when the newest has no
+    usable text: the card then shows the version with the fixed link, as before."""
+    found: list[tuple[Any, ReleaseNote]] = []
+    newest_has_text = False
+    for item in releases:
+        if item.prerelease and channel != "prerelease":
+            continue
+        if not is_newer(item.tag, installed) or is_newer(item.tag, newest):
+            continue
+        if item.tag == newest:
+            newest_has_text = item.body is not None
+        body = item.body or ""
+        cut = len(body) > MAX_NOTE_CHARS
+        note = ReleaseNote(item.tag, item.published, body[:MAX_NOTE_CHARS], cut, item.prerelease)
+        found.append((parse_version(item.tag), note))
+    found.sort(key=lambda pair: pair[0], reverse=True)
+    entries = tuple(note for _, note in found[:MAX_VERSIONS])
+    if not newest_has_text:
+        return ReleaseNotes(entries=entries, page_url=page_url, failed=True)
+    return ReleaseNotes(entries=entries, page_url=page_url)

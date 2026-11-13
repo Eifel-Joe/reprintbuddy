@@ -273,3 +273,55 @@ def test_an_error_while_fetching_never_breaks_the_check():
     found = rn.with_notes(info("v0.1.0", "v0.2.0"), INSTALL, runner_with_origin("https://github.com/o/r"), broken)
     assert found.newest == "v0.2.0" and found.update_available
     assert found.notes.failed is True
+
+
+# --- v0.4.9: the notes come from the release list of the check (Spec 11.3a "Neuerungen") ---------
+
+
+def listed(*items):
+    from reprintbuddy.ops import releases as rl
+
+    full = []
+    for tag, body in items:
+        prerelease = "-beta." in tag
+        full.append({
+            "tag_name": tag, "body": body, "draft": False, "prerelease": prerelease,
+            "published_at": "2026-11-09T15:19:00Z",
+            "assets": [
+                {"name": rl.package_name(tag), "browser_download_url": f"https://github.com/o/r/releases/download/{tag}/{rl.package_name(tag)}"},
+                {"name": rl.checksum_name(tag), "browser_download_url": f"https://github.com/o/r/releases/download/{tag}/{rl.checksum_name(tag)}"},
+            ],
+        })
+    return rl.parse_releases(full)
+
+
+def test_notes_for_leaves_pre_releases_out_on_the_stable_channel():
+    found = listed(("v0.2.0", "A"), ("v0.3.0-beta.1", "B"), ("v0.3.0", "C"))
+    notes = rn.notes_for(found, installed="v0.1.0", newest="v0.3.0", channel="stable", page_url="P")
+    assert tags(notes.entries) == ["v0.3.0", "v0.2.0"]
+    assert [entry.prerelease for entry in notes.entries] == [False, False]
+    assert notes.failed is False
+    assert notes.page_url == "P"
+
+
+def test_notes_for_marks_pre_releases_on_their_channel():
+    found = listed(("v0.2.0", "A"), ("v0.3.0-beta.1", "B"), ("v0.3.0-beta.2", "C"))
+    notes = rn.notes_for(found, installed="v0.1.0", newest="v0.3.0-beta.2", channel="prerelease", page_url="P")
+    assert tags(notes.entries) == ["v0.3.0-beta.2", "v0.3.0-beta.1", "v0.2.0"]
+    assert [entry.prerelease for entry in notes.entries] == [True, True, False]
+
+
+def test_notes_for_keeps_ten_and_cuts_long_ones():
+    found = listed(*[(f"v0.1.{n}", "x" * 25_000) for n in range(1, 16)])
+    notes = rn.notes_for(found, installed="v0.1.0", newest="v0.1.15", channel="stable", page_url="P")
+    assert tags(notes.entries) == [f"v0.1.{n}" for n in range(15, 5, -1)]
+    assert all(entry.cut and len(entry.body) == rn.MAX_NOTE_CHARS for entry in notes.entries)
+
+
+def test_notes_for_fails_only_when_the_newest_has_no_usable_text():
+    notes = rn.notes_for(listed(("v0.2.0", "A"), ("v0.3.0", None)), installed="v0.1.0", newest="v0.3.0", channel="stable", page_url="P")
+    assert notes.failed is True
+    assert notes.page_url == "P"
+    notes = rn.notes_for(listed(("v0.2.0", None), ("v0.3.0", "C")), installed="v0.1.0", newest="v0.3.0", channel="stable", page_url="P")
+    assert notes.failed is False
+    assert [entry.body for entry in notes.entries] == ["C", ""]
