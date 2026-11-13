@@ -39,7 +39,7 @@ def refused(db, data, key, cls=ValidationError, set_id=None):
 def test_set_without_choices_is_the_minimum_over_its_articles(db):  # Spec 5.4
     with db.begin() as s:
         a = articles(s, frame=3, screw=5)
-        catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a["frame"]), BaseInput(2, a["screw"])], []))
+        catalog.create_set(s, SetInput("Starter Set", "EX-STARTER-SET", [BaseInput(1, a["frame"]), BaseInput(2, a["screw"])], []))
     with db.begin() as s:
         row = catalog.list_sets(s)[0]
         assert (row.available, row.variants, row.incomplete, row.orderable) == (2, [], None, True)
@@ -100,7 +100,7 @@ def test_choice_quantity_counts_for_the_chosen_article(db):
 def test_choice_fields_need_a_set_number(db):
     with db.begin() as s:
         a = articles(s, frame=1, a=1)
-    refused(db, SetInput("Kit", None, [BaseInput(1, a["frame"])], [choice(1, (a["a"], "-A"))]), "sets.sku_required")
+    refused(db, SetInput("Kit", None, [BaseInput(1, a["frame"])], [choice(1, (a["a"], "-A"))]), "form.required")
 
 
 def test_every_choice_needs_a_suffix(db):
@@ -136,9 +136,9 @@ def test_an_article_is_only_once_in_a_set(db):  # decision p340, question 5
 def test_every_variant_has_two_different_articles(db):  # decision p340, question 3
     with db.begin() as s:
         a = articles(s, frame=1, a=1, b=1)
-    refused(db, SetInput("Kit", None, [BaseInput(2, a["frame"])], []), "sets.too_few_articles")
+    refused(db, SetInput("Kit", "EX-KIT", [BaseInput(2, a["frame"])], []), "sets.too_few_articles")
     refused(db, SetInput("Kit", "EX-S10", [], [choice(1, (a["a"], "-A"), (a["b"], "-B"))]), "sets.too_few_articles")
-    refused(db, SetInput("Kit", None, [], []), "sets.too_few_articles")
+    refused(db, SetInput("Kit", "EX-KIT", [], []), "sets.too_few_articles")
     with db.begin() as s:
         catalog.create_set(s, SetInput("One base and a choice", "EX-S11", [BaseInput(1, a["frame"])],
                                        [choice(1, (a["a"], "-A"))]))
@@ -250,7 +250,7 @@ def test_an_archived_article_cannot_come_into_a_set(db):
 def test_archived_base_part_keeps_the_set_orderable(db):  # Spec 5.4 Altfall (0.4.3; until 0.4.2 not orderable)
     with db.begin() as s:
         a = articles(s, frame=5, screw=5)
-        catalog.create_set(s, SetInput("Kit", None, [BaseInput(1, a["frame"]), BaseInput(1, a["screw"])], []))
+        catalog.create_set(s, SetInput("Kit", "EX-KIT", [BaseInput(1, a["frame"]), BaseInput(1, a["screw"])], []))
         s.get(catalog.Article, a["screw"]).archived_at = catalog.utcnow()
     with db.begin() as s:
         row = catalog.list_sets(s)[0]
@@ -289,11 +289,11 @@ def test_set_validation(db):
         a = articles(s, frame=1, screw=1)
     two = [BaseInput(1, a["frame"]), BaseInput(1, a["screw"])]
     cases = [
-        (SetInput("S", None, [BaseInput(0, a["frame"]), two[1]], []), "form.invalid_number"),
-        (SetInput("S", None, [BaseInput(1001, a["frame"]), two[1]], []), "form.invalid_number"),
+        (SetInput("S", "EX-S", [BaseInput(0, a["frame"]), two[1]], []), "form.invalid_number"),
+        (SetInput("S", "EX-S", [BaseInput(1001, a["frame"]), two[1]], []), "form.invalid_number"),
         (SetInput("S", "K", two[:1], [choice(0, (a["screw"], "-S"))]), "form.invalid_number"),
-        (SetInput("  ", None, two, []), "form.required"),
-        (SetInput("S", None, [BaseInput(1, 999), two[1]], []), "articles.not_found"),
+        (SetInput("  ", "EX-", two, []), "form.required"),
+        (SetInput("S", "EX-S", [BaseInput(1, 999), two[1]], []), "articles.not_found"),
         (SetInput("S", "K", two[:1], [choice(1, (999, "-X"))]), "articles.not_found"),
     ]
     for data, key in cases:

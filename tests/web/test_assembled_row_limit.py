@@ -21,7 +21,7 @@ def test_saving_with_one_blank_row_more_than_the_limit_keeps_every_row(ready_cli
     box, ids = _box_with_max_rows(ready_client)
     data = {
         "csrf_token": csrf_of(ready_client, f"/articles/{box}/assembled"),
-        "name": "Big box", "sku": "", "mode": "stock", "base_rows": str(MAX_ROWS + 1),
+        "name": "Big box", "sku": "EX-BIG", "mode": "stock", "base_rows": str(MAX_ROWS + 1),
         "c1_options": "0",
     }
     for i, article_id in enumerate(ids):

@@ -125,7 +125,7 @@ def test_only_print_articles_can_be_parts(db, parts):
     for article_id in (box, variant):
         with pytest.raises(ValidationError) as err, db.begin() as s:
             assembled.create_assembled(s, AssembledInput(
-                name="Lamp", sku=None, mode="stock", base=[B(1, article_id), B(1, parts["Holder"])], fields=[], parts={},
+                name="Lamp", sku="EX-LAMP", mode="stock", base=[B(1, article_id), B(1, parts["Holder"])], fields=[], parts={},
             ))
         assert err.value.key == "assembled.part_not_print"
 
@@ -135,7 +135,7 @@ def test_archived_part_is_refused(db, parts):
         s.get(Article, parts["Holder"]).archived_at = catalog_now()
     with pytest.raises(ValidationError) as err, db.begin() as s:
         assembled.create_assembled(s, AssembledInput(
-            name="Lamp", sku=None, mode="stock", base=[B(2, parts["Holder"])], fields=[], parts={},
+            name="Lamp", sku="EX-LAMP", mode="stock", base=[B(2, parts["Holder"])], fields=[], parts={},
         ))
     assert err.value.key == "assembled.part_archived"
 
@@ -154,7 +154,7 @@ def catalog_now():
 ])
 def test_size_counts_units_and_purchased_parts(db, parts, base, purchased, ok):  # Spec 5.6 "Umfang"
     data = AssembledInput(
-        name="Holder mounted", sku=None, mode="stock", base=[B(q, parts[n]) for q, n in base], fields=[],
+        name="Holder mounted", sku="EX-HOLDER-MOUNTED", mode="stock", base=[B(q, parts[n]) for q, n in base], fields=[],
         parts={parts[k]: q for k, q in purchased.items()},
     )
     if ok:
@@ -169,7 +169,7 @@ def test_size_counts_units_and_purchased_parts(db, parts, base, purchased, ok): 
 def test_number_and_suffixes_are_required_with_choices(db, parts):
     with pytest.raises(ValidationError) as err, db.begin() as s:
         assembled.create_assembled(s, hose_input(parts, sku=None))
-    assert err.value.key == "assembled.sku_required"
+    assert err.value.key == "form.required"
     data = hose_input(parts)
     data.fields[0][1].suffix = " "
     with pytest.raises(ValidationError) as err, db.begin() as s:
@@ -353,7 +353,7 @@ def test_mode_switch_refused_with_stock(db, parts):
 def test_sold_alone_defaults_to_on_for_print_articles(db, parts):
     with db.begin() as s:
         assert s.get(Article, parts["Holder"]).sold_alone is True
-        assert ArticleInput(name="x").sold_alone is True
+        assert ArticleInput(name="x", sku="EX-X").sold_alone is True
         catalog.update_article(s, parts["Holder"], ArticleInput(name="Holder", sold_alone=False))
         assert s.get(Article, parts["Holder"]).sold_alone is False
 

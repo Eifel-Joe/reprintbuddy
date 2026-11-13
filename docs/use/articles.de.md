@@ -32,7 +32,7 @@ Dasselbe Formular öffnet sich auf der Artikelseite unter **Einstellungen änder
 | Feld | Bedeutung | Vorgabe |
 |---|---|---|
 | **Name** | Freier Text, bis 200 Zeichen. | Der Dateiname ohne Endung (`.gcode.3mf` oder `.3mf`) |
-| **Artikelnummer** | Freiwillig, bis 64 Zeichen. Muss unter allen Artikeln, Sets und Varianten eindeutig sein; Groß- und Kleinschreibung zählen nicht (EX-1 und ex-1 sind dieselbe Nummer). Gespeichert wird sie, wie du sie schreibst. | leer |
+| **Artikelnummer** | Pflicht, bis 64 Zeichen; nur ein Artikel, der nicht einzeln erhältlich ist (ein Bauteil), darf ohne bleiben und braucht eine, sobald du **Einzeln erhältlich** einschaltest. Ohne Nummer speichert Reprintbuddy den Artikel nicht und sagt, dass die Nummer fehlt. Muss unter allen Artikeln, Sets und Varianten eindeutig sein; Groß- und Kleinschreibung zählen nicht (EX-1 und ex-1 sind dieselbe Nummer). Gespeichert wird sie, wie du sie schreibst. | leer |
 | **Etikettentext** | Freiwilliger Text für das [Etikett](labels.md), zum Beispiel das Regalfach (bis 60 Zeichen). | leer |
 | **Stück je Druck** | Wie viele Einheiten ein Druck dieser Platte liefert, 1 bis 1000. Danach rechnet Reprintbuddy aus, wie viele Drucke ein Nachdruck braucht. | 1 |
 | **Druckziel** | Wohin Bambuddy den Druck schickt: **Jeder** und ein Druckermodell (jeder freie Drucker dieses Modells druckt), ein bestimmter Drucker oder **Kein Druckziel**. Ein Drucker im Wartungsmodus wird nicht neu angeboten. | Das Druckermodell, für das die Datei geslict ist |

@@ -158,7 +158,7 @@ def test_archive_restore_set(bb_client):
     with sm_of(bb_client).begin() as s:
         a = make_article(s, name="Template A").id
         z = make_article(s, name="Template Z").id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, z)], [])).id
+        set_id = catalog.create_set(s, SetInput("Starter Set", "EX-STARTER-SET", [BaseInput(1, a), BaseInput(1, z)], [])).id
     assert act(bb_client, f"/sets/{set_id}", "archive", page=f"/sets/{set_id}/edit").status_code == 303
     assert "Starter Set" in bb_client.get("/sets?view=archived").text
     assert en("sets.empty") in bb_client.get("/sets").text
@@ -172,8 +172,8 @@ def test_archiving_what_stands_in_an_active_set_is_refused_with_its_names(bb_cli
         a = make_article(s, name="Template A", library_file_id=1, plate_id=1).id
         z = make_article(s, name="Template Z", library_file_id=2, plate_id=1).id
         c = make_article(s, name="Template C", library_file_id=3, plate_id=1).id
-        inner = catalog.create_set(s, SetInput("Inner Set", None, [BaseInput(1, a), BaseInput(1, z)], [])).id
-        catalog.create_set(s, SetInput("Outer Set", None, [BaseInput(1, None, inner), BaseInput(1, c)], []))
+        inner = catalog.create_set(s, SetInput("Inner Set", "EX-INNER-SET", [BaseInput(1, a), BaseInput(1, z)], [])).id
+        catalog.create_set(s, SetInput("Outer Set", "EX-OUTER-SET", [BaseInput(1, None, inner), BaseInput(1, c)], []))
     response = act(bb_client, f"/sets/{inner}", "archive", page=f"/sets/{inner}/edit")
     assert response.status_code == 200 and en("sets.archive_in_set", names="Outer Set") in response.text
     response = act(bb_client, f"/articles/{a}", "archive")
@@ -205,8 +205,8 @@ def test_archived_absent_from_selections(bb_client):
         insert = make_part(s, name="Insert M4").id
         hex_key = make_part(s, name="Hex key 2").id
         z = make_article(s, name="Template Z", library_file_id=3, plate_id=1, stock=3).id
-        starter = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, z)], [])).id
-        other = catalog.create_set(s, SetInput("Other Set", None, [BaseInput(1, a), BaseInput(1, z)], [])).id
+        starter = catalog.create_set(s, SetInput("Starter Set", "EX-STARTER-SET", [BaseInput(1, a), BaseInput(1, z)], [])).id
+        other = catalog.create_set(s, SetInput("Other Set", "EX-OTHER-SET", [BaseInput(1, a), BaseInput(1, z)], [])).id
         catalog.archive_set(s, starter)
         catalog.archive_article(s, b)
         catalog.archive_part(s, hex_key)
@@ -227,7 +227,7 @@ def test_set_with_archived_article_stays_orderable_in_form(bb_client):  # Spec 5
     with sm_of(bb_client).begin() as s:
         a = make_article(s, name="Template A", library_file_id=1, plate_id=1).id
         z = make_article(s, name="Template Z", library_file_id=2, plate_id=1).id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, z)], [])).id
+        set_id = catalog.create_set(s, SetInput("Starter Set", "EX-STARTER-SET", [BaseInput(1, a), BaseInput(1, z)], [])).id
         s.get(Article, a).archived_at = utcnow()  # archiving it is refused now; an earlier version left it so
     assert f'value="set:{set_id}"' in bb_client.get("/orders/new").text
 
@@ -320,7 +320,7 @@ def test_archive_and_restore_of_a_set_go_back_to_the_list(bb_client):
     with sm_of(bb_client).begin() as s:
         a = make_article(s, name="Template A").id
         z = make_article(s, name="Template Z").id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, z)], [])).id
+        set_id = catalog.create_set(s, SetInput("Starter Set", "EX-STARTER-SET", [BaseInput(1, a), BaseInput(1, z)], [])).id
     archived = act(bb_client, f"/sets/{set_id}", "archive", page=f"/sets/{set_id}/edit")
     assert archived.status_code == 303 and archived.headers["location"] == "/sets"
     assert en("sets.flash_archived", name="Starter Set") in bb_client.get("/sets").text

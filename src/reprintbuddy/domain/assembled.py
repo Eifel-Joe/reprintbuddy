@@ -190,7 +190,7 @@ def _check(session: Session, data: AssembledInput, *, article_id: int | None = N
     if data.mode not in MODES:
         raise ValueError(f"unknown assembly mode {data.mode!r}")
     name = catalog._required_name(data.name, "articles.field.name")
-    sku = catalog.validate_sku(session, data.sku, article_id=article_id)
+    sku = catalog.validate_sku(session, data.sku, article_id=article_id, required=True)  # p533
     label_text = catalog._text(data.label_text, "articles.field.label_text", catalog.MAX_LABEL_TEXT)
     min_stock = catalog._int_in(data.min_stock, "articles.field.min_stock", 0, MAX_QTY)
     buffer = catalog._int_in(data.buffer, "articles.field.buffer", 0, MAX_QTY)
@@ -262,8 +262,6 @@ def _check(session: Session, data: AssembledInput, *, article_id: int | None = N
         part_units = base_units + sum(q for _id, _suffix, rows in combination for _a, q in rows)
         if part_units < 1 or part_units + purchased_units < MIN_UNITS:
             raise ValidationError("assembled.too_small")
-    if fields and sku is None:
-        raise ValidationError("assembled.sku_required")
     if data.mode == "order" or fields:
         min_stock = buffer = 0
     return _Checked(name, sku, data.mode, label_text, min_stock, buffer, base, fields, purchased)

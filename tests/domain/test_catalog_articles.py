@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 from sqlalchemy import select
 
@@ -18,6 +20,8 @@ def a_file(file_id=1, filename="Template A.gcode.3mf", model="A1", fingerprint="
 def create(s, *, data=None, file=None, plate=1, thumbnail=b"\x89PNG-x"):
     file = file or a_file()
     data = data or catalog.default_article_input(file)
+    if data.sku is None and data.sold_alone:  # p533: an article is saved with a number
+        data = replace(data, sku=f"T-{file.id}-{plate}")
     return catalog.create_article(
         s, file=file, plate=Plate(plate, None), requirements=REQS, thumbnail=thumbnail, data=data
     )
@@ -57,7 +61,7 @@ def test_plate_only_once(db):  # Spec 5.1
         create(s, plate=1)
     with pytest.raises(ConflictError) as info:
         with db.begin() as s:
-            create(s, plate=1)
+            create(s, plate=1, data=ArticleInput(name="Again", sku="T-again"))
     assert info.value.key == "articles.plate_taken"
     assert info.value.params["name"] == "Template A"
     with db.begin() as s:
@@ -195,7 +199,7 @@ def test_update_article(db):
         art = create(s)
         art_id = art.id
         catalog.update_article(
-            s, art_id, ArticleInput(name="Template A", min_stock=4, buffer=2, auto_enabled=True, target_model="A1")
+            s, art_id, ArticleInput(sku="T-1-1", name="Template A", min_stock=4, buffer=2, auto_enabled=True, target_model="A1")
         )
     with db.begin() as s:
         row = catalog.list_articles(s)[0]
@@ -290,7 +294,7 @@ def test_a_new_target_changes_the_state_rule_7_1_looks_at(db):
 def test_update_unknown_article(db):
     with pytest.raises(NotFoundError) as info:
         with db.begin() as s:
-            catalog.update_article(s, 999, ArticleInput(name="x"))
+            catalog.update_article(s, 999, ArticleInput(sku="T-1-1", name="x"))
     assert info.value.key == "articles.not_found"
 
 
@@ -302,7 +306,7 @@ def test_article_parts(db):
     with db.begin() as s:
         links = {l.part_id: l.qty_per_unit for l in s.scalars(select(ArticlePart))}
         assert links == {ids[1]: 2, ids[2]: 1}
-        catalog.update_article(s, ids[0], ArticleInput(name="A", parts={ids[1]: 2}))
+        catalog.update_article(s, ids[0], ArticleInput(sku="T-1-1", name="A", parts={ids[1]: 2}))
     with db.begin() as s:
         assert {l.part_id for l in s.scalars(select(ArticlePart))} == {ids[1]}
 
@@ -451,7 +455,7 @@ def test_update_with_automation_but_no_target_is_refused(db):
         art_id = create(s).id
     with pytest.raises(ValidationError) as info:
         with db.begin() as s:
-            catalog.update_article(s, art_id, ArticleInput(name="Renamed", auto_enabled=True))
+            catalog.update_article(s, art_id, ArticleInput(sku="T-1-1", name="Renamed", auto_enabled=True))
     assert info.value.key == "articles.field_auto_needs_target"
     with db.begin() as s:
         art = s.get(Article, art_id)
@@ -461,14 +465,14 @@ def test_update_with_automation_but_no_target_is_refused(db):
 def test_automation_with_a_model_or_printer_target_is_saved(db):
     with db.begin() as s:
         art_id = create(s).id
-        catalog.update_article(s, art_id, ArticleInput(name="Template A", auto_enabled=True, target_model="A1"))
+        catalog.update_article(s, art_id, ArticleInput(sku="T-1-1", name="Template A", auto_enabled=True, target_model="A1"))
         assert s.get(Article, art_id).auto_enabled is True
-        catalog.update_article(s, art_id, ArticleInput(name="Template A", auto_enabled=True, printer_id=3))
+        catalog.update_article(s, art_id, ArticleInput(sku="T-1-1", name="Template A", auto_enabled=True, printer_id=3))
         assert s.get(Article, art_id).auto_enabled is True
 
 
 def test_no_automation_without_target_is_fine(db):
     with db.begin() as s:
         art_id = create(s).id
-        catalog.update_article(s, art_id, ArticleInput(name="Template A", auto_enabled=False))
+        catalog.update_article(s, art_id, ArticleInput(sku="T-1-1", name="Template A", auto_enabled=False))
         assert s.get(Article, art_id).target_model is None

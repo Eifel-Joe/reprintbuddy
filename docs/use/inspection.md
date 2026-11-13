@@ -121,7 +121,7 @@ Deleting in Bambuddy needs the recommended right **Delete Own Queue** in the gro
 
 ## Sets
 
-A set is a bundle of articles sold together, with a name and an article number (required once the set has choice parts). It has no stock of its own.
+A set is a bundle of articles sold together, with a name and an article number (required). It has no stock of its own.
 
 **Base parts** go into every set: per row a **Quantity** and an **Article** or another **Set**, chosen from a drop-down (groups **Articles** and **Sets**; see [Sets in sets](#sets-in-sets)). What is in one row already, or in a set chosen in one, is not offered in the others; an article is only once in a set.
 

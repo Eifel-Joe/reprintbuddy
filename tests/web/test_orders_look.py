@@ -344,7 +344,7 @@ def test_new_order_form_offers_an_article_created_elsewhere(ready_client):
     with sm_of(ready_client).begin() as s:
         a = make_article(s, name="Template Y").id
         b = make_article(s, name="Template X").id
-        catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, b)], []))
+        catalog.create_set(s, SetInput("Starter Set", "EX-STARTER-SET", [BaseInput(1, a), BaseInput(1, b)], []))
     found = regions_of(ready_client, "/orders/new", "form")
     assert "Template Z" in found["form"] and "Starter Set" in found["form"]
 

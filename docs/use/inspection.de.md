@@ -121,7 +121,7 @@ Das Löschen in Bambuddy braucht das empfohlene Recht **Delete Own Queue** in de
 
 ## Sets
 
-Ein Set ist eine Zusammenstellung von Artikeln, die zusammen verkauft werden, mit Namen und Artikelnummer (Pflicht, sobald das Set Wahlteile hat). Es hat keinen eigenen Bestand.
+Ein Set ist eine Zusammenstellung von Artikeln, die zusammen verkauft werden, mit Namen und Artikelnummer (Pflicht). Es hat keinen eigenen Bestand.
 
 **Basisteile** kommen in jedes Set: je Zeile eine **Menge** und ein **Artikel** oder ein anderes **Set** aus der Aufklappliste (Dropdown, Gruppen **Artikel** und **Sets**; siehe [Sets aus anderen Sets](#sets-aus-anderen-sets)). Was schon in einer Zeile steht oder in einem dort gewählten Set steckt, wird in den anderen nicht mehr angeboten; ein Artikel steht nur einmal in einem Set.
 

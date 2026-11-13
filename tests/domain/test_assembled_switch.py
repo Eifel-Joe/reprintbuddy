@@ -129,7 +129,7 @@ def test_switch_refused_with_stock_or_running_prints(db):
     with db.begin() as s:
         article = make_article(s, name="Lamp", stock=1)
         clip = make_article(s, name="Clip")
-        data = AssembledInput(name="Lamp", sku=None, mode="stock", base=[BaseInput(2, clip.id)], fields=[], parts={})
+        data = AssembledInput(name="Lamp", sku="EX-LAMP", mode="stock", base=[BaseInput(2, clip.id)], fields=[], parts={})
         with pytest.raises(ConflictError) as err:
             assembled.convert_to_assembled(s, article.id, data)
         assert err.value.key == "assembled.switch_busy"
@@ -146,7 +146,7 @@ def test_part_of_an_assembled_article_cannot_become_one(db):
         clip = make_article(s, name="Clip")
         with pytest.raises(ConflictError) as err:
             assembled.convert_to_assembled(s, segment.id, AssembledInput(
-                name="Segment", sku=None, mode="stock", base=[BaseInput(2, clip.id)], fields=[], parts={},
+                name="Segment", sku="EX-SEGMENT", mode="stock", base=[BaseInput(2, clip.id)], fields=[], parts={},
             ))
         assert err.value.key == "articles.archive_in_assembled"
 
@@ -171,10 +171,10 @@ def test_set_refuses_part_not_sold_alone_and_order_mode_assembled(db):  # Spec 5
         composite, _segment = hose(s)
         panel = make_article(s, name="Panel A")
         box = make_assembled(s, name="Storage box", base=[(panel.id, 2)])
-        catalog.create_set(s, SetInput("Starter", None, [BaseInput(1, box.id), BaseInput(1, lid.id)], []))
+        catalog.create_set(s, SetInput("Starter", "EX-STARTER", [BaseInput(1, box.id), BaseInput(1, lid.id)], []))
         for other in (part, composite, assembled.variants(s, composite)[0]):
             with pytest.raises(ValidationError) as err:
-                catalog.create_set(s, SetInput("Kit", None, [BaseInput(1, lid.id), BaseInput(1, other.id)], []))
+                catalog.create_set(s, SetInput("Kit", "EX-KIT", [BaseInput(1, lid.id), BaseInput(1, other.id)], []))
             assert err.value.key == "sets.article_not_allowed"
         with pytest.raises(ValidationError):
             catalog.create_set(s, SetInput("Kit", "EX-S9", [BaseInput(1, lid.id)],

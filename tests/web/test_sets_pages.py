@@ -199,7 +199,7 @@ def test_edit_set(ready_client):
     set_id = sets_in_db(ready_client)[0].id
     response = ready_client.post(
         f"/sets/{set_id}/edit",
-        data={"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Starter Set 2", "sku": "",
+        data={"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Starter Set 2", "sku": "S-2",
               "base_rows": "3", "c1_rows": "3", "c1_qty": "1",
               "base_0_qty": "3", "base_0_article": str(b), "base_1_qty": "1", "base_1_article": str(c)},
     )
@@ -207,7 +207,7 @@ def test_edit_set(ready_client):
     with sm_of(ready_client).begin() as s:
         row = catalog.list_sets(s)[0]
         assert s.scalar(select(func.count()).select_from(SetPosition)) == 2
-    assert (row.name, row.sku, row.available, row.choices) == ("Starter Set 2", None, 1, [])
+    assert (row.name, row.sku, row.available, row.choices) == ("Starter Set 2", "S-2", 1, [])
 
 
 def test_migrated_set_opens_with_empty_suffixes_and_saving_requires_them(ready_client):  # review focus 5
@@ -249,7 +249,7 @@ def test_edit_validation_keeps_form(ready_client):
     set_id = sets_in_db(ready_client)[0].id
     response = ready_client.post(
         f"/sets/{set_id}/edit",
-        data={"csrf_token": csrf_of(ready_client, "/sets"), "name": "Changed", "sku": "", "base_rows": "3"},
+        data={"csrf_token": csrf_of(ready_client, "/sets"), "name": "Changed", "sku": "S-1", "base_rows": "3"},
     )
     assert response.status_code == 200 and en("sets.too_few_articles") in response.text
     assert sets_in_db(ready_client)[0].name == "Starter Set"
@@ -267,7 +267,7 @@ def test_sets_german(ready_client):
     a, b, _c = three_articles(ready_client)
     with sm_of(ready_client).begin() as s:
         st.set_setting(s, "language", "de", commit=False)
-        catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, b)], []))
+        catalog.create_set(s, SetInput("Starter Set", "EX-STARTER-SET", [BaseInput(1, a), BaseInput(1, b)], []))
     page = ready_client.get("/sets").text
     assert "Sets" in page and "Verfügbar" in page
     form = ready_client.get("/sets/new").text
