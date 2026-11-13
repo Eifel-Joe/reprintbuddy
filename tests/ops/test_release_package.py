@@ -316,3 +316,31 @@ def test_p550_the_request_of_the_helper_has_a_deadline_within_a_block_too(monkey
 def test_p550_the_request_of_the_helper_still_reads_a_whole_answer(monkeypatch):
     body = b"[" + b" " * 200_000 + b"]"
     assert pk.urllib_get("https://api.github.com/x", {}, _opener=FakeOpener(FakeResponse(body))) == (200, body)
+
+
+@pytest.mark.parametrize("kind", [tarfile.SYMTYPE, tarfile.LNKTYPE, tarfile.REGTYPE])
+def test_p552_the_top_folder_must_be_a_real_folder(tmp_path, kind):
+    """p552 (v0.4.10): a top entry `reprintbuddy-<tag>` that is a link (to `.`, say) passed the check of the
+    names; its files then landed beside it and `releases/<tag>` became a link. Now the top entry must be a
+    folder, refused before anything is unpacked."""
+    path = tmp_path / "bad.tar.gz"
+    with tarfile.open(path, "w:gz") as archive:
+        top = tarfile.TarInfo(TOP)
+        top.type = kind
+        if kind in (tarfile.SYMTYPE, tarfile.LNKTYPE):
+            top.linkname = "."
+        archive.addfile(top, io.BytesIO(b"") if kind == tarfile.REGTYPE else None)
+        data = b"[project]\n"
+        info = tarfile.TarInfo(f"{TOP}/pyproject.toml")
+        info.size = len(data)
+        archive.addfile(info, io.BytesIO(data))
+    with pytest.raises(pk.PackageError) as raised:
+        pk.unpack(path, tmp_path / "releases", TAG)
+    assert (raised.value.reason, raised.value.detail) == ("package_unusable", "the version's folder is no real folder")
+    assert list((tmp_path / "releases").iterdir()) == []
+
+
+def test_p552_an_archive_without_an_entry_for_the_top_folder_is_still_fine(tmp_path):
+    """Some tools write no entry for the folder itself, only its files; that folder is a real one."""
+    path = build_tar(tmp_path / "p.tar.gz", [(f"{TOP}/pyproject.toml", b"[project]\n")])
+    assert (pk.unpack(path, tmp_path / "releases", TAG) / "pyproject.toml").is_file()

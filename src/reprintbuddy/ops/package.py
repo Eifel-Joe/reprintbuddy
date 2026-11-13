@@ -172,6 +172,11 @@ def unpack(archive: Path, dest: Path, tag: str) -> Path:
                 parts = PurePosixPath(member.name).parts
                 if not parts or parts[0] != top or member.name.startswith("/") or ".." in parts:
                     raise PackageError("package_unusable", "the archive holds more than the version's folder")
+                # p552 (v0.4.10): the entry of the folder itself must be a folder. Root: a link `<top>` -> `.`
+                # passed the names, its files landed beside it and `releases/<tag>` became a link (nothing
+                # outside, but the install then failed into a rollback). Tests: test_release_package.py "p552".
+                if len(parts) == 1 and not member.isdir():
+                    raise PackageError("package_unusable", "the version's folder is no real folder")
             work.mkdir()
             tar.extractall(work, members=members, filter="data")
         unpacked = work / top
