@@ -348,3 +348,24 @@ def test_what_is_planned_is_listed_without_dates(name, heading, words):  # v0.3.
     for word in words:
         assert word in section, (name, word)
     assert not any(char.isdigit() for char in section), "no dates or version numbers in the planned list"
+
+
+# --- v0.4.9 p500: installation and update from the package of a release (Spec 11.3a) -------------------
+
+PACKAGE_PAGES = ("README.md", "README.de.md", "docs/start/install.md", "docs/start/install.de.md")
+
+
+@pytest.mark.parametrize("name", PACKAGE_PAGES)
+def test_v049_the_installer_needs_no_git_and_the_download_host_is_named(name):
+    text = (ROOT / name).read_text(encoding="utf-8")
+    assert "`python3-venv`, `curl`" in text and "`git`, `curl`" not in text
+    assert "release-assets.githubusercontent.com" in text  # GitHub's docs: "Needed for downloading release assets"
+    assert "releases/<tag>" in text
+
+
+@pytest.mark.parametrize("name", ["README.md", "README.de.md", "docs/operate/update-backup.md", "docs/operate/update-backup.de.md"])
+def test_v049_versions_are_releases_with_a_package_not_git_tags(name):
+    text = (ROOT / name).read_text(encoding="utf-8")
+    assert "Versions are git tags" not in text and "Versionen sind Git-Tags" not in text
+    assert "`vX.Y.Z-beta.N`" in text
+    assert "pre-releases to choose from" not in text and "Vorabversionen, die sich im Updater" not in text

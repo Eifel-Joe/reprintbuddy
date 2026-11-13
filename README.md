@@ -76,8 +76,9 @@ Invented example data. More pictures are on the [documentation pages](https://ei
   export*).
   One CPU core, 1 GB RAM and 8 GB disk are enough. No Docker needed.
 - Outgoing network access from that machine to the Debian package sources (`apt`),
-  `github.com` and `raw.githubusercontent.com` (installation and updates), `api.github.com` (the
-  release notes on the update card),
+  `github.com`, `raw.githubusercontent.com` and `release-assets.githubusercontent.com` (installation and
+  updates: GitHub serves the package of a release from the last one), `api.github.com` (the check for
+  updates and the release notes on the update card),
   `pypi.org` and `files.pythonhosted.org` (Python packages, at installation and at
   every update) and to your Bambuddy.
 - Optional: [Home Assistant](https://www.home-assistant.io/) with its phone app for push
@@ -108,11 +109,11 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 
 What the installer does:
 
-- installs the packages it needs (`python3`, `python3-venv`, `git`, `curl`, `sudo`,
-  `ca-certificates`),
+- installs the packages it needs (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`),
 - creates the system user `reprintbuddy`,
-- puts Reprintbuddy into `/opt/reprintbuddy` on the release tag of the script, with its Python
-  environment in `/opt/reprintbuddy/.venv`,
+- downloads the package of the release of the script from GitHub with its checksum file (nothing is
+  installed if they do not match) and unpacks it to `/opt/reprintbuddy/releases/<tag>`, with the Python
+  environment in `/opt/reprintbuddy/.venv`; git is not needed,
 - creates `/var/lib/reprintbuddy` (mode 700) with the database, the backups and the update state,
 - installs the systemd units `reprintbuddy.service` and `reprintbuddy-update.service`,
 - installs a sudoers rule in `/etc/sudoers.d/reprintbuddy` that lets the service user run
@@ -260,8 +261,8 @@ server (`timedatectl set-timezone …`, then restart).
 of every page; the switch **Check for new versions automatically** on the card turns that off. The check asks GitHub (the release notes come from GitHub's API without a login), so GitHub sees the IP address of your server. The update
 
 1. backs up the database,
-2. switches to the new release tag,
-3. installs the packages,
+2. downloads the package of the new release and checks it against its checksum (nothing is installed if it does not match),
+3. installs it and the packages it needs,
 4. migrates the database,
 5. restarts the service and
 6. checks that the new version answers.
@@ -273,12 +274,18 @@ runs would be lost in that case, so every change is paused until it has finished
 If the page says **Update was interrupted** or **Update failed and the previous version could not be restored**,
 run the installer again: it repairs packages, units and the service and keeps the database. If Reprintbuddy still
 does not start, restore the backup named on the page (see *Backup and export*) and run the installer again.
-The page shows the Git tag and, if it differs, the package version next to it.
+The page shows the installed version and, if it differs, the package version next to it.
 
 Backups are kept in `/var/lib/reprintbuddy/backups/` (the last 5; a backup named by a failed rollback is never deleted). To start an update by hand:
 `systemctl start reprintbuddy-update.service`; its system log is `journalctl -u reprintbuddy-update`.
 
-Versions are git tags `vX.Y.Z`, and the package version equals the tag. If a release changes the
+Every version is a published GitHub release `vX.Y.Z` with its package and a checksum file; the package
+version equals the tag. Installation and update both download the package, so GitHub counts the
+downloads of each version; Reprintbuddy sends nothing else. An installation made with git (up to v0.4.9)
+gets v0.4.9 by git; its next update downloads the package and removes the old git copy from
+`/opt/reprintbuddy` (never the data). **Versions offered** on the card chooses between stable releases only
+(the default) and pre-releases too (`vX.Y.Z-beta.N`, older than `vX.Y.Z`); back on stable releases, an
+installed pre-release stays until a newer stable release comes. If a release changes the
 systemd units or the sudoers rule, its release notes say so; then run the installer again.
 
 ## Restart
@@ -423,8 +430,7 @@ Ideas for later versions. This is a list of directions, not a promise: there are
 - receiving orders by email,
 - a display at the shelf (a device of its own) to confirm finished prints and to change the quantity,
 - more ways to send messages: email and a general webhook,
-- several users,
-- pre-releases to choose from in the updater.
+- several users.
 
 ## Contributing
 

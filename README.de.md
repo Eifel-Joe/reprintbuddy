@@ -79,8 +79,9 @@ Erfundene Beispieldaten. Weitere Bilder stehen auf den [Doku-Seiten](https://eif
   Sicherung ziehen (*Sicherung und Export*).
   Ein CPU-Kern, 1 GB RAM und 8 GB Platte reichen. Docker ist nicht nötig.
 - Ausgehender Netzzugang dieses Rechners zu den Debian-Paketquellen (`apt`),
-  `github.com` und `raw.githubusercontent.com` (Installation und Updates), `api.github.com` (die
-  Versionshinweise auf der Update-Karte),
+  `github.com`, `raw.githubusercontent.com` und `release-assets.githubusercontent.com` (Installation und
+  Updates: das Paket eines Release liefert GitHub vom letzten aus), `api.github.com` (die Prüfung auf
+  Updates und die Versionshinweise auf der Update-Karte),
   `pypi.org` und `files.pythonhosted.org` (Python-Pakete, bei der Installation und
   bei jedem Update) und zu deinem Bambuddy.
 - Wahlweise: [Home Assistant](https://www.home-assistant.io/) mit seiner Handy-App für
@@ -112,11 +113,11 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 
 Das Skript
 
-- installiert die nötigen Pakete (`python3`, `python3-venv`, `git`, `curl`, `sudo`,
-  `ca-certificates`),
+- installiert die nötigen Pakete (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`),
 - legt den Systembenutzer `reprintbuddy` an,
-- legt Reprintbuddy auf dem Release-Tag des Skripts nach `/opt/reprintbuddy` und die
-  Python-Umgebung nach `/opt/reprintbuddy/.venv`,
+- lädt das Paket des Release des Skripts mit seiner Prüfsummen-Datei von GitHub (passt beides nicht
+  zusammen, wird nichts installiert), entpackt es nach `/opt/reprintbuddy/releases/<tag>` und legt die
+  Python-Umgebung nach `/opt/reprintbuddy/.venv`; git braucht es nicht,
 - legt `/var/lib/reprintbuddy` (Rechte 700) mit Datenbank, Sicherungen und Update-Stand an,
 - richtet die systemd-Einheiten `reprintbuddy.service` und `reprintbuddy-update.service` ein,
 - installiert eine sudoers-Regel in `/etc/sudoers.d/reprintbuddy`, die dem Dienstbenutzer genau
@@ -272,8 +273,8 @@ der Zeitzone des Servers (`timedatectl set-timezone …`, danach neu starten).
 Seite einen Balken; der Schalter **Automatisch nach neuen Versionen suchen** auf der Karte schaltet das ab. Die Prüfung fragt GitHub (die Versionshinweise kommen ohne Anmeldung über GitHubs API), dabei sieht GitHub die IP-Adresse deines Servers. Das Update
 
 1. sichert die Datenbank,
-2. wechselt auf den neuen Release-Tag,
-3. installiert die Pakete,
+2. lädt das Paket der neuen Version und prüft es gegen seine Prüfsumme (passt es nicht, wird nichts installiert),
+3. installiert es und die Pakete, die es braucht,
 4. migriert die Datenbank,
 5. startet den Dienst neu und
 6. prüft, ob die neue Version antwortet.
@@ -285,7 +286,7 @@ der Zeit des Updates gingen dabei verloren, darum sind alle Änderungen gesperrt
 Zeigt die Seite **Update wurde unterbrochen** oder **Update fehlgeschlagen, vorige Version ließ sich nicht wiederherstellen**,
 führe das Installationsskript erneut aus: Es repariert Pakete, Einheiten und den Dienst und lässt die Datenbank
 stehen. Startet Reprintbuddy danach nicht, spiele die auf der Seite genannte Sicherung zurück (siehe
-*Sicherung und Export*) und führe das Skript noch einmal aus. Die Seite zeigt den Git-Tag und, wenn sie sich
+*Sicherung und Export*) und führe das Skript noch einmal aus. Die Seite zeigt die installierte Version und, wenn sie sich
 unterscheidet, daneben die Paketversion.
 
 Die Sicherungen liegen in `/var/lib/reprintbuddy/backups/` (die letzten 5; eine von einem gescheiterten Rückfall
@@ -293,7 +294,13 @@ genannte Sicherung wird nie gelöscht). Ein Update von Hand
 startest du mit `systemctl start reprintbuddy-update.service`; das Systemprotokoll steht in
 `journalctl -u reprintbuddy-update`.
 
-Versionen sind Git-Tags `vX.Y.Z`, die Paketversion entspricht dem Tag. Ändert eine Version die
+Jede Version ist ein veröffentlichtes GitHub-Release `vX.Y.Z` mit seinem Paket und einer Prüfsummen-Datei;
+die Paketversion entspricht dem Tag. Installation und Update laden beide das Paket, darum zählt GitHub die
+Downloads jeder Version; sonst sendet Reprintbuddy nichts. Eine mit git eingerichtete Installation (bis
+v0.4.9) bekommt v0.4.9 noch per git; ihr nächstes Update lädt das Paket und entfernt die alte git-Kopie
+aus `/opt/reprintbuddy` (nie die Daten). **Angebotene Versionen** auf der Karte wählt zwischen nur stabilen
+Versionen (Vorgabe) und auch Vorabversionen (`vX.Y.Z-beta.N`, älter als `vX.Y.Z`); zurück auf nur stabile
+bleibt eine installierte Vorabversion, bis eine neuere stabile Version kommt. Ändert eine Version die
 systemd-Einheiten oder die sudoers-Regel, steht es in der Release-Notiz; dann das
 Installationsskript erneut ausführen.
 
@@ -444,8 +451,7 @@ Ideen für spätere Versionen. Das ist eine Liste von Richtungen, kein Versprech
 - Bestelleingang per E-Mail,
 - eine Anzeige am Regal (ein eigenes Gerät), um fertige Drucke zu bestätigen und die Stückzahl zu ändern,
 - weitere Wege für Nachrichten: E-Mail und ein allgemeiner Webhook,
-- mehrere Benutzer,
-- Vorabversionen, die sich im Updater wählen lassen.
+- mehrere Benutzer.
 
 ## Mitmachen
 

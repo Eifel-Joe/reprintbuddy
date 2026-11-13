@@ -28,9 +28,9 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 
 ## Was das Installationsskript tut
 
-- installiert die Pakete, die es braucht (`python3`, `python3-venv`, `git`, `curl`, `sudo`, `ca-certificates`),
+- installiert die Pakete, die es braucht (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`),
 - legt den Systembenutzer `reprintbuddy` an,
-- legt Reprintbuddy auf dem Release-Tag des Skripts nach `/opt/reprintbuddy`, mit der Python-Umgebung in `/opt/reprintbuddy/.venv`,
+- lädt das Paket des Release des Skripts von GitHub (`reprintbuddy-<tag>.tar.gz`) mit seiner Prüfsummen-Datei, installiert nichts, wenn beides nicht zusammenpasst, und entpackt es nach `/opt/reprintbuddy/releases/<tag>`; `/opt/reprintbuddy/release.json` nennt die installierte Version. Die Python-Umgebung liegt in `/opt/reprintbuddy/.venv`. git braucht es nicht,
 - legt `/var/lib/reprintbuddy` (Modus 700) an, mit Datenbank, Sicherungen und Update-Zustand,
 - installiert die systemd-Units `reprintbuddy.service` und `reprintbuddy-update.service`,
 - installiert eine sudoers-Regel in `/etc/sudoers.d/reprintbuddy`, mit der der Dienstbenutzer genau diese Befehle als root ausführen darf und sonst nichts (die letzten beiden gehören zum Zurückrollen eines fehlgeschlagenen Updates, das die Datenbank zurückspielt, während der Dienst steht):
@@ -51,7 +51,7 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 
 ## Netzzugang, den der Rechner braucht
 
-Ausgehend zu den Debian-Paketquellen (`apt`), `github.com` und `raw.githubusercontent.com` (Installation und Updates), `api.github.com` (die Versionshinweise auf der Update-Karte), `pypi.org` und `files.pythonhosted.org` (Python-Pakete, bei der Installation und bei jedem Update) und zu deinem Bambuddy.
+Ausgehend zu den Debian-Paketquellen (`apt`), `github.com`, `raw.githubusercontent.com` und `release-assets.githubusercontent.com` (Installation und Updates: das Paket eines Release liefert GitHub vom letzten aus), `api.github.com` (die Versionshinweise auf der Update-Karte), `pypi.org` und `files.pythonhosted.org` (Python-Pakete, bei der Installation und bei jedem Update) und zu deinem Bambuddy.
 
 ## Das Skript noch einmal ausführen
 
