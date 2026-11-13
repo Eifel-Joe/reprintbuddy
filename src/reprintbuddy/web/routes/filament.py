@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,7 @@ from reprintbuddy.domain.filament import DEFAULT_ROLL_GRAMS, FilamentSettingsInp
 from reprintbuddy.models import FilamentSettings, FilamentSort, utcnow
 from reprintbuddy.web import kpis, supplier_form
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, db_session, get_db, render
+from reprintbuddy.web.deps import current_language, db_session, get_db, get_or_404, render
 from reprintbuddy.web.formatting import format_date
 from reprintbuddy.web.forms import error_status, error_text, parse_int, saved_redirect
 from reprintbuddy.web.filament_view import COLOR, may_write, page_spools
@@ -101,10 +101,8 @@ def _settings_page(request: Request, sort: FilamentSort, values: dict[str, objec
 
 
 def _get_sort(db: Session, sort_id: int) -> FilamentSort:
-    sort = db.get(FilamentSort, sort_id)
-    if sort is None or sort.legacy:  # a sort of 0006 waits for its conversion and has no page
-        raise HTTPException(status_code=404)
-    return sort
+    # a sort of 0006 waits for its conversion and has no page
+    return get_or_404(db, FilamentSort, sort_id, valid=lambda s: not s.legacy)
 
 
 @router.get("/filament/{sort_id:int}")

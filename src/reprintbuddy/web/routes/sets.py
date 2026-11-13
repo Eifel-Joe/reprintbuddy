@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,9 +15,10 @@ from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.models import Article, ProductSet
 from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_db, render
+from reprintbuddy.web.deps import current_language, get_db, get_or_404, render
 from reprintbuddy.web.i18n import translate
 from reprintbuddy.web.forms import (
+    MAX_ID,
     bounded_int,
     duplicate_redirect,
     run_form_action,
@@ -41,7 +42,6 @@ router = APIRouter()
 DEFAULT_ROWS = 3
 MORE_ROWS = 3
 MAX_ROWS = 200  # a set may have many rows; the edit form must show all of them
-MAX_ID = 2**31 - 1
 SECTIONS = ("base", "c1", "c2")
 
 
@@ -330,26 +330,20 @@ async def sets_create(request: Request, db: Session = Depends(get_db)):
     return await _post(request, db, None)
 
 
-def _get_set(db: Session, set_id: int) -> ProductSet:
-    product_set = db.get(ProductSet, set_id)
-    if product_set is None:
-        raise HTTPException(status_code=404)
-    return product_set
-
 
 @router.get("/sets/{set_id:int}/edit")
 async def sets_edit(request: Request, set_id: int, db: Session = Depends(get_db)):
-    return _edit_again(request, db, _get_set(db, set_id), None, 200)
+    return _edit_again(request, db, get_or_404(db, ProductSet, set_id), None, 200)
 
 
 @router.post("/sets/{set_id:int}/edit", dependencies=[Depends(verify_csrf)])
 async def sets_update(request: Request, set_id: int, db: Session = Depends(get_db)):
-    return await _post(request, db, _get_set(db, set_id))
+    return await _post(request, db, get_or_404(db, ProductSet, set_id))
 
 
 def _archive_action(action, flash_key: str):
     async def handler(request: Request, set_id: int, db: Session = Depends(get_db)):
-        product_set = _get_set(db, set_id)
+        product_set = get_or_404(db, ProductSet, set_id)
 
         def work(tx):
             action(tx, set_id)

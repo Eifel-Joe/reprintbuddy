@@ -36,6 +36,7 @@ from reprintbuddy.web import kpis, labels_view, listing, regions
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import (
+    get_or_404,
     current_language, db_session, get_bambuddy, get_db, local_next, release_connection, render,
 )
 from reprintbuddy.web.forms import (
@@ -340,7 +341,7 @@ async def article_target(request: Request, article_id: int, db: Session = Depend
     never send it, because every saved change lets rule 7.1 plan prints, and three clicks on an arrow
     must not be three changes.
     """
-    name = _get_article(db, article_id).name
+    name = get_or_404(db, Article, article_id).name
     form = await request.form()
     after = local_next(form) or "/articles"
     raw = str(form.get("target", ""))
@@ -636,16 +637,10 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
 # ---- detail, thumbnail, settings -------------------------------------------------------------
 
 
-def _get_article(db: Session, article_id: int) -> Article:
-    article = db.get(Article, article_id)
-    if article is None:
-        raise HTTPException(status_code=404)
-    return article
-
 
 def _relink_article(db: Session, article_id: int) -> Article:
     """A print article, or an article made of parts that becomes one again (Spec 5.6); never a variant."""
-    article = _get_article(db, article_id)
+    article = get_or_404(db, Article, article_id)
     if article.kind == "variant":
         raise HTTPException(status_code=404)
     return article
@@ -763,7 +758,7 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
 
 @router.get("/articles/{article_id:int}")
 async def article_detail(request: Request, article_id: int, db: Session = Depends(get_db)):
-    article = _get_article(db, article_id)
+    article = get_or_404(db, Article, article_id)
     if article.kind == "variant":  # a variant shows on the page of its article made of parts
         return RedirectResponse(f"/articles/{article.parent_id}", status_code=303)
     return _detail_page(request, db, article)
@@ -824,7 +819,7 @@ def _edit_refused(request: Request, db: Session, article: Article):
 
 @router.get("/articles/{article_id:int}/edit")
 async def article_edit(request: Request, article_id: int, db: Session = Depends(get_db)):
-    article = _get_article(db, article_id)
+    article = get_or_404(db, Article, article_id)
     if article.kind == "assembled":  # an article made of parts has its own form (Spec 5.6, 0.4.0)
         return RedirectResponse(f"/articles/{article.id}/assembled", status_code=303)
     if article.archived_at is not None:
@@ -835,7 +830,7 @@ async def article_edit(request: Request, article_id: int, db: Session = Depends(
 
 @router.post("/articles/{article_id:int}/edit", dependencies=[Depends(verify_csrf)])
 async def article_update(request: Request, article_id: int, db: Session = Depends(get_db)):
-    article = _get_article(db, article_id)
+    article = get_or_404(db, Article, article_id)
     if article.archived_at is not None:
         return _edit_refused(request, db, article)
     form = await request.form()
@@ -949,7 +944,7 @@ def _filament_page(request: Request, spools, article_id: int, typed: _Typed | No
 
 @router.get("/articles/{article_id:int}/filaments")
 async def article_filaments(request: Request, article_id: int, db: Session = Depends(get_db)):
-    _get_article(db, article_id)
+    get_or_404(db, Article, article_id)
     spools = await page_spools(request)  # before any write transaction
     return _filament_page(request, spools, article_id)
 
@@ -958,7 +953,7 @@ async def article_filaments(request: Request, article_id: int, db: Session = Dep
 async def article_filaments_save(request: Request, article_id: int, db: Session = Depends(get_db)):
     """One `slot` field per slot of the form, `tick_<slot>` per ticked spool sort, `reorder_<slot>`
     for the reordered one. A slot named without ticks is cleared; slots not named stay."""
-    _get_article(db, article_id)
+    get_or_404(db, Article, article_id)
     form = await request.form()
     typed: dict[int, tuple[set[str], str]] = {}
     lang = current_language(request)
@@ -994,7 +989,7 @@ async def article_filaments_save(request: Request, article_id: int, db: Session 
 
 def _archive_action(action, flash_key: str):
     async def handler(request: Request, article_id: int, db: Session = Depends(get_db)):
-        article = _get_article(db, article_id)
+        article = get_or_404(db, Article, article_id)
         # From the list (its forms send `next`) the person lands on the list again, where the row
         # left or came back; from the detail page (no `next`) on the detail page.
         after = local_next(await request.form()) or f"/articles/{article_id}"
@@ -1115,7 +1110,7 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
 
 
 def _detail_refused(request: Request, db: Session, article_id: int, text: str, status: int = 200):
-    return _detail_page(request, db, _get_article(db, article_id), error=text, status=status)
+    return _detail_page(request, db, get_or_404(db, Article, article_id), error=text, status=status)
 
 
 @router.post("/articles/{article_id:int}/resume", dependencies=[Depends(verify_csrf)])
@@ -1124,7 +1119,7 @@ async def article_resume(request: Request, article_id: int, db: Session = Depend
 
     Back to the page the button was on (`next`, a local path; the notice of a pause on the
     overview and the queue has one), else to the article. A refusal shows on the article page."""
-    name = _get_article(db, article_id).name
+    name = get_or_404(db, Article, article_id).name
     form = await request.form()
     # The overview is "/", which `local_next` counts as no `next`: here it is a page like any.
     back = "/" if str(form.get("next", "")) == "/" else local_next(form)
@@ -1146,7 +1141,7 @@ async def article_auto(request: Request, article_id: int, db: Session = Depends(
 
     Back to the list the switch was on (`next`, with its search and filter); a refusal is a
     warning there, not a page of its own."""
-    name = _get_article(db, article_id).name
+    name = get_or_404(db, Article, article_id).name
     form = await request.form()
     after = local_next(form) or "/articles"
     wanted = str(form.get("enabled", "")).strip()
@@ -1174,7 +1169,7 @@ async def article_auto(request: Request, article_id: int, db: Session = Depends(
 async def article_confirm_file(request: Request, article_id: int, db: Session = Depends(get_db)):
     """Accept the changed print file as it is now (Spec 5.1): file, filament need and preview
     are read from Bambuddy first, outside of the write transaction."""
-    article = _get_article(db, article_id)
+    article = get_or_404(db, Article, article_id)
     name, file_id, plate_index = article.name, article.library_file_id, article.plate_id
     release_connection(db)  # nothing is pending; no connection is held while Bambuddy answers
 

@@ -17,6 +17,7 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from reprintbuddy.domain import inputs
 from reprintbuddy.domain.errors import ValidationError
 from reprintbuddy.models import FilamentSupplier, PartSupplier
 
@@ -77,33 +78,20 @@ FILAMENT_LABELS = Labels(
 )
 
 
-def _int_in(value: object, field_key: str, low: int, high: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
-        raise ValidationError("form.invalid_number", field=field_key, min=low, max=high)
-    return value
-
-
-def _text(value: str | None, field_key: str, max_len: int) -> str | None:
-    value = (value or "").strip()
-    if not value:
-        return None
-    if len(value) > max_len:
-        raise ValidationError("form.too_long", field=field_key, max=max_len)
-    return value
 
 
 def _check_one(data: SupplierInput, labels: Labels, number: int | None) -> SupplierInput:
     """One supplier's fields; with several, an error names the supplier by its number (1 first)."""
     try:
-        url = _text(data.order_url, labels.order_url, MAX_URL)
+        url = inputs.text(data.order_url, labels.order_url, MAX_URL)
         if url is not None and not url.lower().startswith(("http://", "https://")):
             raise ValidationError(labels.invalid_url)
         return SupplierInput(
-            name=_text(data.name, labels.name, MAX_NAME),
+            name=inputs.text(data.name, labels.name, MAX_NAME),
             order_url=url,
-            pack_size=_int_in(data.pack_size, labels.pack_size, 1, labels.pack_max),
-            min_order_packs=_int_in(data.min_order_packs, labels.min_order_packs, 1, 1000),
-            lead_time_days=_int_in(data.lead_time_days, labels.lead_time_days, 0, 365),
+            pack_size=inputs.int_in(data.pack_size, labels.pack_size, 1, labels.pack_max),
+            min_order_packs=inputs.int_in(data.min_order_packs, labels.min_order_packs, 1, 1000),
+            lead_time_days=inputs.int_in(data.lead_time_days, labels.lead_time_days, 0, 365),
             is_default=bool(data.is_default),
         )
     except ValidationError as error:

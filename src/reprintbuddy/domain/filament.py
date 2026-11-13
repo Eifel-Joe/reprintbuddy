@@ -20,10 +20,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from reprintbuddy.activity.capture import quiet
 from reprintbuddy.bambuddy.client import BambuddyClient
 from reprintbuddy.bambuddy.types import Spool
-from reprintbuddy.domain import color, rules, suppliers
+from reprintbuddy.domain import color, inputs, rules, suppliers
 from reprintbuddy.domain import articlesets
 from reprintbuddy.domain import catalog
-from reprintbuddy.domain.catalog import _int_in
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.models import (
     Article,
@@ -709,7 +708,7 @@ def save_settings(session: Session, sort_id: int, data: FilamentSettingsInput) -
         raise NotFoundError("filament.sort_not_found")
     if data.safety_unit not in ("days", "grams"):
         raise ValidationError("filament.invalid_safety_unit")
-    safety = _int_in(data.safety_value, "filament.field.safety_value", 0, 1_000_000)
+    safety = inputs.int_in(data.safety_value, "filament.field.safety_value", 0, 1_000_000)
     wanted = suppliers.check(data.suppliers, suppliers.FILAMENT_LABELS)
     row = session.get(FilamentSettings, sort_id)
     if row is None:

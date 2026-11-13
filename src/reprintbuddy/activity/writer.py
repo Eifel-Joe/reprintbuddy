@@ -23,7 +23,7 @@ import threading
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy.activity.kinds import KINDS, Actor, area_of
 from reprintbuddy.models import (
+    naive_utc,
     ActivityEntry,
     ActivityMark,
     Article,
@@ -71,10 +72,6 @@ class _Event:
     at: datetime = field(default_factory=utcnow)
 
 
-def _naive(moment: datetime) -> datetime:
-    return moment.astimezone(UTC).replace(tzinfo=None) if moment.tzinfo else moment
-
-
 def write_transition(
     session: Session,
     key: str,
@@ -88,7 +85,7 @@ def write_transition(
 
     In the caller's transaction. True when the line was added.
     """
-    at = _naive(now or utcnow())
+    at = naive_utc(now or utcnow())
     mark = session.get(ActivityMark, key)
     before = mark.state if mark is not None else None
     if mark is None:
@@ -147,7 +144,7 @@ class ActivityLog:
             if kind not in KINDS:
                 raise KeyError(kind)
             with self._lock:
-                self._pending.append(_Event(kind, actor, details, address, via, at=_naive(self.now())))
+                self._pending.append(_Event(kind, actor, details, address, via, at=naive_utc(self.now())))
         except Exception:
             log.exception("activity log: an event could not be queued")
 
@@ -157,7 +154,7 @@ class ActivityLog:
             if kind not in KINDS:
                 raise KeyError(kind)
             with self._lock:
-                self._pending.append(_Event(kind, actor, details, key=key, state=state, at=_naive(self.now())))
+                self._pending.append(_Event(kind, actor, details, key=key, state=state, at=naive_utc(self.now())))
         except Exception:
             log.exception("activity log: an event could not be queued")
 
@@ -223,7 +220,7 @@ class ActivityLog:
             # (Spec 11.3a; review v0.3.13 C, finding 3).
             details = event.details or {}
             session.add(ActivityEntry(
-                at=_naive(datetime.fromisoformat(str(event.state))), area=area_of("update_started"),
+                at=naive_utc(datetime.fromisoformat(str(event.state))), area=area_of("update_started"),
                 kind="update_started", actor="user", details={"from": details.get("from"), "to": details.get("to")},
             ))
             session.flush()
@@ -252,7 +249,7 @@ class ActivityLog:
 
     def prune(self) -> None:
         """Delete lines older than 90 days (Spec 10.7)."""
-        cutoff = _naive(self.now()) - KEEP
+        cutoff = naive_utc(self.now()) - KEEP
         try:
             with self.sm.begin() as session:
                 session.execute(delete(ActivityEntry).where(ActivityEntry.at < cutoff))
@@ -446,7 +443,7 @@ def _moment(value: object) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        return _naive(datetime.fromisoformat(value))
+        return naive_utc(datetime.fromisoformat(value))
     except ValueError:
         return None
 
@@ -520,6 +517,6 @@ def restore_marks(maker: sessionmaker, marks: dict[str, Any]) -> None:
                     moment = datetime.fromisoformat(at) if isinstance(at, str) else utcnow()
                 except ValueError:
                     moment = utcnow()
-                session.add(ActivityMark(key=key, state=mark["state"], at=_naive(moment)))
+                session.add(ActivityMark(key=key, state=mark["state"], at=naive_utc(moment)))
     except Exception as error:  # noqa: BLE001 - the log must not stop the start
         log.warning("activity log: the marks could not be carried over (%s)", type(error).__name__)

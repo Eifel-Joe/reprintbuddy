@@ -46,6 +46,7 @@ from reprintbuddy.ops.status import read_status
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render
+from reprintbuddy.web.forms import maintenance_redirect
 from reprintbuddy.web.routes.auth import password_confirmed
 from reprintbuddy.web.routes.ops import _display_host
 
@@ -231,12 +232,7 @@ def _refused(request: Request, code: str) -> RedirectResponse:
     """Back to the card with the message of `code`, and the refusal in the activity log."""
     reason = code if code in RESTORE_REASONS else "failed"
     request.app.state.activity.record("restore_rejected", "user", {"reason": reason})
-    return _back(f"restore_{code}", "ops-restore")
-
-
-def _back(code: str | None, anchor: str) -> RedirectResponse:
-    query = f"&ops={code}" if code else ""
-    return RedirectResponse(f"/settings?tab=maintenance{query}#{anchor}", status_code=303)
+    return maintenance_redirect(f"restore_{code}", "ops-restore")
 
 
 def _work_dir(request: Request) -> Path:
@@ -277,12 +273,12 @@ async def download_backup(request: Request, db: Session = Depends(get_db)) -> Re
     form = await request.form()
     password = str(form.get("backup_password") or "")
     if password != str(form.get("backup_password_repeat") or ""):
-        return _back("backup_mismatch", "ops-backup")
+        return maintenance_redirect("backup_mismatch", "ops-backup")
     if password and not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
-        return _back("backup_length", "ops-backup")
+        return maintenance_redirect("backup_length", "ops-backup")
     login = str(form.get("login_password") or "")[: 4 * MAX_PASSWORD_LENGTH]
     if not await password_confirmed(request, db, login):
-        return _back("backup_login", "ops-backup")
+        return maintenance_redirect("backup_login", "ops-backup")
     work = fb.ensure_work_dir(_work_dir(request))
     fb.clear_work_dir(work, older_than=fb.STALE_AFTER)
     # v0.3.12 p149: the route names the file and holds a flag, as the restore does (p140). Root: a
@@ -304,7 +300,7 @@ async def download_backup(request: Request, db: Session = Depends(get_db)) -> Re
         )
     except (OSError, sqlite3.Error, fb.BackupError) as error:
         log.warning("backup failed: %s", type(error).__name__)  # never the message: no paths, no values
-        return _back("backup_failed", "ops-backup")
+        return maintenance_redirect("backup_failed", "ops-backup")
     except BaseException:  # cancelled (a closed browser, a shutdown): the flag first, then the file
         abandoned.set()
         _remove(target)
@@ -365,7 +361,7 @@ async def restore_upload(request: Request) -> Response:
     # `upload_length_ok`: no `Transfer-Encoding` (h11 would frame by it, not by the length) and a
     # plain length within the limit; the middleware counts what is read (v0.3.9 T0).
     if not upload_length_ok(request, fb.MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD):
-        refused = _back("restore_too_large", "ops-restore")
+        refused = maintenance_redirect("restore_too_large", "ops-restore")
         # Nothing reads the body: close the connection, or the server reads and drops all of it
         # before the browser follows the redirect (v0.3.9 review, sister of the print-file upload).
         refused.headers["Connection"] = "close"
@@ -380,7 +376,7 @@ async def restore_upload(request: Request) -> Response:
             await upload.close()  # a refused token leaves no temporary file behind
         raise
     if not isinstance(upload, UploadFile) or not upload.filename:
-        return _back("restore_nofile", "ops-restore")
+        return maintenance_redirect("restore_nofile", "ops-restore")
     # The guard let this request in before the body was read; a restore may have begun since.
     # No `await` from here to the cleanup: its candidate is never deleted under it.
     if request.app.state.restore.active:
@@ -443,12 +439,12 @@ def _confirm_page(
 async def restore_page(request: Request) -> Response:
     path = _staged(request)
     if path is None:
-        return _back(None, "ops-restore")
+        return maintenance_redirect(None, "ops-restore")
     try:
         manifest = await run_in_threadpool(fb.read_manifest, path)
     except (fb.BackupError, OSError):
         _discard(request)
-        return _back("restore_expired", "ops-restore")
+        return maintenance_redirect("restore_expired", "ops-restore")
     return _confirm_page(request, manifest)
 
 
@@ -456,7 +452,7 @@ async def restore_page(request: Request) -> Response:
 async def restore_cancel(request: Request) -> Response:
     _discard(request)
     request.app.state.activity.record("restore_cancelled", "user")
-    return _back(None, "ops-restore")
+    return maintenance_redirect(None, "ops-restore")
 
 
 @router.post("/settings/restore", dependencies=[Depends(verify_csrf)])
@@ -468,7 +464,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
     shown = str(form.get("upload_token") or "")
     # The file this page showed, not one another tab uploaded in the meantime.
     if path is None or expected is None or not secrets.compare_digest(shown.encode(), expected.encode()):
-        return _back("restore_expired", "ops-restore")
+        return maintenance_redirect("restore_expired", "ops-restore")
     password = str(form.get("backup_password") or "")[: 4 * MAX_PASSWORD_LENGTH]
     login = str(form.get("login_password") or "")[: 4 * MAX_PASSWORD_LENGTH]
     if not await password_confirmed(request, db, login):
@@ -476,7 +472,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
             manifest_shown = await run_in_threadpool(fb.read_manifest, path)
         except (fb.BackupError, OSError):
             _discard(request)
-            return _back("restore_expired", "ops-restore")
+            return maintenance_redirect("restore_expired", "ops-restore")
         return _confirm_page(request, manifest_shown, "ops.restore.login_wrong", "login")  # the upload stays
     work = fb.ensure_work_dir(_work_dir(request))
     candidate = work / f"candidate-{secrets.token_hex(8)}.db"

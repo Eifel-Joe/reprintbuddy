@@ -20,8 +20,9 @@ from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Article, ArticlePart
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_db, render
+from reprintbuddy.web.deps import current_language, get_db, get_or_404, render
 from reprintbuddy.web.forms import (
+    MAX_ID,
     bounded_int,
     duplicate_redirect,
     error_status,
@@ -41,7 +42,6 @@ DEFAULT_OPTION_ROWS = 2
 MORE_ROWS = 2
 MAX_ROWS = 200
 MAX_OPTIONS = 200
-MAX_ID = 2**31 - 1
 FIELDS = ("c1", "c2")
 
 
@@ -366,10 +366,7 @@ async def assembled_create(request: Request, db: Session = Depends(get_db)):
 
 
 def _get(db: Session, article_id: int) -> Article:
-    composite = db.get(Article, article_id)
-    if composite is None or composite.kind != "assembled":
-        raise HTTPException(status_code=404)
-    return composite
+    return get_or_404(db, Article, article_id, valid=lambda a: a.kind == "assembled")
 
 
 @router.get("/articles/{article_id:int}/assembled")

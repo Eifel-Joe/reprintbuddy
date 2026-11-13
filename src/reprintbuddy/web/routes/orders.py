@@ -21,6 +21,7 @@ from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, local_next, render
 from reprintbuddy.web.formatting import to_local
 from reprintbuddy.web.forms import (
+    MAX_ID,
     bounded_int,
     duplicate_redirect,
     error_status,
@@ -38,7 +39,6 @@ router = APIRouter()
 DEFAULT_ROWS = 5
 MORE_ROWS = 5
 MAX_ROWS = 50
-MAX_ID = 2**31 - 1
 
 
 # ---- list ------------------------------------------------------------------------------

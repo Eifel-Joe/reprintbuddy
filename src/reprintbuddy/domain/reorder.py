@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import func, select
@@ -21,6 +21,7 @@ from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.localtime import local_date
 from reprintbuddy.models import (
+    naive_utc,
     Article,
     ArticleFilament,
     ArticlePart,
@@ -293,7 +294,7 @@ def _arrived(session: Session, mark: ReorderMark, seen: Sequence[_NewSpool]) -> 
     return float(sum(
         s.label_g
         for s in seen
-        if s.sort_id == mark.item_id and s.created_at is not None and _naive_utc(s.created_at) > mark.marked_at
+        if s.sort_id == mark.item_id and s.created_at is not None and naive_utc(s.created_at) > mark.marked_at
     ))
 
 
@@ -659,12 +660,6 @@ def _mark_row(session: Session, mark: ReorderMark, seen: Sequence[_NewSpool]) ->
         arrived=_arrived(session, mark, seen),
         supplier=mark.supplier_name, supplier_position=mark.supplier_position,
     )
-
-
-def _naive_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value
-    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def close_arrived_marks(session: Session, spools: Sequence[Spool] | None, now: datetime) -> int:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import NamedTuple
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import catalog
@@ -17,7 +17,7 @@ from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Part, PartSupplier
 from reprintbuddy.web import kpis, listing, supplier_form
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_db, render
+from reprintbuddy.web.deps import current_language, get_db, get_or_404, render
 from reprintbuddy.web.formatting import canonical_unit, fill_percent
 from reprintbuddy.web.i18n import translate
 from reprintbuddy.web.forms import (
@@ -183,22 +183,16 @@ async def parts_create(request: Request, db: Session = Depends(get_db)):
     return saved_redirect(request, "/parts", "parts.created", name=data.name)
 
 
-def _get_part(db: Session, part_id: int) -> Part:
-    part = db.get(Part, part_id)
-    if part is None:
-        raise HTTPException(status_code=404)
-    return part
-
 
 @router.get("/parts/{part_id:int}/edit")
 async def parts_edit(request: Request, part_id: int, db: Session = Depends(get_db)):
-    part = _get_part(db, part_id)
+    part = get_or_404(db, Part, part_id)
     return _form_page(request, db, part=part, values=_values_of(db, part))
 
 
 @router.post("/parts/{part_id:int}/edit", dependencies=[Depends(verify_csrf)])
 async def parts_update(request: Request, part_id: int, db: Session = Depends(get_db)):
-    part = _get_part(db, part_id)
+    part = get_or_404(db, Part, part_id)
     form = await request.form()
     values = _typed(form)
     if supplier_form.change_rows(form, values, PACK_SIZE):
@@ -217,7 +211,7 @@ async def parts_update(request: Request, part_id: int, db: Session = Depends(get
 
 def _archive_action(action, flash_key: str):
     async def handler(request: Request, part_id: int, db: Session = Depends(get_db)):
-        part = _get_part(db, part_id)
+        part = get_or_404(db, Part, part_id)
 
         def work(tx):
             action(tx, part_id)
