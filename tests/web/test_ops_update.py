@@ -249,8 +249,8 @@ def _failed(**kwargs):
 @pytest.mark.parametrize(
     "lang, expected",
     [
-        ("en", "The releases could not be fetched: fatal: no network"),
-        ("de", "Die Versionen konnten nicht geholt werden: fatal: no network"),
+        ("en", "The releases or the package could not be fetched: fatal: no network"),
+        ("de", "Die Versionen oder das Paket konnten nicht geholt werden: fatal: no network"),
     ],
 )
 def test_the_reason_of_a_failed_update_is_in_the_language_of_the_page(ops_env, lang, expected):  # v0.3.14 p176
@@ -270,8 +270,8 @@ def test_the_reason_of_a_failed_update_is_in_the_language_of_the_page(ops_env, l
 @pytest.mark.parametrize(
     "lang, expected",
     [
-        ("en", "The releases could not be fetched"),
-        ("de", "Die Versionen konnten nicht geholt werden"),
+        ("en", "The releases or the package could not be fetched"),
+        ("de", "Die Versionen oder das Paket konnten nicht geholt werden"),
     ],
 )
 @pytest.mark.parametrize("detail", ["", "  ", "\n"])

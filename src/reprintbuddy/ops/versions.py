@@ -1,7 +1,7 @@
 """Which version is installed, which is the newest release?
 
 Versions are tags `vMAJOR.MINOR.PATCH`, pre-releases `vMAJOR.MINOR.PATCH-beta.N` (v0.4.9, Spec 11.3a
-"Vorabversionen"); every other tag is ignored. Only the check against the remote talks to the network.
+"Vorabversionen"); every other tag is ignored. Nothing here talks to the network (`ops/releases.py` does).
 """
 
 from __future__ import annotations
@@ -9,10 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import TYPE_CHECKING, Iterable
-
-from reprintbuddy.ops.runner import CommandRunner
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from reprintbuddy.ops.releasenotes import ReleaseNotes
@@ -50,16 +47,6 @@ def is_prerelease_tag(tag: str) -> bool:
     return key is not None and key[3] == 0
 
 
-def newest_release(tags: Iterable[str]) -> str | None:
-    """The newest stable release among git tags (the git way of the update)."""
-    best: tuple[VersionKey, str] | None = None
-    for tag in tags:
-        number = parse_version(tag)
-        if number is not None and number[3] == 1 and (best is None or number > best[0]):
-            best = (number, tag)
-    return None if best is None else best[1]
-
-
 def is_newer(candidate: str, installed: str | None) -> bool:
     """Is `candidate` a newer version than `installed`? A non-version `installed` counts as older."""
     new = parse_version(candidate)
@@ -67,11 +54,6 @@ def is_newer(candidate: str, installed: str | None) -> bool:
         return False
     old = parse_version(installed) if installed else None
     return old is None or new > old
-
-
-def local_tags(install_dir: Path, runner: CommandRunner) -> list[str]:
-    result = runner(("git", "-C", str(install_dir), "tag", "--list", "v*"))
-    return result.stdout.split() if result.ok else []
 
 
 @dataclass(frozen=True)

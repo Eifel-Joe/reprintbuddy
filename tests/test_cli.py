@@ -293,6 +293,11 @@ def test_cli_update_exit_codes(db, monkeypatch, state, code):
     assert main(["update", "--db", str(db), "--target", "v0.2.0"]) == code
     assert calls[0][0] == db
     assert calls[0][1]["target"] == "v0.2.0"
+    # v0.4.9: the helper asks GitHub and downloads with the standard library only (pip replaces packages)
+    from reprintbuddy.ops.package import urllib_download, urllib_get
+
+    assert calls[0][1]["http_get"] is urllib_get
+    assert calls[0][1]["download"] is urllib_download
 
 
 def test_cli_update_missing_db(db, capsys):

@@ -1,12 +1,20 @@
+import hashlib
+import io
+import json
 import sqlite3
-from pathlib import Path
+import tarfile
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
+from github_support import ORIGIN, FakeGitHub, release_item
 
 from reprintbuddy import settings as st
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.ops.backup import backup_dir_for
+from reprintbuddy.ops.installation import read_installation, write_marker
+from reprintbuddy.ops.package import PackageError
+from reprintbuddy.ops.releases import checksum_name, package_name
 from reprintbuddy.ops.runner import CommandResult
 from reprintbuddy.ops.service import RESTART_WAIT_CMD, START_CMD, STOP_CMD
 from reprintbuddy.ops.status import UpdateStatus, read_status, write_status
@@ -16,10 +24,23 @@ NOW = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
 REF = "a" * 40
 
 
-class Env:
-    """A database with queue_cap 7, a fake install dir and a runner that behaves like a good update."""
+def build_archive(path: Path, tag: str) -> Path:
+    """The package of `tag` as the release workflow builds it: one folder `reprintbuddy-<tag>/`."""
+    top = f"reprintbuddy-{tag}"
+    with tarfile.open(path, "w:gz") as archive:
+        for name, data in ((f"{top}/pyproject.toml", b"[project]\n"), (f"{top}/install/install.sh", b"#!/bin/sh\n")):
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    return path
 
-    def __init__(self, tmp_path, fake_runner):
+
+class Env:
+    """A database with queue_cap 7, an installation of v0.1.0 (a package one unless `kind="git"`), a GitHub
+    that offers v0.2.0, downloads that hand over a real package, and a runner that behaves like a good
+    update (v0.4.9 p500)."""
+
+    def __init__(self, tmp_path, fake_runner, kind="package"):
         self.data = tmp_path / "data"
         self.data.mkdir()
         self.db = self.data / "u.db"
@@ -29,16 +50,53 @@ class Env:
         with self.maker() as session:
             st.set_setting(session, "queue_cap", 7)
         self.opt = tmp_path / "opt"
-        (self.opt / ".git").mkdir(parents=True)
+        self.opt.mkdir()
+        self.archives = tmp_path / "archives"
+        self.archives.mkdir()
         self.runner = fake_runner
         self.d = str(self.opt)
         self.py = str(venv_python(self.opt))
-        git = ("git", "-C", self.d)
-        fake_runner.on(git + ("describe",), CommandResult(0, "v0.1.0\n"))
-        fake_runner.on(git + ("rev-parse",), CommandResult(0, REF + "\n"))
-        fake_runner.on(git + ("tag", "--list"), CommandResult(0, "v0.1.0\nv0.2.0\n"))
+        if kind == "package":
+            write_marker(self.opt, tag="v0.1.0", repo=("owner", "repo"), sha256="0" * 64)
+            self.old_source = self.opt / "releases" / "v0.1.0"
+        else:
+            (self.opt / ".git").mkdir()
+            git = ("git", "-C", self.d)
+            fake_runner.on(git + ("describe",), CommandResult(0, "v0.1.0\n"))
+            fake_runner.on(git + ("rev-parse",), CommandResult(0, REF + "\n"))
+            fake_runner.on(git + ("remote", "get-url", "origin"), CommandResult(0, ORIGIN + "\n"))
+            self.old_source = self.opt
+        self.old_source.mkdir(parents=True, exist_ok=True)
+        (self.old_source / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
         fake_runner.on((self.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.2.0\n"))
+        self.offer("v0.2.0", "v0.1.0")
+        self.downloads: list[str] = []
+        self.checksum_text: str | None = None  # None: the right one
+        self.download_error: Exception | None = None
+        self.on_download = None
         self.health_answers = [True]
+
+    def offer(self, *entries):
+        self.github = FakeGitHub(entries)
+
+    def archive(self, tag: str) -> Path:
+        path = self.archives / package_name(tag)
+        return path if path.exists() else build_archive(path, tag)
+
+    def download(self, url: str, dest: Path) -> None:
+        self.downloads.append(url)
+        if self.on_download is not None:
+            self.on_download(url)
+        if self.download_error is not None:
+            raise self.download_error
+        name = url.rsplit("/", 1)[1]
+        if name.endswith(".sha256"):
+            tag = name.removeprefix("reprintbuddy-").removesuffix(".tar.gz.sha256")
+            digest = hashlib.sha256(self.archive(tag).read_bytes()).hexdigest()
+            dest.write_text(self.checksum_text or f"{digest}  {package_name(tag)}\n", encoding="utf-8")
+        else:
+            tag = name.removeprefix("reprintbuddy-").removesuffix(".tar.gz")
+            dest.write_bytes(self.archive(tag).read_bytes())
 
     def wait_healthy(self):
         answers = self.health_answers
@@ -51,6 +109,8 @@ class Env:
             runner=self.runner,
             wait_healthy=self.wait_healthy,
             now=lambda: NOW,
+            http_get=self.github,
+            download=self.download,
             **kwargs,
         )
 
@@ -61,6 +121,20 @@ class Env:
         finally:
             con.close()
 
+    def set_channel(self, value):
+        con = sqlite3.connect(self.db)
+        try:
+            con.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('update_channel', ?)", (json.dumps(value),))
+            con.commit()
+        finally:
+            con.close()
+
+    def installed(self):
+        return read_installation(self.opt, self.runner)
+
+    def pip_install(self, source: Path):
+        return (self.py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", str(source))
+
     def called(self, *prefix):
         return [c for c in self.runner.calls if c[: len(prefix)] == prefix]
 
@@ -70,6 +144,11 @@ def update_env(tmp_path, fake_runner):
     return Env(tmp_path, fake_runner)
 
 
+@pytest.fixture
+def git_update_env(tmp_path, fake_runner):
+    return Env(tmp_path, fake_runner, kind="git")
+
+
 def test_venv_python(tmp_path):
     assert venv_python(tmp_path) == tmp_path / ".venv" / "bin" / "python"
 
@@ -77,18 +156,15 @@ def test_venv_python(tmp_path):
 def test_happy_path_commands(update_env):
     e = update_env
     e.update()
-    git = ("git", "-C", e.d)
     assert e.runner.calls == [
-        git + ("describe", "--tags", "--exact-match", "HEAD"),
-        git + ("rev-parse", "HEAD"),
-        git + ("fetch", "--prune", "--prune-tags", "--force", "--tags", "origin"),
-        git + ("tag", "--list", "v*"),
-        git + ("checkout", "--quiet", "--detach", "v0.2.0"),
-        (e.py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", e.d),
+        e.pip_install(e.opt / "releases" / "v0.2.0"),
         (e.py, "-m", "reprintbuddy", "--version"),
         (e.py, "-m", "reprintbuddy", "migrate", "--db", str(e.db)),
         RESTART_WAIT_CMD,
     ]
+    base = "https://github.com/owner/repo/releases/download/v0.2.0/"
+    assert e.downloads == [base + package_name("v0.2.0"), base + checksum_name("v0.2.0")]
+    assert e.github.calls == ["https://api.github.com/repos/owner/repo/releases?per_page=30"]
 
 
 def test_happy_path_status(update_env):
@@ -99,20 +175,26 @@ def test_happy_path_status(update_env):
     assert stored.state == "succeeded" and stored.step == "done"
     assert (stored.from_tag, stored.to_tag) == ("v0.1.0", "v0.2.0")
     assert stored.finished_at is not None
-    from pathlib import Path
-
     assert stored.backup and Path(stored.backup).exists()
+    assert "reprintbuddy-v0.1.0-" in stored.backup
 
 
-def test_backup_before_fetch(update_env):
+def test_a_success_names_the_new_version_and_keeps_the_previous_one(update_env):
+    e = update_env
+    (e.opt / "releases" / "v0.0.9").mkdir()  # an older one from before
+    e.update()
+    found = e.installed()
+    assert (found.kind, found.tag, found.repo) == ("package", "v0.2.0", ("owner", "repo"))
+    marker = json.loads((e.opt / "release.json").read_text(encoding="utf-8"))
+    assert marker["sha256"] == hashlib.sha256(e.archive("v0.2.0").read_bytes()).hexdigest()
+    assert sorted(path.name for path in (e.opt / "releases").iterdir()) == ["v0.1.0", "v0.2.0"]
+    assert (e.opt / "releases" / "v0.2.0" / "pyproject.toml").is_file()
+
+
+def test_backup_before_the_download(update_env):
     e = update_env
     seen = {}
-
-    def at_fetch(call):
-        seen["files"] = list(backup_dir_for(e.db).iterdir())
-        return CommandResult(0)
-
-    e.runner.on(("git", "-C", e.d, "fetch"), at_fetch)
+    e.on_download = lambda url: seen.setdefault("files", list(backup_dir_for(e.db).iterdir()))
     e.update()
     assert len(seen["files"]) == 1
 
@@ -133,12 +215,12 @@ def test_status_written_per_step(update_env):
 
 def test_no_newer_release(update_env):
     e = update_env
-    e.runner.on(("git", "-C", e.d, "tag", "--list"), CommandResult(0, "v0.1.0\n"))
+    e.offer("v0.1.0")
     result = e.update()
     assert result.state == "failed"
     assert "no newer release" in result.message
     assert (result.reason, result.params) == ("no_newer", {})  # p176
-    assert not e.called("git", "-C", e.d, "checkout")
+    assert e.downloads == []
     assert RESTART_WAIT_CMD not in e.runner.calls
 
 
@@ -149,7 +231,7 @@ def test_unknown_target(update_env, target):
     assert result.state == "failed"
     assert f"unknown target {target}" in result.message
     assert (result.reason, result.params) == ("unknown_target", {"detail": target})  # p176
-    assert not e.called("git", "-C", e.d, "checkout")
+    assert e.downloads == []
 
 
 def test_explicit_target_must_be_newer(update_env):
@@ -157,24 +239,33 @@ def test_explicit_target_must_be_newer(update_env):
     assert result.state == "failed" and "no newer release" in result.message
 
 
-def test_fetch_fails_nothing_changed(update_env):
+def test_a_failed_request_to_github_changes_nothing(update_env):
     e = update_env
-    e.runner.on(("git", "-C", e.d, "fetch"), CommandResult(1, "", "fatal: no network\nmore"))
+    e.github = FakeGitHub(status=500)
     result = e.update()
     assert result.state == "failed" and result.step == "fetch"
-    assert result.message == "fetch: fatal: no network"
-    assert (result.reason, result.params) == ("fetch_failed", {"detail": "fatal: no network"})  # p176
-    assert not e.called("git", "-C", e.d, "checkout")
-    assert RESTART_WAIT_CMD not in e.runner.calls
+    assert result.message == "fetch: HTTP 500"
+    assert (result.reason, result.params) == ("fetch_failed", {"detail": "HTTP 500"})
+    assert e.downloads == [] and e.runner.calls == []
     assert e.queue_cap() == 7
 
 
-def test_rev_parse_failure_is_a_failure_before_anything_changed(update_env):
+@pytest.mark.parametrize("marker", ['{"tag": "v0.1.0"}', "not json"])
+def test_an_installation_that_names_no_repository_is_a_failure_before_anything_changed(update_env, marker):
     e = update_env
-    e.runner.on(("git", "-C", e.d, "rev-parse"), CommandResult(128, "", "fatal: not a git repository"))
+    (e.opt / "release.json").write_text(marker, encoding="utf-8")
     result = e.update()
-    assert result.state == "failed"
-    assert not e.called("git", "-C", e.d, "checkout")
+    assert (result.state, result.step, result.reason) == ("failed", "backup", "head_unreadable")
+    assert e.github.calls == [] and e.downloads == []
+    assert not backup_dir_for(e.db).exists()
+
+
+def test_no_installation_at_all_is_a_failure_too(update_env):
+    e = update_env
+    (e.opt / "release.json").unlink()
+    result = e.update()
+    assert (result.state, result.reason) == ("failed", "head_unreadable")
+    assert result.message == "backup: no installation found"
 
 
 def test_missing_database_is_a_failure_not_a_traceback(update_env):
@@ -186,21 +277,164 @@ def test_missing_database_is_a_failure_not_a_traceback(update_env):
     assert not e.db.exists()
 
 
+# --- the package: download, checksum, unpack (Spec 11.3a "Paket je Release") -------------------
+
+
+def assert_nothing_changed(e, result, step, reason):
+    assert (result.state, result.step, result.reason) == ("failed", step, reason)
+    assert e.called(e.py, "-m", "pip") == []
+    assert RESTART_WAIT_CMD not in e.runner.calls and STOP_CMD not in e.runner.calls
+    assert e.installed().tag == "v0.1.0"
+    assert sorted(path.name for path in (e.opt / "releases").iterdir()) == ["v0.1.0"]
+    assert e.queue_cap() == 7
+
+
+def test_a_wrong_checksum_installs_nothing(update_env):
+    e = update_env
+    e.checksum_text = "0" * 64 + "  " + package_name("v0.2.0") + "\n"
+    result = e.update()
+    assert_nothing_changed(e, result, "fetch", "checksum_mismatch")
+
+
+def test_a_wrong_checksum_of_github_itself_installs_nothing(update_env):
+    e = update_env
+    e.offer(release_item("v0.2.0", digest="sha256:" + "0" * 64), "v0.1.0")
+    assert_nothing_changed(e, e.update(), "fetch", "checksum_mismatch")
+
+
+def test_githubs_own_checksum_when_right_is_fine(update_env):
+    e = update_env
+    right = hashlib.sha256(e.archive("v0.2.0").read_bytes()).hexdigest()
+    e.offer(release_item("v0.2.0", digest="sha256:" + right), "v0.1.0")
+    assert e.update().state == "succeeded"
+
+
+def test_a_checksum_file_of_another_form_installs_nothing(update_env):
+    e = update_env
+    e.checksum_text = "<html>Not Found</html>"
+    assert_nothing_changed(e, e.update(), "fetch", "package_unusable")
+
+
+@pytest.mark.parametrize(
+    "error, reason",
+    [(PackageError("package_missing", "HTTP 404"), "package_missing"), (PackageError("fetch_failed", "TimeoutError"), "fetch_failed"), (OSError("disk full"), "fetch_failed")],
+)
+def test_a_failed_download_installs_nothing(update_env, error, reason):
+    e = update_env
+    e.download_error = error
+    result = e.update()
+    assert_nothing_changed(e, result, "fetch", reason)
+    assert not (e.opt / "releases" / ".download").exists()
+
+
+def test_an_archive_that_is_no_package_installs_nothing(update_env):
+    e = update_env
+    path = e.archives / package_name("v0.2.0")
+    path.write_bytes(b"not an archive")
+    assert_nothing_changed(e, e.update(), "checkout", "package_unusable")
+
+
+def test_a_half_folder_of_an_interrupted_run_is_replaced(update_env):
+    """Review focus 4: a run stopped after unpacking leaves `releases/v0.2.0`, while `release.json`
+    still names v0.1.0. The next run unpacks anew."""
+    e = update_env
+    half = e.opt / "releases" / "v0.2.0"
+    half.mkdir()
+    (half / "stale.txt").write_text("x", encoding="utf-8")
+    assert e.installed().tag == "v0.1.0"
+    assert e.update().state == "succeeded"
+    assert not (half / "stale.txt").exists() and (half / "pyproject.toml").is_file()
+
+
+def test_the_stable_channel_takes_the_newest_stable_release(update_env):
+    e = update_env
+    e.offer("v0.3.0-beta.1", "v0.2.0", "v0.1.0")
+    assert e.update().to_tag == "v0.2.0"
+
+
+def test_the_pre_release_channel_takes_the_newest_pre_release(update_env):
+    e = update_env
+    e.offer("v0.3.0-beta.1", "v0.2.0", "v0.1.0")
+    e.set_channel("prerelease")
+    e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.3.0-beta.1\n"))
+    result = e.update()
+    assert (result.state, result.to_tag) == ("succeeded", "v0.3.0-beta.1")
+    assert e.installed().tag == "v0.3.0-beta.1"
+
+
+@pytest.mark.parametrize("value", ["nonsense", 5, None])
+def test_an_unreadable_channel_counts_as_stable(update_env, value):
+    e = update_env
+    e.offer("v0.3.0-beta.1", "v0.2.0", "v0.1.0")
+    e.set_channel(value)
+    assert e.update().to_tag == "v0.2.0"
+
+
+# --- an installation made with git (up to v0.4.9) ------------------------------------------------
+
+
+def test_a_git_installation_moves_to_the_package_and_drops_its_git_copy(git_update_env, capsys):
+    e = git_update_env
+    (e.opt / "src").mkdir()
+    (e.opt / ".venv").mkdir()
+    result = e.update()
+    assert result.state == "succeeded", result.message
+    assert "reprintbuddy-v0.1.0-" in result.backup
+    assert e.called("git", "-C", e.d, "fetch") == [] and e.called("git", "-C", e.d, "checkout") == []
+    assert e.pip_install(e.opt / "releases" / "v0.2.0") in e.runner.calls
+    assert sorted(path.name for path in e.opt.iterdir()) == [".venv", "release.json", "releases"]
+    assert e.installed().kind == "package" and e.installed().tag == "v0.2.0"
+    out = capsys.readouterr().out
+    assert "removed the old git copy" in out and ".git" in out
+
+
+def test_a_failed_update_of_a_git_installation_keeps_its_git_copy(git_update_env):
+    e = git_update_env
+    e.health_answers = [False, True]
+    assert e.update().state == "rolled_back"
+    assert (e.opt / ".git").is_dir() and (e.opt / "pyproject.toml").is_file()
+    assert not (e.opt / "release.json").exists()
+    assert not (e.opt / "releases" / "v0.2.0").exists()
+
+
+def test_a_git_installation_from_elsewhere_is_refused_before_anything_changed(git_update_env):
+    e = git_update_env
+    e.runner.on(("git", "-C", e.d, "remote", "get-url", "origin"), CommandResult(0, "https://example.org/x.git\n"))
+    result = e.update()
+    assert (result.state, result.reason) == ("failed", "head_unreadable")
+    assert e.github.calls == []
+
+
+def test_dev_build_without_tag_labels_backup_with_the_commit(git_update_env):
+    """A4: a git installation without a tag names its backup by the commit, as every helper did."""
+    e = git_update_env
+    e.runner.on(("git", "-C", e.d, "describe"), CommandResult(128, "", "fatal: no tag"))
+    result = e.update()
+    assert result.state == "succeeded"
+    assert result.from_tag is None
+    assert "reprintbuddy-" + REF[:12] + "-" in result.backup
+
+
+# --- the rollback (no git: the copied environment, the database, the old folder) ----------------
+
+
 def test_pip_fails_rolls_back(update_env):
     e = update_env
     e.runner.on((e.py, "-m", "pip"), CommandResult(1, "", "ERROR: no network"), CommandResult(0))
     result = e.update()
-    assert ("git", "-C", e.d, "checkout", "--quiet", "--detach", REF) in e.runner.calls
-    assert len(e.called(e.py, "-m", "pip")) == 2
+    assert e.called(e.py, "-m", "pip") == [e.pip_install(e.opt / "releases" / "v0.2.0"), e.pip_install(e.old_source)]
     assert STOP_CMD in e.runner.calls and START_CMD in e.runner.calls
     assert result.state == "rolled_back"
     assert result.message.startswith("install:")
     assert (result.reason, result.params) == ("install_failed", {"detail": "ERROR: no network"})  # p176
+    assert e.installed().tag == "v0.1.0"
+    assert not (e.opt / "releases" / "v0.2.0").exists()
+    assert not [c for c in e.runner.calls if c and c[0] == "git"]
 
 
 def test_pip_offline_in_the_rollback_too_is_still_a_rollback(update_env):
     """No PyPI: the reinstall of the old version fails as well, but the old code is
-    checked out, still installed, and answers. That is a working rollback."""
+    still installed and answers. That is a working rollback."""
     e = update_env
     e.runner.on((e.py, "-m", "pip"), CommandResult(1, "", "ERROR: no network"))
     e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.1.0\n"))
@@ -308,14 +542,6 @@ def test_a_start_that_fails_in_the_rollback_is_a_failed_rollback(update_env):
     assert e.update().state == "rollback_failed"
 
 
-def test_rollback_checkout_failure_is_reported(update_env):
-    e = update_env
-    e.runner.on((e.py, "-m", "pip"), CommandResult(1, "", "no"))
-    e.runner.on(("git", "-C", e.d, "checkout"), CommandResult(0), CommandResult(1, "", "cannot checkout"))
-    result = e.update()
-    assert result.state == "rollback_failed"
-
-
 def test_refuses_when_running(update_env, capsys):
     """An update that runs holds the lock (p91); since p311 the lock, not the state file, says so."""
     from reprintbuddy.ops import oplock
@@ -371,15 +597,6 @@ def test_prunes_backups(update_env):
         (folder / f"reprintbuddy-v0.0.{i}-2026010{i + 1}T000000Z.db").write_bytes(b"x")
     e.update()
     assert len(list(folder.iterdir())) == 5
-
-
-def test_dev_build_without_tag_labels_backup_with_the_commit(update_env):
-    e = update_env
-    e.runner.on(("git", "-C", e.d, "describe"), CommandResult(128, "", "fatal: no tag"))
-    result = e.update()
-    assert result.state == "succeeded"
-    assert result.from_tag is None
-    assert "reprintbuddy-" + REF[:12] + "-" in result.backup
 
 
 def make_venv(e, content="old"):
@@ -443,20 +660,6 @@ def test_a_leftover_snapshot_of_an_earlier_run_is_replaced(update_env):
     assert seen["files"] == ["marker.txt"]
 
 
-def test_a_stale_snapshot_is_never_restored_over_an_untouched_environment(update_env):
-    """Checkout fails before this run took its own snapshot; an old leftover must not come back."""
-    e = update_env
-    marker = make_venv(e, "current")
-    stale = e.opt / ".venv.rollback" / "lib"
-    stale.mkdir(parents=True)
-    (stale / "marker.txt").write_text("stale", encoding="utf-8")
-    # the first checkout (forward) fails; the rollback's checkout then succeeds
-    e.runner.on(("git", "-C", e.d, "checkout"), CommandResult(1, "", "fatal: bad"), CommandResult(0))
-    result = e.update()
-    assert result.state == "rolled_back" and result.message.startswith("checkout:")
-    assert marker.read_text(encoding="utf-8") == "current"
-
-
 def test_a_failed_snapshot_stops_before_pip_touches_anything(update_env, monkeypatch):
     e = update_env
     make_venv(e)
@@ -483,19 +686,19 @@ def queue(e, to_tag):
 def test_update_goes_to_the_version_the_page_offered(update_env):
     """A newer tag published between 'Check for updates' and the click is not installed."""
     e = update_env
-    e.runner.on(("git", "-C", e.d, "tag", "--list"), CommandResult(0, "v0.1.0\nv0.2.0\nv0.3.0\n"))
+    e.offer("v0.3.0", "v0.2.0", "v0.1.0")
     e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.2.0\n"))
     queue(e, "v0.2.0")
     result = e.update()
     assert result.state == "succeeded" and result.to_tag == "v0.2.0"
-    assert ("git", "-C", e.d, "checkout", "--quiet", "--detach", "v0.2.0") in e.runner.calls
+    assert e.pip_install(e.opt / "releases" / "v0.2.0") in e.runner.calls
 
 
 def test_p331_a_start_left_behind_does_not_pick_the_version_of_a_later_update_by_hand(update_env):
     """p331: "queued" stayed (the start was cut off). A `reprintbuddy update` typed days later goes to the
     newest release, not to the one the page offered back then (which may even be gone by now)."""
     e = update_env
-    e.runner.on(("git", "-C", e.d, "tag", "--list"), CommandResult(0, "v0.1.0\nv0.2.0\nv0.3.0\n"))
+    e.offer("v0.3.0", "v0.2.0", "v0.1.0")
     e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.3.0\n"))
     write_status(
         e.data,
@@ -510,7 +713,7 @@ def test_p331_the_offered_version_holds_within_the_start_window_only(update_env)
     from reprintbuddy.ops.updater import QUEUED_TARGET_WINDOW
 
     e = update_env
-    e.runner.on(("git", "-C", e.d, "tag", "--list"), CommandResult(0, "v0.1.0\nv0.2.0\nv0.3.0\n"))
+    e.offer("v0.3.0", "v0.2.0", "v0.1.0")
     e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.3.0\n"))
     write_status(
         e.data,
@@ -524,7 +727,7 @@ def test_p331_the_offered_version_holds_within_the_start_window_only(update_env)
 
 def test_an_explicit_target_wins_over_the_queued_one(update_env):
     e = update_env
-    e.runner.on(("git", "-C", e.d, "tag", "--list"), CommandResult(0, "v0.1.0\nv0.2.0\nv0.3.0\n"))
+    e.offer("v0.3.0", "v0.2.0", "v0.1.0")
     e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, "reprintbuddy 0.3.0\n"))
     queue(e, "v0.2.0")
     assert e.update(target="v0.3.0").to_tag == "v0.3.0"
@@ -534,21 +737,11 @@ def test_an_explicit_target_wins_over_the_queued_one(update_env):
 def test_a_queued_version_that_is_gone_or_invalid_is_not_replaced_by_another(update_env, offered):
     """The tag was deleted on GitHub meanwhile: do not silently install something else."""
     e = update_env
-    e.runner.on(("git", "-C", e.d, "tag", "--list"), CommandResult(0, "v0.1.0\nv0.3.0\n"))
+    e.offer("v0.3.0", "v0.1.0")
     queue(e, offered)
     result = e.update()
     assert result.state == "failed" and f"unknown target {offered}" in result.message
-    assert not e.called("git", "-C", e.d, "checkout")
-
-
-def test_reason_is_the_line_that_says_what_went_wrong(update_env):
-    """git prints 'From https://...' first, pip a retry warning, Python a Traceback header."""
-    e = update_env
-    e.runner.on(
-        ("git", "-C", e.d, "fetch"),
-        CommandResult(128, "", "From https://example.invalid/r\n * [new tag] v0.3.0\nfatal: unable to access 'x': Could not resolve host"),
-    )
-    assert e.update().message == "fetch: fatal: unable to access 'x': Could not resolve host"
+    assert e.downloads == []
 
 
 def test_reason_of_a_pip_failure_skips_the_retry_warnings(update_env):
@@ -575,7 +768,7 @@ def test_an_environment_with_an_older_python_than_the_new_version_needs_rolls_ba
     e.runner.on((e.py, "-m", "pip"), CommandResult(1, "", pip_says), CommandResult(0))
     result = e.update()
     assert result.state == "rolled_back", result.message
-    assert ("git", "-C", e.d, "checkout", "--quiet", "--detach", REF) in e.runner.calls  # back on the old code
+    assert e.pip_install(e.old_source) in e.runner.calls  # back on the old code
     assert STOP_CMD in e.runner.calls and START_CMD in e.runner.calls  # and the service was started again
     assert result.message.startswith("install:")
     for word in ("Python 3.13", f"Python {found}", "install command"):
@@ -613,14 +806,6 @@ def test_reason_cuts_an_inline_sql_part(update_env):
     )
     message = e.update().message
     assert "SECRETKEY" not in message and message.startswith("migrate: OperationalError: no such table: x")
-
-
-
-
-
-
-
-
 
 
 def test_sigterm_handler_writes_the_final_state_and_exits(update_env):
@@ -705,7 +890,6 @@ def test_a_status_file_that_cannot_be_written_does_not_stop_the_update(update_en
     assert e.update().state == "succeeded"
 
 
-
 def test_an_update_refuses_while_a_restore_holds_the_lock(update_env, capsys):
     """p91: by hand on the command line during a restore from the page (or the other way round)."""
     from reprintbuddy.ops import oplock
@@ -750,3 +934,16 @@ def test_an_update_whose_lock_file_cannot_be_opened_is_refused_cleanly(update_en
     result = update_env.update()
     assert result.state == "running" and update_env.runner.calls == []
     assert "lock" in capsys.readouterr().out
+
+
+def test_a_stale_snapshot_is_never_restored_over_an_untouched_environment(update_env):
+    """The package is refused before this run took its own snapshot; an old leftover must not come back."""
+    e = update_env
+    marker = make_venv(e, "current")
+    stale = e.opt / ".venv.rollback" / "lib"
+    stale.mkdir(parents=True)
+    (stale / "marker.txt").write_text("stale", encoding="utf-8")
+    e.checksum_text = "0" * 64 + "  " + package_name("v0.2.0") + "\n"
+    result = e.update()
+    assert result.state == "failed" and result.reason == "checksum_mismatch"
+    assert marker.read_text(encoding="utf-8") == "current"

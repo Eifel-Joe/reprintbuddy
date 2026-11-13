@@ -1,4 +1,4 @@
-from reprintbuddy.ops.versions import is_newer, is_prerelease_tag, newest_release, parse_version
+from reprintbuddy.ops.versions import is_newer, is_prerelease_tag, parse_version
 
 
 def test_parse_version():
@@ -33,12 +33,6 @@ def test_is_prerelease_tag():
     assert is_prerelease_tag("v1.0.1-beta.1")
     assert not is_prerelease_tag("v1.0.1")
     assert not is_prerelease_tag("v1.0.1-beta.0")
-
-
-def test_newest_release():
-    assert newest_release(["v0.9.0", "v0.10.0", "v0.2.1", "junk"]) == "v0.10.0"
-    assert newest_release([]) is None
-    assert newest_release(["junk", "v1.2"]) is None
 
 
 def test_is_newer():

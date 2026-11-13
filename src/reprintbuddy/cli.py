@@ -27,6 +27,7 @@ from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.runner import subprocess_runner
 from reprintbuddy.ops.server import base_url, connect_host, effective_from_settings
 from reprintbuddy.ops.service import INSTALL_DIR
+from reprintbuddy.ops.package import urllib_download, urllib_get
 from reprintbuddy.ops.updater import http_health_waiter, interrupt_handler, run_update
 from reprintbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upgrade
 from reprintbuddy.web import server as web_server
@@ -196,6 +197,8 @@ def _update(args: argparse.Namespace) -> int:
         runner=subprocess_runner,
         wait_healthy=http_health_waiter(args.db),
         now=lambda: datetime.now(UTC),
+        http_get=urllib_get,  # v0.4.9: the release list and the package, standard library only
+        download=urllib_download,
         target=args.target,
     )
     if result.state == "succeeded":
