@@ -35,6 +35,7 @@ from reprintbuddy.models import (
 from reprintbuddy.web import kpis, labels_view, listing, regions
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.csrf import verify_csrf
+from reprintbuddy.web.archiving import add_archive_routes
 from reprintbuddy.web.deps import (
     get_or_404,
     current_language, db_session, get_bambuddy, get_db, local_next, release_connection, render,
@@ -983,34 +984,23 @@ async def article_filaments_save(request: Request, article_id: int, db: Session 
 # ---- archive, restore, restore with another file (Spec 5.5) ------------------------------------------
 
 
-def _archive_action(action, flash_key: str):
-    async def handler(request: Request, article_id: int, db: Session = Depends(get_db)):
-        article = get_or_404(db, Article, article_id)
-        # From the list (its forms send `next`) the person lands on the list again, where the row
-        # left or came back; from the detail page (no `next`) on the detail page.
-        after = local_next(await request.form()) or f"/articles/{article_id}"
-
-        def work(tx):
-            action(tx, article_id)
-            return {"name": article.name}
-
-        def on_error(text: str, status: int, exc: Exception):
-            # a taken plate offers the way out: restore with another file
-            offer = getattr(exc, "key", None) == "articles.restore_plate_taken"
-            return _detail_page(request, db, article, error=text, status=status, relink_offer=offer)
-
-        return await run_form_action(request, work=work, success_url=after, flash_key=flash_key, on_error=on_error)
-
-    return handler
+async def _after_archive(request: Request, article_id: int) -> str:
+    """From the list (its forms send `next`) the person lands on the list again, where the row left or
+    came back; from the detail page (no `next`) on the detail page."""
+    return local_next(await request.form()) or f"/articles/{article_id}"
 
 
-router.add_api_route(
-    "/articles/{article_id:int}/archive", _archive_action(catalog.archive_article, "articles.flash_archived"),
-    methods=["POST"], dependencies=[Depends(verify_csrf)],
-)
-router.add_api_route(
-    "/articles/{article_id:int}/restore", _archive_action(catalog.restore_article, "articles.flash_restored"),
-    methods=["POST"], dependencies=[Depends(verify_csrf)],
+def _archive_refused(request: Request, db: Session, article, text: str, status: int, exc: Exception):
+    # a taken plate offers the way out: restore with another file
+    offer = getattr(exc, "key", None) == "articles.restore_plate_taken"
+    return _detail_page(request, db, article, error=text, status=status, relink_offer=offer)
+
+
+add_archive_routes(
+    router, base="/articles", param="article_id", load=lambda db, ident: get_or_404(db, Article, ident),
+    archive=catalog.archive_article, restore=catalog.restore_article,
+    flash_archived="articles.flash_archived", flash_restored="articles.flash_restored",
+    success_url=_after_archive, on_error=_archive_refused,
 )
 
 

@@ -17,6 +17,7 @@ from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Part, PartSupplier
 from reprintbuddy.web import kpis, listing, supplier_form
 from reprintbuddy.web.csrf import verify_csrf
+from reprintbuddy.web.archiving import add_archive_routes, to
 from reprintbuddy.web.deps import current_language, get_db, get_or_404, render
 from reprintbuddy.web.formatting import canonical_unit, fill_percent
 from reprintbuddy.web.i18n import translate
@@ -209,32 +210,12 @@ async def parts_update(request: Request, part_id: int, db: Session = Depends(get
     return saved_redirect(request, "/parts", "parts.updated", name=data.name)
 
 
-def _archive_action(action, flash_key: str):
-    async def handler(request: Request, part_id: int, db: Session = Depends(get_db)):
-        part = get_or_404(db, Part, part_id)
-
-        def work(tx):
-            action(tx, part_id)
-            return {"name": part.name}
-
-        return await run_form_action(
-            request,
-            work=work,
-            success_url="/parts",  # back to the list; an archived part leaves it, that is right
-            flash_key=flash_key,
-            on_error=lambda text, status, exc: _form_page(
-                request, db, part=part, values=_values_of(db, part), error=text, status=status
-            ),
-        )
-
-    return handler
-
-
-router.add_api_route(
-    "/parts/{part_id:int}/archive", _archive_action(catalog.archive_part, "parts.flash_archived"),
-    methods=["POST"], dependencies=[Depends(verify_csrf)],
-)
-router.add_api_route(
-    "/parts/{part_id:int}/restore", _archive_action(catalog.restore_part, "parts.flash_restored"),
-    methods=["POST"], dependencies=[Depends(verify_csrf)],
+add_archive_routes(
+    router, base="/parts", param="part_id", load=lambda db, ident: get_or_404(db, Part, ident),
+    archive=catalog.archive_part, restore=catalog.restore_part,
+    flash_archived="parts.flash_archived", flash_restored="parts.flash_restored",
+    success_url=to("/parts"),  # back to the list; an archived part leaves it, that is right
+    on_error=lambda request, db, part, text, status, exc: _form_page(
+        request, db, part=part, values=_values_of(db, part), error=text, status=status
+    ),
 )

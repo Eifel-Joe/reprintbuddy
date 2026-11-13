@@ -15,6 +15,7 @@ from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.models import Article, ProductSet
 from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
+from reprintbuddy.web.archiving import add_archive_routes, to
 from reprintbuddy.web.deps import current_language, get_db, get_or_404, render
 from reprintbuddy.web.i18n import translate
 from reprintbuddy.web import form_rows
@@ -341,25 +342,6 @@ async def sets_update(request: Request, set_id: int, db: Session = Depends(get_d
     return await _post(request, db, get_or_404(db, ProductSet, set_id))
 
 
-def _archive_action(action, flash_key: str):
-    async def handler(request: Request, set_id: int, db: Session = Depends(get_db)):
-        product_set = get_or_404(db, ProductSet, set_id)
-
-        def work(tx):
-            action(tx, set_id)
-            return {"name": product_set.name}
-
-        return await run_form_action(
-            request,
-            work=work,
-            success_url="/sets",  # back to the list; an archived set leaves it, that is right
-            flash_key=flash_key,
-            on_error=lambda text, status, exc: _edit_again(request, db, product_set, text, status),
-        )
-
-    return handler
-
-
 def _edit_again(request, db, product_set, error, status):
     """The form with what the set holds, one empty row more per part (at least three)."""
     row = catalog.set_row(db, product_set.id)
@@ -380,11 +362,10 @@ def _edit_again(request, db, product_set, error, status):
     return _form_page(request, db, product_set=product_set, values=values, error=error, status=status)
 
 
-router.add_api_route(
-    "/sets/{set_id:int}/archive", _archive_action(catalog.archive_set, "sets.flash_archived"),
-    methods=["POST"], dependencies=[Depends(verify_csrf)],
-)
-router.add_api_route(
-    "/sets/{set_id:int}/restore", _archive_action(catalog.restore_set, "sets.flash_restored"),
-    methods=["POST"], dependencies=[Depends(verify_csrf)],
+add_archive_routes(
+    router, base="/sets", param="set_id", load=lambda db, ident: get_or_404(db, ProductSet, ident),
+    archive=catalog.archive_set, restore=catalog.restore_set,
+    flash_archived="sets.flash_archived", flash_restored="sets.flash_restored",
+    success_url=to("/sets"),  # back to the list; an archived set leaves it, that is right
+    on_error=lambda request, db, product_set, text, status, exc: _edit_again(request, db, product_set, text, status),
 )

@@ -1361,6 +1361,18 @@ def list_sets(session: Session, *, archived: bool = False) -> list[SetRow]:
 # ---- archive instead of delete (Spec 5.5) ---------------------------------------------------
 
 
+def _must_be_active(thing) -> None:
+    """Archiving something already in the archive is refused (another tab got there first)."""
+    if thing.archived_at is not None:
+        raise ConflictError("catalog.already_archived")
+
+
+def _must_be_archived(thing) -> None:
+    """Restoring something that is not in the archive is refused."""
+    if thing.archived_at is None:
+        raise ConflictError("catalog.not_archived")
+
+
 def _article_or_404(session: Session, article_id: int) -> Article:
     article = session.get(Article, article_id)
     if article is None:
@@ -1417,8 +1429,7 @@ def archive_article(session: Session, article_id: int) -> None:
     article = _article_or_404(session, article_id)
     if article.kind == articlesets.VARIANT:
         raise NotFoundError("articles.not_found")  # a variant goes with its article made of parts
-    if article.archived_at is not None:
-        raise ConflictError("catalog.already_archived")
+    _must_be_active(article)
     users = _assembled_users(session, article.id) if article.kind == articlesets.PRINT else []
     if users:
         raise ConflictError("articles.archive_in_assembled", names=", ".join(users))
@@ -1464,8 +1475,7 @@ def restore_article(session: Session, article_id: int) -> Article:
     article = _article_or_404(session, article_id)
     if article.kind == articlesets.VARIANT:  # review finding 5: a variant comes back with its article
         raise NotFoundError("articles.not_found")
-    if article.archived_at is None:
-        raise ConflictError("catalog.not_archived")
+    _must_be_archived(article)
     if article.kind == articlesets.ASSEMBLED:
         return _restore_assembled(session, article)
     holder = _plate_holder(session, article.library_file_id, article.plate_id, besides=article.id)
@@ -1511,8 +1521,7 @@ def restore_article_with_plate(
 ) -> Article:
     """Restore with another file and plate; takes over the file data like `create_article`."""
     article = _article_or_404(session, article_id)
-    if article.archived_at is None:
-        raise ConflictError("catalog.not_archived")
+    _must_be_archived(article)
     holder = _plate_holder(session, file.id, plate.index, besides=article.id)
     if holder is not None:
         raise ConflictError("articles.plate_taken", name=holder.name)
@@ -1691,8 +1700,7 @@ def archive_part(session: Session, part_id: int) -> None:
     part = session.get(Part, part_id)
     if part is None:
         raise NotFoundError("parts.not_found")
-    if part.archived_at is not None:
-        raise ConflictError("catalog.already_archived")
+    _must_be_active(part)
     user = session.scalar(
         select(Article)
         .join(ArticlePart, ArticlePart.article_id == Article.id)
@@ -1710,8 +1718,7 @@ def restore_part(session: Session, part_id: int) -> Part:
     part = session.get(Part, part_id)
     if part is None:
         raise NotFoundError("parts.not_found")
-    if part.archived_at is None:
-        raise ConflictError("catalog.not_archived")
+    _must_be_archived(part)
     part.archived_at = None
     session.flush()
     return part
@@ -1722,8 +1729,7 @@ def archive_set(session: Session, set_id: int) -> None:
     only directly, since a restored set may hold an archived one (review finding 2). Open orders keep
     their lines and still ship."""
     product_set = get_set(session, set_id)
-    if product_set.archived_at is not None:
-        raise ConflictError("catalog.already_archived")
+    _must_be_active(product_set)
     parents = sets_holding_set(session, set_id)
     if parents:
         raise ConflictError("sets.archive_in_set", names=", ".join(parents))
@@ -1733,8 +1739,7 @@ def archive_set(session: Session, set_id: int) -> None:
 
 def restore_set(session: Session, set_id: int) -> ProductSet:
     product_set = get_set(session, set_id)
-    if product_set.archived_at is None:
-        raise ConflictError("catalog.not_archived")
+    _must_be_archived(product_set)
     product_set.archived_at = None
     session.flush()
     return product_set
