@@ -35,6 +35,7 @@ dev = [
     "PyYAML>=6",
     "trustme>=1.1",
     "zxing-cpp>=2",  # reads the QR codes back in the tests
+    "setuptools>=77",  # builds the package offline in tests/ops/test_package_install.py (as pip does on the target)
 ]
 
 # The documentation pages (docs/, mkdocs.yml): build tools only, not part of the installed program.

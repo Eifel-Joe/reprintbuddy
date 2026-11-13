@@ -1,0 +1,86 @@
+name: Release package
+
+# Attaches the package of a release and its checksum file to the release, as soon as the release is
+# published (Spec 11.3a "Paket je Release"): reprintbuddy-<tag>.tar.gz is the whole state of the tag
+# (git archive, built on Linux), reprintbuddy-<tag>.tar.gz.sha256 the line sha256sum writes. Installer and
+# update download both and install nothing that does not match; a release without them is not offered.
+# GitHub counts the downloads of each file of a release, so the count of the package is roughly the
+# number of installations of that version. Started by hand for the tag of a published release, it builds
+# the same file again (git archive and gzip -n give identical bytes) and replaces both files.
+# "Immutable releases" must stay off in the repository settings: they forbid files added after publishing.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of the published release whose package is built again (for example v1.0.0)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-package-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package and checksum
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # "contents: write allows the action to create a release" (workflow syntax, permissions)
+    env:
+      # The tag reaches the shell only through the environment, never as text inside a script.
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check the tag and the pre-release mark
+        run: |
+          set -euo pipefail
+          if ! printf '%s\n' "$TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-beta\.[1-9][0-9]*)?$'; then
+            echo "::error::'$TAG' is not a version tag (vX.Y.Z or vX.Y.Z-beta.N)."
+            exit 1
+          fi
+          mark="$(gh release view "$TAG" --json isPrerelease,isDraft --jq '"\(.isPrerelease) \(.isDraft)"')"
+          case "$TAG" in
+            *-beta.*) wanted="true" ;;
+            *) wanted="false" ;;
+          esac
+          if [ "${mark#* }" != "false" ]; then
+            echo "::error::The release $TAG is a draft; publish it first."
+            exit 1
+          fi
+          if [ "${mark% *}" != "$wanted" ]; then
+            echo "::error::The pre-release mark of $TAG does not agree with its tag: a tag vX.Y.Z-beta.N must be marked as a pre-release on GitHub, a tag vX.Y.Z must not. Nothing was attached."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the version in the code
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/reprintbuddy/__init__.py)"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::The code of $TAG says version '$version'; the tag and __version__ must agree."
+            exit 1
+          fi
+
+      - name: Build package and checksum
+        run: |
+          set -euo pipefail
+          package="reprintbuddy-$TAG.tar.gz"
+          git archive --format=tar --prefix="reprintbuddy-$TAG/" "refs/tags/$TAG" | gzip -n -9 > "$package"
+          sha256sum "$package" > "$package.sha256"
+          cat "$package.sha256"
+
+      - name: Attach both to the release (a second run replaces them)
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" "reprintbuddy-$TAG.tar.gz" "reprintbuddy-$TAG.tar.gz.sha256" --clobber

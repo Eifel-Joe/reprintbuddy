@@ -16,7 +16,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from reprintbuddy.ops.versions import RELEASE_TAG
+from reprintbuddy.ops.versions import VERSION_TAG
 
 BACKUP_DIRNAME = "backups"
 KEEP_BACKUPS = 5
@@ -138,7 +138,7 @@ def update_backup_since(backup_dir: Path, moment: datetime, from_tag: str | None
         if wanted is not None:
             helpers = label == wanted or bool(_COMMIT_LABEL.match(label))
         else:
-            helpers = bool(_COMMIT_LABEL.match(label) or RELEASE_TAG.match(label))
+            helpers = bool(_COMMIT_LABEL.match(label) or VERSION_TAG.match(label))
         if not helpers:
             continue
         try:

@@ -94,7 +94,11 @@ def test_running_without_start_time_is_not_busy():
     assert not is_busy(UpdateStatus(state="running"), NOW)
 
 
-@pytest.mark.parametrize("step,state", [("backup", "failed"), ("fetch", "failed"), ("install", "rollback_failed"), ("rollback", "rollback_failed")])
+# v0.4.9: "checkout" unpacks the package beside the installed version; the installation is still untouched.
+@pytest.mark.parametrize(
+    "step,state",
+    [("backup", "failed"), ("fetch", "failed"), ("checkout", "failed"), ("install", "rollback_failed"), ("rollback", "rollback_failed")],
+)
 def test_interrupted_update_leaves_a_final_state(tmp_path, step, state):
     from reprintbuddy.ops.status import mark_interrupted
 
@@ -145,3 +149,9 @@ def test_acknowledged_survives_the_file_and_defaults_to_false(tmp_path):  # p503
     assert read_status(tmp_path).acknowledged is True
     (tmp_path / "update-status.json").write_text('{"state": "succeeded"}', encoding="utf-8")  # a file of 0.4.5
     assert read_status(tmp_path).acknowledged is False
+
+
+@pytest.mark.parametrize("reason", ["package_missing", "checksum_mismatch", "package_unusable"])
+def test_v049_the_reasons_of_the_package_survive_the_status_file(tmp_path, reason):
+    write_status(tmp_path, UpdateStatus(state="failed", step="fetch", started_at=NOW, reason=reason, params={"detail": "d"}))
+    assert read_status(tmp_path).reason == reason

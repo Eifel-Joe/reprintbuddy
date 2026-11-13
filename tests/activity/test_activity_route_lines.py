@@ -13,6 +13,7 @@ import re
 from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
+from github_support import ORIGIN, FakeGitHub, use_github
 from factories import make_article, make_filament_settings, make_part, make_set, make_sort
 from reprintbuddy.models import ActivityEntry, Article, ArticleFilament, ArticlePart, FilamentSort, ReorderMark, utcnow
 
@@ -334,7 +335,8 @@ def test_the_automatic_check_for_versions_switched_on_the_page(ops_env):
     (ops_env.install_dir / ".git").mkdir(parents=True, exist_ok=True)
     d = str(ops_env.install_dir)
     ops_env.runner.on(("git", "-C", d, "describe"), CommandResult(0, "v0.1.0\n"))
-    ops_env.runner.on(("git", "-C", d, "ls-remote"), CommandResult(0, "abc\trefs/tags/v0.1.0\n"))
+    ops_env.runner.on(("git", "-C", d, "remote", "get-url", "origin"), CommandResult(0, ORIGIN + "\n"))
+    use_github(ops_env, FakeGitHub(("v0.1.0",)))
     client = ops_env.client
     page = "/settings?tab=maintenance"
     before = len(lines_of(client, "settings_changed"))
@@ -346,6 +348,25 @@ def test_the_automatic_check_for_versions_switched_on_the_page(ops_env):
     assert response.status_code == 303
     item = setting_names(new_settings_line(client, before))["update_check"]
     assert item["new"] is False
+
+
+def test_the_choice_of_versions_offered_on_the_page(ops_env):
+    """v0.4.9 (Spec 11.3a "Vorabversionen"): the choice is a setting; the log says it changed."""
+    from reprintbuddy.ops.installation import write_marker
+
+    ops_env.install_dir.mkdir(parents=True, exist_ok=True)
+    write_marker(ops_env.install_dir, tag="v0.1.0", repo=("owner", "repo"), sha256="0" * 64)
+    use_github(ops_env, FakeGitHub(("v0.1.0",)))
+    client = ops_env.client
+    page = "/settings?tab=maintenance"
+    before = len(lines_of(client, "settings_changed"))
+    response = client.post(
+        "/settings/update/channel",
+        data={"csrf_token": csrf_of(client, page), "form_token": form_token_of(client, page, "/settings/update/channel"),
+              "channel": "prerelease"},
+    )
+    assert response.status_code == 303
+    assert setting_names(new_settings_line(client, before))["update_channel"] == {"setting": "update_channel", "change": "changed"}
 
 
 def test_the_bambuddy_connection_of_the_setup(admin_client, respx_mock):

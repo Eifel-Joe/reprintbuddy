@@ -1,4 +1,4 @@
-"""The update helper: back up, switch to the newest release, roll back on any failure.
+"""The update helper: back up, put the package of the newest release in place, roll back on any failure.
 
 It runs as its own process (`reprintbuddy update`, started by the systemd unit
 `reprintbuddy-update.service`), never inside the web service: the service is
@@ -6,6 +6,13 @@ restarted midway and would take a child process down with it.
 
 All imports are at the top of this module on purpose. pip replaces the package files
 while the helper runs, and the rollback must not load any new code.
+
+v0.4.9 p500 (Spec 11.3a "Paket je Release"): the new version is the package of a GitHub release, read
+from the release list, downloaded, checked against its checksum (and GitHub's own) and unpacked into
+`releases/<tag>` before anything of the running installation is touched; pip installs from there. The
+rollback needs no git: the copy of the Python environment comes back without network, and
+`release.json` names the new version only after a success. An installation made with git (up to
+v0.4.9) takes this way too on its next update; its git copy goes after the first success.
 """
 
 from __future__ import annotations
@@ -29,13 +36,34 @@ from reprintbuddy.ops.backup import (
     prune_backups,
     restore_database,
 )
+from reprintbuddy.ops.installation import MARKER, RELEASES_DIR, Installation, read_installation, write_marker
 from reprintbuddy.ops.oplock import LOCK_NAME, Held, acquire
+from reprintbuddy.ops.package import (
+    Download,
+    PackageError,
+    expected_sha256,
+    prune_releases,
+    remove_git_copy,
+    unpack,
+    verify,
+)
+from reprintbuddy.ops.releasenotes import HttpGet
+from reprintbuddy.ops.releases import (
+    CHANNELS,
+    Channel,
+    ReleaseCheckError,
+    checksum_name,
+    fetch_releases,
+    newest_offered,
+    package_name,
+)
 from reprintbuddy.ops.runner import CommandResult, CommandRunner
 from reprintbuddy.ops.service import RESTART_WAIT_CMD, START_CMD, STOP_CMD
 from reprintbuddy.ops.status import UpdateStatus, is_busy, mark_interrupted, read_status, write_status
-from reprintbuddy.ops.versions import is_newer, local_tags, newest_release, parse_release_tag
+from reprintbuddy.ops.versions import is_newer
 
 MAX_REASON = 300
+DOWNLOAD_DIR = ".download"  # under releases/: the package and its checksum while they are checked
 # p331 (v0.4.5): how old a "queued" may be for its target version to count. The button writes "queued" right
 # before it starts the unit (sudo up to 15 s, `QUEUE_GRACE`), and the helper reads it as its first act; the
 # window leaves room for a slow start. Root: the version was taken however old "queued" was, so a start left
@@ -118,6 +146,8 @@ def run_update(
     runner: CommandRunner,
     wait_healthy: Callable[[], bool],
     now: Callable[[], datetime],
+    http_get: HttpGet,
+    download: Download,
     target: str | None = None,
     keep_backups: int = KEEP_BACKUPS,
 ) -> UpdateStatus:
@@ -147,9 +177,26 @@ def run_update(
     if previous.state == "running" and is_busy(previous, started):
         print("update: an earlier update did not finish (its process ended); starting anew", flush=True)
     try:
-        return _run_update(db_path, install_dir, runner, wait_healthy, now, target, keep_backups, previous, started)
+        return _run_update(
+            db_path, install_dir, runner, wait_healthy, now, http_get, download, target, keep_backups, previous, started
+        )
     finally:
         lock.release()
+
+
+def _read_channel(db_path: Path) -> Channel:
+    """The choice "stable only" / "pre-releases too" (Spec 11.3a), from the database (plain sqlite3).
+    Anything unreadable counts as the default, "stable"."""
+    try:
+        connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+        try:
+            row = connection.execute("SELECT value FROM settings WHERE key = 'update_channel'").fetchone()
+        finally:
+            connection.close()
+        value = json.loads(row[0]) if row else None
+    except (sqlite3.Error, ValueError, TypeError):
+        return "stable"
+    return value if value in CHANNELS else "stable"
 
 
 def _run_update(
@@ -158,6 +205,8 @@ def _run_update(
     runner: CommandRunner,
     wait_healthy: Callable[[], bool],
     now: Callable[[], datetime],
+    http_get: HttpGet,
+    download: Download,
     target: str | None,
     keep_backups: int,
     previous: UpdateStatus,
@@ -166,11 +215,11 @@ def _run_update(
     data_dir = db_path.parent
     backup_dir = backup_dir_for(db_path)
 
-    d = str(install_dir)
     py = str(venv_python(install_dir))
-    git = ("git", "-C", d)
     venv_dir = install_dir / ".venv"
     snapshot_dir = install_dir / ".venv.rollback"
+    releases_dir = install_dir / RELEASES_DIR
+    work_dir = releases_dir / DOWNLOAD_DIR
     snapshot_taken: list[bool] = []  # only a snapshot of THIS run may be restored, never a leftover
     info: dict[str, str | None] = {
         "from_tag": None,
@@ -213,57 +262,79 @@ def _run_update(
         return put(state, step, message, finished=True, reason=reason, params=params)
 
     # --- before anything is changed: a failure leaves everything as it was -------------
+    # v0.4.9 p500: what is installed comes from `release.json` (a package installation) or, for an
+    # installation made with git, from git; where the new version comes from is the release list.
     put("running", "backup")
-    described = runner((*git, "describe", "--tags", "--exact-match", "HEAD"))
-    info["from_tag"] = described.stdout.strip() or None if described.ok else None
-    head = runner((*git, "rev-parse", "HEAD"))
-    from_ref = head.stdout.strip() if head.ok else ""
-    if not from_ref:
-        line = _reason(head, "cannot read the installed commit")
-        return finish("failed", "backup", "backup: " + line, "head_unreadable", {"detail": _reason(head, "")})
+    installed = read_installation(install_dir, runner)
+    if installed is None or installed.repo is None:
+        line = "no installation found" if installed is None else "the repository of the installation is unknown"
+        return finish("failed", "backup", "backup: " + line, "head_unreadable", {"detail": line})
+    info["from_tag"] = installed.tag
     try:
-        backup = backup_database(
-            db_path, backup_dir, label=info["from_tag"] or from_ref[:12], now=now()
-        )
+        backup = backup_database(db_path, backup_dir, label=installed.label, now=now())
     except (OSError, sqlite3.Error) as error:
         detail = str(error)[:MAX_REASON]
         return finish("failed", "backup", f"backup: {detail}", "backup_failed", {"detail": detail})
     info["backup"] = str(backup)
 
     put("running", "fetch")
-    # --force: a tag moved on GitHub ("would clobber existing tag") must not stop every update;
-    # --prune-tags: a tag deleted there must not stay offered here.
-    fetched = runner(
-        (*git, "fetch", "--prune", "--prune-tags", "--force", "--tags", "origin"), timeout=300.0
-    )
-    if not fetched.ok:
-        line = _reason(fetched, "git fetch failed")
-        return finish("failed", "fetch", "fetch: " + line, "fetch_failed", {"detail": _reason(fetched, "")})
-    tags = local_tags(install_dir, runner)
-    # The version the page offered (or the one asked for) is installed, not whatever is newest
-    # by now; if it is gone, the update stops instead of installing something else.
+    try:
+        releases = fetch_releases(installed.repo, http_get)
+    except ReleaseCheckError as error:
+        detail = str(error)[:MAX_REASON]
+        return finish("failed", "fetch", f"fetch: {detail}", "fetch_failed", {"detail": detail})
+    # The version the page offered (or the one asked for) is installed, not whatever is newest by now;
+    # if it is gone, the update stops instead of installing something else. Without one, the newest the
+    # chosen channel offers (Spec 11.3a "Vorabversionen").
     wanted = target or info["to_tag"]
-    goal = wanted or newest_release(tags)
-    if goal is None:
+    chosen = next((item for item in releases if item.tag == wanted), None) if wanted else newest_offered(
+        releases, _read_channel(db_path)
+    )
+    if chosen is None and not wanted:
         return finish("failed", "fetch", "fetch: no newer release", "no_newer")
-    if parse_release_tag(goal) is None or goal not in tags:
-        return finish("failed", "fetch", f"fetch: unknown target {goal}", "unknown_target", {"detail": goal})
+    if chosen is None:
+        return finish("failed", "fetch", f"fetch: unknown target {wanted}", "unknown_target", {"detail": str(wanted)})
+    goal = chosen.tag
     info["to_tag"] = goal
     if not is_newer(goal, info["from_tag"]):
         return finish("failed", "fetch", "fetch: no newer release", "no_newer")
 
-    # --- from the checkout on, any failure is rolled back ------------------------------
-    current = "checkout"
+    # Download and check the package, then unpack it beside the installed version. Nothing of the running
+    # installation is touched yet: a failure here removes what was downloaded and changes nothing else.
+    package = work_dir / package_name(goal)
+    checksum_file = work_dir / checksum_name(goal)
+    new_source = releases_dir / goal
+
+    def discard_download() -> None:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+    try:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        work_dir.mkdir(parents=True)
+        download(chosen.package_url, package)
+        download(chosen.checksum_url, checksum_file)
+        expected = expected_sha256(checksum_file.read_text(encoding="utf-8", errors="replace"), package_name(goal))
+        sha256 = verify(package, expected, chosen.digest)
+    except (PackageError, OSError) as error:
+        discard_download()
+        reason = error.reason if isinstance(error, PackageError) else "fetch_failed"
+        detail = (error.detail or error.reason) if isinstance(error, PackageError) else type(error).__name__
+        return finish("failed", "fetch", f"fetch: {detail}"[:MAX_REASON], reason, {"detail": detail[:MAX_REASON]})
+
+    put("running", "checkout")
+    try:
+        unpack(package, releases_dir, goal)
+    except PackageError as error:
+        discard_download()
+        return finish("failed", "checkout", f"checkout: {error.detail or error.reason}", error.reason, {"detail": error.detail})
+    discard_download()
+
+    # --- from pip on, any failure is rolled back ---------------------------------------
+    current = "install"
 
     def forward() -> tuple[str, str, str, dict[str, str]] | None:
         """None when everything went through, else (step, English line, reason code, parameters)."""
         nonlocal current
-        current = "checkout"
-        put("running", "checkout")
-        done = runner((*git, "checkout", "--quiet", "--detach", goal))
-        if not done.ok:
-            return "checkout", _reason(done, "git checkout failed"), "checkout_failed", {"detail": _reason(done, "")}
-
         current = "install"
         put("running", "install")
         # A pip that fails half way can leave the environment neither old nor new, and the
@@ -277,8 +348,8 @@ def _run_update(
                 shutil.rmtree(snapshot_dir, ignore_errors=True)
                 detail = str(error)[:200]
                 return "install", f"cannot back up the Python environment: {detail}", "snapshot_failed", {"detail": detail}
-        shutil.rmtree(install_dir / "build", ignore_errors=True)  # old build leftovers would bring back deleted modules
-        done = runner((py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", d), timeout=900.0)
+        shutil.rmtree(new_source / "build", ignore_errors=True)
+        done = runner((py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", str(new_source)), timeout=900.0)
         if not done.ok:
             too_old = _too_old_python(done)
             if too_old is not None:
@@ -312,11 +383,8 @@ def _run_update(
         return None
 
     def backward() -> bool:
-        """Previous code, previous database, restart. True only if the old version answers."""
+        """Previous environment, previous database, restart. True only if the old version answers."""
         ok = True
-        done = runner((*git, "checkout", "--quiet", "--detach", from_ref))
-        ok &= done.ok
-        shutil.rmtree(install_dir / "build", ignore_errors=True)
         if snapshot_taken and snapshot_dir.is_dir():
             # The environment as it was before pip: no network, no reinstall needed.
             try:
@@ -326,7 +394,10 @@ def _run_update(
                 ok = False
             done = CommandResult(0)
         else:
-            done = runner((py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", d), timeout=900.0)
+            shutil.rmtree(installed.source_dir / "build", ignore_errors=True)
+            done = runner(
+                (py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", str(installed.source_dir)), timeout=900.0
+            )
         if not done.ok:
             # No network for pip is the usual reason the update failed, so the reinstall of
             # the old version fails too. What matters is whether the old version is the one
@@ -334,6 +405,8 @@ def _run_update(
             old = info["from_tag"]
             shown = runner((py, "-m", "reprintbuddy", "--version"))
             ok &= bool(old) and shown.ok and shown.stdout.strip() == "reprintbuddy " + str(old)[1:]
+        # The new version's folder goes; `release.json` was never touched, so it still names the old one.
+        shutil.rmtree(new_source, ignore_errors=True)
         # Restore the database while nothing has it open. If the service cannot be stopped it
         # may still run the new code: then a restart (below) is the way back.
         stopped = runner(STOP_CMD, timeout=120.0)
@@ -351,6 +424,7 @@ def _run_update(
         problem = (current, f"unexpected error: {type(error).__name__}", "unexpected", {"detail": type(error).__name__})
     if problem is None:
         shutil.rmtree(snapshot_dir, ignore_errors=True)
+        _settle(install_dir, installed, goal, sha256, db_path)
         return finish("succeeded", "done", "")
 
     cause = f"{problem[0]}: {problem[1]}"
@@ -362,6 +436,28 @@ def _run_update(
     if restored:
         return finish("rolled_back", "rollback", cause, problem[2], problem[3])
     return finish("rollback_failed", "rollback", f"{cause} – backup: {backup}", problem[2], problem[3])
+
+
+def _settle(install_dir: Path, installed: Installation, goal: str, sha256: str, db_path: Path) -> None:
+    """After a successful update: `release.json` names the new version, the old git copy of an
+    installation made with git goes (Spec 11.3a), and of the unpacked versions only the new and the
+    previous one stay. Nothing here may turn the success into a failure: the new version runs."""
+    if installed.repo is None:  # cannot happen: the update stops before without a repository
+        return
+    try:
+        write_marker(install_dir, tag=goal, repo=installed.repo, sha256=sha256)
+    except OSError as error:
+        print(f"update: cannot write {MARKER} ({error}); the next update reads the version from git", flush=True)
+        return
+    if installed.kind == "git":
+        removed, failed = remove_git_copy(install_dir, protect=[db_path])
+        for name in removed:
+            print(f"update: removed the old git copy: {install_dir / name}", flush=True)
+        for name in failed:
+            print(f"update: could not remove the old git copy: {install_dir / name}", flush=True)
+    keep = {goal} | ({installed.tag} if installed.tag else set())
+    for name in prune_releases(install_dir, keep=keep):
+        print(f"update: removed the unpacked version {name}", flush=True)
 
 
 def interrupt_handler(db_path: Path, *, now: Callable[[], datetime]) -> Callable[[int, object], None]:

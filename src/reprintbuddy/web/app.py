@@ -40,10 +40,11 @@ from reprintbuddy.notify.service import Notifier
 from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.autocheck import AutoCheck
 from reprintbuddy.ops.context import OpsContext
-from reprintbuddy.ops.releasenotes import with_notes
+from reprintbuddy.ops.installation import is_installation
+from reprintbuddy.ops.releases import check_versions
 from reprintbuddy.ops.running import update_just_started, update_running
 from reprintbuddy.ops.status import is_busy, read_status
-from reprintbuddy.ops.versions import VersionInfo, check_versions, is_git_install
+from reprintbuddy.ops.versions import VersionInfo
 from reprintbuddy.web import deps
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, BodyLimitMiddleware
@@ -188,14 +189,16 @@ def _install_auto_check(app: FastAPI) -> None:
             await asyncio.wait_for(wake.wait(), delay)
         wake.clear()
 
-    def check() -> VersionInfo:  # blocking (git, GitHub); `AutoCheck` runs it in a thread
+    def check() -> VersionInfo:  # blocking (GitHub); `AutoCheck` runs it in a thread
         ops = app.state.ops
-        info = check_versions(ops.install_dir, ops.runner, now=datetime.now(UTC))
-        return with_notes(info, ops.install_dir, ops.runner, ops.http_get)  # p143: same round
+        # v0.4.9: one request to GitHub's release list gives the versions and the notes (Spec 11.3a).
+        with app.state.sessionmaker() as session:
+            channel = st.get_setting(session, "update_channel")
+        return check_versions(ops.install_dir, ops.runner, ops.http_get, channel=channel, now=datetime.now(UTC))
 
     app.state.auto_check = AutoCheck(
         enabled=enabled,
-        is_install=lambda: is_git_install(app.state.ops.install_dir),
+        is_install=lambda: is_installation(app.state.ops.install_dir),
         busy=lambda: app.state.update_starting
         or update_running(app.state.db_path.parent, app.state.ops.runner, datetime.now(UTC)),
         check=check,

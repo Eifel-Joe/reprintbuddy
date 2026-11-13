@@ -28,6 +28,8 @@ UPDATE_REASONS = (
     "checkout_failed", "snapshot_failed", "install_failed", "python_too_old", "verify_failed",
     "migrate_failed", "restart_failed", "health_failed", "unexpected",
     "interrupted_untouched", "interrupted_partial",
+    # v0.4.9 p500: the package of the release (Spec 11.3a "Paket je Release")
+    "package_missing", "checksum_mismatch", "package_unusable",
 )
 BUSY_STATES = frozenset({"queued", "running"})
 # The results that count as a failure: their card stays until the user hides it (p503, Spec 11.3a).
@@ -134,8 +136,9 @@ def is_busy(status: UpdateStatus, now: datetime) -> bool:
     )
 
 
-# Steps before the checkout change nothing; from the checkout on the installation may be half switched.
-_UNTOUCHED_STEPS = frozenset({"start", "backup", "fetch"})
+# Steps before pip change nothing: since v0.4.9 "checkout" unpacks the package beside the installed version
+# (`releases/<tag>`), and `release.json` still names the old one. From pip on it may be half switched.
+_UNTOUCHED_STEPS = frozenset({"start", "backup", "fetch", "checkout"})
 
 
 def mark_interrupted(data_dir: Path, now: datetime) -> UpdateStatus | None:

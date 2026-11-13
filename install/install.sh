@@ -4,9 +4,11 @@
 #   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/<tag>/install/install.sh)"
 #
 # Run as root on the system that is to run Reprintbuddy. The tag in the address is the version that gets
-# installed (RELEASE_TAG below, set together with the package version). Safe to run again: the installed
-# version and the database stay as they are; packages, user, permissions, units and the service are
-# repaired. Versions change only through the update on the settings page.
+# installed (RELEASE_TAG below, set together with the package version). Since v0.4.9 the code comes as the
+# package of that GitHub release (reprintbuddy-<tag>.tar.gz), checked against its checksum file; git is
+# not needed. Safe to run again: the installed version and the database stay as they are; packages, user,
+# permissions, units and the service are repaired. Versions change only through the update on the
+# settings page.
 #
 # Options: --language en|de   --repo URL   --dry-run   -h|--help
 set -Eeuo pipefail
@@ -17,8 +19,13 @@ set -Eeuo pipefail
 # system that the script embeds below belong to this release and to no other.
 RELEASE_TAG="v0.4.8"
 
-# Replaced when the repository is published; the script refuses to run with the placeholder.
-REPO_URL_DEFAULT="https://github.com/Eifel-Joe/reprintbuddy.git"
+# The GitHub repository whose releases hold the packages (v0.4.9 p500). The script refuses a placeholder.
+REPO_URL_DEFAULT="https://github.com/Eifel-Joe/reprintbuddy"
+
+# A version tag: a release vX.Y.Z or a pre-release vX.Y.Z-beta.N (the same rule as ops/versions.py
+# VERSION_TAG; a test compares the two). Also keeps a stray value from being read as an option.
+VERSION_PATTERN='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-beta\.[1-9][0-9]*)?$'
+MAX_PACKAGE_BYTES=50000000
 
 APP_USER="reprintbuddy"
 INSTALL_DIR="/opt/reprintbuddy"
@@ -35,6 +42,9 @@ DESTDIR="${REPRINTBUDDY_DESTDIR:-}"
 DESTDIR="${DESTDIR%/}"
 NEW_DATABASE=0
 STAGE_DIR=""
+REPO_SLUG=""      # owner/name of the repository, set by require_repo_url
+SOURCE_DIR=""     # the code pip installs from: releases/<tag>, or the program folder of a git installation
+INSTALLED_TAG=""  # the version of an existing installation, when it says one
 
 cleanup() {
     if [ -n "${STAGE_DIR}" ]; then
@@ -56,7 +66,8 @@ usage() {
 Usage: install.sh [--language en|de] [--repo URL] [--dry-run] [-h|--help]
 
   --language en|de   interface language (default: ask, or en without a terminal)
-  --repo URL         git repository to install from (or set REPRINTBUDDY_REPO)
+  --repo URL         GitHub repository whose release to install (https://github.com/<owner>/<name>,
+                     or set REPRINTBUDDY_REPO)
   --dry-run          print what would be changed, change nothing
 EOF
 }
@@ -225,11 +236,19 @@ require_repo_url() {
     case "${REPO_URL}" in
         *"<owner>"*) die 1 "Repository URL not set: use --repo or REPRINTBUDDY_REPO." ;;
     esac
+    local url="${REPO_URL%/}"
+    url="${url%.git}"
+    if ! printf '%s\n' "${url}" | grep -Eq '^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' ||
+        printf '%s\n' "${url}" | grep -Eq '/\.\.?(/|$)'; then
+        die 1 "Repository URL must be https://github.com/<owner>/<name>: ${REPO_URL}"
+    fi
+    REPO_URL="${url}"
+    REPO_SLUG="${url#https://github.com/}"
 }
 
 install_packages() {
     run apt-get update
-    run apt-get install -y --no-install-recommends python3 python3-venv git curl sudo ca-certificates
+    run apt-get install -y --no-install-recommends python3 python3-venv curl sudo ca-certificates
 }
 
 create_user() {
@@ -246,7 +265,8 @@ prepare_dirs() {
     run chmod 700 "${DATA_DIR}"
     # Repair files that ended up with another owner (a manual command run as root, for example).
     run find "${DATA_DIR}" -xdev ! -user "${APP_USER}" -exec chown -h "${APP_USER}:${APP_USER}" {} +
-    if [ -d "${existing}" ] && [ ! -e "${existing}/.git" ] && [ -n "$(ls -A "${existing}")" ]; then
+    if [ -d "${existing}" ] && [ ! -e "${existing}/.git" ] && [ ! -e "${existing}/release.json" ] &&
+        [ -n "$(ls -A "${existing}")" ]; then
         die 1 "${INSTALL_DIR} exists but is not a Reprintbuddy installation."
     fi
     run mkdir -p "${INSTALL_DIR}"
@@ -254,42 +274,103 @@ prepare_dirs() {
 }
 
 # The release of this script, not the newest one: the address of a tag installs that version (p168).
-# The repository's other tags are not looked at; the update on the settings page is what moves on.
-checkout_release() {
-    # Same rule as the tags of the update (ops/versions.py RELEASE_TAG); also keeps a stray value from being read as an option.
-    printf '%s\n' "${RELEASE_TAG}" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' ||
+# v0.4.9 p500: its package from the GitHub release, as the service user, into releases/.download; checked
+# against its checksum file; unpacked there; then moved to releases/<tag>. release.json names it last.
+# A failure removes what was downloaded and installs nothing.
+download_release() {
+    printf '%s\n' "${RELEASE_TAG}" | grep -Eq "${VERSION_PATTERN}" ||
         die 1 "The release ${RELEASE_TAG} of this script is not a version tag."
-    if [ "${DRY_RUN}" -ne 1 ] &&
-        ! capture_as_service_user git -C "${INSTALL_DIR}" rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null; then
-        die 1 "The release ${RELEASE_TAG} was not found in the repository."
+    local package="reprintbuddy-${RELEASE_TAG}.tar.gz" top="reprintbuddy-${RELEASE_TAG}"
+    local base="${REPO_URL}/releases/download/${RELEASE_TAG}" work="${INSTALL_DIR}/releases/.download"
+    local sha="<sha256>" stray
+    SOURCE_DIR="${INSTALL_DIR}/releases/${RELEASE_TAG}"
+    as_service_user rm -rf "${work}"
+    as_service_user mkdir -p "${work}"
+    local file
+    for file in "${package}" "${package}.sha256"; do
+        if ! as_service_user curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize "${MAX_PACKAGE_BYTES}" \
+            -o "${work}/${file}" "${base}/${file}"; then
+            as_service_user rm -rf "${work}"
+            die 1 "The package of release ${RELEASE_TAG} could not be downloaded: ${base}/${file}"
+        fi
+    done
+    # Everything in releases/ belongs to the service user: it reads the files there, never root (review).
+    local line="" listing=""
+    if [ "${DRY_RUN}" -ne 1 ]; then
+        # The checksum file is the one line sha256sum writes, and it names this package (review: a line
+        # naming another file would let `sha256sum -c` check that file instead).
+        line="$(capture_as_service_user cat "${work}/${package}.sha256" 2>/dev/null || true)"
+        sha="${line%%  *}"
+        if [ "${line#*  }" != "${package}" ] || ! printf '%s\n' "${sha}" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+            as_service_user rm -rf "${work}"
+            die 1 "The checksum file of ${package} does not name the package; nothing was installed."
+        fi
     fi
-    as_service_user git -C "${INSTALL_DIR}" checkout --quiet --detach "${RELEASE_TAG}"
+    if ! as_service_user env -C "${work}" sha256sum -c --strict --quiet "${package}.sha256"; then
+        as_service_user rm -rf "${work}"
+        die 1 "The package ${package} does not match its checksum; nothing was installed."
+    fi
+    if [ "${DRY_RUN}" -ne 1 ]; then
+        # Only the version's folder (its dots taken literally), nothing above it and no way out of it ("..").
+        listing="$(capture_as_service_user tar -tzf "${work}/${package}" 2>/dev/null || true)"
+        stray="$(printf '%s\n' "${listing}" | grep -Ev "^${top//./\\.}(/|\$)" || true)"
+        stray="${stray}$(printf '%s\n' "${listing}" | grep -E '(^|/)\.\.(/|$)' || true)"
+        if [ -n "${stray}" ]; then
+            as_service_user rm -rf "${work}"
+            die 1 "The package ${package} holds more than the folder ${top}; nothing was installed."
+        fi
+    fi
+    if ! as_service_user tar -xzf "${work}/${package}" -C "${work}"; then
+        as_service_user rm -rf "${work}"
+        die 1 "The package ${package} could not be unpacked; nothing was installed."
+    fi
+    as_service_user rm -rf "${SOURCE_DIR}"
+    as_service_user mv "${work}/${top}" "${SOURCE_DIR}"
+    # shellcheck disable=SC2016 # Python code, not shell: nothing in it is to be expanded
+    as_service_user python3 -c 'import json, os, sys, tempfile
+folder, tag, repo, sha = sys.argv[1:5]
+handle, name = tempfile.mkstemp(prefix=".release-", suffix=".json", dir=folder)
+with os.fdopen(handle, "w", encoding="utf-8") as file:
+    json.dump({"tag": tag, "repo": repo, "sha256": sha}, file)
+    file.write("\n")
+os.replace(name, os.path.join(folder, "release.json"))' "${INSTALL_DIR}" "${RELEASE_TAG}" "${REPO_SLUG}" "${sha}"
+    as_service_user rm -rf "${work}"
+}
+
+# An existing installation: its version stays (it changes only through the update). Since v0.4.9 it is
+# named by release.json; an installation made with git (up to v0.4.9) still answers by git.
+keep_installed() {
+    local tree="${DESTDIR}${INSTALL_DIR}"
+    if [ -e "${tree}/release.json" ]; then
+        INSTALLED_TAG="$(sed -n 's/.*"tag"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${tree}/release.json" | head -n 1)"
+        printf '%s\n' "${INSTALLED_TAG}" | grep -Eq "${VERSION_PATTERN}" ||
+            die 1 "${INSTALL_DIR}/release.json does not name a version. Run the install command of the installed version again, or set Reprintbuddy up again and restore a backup."
+        SOURCE_DIR="${INSTALL_DIR}/releases/${INSTALLED_TAG}"
+    else
+        INSTALLED_TAG="$(capture_as_service_user git -C "${INSTALL_DIR}" describe --tags --exact-match HEAD 2>/dev/null || true)"
+        SOURCE_DIR="${INSTALL_DIR}"
+    fi
+    if [ -n "${INSTALLED_TAG}" ] && [ "${INSTALLED_TAG}" != "${RELEASE_TAG}" ]; then
+        say "Existing installation found, keeping version ${INSTALLED_TAG} (this script is ${RELEASE_TAG}; the version changes through the update on the settings page)."
+    else
+        say "Existing installation found, keeping version."
+    fi
 }
 
 fetch_code() {
-    if [ -e "${DESTDIR}${INSTALL_DIR}/.git" ]; then
-        # A first run that stopped after the clone (for example "was not found" before the
-        # tag existed) leaves the default branch checked out and no database behind.
-        # Nothing is installed yet then, so move to the release of this script instead of keeping that
-        # state. Whatever HEAD stands on is no reason to keep it: the default branch can carry a release
-        # tag too, and so can the checkout of an earlier run of another script.
-        if [ ! -e "${DESTDIR}${DB_FILE}" ]; then
-            say "Unfinished installation found, switching to release ${RELEASE_TAG}."
-            as_service_user git -C "${INSTALL_DIR}" fetch --prune --prune-tags --force --tags origin
-            checkout_release
-            return 0
-        fi
-        local installed
-        installed="$(capture_as_service_user git -C "${INSTALL_DIR}" describe --tags --exact-match HEAD 2>/dev/null || true)"
-        if [ -n "${installed}" ] && [ "${installed}" != "${RELEASE_TAG}" ]; then
-            say "Existing installation found, keeping version ${installed} (this script is ${RELEASE_TAG}; the version changes through the update on the settings page)."
-        else
-            say "Existing installation found, keeping version."
-        fi
+    local tree="${DESTDIR}${INSTALL_DIR}"
+    if [ -e "${DESTDIR}${DB_FILE}" ] && { [ -e "${tree}/release.json" ] || [ -e "${tree}/.git" ]; }; then
+        keep_installed
         return 0
     fi
-    as_service_user git clone "${REPO_URL}" "${INSTALL_DIR}"
-    checkout_release
+    # No database: nothing is installed yet. A first run that stopped half way (an older script's clone,
+    # or a package without its database) leaves a copy that is no reason to keep anything.
+    if [ -e "${tree}/.git" ] || [ -e "${tree}/release.json" ]; then
+        say "Unfinished installation found, putting release ${RELEASE_TAG} in place."
+        as_service_user find "${INSTALL_DIR}" -mindepth 1 -maxdepth 1 ! -name .venv ! -name releases ! -name release.json \
+            -exec rm -rf {} +
+    fi
+    download_release
 }
 
 # Does the installed environment still fit? It was built with one Python and holds its packages under that
@@ -331,8 +412,9 @@ install_python() {
     if [ "${rebuild}" -eq 1 ] || [ ! -d "${DESTDIR}${VENV_DIR}" ]; then
         as_service_user python3 -m venv "${VENV_DIR}"
     fi
-    run rm -rf "${INSTALL_DIR}/build" # old build leftovers would bring back deleted modules
-    as_service_user "${VENV_DIR}/bin/python" -m pip install --no-cache-dir --upgrade "${INSTALL_DIR}"
+    # Old build leftovers would bring back deleted modules. By the service user: releases/ is its folder.
+    as_service_user rm -rf "${SOURCE_DIR}/build"
+    as_service_user "${VENV_DIR}/bin/python" -m pip install --no-cache-dir --upgrade "${SOURCE_DIR}"
 }
 
 init_database() {
@@ -423,17 +505,16 @@ stage_system_files() {
 # system that the installed version does not expect.
 check_installer_matches_code() {
     stage_system_files
-    local file tree tag
+    local file tree tag="${INSTALLED_TAG}"
     for file in reprintbuddy.sudoers reprintbuddy.service reprintbuddy-update.service reprintbuddy-cli.sh; do
-        tree="${DESTDIR}${INSTALL_DIR}/install/${file}"
+        tree="${DESTDIR}${SOURCE_DIR}/install/${file}"
         if [ ! -e "${tree}" ] && [ "${DRY_RUN}" -eq 1 ]; then
-            continue # a dry run that cloned nothing has nothing to compare with
+            continue # a dry run that downloaded nothing has nothing to compare with
         fi
         if ! cmp -s "${STAGE_DIR}/${file}" "${tree}" 2>/dev/null; then
-            tag="$(capture_as_service_user git -C "${INSTALL_DIR}" describe --tags --exact-match HEAD 2>/dev/null || true)"
             die 1 "The installer does not match the installed version (${file} differs)." \
                 "Use the install.sh of the tag ${tag:-of the installed version} (${REPO_URL}), for example:" \
-                "  bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/${tag:-<tag>}/install/install.sh)\""
+                "  bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/${REPO_SLUG}/${tag:-<tag>}/install/install.sh)\""
         fi
     done
 }
@@ -493,7 +574,7 @@ print_next_steps() {
 
 main() {
     cd /
-    export DEBIAN_FRONTEND=noninteractive GIT_TERMINAL_PROMPT=0
+    export DEBIAN_FRONTEND=noninteractive
     parse_args "$@"
     require_root
     require_debian

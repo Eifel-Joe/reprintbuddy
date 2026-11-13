@@ -13,20 +13,20 @@ Reprintbuddy updates itself from the web interface and brings its own complete b
 The update does these things, in this order:
 
 1. backs up the database,
-2. switches to the new release tag,
-3. installs the packages,
+2. downloads the package of the new release and checks it against its checksum (nothing is installed if it does not match),
+3. installs it and the packages it needs,
 4. migrates the database,
 5. restarts the service and
 6. checks that the new version answers (it waits up to 90 seconds).
 
-The card names the step it is in: **Backing up the database**, **Fetching releases**, **Switching to the new version**, **Installing packages**, **Checking the installed version**, **Migrating the database**, **Restarting**, **Waiting for the new version to answer**. When it is finished it says "Update finished"; that card is shown once and gone the next time you open the page. A failed or rolled-back update stays on the card, with the path of the backup, until you hide it with **Hide**. Start and result of every update are also written to the [Log](log.md) (*Settings → Log*): "Update started" with the old and the new version, and once per update its result. If an update is rolled back, the database is restored too, so log lines from the time of the update are lost; the result is entered after that.
+The card names the step it is in: **Backing up the database**, **Downloading and checking the package**, **Putting the new version in place**, **Installing packages**, **Checking the installed version**, **Migrating the database**, **Restarting**, **Waiting for the new version to answer**. When it is finished it says "Update finished"; that card is shown once and gone the next time you open the page. A failed or rolled-back update stays on the card, with the path of the backup, until you hide it with **Hide**. Start and result of every update are also written to the [Log](log.md) (*Settings → Log*): "Update started" with the old and the new version, and once per update its result. If an update is rolled back, the database is restored too, so log lines from the time of the update are lost; the result is entered after that.
 
 !!! note "Updates need the installer"
     The buttons work only for an installation made with the install script. Otherwise the card says "Updates from this page need an installation made with the install script." The update replaces the program, not the systemd units or the sudoers rule; see [Versions and release notes](#versions-and-release-notes).
 
 ### If a step fails
 
-Reprintbuddy goes back to the previous version **and** restores the database from the backup it made at the start. The card says "Update failed, previous version restored" and names the step that failed and why. If the update fails before anything was switched (the backup or the download of the releases), the card says "Update failed, nothing was changed".
+Reprintbuddy goes back to the previous version **and** restores the database from the backup it made at the start. The card says "Update failed, previous version restored" and names the step that failed and why. If the update fails before anything was switched (the backup, the download or the check of the package), the card says "Update failed, nothing was changed".
 
 ### Why changes are paused
 
@@ -38,7 +38,7 @@ When the check finds a newer release, the update card also shows a closed box **
 
 - The notes are in English only. In the German interface a line says so: "The release notes are available in English only."
 - They come from GitHub and are shown as simple formatted text: paragraphs, lists, bold, italic and code. Links and pictures from the text show only their words; nothing from the text is run or loaded.
-- If they cannot be loaded, the box says "The release notes could not be loaded." The check and the update do not depend on them.
+- They come with the check, from the same request. If the newest version has no usable text, the box says "The release notes could not be loaded." The update does not depend on them.
 - Reprintbuddy asks for them once per check, at `api.github.com`, without a login, a cookie or any address of your installation. GitHub sees the IP address of your server, and it limits such requests to 60 an hour. A page view never asks; the result is kept in memory only.
 
 ## The daily check and the bar at the top
@@ -46,7 +46,7 @@ When the check finds a newer release, the update card also shows a closed box **
 Reprintbuddy asks at the start and then once a day whether a newer release exists. It is the same check as the button. If there is one, a narrow bar appears at the top of every page: "Version … is available." with the link **Show update**, which leads to the update card.
 
 - If a check fails, you see nothing; Reprintbuddy tries again after an hour.
-- The check asks the repository on GitHub, and when it finds a newer release also GitHub's API for the release notes, so GitHub sees the address of your server.
+- The check asks GitHub's API for the list of releases (one request, which brings the release notes too), so GitHub sees the address of your server.
 - Switch it off with **Check for new versions automatically** on the update card. Then there is no automatic check and no bar; the button still works.
 - A development build never shows the bar.
 
@@ -95,9 +95,15 @@ An update and a restore never run at the same time, however they were started: t
 
 ## Versions and release notes
 
-Versions are git tags `vX.Y.Z`, and the package version equals the tag. The update installs the newest release tag. If a release changes the systemd units or the sudoers rule, its release notes say so, and you run the installer again after the update. The release notes are on [GitHub](https://github.com/Eifel-Joe/reprintbuddy/releases) and, for the versions a newer release brings, on the update card (see [What the newer versions bring](#what-the-newer-versions-bring)).
+Every version is a published GitHub release `vX.Y.Z` with its package (`reprintbuddy-<tag>.tar.gz`, the whole state of the version) and a checksum file; a workflow on GitHub attaches both when the release is published. The package version equals the tag. The update installs the newest release the card offers; a release without its package is not offered. Pre-releases are tagged `vX.Y.Z-beta.N` and marked as such on GitHub; a pre-release is older than the release with the same numbers (`1.0.1-beta.2` is older than `1.0.1`).
 
-The card shows the version as the Git tag and, if it differs, the package version next to it.
+Installation and update both download the package, so GitHub counts the downloads of each version; Reprintbuddy sends nothing else. An installation made with git (up to v0.4.9) gets v0.4.9 by git; its next update downloads the package and then removes the old git copy from `/opt/reprintbuddy` (never the data). If a release changes the systemd units or the sudoers rule, its release notes say so, and you run the installer again after the update. The release notes are on [GitHub](https://github.com/Eifel-Joe/reprintbuddy/releases) and, for the versions a newer release brings, on the update card (see [What the newer versions bring](#what-the-newer-versions-bring)).
+
+The card shows the installed version and, if it differs, the package version next to it.
+
+## Stable releases or pre-releases too
+
+The row **Versions offered** on the update card chooses between **Stable releases only** (the default) and **Pre-releases too**. A click saves the choice and checks for updates at once, also when the automatic check is off. With pre-releases on, the card offers the newest version of either kind, and the notes of a pre-release say "pre-release". Back on stable releases only, an installed pre-release stays; nothing older is offered, the next newer stable release is. The card then says "A pre-release is installed." An installation made from the install command of a pre-release starts with pre-releases on.
 
 ## Restart
 

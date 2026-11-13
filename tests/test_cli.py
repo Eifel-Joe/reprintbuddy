@@ -293,6 +293,11 @@ def test_cli_update_exit_codes(db, monkeypatch, state, code):
     assert main(["update", "--db", str(db), "--target", "v0.2.0"]) == code
     assert calls[0][0] == db
     assert calls[0][1]["target"] == "v0.2.0"
+    # v0.4.9: the helper asks GitHub and downloads with the standard library only (pip replaces packages)
+    from reprintbuddy.ops.package import urllib_download, urllib_get
+
+    assert calls[0][1]["http_get"] is urllib_get
+    assert calls[0][1]["download"] is urllib_download
 
 
 def test_cli_update_missing_db(db, capsys):
@@ -358,3 +363,29 @@ def test_serve_limits_the_graceful_shutdown(db, monkeypatch, with_tls):
     assert (kwargs.get("ssl_certfile") is not None) == with_tls
     assert kwargs["timeout_graceful_shutdown"] == 3
     assert "workers" not in kwargs  # one process (Spec 10.5.8)
+
+
+def test_v049_init_of_a_pre_release_offers_pre_releases_from_the_start(db, monkeypatch):
+    """Spec 11.3a: a new installation of a pre-release starts with "pre-releases too"."""
+    import reprintbuddy
+
+    monkeypatch.setattr(reprintbuddy, "__version__", "1.0.0-beta.1")
+    assert main(["init", "--language", "en", "--db", str(db)]) == 0
+    with open_session(db) as s:
+        assert st.get_setting(s, "update_channel") == "prerelease"
+
+
+def test_v049_init_of_a_stable_release_keeps_stable_releases_only(db):
+    assert main(["init", "--language", "en", "--db", str(db)]) == 0
+    with open_session(db) as s:
+        assert st.get_setting(s, "update_channel") == "stable"
+
+
+def test_v049_init_on_an_existing_database_keeps_its_choice(db, monkeypatch):
+    import reprintbuddy
+
+    assert main(["init", "--language", "en", "--db", str(db)]) == 0  # an existing stable installation
+    monkeypatch.setattr(reprintbuddy, "__version__", "1.0.0-beta.1")
+    assert main(["init", "--language", "en", "--db", str(db)]) == 0
+    with open_session(db) as s:
+        assert st.get_setting(s, "update_channel") == "stable"

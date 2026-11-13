@@ -63,6 +63,7 @@ LOGGED = {
     "/settings/server": "test_secrets_of_the_settings_pages_never_reach_log_page_or_export",
     "/settings/update": "test_the_new_version_once_and_the_start_of_an_update_with_its_result",
     "/settings/update/auto": "test_the_automatic_check_for_versions_switched_on_the_page",
+    "/settings/update/channel": "test_the_choice_of_versions_offered_on_the_page",
     # a newer version, once
     "/settings/update/check": "test_the_new_version_once_and_the_start_of_an_update_with_its_result",
     "/setup": "test_the_setup_logs_the_account_with_the_address",

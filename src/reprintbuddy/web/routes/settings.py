@@ -137,6 +137,7 @@ def _page(
         tls_cert_set=bool(st.get_setting(db, "tls_cert")),
         ops=ops,
         update_check=bool(st.get_setting(db, "update_check")),  # the switch of the automatic check
+        update_channel=st.get_setting(db, "update_channel"),  # v0.4.9: stable releases only / pre-releases too
         # The live channel row: only with a stored address (without one there is nothing to connect to).
         # The stored setting decides, not `values`: a typed address that was refused is no address.
         live_channel=request.app.state.live_listener.state if st.get_setting(db, "bambuddy_url") else None,

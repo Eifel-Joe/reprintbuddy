@@ -24,6 +24,7 @@ SETTINGS: dict[str, ValueKind] = {
     # Stored as "queue running", asked on the page as "stop the queue": shown as on the page.
     "queue_running": "switch_inverted",
     "update_check": "switch",
+    "update_channel": "text",  # v0.4.9: only "changed" (two fixed words, nothing personal)
     "qr_base_url": "address",
     "label_printer_host": "host",
     "label_roll": "text",

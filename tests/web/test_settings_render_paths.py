@@ -49,7 +49,7 @@ def test_a_refused_save_asks_the_system_in_a_worker_thread(ops_env, monkeypatch,
         except RuntimeError:
             where.append(f"{what}: worker thread")
 
-    real_installed, real_running = ops_routes.installed_tag, ops_routes.update_running
+    real_installed, real_running = ops_routes.installed_version, ops_routes.update_running
 
     def installed(*args, **kwargs):
         mark("installed")
@@ -59,7 +59,7 @@ def test_a_refused_save_asks_the_system_in_a_worker_thread(ops_env, monkeypatch,
         mark("running")
         return real_running(*args, **kwargs)
 
-    monkeypatch.setattr(ops_routes, "installed_tag", installed)
+    monkeypatch.setattr(ops_routes, "installed_version", installed)
     monkeypatch.setattr(ops_routes, "update_running", running)
 
     response = ops_env.client.post(path, data={"csrf_token": token, **data})

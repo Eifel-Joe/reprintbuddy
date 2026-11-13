@@ -178,6 +178,7 @@ def named(folder: Path, name: str) -> None:
         ("reprintbuddy-v0.1.0-20261109T101645Z.db", None, True),  # the card knew no tag, the helper did
         ("reprintbuddy-0123456789ab-20261109T101645Z.db", "v0.1.0", True),  # the card knew it, the helper not
         ("reprintbuddy-v0.1.0-beta-20261109T101645Z.db", None, False),  # not a release tag, no commit
+        ("reprintbuddy-v1.0.1-beta.2-20261109T101645Z.db", None, True),  # a pre-release is a version too (v0.4.9)
         ("notes-20261109T101645Z.db", "v0.1.0", False),  # a foreign file in the folder
         ("reprintbuddy-v0.1.0-20261109T101645Z.db-wal", "v0.1.0", False),
         ("reprintbuddy-v0.1.0-20261399T101645Z.db", "v0.1.0", False),  # no real time

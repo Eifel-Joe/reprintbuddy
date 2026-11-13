@@ -35,8 +35,7 @@ Ideas for later versions. This is a list of directions, not a promise: there are
 - receiving orders by email,
 - a display at the shelf (a device of its own) to confirm finished prints and to change the quantity,
 - more ways to send messages: email and a general webhook,
-- several users,
-- pre-releases to choose from in the updater.
+- several users.
 
 ## Where to go next
 

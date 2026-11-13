@@ -1,7 +1,7 @@
 """Restart, update and export from the settings page.
 
 Commands run only on a POST with a CSRF token. The one command a GET route may run
-is the local `git describe` (once per process); GitHub is asked only on a button press.
+is `release.json` or the local `git describe` (once per process); GitHub is asked only by the check.
 """
 
 from __future__ import annotations
@@ -22,7 +22,8 @@ from reprintbuddy.activity.kinds import Actor
 from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.backup import backup_dir_for, update_backup_since
 from reprintbuddy.ops.export import export_bytes
-from reprintbuddy.ops.releasenotes import with_notes
+from reprintbuddy.ops.installation import installed_version, is_installation
+from reprintbuddy.ops.releases import check_versions
 from reprintbuddy.ops.server import (
     EffectiveServer,
     address_changed,
@@ -43,13 +44,7 @@ from reprintbuddy.ops.status import (
     read_status,
     write_status,
 )
-from reprintbuddy.ops.versions import (
-    UpdateCheckError,
-    VersionInfo,
-    check_versions,
-    installed_tag,
-    is_git_install,
-)
+from reprintbuddy.ops.versions import UpdateCheckError, VersionInfo, is_prerelease_tag
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render
 from reprintbuddy.web.flash import flash
@@ -107,6 +102,7 @@ class OpsView:
     message_card: str | None = None  # the card that shows it ("update", "backup", …)
     git_install: bool = False
     installed: str | None = None
+    installed_prerelease: bool = False  # v0.4.9: a pre-release runs while only stable ones are offered
     dev_version: str = __version__
     version_info: VersionInfo | None = None
     update: UpdateStatus = UpdateStatus()
@@ -143,15 +139,15 @@ def _installed(request: Request) -> str | None:
     app = request.app
     ops = app.state.ops
     if not hasattr(app.state, "installed_tag"):
-        app.state.installed_tag = installed_tag(ops.install_dir, ops.runner)
+        app.state.installed_tag = installed_version(ops.install_dir, ops.runner)
     return app.state.installed_tag
 
 
 async def warm_installed(request: Request) -> None:
-    """Ask for the installed tag (`git describe`, once per process) in a worker thread, so the page that
+    """Ask for the installed tag (`release.json` or `git describe`, once per process) in a worker thread, so the page that
     needs it does not run git in the event loop (v0.3.8 p96, same family)."""
     app = request.app
-    if is_git_install(app.state.ops.install_dir) and not hasattr(app.state, "installed_tag"):
+    if is_installation(app.state.ops.install_dir) and not hasattr(app.state, "installed_tag"):
         await in_thread(_installed, request)
 
 
@@ -193,10 +189,13 @@ def ops_view(request: Request, session: Session, busy: bool | None = None) -> Op
     view = OpsView(running_url=running_url, restart_pending=pending, message=message)
     view.message_card = OPS_MESSAGES.get(code or "")
     view.dev_version = __version__  # read now, so it is the version of the running code
-    view.git_install = is_git_install(ops.install_dir)
+    view.git_install = is_installation(ops.install_dir)  # (name kept: also a package installation, v0.4.9)
     if view.git_install:
         view.installed = _installed(request)
         view.version_info = getattr(app.state, "version_info", None)
+        view.installed_prerelease = is_prerelease_tag(view.installed or "") and (
+            st.get_setting(session, "update_channel") != "prerelease"
+        )
     view.update = read_status(_data_dir(request))
     if not request.app.state.restore.active:
         # Uploads nobody confirmed and downloads that were cut off hold every secret.
@@ -427,18 +426,52 @@ def _back(code: str | None = None) -> RedirectResponse:
 async def update_check(request: Request):
     app = request.app
     ops = app.state.ops
-    if not is_git_install(ops.install_dir):
+    if not is_installation(ops.install_dir):
         return _back("not_git")
+    return await _check(request)
+
+
+async def _check(request: Request):
+    """The check for new versions, for the button and for a new choice of versions (Spec 11.3a)."""
+    app = request.app
+    ops = app.state.ops
+    with app.state.sessionmaker() as session:
+        channel = st.get_setting(session, "update_channel")
     try:
-        # In a thread that can be stopped: a shutdown kills the git command instead of waiting for it.
-        info = await in_thread(check_versions, ops.install_dir, ops.runner, now=_utc_now())
+        # v0.4.9: one request to GitHub's release list gives versions and notes (Spec 11.3a); in a thread.
+        info = await in_thread(check_versions, ops.install_dir, ops.runner, ops.http_get, channel=channel, now=_utc_now())
     except UpdateCheckError as error:
         log.warning("update check failed: %s", str(error)[:300])  # not shown on the page
         return _back("check_failed")
-    # p143: the notes of the newer versions in the same round (one request to GitHub, never raises).
-    info = await in_thread(with_notes, info, ops.install_dir, ops.runner, ops.http_get)
     store_versions(app.state, info, actor="user")
     return _back()
+
+
+@router.post("/settings/update/channel", dependencies=[Depends(verify_csrf)])
+async def update_channel(request: Request):
+    """The choice "stable releases only" / "pre-releases too" (v0.4.9, Spec 11.3a "Vorabversionen"):
+    `channel` is the wanted value, never a toggle. Saved, then checked at once with the new choice, also
+    when the automatic check is off ("wirkt sofort und löst eine neue Prüfung aus"). A value that is
+    neither changes nothing and asks nobody; a form sent again or an expired one changes nothing, as on
+    the switch of the automatic check (p99)."""
+    form = await request.form()
+    wanted = str(form.get("channel", ""))
+    if wanted not in st.UPDATE_CHANNELS:
+        return _back()
+    try:
+        with form_transaction(request, str(form.get("form_token", ""))) as tx:
+            st.set_setting(tx, "update_channel", wanted, commit=False)
+    except FormTokenUsed:
+        return duplicate_redirect(request, _back().headers["location"])
+    except FormTokenInvalid:
+        flash(request, "form.expired", warning=True)
+        return _back()
+    if not is_installation(request.app.state.ops.install_dir):
+        return _back()
+    # Final review: what the earlier check found was offered under the earlier choice. Forgotten here, so
+    # that a check that fails now leaves no pre-release on offer (bar, button) after "stable releases only".
+    request.app.state.version_info = None
+    return await _check(request)
 
 
 @router.post("/settings/update/auto", dependencies=[Depends(verify_csrf)])
@@ -479,7 +512,7 @@ async def update_start(request: Request):
     """
     app = request.app
     ops = app.state.ops
-    if not is_git_install(ops.install_dir):
+    if not is_installation(ops.install_dir):
         return _back("not_git")
     # A restore that is replacing the database (or waits for its restart) counts as busy, and so does
     # another click that is still on its way.

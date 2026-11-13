@@ -13,13 +13,13 @@ Reprintbuddy aktualisiert sich aus der Weboberfläche und bringt eine eigene vol
 Das Update macht der Reihe nach:
 
 1. sichert die Datenbank,
-2. wechselt auf das neue Versions-Tag,
-3. installiert die Pakete,
+2. lädt das Paket der neuen Version und prüft es gegen seine Prüfsumme (passt es nicht, wird nichts installiert),
+3. installiert es und die Pakete, die es braucht,
 4. migriert die Datenbank,
 5. startet den Dienst neu und
 6. prüft, ob die neue Version antwortet (es wartet bis zu 90 Sekunden).
 
-Die Karte nennt den Schritt, in dem es gerade ist: **Datenbank wird gesichert**, **Versionen werden geholt**, **Wechsel auf die neue Version**, **Pakete werden installiert**, **Installierte Version wird geprüft**, **Datenbank wird migriert**, **Neustart**, **Warten, bis die neue Version antwortet**. Ist es fertig, steht dort „Update abgeschlossen“; diese Karte erscheint einmal und ist beim nächsten Öffnen der Seite weg. Ein fehlgeschlagenes oder zurückgerolltes Update bleibt mit dem Pfad der Sicherung auf der Karte stehen, bis du es mit **Ausblenden** wegklickst. Start und Ergebnis jedes Updates stehen außerdem im [Protokoll](log.md) (*Einstellungen → Protokoll*): „Update gestartet“ mit alter und neuer Version, und je Update einmal das Ergebnis. Wird ein Update zurückgerollt, wird auch die Datenbank zurückgespielt; Protokollzeilen aus der Zeit des Updates gehen dabei verloren, das Ergebnis wird danach eingetragen.
+Die Karte nennt den Schritt, in dem es gerade ist: **Datenbank wird gesichert**, **Paket wird geladen und geprüft**, **Neue Version wird abgelegt**, **Pakete werden installiert**, **Installierte Version wird geprüft**, **Datenbank wird migriert**, **Neustart**, **Warten, bis die neue Version antwortet**. Ist es fertig, steht dort „Update abgeschlossen“; diese Karte erscheint einmal und ist beim nächsten Öffnen der Seite weg. Ein fehlgeschlagenes oder zurückgerolltes Update bleibt mit dem Pfad der Sicherung auf der Karte stehen, bis du es mit **Ausblenden** wegklickst. Start und Ergebnis jedes Updates stehen außerdem im [Protokoll](log.md) (*Einstellungen → Protokoll*): „Update gestartet“ mit alter und neuer Version, und je Update einmal das Ergebnis. Wird ein Update zurückgerollt, wird auch die Datenbank zurückgespielt; Protokollzeilen aus der Zeit des Updates gehen dabei verloren, das Ergebnis wird danach eingetragen.
 
 !!! note "Updates brauchen das Installationsskript"
     Die Knöpfe funktionieren nur bei einer Installation mit dem Installationsskript. Sonst steht auf der Karte „Updates aus der Oberfläche brauchen eine Installation mit dem Installationsskript.“ Das Update ersetzt das Programm, nicht die systemd-Units und nicht die sudoers-Regel; siehe [Versionen und Release-Notes](#versionen-und-release-notes).
@@ -34,11 +34,11 @@ Ein Rückfall setzt die Datenbank auf den Stand vor dem Update zurück. Alles, w
 
 ## Was die neueren Versionen mitbringen
 
-Findet die Prüfung eine neuere Version, zeigt die Update-Karte außerdem ein zugeklapptes Feld **Was ist neu bis …** (mit der neuesten Version). Klappe es auf, um die Versionshinweise jeder Version nach der installierten bis zur neuesten zu lesen, die neueste zuerst, jede mit ihrer Versionsnummer (dem Git-Tag) und dem Datum. Höchstens 10 Versionen stehen in der Liste; ein Hinweis von mehr als 20.000 Zeichen wird gekürzt und mit „… (gekürzt)“ markiert. Unter den Hinweisen führt der Link **Alle Versionshinweise auf GitHub** zur Seite aller Versionen.
+Findet die Prüfung eine neuere Version, zeigt die Update-Karte außerdem ein zugeklapptes Feld **Was ist neu bis …** (mit der neuesten Version). Klappe es auf, um die Versionshinweise jeder Version nach der installierten bis zur neuesten zu lesen, die neueste zuerst, jede mit ihrer Versionsnummer und dem Datum. Höchstens 10 Versionen stehen in der Liste; ein Hinweis von mehr als 20.000 Zeichen wird gekürzt und mit „… (gekürzt)“ markiert. Unter den Hinweisen führt der Link **Alle Versionshinweise auf GitHub** zur Seite aller Versionen.
 
 - Die Hinweise gibt es nur auf Englisch. In der deutschen Oberfläche sagt das eine Zeile: „Die Versionshinweise gibt es nur auf Englisch.“
 - Sie kommen von GitHub und erscheinen als einfacher formatierter Text: Absätze, Listen, fett, kursiv und Code. Links und Bilder aus dem Text zeigen nur ihre Worte; nichts aus dem Text wird ausgeführt oder nachgeladen.
-- Lassen sie sich nicht laden, sagt das Feld „Versionshinweise konnten nicht geladen werden.“ Die Prüfung und das Update hängen nicht von ihnen ab.
+- Sie kommen mit der Prüfung, aus derselben Anfrage. Hat die neueste Version keinen brauchbaren Text, sagt das Feld „Versionshinweise konnten nicht geladen werden.“ Das Update hängt nicht von ihnen ab.
 - Reprintbuddy fragt sie einmal je Prüfung ab, bei `api.github.com`, ohne Anmeldung, ohne Cookie und ohne eine Adresse deiner Installation. GitHub sieht die IP-Adresse deines Servers und begrenzt solche Anfragen auf 60 je Stunde. Ein Seitenaufruf fragt nie; das Ergebnis liegt nur im Arbeitsspeicher.
 
 ## Die tägliche Prüfung und der Balken oben
@@ -46,7 +46,7 @@ Findet die Prüfung eine neuere Version, zeigt die Update-Karte außerdem ein zu
 Reprintbuddy fragt beim Start und danach einmal täglich, ob es eine neuere Version gibt. Es ist dieselbe Prüfung wie der Knopf. Gibt es eine, erscheint oben auf jeder Seite ein schmaler Balken: „Version … ist verfügbar.“ mit dem Link **Update anzeigen**, der zur Update-Karte führt.
 
 - Schlägt eine Prüfung fehl, siehst du nichts; Reprintbuddy versucht es nach einer Stunde wieder.
-- Die Prüfung fragt das Repository auf GitHub und, wenn sie eine neuere Version findet, auch GitHubs API nach den Versionshinweisen; GitHub sieht also die Adresse deines Servers.
+- Die Prüfung fragt GitHubs API nach der Liste der Releases (eine Anfrage, die auch die Versionshinweise bringt); GitHub sieht also die Adresse deines Servers.
 - Schalte sie mit **Automatisch nach neuen Versionen suchen** auf der Update-Karte ab. Dann gibt es weder die automatische Prüfung noch den Balken; der Knopf funktioniert weiter.
 - Ein Entwicklungsstand zeigt den Balken nie.
 
@@ -95,9 +95,15 @@ Ein Update und ein Wiederherstellen laufen nie gleichzeitig, egal wie sie gestar
 
 ## Versionen und Release-Notes
 
-Versionen sind Git-Tags `vX.Y.Z`, und die Paketversion entspricht dem Tag. Das Update installiert das neueste Versions-Tag. Ändert eine Version die systemd-Units oder die sudoers-Regel, steht das in ihren Release-Notes, und du führst nach dem Update das Installationsskript noch einmal aus. Die Release-Notes stehen auf [GitHub](https://github.com/Eifel-Joe/reprintbuddy/releases) und, für die Versionen einer neueren Version, auf der Update-Karte (siehe [Was die neueren Versionen mitbringen](#was-die-neueren-versionen-mitbringen)).
+Jede Version ist ein veröffentlichtes GitHub-Release `vX.Y.Z` mit seinem Paket (`reprintbuddy-<tag>.tar.gz`, der ganze Stand der Version) und einer Prüfsummen-Datei; ein Workflow auf GitHub hängt beides an, sobald das Release veröffentlicht ist. Die Paketversion entspricht dem Tag. Das Update installiert die neueste Version, die die Karte anbietet; ein Release ohne sein Paket wird nicht angeboten. Vorabversionen haben Tags `vX.Y.Z-beta.N` und sind auf GitHub als Vorabversion markiert; eine Vorabversion ist älter als die Version mit denselben Zahlen (`1.0.1-beta.2` ist älter als `1.0.1`).
 
-Die Karte zeigt die Version als Git-Tag und, wenn sie abweicht, daneben die Paketversion.
+Installation und Update laden beide das Paket, darum zählt GitHub die Downloads jeder Version; sonst sendet Reprintbuddy nichts. Eine Installation, die mit git eingerichtet wurde (bis v0.4.9), bekommt v0.4.9 noch per git; ihr nächstes Update lädt das Paket und entfernt danach die alte git-Kopie aus `/opt/reprintbuddy` (nie die Daten). Ändert eine Version die systemd-Units oder die sudoers-Regel, steht das in ihren Release-Notes, und du führst nach dem Update das Installationsskript noch einmal aus. Die Release-Notes stehen auf [GitHub](https://github.com/Eifel-Joe/reprintbuddy/releases) und, für die Versionen einer neueren Version, auf der Update-Karte (siehe [Was die neueren Versionen mitbringen](#was-die-neueren-versionen-mitbringen)).
+
+Die Karte zeigt die installierte Version und, wenn sie abweicht, daneben die Paketversion.
+
+## Stabile Versionen oder auch Vorabversionen
+
+Die Zeile **Angebotene Versionen** auf der Update-Karte wählt zwischen **Nur stabile Versionen** (Vorgabe) und **Auch Vorabversionen**. Ein Klick speichert die Wahl und sucht sofort nach Updates, auch wenn die automatische Prüfung aus ist. Mit Vorabversionen bietet die Karte die neueste Version beider Arten an, und die Hinweise einer Vorabversion tragen den Zusatz „Vorabversion“. Schaltest du zurück auf nur stabile Versionen, bleibt eine installierte Vorabversion; Älteres wird nicht angeboten, die nächste neuere stabile Version schon. Die Karte sagt dann „Installiert ist eine Vorabversion.“ Eine Installation mit dem Installationsbefehl einer Vorabversion beginnt mit eingeschalteten Vorabversionen.
 
 ## Neustart
 

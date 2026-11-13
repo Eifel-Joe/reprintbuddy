@@ -43,11 +43,21 @@ def test_the_stand_in_is_no_real_version(shots):
 def test_the_card_update_tells_the_stand_in_not_the_installed_version(shots):
     real = reprintbuddy.__version__
     described = shots.release_runner(["git", "describe", "--tags"]).stdout
-    tags = shots.release_runner(["git", "ls-remote", "--tags", "origin"]).stdout
     assert f"v{shots.SHOT_VERSION}" in described and real not in described
-    assert f"v{shots.next_version()}" in tags and f"v{shots.SHOT_VERSION}" in tags and f"v{real}" not in tags
     body = shots.release_notes_answer("https://example.invalid", {})[1].decode()
     assert f"v{shots.next_version()}" in body and real not in body
+
+
+def test_the_card_offers_the_next_version_through_the_release_list(shots, tmp_path):
+    """v0.4.9: the check reads GitHub's release list; a release counts only with its package."""
+    from datetime import UTC, datetime
+
+    from reprintbuddy.ops.releases import check_versions
+
+    (tmp_path / ".git").mkdir()
+    info = check_versions(tmp_path, shots.release_runner, shots.release_notes_answer, channel="stable", now=datetime.now(UTC))
+    assert (info.installed, info.newest) == (f"v{shots.SHOT_VERSION}", f"v{shots.next_version()}")
+    assert info.update_available and info.notes is not None and not info.notes.failed
 
 
 def test_the_pages_of_the_recorded_application_carry_the_stand_in(shots, tmp_path):

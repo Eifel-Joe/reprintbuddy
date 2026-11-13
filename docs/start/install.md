@@ -28,9 +28,9 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 
 ## What the installer does
 
-- installs the packages it needs (`python3`, `python3-venv`, `git`, `curl`, `sudo`, `ca-certificates`),
+- installs the packages it needs (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`),
 - creates the system user `reprintbuddy`,
-- puts Reprintbuddy into `/opt/reprintbuddy` on the release tag of the script, with its Python environment in `/opt/reprintbuddy/.venv`,
+- downloads the package of the release of the script from GitHub (`reprintbuddy-<tag>.tar.gz`) with its checksum file, installs nothing if they do not match, and unpacks it to `/opt/reprintbuddy/releases/<tag>`; `/opt/reprintbuddy/release.json` names the installed version. The Python environment is in `/opt/reprintbuddy/.venv`. git is not needed,
 - creates `/var/lib/reprintbuddy` (mode 700) with the database, the backups and the update state,
 - installs the systemd units `reprintbuddy.service` and `reprintbuddy-update.service`,
 - installs a sudoers rule in `/etc/sudoers.d/reprintbuddy` that lets the service user run exactly these commands as root, and nothing else (the last two are for the rollback of a failed update, which restores the database while the service is stopped):
@@ -51,7 +51,7 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 
 ## Network access the machine needs
 
-Outgoing access to the Debian package sources (`apt`), `github.com` and `raw.githubusercontent.com` (installation and updates), `api.github.com` (the release notes on the update card), `pypi.org` and `files.pythonhosted.org` (Python packages, at installation and at every update) and to your Bambuddy.
+Outgoing access to the Debian package sources (`apt`), `github.com`, `raw.githubusercontent.com` and `release-assets.githubusercontent.com` (installation and updates: GitHub serves the package of a release from the last one), `api.github.com` (the release notes on the update card), `pypi.org` and `files.pythonhosted.org` (Python packages, at installation and at every update) and to your Bambuddy.
 
 ## Running the installer again
 
