@@ -242,3 +242,33 @@ def test_remove_git_copy_keeps_what_belongs_to_the_package_way(tmp_path):
     assert sorted(removed) == [".git", "README.md", "pyproject.toml", "src"]
     assert failed == []
     assert sorted(path.name for path in tmp_path.iterdir()) == [".venv", "release.json", "releases"]
+
+
+def test_review_an_archive_whose_compressed_stream_is_broken_is_unusable(tmp_path, monkeypatch):
+    """Final review, minor 1: a gzip stream that breaks inside raised `zlib.error`, which escaped `unpack`
+    (traceback, the status stayed "running"). Anything the archive library raises means "unusable"."""
+    import zlib
+
+    def broken(*args, **kwargs):
+        raise zlib.error("Error -3 while decompressing data")
+
+    archive = good_tar(tmp_path / "p.tar.gz")
+    monkeypatch.setattr(pk.tarfile, "open", broken)
+    with pytest.raises(pk.PackageError) as raised:
+        pk.unpack(archive, tmp_path / "releases", TAG)
+    assert raised.value.reason == "package_unusable"
+    assert list((tmp_path / "releases").iterdir()) == []
+
+
+def test_review_remove_git_copy_never_removes_the_folder_of_the_database(tmp_path):
+    """Final review, minor 7: "Daten nie" (Spec 11.3a), also for `reprintbuddy update --db` pointing into
+    the program folder by hand."""
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "data").mkdir()
+    db = tmp_path / "data" / "reprintbuddy.db"
+    db.write_bytes(b"x")
+    (tmp_path / "loose.db").write_bytes(b"y")
+    removed, failed = pk.remove_git_copy(tmp_path, protect=[db, tmp_path / "loose.db"])
+    assert removed == [".git"]
+    assert sorted(failed) == ["data", "loose.db"]
+    assert db.exists() and (tmp_path / "loose.db").exists()

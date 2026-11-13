@@ -947,3 +947,19 @@ def test_a_stale_snapshot_is_never_restored_over_an_untouched_environment(update
     result = e.update()
     assert result.state == "failed" and result.reason == "checksum_mismatch"
     assert marker.read_text(encoding="utf-8") == "current"
+
+
+def test_review_a_database_inside_the_program_folder_survives_the_removal_of_the_git_copy(tmp_path, fake_runner, capsys):
+    """Final review, minor 7: `reprintbuddy update --db` pointing into /opt/reprintbuddy by hand."""
+    e = Env(tmp_path, fake_runner, kind="git")
+    inside = e.opt / "data"
+    inside.mkdir()
+    for suffix in ("", "-wal", "-shm"):
+        source = e.data / ("u.db" + suffix)
+        if source.exists():
+            source.replace(inside / source.name)
+    e.db = inside / "u.db"
+    assert e.update().state == "succeeded"
+    assert e.db.exists() and (e.opt / "data").is_dir()
+    assert not (e.opt / ".git").exists()
+    assert "could not remove the old git copy" in capsys.readouterr().out

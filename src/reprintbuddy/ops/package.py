@@ -23,7 +23,7 @@ import tarfile
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
@@ -171,7 +171,7 @@ def unpack(archive: Path, dest: Path, tag: str) -> Path:
     except PackageError:
         shutil.rmtree(work, ignore_errors=True)
         raise
-    except (tarfile.TarError, OSError, EOFError) as error:
+    except Exception as error:  # noqa: BLE001 - tarfile, gzip, zlib (review: zlib.error escaped): unusable
         shutil.rmtree(work, ignore_errors=True)
         raise PackageError("package_unusable", type(error).__name__) from None
     shutil.rmtree(work, ignore_errors=True)
@@ -198,17 +198,23 @@ def prune_releases(install_dir: Path, keep: set[str]) -> list[str]:
     return removed
 
 
-def remove_git_copy(install_dir: Path) -> tuple[list[str], list[str]]:
+def remove_git_copy(install_dir: Path, *, protect: Iterable[Path] = ()) -> tuple[list[str], list[str]]:
     """Remove the old git copy: everything in the program folder but `.venv`, `releases` and
-    `release.json`. Never raises; returns (removed, could not be removed)."""
+    `release.json`. An entry that is or holds a path of `protect` (the database: "Daten nie", Spec 11.3a)
+    stays and counts as not removed. Never raises; returns (removed, could not be removed)."""
     removed: list[str] = []
     failed: list[str] = []
     try:
         entries = list(install_dir.iterdir())
+        kept = [path.resolve() for path in protect]
     except OSError:
         return removed, failed
     for entry in entries:
         if entry.name in KEEP_IN_INSTALL_DIR:
+            continue
+        here = entry.resolve() if not entry.is_symlink() else entry.absolute()
+        if any(path == here or path.is_relative_to(here) for path in kept):
+            failed.append(entry.name)
             continue
         try:
             if entry.is_dir() and not entry.is_symlink():

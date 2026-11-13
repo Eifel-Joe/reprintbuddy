@@ -144,8 +144,6 @@ def test_dry_run_fresh(bash, tmp_path):
     assert "anyone in your network" in out
     assert not [line for line in out.splitlines() if " git " in line or "git clone" in line]  # v0.4.9: no git at all
     for line in out.splitlines():
-        if line.startswith("+ rm -rf ") and line.endswith("/build"):
-            continue  # build leftovers are removed by root, as before
         if any(word in line for word in ("curl -fsSL", "sha256sum", "tar -x", "-m venv", "-m pip", "reprintbuddy init", "/releases/")):
             assert line.startswith(RUNUSER), line
         assert not line.startswith(("+ git", "+ python3 ", "+ /opt/reprintbuddy/.venv", "+ curl", "+ tar")), line
@@ -816,3 +814,41 @@ def test_an_unfinished_git_installation_gives_way_to_the_package(bash, tmp_path,
     assert "Unfinished installation found" in done.stdout
     assert sorted(path.name for path in install.iterdir()) == ["release.json", "releases"]
     assert json.loads((install / "release.json").read_text(encoding="utf-8"))["tag"] == PINNED
+
+
+
+def test_review_a_checksum_line_that_names_another_file_installs_nothing(bash, tmp_path):
+    """Final review, minor 5: `sha256sum -c` checks the file the line names; it must name the package."""
+    import hashlib
+
+    fixtures = package_fixture(tmp_path / "fixtures")
+    (fixtures / "other.txt").write_text("x", encoding="utf-8")
+    digest = hashlib.sha256(b"x").hexdigest()
+    (fixtures / f"{PACKAGE}.sha256").write_text(f"{digest}  other.txt\n", encoding="utf-8", newline="\n")
+    done, install = _call(bash, tmp_path, "fetch_code", fixtures)
+    assert done.returncode == 1
+    assert "does not name the package" in done.stderr, done.stderr
+    assert not (install / "release.json").exists()
+
+
+def test_review_root_reads_nothing_in_the_folders_of_the_service_user():
+    """Final review, minors 3 and 4: in `releases/` (the service user's) root neither reads (checksum, list
+    of the archive) nor removes anything; the service user does it (the script's own rule)."""
+    import re as _re
+
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    body = _re.search(r"^download_release\(\) \{\n(.*?)\n\}\n", text, _re.S | _re.M).group(1)
+    for line in body.splitlines():
+        if "tar -tzf" in line or "cut -d" in line:
+            assert "capture_as_service_user" in line, line
+        assert "${DESTDIR}${work}" not in line, line
+    install_python = _re.search(r"^install_python\(\) \{\n(.*?)\n\}\n", text, _re.S | _re.M).group(1)
+    assert 'as_service_user rm -rf "${SOURCE_DIR}/build"' in install_python
+
+
+def test_review_the_top_folder_check_takes_the_dots_of_the_tag_literally(bash, tmp_path):
+    """Final review, minor 9: `reprintbuddy-v0x4y9/` must not pass for `reprintbuddy-v0.4.9/`."""
+    fixtures = package_fixture(tmp_path / "fixtures", extra=f"reprintbuddy-{PINNED.replace('.', 'x')}/x")
+    done, install = _call(bash, tmp_path, "fetch_code", fixtures)
+    assert done.returncode == 1
+    assert "more than the folder" in done.stderr

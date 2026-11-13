@@ -424,7 +424,7 @@ def _run_update(
         problem = (current, f"unexpected error: {type(error).__name__}", "unexpected", {"detail": type(error).__name__})
     if problem is None:
         shutil.rmtree(snapshot_dir, ignore_errors=True)
-        _settle(install_dir, installed, goal, sha256)
+        _settle(install_dir, installed, goal, sha256, db_path)
         return finish("succeeded", "done", "")
 
     cause = f"{problem[0]}: {problem[1]}"
@@ -438,7 +438,7 @@ def _run_update(
     return finish("rollback_failed", "rollback", f"{cause} – backup: {backup}", problem[2], problem[3])
 
 
-def _settle(install_dir: Path, installed: Installation, goal: str, sha256: str) -> None:
+def _settle(install_dir: Path, installed: Installation, goal: str, sha256: str, db_path: Path) -> None:
     """After a successful update: `release.json` names the new version, the old git copy of an
     installation made with git goes (Spec 11.3a), and of the unpacked versions only the new and the
     previous one stay. Nothing here may turn the success into a failure: the new version runs."""
@@ -450,7 +450,7 @@ def _settle(install_dir: Path, installed: Installation, goal: str, sha256: str) 
         print(f"update: cannot write {MARKER} ({error}); the next update reads the version from git", flush=True)
         return
     if installed.kind == "git":
-        removed, failed = remove_git_copy(install_dir)
+        removed, failed = remove_git_copy(install_dir, protect=[db_path])
         for name in removed:
             print(f"update: removed the old git copy: {install_dir / name}", flush=True)
         for name in failed:

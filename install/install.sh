@@ -294,20 +294,31 @@ download_release() {
             die 1 "The package of release ${RELEASE_TAG} could not be downloaded: ${base}/${file}"
         fi
     done
+    # Everything in releases/ belongs to the service user: it reads the files there, never root (review).
+    local line="" listing=""
+    if [ "${DRY_RUN}" -ne 1 ]; then
+        # The checksum file is the one line sha256sum writes, and it names this package (review: a line
+        # naming another file would let `sha256sum -c` check that file instead).
+        line="$(capture_as_service_user cat "${work}/${package}.sha256" 2>/dev/null || true)"
+        sha="${line%%  *}"
+        if [ "${line#*  }" != "${package}" ] || ! printf '%s\n' "${sha}" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+            as_service_user rm -rf "${work}"
+            die 1 "The checksum file of ${package} does not name the package; nothing was installed."
+        fi
+    fi
     if ! as_service_user env -C "${work}" sha256sum -c --strict --quiet "${package}.sha256"; then
         as_service_user rm -rf "${work}"
         die 1 "The package ${package} does not match its checksum; nothing was installed."
     fi
     if [ "${DRY_RUN}" -ne 1 ]; then
-        # Only the version's folder, nothing above it and no way out of it ("..").
-        stray="$(tar -tzf "${DESTDIR}${work}/${package}" 2>/dev/null |
-            grep -Ev "^${top}(/|\$)" || true)"
-        stray="${stray}$(tar -tzf "${DESTDIR}${work}/${package}" 2>/dev/null | grep -E '(^|/)\.\.(/|$)' || true)"
+        # Only the version's folder (its dots taken literally), nothing above it and no way out of it ("..").
+        listing="$(capture_as_service_user tar -tzf "${work}/${package}" 2>/dev/null || true)"
+        stray="$(printf '%s\n' "${listing}" | grep -Ev "^${top//./\\.}(/|\$)" || true)"
+        stray="${stray}$(printf '%s\n' "${listing}" | grep -E '(^|/)\.\.(/|$)' || true)"
         if [ -n "${stray}" ]; then
             as_service_user rm -rf "${work}"
             die 1 "The package ${package} holds more than the folder ${top}; nothing was installed."
         fi
-        sha="$(cut -d ' ' -f 1 "${DESTDIR}${work}/${package}.sha256")"
     fi
     if ! as_service_user tar -xzf "${work}/${package}" -C "${work}"; then
         as_service_user rm -rf "${work}"
@@ -401,7 +412,8 @@ install_python() {
     if [ "${rebuild}" -eq 1 ] || [ ! -d "${DESTDIR}${VENV_DIR}" ]; then
         as_service_user python3 -m venv "${VENV_DIR}"
     fi
-    run rm -rf "${SOURCE_DIR}/build" # old build leftovers would bring back deleted modules
+    # Old build leftovers would bring back deleted modules. By the service user: releases/ is its folder.
+    as_service_user rm -rf "${SOURCE_DIR}/build"
     as_service_user "${VENV_DIR}/bin/python" -m pip install --no-cache-dir --upgrade "${SOURCE_DIR}"
 }
 

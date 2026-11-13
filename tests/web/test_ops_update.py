@@ -1239,3 +1239,21 @@ def test_v049_the_german_page_says_it_in_german(ops_env):
     assert "Vorabversion" in notes
     choose(ops_env, "stable")
     assert "Installiert ist eine Vorabversion." in ops_env.client.get("/settings?tab=maintenance").text
+
+
+def test_v049_review_back_on_stable_a_failed_check_offers_no_pre_release_any_more(ops_env):
+    """Final review, finding 1: the choice "wirkt sofort" (Spec 11.3a). A check that fails right after
+    switching back to stable releases must not leave the pre-release on offer (bar and button)."""
+    from test_update_banner import banner
+
+    package_env(ops_env, remote=("v0.2.0-beta.1", "v0.1.0"))
+    choose(ops_env, "prerelease")
+    assert "Update to v0.2.0-beta.1" in ops_env.client.get("/settings?tab=maintenance").text
+    use_github(ops_env, FakeGitHub(status=503))  # GitHub's limit, or no network
+    response = choose(ops_env, "stable")
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=check_failed#ops-update"
+    assert banner(ops_env.client.get("/").text) is None
+    assert "Update to" not in ops_env.client.get("/settings?tab=maintenance").text
+    started = post(ops_env, "/settings/update")
+    assert started.headers["location"] == "/settings?tab=maintenance&ops=no_update#ops-update"
+    assert START_UPDATE_CMD not in ops_env.runner.calls

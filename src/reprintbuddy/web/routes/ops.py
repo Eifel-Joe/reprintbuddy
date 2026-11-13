@@ -468,6 +468,9 @@ async def update_channel(request: Request):
         return _back()
     if not is_installation(request.app.state.ops.install_dir):
         return _back()
+    # Final review: what the earlier check found was offered under the earlier choice. Forgotten here, so
+    # that a check that fails now leaves no pre-release on offer (bar, button) after "stable releases only".
+    request.app.state.version_info = None
     return await _check(request)
 
 
