@@ -39,3 +39,9 @@ def test_assembled_form_leaves_out_what_another_row_holds(result):  # p351
     assert result["assembled"]["after_choosing_in_choice_parts"] == [
         ["", "1", "3"], ["", "3"], ["", "2", "3"], "1",
     ]
+
+
+def test_more_rows_offers_the_drop_down_helpers_of_both_forms(result):
+    """0.4.7 (R7): one copy of `offerOnly` and `drawn`, in more_rows.js, for the set form and the form of an
+    article made of parts; the order form loads more_rows.js alone."""
+    assert result["shared_rows"] == ["function", "function"]

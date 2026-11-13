@@ -17,6 +17,7 @@ from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, get_or_404, render
 from reprintbuddy.web.i18n import translate
+from reprintbuddy.web import form_rows
 from reprintbuddy.web.forms import (
     MAX_ID,
     bounded_int,
@@ -46,8 +47,7 @@ SECTIONS = ("base", "c1", "c2")
 
 
 def _count(form, section: str) -> int:
-    value = bounded_int(str(form.get(f"{section}_rows", "")).strip())
-    return value if value is not None and 1 <= value <= MAX_ROWS else DEFAULT_ROWS
+    return form_rows.row_count(form, f"{section}_rows", DEFAULT_ROWS, MAX_ROWS)
 
 
 def _typed(form) -> dict:
@@ -89,7 +89,7 @@ def _grow(values: dict, section: str, rows: int) -> None:
 
 
 def _article_id(raw: str) -> int:
-    return parse_int(raw, field="sets.field.article", min=1, max=MAX_ID)
+    return form_rows.article_choice(raw, "sets.field.article")
 
 
 def _set_value(set_id: int) -> str:
@@ -114,7 +114,7 @@ def _parse(values: dict) -> SetInput:
     for row in values["base"]:
         if not row["article"]:
             continue  # rows without an article are skipped
-        qty = parse_int(row["qty"], field="sets.field.qty", min=1, max=1000)
+        qty = form_rows.qty(row["qty"], "sets.field.qty")
         article_id, set_id = _base_choice(row["article"])
         base.append(BaseInput(qty, article_id, set_id))
     choices = []
