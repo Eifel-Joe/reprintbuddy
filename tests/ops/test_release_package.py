@@ -272,3 +272,47 @@ def test_review_remove_git_copy_never_removes_the_folder_of_the_database(tmp_pat
     assert removed == [".git"]
     assert sorted(failed) == ["data", "loose.db"]
     assert db.exists() and (tmp_path / "loose.db").exists()
+
+
+class TrickleResponse(FakeResponse):
+    """A server that sends one byte at a time; a whole block (`read`) would wait for 64 KiB."""
+
+    def read(self, size=-1):
+        raise AssertionError("the download must not wait for a whole block")
+
+    def read1(self, size=-1):
+        return super().read1(1)
+
+
+def test_p550_the_deadline_holds_within_a_block_of_a_trickling_server(tmp_path, monkeypatch):
+    """p550 (v0.4.10): the 300 s for the whole download were looked at only after a full block of 64 KiB;
+    a server that trickles one byte now and then could hold the update far longer (until systemd's 30
+    minutes). Each read returns what has arrived, and the deadline is checked after it."""
+    clock = iter(range(0, 10_000, 100))  # every look at the clock is 100 s later
+    monkeypatch.setattr(pk.time, "monotonic", lambda: next(clock))
+    dest = tmp_path / "p.tar.gz"
+    with pytest.raises(pk.PackageError) as raised:
+        pk.urllib_download("https://github.com/x", dest, _opener=FakeOpener(TrickleResponse(b"x" * 1000)))
+    assert (raised.value.reason, raised.value.detail) == ("fetch_failed", "the download took too long")
+    assert not dest.exists()
+
+
+def test_p550_a_normal_download_still_arrives_whole(tmp_path):
+    dest = tmp_path / "p.tar.gz"
+    data = bytes(range(256)) * 1000  # more than one block
+    pk.urllib_download("https://github.com/x", dest, _opener=FakeOpener(FakeResponse(data)))
+    assert dest.read_bytes() == data
+
+
+def test_p550_the_request_of_the_helper_has_a_deadline_within_a_block_too(monkeypatch):
+    """Sister path of p550: the helper's request to the release list read up to 1 MB in one blocking call."""
+    clock = iter(range(0, 10_000, 5))  # every look at the clock is 5 s later; the limit is 10 s
+    monkeypatch.setattr(pk.time, "monotonic", lambda: next(clock))
+    with pytest.raises(pk.PackageError) as raised:
+        pk.urllib_get("https://api.github.com/x", {}, _opener=FakeOpener(TrickleResponse(b"[" + b" " * 100 + b"]")))
+    assert raised.value.detail == "timeout"
+
+
+def test_p550_the_request_of_the_helper_still_reads_a_whole_answer(monkeypatch):
+    body = b"[" + b" " * 200_000 + b"]"
+    assert pk.urllib_get("https://api.github.com/x", {}, _opener=FakeOpener(FakeResponse(body))) == (200, body)
