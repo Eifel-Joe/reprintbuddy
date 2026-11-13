@@ -71,3 +71,49 @@ def test_the_pages_of_the_recorded_application_carry_the_stand_in(shots, tmp_pat
         assert ops_routes.__version__ == shots.SHOT_VERSION  # the line "installed ... package ..." of the card
     finally:
         server.app.state.engine.dispose()
+
+
+class ScrolledBrowser:
+    """Stands in for the browser of the picture tool: a page that the address with `#ops-update` has
+    scrolled down by 215 px (measured on the update card, p541). The sticky menu sits at the scroll position;
+    a picture cut from the top of the page shows it that far down."""
+
+    def __init__(self):
+        from PIL import Image
+
+        self.scroll_y = 215
+        self.at_capture: list[int] = []
+        self._image = Image.new("RGB", (10, 10))
+
+    def viewport(self, width, height, mobile=False):
+        pass
+
+    def call(self, *args, **kwargs):
+        return {}
+
+    def evaluate(self, expression):
+        if "scrollTo" in expression:
+            self.scroll_y = 0
+            return None
+        return 800  # the height of the page
+
+    def screenshot(self, clip=None):
+        self.at_capture.append(self.scroll_y)
+        return self._image
+
+
+@pytest.mark.parametrize("take", ["frame", "mobile"])
+def test_p541_a_picture_is_taken_from_the_top_of_a_scrolled_page(shots, tmp_path, monkeypatch, take):
+    """p541 (v0.4.10): after "Check for updates" the page lands on `#ops-update`, scrolled down; the picture
+    is cut from the top of the page, but the sticky menu stayed at the scroll position, 112 px under the bar
+    on the update card. The page is scrolled to the top before the picture is measured and taken."""
+    monkeypatch.setattr(shots.time, "sleep", lambda seconds: None)
+    browser = ScrolledBrowser()
+    shooter = shots.Shooter(browser, type("S", (), {"url": "http://127.0.0.1:1"})(), tmp_path, "en", set())
+    monkeypatch.setattr(shooter, "save", lambda name, image: None)
+    if take == "frame":
+        shooter.frame()
+    else:
+        browser.goto = lambda url: None
+        shooter.mobile("overview-mobile", "/")
+    assert browser.at_capture == [0]

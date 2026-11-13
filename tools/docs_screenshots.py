@@ -946,6 +946,18 @@ def run_prints(server: Server, scn: Scenario) -> None:
 # taking the pictures
 
 
+def to_top(b: Browser) -> None:
+    """Scroll the page to its top before a picture cut from the top of the page.
+
+    p541 (v0.4.10): after "Check for updates" the page lands on `#ops-update` and is scrolled down (215 px
+    measured, 112 px after the window grows to the height of the picture). The picture is cut from the top of
+    the page, but the sticky menu stays at the scroll position, so it began 112 px under the bar. In a browser
+    the page is right: the menu sits at the top of the window (measured: its top equals the scroll position).
+    Rejected: dropping the anchor from the redirect (the page itself is right). Tests:
+    test_docs_screenshots_version.py "p541"."""
+    b.evaluate("window.scrollTo(0, 0)")
+
+
 class Shooter:
     """Takes and saves the pictures of one language."""
 
@@ -972,6 +984,7 @@ class Shooter:
     def frame(self, cap: int = MAX_HEIGHT, width: int = WIDTH) -> Image.Image:
         """The page with the menu, as high as its content (at most `cap`)."""
         b = self.b
+        to_top(b)
         b.viewport(width, 300)
         time.sleep(0.2)
         need = b.evaluate(
@@ -1021,6 +1034,7 @@ class Shooter:
         b.goto(self.url(path))
         if before:
             before(b)
+        to_top(b)
         height = min(int(b.evaluate("Math.ceil(document.documentElement.scrollHeight)")), cap)
         b.viewport(MOBILE_WIDTH, height, mobile=True)
         time.sleep(0.4)
