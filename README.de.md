@@ -89,16 +89,16 @@ Erfundene Beispieldaten. Weitere Bilder stehen auf den [Doku-Seiten](https://eif
 ## Installation
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.4.6/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.4.7/install/install.sh)"
 ```
 
 Als root auf diesem System ausführen. Frische Debian-Systeme bringen oft kein curl mit; der erste Teil installiert es.
-Das Skript legt das Release auf, dessen Tag in der Adresse steht (hier `v0.4.6`): Skript und Release sind eine
+Das Skript legt das Release auf, dessen Tag in der Adresse steht (hier `v0.4.7`): Skript und Release sind eine
 Version.
 Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.4.6/install/install.sh)" _ --language de
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v0.4.7/install/install.sh)" _ --language de
 ```
 
 Willst du eine andere Version installieren, setzt du ihren Tag anstelle von `<tag>` in die Adresse (ab v0.3.14; die
