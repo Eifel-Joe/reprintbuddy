@@ -23,6 +23,7 @@ from reprintbuddy.ops.versions import parse_version
 from reprintbuddy.web import regions
 from reprintbuddy.web.csrf import csrf_token
 from reprintbuddy.web.i18n import translate, translate_count
+from reprintbuddy.web.installed import refresh as refresh_installed
 
 UID_KEY = "uid"
 SID_KEY = "sid"
@@ -171,6 +172,10 @@ def _add_update_notice(request: Request, context: dict[str, object], session) ->
     """
     context["update_version"] = None
     info = getattr(request.app.state, "version_info", None)
+    if info is not None:
+        # p543: a result that named the version before the last update is no longer offered
+        refresh_installed(request.app.state)
+        info = getattr(request.app.state, "version_info", None)
     if info is None or not info.update_available or parse_version(info.installed or "") is None:
         return
     if st.get_setting(session, "update_check"):

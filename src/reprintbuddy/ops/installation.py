@@ -122,3 +122,24 @@ def write_marker(install_dir: Path, *, tag: str, repo: tuple[str, str], sha256: 
     except BaseException:
         Path(name).unlink(missing_ok=True)
         raise
+
+
+def marker_stamp(install_dir: Path) -> tuple[int, int, int] | None:
+    """What tells a new `release.json` from the one read before (time, size, file), or None without one.
+
+    The update writes the file by a rename (`write_marker`), so a new one is a new file even within the
+    same second (p543, v0.4.11)."""
+    try:
+        found = (install_dir / MARKER).stat()
+    except OSError:
+        return None
+    return (found.st_mtime_ns, found.st_size, found.st_ino)
+
+
+def marker_version(install_dir: Path) -> tuple[bool, str | None]:
+    """The version `release.json` names, read from the file alone, never from git: (True, tag), with tag
+    None when it names no valid version, or (False, None) when there is no file that can be read."""
+    data = _read_marker(install_dir) if (install_dir / MARKER).is_file() else None
+    if data is None:
+        return False, None
+    return True, _package(install_dir, data).tag

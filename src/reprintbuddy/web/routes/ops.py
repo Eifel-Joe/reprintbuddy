@@ -22,7 +22,7 @@ from reprintbuddy.activity.kinds import Actor
 from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.backup import backup_dir_for, update_backup_since
 from reprintbuddy.ops.export import export_bytes
-from reprintbuddy.ops.installation import installed_version, is_installation
+from reprintbuddy.ops.installation import installed_version, is_installation, marker_stamp
 from reprintbuddy.ops.releases import check_versions
 from reprintbuddy.ops.server import (
     EffectiveServer,
@@ -51,6 +51,7 @@ from reprintbuddy.web.flash import flash
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
 from reprintbuddy.web.forms import duplicate_redirect, maintenance_redirect
 from reprintbuddy.web.i18n import translate
+from reprintbuddy.web.installed import refresh as refresh_installed
 
 log = logging.getLogger("reprintbuddy.ops")
 router = APIRouter()
@@ -135,11 +136,15 @@ def _utc_now() -> datetime:
 
 
 def _installed(request: Request) -> str | None:
-    """The tag this process runs: asked once, because every update restarts the process."""
+    """The tag this process runs: asked once, because every update restarts the process; read again
+    when the update writes `release.json` after the restart (p543, `web.installed`)."""
     app = request.app
     ops = app.state.ops
     if not hasattr(app.state, "installed_tag"):
+        stamp = marker_stamp(ops.install_dir)  # before the read: a file written in between is read again
         app.state.installed_tag = installed_version(ops.install_dir, ops.runner)
+        app.state.installed_stamp = stamp
+    refresh_installed(app.state)
     return app.state.installed_tag
 
 
@@ -411,9 +416,17 @@ async def restart(request: Request, db: Session = Depends(get_db)):
 
 def store_versions(state: Any, info: VersionInfo, *, actor: Actor) -> None:
     """Keep a good result of the check for new versions, from the button or the automatic check (one
-    state), and log a newer version once (Spec 10.7, group 4)."""
+    state), and log a newer version once (Spec 10.7, group 4).
+
+    p543: the check read the installation itself, at a time not known here; when `release.json` names
+    another version by now (the update wrote it while the check ran), the result is dropped, and nothing is
+    logged for it."""
     state.version_info = info
     state.installed_tag = info.installed
+    state.installed_stamp = None  # compared with `release.json` at once
+    refresh_installed(state)
+    if state.version_info is not info:
+        return
     if info.update_available and info.newest:
         state.activity.transition("update.available", info.newest, "version_found", actor, {"version": info.newest})
 
@@ -539,6 +552,7 @@ async def _start_update(request: Request):
     # The state file alone says "idle" for most clicks; only a recorded update needs systemd's word.
     if is_busy(read_status(data_dir), now) and await update_running_async(data_dir, ops.runner, now):
         return _back("busy")
+    refresh_installed(app.state)  # p543: not an update to the version the last update installed
     info: VersionInfo | None = getattr(app.state, "version_info", None)
     if info is None or not info.update_available:
         return _back("no_update")
