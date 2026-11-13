@@ -14,7 +14,8 @@ from factories import make_article, make_entry
 from texts import en_html as en
 from reprintbuddy import settings as st
 from reprintbuddy.i18n import translate_count
-from reprintbuddy.web import regions
+from reprintbuddy.models import utcnow
+from reprintbuddy.web import printplan_view, regions
 
 CSS = Path(__file__).resolve().parents[2] / "src/reprintbuddy/web/static/css/reprintbuddy.css"
 
@@ -143,11 +144,45 @@ def test_long_queue_renders(bb_client, fake_bambuddy):
     for n in range(60):
         fake_bambuddy.add_foreign_item(f"Part {n}.gcode.3mf", target_model="A1", print_time_s=5400)
     query(bb_client)
-    started = time.perf_counter()
     part = plan_part(bb_client)
-    assert time.perf_counter() - started < 1.0
     assert len(bars(part)) == 60
     assert "→" in part  # the bars beyond 24 hours end at the edge
+
+
+def best_plan_time(client, runs: int = 7) -> float:
+    """The shortest of `runs` builds of the plan view from the last query, in seconds.
+
+    Only the plan itself is timed (not the login, the middleware or the rest of the page, which a loaded
+    runner can stretch by a factor of twenty), and the shortest run counts: a stall of the machine lengthens
+    one run, a slow plan lengthens all of them (p536)."""
+    ticker = client.app.state.ticker
+    shortest = float("inf")
+    for _ in range(runs):
+        with sm_of(client)() as db:
+            started = time.perf_counter()
+            printplan_view.plan_view(db, ticker.board, ticker.status.bambuddy_queue, utcnow(), "en", known=True)
+            shortest = min(shortest, time.perf_counter() - started)
+    return shortest
+
+
+def test_long_queue_is_planned_quickly(bb_client, fake_bambuddy):
+    """Two things a slow plan would show, neither of which depends on the speed of the machine much:
+    the time grows no faster than the queue does (a quadratic loop, a query per print: four times the
+    prints must not cost sixteen times the time), and 60 prints stay far below the 5 ms of a normal run
+    (a bound with a wide margin, for a plan that became slow for every queue)."""
+    added = 0
+
+    def queue_of(count):
+        nonlocal added
+        while added < count:
+            fake_bambuddy.add_foreign_item(f"Part {added}.gcode.3mf", target_model="A1", print_time_s=5400)
+            added += 1
+        query(bb_client)
+        return best_plan_time(bb_client)
+
+    sixty = queue_of(60)
+    assert sixty < 0.15
+    assert queue_of(240) < 8 * sixty  # linear is about 2, quadratic about 16
 
 
 def test_mobile_css_turns_lanes_into_a_list():

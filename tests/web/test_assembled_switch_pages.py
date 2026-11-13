@@ -48,8 +48,9 @@ def _switch_form(client, lamp, clip, **over):
     return data
 
 
-def test_switch_sent_twice_answers_not_found_and_a_bad_input_keeps_the_form(ready_client):
-    """0.4.8 (R9): held before the save moved into the shared double-submit helper."""
+def test_switch_sent_twice_says_already_saved_and_a_bad_input_keeps_the_form(ready_client):
+    """0.4.8 (R9): a bad input keeps the form. p540 (0.4.9): the second sending answers "already saved"
+    and leads to the article like every other one-time form, no longer "not found"."""
     with sm_of(ready_client).begin() as s:
         lamp = make_article(s, name="Lamp", sku="EX-L1").id
         clip = make_article(s, name="Clip").id
@@ -60,10 +61,28 @@ def test_switch_sent_twice_answers_not_found_and_a_bad_input_keeps_the_form(read
     assert forged.status_code == 400 and en("form.expired") in forged.text
     data = _switch_form(ready_client, lamp, clip)
     assert ready_client.post(path, data=data, follow_redirects=False).status_code == 303
-    # Sent again, the article is no print article any more: the route answers "not found" before the
-    # form is read, so the repeat never reaches the double-submit guard. Held as it is (0.4.8, R9).
+    # Sent again (double click, back and send once more): the article is no print article any more, but the
+    # repeat still reaches the double-submit guard. Nothing is booked twice.
     again = ready_client.post(path, data=data, follow_redirects=False)
-    assert again.status_code == 404
+    assert again.status_code == 303 and again.headers["location"] == f"/articles/{lamp}"
+    assert en("form.duplicate") in ready_client.get(f"/articles/{lamp}").text
+    with sm_of(ready_client).begin() as s:
+        assert s.get(Article, lamp).kind == "assembled"
+
+
+def test_switch_of_something_that_is_no_print_article_is_still_not_found(ready_client):
+    """Only a repeat of the form is "already saved"; an unknown article, and an article made of parts that
+    meets a fresh form, stay "not found"."""
+    with sm_of(ready_client).begin() as s:
+        clip = make_article(s, name="Clip").id
+        lamp = make_assembled(s, name="Lamp", sku="EX-L1", base=[(clip, 2)]).id
+    path = f"/articles/{lamp}/to-assembled"
+    fresh = {"csrf_token": csrf_of(ready_client, f"/articles/{clip}/to-assembled"),
+             "form_token": form_token_of(ready_client, f"/articles/{clip}/to-assembled", f"/articles/{clip}/to-assembled"),
+             "name": "Lamp", "sku": "EX-L1", "mode": "stock", "base_rows": "1", "base_0_qty": "2", "base_0_article": str(clip),
+             "c1_options": "1", "c1_0_rows": "1"}
+    assert ready_client.post(path, data=fresh, follow_redirects=False).status_code == 404
+    assert ready_client.post("/articles/999/to-assembled", data=fresh, follow_redirects=False).status_code == 404
     with sm_of(ready_client).begin() as s:
         assert s.get(Article, lamp).kind == "assembled"
 

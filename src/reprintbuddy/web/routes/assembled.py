@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy.domain import assembled, catalog
 from reprintbuddy.domain.assembled import AssembledInput, OptionInput
 from reprintbuddy.domain.catalog import MAX_LABEL_TEXT, BaseInput
-from reprintbuddy.domain.errors import ValidationError
+from reprintbuddy.domain.errors import NotFoundError, ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Article, ArticlePart
 from reprintbuddy.web.csrf import verify_csrf
@@ -328,23 +328,30 @@ async def to_assembled_form(request: Request, article_id: int, db: Session = Dep
 
 @router.post("/articles/{article_id:int}/to-assembled", dependencies=[Depends(verify_csrf)])
 async def to_assembled(request: Request, article_id: int, db: Session = Depends(get_db)):
-    article = _print_article(db, article_id)
+    # No `_print_article` here (p540, 0.4.9): a repeat of the form meets an article that is no print article
+    # any more and must reach the double-submit guard, which answers "already saved". A fresh form for such an
+    # article is refused by the domain (`NotFoundError`) and answered "not found" as before.
+    if db.get(Article, article_id) is None:
+        raise HTTPException(status_code=404)
     action = f"/articles/{article_id}/to-assembled"
     form = await request.form()
     values = _typed(form)
     if change_part_rows(form, values) or _grow(values, str(form.get("action", ""))):
+        _print_article(db, article_id)  # the form is shown again: only for a print article, as the GET
         return _form_page(request, db, composite=None, values=values, action=action)
 
     def save(tx, data):
-        assembled.convert_to_assembled(tx, article.id, data)
+        assembled.convert_to_assembled(tx, article_id, data)
         return {"name": data.name}
+
+    def refused(text: str, status: int, exc: Exception):
+        if isinstance(exc, NotFoundError):
+            raise HTTPException(status_code=404)
+        return _form_page(request, db, composite=None, values=values, action=action, error=text, status=status)
 
     return await run_form_action(
         request, check=lambda: _parse(values, form, active_parts(db)), work=save,
-        success_url=f"/articles/{article_id}", flash_key="articles.saved",
-        on_error=lambda text, status, exc: _form_page(
-            request, db, composite=None, values=values, action=action, error=text, status=status
-        ),
+        success_url=f"/articles/{article_id}", flash_key="articles.saved", on_error=refused,
     )
 
 
