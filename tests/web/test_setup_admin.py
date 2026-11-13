@@ -1,7 +1,12 @@
+import pytest
+
 from conftest import csrf_of
 
 from reprintbuddy import auth
 from reprintbuddy import settings as st
+
+# The first-run setup on an empty database: the app creates and migrates the file itself (R1).
+pytestmark = pytest.mark.fresh_database
 
 
 def _form(token, **over):

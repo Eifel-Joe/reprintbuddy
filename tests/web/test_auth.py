@@ -161,6 +161,7 @@ def test_session_survives_restart(logged_out, db_path):
     assert response.headers["location"] == "/setup/bambuddy"  # recognised as logged in
 
 
+@pytest.mark.fresh_database  # the secret of the app's first start on a new database (R1)
 def test_session_secret_is_reused(db_path):
     make_client(db_path)
     with make_sessionmaker(make_engine(db_path))() as s:

@@ -7,6 +7,7 @@ import asyncio
 import threading
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import select
 
 from conftest import make_client, sm_of
@@ -20,6 +21,7 @@ def lines(client) -> list[ActivityEntry]:
         return list(s.scalars(select(ActivityEntry).order_by(ActivityEntry.id)))
 
 
+@pytest.mark.fresh_database  # also the very first start, on a database the app creates (R1)
 def test_every_start_is_logged_with_the_version(db_path):
     client = make_client(db_path)
     with client:
