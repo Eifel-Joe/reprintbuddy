@@ -55,7 +55,7 @@ Ausgehend zu den Debian-Paketquellen (`apt`), `github.com`, `raw.githubuserconte
 
 ## Das Skript noch einmal ausführen
 
-Das ist unbedenklich. Die installierte Version und die Datenbank bleiben, wie sie sind; es richtet Pakete, Benutzer, Rechte, Units und den Dienst wieder her. Versionen wechseln nur durch das Update, siehe [Update und Sicherung](../operate/update-backup.md). `--dry-run` zeigt, was es tun würde, ohne etwas zu ändern.
+Das ist unbedenklich. Die installierte Version und die Datenbank bleiben, wie sie sind; es richtet Pakete, Benutzer, Rechte, Units und den Dienst wieder her. Fehlt der entpackte Ordner der installierten Version (`/opt/reprintbuddy/releases/<tag>`), lädt das Skript dieser Version ihr Paket wieder, geprüft wie bei der Installation; das Skript einer anderen Version bricht ab und nennt den Befehl der installierten. Versionen wechseln nur durch das Update, siehe [Update und Sicherung](../operate/update-backup.md). `--dry-run` zeigt, was es tun würde, ohne etwas zu ändern.
 
 ## Auf Debian 12
 

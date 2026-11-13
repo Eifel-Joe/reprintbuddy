@@ -85,7 +85,12 @@ def urllib_download(url: str, dest: Path, *, _opener: Any = None) -> None:
         request = urllib.request.Request(url, headers={"Accept": "application/octet-stream"})
         with opener.open(request, timeout=_STEP_TIMEOUT) as response, open(dest, "wb") as file:
             size = 0
-            while chunk := response.read(_CHUNK):
+            # p550 (v0.4.10): `read1` returns what has arrived (one receive, at most `_STEP_TIMEOUT`), so
+            # the deadline is looked at after every piece. Root: `read(_CHUNK)` waited for a whole block,
+            # and a server sending a byte now and then held the update until systemd's 30 minutes.
+            # Rejected: a timer thread that closes the socket (more moving parts for the same bound).
+            # Tests: test_release_package.py "p550".
+            while chunk := response.read1(_CHUNK):
                 size += len(chunk)
                 if size > MAX_PACKAGE_BYTES:
                     raise PackageError("fetch_failed", "the package is larger than allowed")
@@ -107,14 +112,20 @@ def urllib_download(url: str, dest: Path, *, _opener: Any = None) -> None:
 
 def urllib_get(url: str, headers: Mapping[str, str], *, _opener: Any = None) -> tuple[int, bytes]:
     """The one request to the release list from the update helper (no httpx there): no redirect followed,
-    at most `MAX_RESPONSE_BYTES`, at most `TIMEOUT` seconds per step. `_opener` is for the tests only."""
+    at most `MAX_RESPONSE_BYTES`, at most `TIMEOUT` seconds in all (p550, v0.4.10: looked at after every
+    piece that arrives, as for the download). `_opener` is for the tests only."""
     opener = _opener or _api_opener()
+    deadline = time.monotonic() + TIMEOUT
     try:
         with opener.open(urllib.request.Request(url, headers=dict(headers)), timeout=TIMEOUT) as response:
-            data = response.read(MAX_RESPONSE_BYTES + 1)
-            if len(data) > MAX_RESPONSE_BYTES:
-                raise PackageError("fetch_failed", "answer too large")
-            return response.status, data
+            data = bytearray()
+            while chunk := response.read1(_CHUNK):
+                data += chunk
+                if len(data) > MAX_RESPONSE_BYTES:
+                    raise PackageError("fetch_failed", "answer too large")
+                if time.monotonic() > deadline:
+                    raise PackageError("fetch_failed", "timeout")
+            return response.status, bytes(data)
     except urllib.error.HTTPError as error:
         return error.code, b""
 
@@ -161,6 +172,11 @@ def unpack(archive: Path, dest: Path, tag: str) -> Path:
                 parts = PurePosixPath(member.name).parts
                 if not parts or parts[0] != top or member.name.startswith("/") or ".." in parts:
                     raise PackageError("package_unusable", "the archive holds more than the version's folder")
+                # p552 (v0.4.10): the entry of the folder itself must be a folder. Root: a link `<top>` -> `.`
+                # passed the names, its files landed beside it and `releases/<tag>` became a link (nothing
+                # outside, but the install then failed into a rollback). Tests: test_release_package.py "p552".
+                if len(parts) == 1 and not member.isdir():
+                    raise PackageError("package_unusable", "the version's folder is no real folder")
             work.mkdir()
             tar.extractall(work, members=members, filter="data")
         unpacked = work / top

@@ -319,6 +319,14 @@ download_release() {
             as_service_user rm -rf "${work}"
             die 1 "The package ${package} holds more than the folder ${top}; nothing was installed."
         fi
+        # p552 (v0.4.10): the entry of the folder itself, if the archive has one, must be a folder (a line of
+        # `tar -tv` starting with "d"), not a link: its files would land beside it.
+        stray="$(capture_as_service_user tar -tvzf "${work}/${package}" 2>/dev/null |
+            grep -E " ${top//./\\.}/?( -> .*)?\$" | grep -v '^d' || true)"
+        if [ -n "${stray}" ]; then
+            as_service_user rm -rf "${work}"
+            die 1 "The folder ${top} in the package ${package} is no real folder; nothing was installed."
+        fi
     fi
     if ! as_service_user tar -xzf "${work}/${package}" -C "${work}"; then
         as_service_user rm -rf "${work}"
@@ -346,6 +354,19 @@ keep_installed() {
         printf '%s\n' "${INSTALLED_TAG}" | grep -Eq "${VERSION_PATTERN}" ||
             die 1 "${INSTALL_DIR}/release.json does not name a version. Run the install command of the installed version again, or set Reprintbuddy up again and restore a backup."
         SOURCE_DIR="${INSTALL_DIR}/releases/${INSTALLED_TAG}"
+        # p553 (v0.4.10): without its unpacked folder the comparison of the system files below said "does not
+        # match the installed version". A re-run repairs: the script's own version comes again from its
+        # package (checked as at the installation); for another version the command of exactly that version
+        # does it. Version and database stay either way. Tests: test_install_script.py "p553".
+        if [ ! -d "${tree}/releases/${INSTALLED_TAG}" ]; then
+            if [ "${INSTALLED_TAG}" != "${RELEASE_TAG}" ]; then
+                die 1 "The folder of the installed version ${INSTALLED_TAG} is missing: ${SOURCE_DIR}" \
+                    "Run the install command of ${INSTALLED_TAG} to put it back; the version, the database and the settings are kept:" \
+                    "  bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/${REPO_SLUG}/${INSTALLED_TAG}/install/install.sh)\""
+            fi
+            say "The folder of the installed version ${INSTALLED_TAG} is missing: ${SOURCE_DIR}; putting it back from its package."
+            download_release
+        fi
     else
         INSTALLED_TAG="$(capture_as_service_user git -C "${INSTALL_DIR}" describe --tags --exact-match HEAD 2>/dev/null || true)"
         SOURCE_DIR="${INSTALL_DIR}"

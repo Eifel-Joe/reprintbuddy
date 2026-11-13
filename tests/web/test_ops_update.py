@@ -1145,6 +1145,11 @@ def test_v049_a_git_installation_from_elsewhere_fails_the_check_without_asking(o
 # --- v0.4.9 p15: "stable releases only" / "pre-releases too" (Spec 11.3a "Vorabversionen") -----
 
 
+# p542 (v0.4.10): the choice is a switch like the one of the automatic check: `enabled=1` is
+# "pre-releases too", `enabled=0` "stable releases only".
+SWITCH = {"prerelease": "1", "stable": "0"}
+
+
 def choose(env, value, *, form_token=None):
     from conftest import form_token_of
 
@@ -1152,7 +1157,7 @@ def choose(env, value, *, form_token=None):
     token = form_token or form_token_of(env.client, page, "/settings/update/channel")
     return env.client.post(
         "/settings/update/channel",
-        data={"csrf_token": csrf_of(env.client, page), "form_token": token, "channel": value},
+        data={"csrf_token": csrf_of(env.client, page), "form_token": token, "enabled": SWITCH.get(value, value)},
     )
 
 
@@ -1168,9 +1173,23 @@ def test_v049_the_choice_is_stable_releases_by_default(ops_env):
     assert stored_channel(ops_env) == "stable"
     page = ops_env.client.get("/settings?tab=maintenance").text
     form = page.split('action="/settings/update/channel"', 1)[1].split("</form>", 1)[0]
-    assert 'value="stable"' in form and 'value="prerelease"' in form
-    assert re.search(r'value="stable"[^>]*aria-pressed="true"', form)
-    assert re.search(r'value="prerelease"[^>]*aria-pressed="false"', form)
+    # p542: a switch (role="switch"), off; pressing it asks for "on"
+    assert 'role="switch"' in form and 'aria-checked="false"' in form
+    assert 'name="enabled" value="1"' in form
+    assert "Include pre-releases" in page
+
+
+def test_p542_the_switch_sits_in_the_row_below_the_automatic_check_and_shows_the_choice(ops_env):
+    package_env(ops_env)
+    choose(ops_env, "prerelease")
+    page = ops_env.client.get("/settings?tab=maintenance").text
+    auto = page.index('action="/settings/update/auto"')
+    channel = page.index('action="/settings/update/channel"')
+    assert auto < channel
+    form = page[channel:].split("</form>", 1)[0]
+    assert 'aria-checked="true"' in form and 'name="enabled" value="0"' in form
+    assert 'class="setting-row' in page[auto:channel]  # its own row, the form as the switch above
+    assert "Stable releases only" not in page and "Pre-releases too" not in page
 
 
 def test_v049_choosing_pre_releases_offers_the_beta_at_once_with_marked_notes(ops_env):
@@ -1210,7 +1229,7 @@ def test_v049_the_choice_checks_even_with_the_automatic_check_off(ops_env):
     assert len(github.calls) == 1
 
 
-@pytest.mark.parametrize("value", ["beta", "", "PRERELEASE"])
+@pytest.mark.parametrize("value", ["beta", "", "2", "on"])
 def test_v049_an_unknown_choice_changes_nothing(ops_env, value):
     github = package_env(ops_env)
     choose(ops_env, value)
@@ -1234,7 +1253,7 @@ def test_v049_the_german_page_says_it_in_german(ops_env):
     _set_language(ops_env, "de")
     choose(ops_env, "prerelease")
     page = ops_env.client.get("/settings?tab=maintenance").text
-    assert "Angebotene Versionen" in page and "Nur stabile Versionen" in page and "Auch Vorabversionen" in page
+    assert "Vorabversionen einschließen" in page and "Nur stabile Versionen" not in page
     notes = page.split('id="ops-notes"', 1)[1].split("</details>", 1)[0]
     assert "Vorabversion" in notes
     choose(ops_env, "stable")

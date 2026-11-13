@@ -55,7 +55,7 @@ Outgoing access to the Debian package sources (`apt`), `github.com`, `raw.github
 
 ## Running the installer again
 
-This is safe. The installed version and the database stay as they are; it repairs packages, user, permissions, units and the service. Versions change only through the update, see [Update and backup](../operate/update-backup.md). `--dry-run` shows what it would do without changing anything.
+This is safe. The installed version and the database stay as they are; it repairs packages, user, permissions, units and the service. If the unpacked folder of the installed version (`/opt/reprintbuddy/releases/<tag>`) is missing, the installer of that version downloads its package again, checked as at the installation; the installer of another version stops and names the command of the installed one. Versions change only through the update, see [Update and backup](../operate/update-backup.md). `--dry-run` shows what it would do without changing anything.
 
 ## On Debian 12
 

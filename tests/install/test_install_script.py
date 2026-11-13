@@ -716,6 +716,10 @@ def package_fixture(folder: Path, tag: str = PINNED, *, extra: str | None = None
     name = f"reprintbuddy-{tag}.tar.gz"
     top = f"reprintbuddy-{tag}"
     with tarfile.open(folder / name, "w:gz") as archive:
+        folder_entry = tarfile.TarInfo(top)  # git archive writes an entry for the folder itself
+        folder_entry.type = tarfile.DIRTYPE
+        folder_entry.mode = 0o755
+        archive.addfile(folder_entry)
         entries = [(f"{top}/pyproject.toml", b"[project]\n"), (f"{top}/install/install.sh", b"#!/bin/sh\n")]
         if extra:
             entries.append((extra, b"x"))
@@ -855,3 +859,82 @@ def test_review_the_top_folder_check_takes_the_dots_of_the_tag_literally(bash, t
     done, install = _call(bash, tmp_path, "fetch_code", fixtures)
     assert done.returncode == 1
     assert "more than the folder" in done.stderr
+
+
+def test_p552_a_package_whose_folder_is_a_link_installs_nothing(bash, tmp_path):
+    """p552 (v0.4.10), sister path in the installer: the version's folder in the package must be a folder."""
+    import hashlib
+    import io
+    import tarfile
+
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    top = f"reprintbuddy-{PINNED}"
+    with tarfile.open(fixtures / PACKAGE, "w:gz") as archive:
+        link = tarfile.TarInfo(top)
+        link.type = tarfile.SYMTYPE
+        link.linkname = "."
+        archive.addfile(link)
+        data = b"[project]\n"
+        info = tarfile.TarInfo(f"{top}/pyproject.toml")
+        info.size = len(data)
+        archive.addfile(info, io.BytesIO(data))
+    digest = hashlib.sha256((fixtures / PACKAGE).read_bytes()).hexdigest()
+    (fixtures / f"{PACKAGE}.sha256").write_text(f"{digest}  {PACKAGE}\n", encoding="utf-8", newline="\n")
+    done, install = _call(bash, tmp_path, "fetch_code", fixtures)
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "no real folder" in done.stderr, done.stderr
+    assert not (install / "release.json").exists()
+    assert not (install / "releases" / PINNED).exists()
+
+
+def test_p553_a_missing_folder_of_the_installed_version_is_named(bash, tmp_path):
+    """p553 (v0.4.10): the re-run said "the installer does not match the installed version" when the
+    unpacked folder of the installed version was gone; it now names the missing folder."""
+    import shutil as _shutil
+
+    installed_package(tmp_path, tag="v0.4.1")
+    _shutil.rmtree(tmp_path / "opt/reprintbuddy/releases/v0.4.1")
+    result = run(bash, tmp_path, "--repo", REPO)
+    message = result.stderr + result.stdout
+    assert result.returncode == 1
+    assert "The folder of the installed version v0.4.1 is missing: /opt/reprintbuddy/releases/v0.4.1" in message
+    assert "does not match the installed version" not in message
+    assert "pip install" not in lines(result)
+    # another version than the script's: the command of exactly that version puts the folder back
+    assert "Run the install command of v0.4.1" in message
+    assert "https://raw.githubusercontent.com/owner/reprintbuddy/v0.4.1/install/install.sh" in message
+
+
+def test_p553_the_missing_folder_of_the_scripts_own_version_is_downloaded_again(bash, tmp_path):
+    """p553: the re-run "repairs" (README); the version stays, its package comes again, checked as at the
+    installation; the database stays."""
+    import shutil as _shutil
+
+    installed_package(tmp_path, tag=PINNED)
+    _shutil.rmtree(tmp_path / f"opt/reprintbuddy/releases/{PINNED}")
+    result = run(bash, tmp_path, "--repo", REPO)
+    assert result.returncode == 0, result.stderr
+    out = lines(result)
+    assert f"The folder of the installed version {PINNED} is missing: {SOURCE}; putting it back from its package." in out
+    assert f"{REPO_BASE}/releases/download/{PINNED}/{PACKAGE}" in out
+    assert "sha256sum -c --strict --quiet" in out
+    assert "Existing database kept." in out
+    assert "init --db" not in out
+    assert out.index(f"/releases/download/{PINNED}/") < out.index("-m pip install")
+
+
+def test_p553_putting_the_folder_back_for_real(bash, tmp_path):
+    """The same with the real download path (stand-ins for curl and the service user): folder and marker
+    are back, the database is untouched."""
+    import json
+
+    fixtures = package_fixture(tmp_path / "fixtures")
+    marker = json.dumps({"tag": PINNED, "repo": "owner/reprintbuddy", "sha256": "0" * 64})
+    command = f"printf '%s\\n' '{marker}' > \"$FAKE_INSTALL/release.json\"; fetch_code"
+    done, install = _call(bash, tmp_path, command, fixtures, database=True)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "putting it back from its package" in done.stdout
+    assert (install / "releases" / PINNED / "pyproject.toml").is_file()
+    assert json.loads((install / "release.json").read_text(encoding="utf-8"))["tag"] == PINNED
+    assert (tmp_path / "root/var/lib/reprintbuddy/reprintbuddy.db").read_bytes() == b""
