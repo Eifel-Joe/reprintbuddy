@@ -6,6 +6,7 @@ from datetime import date
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_dispatch, make_entry
+from texts import en
 from sqlalchemy import select
 
 from reprintbuddy.domain import orders
@@ -13,10 +14,6 @@ from reprintbuddy.domain.engine import EngineStatus, collect_warnings, warning_t
 from reprintbuddy.domain.orders import ArticleItem
 from reprintbuddy.models import ActivityEntry, JournalEntry, Withdrawal, WorkQueueEntry
 from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def place(client, *, entries=2, waiting=3, qty=5):

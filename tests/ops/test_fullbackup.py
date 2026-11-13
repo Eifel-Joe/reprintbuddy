@@ -19,12 +19,9 @@ from reprintbuddy.ops import fullbackup as fb
 NOW = datetime(2026, 11, 7, 12, 0, 5, tzinfo=UTC)
 API_KEY = "bb_FULLBACKUP_test_key"
 TLS_KEY = "-----BEGIN PRIVATE KEY-----\nFULLBACKUP\n-----END PRIVATE KEY-----\n"
-FAST = bc.KdfParams(time_cost=1, memory_cost=8 * 1024, parallelism=1)
 
 
-@pytest.fixture(autouse=True)
-def fast_kdf(monkeypatch):
-    monkeypatch.setattr(fb, "KDF", FAST)
+pytestmark = pytest.mark.usefixtures("fast_kdf")  # backups derive their key cheaply (conftest)
 
 
 def make_db(path: Path, revision: str = "head") -> Path:

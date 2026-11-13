@@ -6,16 +6,12 @@ from sqlalchemy import func, select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_set
+from texts import en
 from more_rows_support import without_templates
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog
 from reprintbuddy.domain.catalog import BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
 from reprintbuddy.models import Article, ProductSet, SetPosition, utcnow
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def three_articles(client, a=3, b=3, c=5):

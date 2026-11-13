@@ -8,14 +8,10 @@ from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_set
+from texts import en
 from reprintbuddy.models import ProductSet, SetPositionSet
-from reprintbuddy.web.i18n import translate
 
 ARCHIVED = datetime(2026, 11, 12, 8, 0)
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def inner(set_id):

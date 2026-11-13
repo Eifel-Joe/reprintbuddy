@@ -6,7 +6,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
-from conftest import ADMIN, PASSWORD, csrf_of, make_client
+from conftest import ADMIN, PASSWORD, csrf_of, login as _login, make_client
 from test_concurrency import asgi_client, token_of
 
 from reprintbuddy import auth
@@ -177,11 +177,6 @@ def test_login_setup_and_password_change_all_go_through_the_limiter(db_path):
 
 
 # --- the brake in the app ----------------------------------------------------------------------------
-
-
-def _login(client, password):
-    token = csrf_of(client, "/login")
-    return client.post("/login", data={"csrf_token": token, "username": ADMIN, "password": password})
 
 
 @pytest.fixture

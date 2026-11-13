@@ -16,10 +16,10 @@ import pytest
 
 from conftest import sm_of
 from factories import make_article, make_part
+from texts import en
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
 from reprintbuddy.web import i18n
-from reprintbuddy.web.i18n import translate
 
 CSS = "/static/css/reprintbuddy.css"
 FORM = "/articles/new/file/1/plate/1"
@@ -96,10 +96,6 @@ PART_KEYS = {
     "info.part_min_stock", "info.pack_size", "info.min_order_packs", "info.lead_time_days",
     "info.safety_value",
 }
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def render(client, source, **context):

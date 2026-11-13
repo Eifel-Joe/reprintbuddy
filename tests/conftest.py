@@ -14,6 +14,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.fake import FakeBambuddy
 from reprintbuddy.bambuddy.types import FilamentRequirement
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
+from reprintbuddy.ops.backupcrypto import KdfParams
 from reprintbuddy.web.app import create_app, shared_tls_client_factory
 
 ADMIN = "admin"
@@ -32,6 +33,12 @@ def csrf_of(client: TestClient, path: str) -> str:
 
 
 _FORM_TOKEN = re.compile(r'name="form_token" value="([^"]+)"')
+
+
+def login(client: TestClient, password: str = PASSWORD, *, username: str = ADMIN, token: str | None = None, **extra):
+    """Sign in through the login form; `token` replaces the form's CSRF token, `extra` adds fields."""
+    token = token if token is not None else csrf_of(client, "/login")
+    return client.post("/login", data={"csrf_token": token, "username": username, "password": password, **extra})
 
 
 def form_token_of(client: TestClient, path: str, action: str | None = None) -> str:
@@ -397,6 +404,37 @@ def ops_env(tmp_path, fake_runner):
     finish_bambuddy_setup(finish_admin_setup(client))
     client.app.state.bambuddy_factory = lambda: None  # no Bambuddy, no network call (Spec 12)
     return OpsEnv(client, fake_runner, install_dir, db)
+
+
+FAST_KDF = KdfParams(time_cost=1, memory_cost=8 * 1024, parallelism=1)  # backup keys, cheaply
+
+
+@pytest.fixture
+def fast_kdf(monkeypatch):
+    """Backups and restores derive their key cheaply (the real parameters take seconds per run).
+    A test file asks for it for all its tests with `pytestmark = pytest.mark.usefixtures("fast_kdf")`."""
+    from reprintbuddy.ops import fullbackup
+
+    monkeypatch.setattr(fullbackup, "KDF", FAST_KDF)
+
+
+@pytest.fixture
+def session(tmp_path):
+    """A session on a fresh migrated database of its own (for tests of settings and accounts)."""
+    dbtemplate.copy_to(tmp_path / "session.db")
+    engine = make_engine(tmp_path / "session.db")
+    upgrade(engine)
+    with make_sessionmaker(engine)() as s:
+        yield s
+    engine.dispose()
+
+
+@pytest.fixture
+def net(monkeypatch):
+    """Label printing without a network: what the printer answers and what happens to each job."""
+    from label_support import Recorder
+
+    return Recorder(monkeypatch)
 
 
 @pytest.fixture

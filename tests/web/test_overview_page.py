@@ -13,6 +13,7 @@ from markupsafe import escape
 
 from conftest import sm_of
 from factories import make_article, make_assembled, make_dispatch, make_entry, make_part
+from texts import en_html as en
 from reprintbuddy import settings as st
 from reprintbuddy.domain import orders
 from reprintbuddy.domain.orders import ArticleItem, AssembledItem
@@ -20,11 +21,6 @@ from reprintbuddy.domain.reorder import Reach
 from reprintbuddy.i18n import translate_count
 from reprintbuddy.models import Inspection
 from reprintbuddy.web import regions
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return str(escape(translate("en", key, **params)))
 
 
 def enc(key, n):

@@ -9,18 +9,13 @@ import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from markupsafe import escape
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article
+from texts import en_html as en
 from reprintbuddy import settings as st
 from reprintbuddy.models import Article
 from reprintbuddy.web import regions
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return str(escape(translate("en", key, **params)))
 
 
 def article(client, name="Template A", **fields) -> int:

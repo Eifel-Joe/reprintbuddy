@@ -12,7 +12,8 @@ import re
 import pytest
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article
-from test_article_upload import PAGE, SLICED, alert, en, mock_auth_me, token, up  # noqa: F401
+from test_article_upload import PAGE, SLICED, alert, mock_auth_me, token, up  # noqa: F401
+from texts import en
 
 from reprintbuddy.bambuddy.client import BambuddyUnavailable
 from reprintbuddy.models import Article, utcnow

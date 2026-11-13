@@ -20,17 +20,13 @@ import pytest
 
 from reprintbuddy import settings as st
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
-from reprintbuddy.ops import backupcrypto as bc
 from reprintbuddy.ops import fullbackup as fb
 
 NOW = datetime(2026, 11, 8, 12, 0, 5, tzinfo=UTC)
-FAST = bc.KdfParams(time_cost=1, memory_cost=8 * 1024, parallelism=1)
 PASSWORD = "abandon-password-1"
 
 
-@pytest.fixture(autouse=True)
-def fast_kdf(monkeypatch):
-    monkeypatch.setattr(fb, "KDF", FAST)
+pytestmark = pytest.mark.usefixtures("fast_kdf")  # backups derive their key cheaply (conftest)
 
 
 @pytest.fixture

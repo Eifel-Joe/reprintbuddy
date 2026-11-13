@@ -7,14 +7,10 @@ from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article
+from texts import en
 from reprintbuddy.models import Article
-from reprintbuddy.web.i18n import translate
 
 FORM = "/articles/new/file/1/plate/1"
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def sku_tag(html):

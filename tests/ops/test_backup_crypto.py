@@ -4,10 +4,9 @@ import pytest
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from conftest import FAST_KDF as FAST  # small parameters keep the tests fast; format and checks are the same
 from reprintbuddy.ops import backupcrypto as bc
 
-# Small parameters keep the tests fast; the format and the checks are the same.
-FAST = bc.KdfParams(time_cost=1, memory_cost=8 * 1024, parallelism=1)
 SALT = bytes(range(16))
 NONCE = bytes(range(12))
 AAD = b'{"format": "test"}'

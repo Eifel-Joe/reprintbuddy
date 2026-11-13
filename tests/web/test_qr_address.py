@@ -7,6 +7,7 @@ import pytest
 import zxingcpp
 from conftest import make_client, finish_admin_setup, finish_bambuddy_setup, sm_of
 from factories import make_article
+from texts import en
 from PIL import Image
 from starlette.requests import Request
 
@@ -14,13 +15,8 @@ from reprintbuddy import settings as st
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.server import EffectiveServer
 from reprintbuddy.web import netaddr, qr
-from reprintbuddy.web.i18n import translate
 
 LAN = "203.0.113.64"
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 @pytest.fixture

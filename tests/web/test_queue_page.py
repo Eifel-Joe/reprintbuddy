@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_dispatch, make_entry
+from texts import de, en
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
 from reprintbuddy.domain import workqueue
@@ -26,14 +27,6 @@ DRAG_SCRIPT = STATIC / "js" / "queue-drag.js"
 LIVE_SCRIPT = STATIC / "js" / "live.js"
 CSS = STATIC / "css" / "reprintbuddy.css"
 FETCH = {"X-Requested-With": "fetch"}
-
-
-def en(key, **params):
-    return translate("en", key, **params)
-
-
-def de(key, **params):
-    return translate("de", key, **params)
 
 
 def esc(text):

@@ -25,13 +25,10 @@ from reprintbuddy.ops import fullbackup as fb
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NOW = datetime(2026, 11, 7, 12, 0, 5, tzinfo=UTC)
-FAST = bc.KdfParams(time_cost=1, memory_cost=8 * 1024, parallelism=1)
 FIXTURE_PASSWORD = "fixture-password-1"
 
 
-@pytest.fixture(autouse=True)
-def fast_kdf(monkeypatch):
-    monkeypatch.setattr(fb, "KDF", FAST)
+pytestmark = pytest.mark.usefixtures("fast_kdf")  # backups derive their key cheaply (conftest)
 
 
 @pytest.fixture

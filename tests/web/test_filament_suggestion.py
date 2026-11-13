@@ -7,15 +7,11 @@ from html import unescape
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article
+from texts import en
 from reprintbuddy.bambuddy.types import FilamentRequirement
 from reprintbuddy.models import ArticleFilament, ArticleFilamentSort, FilamentSort, utcnow
-from reprintbuddy.web.i18n import translate
 
 FORM = "/articles/new/file/1/plate/1"
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def boxes(html, slot=1):

@@ -6,19 +6,11 @@ import re
 import pytest
 from conftest import csrf_of, sm_of
 from factories import make_article
+from texts import de, en
 
 from reprintbuddy import settings as st
-from reprintbuddy.web.i18n import translate
 
 BASE = "https://shelf.example.com"
-
-
-def en(key, **params):
-    return translate("en", key, **params)
-
-
-def de(key, **params):
-    return translate("de", key, **params)
 
 
 @pytest.fixture

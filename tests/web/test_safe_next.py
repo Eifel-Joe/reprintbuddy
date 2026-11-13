@@ -8,7 +8,7 @@ filter in the query may carry any encoded value.
 """
 
 import pytest
-from conftest import ADMIN, PASSWORD, csrf_of
+from conftest import login as _login
 
 from reprintbuddy.web.deps import local_next, safe_next
 
@@ -135,12 +135,6 @@ def test_a_value_that_is_not_text_is_refused():
 
 
 # --- in the application ------------------------------------------------------------------------------
-
-
-def _login(client, **extra):
-    token = csrf_of(client, "/login")
-    data = {"csrf_token": token, "username": ADMIN, "password": PASSWORD, **extra}
-    return client.post("/login", data=data)
 
 
 @pytest.fixture

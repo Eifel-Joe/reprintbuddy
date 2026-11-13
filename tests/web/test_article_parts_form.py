@@ -13,19 +13,15 @@ from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_part
+from texts import en
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog
 from reprintbuddy.models import Article, ArticlePart, Part
 from reprintbuddy.web import i18n
-from reprintbuddy.web.i18n import translate
 
 FORM = "/articles/new/file/1/plate/1"
 SCRIPT = Path(i18n.__file__).parent / "static" / "js" / "article_parts.js"
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def create_fields(client, **over):

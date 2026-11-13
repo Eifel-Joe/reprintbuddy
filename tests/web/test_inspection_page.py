@@ -8,22 +8,14 @@ from sqlalchemy import select
 
 from conftest import csrf_of, sm_of
 from factories import make_article, make_dispatch, make_entry, make_part
+from texts import de, en
 from reprintbuddy import settings as st
 from reprintbuddy.domain import inspection, rules, tracking
 from reprintbuddy.models import Article, ArticlePart, Inspection, JournalEntry
-from reprintbuddy.web.i18n import translate
 
 PAGE = "/inspection"
 _FORM = re.compile(r"<form\b([^>]*)>(.*?)</form>", re.S)
 _TOKEN = re.compile(r'name="form_token" value="([^"]+)"')
-
-
-def en(key, **params):
-    return translate("en", key, **params)
-
-
-def de(key, **params):
-    return translate("de", key, **params)
 
 
 def finished(client, name="Template A", units=1, *, parts=(), **fields):

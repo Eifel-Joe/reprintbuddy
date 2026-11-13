@@ -22,17 +22,13 @@ import time
 import pytest
 import uvicorn
 from conftest import csrf_of
+from texts import en
 
 from reprintbuddy import settings as st
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.web import bodylimit
-from reprintbuddy.web.i18n import translate
 
 TOO_BIG = 2 * 1024 * 1024  # over the 1 MiB of every other form
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def text_of(response) -> str:

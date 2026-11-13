@@ -11,16 +11,12 @@ from markupsafe import escape
 
 from conftest import run_tick, sm_of
 from factories import make_article, make_entry
+from texts import en_html as en
 from reprintbuddy import settings as st
 from reprintbuddy.i18n import translate_count
 from reprintbuddy.web import regions
-from reprintbuddy.web.i18n import translate
 
 CSS = Path(__file__).resolve().parents[2] / "src/reprintbuddy/web/static/css/reprintbuddy.css"
-
-
-def en(key, **params):
-    return str(escape(translate("en", key, **params)))
 
 
 def plan_part(client):

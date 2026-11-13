@@ -10,9 +10,9 @@ import re
 from datetime import datetime
 
 import pytest
-from markupsafe import escape
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article
+from texts import en_html as en
 from sqlalchemy import select
 
 from reprintbuddy import settings as st
@@ -29,11 +29,6 @@ SERVICE = "notify.mobile_app_phone"
 
 def raw(key, **params):
     return translate("en", key, **params)
-
-
-def en(key, **params):
-    """The English text as the page carries it (escaped: an apostrophe becomes &#39;)."""
-    return str(escape(translate("en", key, **params)))
 
 
 def stored(client, key):

@@ -10,6 +10,7 @@ import json
 import re
 
 from conftest import REQUIRED, csrf_of, mock_auth_me
+from texts import en
 
 from reprintbuddy.bambuddy.connection import ConnectionCheck
 from reprintbuddy.web import deps
@@ -19,10 +20,6 @@ CONNECT, DONE = "/setup/bambuddy/connect", "/setup/bambuddy/done"
 SETTINGS = "/settings?tab=bambuddy"
 URL, KEY = "http://bambuddy.test:8000", "bb_PRGKEY_123456"
 PAGE = {"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def _rights(html):

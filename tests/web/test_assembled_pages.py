@@ -8,14 +8,10 @@ from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_assembled
+from texts import en
 from reprintbuddy.domain import assembled, orders
 from reprintbuddy.domain.orders import AssembledItem
 from reprintbuddy.models import Article, Order
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def world(client):

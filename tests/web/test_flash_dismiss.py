@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_part
+from texts import en
 
 from reprintbuddy import __version__
 from reprintbuddy.models import ArticlePart
@@ -26,10 +27,6 @@ SCRIPT = Path(i18n.__file__).parent / "static" / "js" / "flash.js"
 SCRIPT_TAG = f'<script src="/static/js/flash.js?v={__version__}" defer></script>'
 NODE = shutil.which("node")
 REGIONS = {"X-Live-Regions": "journal"}
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def box_of(page):

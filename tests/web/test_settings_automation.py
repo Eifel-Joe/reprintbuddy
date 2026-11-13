@@ -5,14 +5,11 @@ import re
 import pytest
 
 from conftest import csrf_of, sm_of
+from texts import en
 from reprintbuddy import settings as st
 from reprintbuddy.web.i18n import translate
 
 KEYS = ("automation", "queue_running", "queue_cap", "insert_next", "poll_minutes")
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def field(page: str, name: str) -> str:

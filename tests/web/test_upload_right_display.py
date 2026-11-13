@@ -3,15 +3,11 @@
 import re
 
 from conftest import REQUIRED, csrf_of, landed, mock_auth_me
+from texts import en
 
-from reprintbuddy.web.i18n import translate
 
 USER_PAGE, CONNECT = "/setup/bambuddy/user", "/setup/bambuddy/connect"
 URL, KEY = "http://bambuddy.test:8000", "bb_testkey"
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def _optional(html):

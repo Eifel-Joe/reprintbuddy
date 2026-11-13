@@ -6,6 +6,7 @@ check still saves, no notice opens after an update, and a cancel only shrinks Re
 import re
 
 from conftest import REQUIRED, csrf_of, landed, mock_auth_me
+from texts import en
 
 from reprintbuddy.bambuddy import connection
 from reprintbuddy.web.i18n import translate
@@ -13,10 +14,6 @@ from reprintbuddy.web.i18n import translate
 WITHDRAW = "queue:delete_own"
 CONNECT = "/setup/bambuddy/connect"
 URL, KEY = "http://bambuddy.test:8000", "bb_SETUPKEY_123456"
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def _optional(html):

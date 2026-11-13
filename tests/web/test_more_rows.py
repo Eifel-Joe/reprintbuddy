@@ -11,16 +11,12 @@ import re
 
 from conftest import sm_of
 from factories import make_set
+from texts import en
 from more_rows_support import templates_of, without_templates
 from test_assembled_form import hose_form, parts
 from test_orders_pages import one_article, order_fields
 from test_sets_pages import set_fields, three_articles
 
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def fresh(page: str) -> str:

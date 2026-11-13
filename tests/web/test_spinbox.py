@@ -1,27 +1,20 @@
 """Small arrows on every number field (Spec 10.1, p155): one script for all pages."""
 
-import json
 import re
-import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 
+from node_support import run_harness
+
 HERE = Path(__file__).parent
 WEB = HERE.parents[1] / "src" / "reprintbuddy" / "web"
 SCRIPT = WEB / "static" / "js" / "spinbox.js"
-NODE = shutil.which("node")
 
 
 @pytest.fixture(scope="module")
 def result():
-    if NODE is None:
-        pytest.skip("node is not installed")
-    done = subprocess.run(
-        [NODE, str(HERE / "spinbox_harness.js"), str(SCRIPT)], capture_output=True, text=True, timeout=60, check=True
-    )
-    return json.loads(done.stdout)
+    return run_harness("spinbox_harness.js", SCRIPT)
 
 
 def test_numbers_are_read_with_comma_or_point(result):

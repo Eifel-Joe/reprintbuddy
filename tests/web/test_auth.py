@@ -1,16 +1,9 @@
 import pytest
-from conftest import ADMIN, PASSWORD, csrf_of, make_client
+from conftest import csrf_of, login, make_client
 
 from reprintbuddy import auth
 from reprintbuddy import settings as st
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
-
-
-def login(client, password=PASSWORD, token=None, **extra):
-    token = token if token is not None else csrf_of(client, "/login")
-    data = {"csrf_token": token, "username": ADMIN, "password": password}
-    data.update(extra)
-    return client.post("/login", data=data)
 
 
 @pytest.fixture
