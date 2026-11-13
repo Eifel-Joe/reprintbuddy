@@ -294,14 +294,11 @@ def pin_version() -> None:
 
 
 def release_runner(args, *, cwd=None, timeout=120.0) -> CommandResult:
-    """Stands in for git and systemd on the card "Update": a newer release (the next patch version) exists
-    on a repository that is invented (`example/reprintbuddy`)."""
+    """Stands in for git and systemd on the card "Update": the installation is the stand-in version of a
+    repository that is invented (`example/reprintbuddy`); what GitHub offers is `release_notes_answer`."""
     joined = " ".join(str(a) for a in args)
     if "describe" in joined:
         return CommandResult(0, f"v{SHOT_VERSION}\n")
-    if "ls-remote" in joined:
-        tags = [("0123abc", "0.3.11"), ("0123abd", SHOT_VERSION), ("0123abe", next_version())]
-        return CommandResult(0, "".join(f"{sha}\trefs/tags/v{tag}\n" for sha, tag in tags))
     if "get-url" in joined:
         return CommandResult(0, "https://github.com/example/reprintbuddy.git\n")
     if "ActiveState" in joined:
@@ -309,8 +306,20 @@ def release_runner(args, *, cwd=None, timeout=120.0) -> CommandResult:
     return CommandResult(0)
 
 
+def _release(tag: str, body: str, published: str) -> dict:
+    """One release of the invented repository, with its package and checksum (v0.4.9: without them a
+    release is not offered)."""
+    base = f"https://github.com/example/reprintbuddy/releases/download/{tag}"
+    names = (f"reprintbuddy-{tag}.tar.gz", f"reprintbuddy-{tag}.tar.gz.sha256")
+    return {
+        "tag_name": tag, "published_at": published, "draft": False, "prerelease": False, "body": body,
+        "assets": [{"name": name, "state": "uploaded", "browser_download_url": f"{base}/{name}"} for name in names],
+    }
+
+
 def release_notes_answer(url, headers) -> tuple[int, bytes]:
-    """What GitHub's API would answer for the invented repository: one invented release, no network."""
+    """What GitHub's API would answer for the invented repository: the next release and the installed one,
+    no network."""
     lines = [
         "## Changes",
         "",
@@ -319,10 +328,8 @@ def release_notes_answer(url, headers) -> tuple[int, bytes]:
         "- A stored token never goes to another address.",
     ]
     releases = [
-        {
-            "tag_name": f"v{next_version()}", "published_at": "2026-11-08T09:00:00Z", "draft": False, "prerelease": False,
-            "body": "\n".join(lines),
-        },
+        _release(f"v{next_version()}", "\n".join(lines), "2026-11-08T09:00:00Z"),
+        _release(f"v{SHOT_VERSION}", "Earlier changes.", "2026-11-01T09:00:00Z"),
     ]
     return 200, json.dumps(releases).encode()
 
