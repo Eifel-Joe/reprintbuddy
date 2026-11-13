@@ -363,7 +363,7 @@ def test_the_choice_of_versions_offered_on_the_page(ops_env):
     response = client.post(
         "/settings/update/channel",
         data={"csrf_token": csrf_of(client, page), "form_token": form_token_of(client, page, "/settings/update/channel"),
-              "channel": "prerelease"},
+              "enabled": "1"},  # p542: the switch "Include pre-releases"
     )
     assert response.status_code == 303
     assert setting_names(new_settings_line(client, before))["update_channel"] == {"setting": "update_channel", "change": "changed"}

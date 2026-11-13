@@ -103,7 +103,7 @@ The card shows the installed version and, if it differs, the package version nex
 
 ## Stable releases or pre-releases too
 
-The row **Versions offered** on the update card chooses between **Stable releases only** (the default) and **Pre-releases too**. A click saves the choice and checks for updates at once, also when the automatic check is off. With pre-releases on, the card offers the newest version of either kind, and the notes of a pre-release say "pre-release". Back on stable releases only, an installed pre-release stays; nothing older is offered, the next newer stable release is. The card then says "A pre-release is installed." An installation made from the install command of a pre-release starts with pre-releases on.
+The switch **Include pre-releases** on the update card, right under the automatic check, is off by default: then only stable releases are offered. Switched on, pre-releases are offered too. A click saves the choice and checks for updates at once, also when the automatic check is off. With pre-releases on, the card offers the newest version of either kind, and the notes of a pre-release say "pre-release". Switched off again, an installed pre-release stays; nothing older is offered, the next newer stable release is. The card then says "A pre-release is installed." An installation made from the install command of a pre-release starts with pre-releases on.
 
 ## Restart
 

@@ -283,9 +283,9 @@ Every version is a published GitHub release `vX.Y.Z` with its package and a chec
 version equals the tag. Installation and update both download the package, so GitHub counts the
 downloads of each version; Reprintbuddy sends nothing else. An installation made with git (up to v0.4.9)
 gets v0.4.9 by git; its next update downloads the package and removes the old git copy from
-`/opt/reprintbuddy` (never the data). **Versions offered** on the card chooses between stable releases only
-(the default) and pre-releases too (`vX.Y.Z-beta.N`, older than `vX.Y.Z`); back on stable releases, an
-installed pre-release stays until a newer stable release comes. If a release changes the
+`/opt/reprintbuddy` (never the data). The switch **Include pre-releases** on the card (off by default) offers
+pre-releases too (`vX.Y.Z-beta.N`, older than `vX.Y.Z`); switched off again, an installed pre-release stays
+until a newer stable release comes. If a release changes the
 systemd units or the sudoers rule, its release notes say so; then run the installer again.
 
 ## Restart

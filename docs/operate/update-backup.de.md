@@ -103,7 +103,7 @@ Die Karte zeigt die installierte Version und, wenn sie abweicht, daneben die Pak
 
 ## Stabile Versionen oder auch Vorabversionen
 
-Die Zeile **Angebotene Versionen** auf der Update-Karte wählt zwischen **Nur stabile Versionen** (Vorgabe) und **Auch Vorabversionen**. Ein Klick speichert die Wahl und sucht sofort nach Updates, auch wenn die automatische Prüfung aus ist. Mit Vorabversionen bietet die Karte die neueste Version beider Arten an, und die Hinweise einer Vorabversion tragen den Zusatz „Vorabversion“. Schaltest du zurück auf nur stabile Versionen, bleibt eine installierte Vorabversion; Älteres wird nicht angeboten, die nächste neuere stabile Version schon. Die Karte sagt dann „Installiert ist eine Vorabversion.“ Eine Installation mit dem Installationsbefehl einer Vorabversion beginnt mit eingeschalteten Vorabversionen.
+Der Schalter **Vorabversionen einschließen** auf der Update-Karte, direkt unter der automatischen Prüfung, ist anfangs aus: Dann werden nur stabile Versionen angeboten. Eingeschaltet, werden auch Vorabversionen angeboten. Ein Klick speichert die Wahl und sucht sofort nach Updates, auch wenn die automatische Prüfung aus ist. Mit Vorabversionen bietet die Karte die neueste Version beider Arten an, und die Hinweise einer Vorabversion tragen den Zusatz „Vorabversion“. Schaltest du ihn wieder aus, bleibt eine installierte Vorabversion; Älteres wird nicht angeboten, die nächste neuere stabile Version schon. Die Karte sagt dann „Installiert ist eine Vorabversion.“ Eine Installation mit dem Installationsbefehl einer Vorabversion beginnt mit eingeschalteten Vorabversionen.
 
 ## Neustart
 

@@ -298,9 +298,9 @@ Jede Version ist ein veröffentlichtes GitHub-Release `vX.Y.Z` mit seinem Paket 
 die Paketversion entspricht dem Tag. Installation und Update laden beide das Paket, darum zählt GitHub die
 Downloads jeder Version; sonst sendet Reprintbuddy nichts. Eine mit git eingerichtete Installation (bis
 v0.4.9) bekommt v0.4.9 noch per git; ihr nächstes Update lädt das Paket und entfernt die alte git-Kopie
-aus `/opt/reprintbuddy` (nie die Daten). **Angebotene Versionen** auf der Karte wählt zwischen nur stabilen
-Versionen (Vorgabe) und auch Vorabversionen (`vX.Y.Z-beta.N`, älter als `vX.Y.Z`); zurück auf nur stabile
-bleibt eine installierte Vorabversion, bis eine neuere stabile Version kommt. Ändert eine Version die
+aus `/opt/reprintbuddy` (nie die Daten). Der Schalter **Vorabversionen einschließen** auf der Karte (Vorgabe:
+aus) bietet auch Vorabversionen an (`vX.Y.Z-beta.N`, älter als `vX.Y.Z`); wieder aus, bleibt eine installierte
+Vorabversion, bis eine neuere stabile Version kommt. Ändert eine Version die
 systemd-Einheiten oder die sudoers-Regel, steht es in der Release-Notiz; dann das
 Installationsskript erneut ausführen.
 

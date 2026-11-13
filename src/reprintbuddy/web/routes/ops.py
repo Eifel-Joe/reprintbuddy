@@ -449,14 +449,15 @@ async def _check(request: Request):
 
 @router.post("/settings/update/channel", dependencies=[Depends(verify_csrf)])
 async def update_channel(request: Request):
-    """The choice "stable releases only" / "pre-releases too" (v0.4.9, Spec 11.3a "Vorabversionen"):
-    `channel` is the wanted value, never a toggle. Saved, then checked at once with the new choice, also
-    when the automatic check is off ("wirkt sofort und löst eine neue Prüfung aus"). A value that is
-    neither changes nothing and asks nobody; a form sent again or an expired one changes nothing, as on
-    the switch of the automatic check (p99)."""
+    """The switch "Include pre-releases" (v0.4.9, Spec 11.3a "Vorabversionen"; a switch since p542, v0.4.10):
+    `enabled=1` is the wanted state "pre-releases too", `enabled=0` "stable releases only", never a toggle
+    (two open tabs cannot turn each other back). Saved, then checked at once with the new choice, also when
+    the automatic check is off ("wirkt sofort und löst eine neue Prüfung aus"). A value that is neither
+    changes nothing and asks nobody; a form sent again or an expired one changes nothing, as on the switch of
+    the automatic check above it (p99)."""
     form = await request.form()
-    wanted = str(form.get("channel", ""))
-    if wanted not in st.UPDATE_CHANNELS:
+    wanted = {"1": "prerelease", "0": "stable"}.get(str(form.get("enabled", "")).strip())
+    if wanted is None:
         return _back()
     try:
         with form_transaction(request, str(form.get("form_token", ""))) as tx:
