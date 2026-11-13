@@ -354,6 +354,12 @@ keep_installed() {
         printf '%s\n' "${INSTALLED_TAG}" | grep -Eq "${VERSION_PATTERN}" ||
             die 1 "${INSTALL_DIR}/release.json does not name a version. Run the install command of the installed version again, or set Reprintbuddy up again and restore a backup."
         SOURCE_DIR="${INSTALL_DIR}/releases/${INSTALLED_TAG}"
+        # p553 (v0.4.10): without its unpacked folder the comparison of the system files below said "does not
+        # match the installed version"; the missing folder is what to name.
+        if [ ! -d "${tree}/releases/${INSTALLED_TAG}" ]; then
+            die 1 "The folder of the installed version ${INSTALLED_TAG} is missing: ${SOURCE_DIR}" \
+                "Nothing was changed; the database and the settings are kept."
+        fi
     else
         INSTALLED_TAG="$(capture_as_service_user git -C "${INSTALL_DIR}" describe --tags --exact-match HEAD 2>/dev/null || true)"
         SOURCE_DIR="${INSTALL_DIR}"

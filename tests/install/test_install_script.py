@@ -886,3 +886,18 @@ def test_p552_a_package_whose_folder_is_a_link_installs_nothing(bash, tmp_path):
     assert "no real folder" in done.stderr, done.stderr
     assert not (install / "release.json").exists()
     assert not (install / "releases" / PINNED).exists()
+
+
+def test_p553_a_missing_folder_of_the_installed_version_is_named(bash, tmp_path):
+    """p553 (v0.4.10): the re-run said "the installer does not match the installed version" when the
+    unpacked folder of the installed version was gone; it now names the missing folder."""
+    import shutil as _shutil
+
+    installed_package(tmp_path, tag="v0.4.1")
+    _shutil.rmtree(tmp_path / "opt/reprintbuddy/releases/v0.4.1")
+    result = run(bash, tmp_path, "--repo", REPO)
+    message = result.stderr + result.stdout
+    assert result.returncode == 1
+    assert "The folder of the installed version v0.4.1 is missing: /opt/reprintbuddy/releases/v0.4.1" in message
+    assert "does not match the installed version" not in message
+    assert "pip install" not in lines(result)
