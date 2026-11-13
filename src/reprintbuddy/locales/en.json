@@ -605,6 +605,7 @@
   "ops.update.reason.interrupted_untouched": "The update was stopped from outside. Nothing was changed.",
   "ops.update.reason.interrupted_partial": "The update was stopped from outside. The installation may be incomplete.",
   "ops.update.backup_line": "Backup: {path}",
+  "ops.update.dismiss": "Hide",
   "ops.update.state.interrupted": "Update was interrupted",
   "ops.update.state.not_started": "The update did not start. Please start it again.",
   "ops.update.state.not_started_check": "The update did not start. Please check for updates, then start it again.",

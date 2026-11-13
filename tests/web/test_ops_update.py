@@ -1020,3 +1020,67 @@ def test_the_real_notifier_has_the_window_open_while_the_update_waits(ops_env, m
     assert seen == [("while waiting", True)]
     assert notifier._settling is False
     assert START_UPDATE_CMD in ops_env.runner.calls
+
+
+# --- p503: the card of the last update does not stay for ever (Spec 11.3a) -------------------------
+
+MAINTENANCE = "/settings?tab=maintenance"
+
+
+def _finished(state, **kwargs):
+    return UpdateStatus(
+        state=state, step="done", from_tag="v0.1.0", to_tag="v0.2.0", started_at=now(), finished_at=now(),
+        backup="/var/lib/reprintbuddy/backups/x.db", **kwargs,
+    )
+
+
+def test_success_card_is_shown_once_then_gone(ops_env):
+    git_env(ops_env)
+    write_status(data_dir(ops_env), _finished("succeeded"))
+    first = ops_env.client.get(MAINTENANCE).text
+    assert "Update finished" in first and "/var/lib/reprintbuddy/backups/x.db" in first
+    second = ops_env.client.get(MAINTENANCE).text
+    assert "Update finished" not in second and "/var/lib/reprintbuddy/backups/x.db" not in second
+
+
+def test_success_card_is_not_used_up_by_another_tab(ops_env):
+    git_env(ops_env)
+    write_status(data_dir(ops_env), _finished("succeeded"))
+    ops_env.client.get("/settings?tab=general")
+    assert "Update finished" in ops_env.client.get(MAINTENANCE).text
+
+
+@pytest.mark.parametrize("state", ["failed", "rolled_back", "rollback_failed"])
+def test_failed_card_stays_until_dismissed(ops_env, state):
+    git_env(ops_env)
+    write_status(data_dir(ops_env), _finished(state))
+    for _ in range(3):
+        page = ops_env.client.get(MAINTENANCE).text
+        assert "/var/lib/reprintbuddy/backups/x.db" in page
+        assert 'action="/settings/update/dismiss"' in page
+    response = post(ops_env, "/settings/update/dismiss")
+    assert response.status_code == 303 and response.headers["location"] == f"{MAINTENANCE}#ops-update"
+    assert "/var/lib/reprintbuddy/backups/x.db" not in ops_env.client.get(MAINTENANCE).text
+    assert read_status(data_dir(ops_env)).state == state  # the record stays, only the card goes
+
+
+def test_dismiss_needs_login_and_token(ops_env):
+    git_env(ops_env)
+    write_status(data_dir(ops_env), _finished("failed"))
+    assert ops_env.client.post("/settings/update/dismiss", data={"csrf_token": "nope"}).status_code in (400, 403)
+    assert read_status(data_dir(ops_env)).acknowledged is False
+
+
+def test_dismiss_leaves_a_running_update_alone(ops_env):
+    git_env(ops_env)
+    write_status(data_dir(ops_env), UpdateStatus(state="running", step="install", started_at=now()))
+    post(ops_env, "/settings/update/dismiss")
+    assert read_status(data_dir(ops_env)).acknowledged is False
+
+
+def test_new_update_shows_its_own_card_again(ops_env):
+    git_env(ops_env)
+    write_status(data_dir(ops_env), _finished("succeeded", ))
+    ops_env.client.get(MAINTENANCE)
+    write_status(data_dir(ops_env), _finished("failed"))  # what the next update writes
+    assert "/var/lib/reprintbuddy/backups/x.db" in ops_env.client.get(MAINTENANCE).text

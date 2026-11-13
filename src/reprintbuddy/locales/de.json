@@ -605,6 +605,7 @@
   "ops.update.reason.interrupted_untouched": "Das Update wurde von außen beendet. Es wurde nichts verändert.",
   "ops.update.reason.interrupted_partial": "Das Update wurde von außen beendet. Die Installation ist möglicherweise unvollständig.",
   "ops.update.backup_line": "Sicherung: {path}",
+  "ops.update.dismiss": "Ausblenden",
   "ops.update.state.interrupted": "Update wurde unterbrochen",
   "ops.update.state.not_started": "Update wurde nicht gestartet. Bitte erneut starten.",
   "ops.update.state.not_started_check": "Update wurde nicht gestartet. Bitte nach Updates suchen und dann erneut starten.",
