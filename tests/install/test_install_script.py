@@ -716,6 +716,10 @@ def package_fixture(folder: Path, tag: str = PINNED, *, extra: str | None = None
     name = f"reprintbuddy-{tag}.tar.gz"
     top = f"reprintbuddy-{tag}"
     with tarfile.open(folder / name, "w:gz") as archive:
+        folder_entry = tarfile.TarInfo(top)  # git archive writes an entry for the folder itself
+        folder_entry.type = tarfile.DIRTYPE
+        folder_entry.mode = 0o755
+        archive.addfile(folder_entry)
         entries = [(f"{top}/pyproject.toml", b"[project]\n"), (f"{top}/install/install.sh", b"#!/bin/sh\n")]
         if extra:
             entries.append((extra, b"x"))
@@ -855,3 +859,30 @@ def test_review_the_top_folder_check_takes_the_dots_of_the_tag_literally(bash, t
     done, install = _call(bash, tmp_path, "fetch_code", fixtures)
     assert done.returncode == 1
     assert "more than the folder" in done.stderr
+
+
+def test_p552_a_package_whose_folder_is_a_link_installs_nothing(bash, tmp_path):
+    """p552 (v0.4.10), sister path in the installer: the version's folder in the package must be a folder."""
+    import hashlib
+    import io
+    import tarfile
+
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    top = f"reprintbuddy-{PINNED}"
+    with tarfile.open(fixtures / PACKAGE, "w:gz") as archive:
+        link = tarfile.TarInfo(top)
+        link.type = tarfile.SYMTYPE
+        link.linkname = "."
+        archive.addfile(link)
+        data = b"[project]\n"
+        info = tarfile.TarInfo(f"{top}/pyproject.toml")
+        info.size = len(data)
+        archive.addfile(info, io.BytesIO(data))
+    digest = hashlib.sha256((fixtures / PACKAGE).read_bytes()).hexdigest()
+    (fixtures / f"{PACKAGE}.sha256").write_text(f"{digest}  {PACKAGE}\n", encoding="utf-8", newline="\n")
+    done, install = _call(bash, tmp_path, "fetch_code", fixtures)
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "no real folder" in done.stderr, done.stderr
+    assert not (install / "release.json").exists()
+    assert not (install / "releases" / PINNED).exists()

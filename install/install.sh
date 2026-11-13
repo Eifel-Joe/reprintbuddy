@@ -319,6 +319,14 @@ download_release() {
             as_service_user rm -rf "${work}"
             die 1 "The package ${package} holds more than the folder ${top}; nothing was installed."
         fi
+        # p552 (v0.4.10): the entry of the folder itself, if the archive has one, must be a folder (a line of
+        # `tar -tv` starting with "d"), not a link: its files would land beside it.
+        stray="$(capture_as_service_user tar -tvzf "${work}/${package}" 2>/dev/null |
+            grep -E " ${top//./\\.}/?( -> .*)?\$" | grep -v '^d' || true)"
+        if [ -n "${stray}" ]; then
+            as_service_user rm -rf "${work}"
+            die 1 "The folder ${top} in the package ${package} is no real folder; nothing was installed."
+        fi
     fi
     if ! as_service_user tar -xzf "${work}/${package}" -C "${work}"; then
         as_service_user rm -rf "${work}"
