@@ -16,7 +16,7 @@ request: nothing is cancelled, nothing is logged. The grace stays as the net for
 Not chosen: a longer grace or test limit (the end would still hang on the log); plain ASGI instead of
 the four `BaseHTTPMiddleware` layers (a shorter traceback, but the end would still wait for the log);
 the lifespan shutdown (uvicorn sends it only after it has waited for the requests).
-Tests: tests/web/test_live_shutdown.py, tests/web/test_server.py.
+Tests: tests/web/test_live_shutdown.py, tests/web/test_live_server.py.
 """
 
 from __future__ import annotations

@@ -216,3 +216,16 @@ def test_line_endings_are_pinned():
 def test_readmes_say_that_set_password_renames_the_account():
     assert "`set-password` also renames the account" in _read("README.md")
     assert "`set-password` benennt das Konto auch um" in _read("README.de.md")
+
+
+def test_test_files_have_unique_names():
+    """The test folders are no packages, so pytest imports each test file under its bare name: two files
+    with the same name break the collection of the whole suite ("import file mismatch"), which a run of
+    single files never shows (0.4.8, tests/web/test_server.py next to tests/ops/test_server.py)."""
+    seen: dict[str, Path] = {}
+    twins = []
+    for path in sorted((ROOT / "tests").rglob("test_*.py")):
+        if path.name in seen:
+            twins.append(f"{seen[path.name].relative_to(ROOT)} and {path.relative_to(ROOT)}")
+        seen.setdefault(path.name, path)
+    assert twins == []
