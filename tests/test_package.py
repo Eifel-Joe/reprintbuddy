@@ -2,7 +2,7 @@ import reprintbuddy
 
 
 def test_version():
-    assert reprintbuddy.__version__ == "0.4.5"
+    assert reprintbuddy.__version__ == "0.4.6"
 
 
 def test_the_label_fonts_are_part_of_the_package():
@@ -93,3 +93,25 @@ def test_no_code_is_left_that_only_serves_python_3_11():
     source = (Path(reprintbuddy.__file__).parent / "ops" / "fullbackup.py").read_text(encoding="utf-8")
     assert 'getattr(sqlite3, "SQLITE_DBCONFIG_DEFENSIVE"' not in source
     assert "on 3.11" not in source
+
+
+def test_a_run_started_by_hand_names_its_branch_and_purpose():
+    """p502: GitHub lists a run started with `gh workflow run ci.yml --ref release/vX.Y.Z` under the
+    workflow name only. `run-name` (docs: "Workflow syntax", `run-name`) may use the `github` and `inputs`
+    contexts; if it is empty or only whitespace GitHub uses the event's own title (the commit message of a
+    push, the title of a pull request), so pushes and pull requests keep what they had. The run itself
+    shows in `gh run list --workflow ci.yml` and is checked there, after the release branch has run."""
+    from pathlib import Path
+
+    import yaml
+
+    root = Path(reprintbuddy.__file__).parents[2]
+    text = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    workflow = yaml.safe_load(text)
+    triggers = workflow.get("on", workflow.get(True))  # YAML 1.1 reads a bare `on` as True
+    purpose = triggers["workflow_dispatch"]["inputs"]["purpose"]
+    assert purpose["required"] is False and purpose["default"] == "before release"
+    name = workflow["run-name"]
+    assert "github.event_name == 'workflow_dispatch'" in name
+    assert "github.ref_name" in name and "inputs.purpose" in name
+    assert name.rstrip().endswith("|| ' ' }}")  # whitespace for every other event: GitHub's own title

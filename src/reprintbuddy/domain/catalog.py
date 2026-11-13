@@ -89,10 +89,16 @@ def validate_sku(
     article_id: int | None = None,
     set_id: int | None = None,
     variants: dict[str, int] | None = None,
+    required: bool = False,
 ) -> str | None:
     """Trimmed article number, unique over articles, sets and variants (all become SKUs later), case
-    not counted (p350). The refusal names the number that is taken, as it is stored."""
-    sku = _text(sku, "catalog.field.sku", MAX_SKU)
+    not counted (p350). The refusal names the number that is taken, as it is stored.
+
+    `required` (p533, Spec 5.2): an article, a set and an article made of parts are not saved without a
+    number, and the refusal says the number is missing. Only a part ("Sold alone: no") may go without.
+    What an earlier version stored without a number is not looked at here; it is asked for at the next
+    save, which comes through here."""
+    sku = _text(sku, "catalog.field.sku", MAX_SKU, required=required)
     if sku is None:
         return None
     wanted = same_number(sku)
@@ -231,7 +237,8 @@ def _check_article_input(
     session: Session, data: ArticleInput, *, article_id: int | None = None
 ) -> ArticleInput:
     name = _required_name(data.name, "articles.field.name")
-    sku = validate_sku(session, data.sku, article_id=article_id)
+    # Only a part ("Sold alone: no") may stay without a number; it needs one once it is sold alone (p533).
+    sku = validate_sku(session, data.sku, article_id=article_id, required=data.sold_alone)
     label_text = _text(data.label_text, "articles.field.label_text", MAX_LABEL_TEXT)
     target_model = _text(data.target_model, "articles.field.target", MAX_NAME)
     printer_id = data.printer_id
@@ -832,7 +839,7 @@ def _check_set_input(
 ) -> tuple[str, str | None, list[BaseSpec], list[tuple[int, list[tuple[int, str | None]]]]]:
     name = _required_name(data.name, "sets.field.name")
     taken = variant_numbers(session, exclude_set_id=set_id)  # looked up once per save
-    sku = validate_sku(session, data.sku, set_id=set_id, variants=taken)
+    sku = validate_sku(session, data.sku, set_id=set_id, variants=taken, required=True)  # p533
     defs = load_defs(session)
     kept: set[int] = set()  # archived articles that are already part of this set may stay
     kept_sets: set[int] = set()  # so may inner sets that became archived or incomplete (plan v0.4.3, 7)
@@ -900,8 +907,6 @@ def _check_set_input(
         choices.append((qty, options))
     if len(base) + len(choices) < 2:  # every variant has two different articles (p340, question 3)
         raise ValidationError("sets.too_few_articles")  # a row with an inner set counts as one (F8)
-    if choices and sku is None:
-        raise ValidationError("sets.sku_required")
     for _qty, options in choices:
         suffixes: set[str] = set()
         for found, suffix in options:
@@ -913,8 +918,6 @@ def _check_set_input(
     checked = [(qty, [(found.id, suffix) for found, suffix in options]) for qty, options in choices]
     before = dict(defs)
     own_id = _check_nesting(session, defs, set_id, name, sku, base, checked)
-    if sku is None and setresolve.fields(defs, own_id):  # brought choice parts need a number too (0.4.4, E1)
-        raise ValidationError("sets.sku_required")
     _check_brought(session, before, defs, own_id, set_id)
     return name, sku, base, checked
 

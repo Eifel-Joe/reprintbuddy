@@ -7,7 +7,7 @@ is the local `git describe` (once per process); GitHub is asked only on a button
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from string import Formatter
 from typing import Any
@@ -35,6 +35,7 @@ from reprintbuddy.ops.runner import CommandResult, in_thread
 from reprintbuddy.ops.service import request_restart, start_update_unit
 from reprintbuddy.ops.status import (
     BUSY_STATES,
+    FAILED_STATES,
     UPDATE_REASONS,
     UPDATE_STEPS,
     UpdateStatus,
@@ -119,6 +120,7 @@ class OpsView:
     reason_key: str | None = None  # translation key for why the update failed (p176), if the state file names one
     reason_params: dict[str, str] = field(default_factory=dict)
     reason_open_end: bool = False  # a technical line is empty: the text must not end on its colon (p200)
+    dismissable: bool = False  # a failed update's card, which stays until "Hide" (p503)
 
 
 def _display_host(request: Request, effective: EffectiveServer) -> str:
@@ -207,13 +209,29 @@ def ops_view(request: Request, session: Session, busy: bool | None = None) -> Op
         _queued_left_behind(view, app.state.db_path)
     elif view.interrupted:
         view.state_key = "ops.update.state.interrupted"
-    elif view.update.state != "idle":
+    elif view.update.state != "idle" and not view.update.acknowledged:
         view.state_key = f"ops.update.state.{view.update.state}"
+        view.dismissable = view.update.state in FAILED_STATES
     if (view.busy or view.interrupted) and view.update.step in UPDATE_STEPS:
         view.step_key = f"ops.update.step.{view.update.step}"
     view.reason_key, view.reason_params = _reason_text(view.update, str(st.get_setting(session, "language")))
     view.reason_open_end = any(not value.strip() for value in view.reason_params.values())
     return view
+
+
+def mark_result_seen(request: Request, view: OpsView) -> None:
+    """A successful update's card is shown once (Spec 11.3a, p503): the render that shows it also
+    records that it was shown, so the next call of the page no longer has it. A failed update's card is
+    not touched here; it stays until the user hides it (`update_dismiss`). The caller calls this only
+    for a render of the tab that holds the card. A file that cannot be written is no reason to fail the
+    page: the card then shows once more."""
+    status = view.update
+    if not (view.git_install and view.state_key and status.state == "succeeded" and not status.acknowledged):
+        return
+    try:
+        write_status(_data_dir(request), replace(status, acknowledged=True))
+    except OSError:
+        log.warning("update: could not record that the result was shown", exc_info=True)
 
 
 def _reason_text(status: UpdateStatus, lang: str = "en") -> tuple[str | None, dict[str, str]]:
@@ -539,6 +557,17 @@ async def _start_update(request: Request):
             ),
         )
         return _back("start_failed")
+    return _back()
+
+
+@router.post("/settings/update/dismiss", dependencies=[Depends(verify_csrf)])
+async def update_dismiss(request: Request):
+    """Hide the card of a failed or rolled-back update (Spec 11.3a, p503). The record stays in the
+    state file and in the log; a running or successful update is left alone."""
+    data_dir = _data_dir(request)
+    status = read_status(data_dir)
+    if status.state in FAILED_STATES and not status.acknowledged:
+        write_status(data_dir, replace(status, acknowledged=True))
     return _back()
 
 

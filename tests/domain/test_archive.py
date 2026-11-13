@@ -74,7 +74,7 @@ def test_archived_plate_is_free(db):  # Spec 5.5
     with db.begin() as s:
         file = LibraryFile(1, "Template A.gcode.3mf", None, "v1", "A1")
         catalog.create_article(
-            s, file=file, plate=Plate(1, None), requirements=[], thumbnail=None, data=ArticleInput(name="Template A2")
+            s, file=file, plate=Plate(1, None), requirements=[], thumbnail=None, data=ArticleInput(name="Template A2", sku="EX-TEMPLATE-A2")
         )
 
 
@@ -232,7 +232,7 @@ def test_archive_set_always(db):  # Spec 5.5: a set in no other set
     with db.begin() as s:
         a = make_article(s, name="Template A", stock=3).id
         b = make_article(s, name="Template B", stock=3).id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
+        set_id = catalog.create_set(s, SetInput("Starter Set", "EX-STARTER-SET", [BaseInput(1, a), BaseInput(1, b)], [])).id
         order_id = new_order(s, [SetItem(set_id, 1)]).id
     with db.begin() as s:
         catalog.archive_set(s, set_id)
@@ -252,7 +252,7 @@ def test_article_in_an_active_set_cannot_be_archived(db, where):  # Spec 5.4, 5.
         a, b, c = (make_article(s, name=f"Template {x}").id for x in "ABC")
         options = [ChoiceOptionInput(b, "-B"), ChoiceOptionInput(c, "-C")]
         catalog.create_set(s, SetInput("Starter Set", "S", [BaseInput(1, a)], [ChoiceInput(1, options)]))
-        catalog.create_set(s, SetInput("Gift Set", None, [BaseInput(1, a), BaseInput(1, b)], []))
+        catalog.create_set(s, SetInput("Gift Set", "EX-GIFT-SET", [BaseInput(1, a), BaseInput(1, b)], []))
     with pytest.raises(ConflictError) as info:
         with db.begin() as s:
             archive_article(s, a if where == "base" else c)
@@ -263,7 +263,7 @@ def test_article_in_an_active_set_cannot_be_archived(db, where):  # Spec 5.4, 5.
 def test_article_in_an_archived_set_can_be_archived(db):
     with db.begin() as s:
         a, b = (make_article(s, name=f"Template {x}").id for x in "AB")
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
+        set_id = catalog.create_set(s, SetInput("Starter Set", "EX-STARTER-SET", [BaseInput(1, a), BaseInput(1, b)], [])).id
         catalog.archive_set(s, set_id)
         archive_article(s, a)
         assert s.get(Article, a).archived_at is not None
@@ -272,8 +272,8 @@ def test_article_in_an_archived_set_can_be_archived(db):
 def test_set_in_an_active_set_cannot_be_archived(db):  # Spec 5.5 (0.4.3)
     with db.begin() as s:
         a, b, c = (make_article(s, name=f"Template {x}").id for x in "ABC")
-        inner = catalog.create_set(s, SetInput("Inner", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
-        outer = catalog.create_set(s, SetInput("Outer", None, [BaseInput(1, None, inner), BaseInput(1, c)], [])).id
+        inner = catalog.create_set(s, SetInput("Inner", "EX-INNER", [BaseInput(1, a), BaseInput(1, b)], [])).id
+        outer = catalog.create_set(s, SetInput("Outer", "EX-OUTER", [BaseInput(1, None, inner), BaseInput(1, c)], [])).id
     with pytest.raises(ConflictError) as info:
         with db.begin() as s:
             catalog.archive_set(s, inner)
@@ -313,8 +313,8 @@ def test_lists_hide_archived(db):
         p = make_part(s, name="Insert M4").id
         make_part(s, name="Hex key 2")
         b = make_article(s, name="Template C").id
-        set_a = catalog.create_set(s, SetInput("Set A", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
-        catalog.create_set(s, SetInput("Set B", None, [BaseInput(1, tb), BaseInput(1, b)], []))
+        set_a = catalog.create_set(s, SetInput("Set A", "EX-SET-A", [BaseInput(1, a), BaseInput(1, b)], [])).id
+        catalog.create_set(s, SetInput("Set B", "EX-SET-B", [BaseInput(1, tb), BaseInput(1, b)], []))
         catalog.archive_set(s, set_a)
         catalog.archive_part(s, p)
         archive_article(s, a)
@@ -334,7 +334,7 @@ def test_archived_not_allowed_as_new_reference(db):
         c = make_article(s, name="Template C", stock=5)
         d = make_article(s, name="Template D", stock=5)
         p = make_part(s, name="Insert M4")
-        starter = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a.id), BaseInput(1, d.id)], [])).id
+        starter = catalog.create_set(s, SetInput("Starter Set", "EX-STARTER-SET", [BaseInput(1, a.id), BaseInput(1, d.id)], [])).id
         ids = dict(a=a.id, b=b.id, c=c.id, d=d.id, p=p.id, starter=starter)
     with db.begin() as s:
         catalog.archive_part(s, ids["p"])
@@ -343,12 +343,12 @@ def test_archived_not_allowed_as_new_reference(db):
 
     with pytest.raises(ValidationError) as info:
         with db.begin() as s:
-            catalog.update_article(s, ids["a"], ArticleInput(name="Template A", parts={ids["p"]: 1}))
+            catalog.update_article(s, ids["a"], ArticleInput(name="Template A", sku="EX-TEMPLATE-A", parts={ids["p"]: 1}))
     assert info.value.key == "parts.archived"
 
     with pytest.raises(ValidationError) as info:
         with db.begin() as s:
-            catalog.create_set(s, SetInput("New Set", None, [BaseInput(1, ids["c"]), BaseInput(1, ids["a"])], []))
+            catalog.create_set(s, SetInput("New Set", "EX-NEW-SET", [BaseInput(1, ids["c"]), BaseInput(1, ids["a"])], []))
     assert info.value.key == "sets.article_archived"
 
     for items in ([ArticleItem(ids["c"], 1)], [SetItem(ids["starter"], 1)]):
@@ -397,7 +397,7 @@ def test_archived_article_cannot_be_edited(db):
         archive_article(s, a)
     with pytest.raises(ConflictError) as info:
         with db.begin() as s:
-            catalog.update_article(s, a, ArticleInput(name="Renamed"))
+            catalog.update_article(s, a, ArticleInput(name="Renamed", sku="EX-RENAMED"))
     assert info.value.key == "articles.edit_archived"
     with db.begin() as s:
         assert s.get(Article, a).name == "Template A"
@@ -413,11 +413,11 @@ def test_update_keeps_links_to_parts_that_are_not_offered(db):
         s.add(ArticlePart(article_id=a.id, part_id=old.id, qty_per_unit=3))
         ids = (a.id, old.id, new.id)
     with db.begin() as s:
-        catalog.update_article(s, ids[0], ArticleInput(name="Template A", parts={ids[2]: 1}))
+        catalog.update_article(s, ids[0], ArticleInput(name="Template A", sku="EX-TEMPLATE-A", parts={ids[2]: 1}))
     with db.begin() as s:
         links = {l.part_id: l.qty_per_unit for l in s.scalars(select(ArticlePart))}
         assert links == {ids[1]: 3, ids[2]: 1}
-        catalog.update_article(s, ids[0], ArticleInput(name="Template A", parts={ids[1]: 5}))  # already linked
+        catalog.update_article(s, ids[0], ArticleInput(name="Template A", sku="EX-TEMPLATE-A", parts={ids[1]: 5}))  # already linked
     with db.begin() as s:
         assert {l.part_id: l.qty_per_unit for l in s.scalars(select(ArticlePart))} == {ids[1]: 5}
     other = None
@@ -425,7 +425,7 @@ def test_update_keeps_links_to_parts_that_are_not_offered(db):
         other = make_part(s, name="Other archived", archived_at=__import__("datetime").datetime(2026, 1, 1)).id
     with pytest.raises(ValidationError) as info:
         with db.begin() as s:
-            catalog.update_article(s, ids[0], ArticleInput(name="Template A", parts={other: 1}))  # new reference
+            catalog.update_article(s, ids[0], ArticleInput(name="Template A", sku="EX-TEMPLATE-A", parts={other: 1}))  # new reference
     assert info.value.key == "parts.archived"
 
 

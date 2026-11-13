@@ -71,7 +71,7 @@ def test_write_leaves_no_tmp(tmp_path):
 def test_status_json_holds_no_secret_fields(tmp_path):
     assert set(UpdateStatus().to_json()) == {
         "state", "step", "from_tag", "to_tag", "started_at", "finished_at", "message", "backup",
-        "reason", "params",
+        "reason", "params", "acknowledged",
     }
 
 
@@ -137,3 +137,11 @@ def test_a_file_without_reason_or_with_an_unknown_one_reads_as_before(tmp_path):
     assert (read.state, read.message, read.reason, read.params) == ("failed", "fetch: boom", "", {})
     status_path(tmp_path).write_text('{"state": "failed", "message": "fetch: boom"}', encoding="utf-8")
     assert read_status(tmp_path).reason == ""
+
+
+def test_acknowledged_survives_the_file_and_defaults_to_false(tmp_path):  # p503
+    status = UpdateStatus(state="failed", step="fetch", acknowledged=True)
+    write_status(tmp_path, status)
+    assert read_status(tmp_path).acknowledged is True
+    (tmp_path / "update-status.json").write_text('{"state": "succeeded"}', encoding="utf-8")  # a file of 0.4.5
+    assert read_status(tmp_path).acknowledged is False

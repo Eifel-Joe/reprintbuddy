@@ -149,7 +149,7 @@ def test_edit_head_has_the_name_without_a_short_state(ready_client):
 def test_edit_region_brings_the_saved_values(ready_client):
     a = add(ready_client, min_stock=1)
     with sm_of(ready_client).begin() as s:
-        catalog.update_article(s, a, ArticleInput(name="Template A", min_stock=7))
+        catalog.update_article(s, a, ArticleInput(name="Template A", sku="EX-TEMPLATE-A", min_stock=7))
     form = piece(ready_client, f"/articles/{a}/edit", "form")
     assert field_value(form, "min_stock") == "7"
 

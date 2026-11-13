@@ -100,6 +100,7 @@ EXEMPT = {
     "/bambuddy/rights/recheck": "checks the key again; a change of the rights is logged after the next poll",
     "/bambuddy/rights/later": "hides a notice in this browser",
     "/bambuddy/rights/done": "hides a notice in this browser",
+    "/settings/update/dismiss": "hides the card of a failed update; its result is in the log already (p503)",
 }
 
 

@@ -473,6 +473,7 @@ def test_all_settings_posts_require_csrf(ready_client):
         "/settings/update",
         "/settings/update/auto",
         "/settings/update/check",
+        "/settings/update/dismiss",  # p503: hides the card of a failed update
     ]
     csrf_of(ready_client, "/settings")  # a session with a token exists
     for path in paths:

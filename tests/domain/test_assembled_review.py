@@ -26,15 +26,15 @@ def _order(s, item):
 # ---- finding 1: an open order of an article built on order without a number ----------------------
 
 
-def test_mode_switch_refused_with_open_order_without_number(db):
+def test_mode_switch_refused_with_open_order(db):  # p533: the number is required now, the finding stays
     with db.begin() as s:
         segment = make_article(s, name="Segment", stock=24)
         hose = assembled.create_assembled(s, AssembledInput(
-            name="Hose", sku=None, mode="order", base=[B(12, segment.id)], fields=[], parts={}))
+            name="Hose", sku="EX-HOSE", mode="order", base=[B(12, segment.id)], fields=[], parts={}))
         _order(s, AssembledItem(hose.id, 1))
         with pytest.raises(ConflictError) as err:
             assembled.update_assembled(s, hose.id, AssembledInput(
-                name="Hose", sku=None, mode="stock", base=[B(12, segment.id)], fields=[], parts={}))
+                name="Hose", sku="EX-HOSE", mode="stock", base=[B(12, segment.id)], fields=[], parts={}))
         assert err.value.key == "assembled.mode_switch_busy"
         with pytest.raises(ConflictError) as err:
             assembled.convert_to_print(
@@ -53,7 +53,7 @@ def test_article_in_a_set_cannot_get_choices_or_order_mode(db):
         clip = make_article(s, name="Clip")
         lid = make_article(s, name="Lid")
         box = make_assembled(s, name="Storage box", sku="EX-B1", base=[(panel.id, 2)])
-        catalog.create_set(s, SetInput("Starter", None, [B(1, box.id), B(1, clip.id)], []))
+        catalog.create_set(s, SetInput("Starter", "EX-STARTER", [B(1, box.id), B(1, clip.id)], []))
         for change in (
             dict(mode="order"),
             dict(fields=[[OptionInput(None, "-A", [B(1, lid.id)]), OptionInput(None, "-B", [B(1, clip.id)])]]),
@@ -70,7 +70,7 @@ def test_sold_alone_off_refused_while_in_a_set(db):
     with db.begin() as s:
         clip = make_article(s, name="Clip")
         lid = make_article(s, name="Lid")
-        catalog.create_set(s, SetInput("Starter", None, [B(1, lid.id), B(1, clip.id)], []))
+        catalog.create_set(s, SetInput("Starter", "EX-STARTER", [B(1, lid.id), B(1, clip.id)], []))
         with pytest.raises(ConflictError) as err:
             catalog.update_article(s, clip.id, ArticleInput(name="Clip", sold_alone=False))
         assert (err.value.key, err.value.params["names"]) == ("articles.sold_alone_in_set", "Starter")
@@ -133,7 +133,7 @@ def test_an_article_is_not_its_own_part(db):
         clip = make_article(s, name="Clip")
         with pytest.raises(ValidationError) as err:
             assembled.convert_to_assembled(s, lamp.id, AssembledInput(
-                name="Lamp", sku=None, mode="stock", base=[B(1, lamp.id), B(1, clip.id)], fields=[], parts={}))
+                name="Lamp", sku="EX-LAMP", mode="stock", base=[B(1, lamp.id), B(1, clip.id)], fields=[], parts={}))
         assert err.value.key == "assembled.part_is_self"
 
 
@@ -180,10 +180,10 @@ def test_print_article_in_a_set_becomes_assembled_only_as_set_material(db):  # s
         lamp = make_article(s, name="Lamp")
         clip = make_article(s, name="Clip")
         lid = make_article(s, name="Lid")
-        catalog.create_set(s, SetInput("Starter", None, [B(1, lamp.id), B(1, lid.id)], []))
+        catalog.create_set(s, SetInput("Starter", "EX-STARTER", [B(1, lamp.id), B(1, lid.id)], []))
         with pytest.raises(ConflictError) as err:
             assembled.convert_to_assembled(s, lamp.id, AssembledInput(
-                name="Lamp", sku=None, mode="order", base=[B(2, clip.id)], fields=[], parts={}))
+                name="Lamp", sku="EX-LAMP", mode="order", base=[B(2, clip.id)], fields=[], parts={}))
         assert err.value.key == "assembled.in_set"
         assembled.convert_to_assembled(s, lamp.id, AssembledInput(
-            name="Lamp", sku=None, mode="stock", base=[B(2, clip.id)], fields=[], parts={}))
+            name="Lamp", sku="EX-LAMP", mode="stock", base=[B(2, clip.id)], fields=[], parts={}))

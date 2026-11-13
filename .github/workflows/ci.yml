@@ -1,11 +1,21 @@
 name: CI
 
+# A run started by hand is named after its branch and purpose, e.g. "CI release/v0.4.6 (before release)".
+# Every other event gets a single space: GitHub treats a whitespace-only run-name like a missing one and
+# uses the event's own title (the commit message of a push, the title of a pull request).
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('CI {0} ({1})', github.ref_name, inputs.purpose) || ' ' }}
+
 on:
   push:
     branches: [main, dev]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      purpose:
+        description: Why this run is started (shown in the name of the run)
+        required: false
+        default: before release
 
 permissions:
   contents: read
