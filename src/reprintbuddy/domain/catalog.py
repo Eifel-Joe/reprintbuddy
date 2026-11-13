@@ -766,26 +766,6 @@ class SetRow:
     held_archived: tuple[tuple[str, str], ...] = ()
 
 
-def _fields_of(
-    session: Session, set_id: int
-) -> tuple[list[SetPosition], list[tuple[SetPosition, list[SetPositionOption]]]]:
-    """The base positions and the choice fields with their options, in the order of the form."""
-    positions = session.scalars(
-        select(SetPosition)
-        .where(SetPosition.set_id == set_id)
-        .order_by(SetPosition.slot, SetPosition.sort, SetPosition.id)
-    ).all()
-    fields = []
-    for position in (p for p in positions if p.slot > 0):
-        options = session.scalars(
-            select(SetPositionOption)
-            .where(SetPositionOption.position_id == position.id)
-            .order_by(SetPositionOption.sort, SetPositionOption.article_id)
-        ).all()
-        fields.append((position, list(options)))
-    return [p for p in positions if p.slot == 0], fields
-
-
 def _numbers_of(defs: dict[int, setresolve.SetDef], set_id: int) -> list[str]:
     """The variant numbers of a set over every field, brought ones first (Spec 5.4, 0.4.4); none
     without a number, a suffix, or for a set that cannot be resolved."""
