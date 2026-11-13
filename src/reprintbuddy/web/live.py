@@ -74,6 +74,11 @@ class LiveBroker:
             return f"{self._start}:{self._counter}"
 
     @property
+    def closed(self) -> bool:
+        with self._lock:
+            return self._closed
+
+    @property
     def subscriber_count(self) -> int:
         with self._lock:
             return len(self._subs)

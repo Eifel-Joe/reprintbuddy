@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from conftest import make_client
+from reprintbuddy.web import server as web_server
 from reprintbuddy import cli
 from reprintbuddy.web.app import SESSION_COOKIE
 
@@ -56,7 +57,7 @@ def test_plain_http_in_the_network_keeps_a_cookie_without_secure(db_path):
 def test_serve_trusts_forwarded_headers_of_the_same_machine_only(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setenv("FORWARDED_ALLOW_IPS", "*")  # an environment may not widen it
-    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: calls.append(kw))
+    monkeypatch.setattr(web_server, "serve", lambda app, **kw: calls.append(kw))
     assert cli.main(["serve", "--db", str(tmp_path / "t.db")]) == 0
     (kwargs,) = calls
     assert kwargs["proxy_headers"] is True

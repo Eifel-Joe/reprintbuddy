@@ -8,8 +8,18 @@ the grace plus a little (that is what the grace is for, and stricter than before
 longer to tear its event loop down, but must still end long before systemd would kill the service
 (90 s). A step that overruns puts the stack of the server thread into the message, so a next failure
 names its cause.
+
+p535 (v0.4.8): it failed once more on the tag v0.4.7 (Python 3.13, Linux), "the stream stayed open 3 s
+after the stop", the server thread inside `logger.error` reading source lines for a traceback. Root:
+Uvicorn tells a running response nothing when it stops (`H11Protocol.shutdown` only drops keep-alive),
+so the stream ran into the grace and was cancelled; uvicorn then logs the cancelled request with its
+whole traceback and closes the connection only after that (`h11_impl.run_asgi`). How long the stream
+stayed open hung on how fast the log was written. Reproduced at will with an error log that takes
+3.5 s: exactly the CI message. The server now closes the live channel first (`web/server.py`), so the
+streams end themselves, nothing is cancelled and nothing is logged.
 """
 
+import logging
 import sys
 import threading
 import time
@@ -17,6 +27,8 @@ import traceback
 
 import httpx
 import uvicorn
+
+from reprintbuddy.web.server import LiveClosingServer
 
 COOKIE = "reprintbuddy_session"
 GRACE_SECONDS = 1
@@ -31,7 +43,21 @@ def _stack(thread: threading.Thread) -> str:
     return "".join(traceback.format_stack(frame))
 
 
-def test_server_with_an_open_stream_stops_within_the_grace_time(ready_client):
+class _Errors(logging.Handler):
+    """What uvicorn logs at ERROR while it stops; `delay` stands for a slow disk or a slow machine."""
+
+    def __init__(self, delay: float = 0.0) -> None:
+        super().__init__(level=logging.ERROR)
+        self.delay = delay
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage().splitlines()[0])
+        if record.exc_info and self.delay:
+            time.sleep(self.delay)
+
+
+def _stop_with_an_open_stream(ready_client, errors: _Errors) -> None:
     config = uvicorn.Config(
         ready_client.app,
         host="127.0.0.1",
@@ -40,7 +66,29 @@ def test_server_with_an_open_stream_stops_within_the_grace_time(ready_client):
         log_level="warning",
         lifespan="off",
     )
-    server = uvicorn.Server(config)
+    # After the Config: it sets uvicorn's log up anew and would drop the handler.
+    logging.getLogger("uvicorn.error").addHandler(errors)
+    try:
+        _run(ready_client, LiveClosingServer(config, live=ready_client.app.state.live))
+    finally:
+        logging.getLogger("uvicorn.error").removeHandler(errors)
+
+
+def test_server_with_an_open_stream_stops_within_the_grace_time(ready_client):
+    errors = _Errors()
+    _stop_with_an_open_stream(ready_client, errors)
+    # The stream ends by itself: uvicorn neither cancels it nor logs it as a failed request.
+    assert errors.messages == []
+
+
+def test_a_slow_error_log_does_not_keep_the_stream_open(ready_client):
+    """p535: the CI failure, at will. The stream must not wait for uvicorn's error log."""
+    errors = _Errors(delay=STREAM_ENDS_WITHIN + 0.5)
+    _stop_with_an_open_stream(ready_client, errors)
+    assert errors.messages == []
+
+
+def _run(ready_client, server: uvicorn.Server) -> None:
     # Outside the main thread Uvicorn installs no signal handlers.
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
