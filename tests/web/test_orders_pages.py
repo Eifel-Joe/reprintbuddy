@@ -132,6 +132,22 @@ def test_more_rows_keeps_values(ready_client):
     assert order_in_db(ready_client) == []
 
 
+def test_order_rows_above_the_limit_are_capped_not_dropped(ready_client):
+    """p520, the mirror of p391 and of the set form (0.4.7, R7): a row count above the limit read as no
+    count at all, so the form fell back to its five rows and dropped every filled row past them without
+    a message. It now reads up to the limit. The page itself never sends more than the limit."""
+    with sm_of(ready_client).begin() as s:
+        a, b = (make_article(s, name=f"Template {x}").id for x in "AB")
+    rows = {"rows": "51", "item_0": f"article:{a}", "qty_0": "1", "item_49": f"article:{b}", "qty_49": "2"}
+    assert ready_client.post("/orders/new", data=order_fields(ready_client, **rows)).status_code == 303
+    assert (reserved(ready_client, a), reserved(ready_client, b)) == (1, 2)
+    # "more rows" on such a count stays at the limit and keeps the last row
+    page = ready_client.post("/orders/new", data=order_fields(ready_client, action="more", reference="Order 1002", **rows))
+    assert page.status_code == 200
+    assert 'name="qty_49"' in page.text and 'name="qty_50"' not in page.text
+    assert f'value="article:{b}" selected' in page.text
+
+
 def test_order_form_defaults_to_today(ready_client):
     page = ready_client.get("/orders/new").text
     assert re.search(r'type="date"[^>]*value="\d{4}-\d{2}-\d{2}"|value="\d{4}-\d{2}-\d{2}"[^>]*type="date"', page)

@@ -18,6 +18,7 @@ from reprintbuddy.models import utcnow
 from reprintbuddy.web import kpis, listing, regions
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, local_next, render
+from reprintbuddy.web.form_rows import row_count
 from reprintbuddy.web.formatting import to_local
 from reprintbuddy.web.forms import (
     MAX_ID,
@@ -89,9 +90,9 @@ async def orders_list(
 
 
 def _rows_of(form, *, more: bool) -> int:
-    raw = str(form.get("rows", "")).strip()
-    value = bounded_int(raw)
-    rows = value if value is not None and 1 <= value <= MAX_ROWS else DEFAULT_ROWS
+    # p520: a count above the limit is read up to the limit, as in the set form (form_rows.row_count);
+    # it used to fall back to the default and drop the filled rows past it without a message.
+    rows = row_count(form, "rows", DEFAULT_ROWS, MAX_ROWS)
     return min(rows + MORE_ROWS, MAX_ROWS) if more else rows
 
 
