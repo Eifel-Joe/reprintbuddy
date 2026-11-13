@@ -238,8 +238,6 @@ def suppliers_key(session: Session, item_type: str, item_id: int) -> str:
     return suppliers.key(_suppliers_of(session, item_type, item_id))
 
 
-
-
 @dataclass(frozen=True)
 class _NewSpool:
     sort_id: int | None

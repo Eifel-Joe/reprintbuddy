@@ -41,7 +41,6 @@ def target_of(db: Session, article: Article) -> str:
     return f"/articles/{article.id}"
 
 
-
 @router.get("/a/{article_id:int}")
 async def scan(article_id: int, db: Session = Depends(get_db)):
     article = get_or_404(db, Article, article_id)

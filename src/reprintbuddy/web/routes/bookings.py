@@ -28,7 +28,6 @@ from reprintbuddy.web.journal_view import journal_rows
 router = APIRouter()
 
 
-
 def _page(request: Request, db: Session, *, error_form: str | None = None, error: str | None = None,
           values: dict[str, str] | None = None, status: int = 200):
     return render(

@@ -30,7 +30,7 @@ from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.domain import stock as stock_mod
 from reprintbuddy.models import (
-    Article, ArticleFilament, ArticleFilamentSort, ArticlePart, Dispatch, FilamentSort, Part, WorkQueueEntry,
+    Article, ArticlePart, Dispatch, FilamentSort, Part, WorkQueueEntry,
 )
 from reprintbuddy.web import kpis, labels_view, listing, regions
 from reprintbuddy.web import qr as qr_view
@@ -624,7 +624,6 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
 
 
 # ---- detail, thumbnail, settings -------------------------------------------------------------
-
 
 
 def _relink_article(db: Session, article_id: int) -> Article:

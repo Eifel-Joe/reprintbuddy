@@ -48,7 +48,7 @@ def test_text_trims_and_limits():
     assert (caught.value.key, caught.value.params) == ("form.too_long", {"field": "f", "max": 5})
 
 
-def test_max_id_is_the_largest_sqlite_integer_a_form_may_name():
+def test_max_id_is_the_largest_record_number_a_form_may_name():
     assert MAX_ID == 2**31 - 1
 
 

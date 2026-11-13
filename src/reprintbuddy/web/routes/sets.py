@@ -23,7 +23,6 @@ from reprintbuddy.web.forms import (
     MAX_ID,
     bounded_int,
     duplicate_redirect,
-    run_form_action,
     error_status,
     error_text,
     parse_int,
@@ -318,7 +317,6 @@ async def sets_new(request: Request, db: Session = Depends(get_db)):
 @router.post("/sets/new", dependencies=[Depends(verify_csrf)])
 async def sets_create(request: Request, db: Session = Depends(get_db)):
     return await _post(request, db, None)
-
 
 
 @router.get("/sets/{set_id:int}/edit")

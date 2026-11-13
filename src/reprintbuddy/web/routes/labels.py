@@ -82,7 +82,6 @@ def _checked(host: str, roll: str, chosen: list[str], own: frozenset[str]) -> tu
 # ---- settings: save, preview, trial print ----------------------------------------------------
 
 
-
 def _has_choices(db: Session, article: Article) -> bool:
     """An article made of parts with choice parts: its label has no minimum, buffer or target (Teil C 9)."""
     from sqlalchemy import select
@@ -157,7 +156,6 @@ async def trial_print(request: Request, db: Session = Depends(get_db)):
 
 
 # ---- the article's page: preview and print --------------------------------------------------
-
 
 
 @router.get("/articles/{article_id:int}/label.png")

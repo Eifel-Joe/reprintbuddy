@@ -49,8 +49,6 @@ MAX_LABEL_TEXT = 60  # the text for the label (Spec 5.2): a label has little roo
 # ---- validation helpers ----------------------------------------------------------------
 
 
-
-
 def _required_name(value: str | None, field_key: str) -> str:
     name = inputs.text(value, field_key, MAX_NAME, required=True)
     assert name is not None

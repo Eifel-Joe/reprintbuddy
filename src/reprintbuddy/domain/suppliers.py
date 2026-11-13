@@ -78,8 +78,6 @@ FILAMENT_LABELS = Labels(
 )
 
 
-
-
 def _check_one(data: SupplierInput, labels: Labels, number: int | None) -> SupplierInput:
     """One supplier's fields; with several, an error names the supplier by its number (1 first)."""
     try:

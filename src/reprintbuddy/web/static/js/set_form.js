@@ -14,10 +14,9 @@
 (function () {
   "use strict";
 
-  var rows = window.ReprintbuddyRows; // more_rows.js, loaded before this script
-  if (!rows) {
-    return; // without it the form stays as the server drew it, and the server still refuses doubles
-  }
+  // The drop-down helpers come from more_rows.js, loaded before this script. Without it the drop-downs
+  // stay as the server drew them (the server still refuses an article twice); the rest works as before.
+  var rows = window.ReprintbuddyRows || { offerOnly: function () {} };
 
   function each(list, fn) {
     Array.prototype.forEach.call(list, fn);
