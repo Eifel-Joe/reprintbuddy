@@ -17,8 +17,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterator
 
-import uvicorn
-
 from reprintbuddy import __version__, auth
 from reprintbuddy import settings as st
 from reprintbuddy.activity import capture as activity_capture
@@ -31,11 +29,13 @@ from reprintbuddy.ops.server import base_url, connect_host, effective_from_setti
 from reprintbuddy.ops.service import INSTALL_DIR
 from reprintbuddy.ops.updater import http_health_waiter, interrupt_handler, run_update
 from reprintbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upgrade
+from reprintbuddy.web import server as web_server
 from reprintbuddy.web.app import create_app
 
 
-# Open live streams (GET /live) never end by themselves; without this limit Uvicorn waits
-# for them without end when stopping and systemd kills the service only after 90 s.
+# Open live streams (GET /live) never end by themselves; the server ends them first when it stops
+# (web/server.py, p535). This limit stays as the net for any other request that hangs: without it
+# Uvicorn would wait without end and systemd would kill the service only after 90 s.
 SHUTDOWN_GRACE_SECONDS = 3
 
 # Uvicorn takes the client's address and scheme (`X-Forwarded-For`, `X-Forwarded-Proto`) only from a proxy
@@ -91,7 +91,7 @@ def _serve(args: argparse.Namespace) -> int:
     app.state.ops = OpsContext(effective=effective)
     if tls:
         with _pem_files(str(cert), str(key)) as (cert_file, key_file):
-            uvicorn.run(
+            web_server.serve(
                 app,
                 host=host,
                 port=port,
@@ -102,7 +102,7 @@ def _serve(args: argparse.Namespace) -> int:
                 forwarded_allow_ips=TRUSTED_PROXIES,
             )
     else:
-        uvicorn.run(
+        web_server.serve(
             app,
             host=host,
             port=port,

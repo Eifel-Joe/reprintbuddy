@@ -18,19 +18,18 @@ from reprintbuddy.models import utcnow
 from reprintbuddy.web import kpis, listing, regions
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, local_next, render
+from reprintbuddy.web.form_rows import row_count
 from reprintbuddy.web.formatting import to_local
 from reprintbuddy.web.forms import (
     MAX_ID,
     bounded_int,
-    duplicate_redirect,
-    error_status,
-    error_text,
     parse_int,
     parse_text,
+    run_form_action,
     saved_redirect,
 )
 from reprintbuddy.web.filament_view import may_write
-from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
+from reprintbuddy.web.formtoken import write_transaction
 from reprintbuddy.web.i18n import translate
 
 router = APIRouter()
@@ -89,9 +88,9 @@ async def orders_list(
 
 
 def _rows_of(form, *, more: bool) -> int:
-    raw = str(form.get("rows", "")).strip()
-    value = bounded_int(raw)
-    rows = value if value is not None and 1 <= value <= MAX_ROWS else DEFAULT_ROWS
+    # p520: a count above the limit is read up to the limit, as in the set form (form_rows.row_count);
+    # it used to fall back to the default and drop the filled rows past it without a message.
+    rows = row_count(form, "rows", DEFAULT_ROWS, MAX_ROWS)
     return min(rows + MORE_ROWS, MAX_ROWS) if more else rows
 
 
@@ -182,7 +181,6 @@ async def orders_create(request: Request, db: Session = Depends(get_db)):
         "note": str(form.get("note", "")),
     }
     items = _typed_items(form, rows)
-    lang = current_language(request)
 
     before = _rows_of(form, more=False)
 
@@ -194,7 +192,8 @@ async def orders_create(request: Request, db: Session = Depends(get_db)):
 
     if more:  # show more rows; nothing is booked and the token stays unused
         return page()
-    try:
+
+    def check():
         order_date = _parse_date(form.get("order_date"))
         order_items: list[ArticleItem | SetItem | AssembledItem] = []
         for row in items:
@@ -206,17 +205,21 @@ async def orders_create(request: Request, db: Session = Depends(get_db)):
                 order_items.append(AssembledItem(ident, qty, ":".join(str(k) for k in key)))
             else:
                 order_items.append(ArticleItem(ident, qty) if kind == "article" else SetItem(ident, qty, key))
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            order = orders.create_order(
-                tx, reference=values["reference"], order_date=order_date, items=order_items,
-                actor="user", note=values["note"],
-            )
-            order_id, reference = order.id, order.reference
-    except FormTokenUsed:
-        return duplicate_redirect(request, "/orders")
-    except (DomainError, FormTokenInvalid) as exc:
-        return page(error=error_text(lang, exc), status=error_status(exc))
-    return saved_redirect(request, f"/orders/{order_id}", "orders.created", reference=reference)
+        return order_date, order_items
+
+    def save(tx, checked):
+        order_date, order_items = checked
+        order = orders.create_order(
+            tx, reference=values["reference"], order_date=order_date, items=order_items,
+            actor="user", note=values["note"],
+        )
+        return order.id, order.reference
+
+    return await run_form_action(
+        request, check=check, work=save, duplicate_url="/orders",
+        done=lambda result: saved_redirect(request, f"/orders/{result[0]}", "orders.created", reference=result[1]),
+        on_error=lambda text, status, exc: page(error=text, status=status),
+    )
 
 
 # ---- detail, ship, cancel ---------------------------------------------------------------------
@@ -259,19 +262,22 @@ async def _act(request: Request, order_id: int, db: Session, action, flash_key: 
         orders.get_order(db, order_id)
     except DomainError:
         raise HTTPException(status_code=404) from None
-    try:
-        note = parse_text(form.get("note"), field="journal.field.note", max_len=stock.MAX_NOTE)
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            result = action(tx, order_id, "user", note)
-            reference = orders.get_order(tx, order_id).reference
-    except FormTokenUsed:
-        return duplicate_redirect(request, after)
-    except (DomainError, FormTokenInvalid) as exc:
-        return _detail_page(
-            request, db, order_id, error=error_text(current_language(request), exc), status=error_status(exc)
-        )
-    key, params = (flash_key, {}) if flash_for is None else flash_for(result)
-    return saved_redirect(request, after, key, reference=reference, **params)
+
+    def save(tx, note):
+        result = action(tx, order_id, "user", note)
+        return result, orders.get_order(tx, order_id).reference
+
+    def saved(outcome):
+        result, reference = outcome
+        key, params = (flash_key, {}) if flash_for is None else flash_for(result)
+        return saved_redirect(request, after, key, reference=reference, **params)
+
+    return await run_form_action(
+        request,
+        check=lambda: parse_text(form.get("note"), field="journal.field.note", max_len=stock.MAX_NOTE),
+        work=save, done=saved, duplicate_url=after,
+        on_error=lambda text, status, exc: _detail_page(request, db, order_id, error=text, status=status),
+    )
 
 
 @router.post("/orders/{order_id:int}/ship", dependencies=[Depends(verify_csrf)])

@@ -3,12 +3,12 @@ import subprocess
 import sys
 
 import pytest
-import uvicorn
 
 from reprintbuddy import auth
 from reprintbuddy import settings as st
 from reprintbuddy.cli import main
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
+from reprintbuddy.web import server as web_server
 
 CERT = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
 KEY = "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n"
@@ -101,7 +101,7 @@ def test_set_port_invalid(db, bad, capsys):
 def test_serve_uses_stored_host_and_port(db, monkeypatch):
     main(["set-port", "9191", "--db", str(db)])
     calls = []
-    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: calls.append((app, kw)))
+    monkeypatch.setattr(web_server, "serve", lambda app, **kw: calls.append((app, kw)))
     assert main(["serve", "--db", str(db)]) == 0
     (app, kwargs), = calls
     assert kwargs["host"] == "0.0.0.0"
@@ -124,7 +124,7 @@ def test_serve_writes_tls_to_private_temp_files_and_removes_them(db, monkeypatch
         if os.name == "posix":
             seen["modes"] = (os.stat(cert).st_mode & 0o777, os.stat(key).st_mode & 0o777)
 
-    monkeypatch.setattr(uvicorn, "run", fake_run)
+    monkeypatch.setattr(web_server, "serve", fake_run)
     assert main(["serve", "--db", str(db)]) == 0
     assert seen["content"] == (CERT, KEY)
     if os.name == "posix":
@@ -143,7 +143,7 @@ def test_serve_removes_tls_files_even_if_server_crashes(db, monkeypatch):
         paths.extend([kw["ssl_certfile"], kw["ssl_keyfile"]])
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(uvicorn, "run", crashing_run)
+    monkeypatch.setattr(web_server, "serve", crashing_run)
     with pytest.raises(RuntimeError):
         main(["serve", "--db", str(db)])
     assert paths and not any(os.path.exists(p) for p in paths)
@@ -206,7 +206,7 @@ def test_serve_does_not_use_tls_with_a_certificate_alone(db, monkeypatch):
     with open_session(db) as s:
         st.set_setting(s, "tls_cert", CERT)
     calls = []
-    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: calls.append(kw))
+    monkeypatch.setattr(web_server, "serve", lambda app, **kw: calls.append(kw))
     assert main(["serve", "--db", str(db)]) == 0
     assert calls[0].get("ssl_certfile") is None
 
@@ -250,13 +250,11 @@ def test_set_port_above_1023_has_no_warning(db, capsys):
 
 
 def test_serve_passes_effective_server(db_path, monkeypatch):
-    import uvicorn
-
     from reprintbuddy.cli import main
     from reprintbuddy.ops.server import EffectiveServer
 
     seen = {}
-    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: seen.update(app=app, **kwargs))
+    monkeypatch.setattr(web_server, "serve", lambda app, **kwargs: seen.update(app=app, **kwargs))
     assert main(["serve", "--db", str(db_path)]) == 0
     assert seen["app"].state.ops.effective == EffectiveServer("0.0.0.0", 8080, None)
 
@@ -354,7 +352,7 @@ def test_serve_limits_the_graceful_shutdown(db, monkeypatch, with_tls):
             st.set_setting(s, "tls_cert", CERT)
             st.set_setting(s, "tls_key", KEY)
     calls = []
-    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: calls.append(kw))
+    monkeypatch.setattr(web_server, "serve", lambda app, **kw: calls.append(kw))
     assert main(["serve", "--db", str(db)]) == 0
     (kwargs,) = calls
     assert (kwargs.get("ssl_certfile") is not None) == with_tls

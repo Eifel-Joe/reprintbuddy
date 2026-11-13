@@ -37,6 +37,37 @@ def test_switch_to_assembled_from_the_form(ready_client):
         assert (row.kind, row.sku, row.library_file_id) == ("assembled", "EX-L1", None)
 
 
+def _switch_form(client, lamp, clip, **over):
+    path = f"/articles/{lamp}/to-assembled"
+    data = {
+        "csrf_token": csrf_of(client, path), "form_token": form_token_of(client, path, path),
+        "name": "Lamp", "sku": "EX-L1", "mode": "stock", "base_rows": "1", "base_0_qty": "2", "base_0_article": str(clip),
+        "c1_options": "1", "c1_0_rows": "1",
+    }
+    data.update(over)
+    return data
+
+
+def test_switch_sent_twice_answers_not_found_and_a_bad_input_keeps_the_form(ready_client):
+    """0.4.8 (R9): held before the save moved into the shared double-submit helper."""
+    with sm_of(ready_client).begin() as s:
+        lamp = make_article(s, name="Lamp", sku="EX-L1").id
+        clip = make_article(s, name="Clip").id
+    path = f"/articles/{lamp}/to-assembled"
+    bad = ready_client.post(path, data=_switch_form(ready_client, lamp, clip, base_0_qty="abc", name="Lamp 2"))
+    assert bad.status_code == 200 and 'value="Lamp 2"' in bad.text and f'action="{path}"' in bad.text
+    forged = ready_client.post(path, data=_switch_form(ready_client, lamp, clip, form_token="forged"))
+    assert forged.status_code == 400 and en("form.expired") in forged.text
+    data = _switch_form(ready_client, lamp, clip)
+    assert ready_client.post(path, data=data, follow_redirects=False).status_code == 303
+    # Sent again, the article is no print article any more: the route answers "not found" before the
+    # form is read, so the repeat never reaches the double-submit guard. Held as it is (0.4.8, R9).
+    again = ready_client.post(path, data=data, follow_redirects=False)
+    assert again.status_code == 404
+    with sm_of(ready_client).begin() as s:
+        assert s.get(Article, lamp).kind == "assembled"
+
+
 def test_relink_of_assembled_makes_it_a_print_article(bb_client, fake_bambuddy):
     with sm_of(bb_client).begin() as s:
         clip = make_article(s, name="Clip", library_file_id=50).id

@@ -62,6 +62,21 @@ def test_create_hose_from_the_form(ready_client):
         assert hose.assembly_mode == "order"
 
 
+def test_create_double_submit_creates_one_and_a_forged_form_is_refused(ready_client):
+    """0.4.8 (R9): held before the save moved into the shared double-submit helper."""
+    ids = parts(ready_client)
+    data = hose_form(ready_client, ids)
+    first = ready_client.post("/articles/new-assembled", data=data, follow_redirects=False)
+    again = ready_client.post("/articles/new-assembled", data=data, follow_redirects=False)
+    assert first.status_code == again.status_code == 303
+    assert again.headers["location"] == "/articles"
+    assert en("form.duplicate") in ready_client.get("/articles").text
+    forged = ready_client.post("/articles/new-assembled", data={**data, "form_token": "forged", "sku": "EX-H2"})
+    assert forged.status_code == 400 and en("form.expired") in forged.text and 'value="EX-H2"' in forged.text
+    with sm_of(ready_client).begin() as s:
+        assert len(s.scalars(select(Article).where(Article.kind == "assembled")).all()) == 1
+
+
 def test_more_rows_and_options_keep_what_was_typed(ready_client):
     ids = parts(ready_client)
     for action, field in (("more_base", 'name="base_2_article"'), ("more_c1", 'name="c1_3_suffix"'),

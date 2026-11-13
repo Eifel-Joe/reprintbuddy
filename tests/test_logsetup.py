@@ -7,9 +7,8 @@ checked in a fresh interpreter: pytest puts handlers of its own on the root logg
 import subprocess
 import sys
 
-import uvicorn
-
 from reprintbuddy import cli
+from reprintbuddy.web import server as web_server
 
 SCRIPT = """
 import logging
@@ -48,6 +47,6 @@ def test_a_second_call_does_not_double_the_lines():
 def test_serve_sets_up_the_log_before_the_server_runs(tmp_path, monkeypatch):
     order = []
     monkeypatch.setattr(cli, "configure_logging", lambda: order.append("log"))
-    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: order.append("run"))
+    monkeypatch.setattr(web_server, "serve", lambda app, **kw: order.append("run"))
     assert cli.main(["serve", "--db", str(tmp_path / "t.db")]) == 0
     assert order == ["log", "run"]

@@ -37,9 +37,9 @@ from reprintbuddy.web.flash import flash
 from reprintbuddy.web.forms import (
     bounded_int,
     duplicate_redirect,
-    error_status,
     error_text,
     parse_int,
+    run_form_action,
     saved_redirect,
 )
 from reprintbuddy.web.formtoken import (
@@ -250,26 +250,25 @@ def _where(raw: str) -> str | int:
 async def queue_manual(request: Request):
     form = await request.form()
     values = {name: str(form.get(name, "")) for name in MANUAL_DEFAULTS}
-    try:
+
+    def check():
         article_id = bounded_int(values["article_id"].strip())
         if article_id is None:
             raise ValidationError("form.required", field="queue.field.article")
         prints = parse_int(values["prints"], field="queue.field.prints", min=1, max=workqueue.MAX_PRINTS)
-        where = _where(values["where"] or "end")  # the default of Spec 7.4
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            workqueue.add_entry(tx, article_id, prints, "manual", "user", where=where)
-            name = tx.get(Article, article_id).name
-    except FormTokenUsed:
-        return duplicate_redirect(request, QUEUE_URL)
-    except (DomainError, FormTokenInvalid) as exc:
-        return _page(
-            request,
-            error=error_text(current_language(request), exc),
-            error_for="manual",
-            manual_values=values,
-            status_code=error_status(exc),
-        )
-    return saved_redirect(request, QUEUE_URL, "queue.created", name=name, prints=prints)
+        return article_id, prints, _where(values["where"] or "end")  # the default of Spec 7.4
+
+    def save(tx, checked):
+        article_id, prints, where = checked
+        workqueue.add_entry(tx, article_id, prints, "manual", "user", where=where)
+        return {"name": tx.get(Article, article_id).name, "prints": prints}
+
+    return await run_form_action(
+        request, check=check, work=save, success_url=QUEUE_URL, flash_key="queue.created",
+        on_error=lambda text, status, exc: _page(
+            request, error=text, error_for="manual", manual_values=values, status_code=status
+        ),
+    )
 
 
 # ---- moving (Spec 7.2, Design 5) -------------------------------------------------------------
@@ -318,16 +317,16 @@ def _paused_now(article: Article | None, was_paused: bool) -> list[Message]:
 
 async def _entry_action(request: Request, work: Callable[[Session, Any], list[Message]]):
     form = await request.form()
-    try:
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            messages = work(tx, form)
-    except FormTokenUsed:
-        return duplicate_redirect(request, QUEUE_URL)
-    except (DomainError, FormTokenInvalid) as exc:
-        return _page(request, error=error_text(current_language(request), exc), status_code=error_status(exc))
-    for key, warning, params in messages:
-        flash(request, key, warning=warning, **params)
-    return RedirectResponse(QUEUE_URL, status_code=303)
+
+    def done(messages):
+        for key, warning, params in messages:
+            flash(request, key, warning=warning, **params)
+        return RedirectResponse(QUEUE_URL, status_code=303)
+
+    return await run_form_action(
+        request, work=lambda tx: work(tx, form), done=done, duplicate_url=QUEUE_URL,
+        on_error=lambda text, status, exc: _page(request, error=text, status_code=status),
+    )
 
 
 @router.post("/queue/{entry_id:int}/hold", dependencies=[Depends(verify_csrf)])

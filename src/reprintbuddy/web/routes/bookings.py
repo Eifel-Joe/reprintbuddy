@@ -12,7 +12,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import assembled, catalog, stock
-from reprintbuddy.domain.errors import DomainError, NotFoundError, ValidationError
+from reprintbuddy.domain.errors import NotFoundError, ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.localtime import at_local_time, end_of_local_day
 from reprintbuddy.models import Article, Part, utcnow
@@ -21,8 +21,7 @@ from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.formatting import format_date, to_local
-from reprintbuddy.web.forms import MAX_ID, duplicate_redirect, error_status, error_text, parse_bool, parse_int, parse_text
-from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
+from reprintbuddy.web.forms import MAX_ID, parse_bool, parse_int, parse_text, run_form_action
 from reprintbuddy.web.journal_view import journal_rows
 
 router = APIRouter()
@@ -146,20 +145,18 @@ async def _book(
 ):
     form = await request.form()
     values = {k: str(v) for k, v in form.items() if k not in ("csrf_token", "form_token")}
-    try:
-        params = prepare(form)
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            messages = book(tx, params)
-    except FormTokenUsed:
-        return duplicate_redirect(request, "/bookings")
-    except (DomainError, FormTokenInvalid) as exc:
-        return _page(
-            request, db, error_form=name, error=error_text(current_language(request), exc),
-            values=values, status=error_status(exc),
-        )
-    for key, message_params in messages:
-        flash(request, key, warning=key in WARNING_KEYS, **message_params)
-    return RedirectResponse("/bookings", status_code=303)
+
+    def booked(messages):
+        for key, message_params in messages:
+            flash(request, key, warning=key in WARNING_KEYS, **message_params)
+        return RedirectResponse("/bookings", status_code=303)
+
+    return await run_form_action(
+        request, check=lambda: prepare(form), work=book, done=booked, duplicate_url="/bookings",
+        on_error=lambda text, status, exc: _page(
+            request, db, error_form=name, error=text, values=values, status=status
+        ),
+    )
 
 
 def _inventory_done(request: Request, item: str, p: dict, diff: int) -> tuple[str, dict]:

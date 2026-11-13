@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import catalog, setresolve
 from reprintbuddy.domain.catalog import BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
-from reprintbuddy.domain.errors import DomainError, ValidationError
+from reprintbuddy.domain.errors import ValidationError
 from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.models import Article, ProductSet
 from reprintbuddy.web import kpis, listing
@@ -22,18 +22,9 @@ from reprintbuddy.web import form_rows
 from reprintbuddy.web.forms import (
     MAX_ID,
     bounded_int,
-    duplicate_redirect,
-    error_status,
-    error_text,
     parse_int,
     parse_text,
-    saved_redirect,
-)
-from reprintbuddy.web.formtoken import (
-    FormTokenInvalid,
-    FormTokenUsed,
-    form_transaction,
-    write_transaction,
+    run_form_action,
 )
 
 router = APIRouter()
@@ -261,22 +252,22 @@ async def _post(request: Request, db: Session, product_set: ProductSet | None):
         if len(values[section]) > before:
             values["fresh"] = f"{section}:{before}"  # the page jumps to the first new row (p380)
         return _form_page(request, db, product_set=product_set, values=values)
-    try:
-        data = _parse(values)
+
+    def save(tx, data):
         if product_set is None:
-            with form_transaction(request, str(form.get("form_token", ""))) as tx:
-                catalog.create_set(tx, data)
+            catalog.create_set(tx, data)
         else:
-            with write_transaction(request) as tx:
-                catalog.update_set(tx, product_set.id, data)
-    except FormTokenUsed:
-        return duplicate_redirect(request, "/sets")
-    except (DomainError, FormTokenInvalid) as exc:
-        return _form_page(
-            request, db, product_set=product_set, values=values,
-            error=error_text(current_language(request), exc), status=error_status(exc),
-        )
-    return saved_redirect(request, "/sets", "sets.saved" if product_set else "sets.created", name=data.name)
+            catalog.update_set(tx, product_set.id, data)
+        return {"name": data.name}
+
+    # A new set uses its one-time token; editing a saved set has none.
+    return await run_form_action(
+        request, check=lambda: _parse(values), work=save, once=product_set is None,
+        success_url="/sets", flash_key="sets.saved" if product_set else "sets.created",
+        on_error=lambda text, status, exc: _form_page(
+            request, db, product_set=product_set, values=values, error=text, status=status
+        ),
+    )
 
 
 @router.get("/sets")

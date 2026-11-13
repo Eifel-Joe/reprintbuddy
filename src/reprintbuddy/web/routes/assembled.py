@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy.domain import assembled, catalog
 from reprintbuddy.domain.assembled import AssembledInput, OptionInput
 from reprintbuddy.domain.catalog import MAX_LABEL_TEXT, BaseInput
-from reprintbuddy.domain.errors import DomainError, ValidationError
+from reprintbuddy.domain.errors import ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Article, ArticlePart
 from reprintbuddy.web.csrf import verify_csrf
@@ -25,14 +25,12 @@ from reprintbuddy.web import form_rows
 from reprintbuddy.web.forms import (
     MAX_ID,
     bounded_int,
-    duplicate_redirect,
-    error_status,
     error_text,
     parse_int,
     parse_text,
+    run_form_action,
     saved_redirect,
 )
-from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
 from reprintbuddy.web.routes.articles import active_parts, change_part_rows, parse_parts, part_rows
 
 router = APIRouter()
@@ -254,24 +252,27 @@ async def _post(request: Request, db: Session, composite: Article | None):
     values = _typed(form)
     if change_part_rows(form, values) or _grow(values, str(form.get("action", ""))):
         return _form_page(request, db, composite=composite, values=values)
-    try:
-        data = _parse(values, form, active_parts(db))
+
+    def save(tx, data):
         if composite is None:
-            with form_transaction(request, str(form.get("form_token", ""))) as tx:
-                created = assembled.create_assembled(tx, data)
-                target = f"/articles/{created.id}"
-        else:
-            with write_transaction(request) as tx:
-                assembled.update_assembled(tx, composite.id, data)
-            target = f"/articles/{composite.id}"
-    except FormTokenUsed:
-        return duplicate_redirect(request, "/articles")
-    except (DomainError, FormTokenInvalid) as exc:
-        return _form_page(
-            request, db, composite=composite, values=values,
-            error=error_text(current_language(request), exc), status=error_status(exc),
+            return assembled.create_assembled(tx, data).id, data.name
+        assembled.update_assembled(tx, composite.id, data)
+        return composite.id, data.name
+
+    def saved(result):
+        article_id, name = result
+        return saved_redirect(
+            request, f"/articles/{article_id}", "articles.saved" if composite else "articles.created", name=name
         )
-    return saved_redirect(request, target, "articles.saved" if composite else "articles.created", name=data.name)
+
+    # A new article uses its one-time token; editing a saved one has none.
+    return await run_form_action(
+        request, check=lambda: _parse(values, form, active_parts(db)), work=save, once=composite is None,
+        done=saved, duplicate_url="/articles",
+        on_error=lambda text, status, exc: _form_page(
+            request, db, composite=composite, values=values, error=text, status=status
+        ),
+    )
 
 
 def new_values() -> dict:
@@ -333,18 +334,18 @@ async def to_assembled(request: Request, article_id: int, db: Session = Depends(
     values = _typed(form)
     if change_part_rows(form, values) or _grow(values, str(form.get("action", ""))):
         return _form_page(request, db, composite=None, values=values, action=action)
-    try:
-        data = _parse(values, form, active_parts(db))
-        with form_transaction(request, str(form.get("form_token", ""))) as tx:
-            assembled.convert_to_assembled(tx, article.id, data)
-    except FormTokenUsed:
-        return duplicate_redirect(request, f"/articles/{article_id}")
-    except (DomainError, FormTokenInvalid) as exc:
-        return _form_page(
-            request, db, composite=None, values=values, action=action,
-            error=error_text(current_language(request), exc), status=error_status(exc),
-        )
-    return saved_redirect(request, f"/articles/{article_id}", "articles.saved", name=data.name)
+
+    def save(tx, data):
+        assembled.convert_to_assembled(tx, article.id, data)
+        return {"name": data.name}
+
+    return await run_form_action(
+        request, check=lambda: _parse(values, form, active_parts(db)), work=save,
+        success_url=f"/articles/{article_id}", flash_key="articles.saved",
+        on_error=lambda text, status, exc: _form_page(
+            request, db, composite=None, values=values, action=action, error=text, status=status
+        ),
+    )
 
 
 @router.get("/articles/new-assembled")
