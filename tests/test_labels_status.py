@@ -152,7 +152,8 @@ def ask(port, **kwargs):
 
 def test_the_status_block_comes_back_from_a_printer_that_answers(stub):
     s = stub(READY)
-    assert ask(s.port) == READY
+    # a generous limit: the case is "the printer answers", so a slow CI machine must not turn it into silence
+    assert ask(s.port, timeout=5) == READY
     assert len(s.seen) == 1 and s.seen[0][:2] == b"\x30\x2f"
 
 
@@ -165,7 +166,7 @@ def test_a_printer_that_stays_silent_is_no_answer_after_the_time_limit(stub):
 
 def test_a_foreign_answer_first_does_not_count_and_the_right_one_after_it_does(stub):
     s = stub(READY, wrong_first=True)
-    assert ask(s.port, timeout=0.5) == READY
+    assert ask(s.port, timeout=5) == READY  # an answer is expected: generous, the wrong one costs no time
 
 
 def test_a_broken_answer_is_no_answer(stub):
