@@ -10,22 +10,17 @@ and the reprint for the pieces that were not good.
 import asyncio
 import re
 
-from markupsafe import escape
 from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, run_tick, sm_of
 from factories import make_article
+from texts import en_html as en
 from reprintbuddy import settings as st
 from reprintbuddy.domain import dispatch as dispatch_domain
 from reprintbuddy.domain.workqueue import OPEN_STATES
 from reprintbuddy.models import Article, Dispatch, Inspection, WorkQueueEntry
-from reprintbuddy.web.i18n import translate
 
 FORM = "/articles/new/file/1/plate/1"
-
-
-def en(key, **params):
-    return str(escape(translate("en", key, **params)))
 
 
 # ---- the hands: pages as the operator uses them ----------------------------------------

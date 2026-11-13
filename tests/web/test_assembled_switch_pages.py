@@ -5,13 +5,9 @@ from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_assembled
+from texts import en
 from reprintbuddy.domain import assembled
 from reprintbuddy.models import Article, ArticleComponent
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def test_print_article_page_offers_the_switch(ready_client):

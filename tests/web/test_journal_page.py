@@ -2,13 +2,9 @@ import re
 
 from conftest import sm_of
 from factories import make_article, make_part
+from texts import en
 from reprintbuddy import settings as st
 from reprintbuddy.domain import stock
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def test_all_kinds_have_labels():

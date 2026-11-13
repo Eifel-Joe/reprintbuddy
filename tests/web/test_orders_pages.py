@@ -5,17 +5,13 @@ from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_set
+from texts import en
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog, orders, stock
 from reprintbuddy.domain.catalog import BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
 from reprintbuddy.domain.orders import ArticleItem
 from reprintbuddy.models import Article, JournalEntry, Order
 from reprintbuddy.web.formtoken import issue_form_token
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def order_fields(client, **over):

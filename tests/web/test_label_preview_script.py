@@ -9,19 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from reprintbuddy.web.i18n import translate
+from texts import de, en
 
 HERE = Path(__file__).parent
 SCRIPT = HERE.parents[1] / "src" / "reprintbuddy" / "web" / "static" / "js" / "labels.js"
 NODE = shutil.which("node")
-
-
-def en(key):
-    return translate("en", key)
-
-
-def de(key):
-    return translate("de", key)
 
 
 def test_the_failure_note_is_in_both_languages_and_says_the_preview_could_not_be_updated():

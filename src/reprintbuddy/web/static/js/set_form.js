@@ -14,6 +14,10 @@
 (function () {
   "use strict";
 
+  // The drop-down helpers come from more_rows.js, loaded before this script. Without it the drop-downs
+  // stay as the server drew them (the server still refuses an article twice); the rest works as before.
+  var rows = window.ReprintbuddyRows || { offerOnly: function () {} };
+
   function each(list, fn) {
     Array.prototype.forEach.call(list, fn);
   }
@@ -30,43 +34,6 @@
     return select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
   }
 
-  // Every option of a drop-down as the page drew it, per group, also those taken out since (p351).
-  function drawn(node) {
-    if (!node.rbDrawn) {
-      node.rbDrawn = Array.prototype.slice.call(node.children);
-    }
-    return node.rbDrawn;
-  }
-
-  // Safari on the iPhone shows an option with `hidden` greyed instead of leaving it out, so an option
-  // another row holds is taken out of the drop-down and put back in its old place once it is free
-  // (p351). The chosen option of a row is never blocked, so it never moves and stays chosen.
-  // Replaced: `hidden` and `disabled` on the option. The same in assembled_form.js.
-  // Tests: tests/web/test_form_rows_scripts.py.
-  function offerOnly(node, blocked) {
-    var next = null;
-    var list = drawn(node);
-    for (var k = list.length - 1; k >= 0; k -= 1) {
-      var child = list[k];
-      if (child.tagName === "OPTION" && blocked(child)) {
-        if (child.parentNode === node) {
-          node.removeChild(child);
-        }
-        continue;
-      }
-      if (child.tagName === "OPTION") {
-        child.disabled = false;
-        child.hidden = false;
-      } else if (child.tagName === "OPTGROUP") {
-        offerOnly(child, blocked);
-      }
-      if (child.parentNode !== node) {
-        node.insertBefore(child, next);
-      }
-      next = child;
-    }
-  }
-
   function refresh(form) {
     var selects = form.querySelectorAll("select[data-set-article]");
     var counts = {};
@@ -78,7 +45,7 @@
     each(selects, function (select) {
       var own = takes(chosen(select));
       var value = select.value;
-      offerOnly(select, function (option) {
+      rows.offerOnly(select, function (option) {
         return !!option.value && option.value !== value && takes(option).some(function (token) {
           return (counts[token] || 0) - (own.indexOf(token) >= 0 ? 1 : 0) > 0;
         });

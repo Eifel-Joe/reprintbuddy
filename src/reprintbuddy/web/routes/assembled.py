@@ -20,8 +20,10 @@ from reprintbuddy.domain.errors import DomainError, ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Article, ArticlePart
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_db, render
+from reprintbuddy.web.deps import current_language, get_db, get_or_404, render
+from reprintbuddy.web import form_rows
 from reprintbuddy.web.forms import (
+    MAX_ID,
     bounded_int,
     duplicate_redirect,
     error_status,
@@ -41,17 +43,7 @@ DEFAULT_OPTION_ROWS = 2
 MORE_ROWS = 2
 MAX_ROWS = 200
 MAX_OPTIONS = 200
-MAX_ID = 2**31 - 1
 FIELDS = ("c1", "c2")
-
-
-def _count(form, name: str, default: int, maximum: int) -> int:
-    """How many rows or options the form sent. Above the limit it takes the limit (p391): falling back to
-    the default dropped every saved row past it without a message."""
-    value = bounded_int(str(form.get(name, "")).strip())
-    if value is None or value < 1:
-        return default
-    return min(value, maximum)
 
 
 def _one_more(rows: list, blank, limit: int) -> list:
@@ -79,7 +71,7 @@ def _typed(form) -> dict:
         "show_c2": form.get("c2_shown") == "1",
         "base": [
             {"qty": str(form.get(f"base_{i}_qty", "1")), "article": str(form.get(f"base_{i}_article", "")).strip()}
-            for i in range(_count(form, "base_rows", DEFAULT_BASE_ROWS, MAX_ROWS))
+            for i in range(form_rows.row_count(form, "base_rows", DEFAULT_BASE_ROWS, MAX_ROWS))
         ],
         "has_parts": form.get("has_parts") is not None,
         "part_rows": part_rows(form),
@@ -92,14 +84,14 @@ def _typed(form) -> dict:
             values[field] = []
             continue
         options = []
-        for i in range(_count(form, f"{field}_options", DEFAULT_OPTIONS, MAX_OPTIONS)):
+        for i in range(form_rows.row_count(form, f"{field}_options", DEFAULT_OPTIONS, MAX_OPTIONS)):
             prefix = f"{field}_{i}"
             options.append({
                 "id": str(form.get(f"{prefix}_id", "")).strip(),
                 "suffix": str(form.get(f"{prefix}_suffix", "")),
                 "rows": [
                     {"qty": str(form.get(f"{prefix}_{j}_qty", "1")), "article": str(form.get(f"{prefix}_{j}_article", "")).strip()}
-                    for j in range(_count(form, f"{prefix}_rows", DEFAULT_OPTION_ROWS, MAX_ROWS))
+                    for j in range(form_rows.row_count(form, f"{prefix}_rows", DEFAULT_OPTION_ROWS, MAX_ROWS))
                 ],
             })
         values[field] = options
@@ -111,11 +103,11 @@ def _typed(form) -> dict:
 
 
 def _article_id(raw: str) -> int:
-    return parse_int(raw, field="assembled.field.article", min=1, max=MAX_ID)
+    return form_rows.article_choice(raw, "assembled.field.article")
 
 
 def _qty(raw: str) -> int:
-    return parse_int(raw, field="assembled.field.qty", min=1, max=1000)
+    return form_rows.qty(raw, "assembled.field.qty")
 
 
 def _parse(values: dict, form, parts: list) -> AssembledInput:
@@ -366,10 +358,7 @@ async def assembled_create(request: Request, db: Session = Depends(get_db)):
 
 
 def _get(db: Session, article_id: int) -> Article:
-    composite = db.get(Article, article_id)
-    if composite is None or composite.kind != "assembled":
-        raise HTTPException(status_code=404)
-    return composite
+    return get_or_404(db, Article, article_id, valid=lambda a: a.kind == "assembled")
 
 
 @router.get("/articles/{article_id:int}/assembled")

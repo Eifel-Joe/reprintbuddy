@@ -12,7 +12,7 @@ a database lock waits for the printer.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -24,7 +24,7 @@ from reprintbuddy.labels.rolls import ROLLS
 from reprintbuddy.models import Article
 from reprintbuddy.web import labels_view
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_db, release_connection
+from reprintbuddy.web.deps import current_language, get_db, get_or_404, release_connection
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
 from reprintbuddy.web.forms import duplicate_redirect
@@ -80,7 +80,6 @@ def _checked(host: str, roll: str, chosen: list[str], own: frozenset[str]) -> tu
 
 
 # ---- settings: save, preview, trial print ----------------------------------------------------
-
 
 
 def _has_choices(db: Session, article: Article) -> bool:
@@ -159,17 +158,10 @@ async def trial_print(request: Request, db: Session = Depends(get_db)):
 # ---- the article's page: preview and print --------------------------------------------------
 
 
-def _article_or_404(db: Session, article_id: int) -> Article:
-    article = db.get(Article, article_id)
-    if article is None:
-        raise HTTPException(status_code=404)
-    return article
-
-
 @router.get("/articles/{article_id:int}/label.png")
 async def article_preview(request: Request, article_id: int, db: Session = Depends(get_db)):
     """The label as it would be printed now: the article's details as chosen in the settings."""
-    article = _article_or_404(db, article_id)
+    article = get_or_404(db, Article, article_id)
     lang = current_language(request)
     saved = labels_view.LabelSettings(db)
     address = labels_view.label_address(request, db, article.id)
@@ -188,7 +180,7 @@ def _copies(raw: object) -> int | None:
 
 @router.post("/articles/{article_id:int}/label", dependencies=[Depends(verify_csrf)])
 async def print_article_label(request: Request, article_id: int, db: Session = Depends(get_db)):
-    article = _article_or_404(db, article_id)
+    article = get_or_404(db, Article, article_id)
     back = f"/articles/{article_id}"
     form = await request.form()
     copies = _copies(form.get("copies"))

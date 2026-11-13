@@ -9,7 +9,8 @@ layouts and the style sheet shows tiles on narrow screens and the list on wide o
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections import Counter
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import quote, urlencode
@@ -113,6 +114,50 @@ class ToggleLink:
 
 def layout_links(request: Request, current: Layout) -> list[ToggleLink]:
     return [ToggleLink(choice, url_with(request, layout=choice), choice == current) for choice in _CHOICES]
+
+
+@dataclass(frozen=True)
+class ListPage:
+    shown: list  # the rows that pass the search and the status filter
+    status: str | None  # the chosen status, None for all
+    context: dict[str, object]  # total, kpis, filters, layout, layout_links, q, search_keep
+
+
+def list_page(
+    request: Request,
+    *,
+    page: str,
+    rows: Sequence,
+    states: Sequence[str],
+    status_of: Callable[[object], str],
+    search_texts: Callable[[object], Iterable[str | None]],
+    q: str | None,
+    status_filter: bool,
+    view: str | None,
+    cards: list,
+) -> ListPage:
+    """The step the overview pages of parts, sets, articles and orders share (Spec 10.1; 0.4.7, R8):
+    the cards (built by the page) and the total count the whole view, the filter counts follow the
+    search, the list shows what passes both. `status_filter` False (an archive) ignores `?status=`.
+    `view` is the view a new search keeps (archived, closed) or None for the default view."""
+    status = pick(request.query_params.get("status"), states) if status_filter else None
+    found = [row for row in rows if matches(q, *search_texts(row))]
+    counts = Counter(status_of(row) for row in found)
+    keep = (("status", status), ("view", view))
+    layout = layout_of(request, page)
+    return ListPage(
+        shown=[row for row in found if status is None or status_of(row) == status],
+        status=status,
+        context={
+            "total": len(rows),
+            "kpis": cards,
+            "filters": filter_links(request, states, counts, len(found), status),
+            "layout": layout,
+            "layout_links": layout_links(request, layout),
+            "q": q,
+            "search_keep": [(name, value) for name, value in keep if value],  # a new search keeps these
+        },
+    )
 
 
 # ---- the filter by article of the work lists (Spec 8.2; the later QR code of an article opens

@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate
-from reprintbuddy.domain import articlesets, catalog, rules, stock, workqueue
+from reprintbuddy.domain import articlesets, catalog, inputs, rules, stock, workqueue
 from reprintbuddy.domain.catalog import BaseInput
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.domain.status import assembled_status, set_status
@@ -191,9 +191,9 @@ def _check(session: Session, data: AssembledInput, *, article_id: int | None = N
         raise ValueError(f"unknown assembly mode {data.mode!r}")
     name = catalog._required_name(data.name, "articles.field.name")
     sku = catalog.validate_sku(session, data.sku, article_id=article_id, required=True)  # p533
-    label_text = catalog._text(data.label_text, "articles.field.label_text", catalog.MAX_LABEL_TEXT)
-    min_stock = catalog._int_in(data.min_stock, "articles.field.min_stock", 0, MAX_QTY)
-    buffer = catalog._int_in(data.buffer, "articles.field.buffer", 0, MAX_QTY)
+    label_text = inputs.text(data.label_text, "articles.field.label_text", catalog.MAX_LABEL_TEXT)
+    min_stock = inputs.int_in(data.min_stock, "articles.field.min_stock", 0, MAX_QTY)
+    buffer = inputs.int_in(data.buffer, "articles.field.buffer", 0, MAX_QTY)
     purchased = catalog.check_purchased_parts(session, data.parts, article_id)
     kept = _bom_articles(session, article_id)  # an archived part already in the list may stay
 
@@ -216,7 +216,7 @@ def _check(session: Session, data: AssembledInput, *, article_id: int | None = N
         if found.id in in_base:
             raise ValidationError("assembled.article_twice", name=found.name)
         in_base.add(found.id)
-        base.append((found.id, catalog._int_in(row.qty, "assembled.field.qty", 1, MAX_ROW_QTY)))
+        base.append((found.id, inputs.int_in(row.qty, "assembled.field.qty", 1, MAX_ROW_QTY)))
 
     fields_in = list(data.fields)
     while fields_in and not fields_in[-1]:
@@ -241,8 +241,8 @@ def _check(session: Session, data: AssembledInput, *, article_id: int | None = N
                     raise ValidationError("assembled.article_twice", name=found.name)
                 in_option.add(found.id)
                 seen_in_fields[found.id] = number
-                rows.append((found.id, catalog._int_in(row.qty, "assembled.field.qty", 1, MAX_ROW_QTY)))
-            suffix = catalog._text(option.suffix, "sets.field.suffix", catalog.MAX_SKU)
+                rows.append((found.id, inputs.int_in(row.qty, "assembled.field.qty", 1, MAX_ROW_QTY)))
+            suffix = inputs.text(option.suffix, "sets.field.suffix", catalog.MAX_SKU)
             if suffix is None:
                 raise ValidationError("assembled.suffix_required", name=session.get(Article, rows[0][0]).name)
             if suffix in suffixes:

@@ -29,21 +29,17 @@ import pytest
 from conftest import PASSWORD, csrf_of
 from starlette.requests import Request
 
-from reprintbuddy.ops import backupcrypto as bc
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops.service import RESTART_CMD
 from reprintbuddy.web.routes import backup as backup_routes
 
 from test_ops_full_backup import MAINTENANCE, confirm, download, made_backup, upload, work_files
 
-FAST = bc.KdfParams(time_cost=1, memory_cost=8 * 1024, parallelism=1)
 BACKUP_PASSWORD = "backup-password-1"
 SECRETS = ("candidate-", "rebuilt-", "trial-", "snapshot-", "backup-")
 
 
-@pytest.fixture(autouse=True)
-def fast_kdf(monkeypatch):
-    monkeypatch.setattr(fb, "KDF", FAST)
+pytestmark = pytest.mark.usefixtures("fast_kdf")  # backups derive their key cheaply (conftest)
 
 
 def secret_files(env):

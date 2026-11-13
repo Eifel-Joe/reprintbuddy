@@ -129,7 +129,6 @@ def _helpers(name: str, path: str):
 upload_tests = _helpers("_activity_upload_helpers", "web/test_article_upload.py")
 label_tests = _helpers("_activity_label_helpers", "web/test_labels_pages.py")
 up = upload_tests.up
-net = label_tests.net
 configured = label_tests.configured
 article = label_tests.article
 

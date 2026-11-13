@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy.domain import assembled, inspection
 from reprintbuddy.models import Article
 from reprintbuddy.web import listing, qr
-from reprintbuddy.web.deps import get_db
+from reprintbuddy.web.deps import get_db, get_or_404
 from reprintbuddy.web.routes.inspection import ASSEMBLY_URL, INSPECTION_URL  # the lists' own paths
 
 router = APIRouter()
@@ -41,16 +41,9 @@ def target_of(db: Session, article: Article) -> str:
     return f"/articles/{article.id}"
 
 
-def _article_or_404(db: Session, article_id: int) -> Article:
-    article = db.get(Article, article_id)
-    if article is None:
-        raise HTTPException(status_code=404)
-    return article
-
-
 @router.get("/a/{article_id:int}")
 async def scan(article_id: int, db: Session = Depends(get_db)):
-    article = _article_or_404(db, article_id)
+    article = get_or_404(db, Article, article_id)
     return RedirectResponse(target_of(db, article), status_code=303, headers=_NO_STORE)
 
 
@@ -59,7 +52,7 @@ async def picture(request: Request, article_id: int, kind: str, download: str | 
                   db: Session = Depends(get_db)):
     if kind not in _PICTURES:
         raise HTTPException(status_code=404)
-    _article_or_404(db, article_id)
+    get_or_404(db, Article, article_id)
     content_type, draw = _PICTURES[kind]
     headers = dict(_NO_STORE)
     if download == "1":

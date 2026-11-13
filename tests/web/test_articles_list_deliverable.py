@@ -6,11 +6,7 @@ import re
 
 from conftest import sm_of
 from factories import make_article, make_assembled
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
+from texts import en
 
 
 def _articles(client):

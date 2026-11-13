@@ -101,6 +101,11 @@ def utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def naive_utc(moment: datetime) -> datetime:
+    """`moment` as it is stored: in UTC without a zone. A time without a zone counts as UTC already."""
+    return moment.astimezone(UTC).replace(tzinfo=None) if moment.tzinfo else moment
+
+
 def _int(default: int) -> Mapped[int]:
     return mapped_column(default=default, server_default=str(default))
 

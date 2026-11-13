@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,12 +15,14 @@ from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.models import Article, ProductSet
 from reprintbuddy.web import kpis, listing
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_db, render
+from reprintbuddy.web.archiving import add_archive_routes, to
+from reprintbuddy.web.deps import current_language, get_db, get_or_404, render
 from reprintbuddy.web.i18n import translate
+from reprintbuddy.web import form_rows
 from reprintbuddy.web.forms import (
+    MAX_ID,
     bounded_int,
     duplicate_redirect,
-    run_form_action,
     error_status,
     error_text,
     parse_int,
@@ -41,13 +43,11 @@ router = APIRouter()
 DEFAULT_ROWS = 3
 MORE_ROWS = 3
 MAX_ROWS = 200  # a set may have many rows; the edit form must show all of them
-MAX_ID = 2**31 - 1
 SECTIONS = ("base", "c1", "c2")
 
 
 def _count(form, section: str) -> int:
-    value = bounded_int(str(form.get(f"{section}_rows", "")).strip())
-    return value if value is not None and 1 <= value <= MAX_ROWS else DEFAULT_ROWS
+    return form_rows.row_count(form, f"{section}_rows", DEFAULT_ROWS, MAX_ROWS)
 
 
 def _typed(form) -> dict:
@@ -89,7 +89,7 @@ def _grow(values: dict, section: str, rows: int) -> None:
 
 
 def _article_id(raw: str) -> int:
-    return parse_int(raw, field="sets.field.article", min=1, max=MAX_ID)
+    return form_rows.article_choice(raw, "sets.field.article")
 
 
 def _set_value(set_id: int) -> str:
@@ -114,7 +114,7 @@ def _parse(values: dict) -> SetInput:
     for row in values["base"]:
         if not row["article"]:
             continue  # rows without an article are skipped
-        qty = parse_int(row["qty"], field="sets.field.qty", min=1, max=1000)
+        qty = form_rows.qty(row["qty"], "sets.field.qty")
         article_id, set_id = _base_choice(row["article"])
         base.append(BaseInput(qty, article_id, set_id))
     choices = []
@@ -291,30 +291,19 @@ async def sets_list(
     if (redirect := listing.remember_layout(request, "sets")) is not None:
         return redirect  # ?layout=... only sets the cookie
     archived = view == "archived"
-    states = STATES["set"]
-    status = None if archived else listing.pick(request.query_params.get("status"), states)
     every = catalog.list_sets(db, archived=archived)
-    found = [row for row in every if listing.matches(q, row.name, row.sku, *(v.sku for v in row.variants if v.sku))]
-    counts = Counter(row.status for row in found)
     lang = current_language(request)
     t = lambda key: translate(lang, key)  # noqa: E731
     icon, label, named = ("archive", "kpi.sets_archived", []) if archived else (
         "boxes", "kpi.sets", summarize((row.status for row in every), ("not_deliverable",))
     )
-    cards = kpis.state_cards(t, "set", icon, len(every), t(label), named)
-    keep = (("status", status), ("view", "archived" if archived else None))
-    layout = listing.layout_of(request, "sets")
-    return render(
-        request, "sets_list.html", active_nav="sets", archived=archived,
-        rows=[row for row in found if status is None or row.status == status],
-        total=len(every),
-        kpis=cards,
-        filters=listing.filter_links(request, states, counts, len(found), status),
-        layout=layout,
-        layout_links=listing.layout_links(request, layout),
-        q=q,
-        search_keep=[(name, value) for name, value in keep if value],  # a new search keeps these
+    page = listing.list_page(
+        request, page="sets", rows=every, states=STATES["set"], status_of=lambda row: row.status,
+        search_texts=lambda row: (row.name, row.sku, *(v.sku for v in row.variants if v.sku)), q=q,
+        status_filter=not archived, view="archived" if archived else None,
+        cards=kpis.state_cards(t, "set", icon, len(every), t(label), named),
     )
+    return render(request, "sets_list.html", active_nav="sets", archived=archived, rows=page.shown, **page.context)
 
 
 @router.get("/sets/new")
@@ -330,40 +319,14 @@ async def sets_create(request: Request, db: Session = Depends(get_db)):
     return await _post(request, db, None)
 
 
-def _get_set(db: Session, set_id: int) -> ProductSet:
-    product_set = db.get(ProductSet, set_id)
-    if product_set is None:
-        raise HTTPException(status_code=404)
-    return product_set
-
-
 @router.get("/sets/{set_id:int}/edit")
 async def sets_edit(request: Request, set_id: int, db: Session = Depends(get_db)):
-    return _edit_again(request, db, _get_set(db, set_id), None, 200)
+    return _edit_again(request, db, get_or_404(db, ProductSet, set_id), None, 200)
 
 
 @router.post("/sets/{set_id:int}/edit", dependencies=[Depends(verify_csrf)])
 async def sets_update(request: Request, set_id: int, db: Session = Depends(get_db)):
-    return await _post(request, db, _get_set(db, set_id))
-
-
-def _archive_action(action, flash_key: str):
-    async def handler(request: Request, set_id: int, db: Session = Depends(get_db)):
-        product_set = _get_set(db, set_id)
-
-        def work(tx):
-            action(tx, set_id)
-            return {"name": product_set.name}
-
-        return await run_form_action(
-            request,
-            work=work,
-            success_url="/sets",  # back to the list; an archived set leaves it, that is right
-            flash_key=flash_key,
-            on_error=lambda text, status, exc: _edit_again(request, db, product_set, text, status),
-        )
-
-    return handler
+    return await _post(request, db, get_or_404(db, ProductSet, set_id))
 
 
 def _edit_again(request, db, product_set, error, status):
@@ -386,11 +349,10 @@ def _edit_again(request, db, product_set, error, status):
     return _form_page(request, db, product_set=product_set, values=values, error=error, status=status)
 
 
-router.add_api_route(
-    "/sets/{set_id:int}/archive", _archive_action(catalog.archive_set, "sets.flash_archived"),
-    methods=["POST"], dependencies=[Depends(verify_csrf)],
-)
-router.add_api_route(
-    "/sets/{set_id:int}/restore", _archive_action(catalog.restore_set, "sets.flash_restored"),
-    methods=["POST"], dependencies=[Depends(verify_csrf)],
+add_archive_routes(
+    router, base="/sets", param="set_id", load=lambda db, ident: get_or_404(db, ProductSet, ident),
+    archive=catalog.archive_set, restore=catalog.restore_set,
+    flash_archived="sets.flash_archived", flash_restored="sets.flash_restored",
+    success_url=to("/sets"),  # back to the list; an archived set leaves it, that is right
+    on_error=lambda request, db, product_set, text, status, exc: _edit_again(request, db, product_set, text, status),
 )

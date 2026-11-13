@@ -4,16 +4,13 @@
 import re
 
 from conftest import REQUIRED, csrf_of, landed, mock_auth_me
+from texts import en
 
 from reprintbuddy.web.i18n import translate
 
 CONNECT = "/setup/bambuddy/connect"
 URL, KEY = "http://bambuddy.test:8000", "bb_SETUPKEY_123456"
 PAGE = {"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def _post(client, respx_mock, **me):

@@ -1,7 +1,7 @@
 from datetime import date
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from factories import make_article, make_set
 from reprintbuddy.domain import catalog, orders, stock
@@ -256,6 +256,18 @@ def test_order_keeps_variant_number_after_set_change(db):  # review focus 1 (p34
         assert s.get(Article, a).stock == 4
 
 
+def reserved_by_open_orders(session) -> dict[int, int]:
+    """The reservations counted afresh from the open orders: the measure `Article.reserved` must meet.
+    It lived in domain/orders.py, where nothing but this test used it (0.4.7, R3)."""
+    rows = session.execute(
+        select(OrderLine.article_id, func.sum(OrderLine.qty))
+        .join(Order, Order.id == OrderLine.order_id)
+        .where(Order.status == "open")
+        .group_by(OrderLine.article_id)
+    ).all()
+    return {a: int(q) for a, q in rows}
+
+
 def test_reserved_matches_open_orders(db):
     with db.begin() as s:
         a = make_article(s, name="Template A", stock=10).id
@@ -267,7 +279,7 @@ def test_reserved_matches_open_orders(db):
         orders.cancel_order(s, o2, "user")
         orders.ship_order(s, o1, "user")
     with db.begin() as s:
-        expected = orders.reserved_by_open_orders(s)
+        expected = reserved_by_open_orders(s)
         for article in s.scalars(select(Article)):
             assert article.reserved == expected.get(article.id, 0)
         assert expected == {b: 1}

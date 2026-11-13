@@ -89,10 +89,6 @@ def stock_holders() -> Select[tuple[Article]]:
     return select(Article).where(where_stock_holder())
 
 
-def orderable_articles() -> Select[tuple[Article]]:
-    return select(Article).where(where_orderable())
-
-
 def variant_rows(parent_id: int, *, archived: bool = False) -> Select[tuple[Article]]:
     """The variant rows of one article made of parts, active or archived."""
     return select(Article).where(

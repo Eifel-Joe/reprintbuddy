@@ -6,6 +6,7 @@ import re
 import pytest
 from conftest import ADMIN, PASSWORD, csrf_of, sm_of
 from factories import make_article
+from texts import en
 from fastapi.testclient import TestClient
 
 from reprintbuddy import settings as st
@@ -15,11 +16,6 @@ from reprintbuddy.domain import orders
 from reprintbuddy.domain.orders import ArticleItem
 from reprintbuddy.models import Article, utcnow
 from reprintbuddy.web import regions
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def add(client, **fields):

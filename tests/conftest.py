@@ -5,13 +5,16 @@ from pathlib import Path
 from typing import NamedTuple
 
 import pytest
+from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 
+import dbtemplate
 from network_guard import NetworkGuard
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.fake import FakeBambuddy
 from reprintbuddy.bambuddy.types import FilamentRequirement
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
+from reprintbuddy.ops.backupcrypto import KdfParams
 from reprintbuddy.web.app import create_app, shared_tls_client_factory
 
 ADMIN = "admin"
@@ -30,6 +33,12 @@ def csrf_of(client: TestClient, path: str) -> str:
 
 
 _FORM_TOKEN = re.compile(r'name="form_token" value="([^"]+)"')
+
+
+def login(client: TestClient, password: str = PASSWORD, *, username: str = ADMIN, token: str | None = None, **extra):
+    """Sign in through the login form; `token` replaces the form's CSRF token, `extra` adds fields."""
+    token = token if token is not None else csrf_of(client, "/login")
+    return client.post("/login", data={"csrf_token": token, "username": username, "password": password, **extra})
 
 
 def form_token_of(client: TestClient, path: str, action: str | None = None) -> str:
@@ -136,10 +145,50 @@ def make_client(db_path, **create_kwargs) -> TestClient:
 
     create_kwargs.setdefault("ops", OpsContext(install_dir=db_path.parent / "no-install"))
     create_kwargs.setdefault("http_client_factory", http_client_factory)
+    dbtemplate.copy_to(db_path)  # a new database starts as the migrated template (R1)
     app = create_app(db_path, **create_kwargs)
     app.state.login_failure_delay = 0  # tests do not wait; some tests set these themselves
     app.state.login_brake.delay = 0
     return TestClient(app, follow_redirects=False)
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "fresh_database: the app creates and migrates the test's database itself, as at a first start"
+    )
+    config.addinivalue_line("markers", "real_password_hash: passwords are hashed with the production parameters")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _migrated_template(tmp_path_factory):
+    """R1: the database every test starts from, migrated once per run (see tests/dbtemplate.py)."""
+    dbtemplate.TEMPLATE = dbtemplate.build(tmp_path_factory.mktemp("template") / "template.db")
+    yield
+    dbtemplate.TEMPLATE = None
+
+
+@pytest.fixture(autouse=True)
+def _fresh_database(request, monkeypatch):
+    """A test marked `fresh_database` (the app's own first start) gets no copy of the template."""
+    if request.node.get_closest_marker("fresh_database") is not None:
+        monkeypatch.setattr(dbtemplate, "TEMPLATE", None)
+
+
+@pytest.fixture(autouse=True)
+def fast_password_hash(request, monkeypatch):
+    """R1: argon2 with cheap parameters, as `fast_kdf` does for backups; the first-run setup of every
+    `admin_client` hashed with the production ones (most of half a second). A test about the
+    parameters themselves is marked `real_password_hash`. Tests: tests/test_fast_password_hash.py."""
+    if request.node.get_closest_marker("real_password_hash") is not None:
+        return
+    from reprintbuddy import auth
+
+    monkeypatch.setattr(auth, "_hasher", _CHEAP_HASHER)
+    monkeypatch.setattr(auth, "_DUMMY_HASH", _CHEAP_DUMMY_HASH)
+
+
+_CHEAP_HASHER = PasswordHasher(time_cost=1, memory_cost=8 * 1024, parallelism=1)
+_CHEAP_DUMMY_HASH = _CHEAP_HASHER.hash("reprintbuddy-timing-dummy")  # as auth.py builds its own
 
 
 @pytest.fixture(autouse=True)
@@ -252,10 +301,12 @@ def finish_admin_setup(client):
 def finish_bambuddy_setup(client):
     """Step 2 done as well: Bambuddy settings written straight into the DB."""
     with client.app.state.sessionmaker() as session:
-        st.set_setting(session, "bambuddy_url", "http://bambuddy.test:8000")
-        st.set_setting(session, "bambuddy_username", "reprintbuddy")
-        st.set_setting(session, "bambuddy_api_key", "bb_testkey")
-        st.set_setting(session, "bambuddy_review_confirmed", True)
+        # One commit for the four: each commit costs a disk sync (R1).
+        st.set_setting(session, "bambuddy_url", "http://bambuddy.test:8000", commit=False)
+        st.set_setting(session, "bambuddy_username", "reprintbuddy", commit=False)
+        st.set_setting(session, "bambuddy_api_key", "bb_testkey", commit=False)
+        st.set_setting(session, "bambuddy_review_confirmed", True, commit=False)
+        session.commit()
     # Tests that are not about the rights must not ask a Bambuddy that is not there (Spec 12):
     # the key counts as checked. The rights tests set the state back to "unknown".
     client.app.state.rights.status = "ok"
@@ -355,9 +406,41 @@ def ops_env(tmp_path, fake_runner):
     return OpsEnv(client, fake_runner, install_dir, db)
 
 
+FAST_KDF = KdfParams(time_cost=1, memory_cost=8 * 1024, parallelism=1)  # backup keys, cheaply
+
+
+@pytest.fixture
+def fast_kdf(monkeypatch):
+    """Backups and restores derive their key cheaply (the real parameters take seconds per run).
+    A test file asks for it for all its tests with `pytestmark = pytest.mark.usefixtures("fast_kdf")`."""
+    from reprintbuddy.ops import fullbackup
+
+    monkeypatch.setattr(fullbackup, "KDF", FAST_KDF)
+
+
+@pytest.fixture
+def session(tmp_path):
+    """A session on a fresh migrated database of its own (for tests of settings and accounts)."""
+    dbtemplate.copy_to(tmp_path / "session.db")
+    engine = make_engine(tmp_path / "session.db")
+    upgrade(engine)
+    with make_sessionmaker(engine)() as s:
+        yield s
+    engine.dispose()
+
+
+@pytest.fixture
+def net(monkeypatch):
+    """Label printing without a network: what the printer answers and what happens to each job."""
+    from label_support import Recorder
+
+    return Recorder(monkeypatch)
+
+
 @pytest.fixture
 def db(tmp_path):
     """A fresh migrated database; yields a sessionmaker (use `with db.begin() as s:`)."""
+    dbtemplate.copy_to(tmp_path / "domain.db")  # migrated once per run (R1)
     engine = make_engine(tmp_path / "domain.db")
     upgrade(engine)
     yield make_sessionmaker(engine)

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import ipaddress
 import unicodedata
-from collections.abc import MutableMapping
+from collections.abc import Callable, MutableMapping
 from urllib.parse import quote, unquote, urlsplit
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from jinja2 import pass_context
@@ -99,6 +99,15 @@ def get_bambuddy(request: Request) -> BambuddyClient | None:
 
 async def get_db(request: Request) -> Session:
     return db_session(request)
+
+
+def get_or_404[T](db: Session, model: type[T], ident: int, *, valid: Callable[[T], bool] | None = None) -> T:
+    """The record `ident` of `model`, or "page not found" when there is none or `valid` refuses it.
+    Seven route modules had their own copy (0.4.7, R4); tests/test_small_helpers.py."""
+    found = db.get(model, ident)
+    if found is None or (valid is not None and not valid(found)):
+        raise HTTPException(status_code=404)
+    return found
 
 
 def current_language(request: Request) -> str:

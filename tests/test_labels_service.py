@@ -12,41 +12,7 @@ from reprintbuddy.labels.errors import PrinterAddressRefused, PrinterUnreachable
 from reprintbuddy.labels.rolls import DK_11209
 from reprintbuddy.labels.status import Problem
 
-READY = bytes.fromhex("80204234413004000000" "3e0b" "0000030000" "1d" "00000000000000" "01" "0000000000" "00")
-
-
-def block(**changes):
-    data = bytearray(READY)
-    for index, value in changes.items():
-        data[int(index[1:])] = value
-    return bytes(data)
-
-
-class Recorder:
-    """Takes the place of the network: what the printer answers to the status question and what
-    happens to every job that is sent."""
-
-    def __init__(self, monkeypatch, *, answer=READY, outcomes=()):
-        self.asked, self.sent = [], []
-        self.answer, self.outcomes = answer, list(outcomes)
-        monkeypatch.setattr(snmp, "query_status", self.ask)
-        monkeypatch.setattr(brother, "send_job", self.send)
-
-    def ask(self, host, **kwargs):
-        self.asked.append((host, kwargs))
-        return self.answer
-
-    def send(self, host, data, **kwargs):
-        self.sent.append((host, data, kwargs))
-        outcome = self.outcomes.pop(0) if self.outcomes else None
-        if isinstance(outcome, Exception):
-            raise outcome
-
-
-@pytest.fixture
-def net(monkeypatch):
-    return Recorder(monkeypatch)
-
+from label_support import READY, Recorder, block
 
 IMAGE = Image.new("1", (696, 271), 1)
 

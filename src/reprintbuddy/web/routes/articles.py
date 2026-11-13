@@ -30,12 +30,14 @@ from reprintbuddy.domain.status import STATES, summarize
 from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.domain import stock as stock_mod
 from reprintbuddy.models import (
-    Article, ArticleFilament, ArticleFilamentSort, ArticlePart, Dispatch, FilamentSort, Part, WorkQueueEntry,
+    Article, ArticlePart, Dispatch, FilamentSort, Part, WorkQueueEntry,
 )
 from reprintbuddy.web import kpis, labels_view, listing, regions
 from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.csrf import verify_csrf
+from reprintbuddy.web.archiving import add_archive_routes
 from reprintbuddy.web.deps import (
+    get_or_404,
     current_language, db_session, get_bambuddy, get_db, local_next, release_connection, render,
 )
 from reprintbuddy.web.forms import (
@@ -283,15 +285,7 @@ async def articles_list(
     if (redirect := listing.remember_layout(request, "articles")) is not None:
         return redirect  # ?layout=... only sets the cookie
     archived = view == "archived"
-    states = STATES["article"]
-    status = None if archived else listing.pick(request.query_params.get("status"), states)
     every = catalog.list_articles(db, archived=archived)
-    # the search also finds a variant by its number (0.4.0, p341)
-    found = [
-        row for row in every
-        if listing.matches(q, row.name, row.sku, *(h.sku for h in (row.assembled.holders if row.assembled else ())))
-    ]
-    counts = Counter(row.status for row in found)
     lang = current_language(request)
     t = lambda key: translate(lang, key)  # noqa: E731
     # "enough" and "paused" get no card: the cards name what needs attention
@@ -299,10 +293,14 @@ async def articles_list(
         "package", "kpi.articles",
         summarize((row.status for row in every), ("overbooked", "below_min", "low", "not_deliverable")),  # p363
     )
-    cards = kpis.state_cards(t, "article", icon, len(every), t(label), named)
-    keep = (("status", status), ("view", "archived" if archived else None))
-    layout = listing.layout_of(request, "articles")
-    shown = [row for row in found if status is None or row.status == status]
+    page = listing.list_page(
+        request, page="articles", rows=every, states=STATES["article"], status_of=lambda row: row.status,
+        # the search also finds a variant by its number (0.4.0, p341)
+        search_texts=lambda row: (row.name, row.sku, *(h.sku for h in (row.assembled.holders if row.assembled else ()))),
+        q=q, status_filter=not archived, view="archived" if archived else None,
+        cards=kpis.state_cards(t, "article", icon, len(every), t(label), named),
+    )
+    shown = page.shown
     # A refused target quantity (`article_target`) is shown once, at the field of its article. Like a
     # message it is not used up by a fetch of regions (another tab on the same cookie): it belongs to
     # the page that follows the redirect. When the article has no field here (archived on another device
@@ -313,15 +311,7 @@ async def articles_list(
         target_error, orphan_error = None, target_error["text"]
     return render(
         request, "articles_list.html", active_nav="articles", archived=archived, target_error=target_error,
-        orphan_error=orphan_error, rows=shown,
-        total=len(every),
-        kpis=cards,
-        filters=listing.filter_links(request, states, counts, len(found), status),
-        layout=layout,
-        layout_links=listing.layout_links(request, layout),
-        q=q,
-        status=status,
-        search_keep=[(name, value) for name, value in keep if value],  # a new search keeps these
+        orphan_error=orphan_error, rows=shown, status=page.status, **page.context,
         here=request.url.path + (f"?{request.url.query}" if request.url.query else ""),  # the switches return here
     )
 
@@ -340,7 +330,7 @@ async def article_target(request: Request, article_id: int, db: Session = Depend
     never send it, because every saved change lets rule 7.1 plan prints, and three clicks on an arrow
     must not be three changes.
     """
-    name = _get_article(db, article_id).name
+    name = get_or_404(db, Article, article_id).name
     form = await request.form()
     after = local_next(form) or "/articles"
     raw = str(form.get("target", ""))
@@ -636,16 +626,9 @@ async def articles_create(request: Request, file_id: int, index: int, db: Sessio
 # ---- detail, thumbnail, settings -------------------------------------------------------------
 
 
-def _get_article(db: Session, article_id: int) -> Article:
-    article = db.get(Article, article_id)
-    if article is None:
-        raise HTTPException(status_code=404)
-    return article
-
-
 def _relink_article(db: Session, article_id: int) -> Article:
     """A print article, or an article made of parts that becomes one again (Spec 5.6); never a variant."""
-    article = _get_article(db, article_id)
+    article = get_or_404(db, Article, article_id)
     if article.kind == "variant":
         raise HTTPException(status_code=404)
     return article
@@ -687,12 +670,8 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         return _assembled_page(request, db, article, error, status)
     lang = current_language(request)
     article_id = article.id
-    filaments = db.scalars(
-        select(ArticleFilament).where(ArticleFilament.article_id == article_id).order_by(ArticleFilament.slot)
-    ).all()
-    ticked: dict[int, list[ArticleFilamentSort]] = {}
-    for row in db.scalars(select(ArticleFilamentSort).where(ArticleFilamentSort.article_id == article_id)):
-        ticked.setdefault(row.slot, []).append(row)
+    filaments = filament.article_slots(db, article_id)
+    ticked = filament.ticked_rows(db, article_id)
     sort_labels = dict(db.execute(select(FilamentSort.id, FilamentSort.label)).all())
 
     def uses(slot: int) -> str | None:
@@ -763,7 +742,7 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
 
 @router.get("/articles/{article_id:int}")
 async def article_detail(request: Request, article_id: int, db: Session = Depends(get_db)):
-    article = _get_article(db, article_id)
+    article = get_or_404(db, Article, article_id)
     if article.kind == "variant":  # a variant shows on the page of its article made of parts
         return RedirectResponse(f"/articles/{article.parent_id}", status_code=303)
     return _detail_page(request, db, article)
@@ -824,7 +803,7 @@ def _edit_refused(request: Request, db: Session, article: Article):
 
 @router.get("/articles/{article_id:int}/edit")
 async def article_edit(request: Request, article_id: int, db: Session = Depends(get_db)):
-    article = _get_article(db, article_id)
+    article = get_or_404(db, Article, article_id)
     if article.kind == "assembled":  # an article made of parts has its own form (Spec 5.6, 0.4.0)
         return RedirectResponse(f"/articles/{article.id}/assembled", status_code=303)
     if article.archived_at is not None:
@@ -835,7 +814,7 @@ async def article_edit(request: Request, article_id: int, db: Session = Depends(
 
 @router.post("/articles/{article_id:int}/edit", dependencies=[Depends(verify_csrf)])
 async def article_update(request: Request, article_id: int, db: Session = Depends(get_db)):
-    article = _get_article(db, article_id)
+    article = get_or_404(db, Article, article_id)
     if article.archived_at is not None:
         return _edit_refused(request, db, article)
     form = await request.form()
@@ -949,7 +928,7 @@ def _filament_page(request: Request, spools, article_id: int, typed: _Typed | No
 
 @router.get("/articles/{article_id:int}/filaments")
 async def article_filaments(request: Request, article_id: int, db: Session = Depends(get_db)):
-    _get_article(db, article_id)
+    get_or_404(db, Article, article_id)
     spools = await page_spools(request)  # before any write transaction
     return _filament_page(request, spools, article_id)
 
@@ -958,7 +937,7 @@ async def article_filaments(request: Request, article_id: int, db: Session = Dep
 async def article_filaments_save(request: Request, article_id: int, db: Session = Depends(get_db)):
     """One `slot` field per slot of the form, `tick_<slot>` per ticked spool sort, `reorder_<slot>`
     for the reordered one. A slot named without ticks is cleared; slots not named stay."""
-    _get_article(db, article_id)
+    get_or_404(db, Article, article_id)
     form = await request.form()
     typed: dict[int, tuple[set[str], str]] = {}
     lang = current_language(request)
@@ -992,34 +971,23 @@ async def article_filaments_save(request: Request, article_id: int, db: Session 
 # ---- archive, restore, restore with another file (Spec 5.5) ------------------------------------------
 
 
-def _archive_action(action, flash_key: str):
-    async def handler(request: Request, article_id: int, db: Session = Depends(get_db)):
-        article = _get_article(db, article_id)
-        # From the list (its forms send `next`) the person lands on the list again, where the row
-        # left or came back; from the detail page (no `next`) on the detail page.
-        after = local_next(await request.form()) or f"/articles/{article_id}"
-
-        def work(tx):
-            action(tx, article_id)
-            return {"name": article.name}
-
-        def on_error(text: str, status: int, exc: Exception):
-            # a taken plate offers the way out: restore with another file
-            offer = getattr(exc, "key", None) == "articles.restore_plate_taken"
-            return _detail_page(request, db, article, error=text, status=status, relink_offer=offer)
-
-        return await run_form_action(request, work=work, success_url=after, flash_key=flash_key, on_error=on_error)
-
-    return handler
+async def _after_archive(request: Request, article_id: int) -> str:
+    """From the list (its forms send `next`) the person lands on the list again, where the row left or
+    came back; from the detail page (no `next`) on the detail page."""
+    return local_next(await request.form()) or f"/articles/{article_id}"
 
 
-router.add_api_route(
-    "/articles/{article_id:int}/archive", _archive_action(catalog.archive_article, "articles.flash_archived"),
-    methods=["POST"], dependencies=[Depends(verify_csrf)],
-)
-router.add_api_route(
-    "/articles/{article_id:int}/restore", _archive_action(catalog.restore_article, "articles.flash_restored"),
-    methods=["POST"], dependencies=[Depends(verify_csrf)],
+def _archive_refused(request: Request, db: Session, article, text: str, status: int, exc: Exception):
+    # a taken plate offers the way out: restore with another file
+    offer = getattr(exc, "key", None) == "articles.restore_plate_taken"
+    return _detail_page(request, db, article, error=text, status=status, relink_offer=offer)
+
+
+add_archive_routes(
+    router, base="/articles", param="article_id", load=lambda db, ident: get_or_404(db, Article, ident),
+    archive=catalog.archive_article, restore=catalog.restore_article,
+    flash_archived="articles.flash_archived", flash_restored="articles.flash_restored",
+    success_url=_after_archive, on_error=_archive_refused,
 )
 
 
@@ -1115,7 +1083,7 @@ async def relink_restore(request: Request, article_id: int, file_id: int, index:
 
 
 def _detail_refused(request: Request, db: Session, article_id: int, text: str, status: int = 200):
-    return _detail_page(request, db, _get_article(db, article_id), error=text, status=status)
+    return _detail_page(request, db, get_or_404(db, Article, article_id), error=text, status=status)
 
 
 @router.post("/articles/{article_id:int}/resume", dependencies=[Depends(verify_csrf)])
@@ -1124,7 +1092,7 @@ async def article_resume(request: Request, article_id: int, db: Session = Depend
 
     Back to the page the button was on (`next`, a local path; the notice of a pause on the
     overview and the queue has one), else to the article. A refusal shows on the article page."""
-    name = _get_article(db, article_id).name
+    name = get_or_404(db, Article, article_id).name
     form = await request.form()
     # The overview is "/", which `local_next` counts as no `next`: here it is a page like any.
     back = "/" if str(form.get("next", "")) == "/" else local_next(form)
@@ -1146,7 +1114,7 @@ async def article_auto(request: Request, article_id: int, db: Session = Depends(
 
     Back to the list the switch was on (`next`, with its search and filter); a refusal is a
     warning there, not a page of its own."""
-    name = _get_article(db, article_id).name
+    name = get_or_404(db, Article, article_id).name
     form = await request.form()
     after = local_next(form) or "/articles"
     wanted = str(form.get("enabled", "")).strip()
@@ -1174,7 +1142,7 @@ async def article_auto(request: Request, article_id: int, db: Session = Depends(
 async def article_confirm_file(request: Request, article_id: int, db: Session = Depends(get_db)):
     """Accept the changed print file as it is now (Spec 5.1): file, filament need and preview
     are read from Bambuddy first, outside of the write transaction."""
-    article = _get_article(db, article_id)
+    article = get_or_404(db, Article, article_id)
     name, file_id, plate_index = article.name, article.library_file_id, article.plate_id
     release_connection(db)  # nothing is pending; no connection is held while Bambuddy answers
 

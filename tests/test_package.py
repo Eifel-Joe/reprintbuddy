@@ -115,3 +115,13 @@ def test_a_run_started_by_hand_names_its_branch_and_purpose():
     assert "github.event_name == 'workflow_dispatch'" in name
     assert "github.ref_name" in name and "inputs.purpose" in name
     assert name.rstrip().endswith("|| ' ' }}")  # whitespace for every other event: GitHub's own title
+
+
+def test_the_ci_log_names_the_slowest_tests():
+    """R1 (0.4.7): the CI ran `pytest -q` alone, so its log said how long the run took but not where the
+    time went. It now lists the 25 slowest test steps."""
+    from pathlib import Path
+
+    root = Path(reprintbuddy.__file__).parents[2]
+    workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "run: python -m pytest -q --durations=25" in workflow

@@ -12,6 +12,7 @@ from datetime import timedelta
 
 import pytest
 from conftest import REQUIRED, csrf_of, form_token_of, mock_auth_me, sm_of
+from texts import en
 from sqlalchemy import select
 
 from reprintbuddy.models import Article
@@ -22,10 +23,6 @@ from reprintbuddy.web.routes import upload as upload_routes
 
 PAGE = "/articles/new/upload"
 WITH_RIGHT = [*REQUIRED, "library:upload"]
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def zip_bytes(*names: str, extra: bytes = b"") -> bytes:

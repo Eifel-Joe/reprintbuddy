@@ -1,14 +1,5 @@
 from reprintbuddy import auth
-from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 import pytest
-
-
-@pytest.fixture
-def session(tmp_path):
-    engine = make_engine(tmp_path / "a.db")
-    upgrade(engine)
-    with make_sessionmaker(engine)() as s:
-        yield s
 
 
 def test_set_password_trims_and_refuses_empty_names(session):

@@ -6,14 +6,10 @@ from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_assembled
+from texts import en
 from more_rows_support import without_templates
 from reprintbuddy.domain import assembled
 from reprintbuddy.models import Article
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def parts(client):

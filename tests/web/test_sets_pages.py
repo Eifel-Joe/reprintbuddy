@@ -6,16 +6,12 @@ from sqlalchemy import func, select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_set
+from texts import en
 from more_rows_support import without_templates
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog
 from reprintbuddy.domain.catalog import BaseInput, ChoiceInput, ChoiceOptionInput, SetInput
 from reprintbuddy.models import Article, ProductSet, SetPosition, utcnow
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def three_articles(client, a=3, b=3, c=5):
@@ -293,3 +289,17 @@ def test_enter_in_a_field_saves_instead_of_adding_rows(ready_client):
     set_id = sets_in_db(ready_client)[0].id
     edit_form = _first_button(ready_client.get(f"/sets/{set_id}/edit").text, f"/sets/{set_id}/edit")
     assert 'name="action"' not in edit_form
+
+
+def test_set_rows_above_the_limit_are_capped_not_dropped(ready_client):
+    """0.4.7 (R7), the mirror of p391: a row count above the limit read as no count at all, so the form
+    fell back to three rows and dropped every row past them without a message. It now reads up to the
+    limit, as the form of an article made of parts does. The page itself never sends more than the limit."""
+    a, b, c = three_articles(ready_client)
+    with sm_of(ready_client).begin() as s:
+        d = make_article(s, name="Template D", stock=3).id
+    data = set_fields(ready_client, a, b, c, base_rows="201", base_150_qty="1", base_150_article=str(d))
+    assert ready_client.post("/sets/new", data=data).status_code == 303
+    with sm_of(ready_client).begin() as s:
+        row = catalog.list_sets(s)[0]
+    assert sorted(base.name for base in row.base) == ["Template A", "Template D"]

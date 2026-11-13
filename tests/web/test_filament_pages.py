@@ -7,6 +7,7 @@ import pytest
 
 from conftest import csrf_of, sm_of
 from factories import assign_sort, make_article, make_filament_settings, make_part, make_snapshot, make_sort, tick_sorts
+from texts import de, en
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.client import BambuddyRejected
 from reprintbuddy.domain import filament
@@ -328,15 +329,6 @@ def test_filament_list_spool_without_color_name(bb_client, fake_bambuddy):
 from html import unescape  # noqa: E402
 
 from reprintbuddy.web import regions  # noqa: E402
-from reprintbuddy.web.i18n import translate  # noqa: E402
-
-
-def en(key, **params):
-    return translate("en", key, **params)
-
-
-def de(key, **params):
-    return translate("de", key, **params)
 
 
 def head_of(page):

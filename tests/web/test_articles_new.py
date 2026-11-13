@@ -4,15 +4,11 @@ import pytest
 from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
+from texts import en
 from reprintbuddy.bambuddy.fake import FakeBambuddy
 from reprintbuddy.models import Article, ArticleFilament, JournalEntry
-from reprintbuddy.web.i18n import translate
 
 FORM = "/articles/new/file/1/plate/1"
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def tag_of(html, name):

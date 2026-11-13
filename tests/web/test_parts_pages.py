@@ -3,16 +3,12 @@ import re
 from sqlalchemy import func, select
 
 from conftest import csrf_of, form_token_of, sm_of
+from texts import en
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog
 from reprintbuddy.domain.errors import ValidationError
 from reprintbuddy.models import FormToken, Part
 from reprintbuddy.web.forms import error_text
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def set_language(client, lang):

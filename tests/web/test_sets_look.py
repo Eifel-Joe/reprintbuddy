@@ -6,16 +6,12 @@ import re
 import pytest
 from conftest import csrf_of, sm_of
 from factories import make_article, make_part, make_set
+from texts import en
 
 from reprintbuddy import settings as st
 from reprintbuddy.domain import catalog, stock
 from reprintbuddy.models import ProductSet, utcnow
 from reprintbuddy.web import regions
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def kpis_of(page):

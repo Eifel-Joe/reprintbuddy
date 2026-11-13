@@ -10,6 +10,7 @@ import zxingcpp
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article
 from label_support import Recorder, block
+from texts import de, en
 from PIL import Image
 
 from reprintbuddy import settings as st
@@ -17,23 +18,9 @@ from reprintbuddy.labels import fields
 from reprintbuddy.labels.errors import PrinterUnreachable, SendAborted
 from reprintbuddy.models import Article
 from reprintbuddy.web import netaddr
-from reprintbuddy.web.i18n import translate
 
 HOST = "198.51.100.20"
 SAME_PAGE = "/settings?tab=labels"
-
-
-def en(key, **params):
-    return translate("en", key, **params)
-
-
-def de(key, **params):
-    return translate("de", key, **params)
-
-
-@pytest.fixture
-def net(monkeypatch):
-    return Recorder(monkeypatch)
 
 
 @pytest.fixture

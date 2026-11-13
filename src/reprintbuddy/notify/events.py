@@ -33,7 +33,7 @@ from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.engine import EngineStatus, collect_warnings
 from reprintbuddy.domain.status import article_status
 from reprintbuddy.i18n import translate, translate_count
-from reprintbuddy.models import Article, Dispatch, FilamentSort, NotifyMark, Part, ReorderMark
+from reprintbuddy.models import Article, Dispatch, FilamentSort, NotifyMark, Part, ReorderMark, naive_utc
 from reprintbuddy.notify.homeassistant import Message
 from reprintbuddy.web.engine_view import BAD_WARNINGS
 
@@ -88,17 +88,13 @@ class _Config:
 # ---- detect ---------------------------------------------------------------------------------------
 
 
-def _naive_utc(moment: datetime) -> datetime:
-    return moment.astimezone(UTC).replace(tzinfo=None) if moment.tzinfo else moment
-
-
 def _config(session: Session, now: datetime) -> _Config:
     raw = st.get_setting(session, "ha_since")
     if raw is None:  # switched on before the switch kept its time, or restored: from now on
         st.set_setting(session, "ha_since", now.replace(tzinfo=UTC).isoformat(), commit=False)
         since = now
     else:
-        since = _naive_utc(datetime.fromisoformat(str(raw)))
+        since = naive_utc(datetime.fromisoformat(str(raw)))
     marks = {
         (m.kind, m.ref): m
         for m in session.scalars(

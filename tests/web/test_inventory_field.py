@@ -1,12 +1,11 @@
 """The inventory on the bookings page offers "awaiting assembly" only for print articles (p362, Spec 6.1)."""
 
-import json
 import re
-import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
+
+from node_support import run_harness
 
 from conftest import sm_of
 from factories import make_article, make_assembled
@@ -14,7 +13,6 @@ from reprintbuddy import __version__
 
 HERE = Path(__file__).parent
 SCRIPT = HERE.parents[1] / "src" / "reprintbuddy" / "web" / "static" / "js" / "inventory_field.js"
-NODE = shutil.which("node")
 
 
 def test_inventory_marks_articles_made_of_parts(ready_client):
@@ -30,13 +28,7 @@ def test_inventory_marks_articles_made_of_parts(ready_client):
 
 @pytest.fixture(scope="module")
 def result():
-    if NODE is None:
-        pytest.skip("node is not installed")
-    done = subprocess.run(
-        [NODE, str(HERE / "inventory_field_harness.js"), str(SCRIPT)], capture_output=True, text=True,
-        timeout=60, check=True,
-    )
-    return json.loads(done.stdout)
+    return run_harness("inventory_field_harness.js", SCRIPT)
 
 
 def test_awaiting_assembly_is_offered_for_print_articles(result):

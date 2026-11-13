@@ -12,21 +12,14 @@ from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_dispatch, make_entry
+from texts import de_html as de, en_html as en
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.client import BambuddyUnavailable
 from reprintbuddy.bambuddy.types import FilamentRequirement
 from reprintbuddy.domain import catalog
 from reprintbuddy.models import Article, ArticleFilament, JournalEntry
 from reprintbuddy.web import regions
-from reprintbuddy.web.i18n import translate, translate_count
-
-
-def en(key, **params):
-    return str(escape(translate("en", key, **params)))
-
-
-def de(key, **params):
-    return str(escape(translate("de", key, **params)))
+from reprintbuddy.web.i18n import translate_count
 
 
 def stat(html, label):

@@ -7,16 +7,12 @@ from starlette.requests import Request
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_part, make_sort
+from texts import en
 from reprintbuddy import __version__
 from reprintbuddy.web import regions
 from reprintbuddy.web.app import TEMPLATES_DIR
-from reprintbuddy.web.i18n import translate
 
 REGIONS = {regions.HEADER: "journal"}
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def fake_request(method="GET", header=None):

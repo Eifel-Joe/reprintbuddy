@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from typing import NamedTuple
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import catalog
@@ -17,12 +16,12 @@ from reprintbuddy.domain.stock import MAX_QTY
 from reprintbuddy.models import Part, PartSupplier
 from reprintbuddy.web import kpis, listing, supplier_form
 from reprintbuddy.web.csrf import verify_csrf
-from reprintbuddy.web.deps import current_language, get_db, render
+from reprintbuddy.web.archiving import add_archive_routes, to
+from reprintbuddy.web.deps import current_language, get_db, get_or_404, render
 from reprintbuddy.web.formatting import canonical_unit, fill_percent
 from reprintbuddy.web.i18n import translate
 from reprintbuddy.web.forms import (
     duplicate_redirect,
-    run_form_action,
     error_status,
     error_text,
     parse_int,
@@ -128,30 +127,21 @@ async def parts_list(
     if (redirect := listing.remember_layout(request, "parts")) is not None:
         return redirect  # ?layout=... only sets the cookie
     archived = view == "archived"
-    states = STATES["part"]
-    status = None if archived else listing.pick(request.query_params.get("status"), states)
     suppliers = catalog.suppliers_by_part(db)
     every = [_item(part, suppliers.get(part.id, [])) for part in catalog.list_parts(db, archived=archived)]
-    found = [item for item in every if listing.matches(q, item.part.name)]
-    counts = Counter(item.status for item in found)
     lang = current_language(request)
     t = lambda key: translate(lang, key)  # noqa: E731
     icon, label, named = ("archive", "kpi.parts_archived", []) if archived else (
         "puzzle", "kpi.parts", summarize((item.status for item in every), ("below_min",))
     )
-    cards = kpis.state_cards(t, "part", icon, len(every), t(label), named)
-    keep = (("status", status), ("view", "archived" if archived else None))
-    layout = listing.layout_of(request, "parts")
+    page = listing.list_page(
+        request, page="parts", rows=every, states=STATES["part"], status_of=lambda item: item.status,
+        search_texts=lambda item: (item.part.name,), q=q, status_filter=not archived,
+        view="archived" if archived else None,
+        cards=kpis.state_cards(t, "part", icon, len(every), t(label), named),
+    )
     return render(
-        request, "parts_list.html", active_nav="parts", archived=archived,
-        items=[item for item in found if status is None or item.status == status],
-        total=len(every),
-        kpis=cards,
-        filters=listing.filter_links(request, states, counts, len(found), status),
-        layout=layout,
-        layout_links=listing.layout_links(request, layout),
-        q=q,
-        search_keep=[(name, value) for name, value in keep if value],  # a new search keeps these
+        request, "parts_list.html", active_nav="parts", archived=archived, items=page.shown, **page.context
     )
 
 
@@ -183,22 +173,15 @@ async def parts_create(request: Request, db: Session = Depends(get_db)):
     return saved_redirect(request, "/parts", "parts.created", name=data.name)
 
 
-def _get_part(db: Session, part_id: int) -> Part:
-    part = db.get(Part, part_id)
-    if part is None:
-        raise HTTPException(status_code=404)
-    return part
-
-
 @router.get("/parts/{part_id:int}/edit")
 async def parts_edit(request: Request, part_id: int, db: Session = Depends(get_db)):
-    part = _get_part(db, part_id)
+    part = get_or_404(db, Part, part_id)
     return _form_page(request, db, part=part, values=_values_of(db, part))
 
 
 @router.post("/parts/{part_id:int}/edit", dependencies=[Depends(verify_csrf)])
 async def parts_update(request: Request, part_id: int, db: Session = Depends(get_db)):
-    part = _get_part(db, part_id)
+    part = get_or_404(db, Part, part_id)
     form = await request.form()
     values = _typed(form)
     if supplier_form.change_rows(form, values, PACK_SIZE):
@@ -215,32 +198,12 @@ async def parts_update(request: Request, part_id: int, db: Session = Depends(get
     return saved_redirect(request, "/parts", "parts.updated", name=data.name)
 
 
-def _archive_action(action, flash_key: str):
-    async def handler(request: Request, part_id: int, db: Session = Depends(get_db)):
-        part = _get_part(db, part_id)
-
-        def work(tx):
-            action(tx, part_id)
-            return {"name": part.name}
-
-        return await run_form_action(
-            request,
-            work=work,
-            success_url="/parts",  # back to the list; an archived part leaves it, that is right
-            flash_key=flash_key,
-            on_error=lambda text, status, exc: _form_page(
-                request, db, part=part, values=_values_of(db, part), error=text, status=status
-            ),
-        )
-
-    return handler
-
-
-router.add_api_route(
-    "/parts/{part_id:int}/archive", _archive_action(catalog.archive_part, "parts.flash_archived"),
-    methods=["POST"], dependencies=[Depends(verify_csrf)],
-)
-router.add_api_route(
-    "/parts/{part_id:int}/restore", _archive_action(catalog.restore_part, "parts.flash_restored"),
-    methods=["POST"], dependencies=[Depends(verify_csrf)],
+add_archive_routes(
+    router, base="/parts", param="part_id", load=lambda db, ident: get_or_404(db, Part, ident),
+    archive=catalog.archive_part, restore=catalog.restore_part,
+    flash_archived="parts.flash_archived", flash_restored="parts.flash_restored",
+    success_url=to("/parts"),  # back to the list; an archived part leaves it, that is right
+    on_error=lambda request, db, part, text, status, exc: _form_page(
+        request, db, part=part, values=_values_of(db, part), error=text, status=status
+    ),
 )

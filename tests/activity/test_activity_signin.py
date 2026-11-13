@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from conftest import ADMIN, PASSWORD, csrf_of, sm_of
+from conftest import PASSWORD, csrf_of, login as sign_in, sm_of
 from reprintbuddy.models import ActivityEntry
 
 
@@ -14,11 +14,6 @@ def login_lines(client) -> list[ActivityEntry]:
     client.app.state.activity.drain()
     with sm_of(client)() as s:
         return list(s.scalars(select(ActivityEntry).where(ActivityEntry.area == "login").order_by(ActivityEntry.id)))
-
-
-def sign_in(client, password=PASSWORD, username=ADMIN):
-    token = csrf_of(client, "/login")
-    return client.post("/login", data={"csrf_token": token, "username": username, "password": password})
 
 
 def test_signed_in_and_out_with_the_address(ready_client):

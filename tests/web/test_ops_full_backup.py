@@ -11,20 +11,16 @@ from conftest import ADMIN, PASSWORD, csrf_of, make_client
 
 from reprintbuddy import auth
 from reprintbuddy import settings as st
-from reprintbuddy.ops import backupcrypto as bc
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops.runner import CommandResult
 from reprintbuddy.ops.service import RESTART_CMD, UPDATE_SERVICE
 from reprintbuddy.ops.status import UpdateStatus, write_status
 
-FAST = bc.KdfParams(time_cost=1, memory_cost=8 * 1024, parallelism=1)
 BACKUP_PASSWORD = "backup-password-1"
 MAINTENANCE = "/settings?tab=maintenance"
 
 
-@pytest.fixture(autouse=True)
-def fast_kdf(monkeypatch):
-    monkeypatch.setattr(fb, "KDF", FAST)
+pytestmark = pytest.mark.usefixtures("fast_kdf")  # backups derive their key cheaply (conftest)
 
 
 def post(env, path, **data):

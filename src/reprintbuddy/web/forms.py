@@ -17,6 +17,15 @@ from reprintbuddy.web.formatting import format_date, to_local
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
 from reprintbuddy.web.i18n import translate
 
+MAX_ID = 2**31 - 1  # the largest record number a form may name; was written out in four route modules
+
+
+def maintenance_redirect(code: str | None, anchor: str) -> RedirectResponse:
+    """Back to the maintenance tab of the settings, at `anchor`, with the message `code` if any."""
+    query = f"&ops={code}" if code else ""
+    return RedirectResponse(f"/settings?tab=maintenance{query}#{anchor}", status_code=303)
+
+
 _INT = re.compile(r"-?[0-9]{1,18}", re.ASCII)
 _BOUNDED = re.compile(r"[0-9]{1,18}", re.ASCII)
 

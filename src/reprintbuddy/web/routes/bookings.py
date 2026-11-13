@@ -21,13 +21,11 @@ from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, get_db, render
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.formatting import format_date, to_local
-from reprintbuddy.web.forms import duplicate_redirect, error_status, error_text, parse_bool, parse_int, parse_text
+from reprintbuddy.web.forms import MAX_ID, duplicate_redirect, error_status, error_text, parse_bool, parse_int, parse_text
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
 from reprintbuddy.web.journal_view import journal_rows
 
 router = APIRouter()
-
-MAX_ID = 2**31 - 1
 
 
 def _page(request: Request, db: Session, *, error_form: str | None = None, error: str | None = None,

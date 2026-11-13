@@ -118,6 +118,17 @@ const part = (rows) => el("div", { "data-live-region": "form" },
 const first = part(2);
 body.appendChild(first);
 require(moreRows);
+// 0.4.7 (R7): the drop-down helpers of both forms live in more_rows.js, loaded first on both pages and
+// alone on the order form, where nothing may break.
+out.shared_rows = [typeof (window.ReprintbuddyRows && window.ReprintbuddyRows.offerOnly),
+  typeof (window.ReprintbuddyRows && window.ReprintbuddyRows.drawn)];
+{ // with only more_rows.js loaded, as on the order form: a held option leaves and comes back in its place
+  const lone = el("select", {}, el("option", { value: "1" }), el("option", { value: "2" }), el("option", { value: "3" }));
+  window.ReprintbuddyRows.offerOnly(lone, (o) => o.value === "2");
+  const held = lone.options.map((o) => o.value);
+  window.ReprintbuddyRows.offerOnly(lone, () => false);
+  out.shared_call = [held, lone.options.map((o) => o.value)];
+}
 const button = (region) => region.querySelector("[data-more-add]");
 out.full_at_load = button(first).disabled;
 const fresh = part(2);

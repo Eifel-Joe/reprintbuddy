@@ -3,14 +3,10 @@ from sqlalchemy import select
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_part
+from texts import en
 from reprintbuddy import settings as st
 from reprintbuddy.domain import stock
 from reprintbuddy.models import Article, ArticlePart, JournalEntry, Part
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def post(client, action, **fields):

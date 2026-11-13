@@ -9,18 +9,13 @@ import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from markupsafe import escape
 
 from conftest import csrf_of, form_token_of, sm_of
+from texts import en_html as en
 from reprintbuddy import settings as st
 from reprintbuddy.web import regions
-from reprintbuddy.web.i18n import translate
 
 ACTION = "/settings/automation/main"
-
-
-def en(key, **params):
-    return str(escape(translate("en", key, **params)))
 
 
 def region(page, name):

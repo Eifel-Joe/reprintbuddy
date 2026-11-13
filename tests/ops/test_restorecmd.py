@@ -14,22 +14,18 @@ from reprintbuddy import auth
 from reprintbuddy import settings as st
 from reprintbuddy.cli import main
 from reprintbuddy.db import known_revisions, make_engine, make_sessionmaker, upgrade
-from reprintbuddy.ops import backupcrypto as bc
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops import restorecmd
 from reprintbuddy.ops.runner import CommandResult
 from reprintbuddy.ops.service import SERVICE, SYSTEMCTL, UPDATE_SERVICE
 
 NOW = datetime(2026, 11, 8, 9, 30, 0, tzinfo=UTC)
-FAST = bc.KdfParams(time_cost=1, memory_cost=8 * 1024, parallelism=1)
 SECRET_BACKUP_PASSWORD = "backup-password-ZZZ-1"
 API_KEY = "bb_RESTORECMD_key"
 IS_ACTIVE = (SYSTEMCTL, "is-active", SERVICE)
 
 
-@pytest.fixture(autouse=True)
-def fast_kdf(monkeypatch):
-    monkeypatch.setattr(fb, "KDF", FAST)
+pytestmark = pytest.mark.usefixtures("fast_kdf")  # backups derive their key cheaply (conftest)
 
 
 def make_db(path: Path, revision: str = "head") -> Path:

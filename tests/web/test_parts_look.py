@@ -6,16 +6,12 @@ import re
 import pytest
 from conftest import csrf_of, sm_of
 from factories import make_part
+from texts import en
 
 from reprintbuddy import settings as st
 from reprintbuddy.domain import stock
 from reprintbuddy.models import Part, utcnow
 from reprintbuddy.web import regions
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def add(client, **fields):

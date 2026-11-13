@@ -79,7 +79,7 @@ def test_the_helpers_give_the_named_sets(db, world):
         assert ids(articlesets.catalog_articles(archived=True)) == {world["lamp"]}
         assert ids(articlesets.assembled_articles()) == {world["box"], world["hose"]}
         assert ids(articlesets.stock_holders()) == {world["box"]}
-        assert ids(articlesets.orderable_articles()) == world["print"] | {world["box"]}
+        assert ids(select(Article).where(articlesets.where_orderable())) == world["print"] | {world["box"]}
         assert ids(articlesets.variant_rows(world["hose"])) == world["hose_variants"]
         assert ids(articlesets.variant_rows(world["lamp"], archived=True)) == world["lamp_variants"]
 

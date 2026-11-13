@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain import articlesets, assembled, catalog, rules, setresolve, withdraw
@@ -384,13 +384,3 @@ def list_orders(session: Session, view: Literal["open", "closed"]) -> list[Order
             .order_by(Order.closed_at.desc(), Order.id.desc())
         )  # all of them: the page searches and counts the whole view (Spec 10.1)
     return [_view(session, o) for o in session.scalars(query)]
-
-
-def reserved_by_open_orders(session: Session) -> dict[int, int]:
-    rows = session.execute(
-        select(OrderLine.article_id, func.sum(OrderLine.qty))
-        .join(Order, Order.id == OrderLine.order_id)
-        .where(Order.status == "open")
-        .group_by(OrderLine.article_id)
-    ).all()
-    return {a: int(q) for a, q in rows}

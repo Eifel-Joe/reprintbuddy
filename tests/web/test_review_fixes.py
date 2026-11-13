@@ -6,15 +6,11 @@ import pytest
 
 from conftest import csrf_of, sm_of
 from factories import make_article
+from texts import en
 from reprintbuddy.domain import catalog
 from reprintbuddy.domain.catalog import BaseInput, SetInput
 from reprintbuddy.domain.errors import ValidationError
 from reprintbuddy.models import Article, utcnow
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def test_set_edit_keeps_base_parts_with_archived_articles(ready_client):

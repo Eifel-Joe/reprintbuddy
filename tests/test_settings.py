@@ -1,15 +1,7 @@
 import pytest
 
 from reprintbuddy import settings as st
-from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
-
-
-@pytest.fixture
-def session(tmp_path):
-    engine = make_engine(tmp_path / "t.db")
-    upgrade(engine)
-    with make_sessionmaker(engine)() as s:
-        yield s
+from reprintbuddy.db import make_sessionmaker
 
 
 EXPECTED_DEFAULTS = {

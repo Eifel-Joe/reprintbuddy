@@ -33,6 +33,47 @@
     Array.prototype.forEach.call(list, fn);
   }
 
+  // Every option of a drop-down as the page drew it, per group, also those taken out since (p351).
+  function drawn(node) {
+    if (!node.rbDrawn) {
+      node.rbDrawn = Array.prototype.slice.call(node.children);
+    }
+    return node.rbDrawn;
+  }
+
+  // Safari on the iPhone shows an option with `hidden` greyed instead of leaving it out, so an option
+  // another row holds is taken out of the drop-down and put back in its old place once it is free
+  // (p351). The chosen option of a row is never blocked, so it never moves and stays chosen.
+  // Replaced: `hidden` and `disabled` on the option. Used by set_form.js and assembled_form.js
+  // (one copy since 0.4.7; an article made of parts has no option groups, so the recursion does nothing there).
+  // Tests: tests/web/test_form_rows_scripts.py.
+  function offerOnly(node, blocked) {
+    var next = null;
+    var list = drawn(node);
+    for (var k = list.length - 1; k >= 0; k -= 1) {
+      var child = list[k];
+      if (child.tagName === "OPTION" && blocked(child)) {
+        if (child.parentNode === node) {
+          node.removeChild(child);
+        }
+        continue;
+      }
+      if (child.tagName === "OPTION") {
+        child.disabled = false;
+        child.hidden = false;
+      } else if (child.tagName === "OPTGROUP") {
+        offerOnly(child, blocked);
+      }
+      if (child.parentNode !== node) {
+        node.insertBefore(child, next);
+      }
+      next = child;
+    }
+  }
+
+  // The drop-down helpers of the two forms with rows of articles; this script is loaded before them.
+  window.ReprintbuddyRows = { drawn: drawn, offerOnly: offerOnly };
+
   function closest(node, selector) {
     return node && node.closest ? node.closest(selector) : null;
   }

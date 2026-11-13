@@ -54,7 +54,7 @@ from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render
 from reprintbuddy.web.flash import flash
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction
-from reprintbuddy.web.forms import duplicate_redirect
+from reprintbuddy.web.forms import duplicate_redirect, maintenance_redirect
 from reprintbuddy.web.i18n import translate
 
 log = logging.getLogger("reprintbuddy.ops")
@@ -420,8 +420,7 @@ def store_versions(state: Any, info: VersionInfo, *, actor: Actor) -> None:
 
 
 def _back(code: str | None = None) -> RedirectResponse:
-    query = f"&ops={code}" if code else ""
-    return RedirectResponse(f"/settings?tab=maintenance{query}#ops-update", status_code=303)
+    return maintenance_redirect(code, "ops-update")
 
 
 @router.post("/settings/update/check", dependencies=[Depends(verify_csrf)])

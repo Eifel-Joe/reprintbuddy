@@ -13,6 +13,10 @@
 (function () {
   "use strict";
 
+  // The drop-down helpers come from more_rows.js, loaded before this script. Without it the drop-downs
+  // stay as the server drew them (the server still refuses an article twice); the rest works as before.
+  var rows = window.ReprintbuddyRows || { offerOnly: function () {} };
+
   function each(list, fn) {
     Array.prototype.forEach.call(list, fn);
   }
@@ -29,7 +33,7 @@
     each(selects, function (select) {
       var place = select.getAttribute("data-assembled-article");
       var value = select.value;
-      offerOnly(select, function (option) {
+      rows.offerOnly(select, function (option) {
         if (!option.value || option.value === value) {
           return false;
         }
@@ -45,38 +49,6 @@
         return blocked;
       });
     });
-  }
-
-  // Every option of a drop-down as the page drew it, also those taken out since (p351).
-  function drawn(node) {
-    if (!node.rbDrawn) {
-      node.rbDrawn = Array.prototype.slice.call(node.children);
-    }
-    return node.rbDrawn;
-  }
-
-  // Safari on the iPhone shows an option with `hidden` greyed instead of leaving it out, so a blocked
-  // option is taken out of the drop-down and put back in its old place once it is free (p351). The
-  // chosen option of a row is never blocked, so it never moves and stays chosen. Replaced: `hidden`
-  // and `disabled` on the option. The same in set_form.js. Tests: tests/web/test_form_rows_scripts.py.
-  function offerOnly(select, blocked) {
-    var next = null;
-    var list = drawn(select);
-    for (var k = list.length - 1; k >= 0; k -= 1) {
-      var option = list[k];
-      if (blocked(option)) {
-        if (option.parentNode === select) {
-          select.removeChild(option);
-        }
-        continue;
-      }
-      option.disabled = false;
-      option.hidden = false;
-      if (option.parentNode !== select) {
-        select.insertBefore(option, next);
-      }
-      next = option;
-    }
   }
 
   document.addEventListener("change", function (event) {

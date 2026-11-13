@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy.activity.capture import quiet
 from reprintbuddy.bambuddy.types import FilamentRequirement, LibraryFile, Plate, Printer
 from reprintbuddy.domain import rules, setresolve, suppliers, workqueue
-from reprintbuddy.domain import articlesets
+from reprintbuddy.domain import articlesets, inputs
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.domain.workqueue import OPEN_STATES
 from reprintbuddy.domain.status import ArticleStatus, article_status
@@ -49,26 +49,8 @@ MAX_LABEL_TEXT = 60  # the text for the label (Spec 5.2): a label has little roo
 # ---- validation helpers ----------------------------------------------------------------
 
 
-def _int_in(value: object, field_key: str, low: int, high: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
-        raise ValidationError("form.invalid_number", field=field_key, min=low, max=high)
-    return value
-
-
-def _text(value: str | None, field_key: str, max_len: int, *, required: bool = False) -> str | None:
-    """Trimmed text; empty becomes None (or an error when required)."""
-    value = (value or "").strip()
-    if not value:
-        if required:
-            raise ValidationError("form.required", field=field_key)
-        return None
-    if len(value) > max_len:
-        raise ValidationError("form.too_long", field=field_key, max=max_len)
-    return value
-
-
 def _required_name(value: str | None, field_key: str) -> str:
-    name = _text(value, field_key, MAX_NAME, required=True)
+    name = inputs.text(value, field_key, MAX_NAME, required=True)
     assert name is not None
     return name
 
@@ -98,7 +80,7 @@ def validate_sku(
     number, and the refusal says the number is missing. Only a part ("Sold alone: no") may go without.
     What an earlier version stored without a number is not looked at here; it is asked for at the next
     save, which comes through here."""
-    sku = _text(sku, "catalog.field.sku", MAX_SKU, required=required)
+    sku = inputs.text(sku, "catalog.field.sku", MAX_SKU, required=required)
     if sku is None:
         return None
     wanted = same_number(sku)
@@ -224,7 +206,7 @@ def check_purchased_parts(session: Session, wanted: dict[int, int], article_id: 
     parts: dict[int, int] = {}
     linked = _linked_parts(session, article_id)
     for part_id, qty in wanted.items():
-        parts[part_id] = _int_in(qty, "articles.field.qty_per_unit", 1, 1000)
+        parts[part_id] = inputs.int_in(qty, "articles.field.qty_per_unit", 1, 1000)
         part = session.get(Part, part_id)
         if part is None:
             raise NotFoundError("parts.not_found")
@@ -239,11 +221,11 @@ def _check_article_input(
     name = _required_name(data.name, "articles.field.name")
     # Only a part ("Sold alone: no") may stay without a number; it needs one once it is sold alone (p533).
     sku = validate_sku(session, data.sku, article_id=article_id, required=data.sold_alone)
-    label_text = _text(data.label_text, "articles.field.label_text", MAX_LABEL_TEXT)
-    target_model = _text(data.target_model, "articles.field.target", MAX_NAME)
+    label_text = inputs.text(data.label_text, "articles.field.label_text", MAX_LABEL_TEXT)
+    target_model = inputs.text(data.target_model, "articles.field.target", MAX_NAME)
     printer_id = data.printer_id
     if printer_id is not None:
-        printer_id = _int_in(printer_id, "articles.field.printer_id", 1, MAX_QTY)
+        printer_id = inputs.int_in(printer_id, "articles.field.printer_id", 1, MAX_QTY)
     if target_model is not None and printer_id is not None:
         raise ValidationError("articles.target_exclusive")
     # The same rule as the switch of the list (`set_auto_enabled`): the automation needs a print
@@ -256,9 +238,9 @@ def _check_article_input(
         name=name,
         sku=sku,
         label_text=label_text,
-        units_per_print=_int_in(data.units_per_print, "articles.field.units_per_print", 1, 1000),
-        min_stock=_int_in(data.min_stock, "articles.field.min_stock", 0, MAX_QTY),
-        buffer=_int_in(data.buffer, "articles.field.buffer", 0, MAX_QTY),
+        units_per_print=inputs.int_in(data.units_per_print, "articles.field.units_per_print", 1, 1000),
+        min_stock=inputs.int_in(data.min_stock, "articles.field.min_stock", 0, MAX_QTY),
+        buffer=inputs.int_in(data.buffer, "articles.field.buffer", 0, MAX_QTY),
         target_model=target_model,
         printer_id=printer_id,
         parts=parts,
@@ -393,7 +375,7 @@ def set_target_quantity(session: Session, article_id: int, target: int) -> Artic
         raise NotFoundError("articles.not_found")
     if article.archived_at is not None:
         raise ConflictError("articles.edit_archived")
-    target = _int_in(target, "articles.target_quantity", 0, MAX_QTY)
+    target = inputs.int_in(target, "articles.target_quantity", 0, MAX_QTY)
     if target < article.buffer:
         raise ValidationError("articles.target_below_buffer", buffer=article.buffer)
     minimum = target - article.buffer
@@ -582,7 +564,7 @@ class PartInput:
 
 
 def _check_part_input(data: PartInput) -> PartInput:
-    unit = _text(data.unit, "parts.field.unit", 20, required=True)
+    unit = inputs.text(data.unit, "parts.field.unit", 20, required=True)
     if data.safety_unit not in ("days", "qty"):
         raise ValidationError("parts.invalid_safety_unit")
     checked = suppliers.check(data.suppliers, suppliers.PART_LABELS)
@@ -590,8 +572,8 @@ def _check_part_input(data: PartInput) -> PartInput:
         data,
         name=_required_name(data.name, "parts.field.name"),
         unit=unit,
-        min_stock=_int_in(data.min_stock, "parts.field.min_stock", 0, MAX_QTY),
-        safety_value=_int_in(data.safety_value, "parts.field.safety_value", 0, MAX_QTY),
+        min_stock=inputs.int_in(data.min_stock, "parts.field.min_stock", 0, MAX_QTY),
+        safety_value=inputs.int_in(data.safety_value, "parts.field.safety_value", 0, MAX_QTY),
         suppliers=checked,
     )
 
@@ -645,7 +627,7 @@ supplier_names = suppliers.names_in_use  # offered while typing, from parts and 
 def create_part(session: Session, data: PartInput, initial_stock: int, actor: Actor) -> Part:
     """New purchased part; the initial stock is booked as an inventory count (Spec 5.3, 6.5)."""
     data = _check_part_input(data)
-    initial_stock = _int_in(initial_stock, "parts.field.initial_stock", 0, MAX_QTY)
+    initial_stock = inputs.int_in(initial_stock, "parts.field.initial_stock", 0, MAX_QTY)
     part = Part()
     _apply_part(part, data)
     session.add(part)
@@ -766,26 +748,6 @@ class SetRow:
     held_archived: tuple[tuple[str, str], ...] = ()
 
 
-def _fields_of(
-    session: Session, set_id: int
-) -> tuple[list[SetPosition], list[tuple[SetPosition, list[SetPositionOption]]]]:
-    """The base positions and the choice fields with their options, in the order of the form."""
-    positions = session.scalars(
-        select(SetPosition)
-        .where(SetPosition.set_id == set_id)
-        .order_by(SetPosition.slot, SetPosition.sort, SetPosition.id)
-    ).all()
-    fields = []
-    for position in (p for p in positions if p.slot > 0):
-        options = session.scalars(
-            select(SetPositionOption)
-            .where(SetPositionOption.position_id == position.id)
-            .order_by(SetPositionOption.sort, SetPositionOption.article_id)
-        ).all()
-        fields.append((position, list(options)))
-    return [p for p in positions if p.slot == 0], fields
-
-
 def _numbers_of(defs: dict[int, setresolve.SetDef], set_id: int) -> list[str]:
     """The variant numbers of a set over every field, brought ones first (Spec 5.4, 0.4.4); none
     without a number, a suffix, or for a set that cannot be resolved."""
@@ -886,7 +848,7 @@ def _check_set_input(
 
     base: list[BaseSpec] = []
     for row in data.base:
-        qty = _int_in(row.qty, "sets.field.qty", 1, 1000)
+        qty = inputs.int_in(row.qty, "sets.field.qty", 1, 1000)
         if row.set_id is not None:
             base.append((qty, None, inner_set(row.set_id).id))
         else:
@@ -900,9 +862,9 @@ def _check_set_input(
         raise ValidationError("sets.choices2_without_1")
     choices: list[tuple[int, list[tuple[Article, str | None]]]] = []
     for field in fields:
-        qty = _int_in(field.qty, "sets.field.choice_qty", 1, 1000)
+        qty = inputs.int_in(field.qty, "sets.field.choice_qty", 1, 1000)
         options = [
-            (article(option.article_id), _text(option.suffix, "sets.field.suffix", MAX_SKU)) for option in field.options
+            (article(option.article_id), inputs.text(option.suffix, "sets.field.suffix", MAX_SKU)) for option in field.options
         ]
         choices.append((qty, options))
     if len(base) + len(choices) < 2:  # every variant has two different articles (p340, question 3)
@@ -1397,6 +1359,18 @@ def list_sets(session: Session, *, archived: bool = False) -> list[SetRow]:
 # ---- archive instead of delete (Spec 5.5) ---------------------------------------------------
 
 
+def _must_be_active(thing) -> None:
+    """Archiving something already in the archive is refused (another tab got there first)."""
+    if thing.archived_at is not None:
+        raise ConflictError("catalog.already_archived")
+
+
+def _must_be_archived(thing) -> None:
+    """Restoring something that is not in the archive is refused."""
+    if thing.archived_at is None:
+        raise ConflictError("catalog.not_archived")
+
+
 def _article_or_404(session: Session, article_id: int) -> Article:
     article = session.get(Article, article_id)
     if article is None:
@@ -1453,8 +1427,7 @@ def archive_article(session: Session, article_id: int) -> None:
     article = _article_or_404(session, article_id)
     if article.kind == articlesets.VARIANT:
         raise NotFoundError("articles.not_found")  # a variant goes with its article made of parts
-    if article.archived_at is not None:
-        raise ConflictError("catalog.already_archived")
+    _must_be_active(article)
     users = _assembled_users(session, article.id) if article.kind == articlesets.PRINT else []
     if users:
         raise ConflictError("articles.archive_in_assembled", names=", ".join(users))
@@ -1500,8 +1473,7 @@ def restore_article(session: Session, article_id: int) -> Article:
     article = _article_or_404(session, article_id)
     if article.kind == articlesets.VARIANT:  # review finding 5: a variant comes back with its article
         raise NotFoundError("articles.not_found")
-    if article.archived_at is None:
-        raise ConflictError("catalog.not_archived")
+    _must_be_archived(article)
     if article.kind == articlesets.ASSEMBLED:
         return _restore_assembled(session, article)
     holder = _plate_holder(session, article.library_file_id, article.plate_id, besides=article.id)
@@ -1547,8 +1519,7 @@ def restore_article_with_plate(
 ) -> Article:
     """Restore with another file and plate; takes over the file data like `create_article`."""
     article = _article_or_404(session, article_id)
-    if article.archived_at is None:
-        raise ConflictError("catalog.not_archived")
+    _must_be_archived(article)
     holder = _plate_holder(session, file.id, plate.index, besides=article.id)
     if holder is not None:
         raise ConflictError("articles.plate_taken", name=holder.name)
@@ -1727,8 +1698,7 @@ def archive_part(session: Session, part_id: int) -> None:
     part = session.get(Part, part_id)
     if part is None:
         raise NotFoundError("parts.not_found")
-    if part.archived_at is not None:
-        raise ConflictError("catalog.already_archived")
+    _must_be_active(part)
     user = session.scalar(
         select(Article)
         .join(ArticlePart, ArticlePart.article_id == Article.id)
@@ -1746,8 +1716,7 @@ def restore_part(session: Session, part_id: int) -> Part:
     part = session.get(Part, part_id)
     if part is None:
         raise NotFoundError("parts.not_found")
-    if part.archived_at is None:
-        raise ConflictError("catalog.not_archived")
+    _must_be_archived(part)
     part.archived_at = None
     session.flush()
     return part
@@ -1758,8 +1727,7 @@ def archive_set(session: Session, set_id: int) -> None:
     only directly, since a restored set may hold an archived one (review finding 2). Open orders keep
     their lines and still ship."""
     product_set = get_set(session, set_id)
-    if product_set.archived_at is not None:
-        raise ConflictError("catalog.already_archived")
+    _must_be_active(product_set)
     parents = sets_holding_set(session, set_id)
     if parents:
         raise ConflictError("sets.archive_in_set", names=", ".join(parents))
@@ -1769,8 +1737,7 @@ def archive_set(session: Session, set_id: int) -> None:
 
 def restore_set(session: Session, set_id: int) -> ProductSet:
     product_set = get_set(session, set_id)
-    if product_set.archived_at is None:
-        raise ConflictError("catalog.not_archived")
+    _must_be_archived(product_set)
     product_set.archived_at = None
     session.flush()
     return product_set

@@ -10,7 +10,6 @@ import pytest
 from sqlalchemy import select
 
 from reprintbuddy.models import ActivityEntry
-from reprintbuddy.ops import fullbackup as fb
 
 from conftest import csrf_of
 from reprintbuddy.ops.runner import CommandResult
@@ -36,9 +35,7 @@ def post(env, path):
     return env.client.post(path, data={"csrf_token": csrf_of(env.client, "/settings")})
 
 
-@pytest.fixture(autouse=True)
-def fast_kdf(monkeypatch):
-    monkeypatch.setattr(fb, "KDF", backup_tests.FAST)
+pytestmark = pytest.mark.usefixtures("fast_kdf")  # backups derive their key cheaply (conftest)
 
 
 def ops_lines(env) -> list[tuple[str, str, dict | None]]:

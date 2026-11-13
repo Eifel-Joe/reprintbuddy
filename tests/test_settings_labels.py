@@ -3,16 +3,7 @@
 import pytest
 
 from reprintbuddy import settings as st
-from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.labels import fields
-
-
-@pytest.fixture
-def session(tmp_path):
-    engine = make_engine(tmp_path / "t.db")
-    upgrade(engine)
-    with make_sessionmaker(engine)() as s:
-        yield s
 
 
 def test_defaults_no_printer_the_one_roll_and_the_usual_details(session):

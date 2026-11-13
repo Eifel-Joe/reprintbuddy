@@ -1,16 +1,9 @@
 import pytest
-from conftest import ADMIN, PASSWORD, csrf_of, make_client
+from conftest import csrf_of, login, make_client
 
 from reprintbuddy import auth
 from reprintbuddy import settings as st
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
-
-
-def login(client, password=PASSWORD, token=None, **extra):
-    token = token if token is not None else csrf_of(client, "/login")
-    data = {"csrf_token": token, "username": ADMIN, "password": password}
-    data.update(extra)
-    return client.post("/login", data=data)
 
 
 @pytest.fixture
@@ -161,6 +154,7 @@ def test_session_survives_restart(logged_out, db_path):
     assert response.headers["location"] == "/setup/bambuddy"  # recognised as logged in
 
 
+@pytest.mark.fresh_database  # the secret of the app's first start on a new database (R1)
 def test_session_secret_is_reused(db_path):
     make_client(db_path)
     with make_sessionmaker(make_engine(db_path))() as s:

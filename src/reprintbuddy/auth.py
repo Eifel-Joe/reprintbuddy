@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from reprintbuddy.models import LoginSession, User
+from reprintbuddy.models import LoginSession, User, utcnow
 
 MIN_PASSWORD_LENGTH = 8
 
@@ -44,23 +44,19 @@ SESSION_MAX_IDLE = timedelta(days=14)  # as long as the cookie lives
 TOUCH_INTERVAL = timedelta(minutes=1)  # last_seen_at is written at most this often
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
 def session_id_hash(sid: str) -> str:
     return hashlib.sha256(sid.encode()).hexdigest()
 
 
 def prune_sessions(session: Session) -> None:
-    session.execute(delete(LoginSession).where(LoginSession.last_seen_at < _utcnow() - SESSION_MAX_IDLE))
+    session.execute(delete(LoginSession).where(LoginSession.last_seen_at < utcnow() - SESSION_MAX_IDLE))
 
 
 def create_session(session: Session, *, commit: bool = True) -> str:
     """Start a session and return the id for the cookie. Old idle sessions are removed."""
     prune_sessions(session)
     sid = secrets.token_urlsafe(32)
-    now = _utcnow()
+    now = utcnow()
     session.add(LoginSession(id=session_id_hash(sid), created_at=now, last_seen_at=now))
     if commit:
         session.commit()
@@ -81,7 +77,7 @@ def session_valid(session: Session, sid: object, *, may_write: bool = True) -> b
     row = session.get(LoginSession, session_id_hash(sid))
     if row is None:
         return False
-    now = _utcnow()
+    now = utcnow()
     if row.last_seen_at < now - SESSION_MAX_IDLE:
         if not may_write:
             return False

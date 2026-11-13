@@ -14,16 +14,15 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy.activity.capture import quiet
 from reprintbuddy.bambuddy.client import BambuddyClient
 from reprintbuddy.bambuddy.types import Spool
-from reprintbuddy.domain import color, rules, suppliers
+from reprintbuddy.domain import color, inputs, rules, suppliers
 from reprintbuddy.domain import articlesets
 from reprintbuddy.domain import catalog
-from reprintbuddy.domain.catalog import _int_in
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
 from reprintbuddy.models import (
     Article,
@@ -86,7 +85,7 @@ def _spool_key(spool: Spool) -> str:
 def _current_sorts(session: Session) -> dict[str, FilamentSort]:
     return {
         s.sort_key: s
-        for s in session.scalars(select(FilamentSort).where(FilamentSort.legacy.is_(False)))
+        for s in session.scalars(current_sorts())
     }
 
 
@@ -429,7 +428,7 @@ def known_sorts(
         stock, day = stock_from_snapshots(session)
         if day is None:
             return None, None
-    for sort in session.scalars(select(FilamentSort).where(FilamentSort.legacy.is_(False))):
+    for sort in session.scalars(current_sorts()):
         if sort.id not in stock:
             stock[sort.id] = _entry(sort, 0.0, 0)
     return stock, day
@@ -457,7 +456,20 @@ class SlotGroup:
     reordered: int | None
 
 
-def _ticked_rows(session: Session, article_id: int) -> dict[int, list[ArticleFilamentSort]]:
+def current_sorts() -> Select[tuple[FilamentSort]]:
+    """The spool sorts of the directory: a brandless sort of 0006 waits for its conversion and is none yet."""
+    return select(FilamentSort).where(FilamentSort.legacy.is_(False))
+
+
+def article_slots(session: Session, article_id: int) -> list[ArticleFilament]:
+    """The filament slots of the article's print file, in slot order."""
+    return list(session.scalars(
+        select(ArticleFilament).where(ArticleFilament.article_id == article_id).order_by(ArticleFilament.slot)
+    ))
+
+
+def ticked_rows(session: Session, article_id: int) -> dict[int, list[ArticleFilamentSort]]:
+    """The ticked spool sorts of an article, by slot (a slot with none is missing)."""
     rows: dict[int, list[ArticleFilamentSort]] = defaultdict(list)
     for row in session.scalars(select(ArticleFilamentSort).where(ArticleFilamentSort.article_id == article_id)):
         rows[row.slot].append(row)
@@ -485,9 +497,7 @@ def suggest_from_similar(session: Session, article_id: int) -> dict[int, Suggest
     that article the one with the smallest number that has a group. Only sorts the new slot offers itself
     (`is_candidate`) are suggested; the reordered one is the source's if it is still there, else the only
     sort left, else none (saving asks the person to choose). A slot without material or colour gets none."""
-    slots = session.scalars(
-        select(ArticleFilament).where(ArticleFilament.article_id == article_id).order_by(ArticleFilament.slot)
-    ).all()
+    slots = article_slots(session, article_id)
     wanted = [slot for slot in slots if _norm(slot.material) and _norm(slot.color_hex)]
     if not wanted:
         return {}
@@ -506,7 +516,7 @@ def suggest_from_similar(session: Session, article_id: int) -> dict[int, Suggest
         select(ArticleFilamentSort).where(ArticleFilamentSort.article_id.in_([s.id for s in sources]))
     ):
         ticked[row.article_id][row.slot].append(row)
-    sorts = {s.id: s for s in session.scalars(select(FilamentSort).where(FilamentSort.legacy.is_(False)))}
+    sorts = {s.id: s for s in session.scalars(current_sorts())}
     found: dict[int, Suggestion] = {}
     for slot in wanted:
         for source in sources:
@@ -531,16 +541,14 @@ def suggest_from_similar(session: Session, article_id: int) -> dict[int, Suggest
 
 def slot_groups(session: Session, article_id: int) -> list[SlotGroup]:
     """The filament slots of an article by slot number, with their candidates and what is ticked."""
-    slots = session.scalars(
-        select(ArticleFilament).where(ArticleFilament.article_id == article_id).order_by(ArticleFilament.slot)
-    ).all()
-    sorts = session.scalars(select(FilamentSort).where(FilamentSort.legacy.is_(False))).all()
+    slots = article_slots(session, article_id)
+    sorts = session.scalars(current_sorts()).all()
     by_id = {s.id: s for s in sorts}
-    ticked_rows = _ticked_rows(session, article_id)
+    by_slot = ticked_rows(session, article_id)
     result = []
     for slot in slots:
-        ticked = {r.sort_id for r in ticked_rows.get(slot.slot, ())}
-        reordered = next((r.sort_id for r in ticked_rows.get(slot.slot, ()) if r.reordered), None)
+        ticked = {r.sort_id for r in by_slot.get(slot.slot, ())}
+        reordered = next((r.sort_id for r in by_slot.get(slot.slot, ()) if r.reordered), None)
         ids = {s.id for s in sorts if is_candidate(s, slot.material, slot.color_hex)} | ticked
         choices = tuple(sorted(ids, key=lambda i: (by_id[i].label.casefold(), i) if i in by_id else ("", i)))
         result.append(
@@ -560,11 +568,8 @@ def set_groups(
         raise NotFoundError("articles.not_found")
     if article.archived_at is not None:
         raise ConflictError("articles.edit_archived")
-    slots = {
-        r.slot: r
-        for r in session.scalars(select(ArticleFilament).where(ArticleFilament.article_id == article_id))
-    }
-    before = _ticked_rows(session, article_id)
+    slots = {r.slot: r for r in article_slots(session, article_id)}
+    before = ticked_rows(session, article_id)
     plan: dict[int, tuple[set[int], int | None]] = {}
     for slot_no, (ticked_ids, reordered) in groups.items():
         slot = slots.get(slot_no)
@@ -709,7 +714,7 @@ def save_settings(session: Session, sort_id: int, data: FilamentSettingsInput) -
         raise NotFoundError("filament.sort_not_found")
     if data.safety_unit not in ("days", "grams"):
         raise ValidationError("filament.invalid_safety_unit")
-    safety = _int_in(data.safety_value, "filament.field.safety_value", 0, 1_000_000)
+    safety = inputs.int_in(data.safety_value, "filament.field.safety_value", 0, 1_000_000)
     wanted = suppliers.check(data.suppliers, suppliers.FILAMENT_LABELS)
     row = session.get(FilamentSettings, sort_id)
     if row is None:

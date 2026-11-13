@@ -5,13 +5,9 @@ import re
 
 from conftest import sm_of
 from factories import make_article, make_part
-from reprintbuddy.web.i18n import translate
+from texts import en
 
 CSS = "/static/css/reprintbuddy.css"
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def rule_of(css, selector):

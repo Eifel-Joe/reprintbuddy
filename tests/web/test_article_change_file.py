@@ -4,16 +4,12 @@ import re
 
 from conftest import csrf_of, form_token_of, sm_of
 from factories import make_article, make_sort, tick_sorts
+from texts import en
 from sqlalchemy import select
 
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.types import FilamentRequirement
 from reprintbuddy.models import Article, ArticleFilament, ArticleFilamentSort, utcnow
-from reprintbuddy.web.i18n import translate
-
-
-def en(key, **params):
-    return translate("en", key, **params)
 
 
 def make(client, **fields):

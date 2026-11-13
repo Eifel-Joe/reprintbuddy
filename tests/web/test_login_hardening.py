@@ -5,14 +5,9 @@ import asyncio
 import time
 
 import pytest
-from conftest import ADMIN, PASSWORD, csrf_of, make_client
+from conftest import PASSWORD, csrf_of, login, make_client
 
 from reprintbuddy import auth
-
-
-def login(client, username=ADMIN, password=PASSWORD):
-    token = csrf_of(client, "/login")
-    return client.post("/login", data={"csrf_token": token, "username": username, "password": password})
 
 
 @pytest.fixture
