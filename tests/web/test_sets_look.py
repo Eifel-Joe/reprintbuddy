@@ -204,7 +204,7 @@ def test_edit_pages_have_one_balanced_form_region(ready_client):
 
 def test_failed_set_edit_has_no_region_source(ready_client):
     set_id, article_id = set_with(ready_client, "Starter Set", stock=1)
-    data = {"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Typed Name", "sku": "",
+    data = {"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Typed Name", "sku": "EX-TN",
             "base_rows": "3"}  # no article: invalid
     response = ready_client.post(f"/sets/{set_id}/edit", data=data)
     assert response.status_code == 200 and en("sets.too_few_articles") in response.text

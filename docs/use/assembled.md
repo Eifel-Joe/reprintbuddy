@@ -17,7 +17,7 @@ Every print article has the switch **Sold alone**, on by default. Switched off, 
 
 ![The form of an assembled article with base parts, choice parts and the assembly mode](../assets/images/en/assembled-form.png)
 
-- **Name**, **Article number** and **Label text** as for any article. The number is needed as soon as there are choice parts: the variant numbers start with it.
+- **Name**, **Article number** and **Label text** as for any article. The number is required, as for any article; with choice parts the variant numbers start with it.
 - **Assembly**: **on stock** (default) or **on order**, see below.
 - **Base parts**: in every piece. One quantity and one print article per row. An article is in at most one row. **More rows** adds rows.
 - **Choice parts 1** (optional): options of which every piece holds exactly one. Each option has a **suffix** and one or more rows of quantity and article. The same article may be in several options of one field; the side part L of the hose is in `-L32` and in `-L40`. **More options** and **More rows** add room. **Add choice parts 2** opens a second field of the same kind. An article in the base parts is in no option, and no article is in both fields.

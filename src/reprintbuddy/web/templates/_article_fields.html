@@ -6,8 +6,10 @@
   <input name="name" value="{{ values.name }}" maxlength="200" required>
 </label>
 <label>{{ t('catalog.field.sku') }}
-  <input name="sku" value="{{ values.sku }}" maxlength="64">
+  <input name="sku" value="{{ values.sku }}" maxlength="64"{% if values.sold_alone %} required{% endif %}>
+  <span class="hint">{{ t('articles.sku_hint') }}</span>
 </label>
+<script src="/static/js/article_sku.js?v={{ app_version }}" defer></script>
 <label>{{ t('articles.field.label_text') }}
   <input name="label_text" value="{{ values.label_text }}" maxlength="60" placeholder="{{ t('articles.label_text_hint') }}">
 </label>

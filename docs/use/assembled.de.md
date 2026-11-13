@@ -17,7 +17,7 @@ Jeder Druckartikel hat den Schalter **Einzeln erhältlich**, Vorgabe an. Ausgesc
 
 ![Das Formular eines Artikels aus Teilen mit Basisteilen, Wahlteilen und der Montage](../assets/images/de/assembled-form.png)
 
-- **Name**, **Artikelnummer** und **Etikettentext** wie bei jedem Artikel. Die Nummer ist nötig, sobald es Wahlteile gibt: Mit ihr beginnen die Nummern der Varianten.
+- **Name**, **Artikelnummer** und **Etikettentext** wie bei jedem Artikel. Die Nummer ist Pflicht wie bei jedem Artikel; mit Wahlteilen beginnen die Nummern der Varianten damit.
 - **Montage**: **auf Vorrat** (Vorgabe) oder **erst bei Bestellung**, siehe unten.
 - **Basisteile**: in jedem Stück. Je Zeile eine Menge und ein Druckartikel. Ein Artikel steht höchstens in einer Zeile. **Mehr Zeilen** fügt Zeilen an.
 - **Wahlteile 1** (freiwillig): Möglichkeiten, von denen in jedem Stück genau eine steckt. Jede Möglichkeit hat eine **Zusatznummer** und eine oder mehrere Zeilen mit Menge und Artikel. Derselbe Artikel darf in mehreren Möglichkeiten eines Feldes stehen; das Seitenteil L des Schlauchs steckt in `-L32` und in `-L40`. **Mehr Möglichkeiten** und **Mehr Zeilen** schaffen Platz. **Wahlteile 2 hinzufügen** öffnet ein zweites Feld derselben Art. Ein Artikel der Basisteile steht in keiner Möglichkeit, und kein Artikel steht in beiden Feldern.

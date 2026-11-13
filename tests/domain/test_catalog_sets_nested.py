@@ -202,7 +202,7 @@ def test_inner_set_with_choices_and_an_article_is_saved(db):
 
 def test_one_inner_set_alone_is_too_few(db, kits):  # Spec 5.4: two of one inner set alone do not do
     _a, basic, _extension, _ = kits
-    refused(db, SetInput("Double", None, [set_in(basic, qty=2)], []), "sets.too_few_articles")
+    refused(db, SetInput("Double", "EX-DOUBLE", [set_in(basic, qty=2)], []), "sets.too_few_articles")
 
 
 def test_set_cannot_hold_itself(db, kits):
@@ -219,7 +219,7 @@ def test_ring_through_an_inner_set_names_the_path(db, kits):  # Spec 5.4, change
 
 def test_article_of_an_inner_set_cannot_be_a_base_part(db, kits):
     a, basic, _extension, _ = kits
-    error = refused(db, SetInput("Kit", None, [set_in(basic), BaseInput(1, a["manual"])], []), "sets.article_twice")
+    error = refused(db, SetInput("Kit", "EX-KIT", [set_in(basic), BaseInput(1, a["manual"])], []), "sets.article_twice")
     assert error.params["name"] == "Manual"
 
 
@@ -235,13 +235,13 @@ def test_two_inner_sets_with_a_shared_article_are_refused(db, kits):  # F4 (b)
     a, basic, _extension, _ = kits
     with db.begin() as s:
         other = make_set(s, "Other", [(1, a["plate"]), (1, a["manual"])]).id
-    data = SetInput("Kit", None, [set_in(basic), set_in(other)], [])
+    data = SetInput("Kit", "EX-KIT", [set_in(basic), set_in(other)], [])
     assert refused(db, data, "sets.article_twice").params["name"] == "Manual"
 
 
 def test_same_inner_set_twice_is_refused(db, kits):  # review focus 5
     _a, basic, _extension, _ = kits
-    data = SetInput("Kit", None, [set_in(basic), set_in(basic, qty=2)], [])
+    data = SetInput("Kit", "EX-KIT", [set_in(basic), set_in(basic, qty=2)], [])
     assert refused(db, data, "sets.set_twice").params["name"] == "Basic kit"
 
 
@@ -250,9 +250,9 @@ def test_archived_or_incomplete_set_cannot_come_in(db, kits):
     with db.begin() as s:
         s.get(ProductSet, basic).archived_at = ARCHIVED
         lonely = make_set(s, "Lonely", [(1, articles(s, lid=1)["lid"])]).id  # too few: incomplete
-    data = SetInput("Kit", None, [set_in(basic), set_in(extension)], [])
+    data = SetInput("Kit", "EX-KIT", [set_in(basic), set_in(extension)], [])
     assert refused(db, data, "sets.set_not_allowed").params["name"] == "Basic kit"
-    data = SetInput("Kit", None, [set_in(lonely), set_in(extension)], [])
+    data = SetInput("Kit", "EX-KIT", [set_in(lonely), set_in(extension)], [])
     assert refused(db, data, "sets.set_not_allowed").params["name"] == "Lonely"
 
 
@@ -268,7 +268,7 @@ def test_archived_inner_set_already_there_may_stay(db, kits):  # decision 7 of t
 
 def test_unknown_inner_set(db, kits):
     _a, basic, _extension, _ = kits
-    refused(db, SetInput("Kit", None, [set_in(basic), set_in(9999)], []), "sets.not_found", NotFoundError)
+    refused(db, SetInput("Kit", "EX-KIT", [set_in(basic), set_in(9999)], []), "sets.not_found", NotFoundError)
 
 
 def test_change_of_inner_set_that_doubles_an_article_upstream_is_refused(db, kits):  # review focus 4

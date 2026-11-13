@@ -719,16 +719,17 @@ def build_catalog(server: Server, scn: Scenario) -> None:
     # Articles made of parts (Spec 5.6, 0.4.0 p341): a storage box of ten panels built on stock, and a
     # hose of twelve segments with four options of two parts each, built on order.
     for n, letter in enumerate("ABCDEFGHIJ", start=1):
-        article(f"panel_{letter}", "Box panels", n, name=tr(f"Panel {letter}", f"Platte {letter}"), sku=None,
-                label_text=None, units_per_print=1)
+        article(f"panel_{letter}", "Box panels", n, name=tr(f"Panel {letter}", f"Platte {letter}"),
+                sku=f"EX-P{n:02d}", label_text=None, units_per_print=1)  # p533: sold alone, so a number
     for n, (key, en_name, de_name, alone) in enumerate((
         ("segment", "Segment", "Segment", True),
         ("side_l", "Side part L", "Seitenteil L", False), ("side_r", "Side part R", "Seitenteil R", False),
         ("socket_l32", "Socket L32", "Anschluss L32", False), ("socket_l40", "Socket L40", "Anschluss L40", False),
         ("socket_r32", "Socket R32", "Anschluss R32", False), ("socket_r40", "Socket R40", "Anschluss R40", False),
     ), start=1):
-        article(key, "Hose parts", n, name=tr(en_name, de_name), sku=None, label_text=None, units_per_print=1,
-                sold_alone=alone)
+        # p533: a number for what is sold alone; the parts ("Sold alone" off) may go without
+        article(key, "Hose parts", n, name=tr(en_name, de_name), sku="EX-HS1" if alone else None, label_text=None,
+                units_per_print=1, sold_alone=alone)
     with sm.begin() as s:
         a = scn.articles
         B = catalog.BaseInput

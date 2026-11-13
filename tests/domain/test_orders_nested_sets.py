@@ -150,7 +150,7 @@ def test_order_keeps_its_articles_when_the_inner_set_changes_later(db, kits):  #
     with db.begin() as s:
         order_id = new_order(s, [small(complete, 1, a)]).id
     with db.begin() as s:
-        catalog.update_set(s, extension, SetInput("Extension XL", None, [BaseInput(3, a["Plate"]), BaseInput(1, a["Screw set"])], []))
+        catalog.update_set(s, extension, SetInput("Extension XL", "EX-EXTENSION-XL", [BaseInput(3, a["Plate"]), BaseInput(1, a["Screw set"])], []))
     with db.begin() as s:
         view = orders.get_order(s, order_id)
         assert view.groups[0].inner[1].lines == [("Plate", 1), ("Screw set", 1)] and view.ready

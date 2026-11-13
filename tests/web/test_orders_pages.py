@@ -79,7 +79,7 @@ def test_order_form_offers_each_variant_by_number(ready_client):  # Spec 6.7 (p3
     with sm_of(ready_client).begin() as s:
         set_id, a, b, c = variant_set(s)
         d = make_article(s, name="Template D").id
-        plain = catalog.create_set(s, SetInput("Plain Set", None, [BaseInput(1, a), BaseInput(1, d)], [])).id
+        plain = catalog.create_set(s, SetInput("Plain Set", "EX-PLAIN-SET", [BaseInput(1, a), BaseInput(1, d)], [])).id
     page = ready_client.get("/orders/new").text
     assert f'<option value="set:{set_id}:{b}">Starter Set · S-1-B (Template B)</option>' in page
     assert f'<option value="set:{set_id}:{c}">Starter Set · S-1-C (Template C)</option>' in page
@@ -252,7 +252,7 @@ def test_open_list_shows_ready_badge_and_set_group(ready_client):
     with sm_of(ready_client).begin() as s:
         a = make_article(s, name="Template A", stock=1).id
         b = make_article(s, name="Template B", stock=1).id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
+        set_id = catalog.create_set(s, SetInput("Starter Set", "EX-STARTER-SET", [BaseInput(1, a), BaseInput(1, b)], [])).id
         orders.create_order(s, reference="Order 1001", order_date=date(2026, 1, 15), items=[orders.SetItem(set_id, 1)], actor="user")
     page = ready_client.get("/orders").text
     assert "Order 1001" in page and en("status.order.ready") in page and "Starter Set" in page

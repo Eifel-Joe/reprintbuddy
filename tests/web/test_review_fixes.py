@@ -21,14 +21,14 @@ def test_set_edit_keeps_base_parts_with_archived_articles(ready_client):
     with sm_of(ready_client).begin() as s:
         a = make_article(s, name="Template A").id
         b = make_article(s, name="Template B").id
-        set_id = catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(2, b)], [])).id
+        set_id = catalog.create_set(s, SetInput("Starter Set", "EX-STARTER-SET", [BaseInput(1, a), BaseInput(2, b)], [])).id
         s.get(Article, b).archived_at = utcnow()  # archiving it is refused now (0.4.3); an earlier version left it so
     page = ready_client.get(f"/sets/{set_id}/edit").text
     assert re.search(rf'<option value="{b}" selected>', page)  # still offered, and selected
     assert en("catalog.archived_badge") in page
     response = ready_client.post(
         f"/sets/{set_id}/edit",
-        data={"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Renamed", "sku": "",
+        data={"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Renamed", "sku": "EX-RN",
               "base_rows": "3", "base_0_qty": "1", "base_0_article": str(a), "base_1_qty": "2", "base_1_article": str(b)},
     )
     assert response.status_code == 303
@@ -43,25 +43,25 @@ def test_update_set_may_keep_but_not_add_archived_articles(db):
         a = make_article(s, name="Template A").id
         b = make_article(s, name="Template B").id
         c = make_article(s, name="Template C").id
-        set_id = catalog.create_set(s, SetInput("S", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
+        set_id = catalog.create_set(s, SetInput("S", "EX-S", [BaseInput(1, a), BaseInput(1, b)], [])).id
         s.get(Article, b).archived_at = utcnow()  # archiving it is refused now (0.4.3); an earlier version left it so
         catalog.archive_article(s, c)
     with db.begin() as s:
-        catalog.update_set(s, set_id, SetInput("S2", None, [BaseInput(1, a), BaseInput(1, b)], []))  # b was already there
+        catalog.update_set(s, set_id, SetInput("S2", "EX-S2", [BaseInput(1, a), BaseInput(1, b)], []))  # b was already there
     with pytest.raises(ValidationError) as info:
         with db.begin() as s:
-            catalog.update_set(s, set_id, SetInput("S3", None, [BaseInput(1, a), BaseInput(1, c)], []))
+            catalog.update_set(s, set_id, SetInput("S3", "EX-S3", [BaseInput(1, a), BaseInput(1, c)], []))
     assert info.value.key == "sets.article_archived"
 
 
 def test_set_with_many_base_parts_survives_an_edit(ready_client):
     with sm_of(ready_client).begin() as s:
         ids = [make_article(s, name=f"Template {i:02d}").id for i in range(49)]
-        set_id = catalog.create_set(s, SetInput("Big Set", None, [BaseInput(1, a) for a in ids], [])).id
+        set_id = catalog.create_set(s, SetInput("Big Set", "EX-BIG-SET", [BaseInput(1, a) for a in ids], [])).id
     page = ready_client.get(f"/sets/{set_id}/edit").text
     rows = int(re.search(r'name="base_rows" value="(\d+)"', page).group(1))
     assert rows >= 49
-    data = {"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Big Set", "sku": "",
+    data = {"csrf_token": csrf_of(ready_client, f"/sets/{set_id}/edit"), "name": "Big Set", "sku": "EX-BS",
             "base_rows": str(rows), "c1_rows": "3"}
     for i, a in enumerate(ids):
         data[f"base_{i}_qty"] = "1"

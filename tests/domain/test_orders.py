@@ -19,7 +19,7 @@ def new_order(s, items, reference="Order 1001"):
 
 def starter_set(s, a, b):
     """Template A x 1 and Template B x 2."""
-    return catalog.create_set(s, SetInput("Starter Set", None, [BaseInput(1, a), BaseInput(2, b)], []))
+    return catalog.create_set(s, SetInput("Starter Set", "EX-STARTER-SET", [BaseInput(1, a), BaseInput(2, b)], []))
 
 
 def variant_set(s, a, b, c):
@@ -141,7 +141,7 @@ def test_same_article_direct_and_via_set_aggregated(db):
     with db.begin() as s:
         a = make_article(s, name="Template A").id
         b = make_article(s, name="Template B").id
-        set_id = catalog.create_set(s, SetInput("S", None, [BaseInput(1, a), BaseInput(1, b)], [])).id
+        set_id = catalog.create_set(s, SetInput("S", "EX-S", [BaseInput(1, a), BaseInput(1, b)], [])).id
         new_order(s, [ArticleItem(a, 1), SetItem(set_id, 1)])
     with db.begin() as s:
         assert s.get(Article, a).reserved == 2

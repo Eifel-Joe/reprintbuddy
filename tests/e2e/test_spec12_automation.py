@@ -64,7 +64,7 @@ def create_article(client) -> int:
     """Articles > new: Template A, plate 1, with the defaults of the form (min 0, no automation)."""
     response = post_form(
         client, FORM, FORM,
-        name="Template A", sku="", units_per_print="1", min_stock="0", buffer="0", target="model:A1",
+        name="Template A", sku="EX-A", units_per_print="1", min_stock="0", buffer="0", target="model:A1",
         sold_alone="on",  # the box is ticked on the form (0.4.0); a browser sends it
     )
     location = response.headers["location"]
@@ -77,7 +77,7 @@ def edit_article(client, article_id, **fields):
     path = f"/articles/{article_id}/edit"
     data = {
         "csrf_token": csrf_of(client, path),
-        "name": "Template A", "sku": "", "units_per_print": "1", "target": "model:A1",
+        "name": "Template A", "sku": "EX-A", "units_per_print": "1", "target": "model:A1",
         "sold_alone": "on",  # ticked on the form since 0.4.0
         **fields,
     }

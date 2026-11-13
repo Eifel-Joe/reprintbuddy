@@ -41,7 +41,7 @@ def kits(client):
 def form(client, url="/sets/new", **rows):
     data = {
         "csrf_token": csrf_of(client, url),
-        "name": "Workshop kit", "sku": "", "base_rows": "3", "c1_rows": "3", "c1_qty": "1",
+        "name": "Workshop kit", "sku": "EX-WK", "base_rows": "3", "c1_rows": "3", "c1_qty": "1",
         "base_0_qty": "1", "base_1_qty": "1", "base_2_qty": "1",
     }
     if url == "/sets/new":
@@ -132,9 +132,9 @@ def test_contains_hint_under_a_chosen_set(ready_client):  # Spec 5.4
 
 def test_create_set_of_two_sets_through_the_form(ready_client):  # the user's case (p423, p441)
     a, ids = kits(ready_client)
-    data = form(ready_client, base_0_article=f"set:{ids['basic']}", base_1_article=f"set:{ids['sizes']}")
+    data = form(ready_client, sku="", base_0_article=f"set:{ids['basic']}", base_1_article=f"set:{ids['sizes']}")
     response = ready_client.post("/sets/new", data=data)
-    assert response.status_code == 200 and en("sets.sku_required") in response.text  # sizes brings choices
+    assert response.status_code == 200 and en("form.required", field=en("catalog.field.sku")) in response.text  # p533: the number is always needed
     data = form(ready_client, sku="EX-WK", base_0_article=f"set:{ids['basic']}", base_1_article=f"set:{ids['sizes']}")
     response = ready_client.post("/sets/new", data=data)
     assert response.status_code == 303 and response.headers["location"] == "/sets"

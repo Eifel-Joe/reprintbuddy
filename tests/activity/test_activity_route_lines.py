@@ -94,12 +94,12 @@ def test_the_automation_of_an_article_switched_in_the_list(bb_client):
 
 
 def test_an_article_changed_on_its_edit_page(ready_client):
-    a = article_of(ready_client, target_model="A1")
+    a = article_of(ready_client, target_model="A1", sku="EX-BR")
     response = ready_client.post(
         f"/articles/{a}/edit",
         data={
             "csrf_token": csrf_of(ready_client, f"/articles/{a}/edit"),
-            "name": "Bracket 2", "sku": "", "units_per_print": "1", "min_stock": "0", "buffer": "0",
+            "name": "Bracket 2", "sku": "EX-BR", "units_per_print": "1", "min_stock": "0", "buffer": "0",
             "target": "model:A1",
             "sold_alone": "on",  # the box is ticked on the page (0.4.0); a browser sends it so
         },
@@ -409,7 +409,7 @@ def test_a_print_article_made_an_assembled_one(ready_client):
     lamp = article_of(ready_client, name="Lamp", target_model="A1")
     part = article_of(ready_client, name="Clip")
     page = f"/articles/{lamp}/to-assembled"
-    data = _assembled_form(ready_client, page, page, part, name="Lamp", sku="")
+    data = _assembled_form(ready_client, page, page, part, name="Lamp", sku="EX-LAMP")
     assert ready_client.post(page, data=data).status_code == 303
     line = the_line(ready_client, "article_changed")
     assert line.details["id"] == lamp and {"kind", "base"} <= set(line.details["fields"])

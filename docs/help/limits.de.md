@@ -38,6 +38,7 @@ Am sichersten hältst du deine Druckdateien in Bambuddys eigenem Dateimanager. N
 - Eine Platte gehört zu **höchstens einem Artikel**. Einen zweiten Artikel auf derselben Platte lehnt Reprintbuddy ab („Diese Platte gehört schon zum Artikel …“).
 - Ein Set oder ein Artikel aus Teilen hat **höchstens 100 Varianten**. Siehe [Sets](../use/inspection.md#sets) und [Artikel aus Teilen](../use/assembled.md).
 - Artikelnummern werden **ohne Groß- und Kleinschreibung** verglichen. Zwei Nummern aus einer früheren Version, die sich nur darin unterscheiden, bleiben, wie sie sind, und lassen sich weiter bestellen; speichern lässt sich einer der beiden Einträge erst wieder, wenn du eine umbenennst.
+- Ein Artikel, ein Set oder ein Artikel aus Teilen braucht zum Speichern eine **Artikelnummer**. Was du in einer früheren Version ohne Nummer angelegt hast, funktioniert weiter (bestellen, drucken, Bestand); die Nummer wird beim nächsten Speichern verlangt.
 
 ## Etiketten
 

@@ -102,9 +102,9 @@ def test_set_with_brought_choices_is_saved(db, spec):
         assert [v.sku for v in catalog.set_row(s, new).variants] == ["EX-K3-P", "EX-K3-Q", "EX-K3-Z"]
 
 
-def test_outer_without_number_refused_when_inner_brings_choices(db, spec):  # Spec 5.4, plan E1
+def test_outer_without_number_refused_when_inner_brings_choices(db, spec):  # Spec 5.4, plan E1; since p533 for every set
     _a, ids = spec
-    refused(db, SetInput("K3", None, [set_in(ids["bath"]), set_in(ids["power"])], []), "sets.sku_required")
+    refused(db, SetInput("K3", None, [set_in(ids["bath"]), set_in(ids["power"])], []), "form.required")
 
 
 def test_inner_gaining_choices_while_a_parent_has_no_number_is_refused(db, spec):  # plan F2

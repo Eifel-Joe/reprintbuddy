@@ -99,17 +99,17 @@ def test_editing_settings_reports_the_settings_topic(db, published):
         a = make_article(s).id
     published.clear()
     with db.begin() as s:
-        catalog.update_article(s, a, ArticleInput(name="Template A", min_stock=4))
+        catalog.update_article(s, a, ArticleInput(name="Template A", sku="EX-TEMPLATE-A", min_stock=4))
     assert f"article-settings:{a}" in published[0]
 
 
 def test_removing_the_parts_of_an_article_reports_its_settings(db, published):
     with db.begin() as s:
         p = make_part(s).id
-        a = catalog.update_article(s, make_article(s).id, ArticleInput(name="Template A", parts={p: 2})).id
+        a = catalog.update_article(s, make_article(s).id, ArticleInput(name="Template A", sku="EX-TEMPLATE-A", parts={p: 2})).id
     published.clear()
     with db.begin() as s:
-        catalog.update_article(s, a, ArticleInput(name="Template A", parts={}))
+        catalog.update_article(s, a, ArticleInput(name="Template A", sku="EX-TEMPLATE-A", parts={}))
     # "activity": the change is a line of the activity log too (Spec 10.7), which follows live.
     assert published == [frozenset({"article", f"article:{a}", f"article-settings:{a}", "activity"})]
 
@@ -137,7 +137,7 @@ def test_set_update_reports_the_set(db, published):
         set_id = make_set(s, "Set A", [(1, a)], [(2, [(b, "-B")])], sku="S-A").id
     published.clear()
     with db.begin() as s:
-        catalog.update_set(s, set_id, SetInput("Set A", None, [BaseInput(3, b), BaseInput(1, a)], []))
+        catalog.update_set(s, set_id, SetInput("Set A", "EX-SET-A", [BaseInput(3, b), BaseInput(1, a)], []))
     assert len(published) == 1
     assert {"set", f"set:{set_id}"} <= published[0]
 
@@ -151,7 +151,7 @@ def test_inner_set_rows_report_the_set(db, published):  # 0.4.3 p423
         set_id = make_set(s, "Outer", [(1, c)]).id
     published.clear()
     with db.begin() as s:
-        catalog.update_set(s, set_id, SetInput("Outer", None, [BaseInput(1, c), BaseInput(1, None, inner_id)], []))
+        catalog.update_set(s, set_id, SetInput("Outer", "EX-OUTER", [BaseInput(1, c), BaseInput(1, None, inner_id)], []))
     assert len(published) == 1
     assert {"set", f"set:{set_id}"} <= published[0]
 
