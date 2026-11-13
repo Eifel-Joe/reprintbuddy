@@ -17,7 +17,7 @@ set -Eeuo pipefail
 # A script cannot see its own address, so the tag is written into it. It is set with every version and
 # must equal the package version (tests/install/test_install_script.py checks that); the files of the
 # system that the script embeds below belong to this release and to no other.
-RELEASE_TAG="v0.4.10"
+RELEASE_TAG="v0.4.11"
 
 # The GitHub repository whose releases hold the packages (v0.4.9 p500). The script refuses a placeholder.
 REPO_URL_DEFAULT="https://github.com/Eifel-Joe/reprintbuddy"

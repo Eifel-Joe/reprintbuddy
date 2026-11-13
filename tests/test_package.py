@@ -2,7 +2,7 @@ import reprintbuddy
 
 
 def test_version():
-    assert reprintbuddy.__version__ == "0.4.10"
+    assert reprintbuddy.__version__ == "0.4.11"
 
 
 def test_the_label_fonts_are_part_of_the_package():
