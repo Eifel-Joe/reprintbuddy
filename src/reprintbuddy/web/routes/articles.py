@@ -285,15 +285,7 @@ async def articles_list(
     if (redirect := listing.remember_layout(request, "articles")) is not None:
         return redirect  # ?layout=... only sets the cookie
     archived = view == "archived"
-    states = STATES["article"]
-    status = None if archived else listing.pick(request.query_params.get("status"), states)
     every = catalog.list_articles(db, archived=archived)
-    # the search also finds a variant by its number (0.4.0, p341)
-    found = [
-        row for row in every
-        if listing.matches(q, row.name, row.sku, *(h.sku for h in (row.assembled.holders if row.assembled else ())))
-    ]
-    counts = Counter(row.status for row in found)
     lang = current_language(request)
     t = lambda key: translate(lang, key)  # noqa: E731
     # "enough" and "paused" get no card: the cards name what needs attention
@@ -301,10 +293,14 @@ async def articles_list(
         "package", "kpi.articles",
         summarize((row.status for row in every), ("overbooked", "below_min", "low", "not_deliverable")),  # p363
     )
-    cards = kpis.state_cards(t, "article", icon, len(every), t(label), named)
-    keep = (("status", status), ("view", "archived" if archived else None))
-    layout = listing.layout_of(request, "articles")
-    shown = [row for row in found if status is None or row.status == status]
+    page = listing.list_page(
+        request, page="articles", rows=every, states=STATES["article"], status_of=lambda row: row.status,
+        # the search also finds a variant by its number (0.4.0, p341)
+        search_texts=lambda row: (row.name, row.sku, *(h.sku for h in (row.assembled.holders if row.assembled else ()))),
+        q=q, status_filter=not archived, view="archived" if archived else None,
+        cards=kpis.state_cards(t, "article", icon, len(every), t(label), named),
+    )
+    shown = page.shown
     # A refused target quantity (`article_target`) is shown once, at the field of its article. Like a
     # message it is not used up by a fetch of regions (another tab on the same cookie): it belongs to
     # the page that follows the redirect. When the article has no field here (archived on another device
@@ -315,15 +311,7 @@ async def articles_list(
         target_error, orphan_error = None, target_error["text"]
     return render(
         request, "articles_list.html", active_nav="articles", archived=archived, target_error=target_error,
-        orphan_error=orphan_error, rows=shown,
-        total=len(every),
-        kpis=cards,
-        filters=listing.filter_links(request, states, counts, len(found), status),
-        layout=layout,
-        layout_links=listing.layout_links(request, layout),
-        q=q,
-        status=status,
-        search_keep=[(name, value) for name, value in keep if value],  # a new search keeps these
+        orphan_error=orphan_error, rows=shown, status=page.status, **page.context,
         here=request.url.path + (f"?{request.url.query}" if request.url.query else ""),  # the switches return here
     )
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from typing import NamedTuple
 
 from fastapi import APIRouter, Depends, Request
@@ -129,30 +128,21 @@ async def parts_list(
     if (redirect := listing.remember_layout(request, "parts")) is not None:
         return redirect  # ?layout=... only sets the cookie
     archived = view == "archived"
-    states = STATES["part"]
-    status = None if archived else listing.pick(request.query_params.get("status"), states)
     suppliers = catalog.suppliers_by_part(db)
     every = [_item(part, suppliers.get(part.id, [])) for part in catalog.list_parts(db, archived=archived)]
-    found = [item for item in every if listing.matches(q, item.part.name)]
-    counts = Counter(item.status for item in found)
     lang = current_language(request)
     t = lambda key: translate(lang, key)  # noqa: E731
     icon, label, named = ("archive", "kpi.parts_archived", []) if archived else (
         "puzzle", "kpi.parts", summarize((item.status for item in every), ("below_min",))
     )
-    cards = kpis.state_cards(t, "part", icon, len(every), t(label), named)
-    keep = (("status", status), ("view", "archived" if archived else None))
-    layout = listing.layout_of(request, "parts")
+    page = listing.list_page(
+        request, page="parts", rows=every, states=STATES["part"], status_of=lambda item: item.status,
+        search_texts=lambda item: (item.part.name,), q=q, status_filter=not archived,
+        view="archived" if archived else None,
+        cards=kpis.state_cards(t, "part", icon, len(every), t(label), named),
+    )
     return render(
-        request, "parts_list.html", active_nav="parts", archived=archived,
-        items=[item for item in found if status is None or item.status == status],
-        total=len(every),
-        kpis=cards,
-        filters=listing.filter_links(request, states, counts, len(found), status),
-        layout=layout,
-        layout_links=listing.layout_links(request, layout),
-        q=q,
-        search_keep=[(name, value) for name, value in keep if value],  # a new search keeps these
+        request, "parts_list.html", active_nav="parts", archived=archived, items=page.shown, **page.context
     )
 
 

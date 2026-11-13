@@ -176,3 +176,35 @@ def test_macros_render_the_markup_the_pages_rely_on():
     assert 'list.layout_tiles' in html and 'list.layout_list' in html
     assert html.count('class="bar ') == 1 and 'width: 50%' in html
     assert '<div class="collection layout-tiles">X</div>' in html
+
+
+def test_list_page_filters_searches_and_keeps():
+    """0.4.7 (R8): the one step the four overview pages share. The cards and the total count the whole
+    view, the filter counts follow the search, the rows pass search and filter, a new search keeps the
+    filter and the view."""
+    from types import SimpleNamespace
+
+    rows = [SimpleNamespace(name=n, state=s) for n, s in (("Alpha", "a"), ("Beta", "b"), ("Alpine", "a"))]
+    request = make_request("/parts", "status=a&view=archived&q=Al", cookies={"rb_layout_parts": "list"})
+    page = listing.list_page(
+        request, page="parts", rows=rows, states=("a", "b"), status_of=lambda r: r.state,
+        search_texts=lambda r: (r.name,), q="Al", status_filter=True, view="archived", cards=["the cards"],
+    )
+    assert [r.name for r in page.shown] == ["Alpha", "Alpine"]
+    assert page.status == "a"
+    assert page.context["total"] == 3 and page.context["kpis"] == ["the cards"] and page.context["q"] == "Al"
+    assert [(f.state, f.count, f.active) for f in page.context["filters"]] == [(None, 2, False), ("a", 2, True)]
+    assert page.context["search_keep"] == [("status", "a"), ("view", "archived")]
+    assert page.context["layout"] == "list"
+    assert [link.layout for link in page.context["layout_links"]] == ["list", "tiles"]
+
+
+def test_list_page_without_a_status_filter_ignores_the_parameter():
+    from types import SimpleNamespace
+
+    rows = [SimpleNamespace(name="Alpha", state="a")]
+    page = listing.list_page(
+        make_request("/parts", "status=a"), page="parts", rows=rows, states=("a",), status_of=lambda r: r.state,
+        search_texts=lambda r: (r.name,), q=None, status_filter=False, view=None, cards=[],
+    )
+    assert (page.status, len(page.shown), page.context["search_keep"]) == (None, 1, [])

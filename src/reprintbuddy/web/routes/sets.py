@@ -292,30 +292,19 @@ async def sets_list(
     if (redirect := listing.remember_layout(request, "sets")) is not None:
         return redirect  # ?layout=... only sets the cookie
     archived = view == "archived"
-    states = STATES["set"]
-    status = None if archived else listing.pick(request.query_params.get("status"), states)
     every = catalog.list_sets(db, archived=archived)
-    found = [row for row in every if listing.matches(q, row.name, row.sku, *(v.sku for v in row.variants if v.sku))]
-    counts = Counter(row.status for row in found)
     lang = current_language(request)
     t = lambda key: translate(lang, key)  # noqa: E731
     icon, label, named = ("archive", "kpi.sets_archived", []) if archived else (
         "boxes", "kpi.sets", summarize((row.status for row in every), ("not_deliverable",))
     )
-    cards = kpis.state_cards(t, "set", icon, len(every), t(label), named)
-    keep = (("status", status), ("view", "archived" if archived else None))
-    layout = listing.layout_of(request, "sets")
-    return render(
-        request, "sets_list.html", active_nav="sets", archived=archived,
-        rows=[row for row in found if status is None or row.status == status],
-        total=len(every),
-        kpis=cards,
-        filters=listing.filter_links(request, states, counts, len(found), status),
-        layout=layout,
-        layout_links=listing.layout_links(request, layout),
-        q=q,
-        search_keep=[(name, value) for name, value in keep if value],  # a new search keeps these
+    page = listing.list_page(
+        request, page="sets", rows=every, states=STATES["set"], status_of=lambda row: row.status,
+        search_texts=lambda row: (row.name, row.sku, *(v.sku for v in row.variants if v.sku)), q=q,
+        status_filter=not archived, view="archived" if archived else None,
+        cards=kpis.state_cards(t, "set", icon, len(every), t(label), named),
     )
+    return render(request, "sets_list.html", active_nav="sets", archived=archived, rows=page.shown, **page.context)
 
 
 @router.get("/sets/new")

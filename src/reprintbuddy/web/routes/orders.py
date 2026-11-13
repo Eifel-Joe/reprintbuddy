@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import replace
 from datetime import date
 
@@ -64,11 +63,7 @@ async def orders_list(
         # The write lock only when the mark changes; inside, `mark_orders` looks again.
         with write_transaction(request) as tx:
             seen.mark_orders(tx)
-    states = _CLOSED_STATES if closed else _OPEN_STATES
-    status = listing.pick(request.query_params.get("status"), states)
     every = orders.list_orders(db, "closed" if closed else "open")
-    found = [row for row in every if listing.matches(q, row.reference)]
-    counts = Counter(row.display_status for row in found)
     shown = _CLOSED_STATES if closed else ("ready",)  # "open" is the total itself
     lang = current_language(request)
     t = lambda key: translate(lang, key)  # noqa: E731
@@ -79,22 +74,14 @@ async def orders_list(
     )
     if not closed:  # open orders wait for something: the total is a warning, not the accent
         cards[0] = replace(cards[0], tone="warn")
-    keep = (("status", status), ("view", "closed" if closed else None))
-    layout = listing.layout_of(request, "orders")
+    page = listing.list_page(
+        request, page="orders", rows=every, states=_CLOSED_STATES if closed else _OPEN_STATES,
+        status_of=lambda row: row.display_status, search_texts=lambda row: (row.reference,), q=q,
+        status_filter=True, view="closed" if closed else None, cards=cards,
+    )
     return render(
-        request,
-        "orders_list.html",
-        active_nav="orders",
-        closed=closed,
-        rows=[row for row in found if status is None or row.display_status == status],
-        total=len(every),
-        kpis=cards,
-        filters=listing.filter_links(request, states, counts, len(found), status),
-        layout=layout,
-        layout_links=listing.layout_links(request, layout),
-        q=q,
-        status=status,
-        search_keep=[(name, value) for name, value in keep if value],  # a new search keeps these
+        request, "orders_list.html", active_nav="orders", closed=closed, rows=page.shown, status=page.status,
+        **page.context,
     )
 
 
