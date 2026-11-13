@@ -332,10 +332,10 @@ def test_install_texts_do_not_say_the_script_installs_the_newest_release(name):
 
 
 PLANNED = [
-    ("README.md", "## Planned", ["label printers", "Avery", "Shopify", "email", "webhook", "shelf", "several users", "pre-releases"]),
-    ("README.de.md", "## Geplant", ["Etikettendrucker", "Avery", "Shopify", "E-Mail", "Webhook", "Regal", "mehrere Benutzer", "Vorabversionen"]),
-    ("docs/index.md", "## Planned", ["label printers", "Avery", "Shopify", "email", "webhook", "shelf", "several users", "pre-releases"]),
-    ("docs/index.de.md", "## Geplant", ["Etikettendrucker", "Avery", "Shopify", "E-Mail", "Webhook", "Regal", "mehrere Benutzer", "Vorabversionen"]),
+    ("README.md", "## Planned", ["label printers", "Avery", "Shopify", "email", "webhook", "shelf", "several users"]),
+    ("README.de.md", "## Geplant", ["Etikettendrucker", "Avery", "Shopify", "E-Mail", "Webhook", "Regal", "mehrere Benutzer"]),
+    ("docs/index.md", "## Planned", ["label printers", "Avery", "Shopify", "email", "webhook", "shelf", "several users"]),
+    ("docs/index.de.md", "## Geplant", ["Etikettendrucker", "Avery", "Shopify", "E-Mail", "Webhook", "Regal", "mehrere Benutzer"]),
 ]
 
 
@@ -365,7 +365,14 @@ def test_v049_the_installer_needs_no_git_and_the_download_host_is_named(name):
 
 @pytest.mark.parametrize("name", ["README.md", "README.de.md", "docs/operate/update-backup.md", "docs/operate/update-backup.de.md"])
 def test_v049_versions_are_releases_with_a_package_not_git_tags(name):
+    """The choice of pre-releases is built (v0.4.9): it is described, and no longer among the plans."""
     text = (ROOT / name).read_text(encoding="utf-8")
     assert "Versions are git tags" not in text and "Versionen sind Git-Tags" not in text
     assert "`vX.Y.Z-beta.N`" in text
+    assert "pre-releases to choose from" not in text and "Vorabversionen, die sich im Updater" not in text
+
+
+@pytest.mark.parametrize("name", ["docs/index.md", "docs/index.de.md"])
+def test_v049_the_start_page_no_longer_plans_pre_releases(name):
+    text = read(name)
     assert "pre-releases to choose from" not in text and "Vorabversionen, die sich im Updater" not in text

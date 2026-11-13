@@ -35,8 +35,7 @@ Ideen für spätere Versionen. Das ist eine Liste von Richtungen, kein Versprech
 - Bestelleingang per E-Mail,
 - eine Anzeige am Regal (ein eigenes Gerät), um fertige Drucke zu bestätigen und die Stückzahl zu ändern,
 - weitere Wege für Nachrichten: E-Mail und ein allgemeiner Webhook,
-- mehrere Benutzer,
-- Vorabversionen, die sich im Updater wählen lassen.
+- mehrere Benutzer.
 
 ## Wie es weitergeht
 
