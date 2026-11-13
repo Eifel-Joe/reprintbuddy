@@ -68,18 +68,24 @@ def test_three_kinds_of_bars(bb_client, fake_bambuddy):
     assert en("overview.plan.foreign") in part
 
 
+# The end of the plan is a clock time, after midnight with the short weekday in front ("Sat 00:15",
+# Spec 10.2). The tests run at the real time of day in Berlin time, so late in the evening the end falls on
+# the next day: they failed every evening from about 23:15 (seen on the CI of v0.4.11).
+FINISH_TIME = r"(?:[A-Za-z]+ )?\d\d:\d\d"
+
+
 def test_finish_line(bb_client, fake_bambuddy):
     fake_bambuddy.add_foreign_item("Spare part.gcode.3mf", target_model="A1", print_time_s=2400)
     query(bb_client)
     part = plan_part(bb_client)
-    assert re.search(re.escape(en("overview.plan.finish", time="@")).replace("@", r"\d\d:\d\d"), part)
+    assert re.search(re.escape(en("overview.plan.finish", time="@")).replace("@", FINISH_TIME), part)
 
 
 def test_unknown_duration_says_at_least(bb_client, fake_bambuddy):
     fake_bambuddy.add_foreign_item("Spare part.gcode.3mf", target_model="A1", print_time_s=None)
     query(bb_client)
     part = plan_part(bb_client)
-    assert re.search(re.escape(en("overview.plan.finish_minimum", time="@")).replace("@", r"\d\d:\d\d"), part)
+    assert re.search(re.escape(en("overview.plan.finish_minimum", time="@")).replace("@", FINISH_TIME), part)
     assert en("overview.plan.unknown_duration") in part
 
 
