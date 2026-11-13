@@ -682,12 +682,8 @@ def _detail_page(request: Request, db: Session, article: Article, error: str | N
         return _assembled_page(request, db, article, error, status)
     lang = current_language(request)
     article_id = article.id
-    filaments = db.scalars(
-        select(ArticleFilament).where(ArticleFilament.article_id == article_id).order_by(ArticleFilament.slot)
-    ).all()
-    ticked: dict[int, list[ArticleFilamentSort]] = {}
-    for row in db.scalars(select(ArticleFilamentSort).where(ArticleFilamentSort.article_id == article_id)):
-        ticked.setdefault(row.slot, []).append(row)
+    filaments = filament.article_slots(db, article_id)
+    ticked = filament.ticked_rows(db, article_id)
     sort_labels = dict(db.execute(select(FilamentSort.id, FilamentSort.label)).all())
 
     def uses(slot: int) -> str | None:
