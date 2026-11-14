@@ -87,6 +87,11 @@ jobs:
       - name: Check the notes against the rework marks of the database steps
         run: |
           set -euo pipefail
+          if [ ! -f tools/check_release_notes.py ]; then
+            # Started by hand for a tag from before this check: that tag has no checker and no marks to compare.
+            echo "::notice::$TAG is older than the notes check; nothing to compare."
+            exit 0
+          fi
           gh release view "$TAG" --json body --jq .body > "$RUNNER_TEMP/notes.md"
           python tools/check_release_notes.py --tag "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
 

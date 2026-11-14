@@ -92,3 +92,30 @@ def test_the_command_line(repo, tmp_path):
     notes.write_text(WITH_LINE, encoding="utf-8")
     done = subprocess.run(args, capture_output=True, text=True, encoding="utf-8")
     assert done.returncode == 0, done.stderr
+
+
+def test_the_last_stable_version_is_found_on_main_after_a_merge(tmp_path):
+    """Review: stable versions are tagged on a merge commit in `main`, which is not in the history of `dev`.
+    The last stable version is the newest stable tag below the version whose steps lie on the line of `ref`."""
+    repo = ReleaseRepo(tmp_path)
+    repo.run("checkout", "-q", "-b", "dev")
+    first = repo.add_step("add_table")
+    repo.tag("v1.1.0-beta.1")
+    repo.run("checkout", "-q", "-b", "main", "v1.0.0")
+    repo.run("merge", "-q", "--no-ff", "-m", "release", "dev")
+    repo.tag("v1.1.0")
+    repo.run("checkout", "-q", "dev")
+    repo.add_step("rework_marked")
+    repo.tag("v1.2.0-beta.1")
+    stable_head = _stable_head_tool()
+    assert stable_head.last_stable_tag(repo.path, "v1.2.0-beta.1") == "v1.1.0"
+    assert stable_head.stable_head(repo.path, "v1.2.0-beta.1") == first
+    assert stable_head.stable_head(repo.path, "HEAD") == first
+    assert stable_head.last_stable_tag(repo.path, "v1.1.0-beta.1") == "v1.0.0"  # not a newer one
+
+
+def _stable_head_tool():
+    spec = importlib.util.spec_from_file_location("stable_head_under_test", ROOT / "tools" / "stable_head.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module

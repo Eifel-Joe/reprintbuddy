@@ -241,3 +241,17 @@ def test_a_pre_release_whose_notes_miss_the_rework_line_gets_no_package(bash, tm
     assert done.returncode != 0 and "rework" in done.stdout + done.stderr
     done = notes_check(bash, tmp_path, repo, "v1.1.0-beta.1", REWORK_LINE + "\n\nWhat is new.")
     assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_a_tag_from_before_the_notes_check_is_built_without_it(bash, tmp_path):
+    """Review: the workflow started by hand for an older tag checks out that tag, which has no checker."""
+    from release_repo_support import ReleaseRepo
+
+    repo = ReleaseRepo(tmp_path)
+    notes_check(bash, tmp_path, repo, "v1.0.0", "Notes.")  # puts the stubs in place
+    (repo.path / "tools" / "check_release_notes.py").unlink()  # as in a tag from before the check
+    env = {"TAG": "v1.0.0", "NOTES": "Notes.", "RUNNER_TEMP": (tmp_path / "runner").as_posix(),
+           "PATH": f"{(tmp_path / 'stubs').as_posix()}{os.pathsep}{os.environ['PATH']}"}
+    done = run_step(bash, "Check the notes", cwd=repo.path, env=env)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "::notice::" in done.stdout

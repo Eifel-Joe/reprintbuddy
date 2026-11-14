@@ -2,8 +2,9 @@
 
 The rule "only add" holds for every step after this head: the CI checks it (tests/test_migration_rules.py),
 and the release workflow compares the rework marks of those steps with the notes of a pre-release
-(tools/check_release_notes.py). The last stable version is the newest tag vX.Y.Z (no "-beta.N") that is
-part of the history of `ref`; its steps are read with `git show`, parsed, never imported.
+(tools/check_release_notes.py). The last stable version is the newest tag vX.Y.Z (no "-beta.N") whose steps lie
+on the line of `ref` (and that is older than `ref` when `ref` is a version tag); its steps are read with
+`git show`, parsed, never imported.
 
 Without git or without such a tag (a copy without history) the answers are None: the callers decide
 whether that is allowed (locally a test skips, in the CI it fails).
@@ -15,7 +16,8 @@ import re
 import subprocess
 from pathlib import Path
 
-from reprintbuddy.ops.migrationsteps import parse_graph, single_head
+from reprintbuddy.ops.migrationsteps import StepsError, in_line, parse_graph, single_head
+from reprintbuddy.ops.versions import parse_version
 
 STABLE_TAG = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 VERSIONS = "src/reprintbuddy/migrations/versions"
@@ -29,15 +31,6 @@ def _git(repo: Path, *args: str) -> str | None:
     except OSError:
         return None
     return done.stdout if done.returncode == 0 else None
-
-
-def last_stable_tag(repo: Path, ref: str = "HEAD") -> str | None:
-    """The newest stable version tag in the history of `ref`."""
-    listed = _git(repo, "tag", "--merged", ref, "--list", "v*")
-    if listed is None:
-        return None
-    tags = [tag for tag in listed.split() if STABLE_TAG.match(tag)]
-    return max(tags, key=lambda tag: tuple(int(part) for part in tag[1:].split("."))) if tags else None
 
 
 def sources_at(repo: Path, ref: str) -> list[str] | None:
@@ -55,13 +48,50 @@ def sources_at(repo: Path, ref: str) -> list[str] | None:
     return sources
 
 
+def stable_tags(repo: Path) -> list[str]:
+    """Every stable version tag, newest first."""
+    listed = _git(repo, "tag", "--list", "v*")
+    tags = [tag for tag in (listed or "").split() if STABLE_TAG.match(tag)]
+    return sorted(tags, key=lambda tag: parse_version(tag), reverse=True)  # type: ignore[arg-type, return-value]
+
+
+def _head_at(repo: Path, ref: str) -> tuple[dict[str, str | None], str] | None:
+    sources = sources_at(repo, ref)
+    if sources is None:
+        return None
+    try:
+        graph = parse_graph(sources)
+        return graph, single_head(graph)
+    except StepsError:
+        return None
+
+
+def last_stable_tag(repo: Path, ref: str = "HEAD") -> str | None:
+    """The newest stable version whose steps lie on the line of `ref` (older than `ref` when it is a version tag).
+
+    Not the git history of `ref`: a stable version is tagged on a merge commit in `main`, which is not in the
+    history of `dev` (review of p539). What counts is whether its head is one of the steps `ref` builds on."""
+    found = _head_at(repo, ref)
+    if found is None:
+        return None
+    graph, head = found
+    below = parse_version(ref)
+    for tag in stable_tags(repo):
+        if below is not None and not parse_version(tag) < below:  # type: ignore[operator]
+            continue
+        tagged = _head_at(repo, tag)
+        if tagged is not None and in_line(graph, tagged[1], head):
+            return tag
+    return None
+
+
 def stable_head(repo: Path, ref: str = "HEAD") -> str | None:
-    """The head of the steps of the last stable version in the history of `ref`."""
+    """The head of the steps of the last stable version on the line of `ref`."""
     tag = last_stable_tag(repo, ref)
     if tag is None:
         return None
-    sources = sources_at(repo, tag)
-    return single_head(parse_graph(sources)) if sources is not None else None
+    found = _head_at(repo, tag)
+    return found[1] if found else None
 
 
 if __name__ == "__main__":
