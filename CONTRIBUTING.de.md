@@ -31,6 +31,7 @@ Bitte angeben (die Fehler-Vorlage fragt jeden Punkt ab):
 
 ## Pull Requests
 
+- **Den Pull Request gegen den Branch `dev` öffnen**, nicht gegen `main` (siehe *Zweige und Versionen*).
 - Bei größeren Änderungen **vorher ein Issue anlegen** und den Weg absprechen.
 - **Ein Thema je Pull Request.**
 - **Tests für neues Verhalten** schreiben, und **alle Tests müssen grün sein**.
@@ -40,6 +41,16 @@ Bitte angeben (die Fehler-Vorlage fragt jeden Punkt ab):
   und die Seiten unter `docs/` kommen im **selben Pull Request** mit, wenn sich
   Installation, Einrichtung oder Bedienung ändern; die Pull-Request-Vorlage fragt
   danach.
+
+## Zweige und Versionen
+
+- **Pull Requests gehen an `dev`.** Der Branch `main` enthält nur, was als stabile Version veröffentlicht ist.
+- Eine stabile Version `vX.Y.Z` entsteht aus `dev` in Stufen: zuerst als eine oder mehrere Vorabversionen
+  `vX.Y.Z-beta.N`, die sich ausprobieren lassen, dann kommt der getestete Stand per Pull Request nach `main` und
+  wird als `vX.Y.Z` veröffentlicht. Neue Funktionen kommen deshalb zuerst als Vorabversion.
+- Wer eine Vorabversion testen will, schaltet in Reprintbuddy unter *Einstellungen → Update und Sicherung*
+  **Vorabversionen einschließen** ein. Wieder ausgeschaltet, bleibt eine installierte Vorabversion, bis eine neuere
+  stabile Version kommt.
 
 ## Dokumentation
 

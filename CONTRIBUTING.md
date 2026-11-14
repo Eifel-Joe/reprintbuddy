@@ -31,6 +31,7 @@ Please include (the bug template asks for each of these):
 
 ## Pull requests
 
+- **Open the pull request against the branch `dev`**, not `main` (see *Branches and versions*).
 - For larger changes, **open an issue first** and agree on the approach.
 - **One topic per pull request.**
 - **Add tests** for new behaviour, and make sure **all tests pass**.
@@ -39,6 +40,15 @@ Please include (the bug template asks for each of these):
 - Update the **documentation in both languages** (English and German). The README
   and the pages under `docs/` go into the **same pull request** when installation,
   setup or use changes; the pull request template asks for it.
+
+## Branches and versions
+
+- **Pull requests go to `dev`.** The branch `main` holds only what has been released as a stable version.
+- A stable version `vX.Y.Z` is made from `dev` in steps: first as one or more pre-releases `vX.Y.Z-beta.N`, which
+  can be tried out, then the tested state reaches `main` by a pull request and is released as `vX.Y.Z`. New features
+  therefore come as pre-releases first.
+- To try a pre-release, switch on **Include pre-releases** under *Settings → Update and backup* in Reprintbuddy.
+  Switched off again, an installed pre-release stays until a newer stable version comes.
 
 ## Documentation
 
