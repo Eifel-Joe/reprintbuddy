@@ -53,10 +53,11 @@ def _literal(node: ast.expr) -> object:
         return _NOT_LITERAL
 
 
-_NOT_LITERAL = object()
+NOT_LITERAL = _NOT_LITERAL = object()
 
 
-def _assignments(source: str) -> dict[str, object]:
+def literals(source: str) -> dict[str, object]:
+    """The module-level assignments of a step whose values are literals (others map to a marker)."""
     found: dict[str, object] = {}
     for node in ast.parse(source).body:
         if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
@@ -74,7 +75,7 @@ def parse_graph(sources: Iterable[str]) -> dict[str, str | None]:
     graph: dict[str, str | None] = {}
     for source in sources:
         try:
-            values = _assignments(source)
+            values = literals(source)
         except SyntaxError as error:
             raise StepsError(f"a migration step cannot be parsed: {error.msg}") from error
         revision, down = values.get("revision", _NOT_LITERAL), values.get("down_revision", _NOT_LITERAL)
