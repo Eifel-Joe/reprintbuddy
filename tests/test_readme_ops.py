@@ -301,7 +301,7 @@ OLD_STATUS = ("under development", "not ready for real use", "in Entwicklung", "
     ],
 )
 def test_status_line_says_stable_since_1_0(name, status):
-    """Spec 11.8 (decided 15.11.2026): from 1.0.0 on the status line says "stable", and where new features first appear."""
+    """Spec 11.8 (decided 14.11.2026): from 1.0.0 on the status line says "stable", and where new features first appear."""
     text = read(name).replace("\r\n", "\n")
     assert status in text
     assert "no release yet" not in text and "noch keine Version veröffentlicht" not in text
