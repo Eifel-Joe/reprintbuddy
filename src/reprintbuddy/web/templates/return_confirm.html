@@ -23,7 +23,8 @@
   {% else %}
   <div class="warning-card tone-warn" role="alert">{{ ui.icon('triangle-alert') }}<p>
     <strong>{{ t('ops.return.lost_all', time=plan.backup_at|local_dt) }}</strong><br>
-    {{ t('ops.return.case3') }} {{ t('ops.return.why.' ~ plan.why3) }}<br>
+    {% set why_key = 'ops.return.why.' ~ plan.why3 %}
+    {{ t('ops.return.case3') }} {{ t(why_key) }}<br>
     {% set bookings = plan.journal_ids|length %}
     {{ t('ops.return.counts',
          bookings=t('ops.return.bookings_one') if bookings == 1 else t('ops.return.bookings', count=bookings),

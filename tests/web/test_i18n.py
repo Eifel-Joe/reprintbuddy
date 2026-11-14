@@ -146,6 +146,9 @@ def test_dynamic_message_keys_exist():
     used |= {f"permission.{code}" for code in REQUIRED_PERMISSIONS}  # built in the templates
     used |= {f"permission.{code}" for code in ("api_keys:read", "api_keys:create")}
     used |= {"keyright.name", "keyright.status", "keyright.queue"}
+    from reprintbuddy.ops.stablereturn import Why3
+
+    used |= {f"ops.return.why.{why}" for why in get_args(Why3)}  # why case 3 applies, built in the template
     used |= {
         f"error.{kind}.{part}"
         for kind in ("forbidden", "not_found", "host", "generic")
