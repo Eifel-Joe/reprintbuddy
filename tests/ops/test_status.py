@@ -1,4 +1,6 @@
 import os
+import sys
+from pathlib import Path
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -39,7 +41,7 @@ def test_status_path(tmp_path):
 
 def test_steps_are_the_known_ones():
     assert UPDATE_STEPS == (
-        "start", "backup", "fetch", "checkout", "install", "verify", "migrate",
+        "start", "backup", "fetch", "checkout", "stop", "database", "swap", "install", "verify", "migrate",
         "restart", "health", "rollback", "done",
     )
 
@@ -71,7 +73,7 @@ def test_write_leaves_no_tmp(tmp_path):
 def test_status_json_holds_no_secret_fields(tmp_path):
     assert set(UpdateStatus().to_json()) == {
         "state", "step", "from_tag", "to_tag", "started_at", "finished_at", "message", "backup",
-        "reason", "params", "acknowledged",
+        "reason", "params", "acknowledged", "kind", "return_case", "target_head", "return_backup",
     }
 
 
@@ -155,3 +157,69 @@ def test_acknowledged_survives_the_file_and_defaults_to_false(tmp_path):  # p503
 def test_v049_the_reasons_of_the_package_survive_the_status_file(tmp_path, reason):
     write_status(tmp_path, UpdateStatus(state="failed", step="fetch", started_at=NOW, reason=reason, params={"detail": "d"}))
     assert read_status(tmp_path).reason == reason
+
+
+# --- the way back (Spec 11.3a "Rückweg zur stabilen Version") ---------------------------------------
+
+RETURN = UpdateStatus(
+    state="succeeded",
+    step="done",
+    from_tag="v1.1.0-beta.1",
+    to_tag="v1.0.0",
+    started_at=NOW,
+    finished_at=NOW + timedelta(minutes=3),
+    kind="return",
+    return_case=3,
+    target_head="0022",
+    return_backup="/x/backups/reprintbuddy-v1.0.0-20261110T093000Z.db",
+)
+
+
+def test_a_way_back_survives_the_file(tmp_path):
+    write_status(tmp_path, RETURN)
+    assert read_status(tmp_path) == RETURN
+
+
+def test_a_file_of_an_update_reads_as_an_update(tmp_path):
+    (tmp_path / "update-status.json").write_text('{"state": "succeeded"}', encoding="utf-8")
+    found = read_status(tmp_path)
+    assert (found.kind, found.return_case, found.target_head, found.return_backup) == ("update", None, None, None)
+
+
+@pytest.mark.parametrize("data", [{"kind": "sideways"}, {"kind": "return", "return_case": 4}, {"kind": "return", "return_case": "2"}])
+def test_unknown_values_of_the_way_back_read_as_the_default(tmp_path, data):
+    import json
+
+    (tmp_path / "update-status.json").write_text(json.dumps({"state": "failed", **data}), encoding="utf-8")
+    found = read_status(tmp_path)
+    assert found.kind in ("update", "return")
+    assert found.return_case is None or found.return_case in (1, 2, 3)
+    if data["kind"] == "sideways":
+        assert found.kind == "update"
+
+
+@pytest.mark.parametrize("reason", ["return_changed", "return_expired", "return_unavailable", "stop_failed", "database_failed", "swap_failed"])
+def test_the_reasons_of_the_way_back_survive_the_file(tmp_path, reason):
+    write_status(tmp_path, UpdateStatus(state="failed", step="stop", started_at=NOW, kind="return", reason=reason))
+    assert read_status(tmp_path).reason == reason
+
+
+def test_version_1_0_0_reads_the_result_of_a_way_back_as_a_finished_update(tmp_path):
+    """1.0.0 does not know the way back; after it, 1.0.0 runs and reads this file (Spec 11.3a: it says
+    "Update abgeschlossen"). No new state, so its reader takes it; the extra keys it passes over."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "status_reader_v1_0_0", Path(__file__).parent / "fixtures" / "status_reader_v1_0_0.py"
+    )
+    old = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = old  # dataclasses look their module up there
+    try:
+        spec.loader.exec_module(old)
+    finally:
+        del sys.modules[spec.name]
+    write_status(tmp_path, RETURN)
+    found = old.read_status(tmp_path)
+    assert (found.state, found.from_tag, found.to_tag) == ("succeeded", "v1.1.0-beta.1", "v1.0.0")
+    write_status(tmp_path, UpdateStatus(state="rolled_back", step="rollback", kind="return", reason="swap_failed", started_at=NOW))
+    assert old.read_status(tmp_path).state == "rolled_back"

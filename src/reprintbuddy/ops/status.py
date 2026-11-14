@@ -17,9 +17,9 @@ STATUS_FILENAME = "update-status.json"
 
 UpdateState = Literal["idle", "queued", "running", "succeeded", "failed", "rolled_back", "rollback_failed"]
 UPDATE_STEPS = (
-    "start", "backup", "fetch", "checkout", "install", "verify", "migrate",
+    "start", "backup", "fetch", "checkout", "stop", "database", "swap", "install", "verify", "migrate",
     "restart", "health", "rollback", "done",
-)
+)  # "stop", "database", "swap": the way back only (Spec 11.3a "Rückweg", `updater._run_return`)
 # v0.3.14 p176: what went wrong, as a code the page turns into text in the language of the viewer
 # (`ops.update.reason.<code>`). `message` stays as it was: the English line for the log and for old
 # readers. Parameters: `detail` is a technical line of git, pip or the system and stays as it is.
@@ -30,7 +30,11 @@ UPDATE_REASONS = (
     "interrupted_untouched", "interrupted_partial",
     # v0.4.9 p500: the package of the release (Spec 11.3a "Paket je Release")
     "package_missing", "checksum_mismatch", "package_unusable",
+    # the way back to the stable version (Spec 11.3a "Rückweg zur stabilen Version")
+    "return_changed", "return_expired", "return_unavailable", "stop_failed", "database_failed", "swap_failed",
 )
+UpdateKind = Literal["update", "return"]
+RETURN_CASES = (1, 2, 3)
 BUSY_STATES = frozenset({"queued", "running"})
 # The results that count as a failure: their card stays until the user hides it (p503, Spec 11.3a).
 FAILED_STATES = frozenset({"failed", "rolled_back", "rollback_failed"})
@@ -53,6 +57,13 @@ class UpdateStatus:
     # p503 (Spec 11.3a): the card of this result was seen (success) or hidden by the user (failure).
     # The record itself stays; only the card goes. Each new update writes a fresh state without it.
     acknowledged: bool = False
+    # The way back to the stable version (Spec 11.3a) is an update of its own kind. No new state for it: after a
+    # way back to 1.0.0, 1.0.0 reads this file, takes the state and passes over the keys below (it then says
+    # "Update abgeschlossen"); an unknown state would read as "no update has run".
+    kind: UpdateKind = "update"
+    return_case: int | None = None  # the case the user confirmed (1, 2 or 3)
+    target_head: str | None = None  # the head of the stable version's steps the page saw
+    return_backup: str | None = None  # case 3: the backup from before the pre-release the page named
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -67,6 +78,10 @@ class UpdateStatus:
             "reason": self.reason,
             "params": dict(self.params),
             "acknowledged": self.acknowledged,
+            "kind": self.kind,
+            "return_case": self.return_case,
+            "target_head": self.target_head,
+            "return_backup": self.return_backup,
         }
 
     @classmethod
@@ -100,6 +115,10 @@ class UpdateStatus:
             reason=reason if reason in UPDATE_REASONS else "",
             params=params,
             acknowledged=data.get("acknowledged") is True,
+            kind="return" if data.get("kind") == "return" else "update",
+            return_case=case if isinstance(case := data.get("return_case"), int) and case in RETURN_CASES else None,
+            target_head=text("target_head"),
+            return_backup=text("return_backup"),
         )
 
 
