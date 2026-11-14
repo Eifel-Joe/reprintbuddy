@@ -5,7 +5,7 @@
 Reprintbuddy keeps the stock of 3D-printed items. It reprints what runs low by handing print jobs to Bambuddy's queue, lets you check finished prints, and tells you what to reorder. It runs as a small web application on your local network (LAN), reachable from outside only through a VPN.
 
 !!! note "Status"
-    Under development, not ready for real use yet.
+    Stable since 1.0. New features come as pre-releases first.
 
 Reprintbuddy is an independent project and is not affiliated with Bambuddy or Bambu Lab.
 

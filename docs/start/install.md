@@ -57,6 +57,10 @@ Outgoing access to the Debian package sources (`apt`), `github.com`, `raw.github
 
 This is safe. The installed version and the database stay as they are; it repairs packages, user, permissions, units and the service. If the unpacked folder of the installed version (`/opt/reprintbuddy/releases/<tag>`) is missing, the installer of that version downloads its package again, checked as at the installation; the installer of another version stops and names the command of the installed one. Versions change only through the update, see [Update and backup](../operate/update-backup.md). `--dry-run` shows what it would do without changing anything.
 
+## Removing Reprintbuddy
+
+There is no uninstall command in the installer. The steps to take Reprintbuddy off the system again, with or without keeping your data, are on the page [Uninstall](../operate/uninstall.md).
+
 ## On Debian 12
 
 Reprintbuddy needs Python 3.13 or newer; Debian 12 only has Python 3.11, so the installer refuses to run there. Upgrade the system to Debian 13 (the Debian release upgrade), then run the installation command again. It notices that the Python environment no longer fits the system's Python, builds it anew and keeps the installed version, the database and all settings.

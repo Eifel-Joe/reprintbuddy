@@ -57,6 +57,10 @@ Ausgehend zu den Debian-Paketquellen (`apt`), `github.com`, `raw.githubuserconte
 
 Das ist unbedenklich. Die installierte Version und die Datenbank bleiben, wie sie sind; es richtet Pakete, Benutzer, Rechte, Units und den Dienst wieder her. Fehlt der entpackte Ordner der installierten Version (`/opt/reprintbuddy/releases/<tag>`), lädt das Skript dieser Version ihr Paket wieder, geprüft wie bei der Installation; das Skript einer anderen Version bricht ab und nennt den Befehl der installierten. Versionen wechseln nur durch das Update, siehe [Update und Sicherung](../operate/update-backup.md). `--dry-run` zeigt, was es tun würde, ohne etwas zu ändern.
 
+## Reprintbuddy wieder entfernen
+
+Der Installer hat keinen Befehl zum Deinstallieren. Die Schritte, mit denen du Reprintbuddy wieder vom System nimmst, mit oder ohne deine Daten zu behalten, stehen auf der Seite [Deinstallation](../operate/uninstall.md).
+
 ## Auf Debian 12
 
 Reprintbuddy braucht Python 3.13 oder neuer; Debian 12 hat nur Python 3.11, deshalb bricht das Installationsskript dort ab. Aktualisiere das System auf Debian 13 (das Debian-Release-Upgrade) und führe den Installationsbefehl danach erneut aus. Er erkennt, dass die Python-Umgebung nicht mehr zum System-Python passt, baut sie neu und behält die installierte Version, die Datenbank und alle Einstellungen.

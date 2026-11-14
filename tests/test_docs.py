@@ -218,3 +218,27 @@ def test_overview_page_explains_reach_needs_time(page, words):
     text = (DOCS / "use" / page).read_text(encoding="utf-8")
     assert words in text
     assert ("Druckplan" if page.endswith(".de.md") else "Print plan") in text
+
+
+# --- 1.0.0: pull requests go to `dev`, stable versions come from pre-releases (Spec 11.8) --------------------
+
+BRANCH_SECTIONS = [("CONTRIBUTING.md", "## Branches and versions", "en"),
+                   ("CONTRIBUTING.de.md", "## Zweige und Versionen", "de")]
+
+
+@pytest.mark.parametrize(("name", "heading", "lang"), BRANCH_SECTIONS)
+def test_contributing_explains_the_branches_and_the_way_to_a_stable_version(name, heading, lang):
+    """Pull requests go to `dev`; a stable version vX.Y.Z comes from `dev` through pre-releases vX.Y.Z-beta.N and
+    reaches `main` by pull request; whoever wants to test pre-releases switches the choice on (label from the interface)."""
+    from reprintbuddy.web import i18n
+
+    text = (ROOT / name).read_text(encoding="utf-8").replace("\r\n", "\n")
+    assert text.count("\n" + heading + "\n") == 1, name
+    section = " ".join(text.split("\n" + heading + "\n", 1)[1].split("\n## ", 1)[0].split())
+    assert "`dev`" in section and "`main`" in section, name
+    assert "`vX.Y.Z-beta.N`" in section and "`vX.Y.Z`" in section, name
+    assert "pull request" in section.lower(), name
+    assert f"**{i18n.load_locales()[lang]['ops.update.channel']}**" in section, name
+    # the pull request rule is in the list of rules above, too
+    rules = text.split("\n## Pull requests\n" if lang == "en" else "\n## Pull Requests\n", 1)[1].split("\n## ", 1)[0]
+    assert "`dev`" in rules, name

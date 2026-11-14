@@ -94,6 +94,7 @@ plugins:
             Log: Protokoll
             Network and security: Netz und Sicherheit
             Command line: Kommandozeile
+            Uninstall: Deinstallation
             Help: Hilfe
             Limits: Grenzen
             Troubleshooting: Fehlersuche
@@ -132,6 +133,7 @@ nav:
     - Log: operate/log.md
     - Network and security: operate/network.md
     - Command line: operate/cli.md
+    - Uninstall: operate/uninstall.md
   - Help:
     - Limits: help/limits.md
     - Troubleshooting: help/troubleshooting.md
