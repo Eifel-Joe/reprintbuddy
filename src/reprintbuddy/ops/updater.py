@@ -36,6 +36,7 @@ from reprintbuddy.ops.backup import (
     prune_backups,
     restore_database,
 )
+from reprintbuddy.ops import migrationsteps  # noqa: F401 - the way back (Spec 11.3a "Rückweg"), loaded before pip
 from reprintbuddy.ops.installation import MARKER, RELEASES_DIR, Installation, read_installation, write_marker
 from reprintbuddy.ops.oplock import LOCK_NAME, Held, acquire
 from reprintbuddy.ops.package import (
