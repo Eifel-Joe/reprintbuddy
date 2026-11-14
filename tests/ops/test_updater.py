@@ -974,3 +974,47 @@ def test_review_a_database_inside_the_program_folder_survives_the_removal_of_the
     assert e.db.exists() and (e.opt / "data").is_dir()
     assert not (e.opt / ".git").exists()
     assert "could not remove the old git copy" in capsys.readouterr().out
+
+
+# --- the backup from before a pre-release (Spec 11.3a "Sicherung von vor der Vorabversion") --------------
+
+
+def beta_installed(e, offered: str):
+    """The installation runs v1.1.0-beta.1; the backups hold the one from the switch (v1.0.0) and five newer."""
+    write_marker(e.opt, tag="v1.1.0-beta.1", repo=("owner", "repo"), sha256="0" * 64)
+    (e.opt / "releases" / "v1.1.0-beta.1").mkdir(parents=True, exist_ok=True)
+    e.runner.on((e.py, "-m", "reprintbuddy", "--version"), CommandResult(0, f"reprintbuddy {offered[1:]}\n"))
+    e.offer(offered, "v1.1.0-beta.1", "v1.0.0")
+    backups = backup_dir_for(e.db)
+    backups.mkdir(parents=True, exist_ok=True)
+    switch = backups / "reprintbuddy-v1.0.0-20261101T100000Z.db"
+    switch.write_bytes(b"")
+    for day in range(2, 7):
+        (backups / f"reprintbuddy-v1.1.0-beta.1-2026110{day}T100000Z.db").write_bytes(b"")
+    return switch
+
+
+def test_an_update_between_pre_releases_keeps_the_backup_from_before_them(update_env):
+    e = update_env
+    e.set_channel("prerelease")
+    switch = beta_installed(e, "v1.1.0-beta.2")
+    assert e.update().state == "succeeded"
+    assert switch.exists()
+    assert len(list(backup_dir_for(e.db).iterdir())) == 6
+
+
+def test_a_failed_update_of_a_pre_release_keeps_it_too(update_env):
+    e = update_env
+    e.set_channel("prerelease")
+    switch = beta_installed(e, "v1.1.0-beta.2")
+    e.runner.on((e.py, "-m", "reprintbuddy", "migrate"), CommandResult(1, "", "migration failed"))
+    assert e.update().state == "rolled_back"
+    assert switch.exists()
+
+
+def test_an_update_to_a_stable_version_lets_the_usual_limit_apply_again(update_env):
+    e = update_env
+    switch = beta_installed(e, "v1.1.0")
+    assert e.update().state == "succeeded"
+    assert not switch.exists()
+    assert len(list(backup_dir_for(e.db).iterdir())) == 5

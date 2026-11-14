@@ -33,6 +33,7 @@ from reprintbuddy.ops.backup import (
     KEEP_BACKUPS,
     backup_database,
     backup_dir_for,
+    kept_for_running,
     prune_backups,
     restore_database,
 )
@@ -259,6 +260,10 @@ def _run_update(
         if info["backup"]:
             # After a failed rollback the message names this backup as the one to restore.
             protect = [Path(info["backup"])] if state == "rollback_failed" else []
+            # Spec 11.3a "Sicherung von vor der Vorabversion": while a pre-release runs afterwards, the backup
+            # from before the switch to it stays beyond the usual five (the way back may need it).
+            running = info["to_tag"] if state == "succeeded" else info["from_tag"]
+            protect += kept_for_running(backup_dir, running)
             prune_backups(backup_dir, keep_backups, protect=protect)
         return put(state, step, message, finished=True, reason=reason, params=params)
 
