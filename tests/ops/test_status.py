@@ -237,3 +237,25 @@ def test_an_interrupted_way_back_stays_a_way_back_and_names_the_database_as_it_w
     final = mark_interrupted(tmp_path, NOW + timedelta(minutes=30))
     assert (final.kind, final.return_case, final.target_head, final.reason) == ("return", 2, "0022", "interrupted_partial")
     assert str(before) in final.message and read_status(tmp_path) == final
+
+
+@pytest.mark.parametrize(("step", "named"), [("stop", False), ("database", False), ("swap", True), ("install", True)])
+def test_an_interrupted_way_back_names_the_kept_database_only_once_it_counts(tmp_path, step, named):
+    """Review finding 1: before `swap` the live database is untouched, and `before.db` may be half written."""
+    from reprintbuddy.ops.status import mark_interrupted
+
+    before = tmp_path / ".return" / "before.db"
+    before.parent.mkdir()
+    before.write_bytes(b"")
+    write_status(tmp_path, UpdateStatus(state="running", step=step, started_at=NOW, kind="return", return_case=2))
+    final = mark_interrupted(tmp_path, NOW + timedelta(minutes=30))
+    assert (str(before) in final.message) is named
+    if not named:
+        assert "database is untouched" in final.message
+
+
+def test_a_return_case_that_is_true_reads_as_none(tmp_path):
+    import json
+
+    (tmp_path / "update-status.json").write_text(json.dumps({"state": "failed", "kind": "return", "return_case": True}), encoding="utf-8")
+    assert read_status(tmp_path).return_case is None

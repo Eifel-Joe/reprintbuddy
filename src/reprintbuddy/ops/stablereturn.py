@@ -112,10 +112,19 @@ def _count(con: sqlite3.Connection, table: str, column: str | None, default: str
     """Rows of a table (column None), or rows whose value in a column differs from its default."""
     if column is None:
         return int(con.execute(f"SELECT count(*) FROM {_quote(table)}").fetchone()[0])
-    condition = f"{_quote(column)} IS NOT NULL"
+    condition, values = f"{_quote(column)} IS NOT NULL", []
     if default is not None:
-        condition += f" AND {_quote(column)} IS NOT ({default})"  # the default is SQL of our own schema
-    return int(con.execute(f"SELECT count(*) FROM {_quote(table)} WHERE {condition}").fetchone()[0])
+        # The default, evaluated once and compared as a value (review: a default that is no value at all counts as
+        # no default). A default by time counts every row: over, never under.
+        try:
+            values = [con.execute(f"SELECT ({default})").fetchone()[0]]
+        except sqlite3.Error:
+            values = []
+        if values and values[0] is not None:
+            condition += f" AND {_quote(column)} IS NOT ?"
+        else:
+            values = []
+    return int(con.execute(f"SELECT count(*) FROM {_quote(table)} WHERE {condition}", values).fetchone()[0])
 
 
 def trial(

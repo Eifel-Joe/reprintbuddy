@@ -235,3 +235,17 @@ def test_a_package_that_does_not_match_its_checksum_is_refused(tmp_path):
     with pytest.raises(PackageError):
         prepare_target(release, download, tmp_path / "work")
     assert not (tmp_path / "work").exists()
+
+
+def test_a_column_default_is_compared_as_a_value_not_as_sql(tmp_path):
+    """Review finding 3: a default is evaluated once and compared as a value."""
+    from reprintbuddy.ops.stablereturn import _count
+
+    con = sqlite3.connect(tmp_path / "d.db")
+    con.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, mark TEXT DEFAULT 'x', n INTEGER DEFAULT (1 + 1))")
+    con.executemany("INSERT INTO t (mark, n) VALUES (?, ?)", [("x", 2), ("y", 2), ("x", 5), (None, None)])
+    assert _count(con, "t", "mark", "'x'") == 1
+    assert _count(con, "t", "n", "(1 + 1)") == 1
+    assert _count(con, "t", "mark", None) == 3
+    assert _count(con, "t", "mark", "no_such_column") == 3  # not a value: counted as without a default
+    con.close()

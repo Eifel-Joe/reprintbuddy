@@ -596,6 +596,11 @@ def _run_return(
     )
 
     # --- before the service stops: a failure changes nothing ------------------------------------------
+    if before_db.exists():
+        # Left by an earlier way back whose rollback failed (its message names this file as the database as it
+        # was) or that was cut off: it may be the only copy of those entries, so it is never deleted here.
+        line = f"a database kept by an earlier way back lies at {before_db}; restore or move it first"
+        return finish("failed", "start", "start: " + line, "return_unavailable", {"detail": line})
     put("running", "backup")
     installed = read_installation(install_dir, runner)
     if installed is None or installed.repo is None:
@@ -662,9 +667,12 @@ def _run_return(
     stopped = runner(STOP_CMD, timeout=120.0)
     if not stopped.ok:
         shutil.rmtree(new_source, ignore_errors=True)
-        runner(START_CMD, timeout=120.0)  # whatever half of it happened, the pre-release runs on
         detail = _reason(stopped, "the service could not be stopped")
-        return finish("failed", "stop", f"stop: {detail}", "stop_failed", {"detail": detail})
+        # whatever half of it happened, the pre-release runs on - if it answers (review: say so when not)
+        if runner(START_CMD, timeout=120.0).ok and wait_healthy():
+            return finish("failed", "stop", f"stop: {detail}", "stop_failed", {"detail": detail})
+        message = f"stop: {detail} – the pre-release did not answer after its start"
+        return finish("rollback_failed", "stop", message, "stop_failed", {"detail": detail})
 
     def resume(step: str, message: str, reason: str, params: dict[str, str]) -> UpdateStatus:
         """Nothing changed yet: the pre-release starts again on its own database."""
@@ -676,7 +684,7 @@ def _run_return(
 
     put("running", "database")
     try:
-        shutil.rmtree(return_dir, ignore_errors=True)
+        shutil.rmtree(return_dir, ignore_errors=True)  # no `before.db` in it: checked at the start
         return_dir.mkdir(parents=True)
         copy_database(db_path, before_db)
         print(f"update: way back: the database as it was is kept at {before_db} until the way back is through", flush=True)

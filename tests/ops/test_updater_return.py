@@ -331,3 +331,49 @@ def test_a_queued_request_of_another_kind_is_an_ordinary_update(tmp_path, fake_r
     env = ReturnEnv(tmp_path, fake_runner, case=1)
     write_status(env.data, UpdateStatus(state="queued", step="start", from_tag=BETA, to_tag=STABLE, started_at=NOW))
     assert env.run().reason == "no_newer"
+
+
+# --- review of Tasks 6-9 ------------------------------------------------------------------------------
+
+
+def test_a_database_kept_by_an_earlier_way_back_is_never_deleted(tmp_path, fake_runner):
+    """After a failed rollback `.return/before.db` is the database as it was; a new way back stops before
+    anything changes and names it (review finding 1)."""
+    env = ReturnEnv(tmp_path, fake_runner, case=1)
+    kept = env.data / RETURN_DIR / "before.db"
+    kept.parent.mkdir()
+    kept.write_bytes(b"the data of an earlier way back")
+    result = env.run()
+    assert (result.state, result.reason) == ("failed", "return_unavailable")
+    assert str(kept) in result.message
+    assert kept.read_bytes() == b"the data of an earlier way back"
+    assert STOP_CMD not in fake_runner.calls and env.downloads == []
+
+
+def test_the_live_database_is_untouched_when_the_service_stops(tmp_path, fake_runner):
+    """B1: nothing writes to the live database before the stop (review finding 5)."""
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    before = content(env.db)
+    seen = []
+    fake_runner.on(STOP_CMD, lambda call: seen.append(content(env.db)) or CommandResult(0))
+    assert env.run().state == "succeeded"
+    assert seen[0] == before
+
+
+def test_a_failed_start_after_a_failed_stop_is_said(tmp_path, fake_runner):
+    """Review finding 2: the card must not say the pre-release runs when it does not answer."""
+    env = ReturnEnv(tmp_path, fake_runner, case=1)
+    fake_runner.on(STOP_CMD, CommandResult(1, "", "denied"))
+    env.health = [False]
+    result = env.run()
+    assert (result.state, result.reason) == ("rollback_failed", "stop_failed")
+
+
+def test_case_3_after_the_switch_brings_back_the_database_of_the_pre_release(tmp_path, fake_runner):
+    """Review finding 5: the switch brought in an older revision; a failure restores the pre-release's."""
+    env = ReturnEnv(tmp_path, fake_runner, "rework_marked", case=3)
+    add_journal(env.db)
+    before = content(env.db)
+    fake_runner.on(env.pip(), CommandResult(1, "", "ERROR: no network"))
+    assert env.run().state == "rolled_back"
+    assert content(env.db) == before

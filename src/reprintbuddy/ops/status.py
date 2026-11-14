@@ -116,7 +116,9 @@ class UpdateStatus:
             params=params,
             acknowledged=data.get("acknowledged") is True,
             kind="return" if data.get("kind") == "return" else "update",
-            return_case=case if isinstance(case := data.get("return_case"), int) and case in RETURN_CASES else None,
+            return_case=case
+            if isinstance(case := data.get("return_case"), int) and not isinstance(case, bool) and case in RETURN_CASES
+            else None,
             target_head=text("target_head"),
             return_backup=text("return_backup"),
         )
@@ -158,6 +160,9 @@ def is_busy(status: UpdateStatus, now: datetime) -> bool:
 # Steps before pip change nothing: since v0.4.9 "checkout" unpacks the package beside the installed version
 # (`releases/<tag>`), and `release.json` still names the old one. From pip on it may be half switched.
 _UNTOUCHED_STEPS = frozenset({"start", "backup", "fetch", "checkout"})
+# The way back (Spec 11.3a) stops the service and then prepares the database on copies: until `swap` the live
+# database is untouched, though the service may be stopped.
+_UNTOUCHED_RETURN_STEPS = frozenset({"stop", "database"})
 
 
 def mark_interrupted(data_dir: Path, now: datetime) -> UpdateStatus | None:
@@ -178,7 +183,9 @@ def mark_interrupted(data_dir: Path, now: datetime) -> UpdateStatus | None:
         message = f"{step}: interrupted, the installation may be incomplete"
         # The way back (Spec 11.3a) keeps the database as it was when the service stopped beside the data.
         before = data_dir / ".return" / "before.db"
-        if current.kind == "return" and before.is_file():
+        if current.kind == "return" and step in _UNTOUCHED_RETURN_STEPS:
+            message += " \u2013 the database is untouched"  # `before.db` may be stale or half written here
+        elif current.kind == "return" and before.is_file():
             message += f" \u2013 database as it was: {before}"
         if current.backup:
             message += f" \u2013 backup: {current.backup}"
