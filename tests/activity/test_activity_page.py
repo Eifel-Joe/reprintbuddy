@@ -165,3 +165,10 @@ def test_a_set_rebuilt_by_the_update_names_what_was_dropped(ready_client):
         st.set_setting(s, "language", "de", commit=False)
     rows = [text_of(row) for row in table_rows(ready_client.get(PAGE).text)]
     assert any("Set beim Update umgebaut: Bracket kit" in row and "Nicht mehr wählbar: Handle, Strip" in row for row in rows)
+
+
+def test_the_way_back_is_named_in_the_log(ready_client):
+    add(ready_client, ActivityEntry(area="ops", kind="update_result", actor="system",
+                                    details={"from": "v1.1.0-beta.1", "to": "v1.0.0", "result": "done", "return": True}))
+    html = ready_client.get(PAGE).text
+    assert "Way back to the stable version" in html

@@ -325,3 +325,22 @@ async def test_a_cancelled_run_stays_counted_until_its_thread_is_done(db):
             break
         await asyncio.sleep(0.01)
     assert in_flight == 0
+
+
+def test_the_way_back_is_named_in_start_and_result(db, tmp_path):
+    """Spec 11.3a "Rückweg": start and result of the way back stand in the log (Spec 10.7) as such."""
+
+    def outcome():
+        from reprintbuddy.ops.status import read_status
+
+        return states.update_outcome(read_status(tmp_path))
+
+    activity = ActivityLog(db, update_result=outcome)
+    started = datetime(2026, 11, 14, 10, 0, tzinfo=UTC)
+    write_status(tmp_path, UpdateStatus(state="rolled_back", from_tag="v1.1.0-beta.1", to_tag="v1.0.0",
+                                        started_at=started, kind="return", return_case=2))
+    activity.check_update()
+    activity.drain()
+    start, result = rows(db)
+    assert start.details == {"from": "v1.1.0-beta.1", "to": "v1.0.0", "return": True}
+    assert result.details == {"from": "v1.1.0-beta.1", "to": "v1.0.0", "result": "rolled_back", "return": True}

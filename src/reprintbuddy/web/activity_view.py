@@ -129,6 +129,8 @@ def _describe(lang: str, entry: ActivityEntry) -> tuple[str, list[str], str | No
             made = "–"
         extras.append(translate(lang, "activity.backup_of", date=made, version=details.get("version") or "–"))
     elif kind in ("update_started", "update_result"):
+        if details.get("return") is True:  # Spec 11.3a "Rückweg zur stabilen Version"
+            extras.append(translate(lang, "activity.way_back"))
         extras.append(f"{details.get('from') or '–'} → {details.get('to') or '–'}")
         if kind == "update_result":
             result = details.get("result")

@@ -233,6 +233,11 @@ def ops_view(request: Request, session: Session, busy: bool | None = None) -> Op
         view.state_key = "ops.update.state.interrupted"
     elif view.update.state != "idle" and not view.update.acknowledged:
         view.state_key = f"ops.update.state.{view.update.state}"
+        if view.update.kind == "return":
+            # Spec 11.3a "Rückweg": in its own words ("Rückweg fehlgeschlagen, Vorabversion läuft weiter"); after
+            # a success the stable version says the switch "include pre-releases" is now off.
+            view.state_key = f"ops.return.state.{view.update.state}"
+            view.state_params = {"version": (view.update.to_tag or "")[1:]}
         view.dismissable = view.update.state in FAILED_STATES
     if (view.busy or view.interrupted) and view.update.step in UPDATE_STEPS:
         view.step_key = f"ops.update.step.{view.update.step}"
