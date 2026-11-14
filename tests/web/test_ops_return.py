@@ -281,9 +281,9 @@ def test_no_way_back_while_an_update_runs(ops_env, tmp_path):
     beta(ops_env, tmp_path)
     checked(ops_env)
     write_status(ops_env.db_path.parent, UpdateStatus(state="running", step="install", started_at=datetime.now(UTC)))
-    ops_env.runner.on(("systemctl", "is-active"), *[])  # the state file alone counts as busy within the grace
     response = confirm(ops_env, 1)
-    assert "ops=busy" in response.headers["location"]
+    assert response.status_code == 503  # paused like every other change while an update runs
+    assert START_UPDATE_CMD not in ops_env.runner.calls
 
 
 @pytest.mark.parametrize("path", ["/settings/update/return/check", "/settings/update/return"])

@@ -93,8 +93,6 @@ UPDATE_EXEMPT_PATHS = frozenset(
     {
         "/settings/update/check",
         "/settings/update",
-        "/settings/update/return/check",  # the way back answers "busy" on its own, as the update button does
-        "/settings/update/return",
         "/logout",
         "/bambuddy/rights/later",
         "/bambuddy/rights/recheck",
