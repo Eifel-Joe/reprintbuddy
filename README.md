@@ -429,7 +429,7 @@ Reprintbuddy has no uninstall command, and the web interface cannot remove it. Y
 
 ### 1. Keep your data (only if you want it)
 
-Step 5 deletes the data folder with the database **and the backups kept there**. If you may want your articles, settings and log again, download a backup first and keep it **outside** this system: in Reprintbuddy under *Settings → Update and backup*, **Full backup**, with a password (see [Update and backup](#backup-and-export)). After a new installation and its first setup, the same page restores it. Skip this step if you want to start from nothing.
+Step 5 deletes the data folder with the database **and the backups kept there**. If you may want your articles, settings and log again, download a backup first and keep it **outside** this system: in Reprintbuddy under *Settings → Update and backup*, **Full backup**, with a password (see [Backup and export](#backup-and-export)). After a new installation and its first setup, the same page restores it. Skip this step if you want to start from nothing.
 
 ### 2. Stop the services and switch them off
 

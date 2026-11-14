@@ -450,7 +450,7 @@ Reprintbuddy hat keinen Befehl zum Deinstallieren, und die Weboberfläche kann e
 
 ### 1. Daten behalten (nur wenn du sie willst)
 
-Schritt 5 löscht den Datenordner mit der Datenbank **und den dort liegenden Sicherungen**. Wenn du deine Artikel, Einstellungen und das Protokoll vielleicht noch einmal brauchst, lade vorher eine Sicherung herunter und bewahre sie **außerhalb** dieses Systems auf: in Reprintbuddy unter *Einstellungen → Update und Sicherung* die **Vollständige Sicherung**, mit Passwort (siehe [Update und Sicherung](#sicherung-und-export)). Nach einer neuen Installation und ihrer Ersteinrichtung spielt dieselbe Seite sie wieder ein. Überspring den Schritt, wenn du bei null anfangen willst.
+Schritt 5 löscht den Datenordner mit der Datenbank **und den dort liegenden Sicherungen**. Wenn du deine Artikel, Einstellungen und das Protokoll vielleicht noch einmal brauchst, lade vorher eine Sicherung herunter und bewahre sie **außerhalb** dieses Systems auf: in Reprintbuddy unter *Einstellungen → Update und Sicherung* die **Vollständige Sicherung**, mit Passwort (siehe [Sicherung und Export](#sicherung-und-export)). Nach einer neuen Installation und ihrer Ersteinrichtung spielt dieselbe Seite sie wieder ein. Überspring den Schritt, wenn du bei null anfangen willst.
 
 ### 2. Dienste stoppen und abschalten
 
