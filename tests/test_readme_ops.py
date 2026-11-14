@@ -426,3 +426,20 @@ def test_contributing_names_the_rule_for_database_steps():
     for words in ("return_note", "rework = True", "only add", "downgrade", "release notes", "CI"):
         assert words in text, words
     assert "rework" in read(".github/PULL_REQUEST_TEMPLATE.md")
+
+
+def test_the_german_contributing_names_the_rule_too():
+    """Review: CONTRIBUTING exists in both languages (Spec 11.8)."""
+    text = " ".join(read("CONTRIBUTING.de.md").split())
+    for words in ("return_note", "rework = True", "legt nur Neues an", "Rückbau", "Release-Notes", "CI",
+                  "zurück zur stabilen Version"):
+        assert words in text, words
+
+
+@pytest.mark.parametrize(("name", "first", "then"), [
+    ("docs/operate/update-backup.md", "The card then says", "The way back to an older stable release is described"),
+    ("docs/operate/update-backup.de.md", "Die Karte sagt dann", "Den Weg zurück zu einer älteren stabilen Version"),
+])
+def test_the_pointer_to_the_way_back_follows_the_sentence_about_the_card(name, first, then):
+    text = read(name)
+    assert text.index(first) < text.index(then)
