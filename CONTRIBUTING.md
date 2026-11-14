@@ -40,6 +40,14 @@ Please include (the bug template asks for each of these):
 - Update the **documentation in both languages** (English and German). The README
   and the pages under `docs/` go into the **same pull request** when installation,
   setup or use changes; the pull request template asks for it.
+- A **new database step** (an Alembic revision under `src/reprintbuddy/migrations/versions/`) may only add:
+  new tables, new fields that are empty or have a default (added without rebuilding the table), and
+  indexes on new fields or new tables. It brings its downgrade, which removes exactly that, and carries
+  two marks: `return_note = {"de": "…", "en": "…"}` (what it adds, shown when a pre-release goes back
+  to the stable version) and `rework = False`. A step that must change existing data is marked
+  `rework = True`, and the release notes of the pre-release that brings it begin with the line
+  `**Database rework:** …`; going back then restores the backup from before the update. The CI checks
+  every step after the last stable version against this rule (`tests/test_migration_rules.py`).
 
 ## Branches and versions
 
@@ -48,7 +56,8 @@ Please include (the bug template asks for each of these):
   can be tried out, then the tested state reaches `main` by a pull request and is released as `vX.Y.Z`. New features
   therefore come as pre-releases first.
 - To try a pre-release, switch on **Include pre-releases** under *Settings → Update and backup* in Reprintbuddy.
-  Switched off again, an installed pre-release stays until a newer stable version comes.
+  Switched off again, an installed pre-release stays until a newer stable version comes, or until you go
+  back to the stable version from the update card.
 
 ## Documentation
 

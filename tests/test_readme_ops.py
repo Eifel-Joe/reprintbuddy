@@ -393,3 +393,36 @@ def test_p553_the_repair_of_a_missing_folder_is_described(name):
     text = read(name).replace("\n", " ")
     assert "/opt/reprintbuddy/releases/<tag>" in text
     assert ("downloads its package again" in text) or ("lädt das Skript dieser Version ihr Paket wieder" in text)
+
+
+# --- the way back to the stable version (Spec 11.3a "Rückweg zur stabilen Version", last point) ---------------
+
+WAY_BACK_WORDS = {
+    "en": (
+        "Back to the stable version", "no newer stable release", "only the program changes",
+        "removes exactly what it added", "restores the backup from before", "full backup", "**Database rework:**",
+    ),
+    "de": (
+        "Zurück zur stabilen Version", "keine neuere stabile Version", "nur die Programmversion wechselt",
+        "entfernt genau, was sie hinzugefügt hat", "spielt die Sicherung von vor", "vollständige Sicherung",
+        "**Database rework:**",
+    ),
+}
+
+
+@pytest.mark.parametrize("name", ["README.md", "README.de.md", "docs/operate/update-backup.md", "docs/operate/update-backup.de.md"])
+def test_the_way_back_to_the_stable_version_is_described(name):
+    """When the button appears, the three cases in a sentence each, the full backup first, and that pre-releases
+    with rework are announced in their release notes."""
+    text = " ".join(read(name).split())  # a sentence may break across lines
+    for words in WAY_BACK_WORDS["de" if name.endswith(".de.md") else "en"]:
+        assert words in text, words
+    assert "until a newer stable release comes" not in text  # the way back exists now
+
+
+def test_contributing_names_the_rule_for_database_steps():
+    """Spec 11.8: a new database step only adds and brings its downgrade, or is marked as rework; CI checks it."""
+    text = " ".join(read("CONTRIBUTING.md").split())
+    for words in ("return_note", "rework = True", "only add", "downgrade", "release notes", "CI"):
+        assert words in text, words
+    assert "rework" in read(".github/PULL_REQUEST_TEMPLATE.md")

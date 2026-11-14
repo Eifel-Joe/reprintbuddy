@@ -302,9 +302,32 @@ Downloads jeder Version; sonst sendet Reprintbuddy nichts. Eine mit git eingeric
 v0.4.9) bekommt v0.4.9 noch per git; ihr nächstes Update lädt das Paket und entfernt die alte git-Kopie
 aus `/opt/reprintbuddy` (nie die Daten). Der Schalter **Vorabversionen einschließen** auf der Karte (Vorgabe:
 aus) bietet auch Vorabversionen an (`vX.Y.Z-beta.N`, älter als `vX.Y.Z`); wieder aus, bleibt eine installierte
-Vorabversion, bis eine neuere stabile Version kommt. Ändert eine Version die
+Vorabversion, und die nächste neuere stabile Version wird wie üblich angeboten; der Weg zurück zu einer älteren steht unten. Ändert eine Version die
 systemd-Einheiten oder die sudoers-Regel, steht es in der Release-Notiz; dann das
 Installationsskript erneut ausführen.
+
+### Zurück zur stabilen Version
+
+Solange eine Vorabversion installiert ist und es keine neuere stabile Version gibt, bietet die Karte **Zurück zur
+stabilen Version X.Y.Z** an (die neueste stabile Version, die älter ist als die installierte), egal wie der
+Schalter **Vorabversionen einschließen** steht. Der Klick prüft das Paket dieser Version und öffnet eine Seite,
+die sagt, was passiert, in einem von drei Fällen:
+
+1. Die Datenbank ist so, wie die stabile Version sie hinterlassen hat: nur die Programmversion wechselt, alle
+   Daten bleiben.
+2. Die Vorabversion hat nur Tabellen oder Felder hinzugefügt: Sie entfernt genau, was sie hinzugefügt hat (die
+   Seite nennt, was dabei verloren geht, vorher an einer Kopie geprobt); alle übrigen Einträge bleiben.
+3. Die Vorabversion hat vorhandene Daten umgebaut, oder der Rückbau geht nicht: Reprintbuddy spielt die Sicherung
+   von vor dem Wechsel auf die Vorabversion zurück, und alle Einträge seitdem gehen verloren. Die Seite nennt den
+   Zeitpunkt dieser Sicherung, listet die Journal-Buchungen seitdem auf und verlangt das Passwort erneut.
+
+Lade vorher eine vollständige Sicherung herunter (die Seite hat den Knopf), wenn du den Stand der Vorabversion
+behalten willst; sie lässt sich nur in diese Vorabversion oder eine neuere Version zurückspielen. Danach ist
+**Vorabversionen einschließen** aus. Der Rückweg läuft wie ein Update; schlägt er fehl, läuft die Vorabversion mit
+ihren Daten weiter. Solange eine Vorabversion installiert ist, bleibt die Sicherung von vor ihr auch über die
+letzten 5 hinaus. Eine Vorabversion, deren Umbauschritte vorhandene Daten umbauen, sagt das vorher: Ihre
+Release-Notes beginnen mit **Database rework:** …, und die Update-Karte zeigt einen Warnkasten und den Knopf
+**Trotzdem aktualisieren**.
 
 ## Neustart
 
