@@ -15,7 +15,7 @@
   <p>{{ t('ops.return.case2') }}</p>
     {% if plan.losses %}
   <ul>
-      {% for loss in plan.losses %}<li>{{ t('ops.return.loss', what=loss.note[lang], count=loss.count) }}</li>{% endfor %}
+      {% for loss in plan.losses %}<li>{{ t('ops.return.loss_one', what=loss.note[lang]) if loss.count == 1 else t('ops.return.loss', what=loss.note[lang], count=loss.count) }}</li>{% endfor %}
   </ul>
     {% else %}
   <p class="status">{{ t('ops.return.nothing_lost') }}</p>
@@ -24,11 +24,14 @@
   <div class="warning-card tone-warn" role="alert">{{ ui.icon('triangle-alert') }}<p>
     <strong>{{ t('ops.return.lost_all', time=plan.backup_at|local_dt) }}</strong><br>
     {{ t('ops.return.case3') }} {{ t('ops.return.why.' ~ plan.why3) }}<br>
-    {{ t('ops.return.counts', bookings=plan.journal_ids|length, log=plan.activity_since) }}
+    {% set bookings = plan.journal_ids|length %}
+    {{ t('ops.return.counts',
+         bookings=t('ops.return.bookings_one') if bookings == 1 else t('ops.return.bookings', count=bookings),
+         log=t('ops.return.log_entries_one') if plan.activity_since == 1 else t('ops.return.log_entries', count=plan.activity_since)) }}
   </p></div>
     {% if rows %}
   <details class="return-bookings"{% if list_open %} open{% endif %}>
-    <summary>{{ t('ops.return.list_summary', count=rows|length) }}</summary>
+    <summary>{{ t('ops.return.list_summary_one') if rows|length == 1 else t('ops.return.list_summary', count=rows|length) }}</summary>
     {% include "_journal_table.html" %}
   </details>
     {% endif %}
@@ -43,6 +46,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% with login_error = false %}{% include "_backup_fields.html" %}{% endwith %}
   </form>
+  <div class="warning-card tone-warn" role="note">{{ ui.icon('triangle-alert') }}<p>{{ t('ops.backup.warning') }}</p></div>
 </section>
 
 <section class="card section" id="return-go">

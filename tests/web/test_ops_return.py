@@ -346,3 +346,68 @@ def test_a_failed_way_back_says_so_and_why(ops_env, tmp_path, state, lang, words
     assert words in page
     assert "no network" in page
     assert 'action="/settings/update/dismiss"' in page
+
+
+# --- review of the whole branch ---------------------------------------------------------------------------
+
+
+def test_the_page_warns_that_a_backup_without_password_holds_the_keys(ops_env, tmp_path):
+    """Spec 11.6: without a password the page says that anyone with the file gets the keys."""
+    from reprintbuddy.web.i18n import translate
+
+    beta(ops_env, tmp_path)
+    checked(ops_env)
+    page = ops_env.client.get("/settings/update/return").text
+    warning = translate("en", "ops.backup.warning")
+    assert warning.split(".")[0] in page
+
+
+def test_one_entry_is_said_in_the_singular(ops_env, tmp_path):
+    beta(ops_env, tmp_path, "add_table")
+    order = sql(ops_env.db_path, "INSERT INTO orders (reference, order_date) VALUES ('A-1', '2026-11-01') RETURNING id")[0][0]
+    sql(ops_env.db_path, "INSERT INTO t_notes (order_id, text) VALUES (?, 'a')", order)
+    checked(ops_env)
+    assert "Lost: Test notes (1 entry)" in ops_env.client.get("/settings/update/return").text
+
+
+def test_one_booking_is_said_in_the_singular(ops_env, tmp_path):
+    beta(ops_env, tmp_path, "rework_marked")
+    add_journal(ops_env.db_path, 1)
+    checked(ops_env)
+    page = ops_env.client.get("/settings/update/return").text
+    assert "1 journal booking and" in page
+    assert "The 1 journal booking since the backup" in page
+
+
+def test_two_checks_at_once_do_not_share_their_folder(ops_env, tmp_path, monkeypatch):
+    """Review: a double click must not let one check delete the files of the other."""
+    from reprintbuddy.web.routes import ops as ops_routes
+
+    beta(ops_env, tmp_path)
+    seen = []
+    real = ops_routes.prepare_target
+
+    def watch(release, download, work_dir):
+        seen.append(work_dir)
+        return real(release, download, work_dir)
+
+    monkeypatch.setattr(ops_routes, "prepare_target", watch)
+    checked(ops_env)
+    checked(ops_env)
+    assert len(seen) == 2 and seen[0] != seen[1]
+    assert not any(path.exists() for path in seen)
+    assert not [p for p in ops_env.db_path.parent.iterdir() if p.name.startswith(".return-check")]
+
+
+def test_a_stable_version_that_changed_since_the_check_asks_for_a_new_check(ops_env, tmp_path):
+    beta(ops_env, tmp_path)
+    use_github(ops_env, FakeGitHub((BETA, "v1.0.1", STABLE)))  # the card still knows v1.0.0
+    response = checked(ops_env)
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=return_none#ops-update"
+
+
+def test_the_rework_warning_names_the_backup_from_before_the_pre_release():
+    from reprintbuddy.web.i18n import translate
+
+    assert "before the switch to the pre-release" in translate("en", "ops.update.rework_warning")
+    assert "von vor dem Wechsel auf die Vorabversion" in translate("de", "ops.update.rework_warning")

@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 import shutil
 import sqlite3
+import tempfile
+from pathlib import Path
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from string import Formatter
@@ -642,7 +644,11 @@ RETURN_FRESH = timedelta(minutes=30)
 # Up to this many journal bookings the list on the confirmation page is open; more, and it starts closed with
 # the number in its summary (Spec 11.3a case 3, F5; review focus 5). The list has no limit.
 RETURN_OPEN_UP_TO = 10
-RETURN_CHECK_DIR = ".return-check"  # beside the database while the click checks (package, copies); gone after
+RETURN_CHECK_DIR = ".return-check"  # beside the database while a click checks (package, copies); gone after
+
+
+class ReturnTargetChanged(ReleaseCheckError):
+    """GitHub now names another stable version to go back to than the card shows: check for updates first."""
 MAX_LOGIN_FIELD = 4 * 1024
 
 
@@ -654,9 +660,11 @@ def _prepare_return(app: Any, target: str) -> ReturnPlan:
         raise ReleaseCheckError("no installation")
     release = return_target(fetch_releases(found.repo, ops.http_get), found.tag)
     if release is None or release.tag != target:
-        raise ReleaseCheckError("the stable version to go back to has changed")
+        raise ReturnTargetChanged("the stable version to go back to has changed")
     db_path = app.state.db_path
-    work = db_path.parent / RETURN_CHECK_DIR
+    # A folder of its own per check (review: with one shared folder a double click let each check delete the
+    # files of the other).
+    work = Path(tempfile.mkdtemp(prefix=RETURN_CHECK_DIR + "-", dir=db_path.parent))
     try:
         graph = prepare_target(release, ops.download, work / "package")
         return assess(
@@ -697,6 +705,8 @@ async def return_check(request: Request):
     app.state.return_prepared = None
     try:
         plan = await in_thread(_prepare_return, app, info.return_to)
+    except ReturnTargetChanged:
+        return _back("return_none")  # the card's version is out of date: "check for updates first"
     except (UpdateCheckError, PackageError, StepsError, OSError, sqlite3.Error) as error:
         log.warning("way back: the check failed: %s", str(error)[:300])  # not shown on the page
         return _back("return_check_failed")
