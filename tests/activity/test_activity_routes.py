@@ -66,6 +66,9 @@ LOGGED = {
     "/settings/update/channel": "test_the_choice_of_versions_offered_on_the_page",
     # a newer version, once
     "/settings/update/check": "test_the_new_version_once_and_the_start_of_an_update_with_its_result",
+    # the way back to the stable version (Spec 11.3a): the confirmation writes the state file with kind "return"
+    # (tests/web/test_ops_return.py); its start and its result reach the log from that file, as for an update
+    "/settings/update/return": "test_the_way_back_is_named_in_start_and_result",
     "/setup": "test_the_setup_logs_the_account_with_the_address",
     "/setup/bambuddy/connect": "test_the_bambuddy_connection_of_the_setup",
 }
@@ -102,6 +105,8 @@ EXEMPT = {
     "/bambuddy/rights/later": "hides a notice in this browser",
     "/bambuddy/rights/done": "hides a notice in this browser",
     "/settings/update/dismiss": "hides the card of a failed update; its result is in the log already (p503)",
+    "/settings/update/return/check": "checks the stable package and rehearses the way back on copies it deletes;"
+    " only the result stays, in memory, for the confirmation page, which is logged when it starts the way back",
 }
 
 

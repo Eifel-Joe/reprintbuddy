@@ -18,6 +18,7 @@ from sqlalchemy.pool import NullPool
 DEFAULT_DB_PATH = Path("/var/lib/reprintbuddy/reprintbuddy.db")
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+MIGRATIONS_DIR = _MIGRATIONS_DIR  # the steps of this version (read by ops/migrationsteps.py)
 
 
 def _configure(engine: Engine, *, foreign_keys: bool, transactional_ddl: bool) -> None:
@@ -128,10 +129,32 @@ def upgrade(engine: Engine, script_location: Path | None = None, *, revision: st
     one transaction. Afterwards `PRAGMA foreign_key_check` must be clean, or
     everything is rolled back. `script_location` exists for tests.
     """
+    _migrate(engine.url, script_location, lambda cfg: command.upgrade(cfg, revision))
+
+
+def downgrade(engine: Engine, revision: str, script_location: Path | None = None) -> None:
+    """Take the database back to `revision` with the downgrade of each step, the way `upgrade` goes forward:
+    one transaction, foreign keys off, `PRAGMA foreign_key_check` clean afterwards or nothing is kept.
+    Used by the way back to a stable version (Spec 11.3a "Rückweg", ops/stablereturn.py)."""
+    _migrate(engine.url, script_location, lambda cfg: command.downgrade(cfg, revision))
+
+
+def downgrade_file(path: Path, revision: str, script_location: Path | None = None) -> None:
+    """`downgrade` for a database file that no engine of this process has open (a working copy)."""
+    if not Path(path).is_file():
+        raise FileNotFoundError(str(path))  # SQLite would create an empty database
+    engine = create_engine(f"sqlite:///{Path(path)}", poolclass=NullPool)
+    try:
+        downgrade(engine, revision, script_location)
+    finally:
+        engine.dispose()
+
+
+def _migrate(url, script_location: Path | None, action) -> None:
     cfg = Config()
     cfg.set_main_option("script_location", str(script_location or _MIGRATIONS_DIR))
     migration_engine = create_engine(
-        engine.url,
+        url,
         future=True,
         poolclass=NullPool,
         connect_args={"check_same_thread": False},
@@ -141,7 +164,7 @@ def upgrade(engine: Engine, script_location: Path | None = None, *, revision: st
     try:
         with migration_engine.begin() as connection:
             cfg.attributes["connection"] = connection
-            command.upgrade(cfg, revision)
+            action(cfg)
             if connection.exec_driver_sql("PRAGMA foreign_key_check").all():
                 raise RuntimeError("migration left foreign key violations; rolled back")
     finally:

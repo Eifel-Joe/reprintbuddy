@@ -87,15 +87,15 @@ Invented example data. More pictures are on the [documentation pages](https://ei
 ## Installation
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.0.0/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.1.0-beta.1/install/install.sh)"
 ```
 
 Run it as root on that system. Fresh Debian systems often come without curl; the first part installs it.
-The installer puts the release in place whose tag is in the address (`v1.0.0` here): script and release are one
+The installer puts the release in place whose tag is in the address (`v1.1.0-beta.1` here): script and release are one
 version. To skip the language question, add the language:
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.0.0/install/install.sh)" _ --language de
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.1.0-beta.1/install/install.sh)" _ --language de
 ```
 
 To install another version, put its tag in the address in place of `<tag>` (from v0.3.14 on; the scripts of earlier
@@ -286,9 +286,30 @@ version equals the tag. Installation and update both download the package, so Gi
 downloads of each version; Reprintbuddy sends nothing else. An installation made with git (up to v0.4.9)
 gets v0.4.9 by git; its next update downloads the package and removes the old git copy from
 `/opt/reprintbuddy` (never the data). The switch **Include pre-releases** on the card (off by default) offers
-pre-releases too (`vX.Y.Z-beta.N`, older than `vX.Y.Z`); switched off again, an installed pre-release stays
-until a newer stable release comes. If a release changes the
+pre-releases too (`vX.Y.Z-beta.N`, older than `vX.Y.Z`); switched off again, an installed pre-release stays,
+and the next newer stable release is offered as usual; the way back to an older one is below. If a release changes the
 systemd units or the sudoers rule, its release notes say so; then run the installer again.
+
+### Back to the stable version
+
+While a pre-release is installed and there is no newer stable release, the card offers **Back to the stable
+version X.Y.Z** (the newest stable release older than the installed one), whatever the switch **Include
+pre-releases** says. The click checks the package of that version and opens a page that says what happens, in
+one of three cases:
+
+1. The database is as the stable version left it: only the program changes; all data stays.
+2. The pre-release only added tables or fields: it removes exactly what it added (the page names what is lost,
+   rehearsed on a copy first); all other entries stay.
+3. The pre-release reworked existing data, or taking it back is not possible: Reprintbuddy restores the backup
+   from before the switch to the pre-release, and all entries made since then are lost. The page names the time
+   of that backup, lists the journal bookings since then and asks for the password again.
+
+Download a full backup first (the page has the button) if you want to keep the state of the pre-release; it can
+only be restored into this pre-release or a newer version. Afterwards **Include pre-releases** is off. The way
+back runs like an update; if it fails, the pre-release keeps running with its data. While a pre-release is
+installed, the backup from before it is kept beyond the last 5. A pre-release whose database steps rework existing
+data says so beforehand: its release notes begin with **Database rework:** …, and the update card shows a warning
+and the button **Update anyway**.
 
 ## Restart
 

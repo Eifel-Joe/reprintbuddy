@@ -221,7 +221,9 @@ class ActivityLog:
             details = event.details or {}
             session.add(ActivityEntry(
                 at=naive_utc(datetime.fromisoformat(str(event.state))), area=area_of("update_started"),
-                kind="update_started", actor="user", details={"from": details.get("from"), "to": details.get("to")},
+                kind="update_started", actor="user",
+                details={"from": details.get("from"), "to": details.get("to")}
+                | ({"return": True} if details.get("return") is True else {}),
             ))
             session.flush()
         write_transition(session, event.key, str(event.state), entry, now=event.at)

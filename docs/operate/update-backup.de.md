@@ -103,7 +103,30 @@ Die Karte zeigt die installierte Version und, wenn sie abweicht, daneben die Pak
 
 ## Stabile Versionen oder auch Vorabversionen
 
-Der Schalter **Vorabversionen einschließen** auf der Update-Karte, direkt unter der automatischen Prüfung, ist anfangs aus: Dann werden nur stabile Versionen angeboten. Eingeschaltet, werden auch Vorabversionen angeboten. Ein Klick speichert die Wahl und sucht sofort nach Updates, auch wenn die automatische Prüfung aus ist. Mit Vorabversionen bietet die Karte die neueste Version beider Arten an, und die Hinweise einer Vorabversion tragen den Zusatz „Vorabversion“. Schaltest du ihn wieder aus, bleibt eine installierte Vorabversion; Älteres wird nicht angeboten, die nächste neuere stabile Version schon. Die Karte sagt dann „Installiert ist eine Vorabversion.“ Eine Installation mit dem Installationsbefehl einer Vorabversion beginnt mit eingeschalteten Vorabversionen.
+Der Schalter **Vorabversionen einschließen** auf der Update-Karte, direkt unter der automatischen Prüfung, ist anfangs aus: Dann werden nur stabile Versionen angeboten. Eingeschaltet, werden auch Vorabversionen angeboten. Ein Klick speichert die Wahl und sucht sofort nach Updates, auch wenn die automatische Prüfung aus ist. Mit Vorabversionen bietet die Karte die neueste Version beider Arten an, und die Hinweise einer Vorabversion tragen den Zusatz „Vorabversion“. Schaltest du ihn wieder aus, bleibt eine installierte Vorabversion; Älteres wird nicht angeboten, die nächste neuere stabile Version schon. Die Karte sagt dann „Installiert ist eine Vorabversion.“ Den Weg zurück zu einer älteren stabilen Version beschreibt der nächste Abschnitt. Eine Installation mit dem Installationsbefehl einer Vorabversion beginnt mit eingeschalteten Vorabversionen.
+
+### Zurück zur stabilen Version
+
+Solange eine Vorabversion installiert ist und es keine neuere stabile Version gibt, bietet die Karte **Zurück zur
+stabilen Version X.Y.Z** an (die neueste stabile Version, die älter ist als die installierte), egal wie der
+Schalter **Vorabversionen einschließen** steht. Der Klick prüft das Paket dieser Version und öffnet eine Seite,
+die sagt, was passiert, in einem von drei Fällen:
+
+1. Die Datenbank ist so, wie die stabile Version sie hinterlassen hat: nur die Programmversion wechselt, alle
+   Daten bleiben.
+2. Die Vorabversion hat nur Tabellen oder Felder hinzugefügt: Reprintbuddy entfernt genau, was sie hinzugefügt hat (die
+   Seite nennt, was dabei verloren geht, vorher an einer Kopie geprobt); alle übrigen Einträge bleiben.
+3. Die Vorabversion hat vorhandene Daten umgebaut, oder der Rückbau geht nicht: Reprintbuddy spielt die Sicherung
+   von vor dem Wechsel auf die Vorabversion zurück, und alle Einträge seitdem gehen verloren. Die Seite nennt den
+   Zeitpunkt dieser Sicherung, listet die Journal-Buchungen seitdem auf und verlangt das Passwort erneut.
+
+Lade vorher eine vollständige Sicherung herunter (die Seite hat den Knopf), wenn du den Stand der Vorabversion
+behalten willst; sie lässt sich nur in diese Vorabversion oder eine neuere Version zurückspielen. Danach ist
+**Vorabversionen einschließen** aus. Der Rückweg läuft wie ein Update; schlägt er fehl, läuft die Vorabversion mit
+ihren Daten weiter. Solange eine Vorabversion installiert ist, bleibt die Sicherung von vor ihr auch über die
+letzten 5 hinaus. Eine Vorabversion, deren Umbauschritte vorhandene Daten umbauen, sagt das vorher: Die
+Release-Notes beginnen mit **Database rework:** …, und die Update-Karte zeigt einen Warnkasten und den Knopf
+**Trotzdem aktualisieren**.
 
 ## Neustart
 
