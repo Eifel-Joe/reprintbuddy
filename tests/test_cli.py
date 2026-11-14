@@ -375,7 +375,10 @@ def test_v049_init_of_a_pre_release_offers_pre_releases_from_the_start(db, monke
         assert st.get_setting(s, "update_channel") == "prerelease"
 
 
-def test_v049_init_of_a_stable_release_keeps_stable_releases_only(db):
+def test_v049_init_of_a_stable_release_keeps_stable_releases_only(db, monkeypatch):
+    import reprintbuddy
+
+    monkeypatch.setattr(reprintbuddy, "__version__", "1.0.0")  # stable, whatever this branch is released as
     assert main(["init", "--language", "en", "--db", str(db)]) == 0
     with open_session(db) as s:
         assert st.get_setting(s, "update_channel") == "stable"
@@ -384,6 +387,7 @@ def test_v049_init_of_a_stable_release_keeps_stable_releases_only(db):
 def test_v049_init_on_an_existing_database_keeps_its_choice(db, monkeypatch):
     import reprintbuddy
 
+    monkeypatch.setattr(reprintbuddy, "__version__", "1.0.0")  # stable, whatever this branch is released as
     assert main(["init", "--language", "en", "--db", str(db)]) == 0  # an existing stable installation
     monkeypatch.setattr(reprintbuddy, "__version__", "1.0.0-beta.1")
     assert main(["init", "--language", "en", "--db", str(db)]) == 0
