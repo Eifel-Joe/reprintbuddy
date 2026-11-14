@@ -286,17 +286,27 @@ def test_both_readme_heads_are_built_the_same_way():
     assert skeleton("README.md") == skeleton("README.de.md")
 
 
+STABLE_EN = "Stable since 1.0. New features come as pre-releases first."
+STABLE_DE = "Stabil seit 1.0. Neue Funktionen kommen zuerst als Vorabversion."
+OLD_STATUS = ("under development", "not ready for real use", "in Entwicklung", "noch nicht einsatzbereit")
+
+
 @pytest.mark.parametrize(
     "name,status",
     [
-        ("README.md", "> **Status:** under development, not ready for real use yet."),
-        ("README.de.md", "> **Stand:** in Entwicklung, noch nicht einsatzbereit."),
+        ("README.md", f"> **Status:** {STABLE_EN}"),
+        ("README.de.md", f"> **Stand:** {STABLE_DE}"),
+        ("docs/index.md", f'!!! note "Status"\n    {STABLE_EN}'),
+        ("docs/index.de.md", f'!!! note "Stand"\n    {STABLE_DE}'),
     ],
 )
-def test_readme_status_line_is_true(name, status):
-    text = read(name)
+def test_status_line_says_stable_since_1_0(name, status):
+    """Spec 11.8 (decided 15.11.2026): from 1.0.0 on the status line says "stable", and where new features first appear."""
+    text = read(name).replace("\r\n", "\n")
     assert status in text
     assert "no release yet" not in text and "noch keine Version veröffentlicht" not in text
+    for old in OLD_STATUS:
+        assert old not in text, (name, old)
 
 
 @pytest.mark.parametrize(

@@ -29,7 +29,7 @@ kleine Webanwendung im lokalen Netzwerk (LAN) und ist von außen nur über ein V
 
 ![Übersicht: vier Kacheln und der Druckplan je Drucker auf einen Blick](docs/assets/images/de/overview.png)
 
-> **Stand:** in Entwicklung, noch nicht einsatzbereit.
+> **Stand:** Stabil seit 1.0. Neue Funktionen kommen zuerst als Vorabversion.
 
 Reprintbuddy ist ein eigenständiges Projekt und nicht mit Bambuddy oder Bambu Lab verbunden.
 

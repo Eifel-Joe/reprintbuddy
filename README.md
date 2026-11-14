@@ -28,7 +28,7 @@ small web application on your local network (LAN), reachable from outside only t
 
 ![Overview: four tiles and the print plan per printer at a glance](docs/assets/images/en/overview.png)
 
-> **Status:** under development, not ready for real use yet.
+> **Status:** Stable since 1.0. New features come as pre-releases first.
 
 Reprintbuddy is an independent project and is not affiliated with Bambuddy or Bambu Lab.
 
