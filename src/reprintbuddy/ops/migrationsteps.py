@@ -102,17 +102,24 @@ def single_head(graph: dict[str, str | None]) -> str:
     return heads.pop()
 
 
-def head_of_dir(versions_dir: Path) -> str:
-    """The head of a folder of migration steps (the unpacked stable version)."""
+def graph_of_dir(versions_dir: Path) -> dict[str, str | None]:
+    """The steps of a folder (the unpacked stable version), checked to have one head."""
     try:
         sources = [path.read_text(encoding="utf-8") for path in sorted(Path(versions_dir).glob("*.py"))]
     except OSError as error:
         raise StepsError(f"the migration steps cannot be read: {error}") from error
-    return single_head(parse_graph(sources))
+    graph = parse_graph(sources)
+    single_head(graph)
+    return graph
 
 
-def head_of_package(archive: Path, tag: str) -> str:
-    """The head of the steps inside a downloaded package, read from the archive without unpacking it."""
+def head_of_dir(versions_dir: Path) -> str:
+    """The head of a folder of migration steps."""
+    return single_head(graph_of_dir(versions_dir))
+
+
+def graph_of_package(archive: Path, tag: str) -> dict[str, str | None]:
+    """The steps inside a downloaded package, read from the archive without unpacking it; one head."""
     prefix = f"reprintbuddy-{tag}/src/reprintbuddy/migrations/versions/"
     sources: list[str] = []
     try:
@@ -124,11 +131,28 @@ def head_of_package(archive: Path, tag: str) -> str:
                 handle = tar.extractfile(member)
                 if handle is not None:
                     sources.append(handle.read().decode("utf-8", errors="replace"))
-    except (tarfile.TarError, OSError, EOFError) as error:
+    except Exception as error:  # noqa: BLE001 - tarfile, gzip and zlib raise their own errors for a broken file
         raise StepsError(f"the package cannot be read: {type(error).__name__}") from error
-    except Exception as error:  # noqa: BLE001 - gzip and zlib raise their own errors for a broken file
-        raise StepsError(f"the package cannot be read: {type(error).__name__}") from error
-    return single_head(parse_graph(sources))
+    graph = parse_graph(sources)
+    single_head(graph)
+    return graph
+
+
+def head_of_package(archive: Path, tag: str) -> str:
+    """The head of the steps inside a downloaded package."""
+    return single_head(graph_of_package(archive, tag))
+
+
+def in_line(graph: dict[str, str | None], revision: str, head: str) -> bool:
+    """Is `revision` the head itself or one of the steps below it in `graph`?"""
+    current: str | None = head
+    seen: set[str] = set()
+    while current is not None and current not in seen:
+        if current == revision:
+            return True
+        seen.add(current)
+        current = graph.get(current)
+    return False
 
 
 def _note(value: object) -> dict[str, str] | None:

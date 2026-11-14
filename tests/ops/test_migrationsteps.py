@@ -127,3 +127,11 @@ def test_current_revision_of_a_missing_or_empty_database(tmp_path):
     empty = tmp_path / "empty.db"
     sqlite3.connect(empty).close()
     assert current_revision(empty) is None
+
+
+def test_in_line_follows_the_steps_below_the_head():
+    from reprintbuddy.ops.migrationsteps import in_line
+
+    graph = {"a": None, "b": "a", "c": "b"}
+    assert in_line(graph, "c", "c") and in_line(graph, "a", "c")
+    assert not in_line(graph, "c", "b") and not in_line(graph, "x", "c")

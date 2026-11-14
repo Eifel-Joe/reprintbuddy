@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 OPS = Path(__file__).resolve().parents[2] / "src" / "reprintbuddy" / "ops"
-MODULES = ("updater.py", "migrationsteps.py")
+MODULES = ("updater.py", "migrationsteps.py", "stablereturn.py")
 
 
 def late_imports(path: Path) -> list[str]:
