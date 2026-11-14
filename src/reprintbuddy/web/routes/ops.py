@@ -7,23 +7,29 @@ is `release.json` or the local `git describe` (once per process); GitHub is aske
 from __future__ import annotations
 
 import logging
+import shutil
+import sqlite3
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from string import Formatter
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy import __version__
 from reprintbuddy import settings as st
 from reprintbuddy.activity.kinds import Actor
+from reprintbuddy.models import JournalEntry
 from reprintbuddy.ops import fullbackup
 from reprintbuddy.ops.backup import backup_dir_for, update_backup_since
 from reprintbuddy.ops.export import export_bytes
-from reprintbuddy.ops.installation import installed_version, is_installation, marker_stamp
-from reprintbuddy.ops.releases import check_versions
+from reprintbuddy.ops.installation import installed_version, is_installation, marker_stamp, read_installation
+from reprintbuddy.ops.migrationsteps import StepsError
+from reprintbuddy.ops.package import PackageError
+from reprintbuddy.ops.releases import ReleaseCheckError, check_versions, fetch_releases, return_target
 from reprintbuddy.ops.server import (
     EffectiveServer,
     address_changed,
@@ -34,6 +40,7 @@ from reprintbuddy.ops.server import (
 from reprintbuddy.ops.running import update_running, update_running_async
 from reprintbuddy.ops.runner import CommandResult, in_thread
 from reprintbuddy.ops.service import request_restart, start_update_unit
+from reprintbuddy.ops.stablereturn import ReturnPlan, assess, prepare_target
 from reprintbuddy.ops.status import (
     BUSY_STATES,
     FAILED_STATES,
@@ -52,6 +59,8 @@ from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_tra
 from reprintbuddy.web.forms import duplicate_redirect, maintenance_redirect
 from reprintbuddy.web.i18n import translate
 from reprintbuddy.web.installed import refresh as refresh_installed
+from reprintbuddy.web.journal_view import journal_rows
+from reprintbuddy.web.routes.auth import password_confirmed
 
 log = logging.getLogger("reprintbuddy.ops")
 router = APIRouter()
@@ -60,6 +69,11 @@ router = APIRouter()
 OPS_MESSAGES: dict[str, str] = {
     "restart_failed": "restart",
     **{code: "update" for code in ("check_failed", "busy", "no_update", "start_failed", "not_git")},
+    # the way back to the stable version (Spec 11.3a "Rückweg"): why there is none, or why it stopped
+    **{
+        f"return_{code}": "update"
+        for code in ("check_failed", "expired", "none", "no_backup", "backup_unusable", "db_unreadable")
+    },
     **{code: "backup" for code in ("backup_mismatch", "backup_length", "backup_failed", "backup_login")},
     **{
         f"restore_{code}": "restore"
@@ -79,6 +93,8 @@ UPDATE_EXEMPT_PATHS = frozenset(
     {
         "/settings/update/check",
         "/settings/update",
+        "/settings/update/return/check",  # the way back answers "busy" on its own, as the update button does
+        "/settings/update/return",
         "/logout",
         "/bambuddy/rights/later",
         "/bambuddy/rights/recheck",
@@ -118,6 +134,7 @@ class OpsView:
     reason_params: dict[str, str] = field(default_factory=dict)
     reason_open_end: bool = False  # a technical line is empty: the text must not end on its colon (p200)
     dismissable: bool = False  # a failed update's card, which stays until "Hide" (p503)
+    return_to: str | None = None  # Spec 11.3a "Rückweg": the stable version a pre-release can go back to
 
 
 def _display_host(request: Request, effective: EffectiveServer) -> str:
@@ -198,6 +215,7 @@ def ops_view(request: Request, session: Session, busy: bool | None = None) -> Op
     if view.git_install:
         view.installed = _installed(request)
         view.version_info = getattr(app.state, "version_info", None)
+        view.return_to = view.version_info.return_to if view.version_info else None
         view.installed_prerelease = is_prerelease_tag(view.installed or "") and (
             st.get_setting(session, "update_channel") != "prerelease"
         )
@@ -524,6 +542,11 @@ async def update_start(request: Request):
     right before "queued" is written, with no `await` between those two either. A restore sets its own
     state before it asks about updates, so one of the two sees the other.
     """
+    return await _gated_start(request)
+
+
+async def _gated_start(request: Request, way_back: ReturnPlan | None = None):
+    """The gate of `update_start`, for an update and for the way back to the stable version (Spec 11.3a)."""
     app = request.app
     ops = app.state.ops
     if not is_installation(ops.install_dir):
@@ -538,13 +561,13 @@ async def update_start(request: Request):
     # helper starts, every way out closes the window again.
     app.state.notifier.begin_settle()
     try:
-        return await _start_update(request)
+        return await _start_update(request, way_back)
     finally:
         app.state.notifier.end_settle()
         app.state.update_starting = False
 
 
-async def _start_update(request: Request):
+async def _start_update(request: Request, way_back: ReturnPlan | None = None):
     app = request.app
     ops = app.state.ops
     data_dir = _data_dir(request)
@@ -554,8 +577,10 @@ async def _start_update(request: Request):
         return _back("busy")
     refresh_installed(app.state)  # p543: not an update to the version the last update installed
     info: VersionInfo | None = getattr(app.state, "version_info", None)
-    if info is None or not info.update_available:
+    if way_back is None and (info is None or not info.update_available):
         return _back("no_update")
+    if way_back is not None and (info is None or info.return_to != way_back.target):
+        return _back("return_expired")  # the check since then names another stable version, or none
     # p310: Home Assistant could accept a message while the update began; the notifier then refused to
     # write "sent" (an update had started), and the new version sent it once more after its restart.
     # The helper's backup and restart come only after the outcome of that call is written. Bounded:
@@ -568,16 +593,18 @@ async def _start_update(request: Request):
     if app.state.restore.active:
         return _back("busy")
     now = _utc_now()
-    write_status(
-        data_dir,
-        UpdateStatus(
-            state="queued",
-            step="start",
-            from_tag=info.installed,
-            to_tag=info.newest,
-            started_at=now,
-        ),
-    )
+    queued = UpdateStatus(state="queued", step="start", from_tag=info.installed, to_tag=info.newest, started_at=now)
+    if way_back is not None:
+        # Spec 11.3a "Rückweg": what the user confirmed; the helper decides again and changes nothing if it differs.
+        queued = replace(
+            queued,
+            to_tag=way_back.target,
+            kind="return",
+            return_case=way_back.case,
+            target_head=way_back.target_head,
+            return_backup=str(way_back.backup) if way_back.case == 3 and way_back.backup else None,
+        )
+    write_status(data_dir, queued)
     # Cancelled here (a shutdown): sudo is killed, the gate is freed and "queued" stays; it is believed
     # for the grace only, then systemd's word counts, and the card says the update did not start (or,
     # when the target version runs, that it finished: `ops_view`, p123). Not rewritten to "failed":
@@ -591,12 +618,9 @@ async def _start_update(request: Request):
         reason = lines[0][:300] if lines else f"exit code {result.returncode}"
         write_status(
             data_dir,
-            UpdateStatus(
+            replace(
+                queued,
                 state="failed",
-                step="start",
-                from_tag=info.installed,
-                to_tag=info.newest,
-                started_at=now,
                 finished_at=_utc_now(),
                 message=f"start: {reason}",
                 reason="start_failed",
@@ -605,6 +629,127 @@ async def _start_update(request: Request):
         )
         return _back("start_failed")
     return _back()
+
+
+# --- the way back to the stable version (Spec 11.3a "Rückweg zur stabilen Version") -----------------------
+
+# (Festlegung Claude, confirmed with the plan) how long the result of the check counts for the confirmation:
+# long enough to read the page and download a backup, short enough that it still describes the database.
+RETURN_FRESH = timedelta(minutes=30)
+# Up to this many journal bookings the list on the confirmation page is open; more, and it starts closed with
+# the number in its summary (Spec 11.3a case 3, F5; review focus 5). The list has no limit.
+RETURN_OPEN_UP_TO = 10
+RETURN_CHECK_DIR = ".return-check"  # beside the database while the click checks (package, copies); gone after
+MAX_LOGIN_FIELD = 4 * 1024
+
+
+def _prepare_return(app: Any, target: str) -> ReturnPlan:
+    """In a worker thread: the release list, the checked package of `target`, the case (`stablereturn.assess`)."""
+    ops = app.state.ops
+    found = read_installation(ops.install_dir, ops.runner)
+    if found is None or found.repo is None or found.tag is None:
+        raise ReleaseCheckError("no installation")
+    release = return_target(fetch_releases(found.repo, ops.http_get), found.tag)
+    if release is None or release.tag != target:
+        raise ReleaseCheckError("the stable version to go back to has changed")
+    db_path = app.state.db_path
+    work = db_path.parent / RETURN_CHECK_DIR
+    try:
+        graph = prepare_target(release, ops.download, work / "package")
+        return assess(
+            db_path, target=release.tag, target_graph=graph, backup_dir=backup_dir_for(db_path), work_dir=work,
+            script_location=ops.script_location,
+        )
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _prepared(request: Request) -> ReturnPlan | None:
+    held = getattr(request.app.state, "return_prepared", None)
+    if not held:
+        return None
+    plan, at = held
+    return plan if _utc_now() - at <= RETURN_FRESH else None
+
+
+@router.post("/settings/update/return/check", dependencies=[Depends(verify_csrf)])
+async def return_check(request: Request):
+    """The button "Zurück zur stabilen Version X.Y.Z": load and check the stable package, decide the case and
+    rehearse it on a copy, then show the confirmation page. Like "Check for updates", this asks the network;
+    the page itself never does. Without a way back the card says why."""
+    app = request.app
+    ops = app.state.ops
+    if not is_installation(ops.install_dir):
+        return _back("not_git")
+    if app.state.restore.active or app.state.update_starting:
+        return _back("busy")
+    data_dir = _data_dir(request)
+    now = _utc_now()
+    if is_busy(read_status(data_dir), now) and await update_running_async(data_dir, ops.runner, now):
+        return _back("busy")
+    refresh_installed(app.state)
+    info: VersionInfo | None = getattr(app.state, "version_info", None)
+    if info is None or not info.return_to:
+        return _back("return_none")
+    app.state.return_prepared = None
+    try:
+        plan = await in_thread(_prepare_return, app, info.return_to)
+    except (UpdateCheckError, PackageError, StepsError, OSError, sqlite3.Error) as error:
+        log.warning("way back: the check failed: %s", str(error)[:300])  # not shown on the page
+        return _back("return_check_failed")
+    if plan.case is None:
+        return _back(f"return_{plan.unavailable}")
+    app.state.return_prepared = (plan, _utc_now())
+    return RedirectResponse("/settings/update/return", status_code=303)
+
+
+def _return_page(request: Request, db: Session, plan: ReturnPlan, *, error: str | None = None) -> Response:
+    rows: list[dict[str, Any]] = []
+    if plan.case == 3 and plan.journal_ids:
+        wanted = set(plan.journal_ids)
+        entries = db.scalars(
+            select(JournalEntry).where(JournalEntry.id >= min(wanted)).order_by(JournalEntry.id.desc())
+        ).all()
+        rows = journal_rows(db, [entry for entry in entries if entry.id in wanted])
+    lang = "de" if str(st.get_setting(db, "language")) == "de" else "en"
+    return render(
+        request,
+        "return_confirm.html",
+        status_code=400 if error else 200,
+        plan=plan,
+        installed=getattr(request.app.state, "installed_tag", None),
+        rows=rows,
+        list_open=len(rows) <= RETURN_OPEN_UP_TO,
+        lang=lang,
+        error=error,
+    )
+
+
+@router.get("/settings/update/return")
+async def return_page(request: Request, db: Session = Depends(get_db)):
+    """The confirmation page (Spec 11.3a): the case, what is lost, the backup to download. No network."""
+    plan = _prepared(request)
+    if plan is None:
+        return _back("return_expired")
+    return _return_page(request, db, plan)
+
+
+@router.post("/settings/update/return", dependencies=[Depends(verify_csrf)])
+async def return_confirm(request: Request, db: Session = Depends(get_db)):
+    """Start the way back the page described. Case 3 asks the password again, as a restore does (Spec 11.6);
+    cases 1 and 2 keep the data, a click is enough. The case the page showed must be the one checked."""
+    form = await request.form()
+    plan = _prepared(request)
+    if plan is None or str(form.get("case") or "") != str(plan.case):
+        return _back("return_expired")
+    if plan.case == 3:
+        login = str(form.get("login_password") or "")[:MAX_LOGIN_FIELD]
+        if not await password_confirmed(request, db, login):
+            return _return_page(request, db, plan, error="ops.return.password_wrong")
+    response = await _gated_start(request, plan)
+    if "ops=" not in response.headers.get("location", ""):
+        request.app.state.return_prepared = None  # started: the check is used up
+    return response
 
 
 @router.post("/settings/update/dismiss", dependencies=[Depends(verify_csrf)])
