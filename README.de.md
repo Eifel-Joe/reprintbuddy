@@ -315,7 +315,7 @@ die sagt, was passiert, in einem von drei Fällen:
 
 1. Die Datenbank ist so, wie die stabile Version sie hinterlassen hat: nur die Programmversion wechselt, alle
    Daten bleiben.
-2. Die Vorabversion hat nur Tabellen oder Felder hinzugefügt: Sie entfernt genau, was sie hinzugefügt hat (die
+2. Die Vorabversion hat nur Tabellen oder Felder hinzugefügt: Reprintbuddy entfernt genau, was sie hinzugefügt hat (die
    Seite nennt, was dabei verloren geht, vorher an einer Kopie geprobt); alle übrigen Einträge bleiben.
 3. Die Vorabversion hat vorhandene Daten umgebaut, oder der Rückbau geht nicht: Reprintbuddy spielt die Sicherung
    von vor dem Wechsel auf die Vorabversion zurück, und alle Einträge seitdem gehen verloren. Die Seite nennt den
@@ -325,7 +325,7 @@ Lade vorher eine vollständige Sicherung herunter (die Seite hat den Knopf), wen
 behalten willst; sie lässt sich nur in diese Vorabversion oder eine neuere Version zurückspielen. Danach ist
 **Vorabversionen einschließen** aus. Der Rückweg läuft wie ein Update; schlägt er fehl, läuft die Vorabversion mit
 ihren Daten weiter. Solange eine Vorabversion installiert ist, bleibt die Sicherung von vor ihr auch über die
-letzten 5 hinaus. Eine Vorabversion, deren Umbauschritte vorhandene Daten umbauen, sagt das vorher: Ihre
+letzten 5 hinaus. Eine Vorabversion, deren Umbauschritte vorhandene Daten umbauen, sagt das vorher: Die
 Release-Notes beginnen mit **Database rework:** …, und die Update-Karte zeigt einen Warnkasten und den Knopf
 **Trotzdem aktualisieren**.
 
