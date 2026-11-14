@@ -16,7 +16,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from reprintbuddy.ops.versions import VERSION_TAG
+from reprintbuddy.ops.versions import RELEASE_TAG, VERSION_TAG, is_prerelease_tag
 
 BACKUP_DIRNAME = "backups"
 KEEP_BACKUPS = 5
@@ -148,3 +148,41 @@ def update_backup_since(backup_dir: Path, moment: datetime, from_tag: str | None
         if made >= since:
             return True
     return False
+
+
+def backup_time(path: Path) -> datetime | None:
+    """When a backup was made, from its name (UTC); None for a name of another form."""
+    found = _LABELLED.match(Path(path).name)
+    if found is None:
+        return None
+    try:
+        return datetime.strptime(found["at"], "%Y%m%dT%H%M%S").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+def switch_backup(backup_dir: Path) -> Path | None:
+    """The backup from before the switch to a pre-release (Spec 11.3a "Rückweg zur stabilen Version"): the
+    newest one a stable version made before an update, i.e. labelled with a stable tag. While a pre-release
+    is installed, nothing else writes such a label (its own updates are labelled with its pre-release tag,
+    a restore with "before-restore"). None when there is none or the folder cannot be read."""
+    try:
+        entries = list(backup_dir.iterdir())
+    except OSError:
+        return None
+    found: list[tuple[datetime, Path]] = []
+    for path in entries:
+        match = _LABELLED.match(path.name)
+        when = backup_time(path)
+        if match and when is not None and RELEASE_TAG.match(match["label"]) and path.is_file():
+            found.append((when, path))
+    return max(found, key=lambda item: (item[0], item[1].name))[1] if found else None
+
+
+def kept_for_running(backup_dir: Path, running: str | None) -> list[Path]:
+    """What `prune_backups` must keep beyond the newest five while `running` is the version that runs:
+    the backup from before the pre-release, as long as a pre-release runs (Spec 11.3a); nothing otherwise."""
+    if not running or not is_prerelease_tag(running):
+        return []
+    found = switch_backup(backup_dir)
+    return [found] if found is not None else []

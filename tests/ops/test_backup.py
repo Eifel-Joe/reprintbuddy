@@ -9,6 +9,9 @@ from sqlalchemy import text
 from reprintbuddy import settings as st
 from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.ops.backup import (
+    backup_time,
+    kept_for_running,
+    switch_backup,
     KEEP_BACKUPS,
     backup_database,
     backup_dir_for,
@@ -200,3 +203,53 @@ def test_p145_update_backup_since_compares_in_utc(tmp_path):
 
 def test_p145_update_backup_since_without_a_folder(tmp_path):
     assert update_backup_since(tmp_path / "backups", STARTED, "v0.1.0") is False
+
+
+# --- the backup from before a pre-release (Spec 11.3a "Sicherung von vor der Vorabversion") -------------
+
+
+
+def touch(folder: Path, *names: str) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (folder / name).write_bytes(b"")
+
+
+def test_switch_backup_is_the_newest_one_a_stable_version_made(tmp_path):
+    touch(
+        tmp_path,
+        "reprintbuddy-v0.9.0-20261101T100000Z.db",
+        "reprintbuddy-v1.0.0-20261110T100000Z.db",  # the update from 1.0.0 to the pre-release
+        "reprintbuddy-v1.1.0-beta.1-20261111T100000Z.db",
+        "reprintbuddy-before-restore-20261112T100000Z.db",
+        "reprintbuddy-0123456789ab-20261113T100000Z.db",
+        "notes.txt",
+    )
+    assert switch_backup(tmp_path) == tmp_path / "reprintbuddy-v1.0.0-20261110T100000Z.db"
+
+
+def test_no_switch_backup_without_one_or_without_the_folder(tmp_path):
+    assert switch_backup(tmp_path / "missing") is None
+    touch(tmp_path, "reprintbuddy-v1.1.0-beta.1-20261111T100000Z.db")
+    assert switch_backup(tmp_path) is None
+
+
+def test_backup_time_is_read_from_the_name_in_utc(tmp_path):
+    assert backup_time(tmp_path / "reprintbuddy-v1.0.0-20261110T093000Z.db") == datetime(2026, 11, 10, 9, 30, tzinfo=UTC)
+    assert backup_time(tmp_path / "other.db") is None
+
+
+def test_kept_while_a_pre_release_runs_only(tmp_path):
+    touch(tmp_path, "reprintbuddy-v1.0.0-20261110T100000Z.db")
+    switch = tmp_path / "reprintbuddy-v1.0.0-20261110T100000Z.db"
+    assert kept_for_running(tmp_path, "v1.1.0-beta.1") == [switch]
+    assert kept_for_running(tmp_path, "v1.0.0") == []
+    assert kept_for_running(tmp_path, None) == []
+
+
+def test_prune_with_the_switch_backup_kept_leaves_six(tmp_path):
+    touch(tmp_path, "reprintbuddy-v1.0.0-20261101T100000Z.db")
+    touch(tmp_path, *(f"reprintbuddy-v1.1.0-beta.1-2026111{day}T100000Z.db" for day in range(5)))
+    prune_backups(tmp_path, 5, protect=kept_for_running(tmp_path, "v1.1.0-beta.1"))
+    assert len(list(tmp_path.iterdir())) == 6
+    assert (tmp_path / "reprintbuddy-v1.0.0-20261101T100000Z.db").exists()

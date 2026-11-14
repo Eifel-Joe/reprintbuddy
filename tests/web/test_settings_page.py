@@ -475,6 +475,8 @@ def test_all_settings_posts_require_csrf(ready_client):
         "/settings/update/channel",  # v0.4.9: stable releases only / pre-releases too
         "/settings/update/check",
         "/settings/update/dismiss",  # p503: hides the card of a failed update
+        "/settings/update/return",  # the way back to the stable version (Spec 11.3a): the confirmation
+        "/settings/update/return/check",  # and the check before it
     ]
     csrf_of(ready_client, "/settings")  # a session with a token exists
     for path in paths:

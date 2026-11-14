@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from reprintbuddy.ops.package import Download, urllib_download
 from reprintbuddy.ops.releasenotes import HttpGet, httpx_get
 from reprintbuddy.ops.runner import CommandRunner, subprocess_runner
 from reprintbuddy.ops.server import EffectiveServer
@@ -17,3 +18,6 @@ class OpsContext:
     runner: CommandRunner = subprocess_runner
     effective: EffectiveServer | None = None  # what this process was started with
     http_get: HttpGet = httpx_get  # the one request to GitHub for the release notes (p143)
+    # Spec 11.3a "Rückweg": the click on "back to the stable version" loads and checks its package.
+    download: Download = urllib_download
+    script_location: Path | None = None  # the migration steps (tests only: steps of a pre-release)

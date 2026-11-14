@@ -103,7 +103,28 @@ The card shows the installed version and, if it differs, the package version nex
 
 ## Stable releases or pre-releases too
 
-The switch **Include pre-releases** on the update card, right under the automatic check, is off by default: then only stable releases are offered. Switched on, pre-releases are offered too. A click saves the choice and checks for updates at once, also when the automatic check is off. With pre-releases on, the card offers the newest version of either kind, and the notes of a pre-release say "pre-release". Switched off again, an installed pre-release stays; nothing older is offered, the next newer stable release is. The card then says "A pre-release is installed." An installation made from the install command of a pre-release starts with pre-releases on.
+The switch **Include pre-releases** on the update card, right under the automatic check, is off by default: then only stable releases are offered. Switched on, pre-releases are offered too. A click saves the choice and checks for updates at once, also when the automatic check is off. With pre-releases on, the card offers the newest version of either kind, and the notes of a pre-release say "pre-release". Switched off again, an installed pre-release stays; nothing older is offered, the next newer stable release is. The card then says "A pre-release is installed." The way back to an older stable release is described below. An installation made from the install command of a pre-release starts with pre-releases on.
+
+### Back to the stable version
+
+While a pre-release is installed and there is no newer stable release, the card offers **Back to the stable
+version X.Y.Z** (the newest stable release older than the installed one), whatever the switch **Include
+pre-releases** says. The click checks the package of that version and opens a page that says what happens, in
+one of three cases:
+
+1. The database is as the stable version left it: only the program changes; all data stays.
+2. The pre-release only added tables or fields: it removes exactly what it added (the page names what is lost,
+   rehearsed on a copy first); all other entries stay.
+3. The pre-release reworked existing data, or taking it back is not possible: Reprintbuddy restores the backup
+   from before the switch to the pre-release, and all entries made since then are lost. The page names the time
+   of that backup, lists the journal bookings since then and asks for the password again.
+
+Download a full backup first (the page has the button) if you want to keep the state of the pre-release; it can
+only be restored into this pre-release or a newer version. Afterwards **Include pre-releases** is off. The way
+back runs like an update; if it fails, the pre-release keeps running with its data. While a pre-release is
+installed, the backup from before it is kept beyond the last 5. A pre-release whose database steps rework existing
+data says so beforehand: its release notes begin with **Database rework:** …, and the update card shows a warning
+and the button **Update anyway**.
 
 ## Restart
 

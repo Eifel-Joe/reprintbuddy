@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -189,3 +190,68 @@ def test_a_second_build_of_the_same_tag_is_the_same_file(bash, tmp_path, tagged)
     os.utime(tagged / "pyproject.toml", (1, 1))  # the time of a file in the checkout changes nothing
     run_step(bash, "Build", cwd=tagged, env={"TAG": "v1.0.0"})
     assert (tagged / package_name("v1.0.0")).read_bytes() == first
+
+
+# --- the notes against the rework marks (Spec 11.3a "Umbau nur angekündigt") ---------------------------
+
+GH_NOTES_STUB = """#!/bin/bash
+# Stands in for `gh release view <tag> --json body --jq .body`: answers from the environment.
+[ "$1 $2" = "release view" ] || exit 9
+[ "$3" = "$TAG" ] || exit 8
+[ "$4 $5 $6 $7" = "--json body --jq .body" ] || exit 7
+printf '%s\n' "$NOTES"
+"""
+
+
+def test_the_notes_are_checked_before_the_package_is_built():
+    names = [str(item.get("name", "")) for item in workflow()["jobs"]["package"]["steps"]]
+    check = names.index(step("Check the notes")["name"])
+    assert check < names.index(step("Build")["name"])
+    assert check < names.index(step("Attach")["name"])
+    install = names.index(step("Install the code")["name"])
+    assert install < check
+
+
+def notes_check(bash, tmp_path, repo, tag, notes):
+    stubs = tmp_path / "stubs"
+    stubs.mkdir(exist_ok=True)
+    (stubs / "gh").write_text(GH_NOTES_STUB, encoding="utf-8", newline="\n")
+    (stubs / "python").write_text(f'#!/bin/bash\nexec "{Path(sys.executable).as_posix()}" "$@"\n', encoding="utf-8", newline="\n")
+    for name in ("gh", "python"):
+        (stubs / name).chmod(0o755)
+    (repo.path / "tools").mkdir(exist_ok=True)
+    for name in ("check_release_notes.py", "stable_head.py"):
+        shutil.copy(ROOT / "tools" / name, repo.path / "tools" / name)
+    work = tmp_path / "runner"
+    work.mkdir(exist_ok=True)
+    env = {"TAG": tag, "NOTES": notes, "RUNNER_TEMP": work.as_posix(),
+           "PATH": f"{stubs.as_posix()}{os.pathsep}{os.environ['PATH']}"}
+    return run_step(bash, "Check the notes", cwd=repo.path, env=env)
+
+
+def test_a_pre_release_whose_notes_miss_the_rework_line_gets_no_package(bash, tmp_path):
+    from release_repo_support import ReleaseRepo
+
+    from reprintbuddy.ops.releases import REWORK_LINE
+
+    repo = ReleaseRepo(tmp_path)
+    repo.add_step("rework_marked")
+    repo.tag("v1.1.0-beta.1")
+    done = notes_check(bash, tmp_path, repo, "v1.1.0-beta.1", "What is new.")
+    assert done.returncode != 0 and "rework" in done.stdout + done.stderr
+    done = notes_check(bash, tmp_path, repo, "v1.1.0-beta.1", REWORK_LINE + "\n\nWhat is new.")
+    assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_a_tag_from_before_the_notes_check_is_built_without_it(bash, tmp_path):
+    """Review: the workflow started by hand for an older tag checks out that tag, which has no checker."""
+    from release_repo_support import ReleaseRepo
+
+    repo = ReleaseRepo(tmp_path)
+    notes_check(bash, tmp_path, repo, "v1.0.0", "Notes.")  # puts the stubs in place
+    (repo.path / "tools" / "check_release_notes.py").unlink()  # as in a tag from before the check
+    env = {"TAG": "v1.0.0", "NOTES": "Notes.", "RUNNER_TEMP": (tmp_path / "runner").as_posix(),
+           "PATH": f"{(tmp_path / 'stubs').as_posix()}{os.pathsep}{os.environ['PATH']}"}
+    done = run_step(bash, "Check the notes", cwd=repo.path, env=env)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "::notice::" in done.stdout

@@ -911,3 +911,19 @@ def test_an_untrusted_database_is_opened_defensively(tmp_path):
             con.execute("UPDATE sqlite_master SET sql = sql WHERE name = 'settings'")
     finally:
         con.close()
+
+
+@pytest.mark.parametrize(("running", "kept"), [("1.1.0-beta.1", True), ("1.1.0", False)])
+def test_a_restore_under_a_pre_release_keeps_the_backup_from_before_it(live, work, monkeypatch, running, kept):
+    """Spec 11.3a "Sicherung von vor der Vorabversion": kept beyond the five while a pre-release runs."""
+    from reprintbuddy.ops.backup import backup_database, backup_dir_for
+
+    monkeypatch.setattr(fb, "__version__", running)
+    backups = backup_dir_for(live)
+    switch = backup_database(live, backups, label="v1.0.0", now=datetime(2026, 1, 1, tzinfo=UTC))
+    for day in range(2, 8):
+        backup_database(live, backups, label="v1.1.0-beta.1", now=datetime(2026, 1, day, tzinfo=UTC))
+    candidate = read_back(plain_backup(live, work).path, work)
+    fb.replace_database(candidate, live, now=NOW)
+    assert switch.exists() is kept
+    assert len(list(backups.iterdir())) == (6 if kept else 5)

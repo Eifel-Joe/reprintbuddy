@@ -72,6 +72,29 @@ jobs:
             exit 1
           fi
 
+      # Spec 11.3a "Umbau nur angekündigt": a pre-release whose database steps rework existing data begins its
+      # notes with the fixed rework line, and only then. A release that does not agree gets no package, so no
+      # Reprintbuddy offers it; correct the notes and start this workflow again by hand.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install the code for the notes check
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet .
+
+      - name: Check the notes against the rework marks of the database steps
+        run: |
+          set -euo pipefail
+          if [ ! -f tools/check_release_notes.py ]; then
+            # Started by hand for a tag from before this check: that tag has no checker and no marks to compare.
+            echo "::notice::$TAG is older than the notes check; nothing to compare."
+            exit 0
+          fi
+          gh release view "$TAG" --json body --jq .body > "$RUNNER_TEMP/notes.md"
+          python tools/check_release_notes.py --tag "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+
       - name: Build package and checksum
         run: |
           set -euo pipefail

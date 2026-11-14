@@ -33,9 +33,11 @@ from reprintbuddy.ops.backup import (
     KEEP_BACKUPS,
     backup_database,
     backup_dir_for,
+    kept_for_running,
     prune_backups,
     restore_database,
 )
+from reprintbuddy.ops.migrationsteps import StepsError, graph_of_dir, single_head
 from reprintbuddy.ops.installation import MARKER, RELEASES_DIR, Installation, read_installation, write_marker
 from reprintbuddy.ops.oplock import LOCK_NAME, Held, acquire
 from reprintbuddy.ops.package import (
@@ -56,11 +58,13 @@ from reprintbuddy.ops.releases import (
     fetch_releases,
     newest_offered,
     package_name,
+    return_target,
 )
 from reprintbuddy.ops.runner import CommandResult, CommandRunner
 from reprintbuddy.ops.service import RESTART_WAIT_CMD, START_CMD, STOP_CMD
+from reprintbuddy.ops.stablereturn import ReturnPlan, assess, build_stable_db, copy_database
 from reprintbuddy.ops.status import UpdateStatus, is_busy, mark_interrupted, read_status, write_status
-from reprintbuddy.ops.versions import is_newer
+from reprintbuddy.ops.versions import is_newer, is_prerelease_tag
 
 MAX_REASON = 300
 DOWNLOAD_DIR = ".download"  # under releases/: the package and its checksum while they are checked
@@ -73,6 +77,10 @@ DOWNLOAD_DIR = ".download"  # under releases/: the package and its checksum whil
 # miss it, and the update would then install something newer than the page offered); telling the unit from a
 # hand by systemd's environment (a shell may carry it too). Tests: test_updater.py "p331".
 QUEUED_TARGET_WINDOW = timedelta(minutes=2)
+# Spec 11.3a "Rückweg zur stabilen Version": beside the database while the way back runs, the database as it
+# was when the service stopped (`before.db`, what a failure brings back) and the one the stable version will
+# run on (`stable.db`). Gone after the way back; after a failed rollback `before.db` stays and is named.
+RETURN_DIR = ".return"
 
 
 def venv_python(install_dir: Path) -> Path:
@@ -150,7 +158,9 @@ def run_update(
     download: Download,
     target: str | None = None,
     keep_backups: int = KEEP_BACKUPS,
+    script_location: Path | None = None,
 ) -> UpdateStatus:
+    """`script_location` (migration steps of the way back) exists for tests."""
     data_dir = db_path.parent
     started = now()
 
@@ -177,6 +187,11 @@ def run_update(
     if previous.state == "running" and is_busy(previous, started):
         print("update: an earlier update did not finish (its process ended); starting anew", flush=True)
     try:
+        if target is None and previous.state == "queued" and previous.kind == "return":
+            return _start_return(
+                db_path, install_dir, runner, wait_healthy, now, http_get, download, keep_backups, previous, started,
+                script_location,
+            )
         return _run_update(
             db_path, install_dir, runner, wait_healthy, now, http_get, download, target, keep_backups, previous, started
         )
@@ -227,39 +242,7 @@ def _run_update(
         "backup": None,
     }
 
-    def put(
-        state: str, step: str, message: str = "", *, finished: bool = False,
-        reason: str = "", params: dict[str, str] | None = None,
-    ) -> UpdateStatus:
-        status = UpdateStatus(
-            state=state,  # type: ignore[arg-type]
-            step=step,
-            from_tag=info["from_tag"],
-            to_tag=info["to_tag"],
-            started_at=started,
-            finished_at=now() if finished else None,
-            message=message,
-            backup=info["backup"],
-            reason=reason,
-            params=params or {},
-        )
-        try:
-            write_status(data_dir, status)
-        except OSError as error:
-            # A full disk or a read-only file must not stop an update half way, least of all
-            # the rollback: the page just keeps the last state it could get.
-            print(f"update: cannot write the status file ({error})", flush=True)
-        print(f"update: {step}: {state}" + (f" ({message})" if message else ""), flush=True)
-        return status
-
-    def finish(
-        state: str, step: str, message: str, reason: str = "", params: dict[str, str] | None = None
-    ) -> UpdateStatus:
-        if info["backup"]:
-            # After a failed rollback the message names this backup as the one to restore.
-            protect = [Path(info["backup"])] if state == "rollback_failed" else []
-            prune_backups(backup_dir, keep_backups, protect=protect)
-        return put(state, step, message, finished=True, reason=reason, params=params)
+    put, finish = _reporter(data_dir, backup_dir, keep_backups, info, started, now)
 
     # --- before anything is changed: a failure leaves everything as it was -------------
     # v0.4.9 p500: what is installed comes from `release.json` (a package installation) or, for an
@@ -337,32 +320,15 @@ def _run_update(
         nonlocal current
         current = "install"
         put("running", "install")
-        # A pip that fails half way can leave the environment neither old nor new, and the
-        # reinstall of the old version needs the network that just failed. Keep a copy.
-        if venv_dir.is_dir():
-            try:
-                shutil.rmtree(snapshot_dir, ignore_errors=True)
-                shutil.copytree(venv_dir, snapshot_dir, symlinks=True)
-                snapshot_taken.append(True)
-            except OSError as error:
-                shutil.rmtree(snapshot_dir, ignore_errors=True)
-                detail = str(error)[:200]
-                return "install", f"cannot back up the Python environment: {detail}", "snapshot_failed", {"detail": detail}
-        shutil.rmtree(new_source / "build", ignore_errors=True)
-        done = runner((py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", str(new_source)), timeout=900.0)
-        if not done.ok:
-            too_old = _too_old_python(done)
-            if too_old is not None:
-                return "install", too_old[0], "python_too_old", too_old[1]
-            return "install", _reason(done, "pip install failed"), "install_failed", {"detail": _reason(done, "")}
+        problem = _install_package(py, venv_dir, snapshot_dir, new_source, runner, snapshot_taken)
+        if problem is not None:
+            return problem
 
         current = "verify"
         put("running", "verify")
-        done = runner((py, "-m", "reprintbuddy", "--version"))
-        expected = "reprintbuddy " + goal[1:]
-        if not done.ok or done.stdout.strip() != expected:
-            seen = done.stdout.strip()[:80] or _reason(done, "no output")
-            return "verify", f"expected '{expected}', got '{seen}'", "verify_failed", {"expected": expected, "seen": seen}
+        problem = _verify_version(py, goal, runner)
+        if problem is not None:
+            return problem
 
         current = "migrate"
         put("running", "migrate")
@@ -436,6 +402,392 @@ def _run_update(
     if restored:
         return finish("rolled_back", "rollback", cause, problem[2], problem[3])
     return finish("rollback_failed", "rollback", f"{cause} – backup: {backup}", problem[2], problem[3])
+
+
+def _reporter(
+    data_dir: Path,
+    backup_dir: Path,
+    keep_backups: int,
+    info: dict[str, str | None],
+    started: datetime,
+    now: Callable[[], datetime],
+    **extra: object,
+) -> tuple[Callable[..., UpdateStatus], Callable[..., UpdateStatus]]:
+    """`put` writes a state of the run, `finish` its final one (and prunes the backups). `extra` are the fields
+    of the way back (`kind`, `return_case`, ...), the same in every state of the run."""
+
+    def put(
+        state: str, step: str, message: str = "", *, finished: bool = False,
+        reason: str = "", params: dict[str, str] | None = None,
+    ) -> UpdateStatus:
+        status = UpdateStatus(
+            state=state,  # type: ignore[arg-type]
+            step=step,
+            from_tag=info["from_tag"],
+            to_tag=info["to_tag"],
+            started_at=started,
+            finished_at=now() if finished else None,
+            message=message,
+            backup=info["backup"],
+            reason=reason,
+            params=params or {},
+            **extra,  # type: ignore[arg-type]
+        )
+        try:
+            write_status(data_dir, status)
+        except OSError as error:
+            # A full disk or a read-only file must not stop an update half way, least of all
+            # the rollback: the page just keeps the last state it could get.
+            print(f"update: cannot write the status file ({error})", flush=True)
+        print(f"update: {step}: {state}" + (f" ({message})" if message else ""), flush=True)
+        return status
+
+    def finish(
+        state: str, step: str, message: str, reason: str = "", params: dict[str, str] | None = None
+    ) -> UpdateStatus:
+        if info["backup"]:
+            # After a failed rollback the message names this backup as the one to restore.
+            protect = [Path(info["backup"])] if state == "rollback_failed" else []
+            # Spec 11.3a "Sicherung von vor der Vorabversion": while a pre-release runs afterwards, the backup
+            # from before the switch to it stays beyond the usual five (the way back may need it).
+            running = info["to_tag"] if state == "succeeded" else info["from_tag"]
+            protect += kept_for_running(backup_dir, running)
+            prune_backups(backup_dir, keep_backups, protect=protect)
+        return put(state, step, message, finished=True, reason=reason, params=params)
+
+    return put, finish
+
+
+Problem = tuple[str, str, str, dict[str, str]]  # (step, English line, reason code, parameters)
+
+
+def _install_package(
+    py: str, venv_dir: Path, snapshot_dir: Path, new_source: Path, runner: CommandRunner, snapshot_taken: list[bool]
+) -> Problem | None:
+    """pip installs the unpacked version; a copy of the environment comes first (the way back to it)."""
+    # A pip that fails half way can leave the environment neither old nor new, and the
+    # reinstall of the old version needs the network that just failed. Keep a copy.
+    if venv_dir.is_dir():
+        try:
+            shutil.rmtree(snapshot_dir, ignore_errors=True)
+            shutil.copytree(venv_dir, snapshot_dir, symlinks=True)
+            snapshot_taken.append(True)
+        except OSError as error:
+            shutil.rmtree(snapshot_dir, ignore_errors=True)
+            detail = str(error)[:200]
+            return "install", f"cannot back up the Python environment: {detail}", "snapshot_failed", {"detail": detail}
+    shutil.rmtree(new_source / "build", ignore_errors=True)
+    done = runner((py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", str(new_source)), timeout=900.0)
+    if not done.ok:
+        too_old = _too_old_python(done)
+        if too_old is not None:
+            return "install", too_old[0], "python_too_old", too_old[1]
+        return "install", _reason(done, "pip install failed"), "install_failed", {"detail": _reason(done, "")}
+    return None
+
+
+def _verify_version(py: str, goal: str, runner: CommandRunner) -> Problem | None:
+    done = runner((py, "-m", "reprintbuddy", "--version"))
+    expected = "reprintbuddy " + goal[1:]
+    if not done.ok or done.stdout.strip() != expected:
+        seen = done.stdout.strip()[:80] or _reason(done, "no output")
+        return "verify", f"expected '{expected}', got '{seen}'", "verify_failed", {"expected": expected, "seen": seen}
+    return None
+
+
+# --- the way back to the stable version (Spec 11.3a "Rückweg zur stabilen Version") -----------------
+
+
+def _start_return(
+    db_path: Path,
+    install_dir: Path,
+    runner: CommandRunner,
+    wait_healthy: Callable[[], bool],
+    now: Callable[[], datetime],
+    http_get: HttpGet,
+    download: Download,
+    keep_backups: int,
+    previous: UpdateStatus,
+    started: datetime,
+    script_location: Path | None,
+) -> UpdateStatus:
+    """A request for the way back from the page. One that grew old changes nothing: a click on "back" must never
+    lead forward, as an ordinary update to a newer pre-release would. The state it leaves makes the next run by
+    hand an ordinary update again."""
+    if not _fresh_queued(previous, started):
+        info: dict[str, str | None] = {"from_tag": previous.from_tag, "to_tag": previous.to_tag, "backup": None}
+        _, finish = _reporter(
+            db_path.parent, backup_dir_for(db_path), keep_backups, info, started, now,
+            kind="return", return_case=previous.return_case, target_head=previous.target_head,
+            return_backup=previous.return_backup,
+        )
+        return finish("failed", "start", "start: the request for the way back is too old", "return_expired")
+    return _run_return(
+        db_path, install_dir, runner, wait_healthy, now, http_get, download, keep_backups, previous, started,
+        script_location,
+    )
+
+
+def _plan_changed(plan: ReturnPlan, previous: UpdateStatus) -> str | None:
+    """What differs from the case the user confirmed; None when it is the same."""
+    if plan.case is None:
+        return f"no way back any more ({plan.unavailable})"
+    if plan.case != previous.return_case:
+        return f"case {plan.case} instead of the confirmed case {previous.return_case}"
+    if plan.case == 3:
+        confirmed = Path(previous.return_backup).name if previous.return_backup else None
+        if plan.backup is None or plan.backup.name != confirmed:
+            return f"the backup is now {plan.backup.name if plan.backup else 'missing'}, not {confirmed}"
+    return None
+
+
+def _log_losses(plan: ReturnPlan) -> None:
+    """What the way back removes, counted now (it may have grown since the confirmation page)."""
+    if plan.case == 2:
+        for loss in plan.losses:
+            print(f"update: way back: {loss.note['en']}: {loss.count} entries go", flush=True)
+        if not plan.losses:
+            print("update: way back: the steps of the pre-release hold no entries; nothing is lost", flush=True)
+    elif plan.case == 3:
+        print(
+            f"update: way back: the backup {plan.backup} comes back; {len(plan.journal_ids)} journal entries and "
+            f"{plan.activity_since} log entries made since then are lost",
+            flush=True,
+        )
+
+
+def _run_return(
+    db_path: Path,
+    install_dir: Path,
+    runner: CommandRunner,
+    wait_healthy: Callable[[], bool],
+    now: Callable[[], datetime],
+    http_get: HttpGet,
+    download: Download,
+    keep_backups: int,
+    previous: UpdateStatus,
+    started: datetime,
+    script_location: Path | None,
+) -> UpdateStatus:
+    """The way back, in the order of Spec 11.3a: backup of the current state, the package of the stable version
+    loaded and checked; then the service stops, the database, the package, the start, the check.
+
+    The live database changes once, in one SQLite transaction (`swap`, the backup API), before pip: all Alembic
+    work (the case, the downgrade of case 2) lies before pip, which replaces the package files of this code.
+    Before `swap` the live database is untouched, so a failure there only starts the pre-release again; from
+    `swap` on, a failure brings back `before.db`, the database as it was when the service stopped, and the
+    environment of the pre-release. The case is decided again here (`stablereturn.assess`); if it is not the
+    one the user confirmed, nothing is changed. Tests: tests/ops/test_updater_return.py."""
+    data_dir = db_path.parent
+    backup_dir = backup_dir_for(db_path)
+    py = str(venv_python(install_dir))
+    venv_dir = install_dir / ".venv"
+    snapshot_dir = install_dir / ".venv.rollback"
+    releases_dir = install_dir / RELEASES_DIR
+    work_dir = releases_dir / DOWNLOAD_DIR
+    return_dir = data_dir / RETURN_DIR
+    before_db = return_dir / "before.db"
+    snapshot_taken: list[bool] = []
+    info: dict[str, str | None] = {"from_tag": previous.from_tag, "to_tag": previous.to_tag, "backup": None}
+    put, finish = _reporter(
+        data_dir, backup_dir, keep_backups, info, started, now,
+        kind="return", return_case=previous.return_case, target_head=previous.target_head,
+        return_backup=previous.return_backup,
+    )
+
+    # --- before the service stops: a failure changes nothing ------------------------------------------
+    if before_db.exists():
+        # Left by an earlier way back whose rollback failed (its message names this file as the database as it
+        # was) or that was cut off: it may be the only copy of those entries, so it is never deleted here.
+        line = f"a database kept by an earlier way back lies at {before_db}; restore or move it first"
+        return finish("failed", "start", "start: " + line, "return_unavailable", {"detail": line})
+    put("running", "backup")
+    installed = read_installation(install_dir, runner)
+    if installed is None or installed.repo is None:
+        line = "no installation found" if installed is None else "the repository of the installation is unknown"
+        return finish("failed", "backup", "backup: " + line, "head_unreadable", {"detail": line})
+    info["from_tag"] = installed.tag
+    if not installed.tag or not is_prerelease_tag(installed.tag):
+        line = "no pre-release is installed"
+        return finish("failed", "backup", "backup: " + line, "return_unavailable", {"detail": line})
+    try:
+        backup = backup_database(db_path, backup_dir, label=installed.label, now=now())
+    except (OSError, sqlite3.Error) as error:
+        detail = str(error)[:MAX_REASON]
+        return finish("failed", "backup", f"backup: {detail}", "backup_failed", {"detail": detail})
+    info["backup"] = str(backup)
+
+    put("running", "fetch")
+    try:
+        releases = fetch_releases(installed.repo, http_get)
+    except ReleaseCheckError as error:
+        detail = str(error)[:MAX_REASON]
+        return finish("failed", "fetch", f"fetch: {detail}", "fetch_failed", {"detail": detail})
+    chosen = return_target(releases, installed.tag)
+    if chosen is None or chosen.tag != previous.to_tag:
+        detail = f"the stable version to go back to is now {chosen.tag if chosen else 'none'}, not {previous.to_tag}"
+        return finish("failed", "fetch", f"fetch: {detail}", "return_changed", {"detail": detail})
+    goal = chosen.tag
+    package = work_dir / package_name(goal)
+    checksum_file = work_dir / checksum_name(goal)
+    new_source = releases_dir / goal
+    try:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        work_dir.mkdir(parents=True)
+        download(chosen.package_url, package)
+        download(chosen.checksum_url, checksum_file)
+        expected = expected_sha256(checksum_file.read_text(encoding="utf-8", errors="replace"), package_name(goal))
+        sha256 = verify(package, expected, chosen.digest)
+    except (PackageError, OSError) as error:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        reason = error.reason if isinstance(error, PackageError) else "fetch_failed"
+        detail = (error.detail or error.reason) if isinstance(error, PackageError) else type(error).__name__
+        return finish("failed", "fetch", f"fetch: {detail}"[:MAX_REASON], reason, {"detail": detail[:MAX_REASON]})
+
+    put("running", "checkout")
+    try:
+        unpack(package, releases_dir, goal)
+    except PackageError as error:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        return finish("failed", "checkout", f"checkout: {error.detail or error.reason}", error.reason, {"detail": error.detail})
+    shutil.rmtree(work_dir, ignore_errors=True)
+    try:
+        target_graph = graph_of_dir(new_source / "src" / "reprintbuddy" / "migrations" / "versions")
+    except StepsError as error:
+        shutil.rmtree(new_source, ignore_errors=True)
+        return finish("failed", "checkout", f"checkout: {error}", "package_unusable", {"detail": str(error)})
+    head = single_head(target_graph)
+    if head != previous.target_head:
+        shutil.rmtree(new_source, ignore_errors=True)
+        detail = f"the steps of {goal} end at {head}, the check saw {previous.target_head}"
+        return finish("failed", "checkout", f"checkout: {detail}", "return_changed", {"detail": detail})
+
+    # --- the service stops; until `swap` the live database is untouched ------------------------------
+    put("running", "stop")
+    stopped = runner(STOP_CMD, timeout=120.0)
+    if not stopped.ok:
+        shutil.rmtree(new_source, ignore_errors=True)
+        detail = _reason(stopped, "the service could not be stopped")
+        # whatever half of it happened, the pre-release runs on - if it answers (review: say so when not)
+        if runner(START_CMD, timeout=120.0).ok and wait_healthy():
+            return finish("failed", "stop", f"stop: {detail}", "stop_failed", {"detail": detail})
+        message = f"stop: {detail} – the pre-release did not answer after its start"
+        return finish("rollback_failed", "stop", message, "stop_failed", {"detail": detail})
+
+    def resume(step: str, message: str, reason: str, params: dict[str, str]) -> UpdateStatus:
+        """Nothing changed yet: the pre-release starts again on its own database."""
+        shutil.rmtree(new_source, ignore_errors=True)
+        shutil.rmtree(return_dir, ignore_errors=True)
+        if runner(START_CMD, timeout=120.0).ok and wait_healthy():
+            return finish("failed", step, message, reason, params)
+        return finish("rollback_failed", step, f"{message} – the pre-release did not answer after its start", reason, params)
+
+    put("running", "database")
+    try:
+        shutil.rmtree(return_dir, ignore_errors=True)  # no `before.db` in it: checked at the start
+        return_dir.mkdir(parents=True)
+        copy_database(db_path, before_db)
+        print(f"update: way back: the database as it was is kept at {before_db} until the way back is through", flush=True)
+        plan = assess(
+            db_path, target=goal, target_graph=target_graph, backup_dir=backup_dir, work_dir=return_dir / "trial",
+            script_location=script_location,
+        )
+    except Exception as error:  # noqa: BLE001 - nothing has changed: whatever it was, the pre-release runs on
+        detail = f"{type(error).__name__}: {error}"[:MAX_REASON]
+        return resume("database", f"database: {detail}", "database_failed", {"detail": detail})
+    changed = _plan_changed(plan, previous)
+    if changed is not None:
+        return resume("database", f"database: {changed}", "return_changed", {"detail": changed})
+    _log_losses(plan)
+    try:
+        stable_db = build_stable_db(plan, db_path, return_dir / "stable.db", script_location)
+    except Exception as error:  # noqa: BLE001
+        detail = f"{type(error).__name__}: {error}"[:MAX_REASON]
+        return resume("database", f"database: {detail}", "database_failed", {"detail": detail})
+
+    # --- from `swap` on, a failure brings back the database as it was and the pre-release -------------
+    swapped: list[bool] = []
+    current = "swap"
+
+    def forward() -> Problem | None:
+        nonlocal current
+        current = "swap"
+        put("running", "swap")
+        swapped.append(True)  # a failed swap is rolled back by SQLite; restoring `before.db` costs nothing
+        try:
+            restore_database(stable_db, db_path)
+        except (OSError, sqlite3.Error) as error:
+            detail = f"{type(error).__name__}: {error}"[:MAX_REASON]
+            return "swap", detail, "swap_failed", {"detail": detail}
+        current = "install"
+        put("running", "install")
+        problem = _install_package(py, venv_dir, snapshot_dir, new_source, runner, snapshot_taken)
+        if problem is not None:
+            return problem
+        current = "verify"
+        put("running", "verify")
+        problem = _verify_version(py, goal, runner)
+        if problem is not None:
+            return problem
+        current = "migrate"
+        put("running", "migrate")
+        done = runner((py, "-m", "reprintbuddy", "migrate", "--db", str(db_path)), timeout=300.0)
+        if not done.ok:
+            return "migrate", _reason(done, "the database migration failed"), "migrate_failed", {"detail": _reason(done, "")}
+        current = "restart"
+        put("running", "restart")
+        done = runner(START_CMD, timeout=120.0)
+        if not done.ok:
+            return "restart", _reason(done, "the start failed"), "restart_failed", {"detail": _reason(done, "")}
+        current = "health"
+        put("running", "health")
+        if not wait_healthy():
+            return "health", "the stable version did not answer after its start", "health_failed", {}
+        return None
+
+    def backward() -> bool:
+        """The environment and the database of the pre-release, its start. True only if it answers."""
+        ok = True
+        if snapshot_taken and snapshot_dir.is_dir():
+            try:
+                shutil.rmtree(venv_dir, ignore_errors=True)
+                snapshot_dir.rename(venv_dir)
+            except OSError:
+                ok = False
+        shutil.rmtree(new_source, ignore_errors=True)
+        stopped = runner(STOP_CMD, timeout=120.0)  # the stable version may have started (restart, health)
+        if swapped:
+            try:
+                restore_database(before_db, db_path)
+            except (OSError, sqlite3.Error):
+                ok = False
+        done = runner(START_CMD if stopped.ok else RESTART_WAIT_CMD, timeout=120.0)
+        ok &= done.ok
+        return bool(wait_healthy()) and ok
+
+    try:
+        problem = forward()
+    except Exception as error:  # noqa: BLE001 - whatever happened, the rollback must still run
+        problem = (current, f"unexpected error: {type(error).__name__}", "unexpected", {"detail": type(error).__name__})
+    if problem is None:
+        shutil.rmtree(snapshot_dir, ignore_errors=True)
+        _settle(install_dir, installed, goal, sha256, db_path)
+        shutil.rmtree(return_dir, ignore_errors=True)
+        return finish("succeeded", "done", "")
+
+    cause = f"{problem[0]}: {problem[1]}"
+    put("running", "rollback", cause, reason=problem[2], params=problem[3])
+    try:
+        restored = backward()
+    except Exception:  # noqa: BLE001
+        restored = False
+    if restored:
+        shutil.rmtree(return_dir, ignore_errors=True)
+        return finish("rolled_back", "rollback", cause, problem[2], problem[3])
+    print(f"update: way back: the database as it was before it stays at {before_db}", flush=True)
+    return finish(
+        "rollback_failed", "rollback", f"{cause} – database as it was: {before_db} – backup: {backup}", problem[2], problem[3]
+    )
 
 
 def _settle(install_dir: Path, installed: Installation, goal: str, sha256: str, db_path: Path) -> None:

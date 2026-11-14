@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Literal
 
@@ -56,6 +56,39 @@ class Release:
     package_url: str
     checksum_url: str
     digest: str | None  # GitHub's own checksum of the package, as GitHub writes it (format not documented)
+
+
+# Spec 11.3a "Umbau nur angekündigt" (decided 14.11.2026): the notes of a pre-release whose database steps
+# rework existing data begin with this line, word for word. The update card sees it and warns before the
+# update; tools/check_release_notes.py compares it with the rework marks of the steps before a release.
+REWORK_LINE = (
+    "**Database rework:** going back to the stable version restores the backup from before this update; "
+    "entries made since then are lost."
+)
+
+
+def starts_with_rework(body: str | None) -> bool:
+    """Do these notes begin with the rework line? Blank lines, a byte order mark and the spaces around the
+    first line do not count; anything else in front of it does."""
+    for line in (body or "").lstrip("﻿").splitlines():
+        if line.strip():
+            return line.strip() == REWORK_LINE
+    return False
+
+
+def return_target(releases: list[Release], installed: str | None) -> Release | None:
+    """The stable version an installed pre-release goes back to (Spec 11.3a "Rückweg zur stabilen Version"):
+    the newest stable release older than it. None when a stable version is installed (or nothing says which),
+    when there is none older, or when a newer stable release exists - then the ordinary update is the way
+    back, without loss. The channel plays no part."""
+    current = parse_version(installed) if installed else None
+    if current is None or not is_prerelease_tag(installed):
+        return None
+    stable = [item for item in releases if not item.prerelease]
+    if any(parse_version(item.tag) > current for item in stable):  # type: ignore[operator]
+        return None
+    older = [item for item in stable if parse_version(item.tag) < current]  # type: ignore[operator]
+    return max(older, key=lambda item: parse_version(item.tag)) if older else None  # type: ignore[arg-type, return-value]
 
 
 def package_name(tag: str) -> str:
@@ -165,8 +198,11 @@ def check_versions(
         raise ReleaseCheckError("no GitHub repository")
     releases = fetch_releases(found.repo, http_get)
     newest = newest_offered(releases, channel)
-    info = VersionInfo(installed=found.tag, newest=newest.tag if newest else None, checked_at=now)
+    back = return_target(releases, found.tag)
+    info = VersionInfo(
+        installed=found.tag, newest=newest.tag if newest else None, checked_at=now, return_to=back.tag if back else None
+    )
     if newest is None or found.tag is None or not is_newer(newest.tag, found.tag):
         return info
     notes = notes_for(releases, installed=found.tag, newest=newest.tag, channel=channel, page_url=releases_page(*found.repo))
-    return VersionInfo(installed=info.installed, newest=info.newest, checked_at=now, notes=notes)
+    return replace(info, notes=notes, rework_ahead=starts_with_rework(newest.body))
