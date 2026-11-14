@@ -259,3 +259,17 @@ def test_a_return_case_that_is_true_reads_as_none(tmp_path):
 
     (tmp_path / "update-status.json").write_text(json.dumps({"state": "failed", "kind": "return", "return_case": True}), encoding="utf-8")
     assert read_status(tmp_path).return_case is None
+
+
+@pytest.mark.parametrize(("step", "kept"), [("stop", False), ("database", False), ("swap", True), ("install", True)])
+def test_an_interrupted_way_back_clears_a_copy_that_does_not_count(tmp_path, step, kept):
+    """Review: before `swap` the copy in `.return/` is stale and the live database untouched; left there, it would
+    block every later way back (which never deletes a `before.db`), and only a console could remove it."""
+    from reprintbuddy.ops.status import mark_interrupted
+
+    before = tmp_path / ".return" / "before.db"
+    before.parent.mkdir()
+    before.write_bytes(b"")
+    write_status(tmp_path, UpdateStatus(state="running", step=step, started_at=NOW, kind="return", return_case=2))
+    mark_interrupted(tmp_path, NOW + timedelta(minutes=30))
+    assert before.exists() is kept

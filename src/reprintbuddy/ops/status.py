@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -184,7 +185,10 @@ def mark_interrupted(data_dir: Path, now: datetime) -> UpdateStatus | None:
         # The way back (Spec 11.3a) keeps the database as it was when the service stopped beside the data.
         before = data_dir / ".return" / "before.db"
         if current.kind == "return" and step in _UNTOUCHED_RETURN_STEPS:
-            message += " \u2013 the database is untouched"  # `before.db` may be stale or half written here
+            message += " \u2013 the database is untouched"
+            # The copies there are stale or half written and count for nothing; left behind, `before.db` would
+            # block every later way back, which never deletes one (review of p539).
+            shutil.rmtree(data_dir / ".return", ignore_errors=True)
         elif current.kind == "return" and before.is_file():
             message += f" \u2013 database as it was: {before}"
         if current.backup:
