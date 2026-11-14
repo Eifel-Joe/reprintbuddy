@@ -77,7 +77,7 @@ class ReturnPlan:
     activity_since: int = 0  # case 3: log entries since the backup
 
 
-def _copy(source: Path, target: Path) -> Path:
+def copy_database(source: Path, target: Path) -> Path:
     """A consistent copy with SQLite's backup API (a plain file copy misses what still sits in the WAL)."""
     with contextlib.suppress(FileNotFoundError):
         target.unlink()
@@ -126,8 +126,8 @@ def trial(
     work_dir.mkdir(parents=True, exist_ok=True)
     source, copy = work_dir / TRIAL_SOURCE, work_dir / TRIAL_COPY
     try:
-        _copy(db_path, source)
-        _copy(source, copy)
+        copy_database(db_path, source)
+        copy_database(source, copy)
         removed: list[tuple[StepInfo, list[tuple[str, str | None, str | None]]]] = []
         downs = [step.revision for step in steps[1:]] + [target_head]
         for step, down in zip(steps, downs):
@@ -269,9 +269,9 @@ def build_stable_db(plan: ReturnPlan, db_path: Path, out: Path, script_location:
     if plan.case == 3:
         if plan.backup is None:
             raise ValueError("case 3 without a backup")
-        _copy(plan.backup, out)
+        copy_database(plan.backup, out)
     else:
-        _copy(db_path, out)
+        copy_database(db_path, out)
         if plan.case == 2:
             downgrade(out, plan.target_head, script_location)
     if current_revision(out) is None:

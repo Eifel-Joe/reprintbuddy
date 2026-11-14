@@ -223,3 +223,17 @@ def test_version_1_0_0_reads_the_result_of_a_way_back_as_a_finished_update(tmp_p
     assert (found.state, found.from_tag, found.to_tag) == ("succeeded", "v1.1.0-beta.1", "v1.0.0")
     write_status(tmp_path, UpdateStatus(state="rolled_back", step="rollback", kind="return", reason="swap_failed", started_at=NOW))
     assert old.read_status(tmp_path).state == "rolled_back"
+
+
+def test_an_interrupted_way_back_stays_a_way_back_and_names_the_database_as_it_was(tmp_path):
+    """Sibling of the update's interruption (systemd timeout): the fields of the way back stay, and from the
+    stop on the message names `.return/before.db`, the database as it was when the service stopped."""
+    from reprintbuddy.ops.status import mark_interrupted
+
+    before = tmp_path / ".return" / "before.db"
+    before.parent.mkdir()
+    before.write_bytes(b"")
+    write_status(tmp_path, UpdateStatus(state="running", step="install", started_at=NOW, kind="return", return_case=2, target_head="0022", backup="/b.db"))
+    final = mark_interrupted(tmp_path, NOW + timedelta(minutes=30))
+    assert (final.kind, final.return_case, final.target_head, final.reason) == ("return", 2, "0022", "interrupted_partial")
+    assert str(before) in final.message and read_status(tmp_path) == final

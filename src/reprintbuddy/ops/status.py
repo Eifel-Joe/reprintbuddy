@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal, Mapping, get_args
@@ -176,18 +176,22 @@ def mark_interrupted(data_dir: Path, now: datetime) -> UpdateStatus | None:
         state = "rollback_failed"
         reason = "interrupted_partial"
         message = f"{step}: interrupted, the installation may be incomplete"
+        # The way back (Spec 11.3a) keeps the database as it was when the service stopped beside the data.
+        before = data_dir / ".return" / "before.db"
+        if current.kind == "return" and before.is_file():
+            message += f" \u2013 database as it was: {before}"
         if current.backup:
             message += f" \u2013 backup: {current.backup}"
-    final = UpdateStatus(
+    # `replace` keeps what the run was: an update or the way back, and the case of the way back.
+    final = replace(
+        current,
         state=state,  # type: ignore[arg-type]
         step=step,
-        from_tag=current.from_tag,
-        to_tag=current.to_tag,
-        started_at=current.started_at,
         finished_at=now,
         message=message,
-        backup=current.backup,
         reason=reason,
+        params={},
+        acknowledged=False,
     )
     write_status(data_dir, final)
     return final
