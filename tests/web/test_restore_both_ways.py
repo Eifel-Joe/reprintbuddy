@@ -188,9 +188,9 @@ def test_a_good_backup_ends_in_the_same_state_both_ways(ops_env, tmp_path, way, 
     assert secrets_left(ops_env) == []
 
 
-# Today only the page keeps the backup a failed rollback names; whether the command line does too waits for
-# a decision (p531, finding A4). The case stays a list of ways so that it can grow by one.
-@pytest.mark.parametrize("way", ["page"])
+# p531 (A4): the command line kept it only by chance (when it was among the newest five) until 1.2.0-beta.2.
+# It is the way in when the service does not start after a failed update, so it must keep it as the page does.
+@pytest.mark.parametrize("way", WAYS)
 def test_the_backup_a_failed_rollback_names_survives_the_pruning(ops_env, way):
     content = made_backup(ops_env)
     folder = ops_env.db_path.parent / "backups"

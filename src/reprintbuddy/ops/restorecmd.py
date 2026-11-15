@@ -254,7 +254,13 @@ def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, 
             )
         state["touched"] = True
         # The service is stopped: a database that is missing or cannot be read is set aside (p100).
-        installed = restore.install(candidate, db_path, now=now, may_set_aside=True)
+        # p531 (A4): the backup a failed rollback names survives the pruning, as on the page and in the
+        # update helper. This command is the way in when the service does not start after such an update;
+        # each try adds a backup of its own, and without the protection a few tries pruned the named one.
+        # Test: tests/web/test_restore_both_ways.py::test_the_backup_a_failed_rollback_names_survives_the_pruning
+        installed = restore.install(
+            candidate, db_path, now=now, protect=restore.protected_backups(db_path.parent), may_set_aside=True
+        )
     except restore.RestoreNotUndone as error:
         complain(
             "reprintbuddy: the restore failed and the old database could not be put back. "
