@@ -61,7 +61,15 @@ Reprintbuddy fragt beim Start und danach einmal täglich, ob es eine neuere Vers
 | **Update wurde nicht gestartet. Bitte erneut starten.** (oder: bitte zuerst nach Updates suchen) | Der Helfer hat gar nicht begonnen; nichts wurde geändert. | **Nach Updates suchen** drücken, dann den Update-Knopf. |
 | **Das Update wurde gestartet, konnte seinen Zustand aber nicht speichern, und die neue Version läuft nicht.** | Der Helfer lief, konnte aber seine Zustandsdatei nicht schreiben. | Das Systemprotokoll lesen: `journalctl -u reprintbuddy-update` |
 
-systemd beendet ein Update, das länger als 30 Minuten läuft. Die Karte meldet dann einen Fehlschlag, in dessen Meldung „interrupted“ steht.
+Beendet systemd das Update von außen (seine Zeitgrenze von 30 Minuten, `systemctl stop reprintbuddy-update`,
+Herunterfahren), gilt das als Fehlschlag: Reprintbuddy rollt genauso zurück und startet die vorige Version wieder.
+Die Karte sagt „Das Update wurde von außen beendet (Zeitgrenze oder Herunterfahren). Die vorige Version wurde
+zurückgeholt.“, und das [Protokoll](log.md) nennt das Ergebnis „unterbrochen“. Beim Herunterfahren lehnt systemd den
+Start ab; die vorige Version startet dann beim nächsten Booten. Ein harter Neustart, ein Stromausfall oder ein
+hartes Beenden (SIGKILL, zum Beispiel durch den OOM-Killer) lässt keine Zeit zum Zurückrollen; für den Rückweg zur
+stabilen Version steht dort, was dann gilt. An den systemd-Units ändert sich nichts; nach einem harten Beenden des
+Update-Helfers kann Reprintbuddy deshalb bis zum nächsten Start des Containers aus bleiben. Dann startet
+`systemctl start reprintbuddy` es.
 
 Bei **Update fehlgeschlagen, vorige Version ließ sich nicht wiederherstellen** und **Update wurde unterbrochen**:
 
@@ -123,7 +131,12 @@ die sagt, was passiert, in einem von drei Fällen:
 Lade vorher eine vollständige Sicherung herunter (die Seite hat den Knopf), wenn du den Stand der Vorabversion
 behalten willst; sie lässt sich nur in diese Vorabversion oder eine neuere Version zurückspielen. Danach ist
 **Vorabversionen einschließen** aus. Der Rückweg läuft wie ein Update; schlägt er fehl, läuft die Vorabversion mit
-ihren Daten weiter. Solange eine Vorabversion installiert ist, bleibt die Sicherung von vor ihr auch über die
+ihren Daten weiter. Das gilt auch, wenn er von außen beendet wird. Fehlte dafür nach dem Umstellen der Datenbank
+die Zeit (harter Neustart, Stromausfall, SIGKILL), spielt die Vorabversion bei ihrem nächsten Start die Datenbank
+von vor dem Rückweg zurück, bevor sie sie öffnet; die Karte sagt das dann. Das gelingt nur, wenn die Vorabversion
+noch startet: Hat pip ihre Python-Umgebung schon halb ersetzt, bleibt die Datei
+`/var/lib/reprintbuddy/.return/before.db` liegen, und die Karte bzw. das Systemprotokoll nennt sie. Solange eine
+Vorabversion installiert ist, bleibt die Sicherung von vor ihr auch über die
 letzten 5 hinaus. Eine Vorabversion, deren Umbauschritte vorhandene Daten umbauen, sagt das vorher: Die
 Release-Notes beginnen mit **Database rework:** …, und die Update-Karte zeigt einen Warnkasten und den Knopf
 **Trotzdem aktualisieren**.

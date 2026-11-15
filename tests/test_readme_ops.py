@@ -443,3 +443,20 @@ def test_the_german_contributing_names_the_rule_too():
 def test_the_pointer_to_the_way_back_follows_the_sentence_about_the_card(name, first, then):
     text = read(name)
     assert text.index(first) < text.index(then)
+
+
+@pytest.mark.parametrize(
+    "name,stopped,cut_off,limit",
+    [
+        ("README.md", "stops the update from outside", "puts back the database from before the way back", "SIGKILL"),
+        ("README.de.md", "das Update von außen", "die Datenbank von vor dem Rückweg zurück", "SIGKILL"),
+        ("docs/operate/update-backup.md", "stops the update from outside", "puts back the database from before the way back", "SIGKILL"),
+        ("docs/operate/update-backup.de.md", "das Update von außen", "die Datenbank von vor dem Rückweg zurück", "SIGKILL"),
+    ],
+)
+def test_p610_a_stop_from_outside_and_its_limit_are_explained(name, stopped, cut_off, limit):
+    """Spec 11.3a: a stop from outside counts as a failure; a way back cut off after the switch is put back at the
+    next start; the units are unchanged, so a hard kill can leave the service stopped until the next boot."""
+    text = " ".join(read(name).split())
+    for part in (stopped, cut_off, limit, "systemctl start reprintbuddy"):
+        assert part in text, (name, part)
