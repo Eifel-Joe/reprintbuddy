@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
-from reprintbuddy.activity.writer import current_marks, current_notify_marks, write_restored_marker
+from reprintbuddy.activity.writer import write_restored_marker
 from reprintbuddy.auth import MIN_PASSWORD_LENGTH
 from reprintbuddy.db import known_revisions
 from reprintbuddy.ops import fullbackup as fb
@@ -554,9 +554,10 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         if not gate.begin():  # the request was cancelled before this thread got going: replace nothing
             return
         try:
-            marks = current_marks(app.state.db_path)  # p186: the log's marks belong to what has happened
-            notify_marks = current_notify_marks(app.state.db_path)  # p220: so do those of the push messages
-            fb.replace_database(candidate, app.state.db_path, now=_now(), protect=restore.protected_backups(data_dir))
+            # Never `may_set_aside`: this service holds the database open (see `restore.install`).
+            installed = restore.install(
+                candidate, app.state.db_path, now=_now(), protect=restore.protected_backups(data_dir)
+            )
         except BaseException:
             _remove(candidate)  # nothing was replaced: the decrypted copy does not wait for the next start
             gate.fail()
@@ -568,8 +569,8 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
                 created_at=manifest.created_at,
                 version=manifest.app_version,
                 via=None,
-                marks=marks,
-                notify_marks=notify_marks,
+                marks=installed.marks,
+                notify_marks=installed.notify_marks,
             )
         except Exception as error:  # noqa: BLE001 - p164: the restore has happened; only its log entry is lost
             log.warning("restore note for the activity log not written: %s", type(error).__name__)

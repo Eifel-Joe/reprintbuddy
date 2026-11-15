@@ -11,12 +11,53 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
+from reprintbuddy.activity.writer import current_marks, current_notify_marks
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops.backup import _copy, backup_dir_for, connect_existing
 from reprintbuddy.ops.status import read_status
+
+
+@dataclass(frozen=True)
+class Installed:
+    """What `install` did: where the database that was there went, and what the next start needs from it."""
+
+    before: Path | None  # its backup (`before-restore`), the file set aside (`damaged-`), or None: there was none
+    marks: dict[str, dict[str, str | None]] | None  # p186: the log's marks of the replaced database
+    notify_marks: list[dict[str, Any]] | None  # p220: the push messages' marks of the replaced database
+
+
+def install(
+    candidate: Path,
+    db_path: Path,
+    *,
+    now: datetime,
+    protect: Iterable[Path] = (),
+    may_set_aside: bool = False,
+) -> Installed:
+    """Put the checked candidate in place of the database: the one step of a restore that changes it.
+
+    The marks of the log and of the push messages are read from the database that is replaced (they belong
+    to what has happened, not to the data); `fb.replace_database` backs it up and copies the candidate in,
+    in one step. Raises when nothing was replaced; once it returns, the database is the restored one.
+
+    `may_set_aside` is for the command line only, when the service is stopped: a database that is missing
+    or cannot be read is set aside (`set_aside_and_install`) instead of backed up. The page never passes
+    it. Its service holds the database open, and a check that fails for a moment (locked, say) must
+    never move the live database away; without it the page always backs up and copies in (as before p531).
+    Test: tests/ops/test_restore_shared.py::test_without_leave_a_database_that_seems_unreadable_is_never_set_aside
+    """
+    if may_set_aside and not database_readable(db_path):
+        return Installed(set_aside_and_install(candidate, db_path, now), None, None)
+    marks = current_marks(db_path)
+    notify_marks = current_notify_marks(db_path)
+    before = fb.replace_database(candidate, db_path, now=now, protect=protect)
+    return Installed(before, marks, notify_marks)
 
 
 def protected_backups(data_dir: Path) -> list[Path]:

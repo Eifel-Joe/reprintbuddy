@@ -31,7 +31,7 @@ from datetime import datetime
 from pathlib import Path
 
 from reprintbuddy import settings as st
-from reprintbuddy.activity.writer import current_marks, current_notify_marks, write_restored_marker
+from reprintbuddy.activity.writer import write_restored_marker
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops import oplock, restore
 from reprintbuddy.ops.runner import CommandRunner
@@ -254,13 +254,8 @@ def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, 
                 f"Reprintbuddy was started meanwhile ({why}). Stop it first: systemctl stop reprintbuddy.",
             )
         state["touched"] = True
-        readable = restore.database_readable(db_path)
-        marks = current_marks(db_path) if readable else None  # p186: carried over to the next start
-        notify_marks = current_notify_marks(db_path) if readable else None  # p220: likewise
-        if readable:
-            before = fb.replace_database(candidate, db_path, now=now)
-        else:
-            before = restore.set_aside_and_install(candidate, db_path, now)
+        # The service is stopped: a database that is missing or cannot be read is set aside (p100).
+        installed = restore.install(candidate, db_path, now=now, may_set_aside=True)
     except restore.RestoreNotUndone as error:
         complain(
             "reprintbuddy: the restore failed and the old database could not be put back. "
@@ -279,12 +274,12 @@ def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, 
         created_at=manifest.created_at,
         version=manifest.app_version,
         via="cli",
-        marks=marks,
-        notify_marks=notify_marks,
+        marks=installed.marks,
+        notify_marks=installed.notify_marks,
     )
     say(f"Restored the backup {_say_when(manifest)}.")
-    if before is not None:
-        say(f"The database that was there was saved as {before}.")
+    if installed.before is not None:
+        say(f"The database that was there was saved as {installed.before}.")
     else:
         say("There was no database to save.")
     say("Everybody has to sign in again, with the account of the backup.")

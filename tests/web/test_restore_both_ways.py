@@ -212,6 +212,22 @@ def test_the_backup_a_failed_rollback_names_survives_the_pruning(ops_env, way):
     assert len(before_restore_backups(ops_env)) == 1
 
 
+def test_the_page_never_asks_whether_the_database_could_be_set_aside(ops_env, monkeypatch):
+    """Only the command line, with the service stopped, may set a broken database aside. The page restores
+    into the database its own service holds open: a check that failed there for a moment would move the
+    live database away (p531, `restore.install`)."""
+    from reprintbuddy.ops import restore as shared
+
+    def never(path):
+        raise AssertionError("the page asked whether to set the database aside")
+
+    monkeypatch.setattr(shared, "database_readable", never)
+    content = made_backup(ops_env)
+
+    assert by_page(ops_env, content).result == "restored"
+    assert list((ops_env.db_path.parent / "backups").glob("damaged-*")) == []
+
+
 def _saved(content: bytes, tmp_path: Path) -> Path:
     path = tmp_path / "saved.zip"
     path.write_bytes(content)
