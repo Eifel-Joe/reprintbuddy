@@ -121,3 +121,67 @@ def test_impossible_remaining_time_is_unknown(minutes):
 def test_progress_is_kept_between_0_and_100():
     assert parse_printer_status(_row(1, progress=140.0)).progress == 100.0
     assert parse_printer_status(_row(1, progress=-3.0)).progress == 0.0
+
+
+# ---- the printers' nozzles (Spec 7.6, 10.2; p534) -----------------------------------------------
+# Bambuddy's rule, PR #3554 (`print_scheduler.py` at f23e80954): `_installed_nozzle_diameters` :1063,
+# `_nozzle_is_mounted` :1035, `_rack_nozzle_diameters` :1090. Only a positive mismatch excludes a printer,
+# so whatever cannot be read counts as unknown.
+
+def _nozzle(diameter) -> dict:
+    return {"nozzle_type": "stainless_steel", "nozzle_diameter": diameter}
+
+
+def test_nozzles_of_a_single_and_a_dual_nozzle_printer():
+    assert parse_printer_status(_row(1, nozzles=[_nozzle("0.4")])).nozzles == (0.4,)
+    assert parse_printer_status(_row(1, nozzles=[_nozzle("0.4"), _nozzle("0.6")])).nozzles == (0.4, 0.6)
+
+
+@pytest.mark.parametrize("nozzles", [[], [_nozzle("")], [_nozzle("abc")], [_nozzle("0")], [_nozzle("-0.4")],
+                                     [_nozzle(None)], [{}], ["0.4"], "0.4", {"nozzle_diameter": "0.4"}])
+def test_unreadable_nozzles_are_unknown(nozzles):
+    assert parse_printer_status(_row(1, nozzles=nozzles, nozzle_rack=[])).nozzles == ()
+
+
+def test_nozzles_not_reported_are_none():
+    """Neither field in the answer (a row of another shape, a shortened message): not reported at all,
+    which the printer board tells apart from "reported, none known"."""
+    assert parse_printer_status(_row(1)).nozzles is None
+    assert parse_printer_status(_row(1, nozzles=[_nozzle("0.4")])).nozzles == (0.4,)
+    assert parse_printer_status(_row(1, nozzle_rack=[])).nozzles == ()
+
+
+@pytest.mark.parametrize(("entry", "counted"), [
+    ({"id": 1, "serial_number": "N/A", "max_temp": 0}, False),
+    ({"id": 1, "serial_number": " n/a "}, False),
+    ({"id": 1, "serial_number": "N/A", "max_temp": 300}, True),
+    ({"id": 1, "serial_number": "N/A", "max_temp": "hot"}, True),
+    ({"id": 1, "serial_number": "", "max_temp": 0}, True),
+    ({"id": 1, "serial_number": "SN123", "max_temp": 0}, True),
+])
+def test_an_empty_hotend_does_not_count(entry, counted):
+    """`_nozzle_is_mounted`: empty only when the serial is "N/A" and the rating is missing or 0; a rating
+    that is no number means mounted."""
+    status = parse_printer_status(_row(1, nozzles=[_nozzle("0.4"), _nozzle("0.6")], nozzle_rack=[entry]))
+    assert status.nozzles == ((0.4, 0.6) if counted else (0.4,))
+
+
+def test_rack_docks_are_reachable_in_both_spellings():
+    """Docks 16-21 count (`_RACK_NOZZLE_IDS`); Bambuddy reads `diameter` or the REST name `nozzle_diameter`."""
+    rack = [
+        {"id": 0, "nozzle_diameter": "0.8", "serial_number": "SN0", "max_temp": 300},
+        {"id": 2, "nozzle_diameter": "0.8"},
+        {"id": 18, "diameter": "0.2"},
+        {"id": 16, "nozzle_diameter": "0.6", "serial_number": "SN16", "max_temp": 300},
+        {"id": 22, "nozzle_diameter": "1.0"},
+        {"id": 17, "nozzle_diameter": ""},
+        {"id": "x", "nozzle_diameter": "0.6"},
+        "0.6",
+    ]
+    assert parse_printer_status(_row(1, nozzles=[_nozzle("0.4")], nozzle_rack=rack)).nozzles == (0.4, 0.6, 0.2)
+
+
+def test_a_live_message_carries_the_nozzles():
+    data = _row(1, nozzles=[_nozzle("0.6")], nozzle_rack=[])
+    del data["id"]
+    assert parse_printer_status(data, 7).nozzles == (0.6,)

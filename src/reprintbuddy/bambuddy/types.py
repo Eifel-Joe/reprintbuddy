@@ -126,6 +126,10 @@ class PrinterStatus:
     subtask_name: str | None
     awaiting_plate_clear: bool
     stopped_error: bool
+    # The nozzle diameters (mm) the printer can print with: mounted hotends and the docks of a nozzle rack
+    # (Spec 7.6, p534; Bambuddy PR #3554). Empty: none known. None: the answer did not report them at all;
+    # the printer board then keeps the last known ones.
+    nozzles: tuple[float, ...] | None = None
 
 
 # The states of a queue entry as Bambuddy names them (PrintQueueItemResponse.status).

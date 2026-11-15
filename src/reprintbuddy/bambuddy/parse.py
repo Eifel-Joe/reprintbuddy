@@ -359,6 +359,67 @@ def parse_printers(data: object) -> list[Printer]:
     return out
 
 
+# The printers' nozzles, read as Bambuddy's scheduler reads them for "Any <model>" since PR #3554
+# (commit d7e0c7e2d; `backend/app/services/print_scheduler.py` at f23e80954). Only a positive mismatch keeps a
+# printer out, so anything unreadable is unknown and never raises: the print plan only shows (Spec 10.2).
+RACK_DOCK_IDS = frozenset(range(16, 22))  # `_RACK_NOZZLE_IDS`, `bambu_mqtt.py:588`
+EMPTY_NOZZLE_SERIAL = "N/A"  # `_EMPTY_NOZZLE_SERIAL`, `print_scheduler.py:1032`
+
+
+def _diameter(raw: object) -> float | None:
+    """`_parse_diameter` (`:1000`): "0.4" -> 0.4; unreadable or not positive -> None."""
+    if isinstance(raw, bool):
+        return None
+    try:
+        value = float(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 and math.isfinite(value) else None  # finite: no "nan"/"inf" from a broken answer
+
+
+def _mounted(entry: dict | None) -> bool:
+    """`_nozzle_is_mounted` (`:1035`): empty only when the serial is "N/A" and the temperature rating is
+    missing or 0; a rating that is no number counts as mounted."""
+    if entry is None:
+        return True
+    if str(entry.get("serial_number") or "").strip().upper() != EMPTY_NOZZLE_SERIAL:
+        return True
+    try:
+        max_temp = float(entry.get("max_temp") or 0)
+    except (TypeError, ValueError):
+        return True
+    return max_temp > 0
+
+
+def _nozzles(d: dict) -> tuple[float, ...] | None:
+    """The diameters a printer can reach: hotends that are not stated empty (`_installed_nozzle_diameters`,
+    `:1063`), then the rack docks by id (`_rack_nozzle_diameters`, `:1090`, either spelling). None when the
+    answer carries neither field."""
+    if "nozzles" not in d and "nozzle_rack" not in d:
+        return None
+    rack = d.get("nozzle_rack")
+    by_id: dict[int, dict] = {}
+    for entry in rack if isinstance(rack, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            by_id[int(entry.get("id"))] = entry  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            continue
+    found: list[float] = []
+    hotends = d.get("nozzles")
+    for index, nozzle in enumerate(hotends if isinstance(hotends, list) else []):
+        value = _diameter(nozzle.get("nozzle_diameter")) if isinstance(nozzle, dict) else None
+        if value is not None and _mounted(by_id.get(index)):
+            found.append(value)
+    for dock_id, entry in sorted(by_id.items()):
+        if dock_id in RACK_DOCK_IDS:
+            value = _diameter(entry.get("diameter") or entry.get("nozzle_diameter"))
+            if value is not None:
+                found.append(value)
+    return tuple(found)
+
+
 def parse_printer_status(data: object, printer_id: int | None = None) -> PrinterStatus:
     """One printer's state (`PrinterStatus`, Bambuddy `schemas/printer.py:448-560`), from
     `GET /printers/{id}/status`, a row of `GET /bulk/printer-statuses` or the `data` of a live
@@ -392,6 +453,7 @@ def parse_printer_status(data: object, printer_id: int | None = None) -> Printer
         subtask_name=_opt(d, "subtask_name", str) or None,
         awaiting_plate_clear=bool(_opt(d, "awaiting_plate_clear", bool)),
         stopped_error=stopped,
+        nozzles=_nozzles(d),
     )
 
 
