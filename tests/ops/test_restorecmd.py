@@ -15,7 +15,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.cli import main
 from reprintbuddy.db import known_revisions, make_engine, make_sessionmaker, upgrade
 from reprintbuddy.ops import fullbackup as fb
-from reprintbuddy.ops import restorecmd
+from reprintbuddy.ops import restore, restorecmd
 from reprintbuddy.ops.runner import CommandResult
 from reprintbuddy.ops.service import SERVICE, SYSTEMCTL, UPDATE_SERVICE
 
@@ -362,7 +362,7 @@ def test_a_failing_install_into_a_broken_place_puts_the_old_file_back(tmp_path, 
     def fails(*args, **kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(restorecmd, "_copy", fails)
+    monkeypatch.setattr(restore, "_copy", fails)
     code, said, _ = run(backup_of(source, tmp_path), broken)
     assert code == restorecmd.EXIT_REFUSED
     assert broken.read_bytes().startswith(b"this is not a database")  # as it was
@@ -505,7 +505,7 @@ def test_a_move_that_fails_half_way_puts_the_old_files_back(tmp_path, monkeypatc
 
     monkeypatch.setattr(Path, "replace", failing)
     with pytest.raises(PermissionError):
-        restorecmd._install_unreadable(tmp_path / "unused.db", db_path, NOW)
+        restore.set_aside_and_install(tmp_path / "unused.db", db_path, NOW)
     assert db_path.read_bytes() == b"old main file"  # the main file is back where it was
     assert Path(f"{db_path}-wal").read_bytes() == b"old wal"
 
@@ -525,7 +525,7 @@ def test_when_even_the_way_back_fails_the_message_says_where_the_file_is(tmp_pat
         raise OSError("disk full")
 
     monkeypatch.setattr(Path, "replace", failing)
-    monkeypatch.setattr(restorecmd, "_copy", copy_fails)
+    monkeypatch.setattr(restore, "_copy", copy_fails)
     code, said, _ = run(backup_of(source, tmp_path), broken)
     assert code == restorecmd.EXIT_REFUSED
     text = said.text()
