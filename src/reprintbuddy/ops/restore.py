@@ -9,6 +9,7 @@ broken). What is the same comes from here, so that a fix reaches both ways at on
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from collections.abc import Iterable
@@ -17,10 +18,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from reprintbuddy.activity.writer import current_marks, current_notify_marks
+from reprintbuddy.activity.writer import current_marks, current_notify_marks, write_restored_marker
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops.backup import _copy, backup_dir_for, connect_existing
 from reprintbuddy.ops.status import read_status
+
+log = logging.getLogger("reprintbuddy.ops")
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,26 @@ def install(
     notify_marks = current_notify_marks(db_path)
     before = fb.replace_database(candidate, db_path, now=now, protect=protect)
     return Installed(before, marks, notify_marks)
+
+
+def leave_note(data_dir: Path, manifest: fb.Manifest, installed: Installed, *, via: str | None) -> None:
+    """Leave the note the next start logs the restore from, into the restored database (Spec 10.7, group 4).
+
+    Called once the database is replaced: a note that cannot be written loses that entry of the log, never
+    the restore (p164). It is logged and not raised; the page must still restart, the command line must still
+    say what it did. `via`: "cli" for the command line, None for the page.
+    """
+    try:
+        write_restored_marker(
+            data_dir,
+            created_at=manifest.created_at,
+            version=manifest.app_version,
+            via=via,
+            marks=installed.marks,
+            notify_marks=installed.notify_marks,
+        )
+    except Exception as error:  # noqa: BLE001 - see above
+        log.warning("restore note for the activity log not written: %s", type(error).__name__)
 
 
 def protected_backups(data_dir: Path) -> list[Path]:

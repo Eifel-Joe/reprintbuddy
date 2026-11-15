@@ -655,3 +655,17 @@ def test_a_lock_file_that_cannot_be_opened_is_a_clean_refusal(tmp_path, source, 
     code, said, _ = run(backup_of(source, tmp_path), target)
     assert code == restorecmd.EXIT_NOT_DONE and cap_of(target) == 3
     assert "maintenance.lock" in said.text() and "Nothing was changed." in said.text()
+
+
+def test_a_note_for_the_log_that_fails_after_the_replace_is_no_failure_of_the_restore(tmp_path, source, target, monkeypatch):
+    """p531 (A6), as on the page (p164): once the database is replaced, a failing note for the activity log loses
+    only that entry. The command used to end with a traceback here although the restore had happened."""
+
+    def broken(*args, **kwargs):
+        raise TypeError("not serializable")
+
+    monkeypatch.setattr(restore, "write_restored_marker", broken)
+    code, said, _ = run(backup_of(source, tmp_path), target)
+    assert code == 0, said.text()
+    assert cap_of(target) == 7
+    assert "Restored the backup" in said.text()

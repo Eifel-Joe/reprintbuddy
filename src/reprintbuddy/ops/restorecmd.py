@@ -31,7 +31,6 @@ from datetime import datetime
 from pathlib import Path
 
 from reprintbuddy import settings as st
-from reprintbuddy.activity.writer import write_restored_marker
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops import oplock, restore
 from reprintbuddy.ops.runner import CommandRunner
@@ -269,14 +268,8 @@ def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, 
         fb.remove_database_files(candidate)  # whatever happened, the decrypted copy does not stay
 
     # The next start logs the restore into the restored database (Spec 10.7, group 4).
-    write_restored_marker(
-        db_path.parent,
-        created_at=manifest.created_at,
-        version=manifest.app_version,
-        via="cli",
-        marks=installed.marks,
-        notify_marks=installed.notify_marks,
-    )
+    # A note that fails is logged, not raised: the database is replaced by now (p531, as on the page).
+    restore.leave_note(db_path.parent, manifest, installed, via="cli")
     say(f"Restored the backup {_say_when(manifest)}.")
     if installed.before is not None:
         say(f"The database that was there was saved as {installed.before}.")

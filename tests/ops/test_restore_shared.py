@@ -146,3 +146,40 @@ def test_with_leave_a_readable_database_is_replaced_as_without(tmp_path):
     assert queue_cap(db_path) == 3
     assert "before-restore" in installed.before.name
     assert installed.marks == {"bambuddy": {"state": "down", "at": "2026-11-14T08:00:00"}}
+
+
+# --- leave_note: the entry for the activity log, after the database was replaced -------------------------
+
+
+def manifest_for_note():
+    from reprintbuddy.ops.fullbackup import Manifest
+
+    return Manifest("1.1.0", "head", datetime(2026, 11, 1, 8, 0, tzinfo=UTC), False, b"{}")
+
+
+def test_the_note_carries_the_backup_and_the_marks(tmp_path):
+    from reprintbuddy.activity.writer import RESTORED_MARKER
+
+    installed = restore.Installed(None, {"bambuddy": {"state": "down", "at": None}}, [])
+    restore.leave_note(tmp_path, manifest_for_note(), installed, via="cli")
+
+    note = json.loads((tmp_path / RESTORED_MARKER).read_text(encoding="utf-8"))
+    assert note == {
+        "created_at": "2026-11-01T08:00:00+00:00",
+        "version": "1.1.0",
+        "via": "cli",
+        "marks": {"bambuddy": {"state": "down", "at": None}},
+        "notify_marks": [],
+    }
+
+
+def test_a_note_that_cannot_be_written_is_logged_not_raised(tmp_path, monkeypatch, caplog):
+    """p164: the database is replaced by then; only the entry of the log is lost, never the restore."""
+
+    def broken(*args, **kwargs):
+        raise TypeError("not serializable")
+
+    monkeypatch.setattr(restore, "write_restored_marker", broken)
+    with caplog.at_level("WARNING", logger="reprintbuddy.ops"):
+        restore.leave_note(tmp_path, manifest_for_note(), restore.Installed(None, None, None), via=None)
+    assert "restore note for the activity log not written: TypeError" in caplog.text

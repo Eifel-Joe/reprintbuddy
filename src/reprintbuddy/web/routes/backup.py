@@ -34,7 +34,6 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
-from reprintbuddy.activity.writer import write_restored_marker
 from reprintbuddy.auth import MIN_PASSWORD_LENGTH
 from reprintbuddy.db import known_revisions
 from reprintbuddy.ops import fullbackup as fb
@@ -563,17 +562,9 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
             gate.fail()
             raise
         try:
-            # The restored database is migrated at the next start; that start logs the restore into it.
-            write_restored_marker(
-                data_dir,
-                created_at=manifest.created_at,
-                version=manifest.app_version,
-                via=None,
-                marks=installed.marks,
-                notify_marks=installed.notify_marks,
-            )
-        except Exception as error:  # noqa: BLE001 - p164: the restore has happened; only its log entry is lost
-            log.warning("restore note for the activity log not written: %s", type(error).__name__)
+            # The restored database is migrated at the next start; that start logs the restore into it. A note
+            # that fails is logged there (p164: the restore has happened; only its log entry is lost).
+            restore.leave_note(data_dir, manifest, installed, via=None)
         finally:
             # p164: the database is replaced. Was the request cancelled meanwhile, nobody else asks for the
             # restart (see `_ReplaceGate`); the old process must not go on with the state of the old database.
