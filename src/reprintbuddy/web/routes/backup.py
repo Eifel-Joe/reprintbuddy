@@ -26,7 +26,7 @@ import sqlite3
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
@@ -268,17 +268,28 @@ class RemovedAfterSending(FileResponse):
             _remove(Path(self.path))
 
 
+def _backup_error(form: Any, code: str) -> RedirectResponse:
+    """Back to the page the backup form was on, with the message `code`.
+
+    p611: the confirmation page of the way back (Spec 11.3a) has the form too; an error there led to the update
+    card, and the way back had to be checked again. Its form says `back=return`. Only that one fixed target
+    exists: anything else leads to the maintenance card as before, never to an address taken from the request."""
+    if str(form.get("back") or "") == "return":
+        return RedirectResponse(f"/settings/update/return?ops={code}#return-backup", status_code=303)
+    return maintenance_redirect(code, "ops-backup")
+
+
 @router.post("/settings/backup", dependencies=[Depends(verify_csrf)])
 async def download_backup(request: Request, db: Session = Depends(get_db)) -> Response:
     form = await request.form()
     password = str(form.get("backup_password") or "")
     if password != str(form.get("backup_password_repeat") or ""):
-        return maintenance_redirect("backup_mismatch", "ops-backup")
+        return _backup_error(form, "backup_mismatch")
     if password and not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
-        return maintenance_redirect("backup_length", "ops-backup")
+        return _backup_error(form, "backup_length")
     login = str(form.get("login_password") or "")[: 4 * MAX_PASSWORD_LENGTH]
     if not await password_confirmed(request, db, login):
-        return maintenance_redirect("backup_login", "ops-backup")
+        return _backup_error(form, "backup_login")
     work = fb.ensure_work_dir(_work_dir(request))
     fb.clear_work_dir(work, older_than=fb.STALE_AFTER)
     # v0.3.12 p149: the route names the file and holds a flag, as the restore does (p140). Root: a
@@ -300,7 +311,7 @@ async def download_backup(request: Request, db: Session = Depends(get_db)) -> Re
         )
     except (OSError, sqlite3.Error, fb.BackupError) as error:
         log.warning("backup failed: %s", type(error).__name__)  # never the message: no paths, no values
-        return maintenance_redirect("backup_failed", "ops-backup")
+        return _backup_error(form, "backup_failed")
     except BaseException:  # cancelled (a closed browser, a shutdown): the flag first, then the file
         abandoned.set()
         _remove(target)
