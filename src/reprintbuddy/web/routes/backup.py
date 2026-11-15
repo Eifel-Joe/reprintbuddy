@@ -34,15 +34,13 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
-from reprintbuddy.activity.writer import current_marks, current_notify_marks, write_restored_marker
 from reprintbuddy.auth import MIN_PASSWORD_LENGTH
 from reprintbuddy.db import known_revisions
 from reprintbuddy.ops import fullbackup as fb
-from reprintbuddy.ops import oplock, running
+from reprintbuddy.ops import oplock, restore, running
 from reprintbuddy.ops.server import address_changed, base_url, effective_from_settings
 from reprintbuddy.ops.runner import in_thread
 from reprintbuddy.ops.service import request_restart
-from reprintbuddy.ops.status import read_status
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render
@@ -348,12 +346,6 @@ def _discard(request: Request) -> None:
         _remove(path)
 
 
-def _protected(request: Request) -> list[Path]:
-    """A backup named by a failed rollback must survive the pruning (as in the update)."""
-    status = read_status(request.app.state.db_path.parent)
-    return [Path(status.backup)] if status.state == "rollback_failed" and status.backup else []
-
-
 @router.post("/settings/restore/upload")
 async def restore_upload(request: Request) -> Response:
     # The size is checked before anything reads the body: the CSRF check would parse the
@@ -561,25 +553,18 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         if not gate.begin():  # the request was cancelled before this thread got going: replace nothing
             return
         try:
-            marks = current_marks(app.state.db_path)  # p186: the log's marks belong to what has happened
-            notify_marks = current_notify_marks(app.state.db_path)  # p220: so do those of the push messages
-            fb.replace_database(candidate, app.state.db_path, now=_now(), protect=_protected(request))
+            # Never `may_set_aside`: this service holds the database open (see `restore.install`).
+            installed = restore.install(
+                candidate, app.state.db_path, now=_now(), protect=restore.protected_backups(data_dir)
+            )
         except BaseException:
             _remove(candidate)  # nothing was replaced: the decrypted copy does not wait for the next start
             gate.fail()
             raise
         try:
-            # The restored database is migrated at the next start; that start logs the restore into it.
-            write_restored_marker(
-                data_dir,
-                created_at=manifest.created_at,
-                version=manifest.app_version,
-                via=None,
-                marks=marks,
-                notify_marks=notify_marks,
-            )
-        except Exception as error:  # noqa: BLE001 - p164: the restore has happened; only its log entry is lost
-            log.warning("restore note for the activity log not written: %s", type(error).__name__)
+            # The restored database is migrated at the next start; that start logs the restore into it. A note
+            # that fails is logged there (p164: the restore has happened; only its log entry is lost).
+            restore.leave_note(data_dir, manifest, installed, via=None)
         finally:
             # p164: the database is replaced. Was the request cancelled meanwhile, nobody else asks for the
             # restart (see `_ReplaceGate`); the old process must not go on with the state of the old database.
