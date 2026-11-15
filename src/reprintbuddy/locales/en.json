@@ -658,6 +658,8 @@
   "ops.update.reason.swap_failed": "The database could not be switched: {detail}",
   "ops.update.reason.interrupted_untouched": "The update was stopped from outside. Nothing was changed.",
   "ops.update.reason.interrupted_partial": "The update was stopped from outside. The installation may be incomplete.",
+  "ops.update.reason.interrupted_rolled_back": "The update was stopped from outside (time limit or shutdown). The previous version was put back.",
+  "ops.update.reason.interrupted_recovered": "The way back was cut off (for example by a restart). On its start the pre-release put back the database from before the way back.",
   "ops.update.backup_line": "Backup: {path}",
   "ops.update.dismiss": "Hide",
   "ops.update.state.interrupted": "Update was interrupted",

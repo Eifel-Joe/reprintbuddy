@@ -411,3 +411,44 @@ def test_the_rework_warning_names_the_backup_from_before_the_pre_release():
 
     assert "before the switch to the pre-release" in translate("en", "ops.update.rework_warning")
     assert "von vor dem Wechsel auf die Vorabversion" in translate("de", "ops.update.rework_warning")
+
+
+# --- p610: the start after a way back that was cut off ---------------------------------------------------------
+
+
+def test_p610_the_pre_release_puts_back_the_database_of_a_cut_off_way_back_before_it_opens_it(tmp_path):
+    """A power cut during pip: the live database is the stable version's (an older head, without the newer
+    entries). The start of the pre-release must not raise it to its own head first (`upgrade`), but put back
+    `.return/before.db`, the database as it was when the service stopped."""
+    from reprintbuddy import __version__
+    from reprintbuddy.ops.migrationsteps import current_revision
+    from reprintbuddy.web.app import create_app
+
+    data = tmp_path / "data"
+    data.mkdir()
+    db = data / "live.db"
+    before = data / ".return" / "before.db"
+    before.parent.mkdir()
+    source = tmp_path / "pre-release.db"
+    engine = make_engine(source)
+    upgrade(engine)
+    engine.dispose()
+    add_journal(source, 3)
+    backup_database(source, tmp_path / "copies", label="x", now=datetime(2026, 11, 15, tzinfo=UTC)).rename(before)
+    engine = make_engine(db)
+    upgrade(engine, revision="0022")  # the stable version's head
+    engine.dispose()
+    write_status(
+        data,
+        UpdateStatus(
+            state="running", step="install", from_tag="v" + __version__, to_tag=STABLE, kind="return", return_case=3,
+            started_at=datetime(2026, 11, 15, tzinfo=UTC), target_head="0022",
+        ),
+    )
+    app = create_app(db, run_engine=False)
+    app.state.engine.dispose()
+    assert sql(db, "SELECT count(*) FROM journal") == [(3,)]
+    assert current_revision(db) == current_revision(source)
+    status = read_status(data)
+    assert (status.state, status.reason) == ("rolled_back", "interrupted_recovered")
+    assert not before.exists()

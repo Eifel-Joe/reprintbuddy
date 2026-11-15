@@ -223,6 +223,17 @@ def test_version_1_0_0_reads_the_result_of_a_way_back_as_a_finished_update(tmp_p
     assert (found.state, found.from_tag, found.to_tag) == ("succeeded", "v1.1.0-beta.1", "v1.0.0")
     write_status(tmp_path, UpdateStatus(state="rolled_back", step="rollback", kind="return", reason="swap_failed", started_at=NOW))
     assert old.read_status(tmp_path).state == "rolled_back"
+    # p610: the reasons it does not know read as none; the rest of the result stays
+    for reason in ("interrupted_rolled_back", "interrupted_recovered"):
+        write_status(tmp_path, UpdateStatus(state="rolled_back", step="rollback", kind="return", reason=reason, started_at=NOW, message="install: interrupted, x"))
+        found = old.read_status(tmp_path)
+        assert (found.state, found.reason, found.message) == ("rolled_back", "", "install: interrupted, x")
+
+
+@pytest.mark.parametrize("reason", ["interrupted_rolled_back", "interrupted_recovered"])
+def test_p610_the_reasons_of_a_cut_off_run_survive_the_file(tmp_path, reason):
+    write_status(tmp_path, UpdateStatus(state="rolled_back", step="rollback", started_at=NOW, kind="return", reason=reason))
+    assert read_status(tmp_path).reason == reason
 
 
 def test_an_interrupted_way_back_stays_a_way_back_and_names_the_database_as_it_was(tmp_path):

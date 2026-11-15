@@ -62,7 +62,7 @@ from reprintbuddy.ops.releases import (
 )
 from reprintbuddy.ops.runner import CommandResult, CommandRunner
 from reprintbuddy.ops.service import RESTART_WAIT_CMD, START_CMD, STOP_CMD
-from reprintbuddy.ops.stablereturn import ReturnPlan, assess, build_stable_db, copy_database
+from reprintbuddy.ops.stablereturn import RETURN_DIR, ReturnPlan, assess, build_stable_db, copy_database
 from reprintbuddy.ops.status import UpdateStatus, is_busy, mark_interrupted, read_status, write_status
 from reprintbuddy.ops.versions import is_newer, is_prerelease_tag
 
@@ -79,9 +79,8 @@ DOWNLOAD_DIR = ".download"  # under releases/: the package and its checksum whil
 QUEUED_TARGET_WINDOW = timedelta(minutes=2)
 # Spec 11.3a "Rückweg zur stabilen Version": beside the database while the way back runs, the database as it
 # was when the service stopped (`before.db`, what a failure brings back) and the one the stable version will
-# run on (`stable.db`). Gone after the way back, and in a rollback as soon as `before.db` is back in place (p610);
-# only when it could not be put back does it stay and is named.
-RETURN_DIR = ".return"
+# run on (`stable.db`), in `RETURN_DIR` (from `stablereturn`). Gone after the way back, and in a rollback as soon
+# as `before.db` is back in place (p610); only when it could not be put back does it stay and is named.
 
 
 def venv_python(install_dir: Path) -> Path:

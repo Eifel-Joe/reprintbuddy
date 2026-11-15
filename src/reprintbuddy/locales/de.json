@@ -658,6 +658,8 @@
   "ops.update.reason.swap_failed": "Die Datenbank konnte nicht umgestellt werden: {detail}",
   "ops.update.reason.interrupted_untouched": "Das Update wurde von außen beendet. Es wurde nichts verändert.",
   "ops.update.reason.interrupted_partial": "Das Update wurde von außen beendet. Die Installation ist möglicherweise unvollständig.",
+  "ops.update.reason.interrupted_rolled_back": "Das Update wurde von außen beendet (Zeitgrenze oder Herunterfahren). Die vorige Version wurde zurückgeholt.",
+  "ops.update.reason.interrupted_recovered": "Der Rückweg wurde abgebrochen (zum Beispiel durch einen Neustart). Die Vorabversion hat beim Start die Datenbank von vor dem Rückweg zurückgespielt.",
   "ops.update.backup_line": "Sicherung: {path}",
   "ops.update.dismiss": "Ausblenden",
   "ops.update.state.interrupted": "Update wurde unterbrochen",
