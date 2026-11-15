@@ -31,6 +31,7 @@ from conftest import PASSWORD, FakeRunner, make_client
 from reprintbuddy.activity.writer import RESTORED_MARKER, current_marks
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops import restorecmd
+from reprintbuddy.ops.status import UpdateStatus, write_status
 
 from test_backup_abandon import Held, async_client, cancel_and_let_go, settled, token_of, upload_token
 from test_ops_full_backup import MAINTENANCE, confirm, made_backup, set_queue_cap, upload, work_files, zip_members
@@ -185,6 +186,30 @@ def test_a_good_backup_ends_in_the_same_state_both_ways(ops_env, tmp_path, way, 
     assert note["via"] == (None if way == "page" else "cli")
     assert note["marks"] == old_marks
     assert secrets_left(ops_env) == []
+
+
+# Today only the page keeps the backup a failed rollback names; whether the command line does too waits for
+# a decision (p531, finding A4). The case stays a list of ways so that it can grow by one.
+@pytest.mark.parametrize("way", ["page"])
+def test_the_backup_a_failed_rollback_names_survives_the_pruning(ops_env, way):
+    content = made_backup(ops_env)
+    folder = ops_env.db_path.parent / "backups"
+    folder.mkdir(exist_ok=True)
+    older = [folder / f"reprintbuddy-v1.0.{n}-2026010{n}T080000Z.db" for n in range(1, 7)]  # oldest first
+    for path in older:
+        path.write_bytes(b"an old backup")
+    named = older[0]
+    write_status(
+        ops_env.db_path.parent,
+        UpdateStatus(state="rollback_failed", step="rollback", backup=str(named), started_at=datetime.now(UTC)),
+    )
+
+    assert restore(way, ops_env, content).result == "restored"
+
+    # six old ones and the new one, five are kept: the oldest is pruned, except the one the rollback names
+    assert named.exists()
+    assert not older[1].exists()
+    assert len(before_restore_backups(ops_env)) == 1
 
 
 def _saved(content: bytes, tmp_path: Path) -> Path:
