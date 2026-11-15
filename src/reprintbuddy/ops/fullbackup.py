@@ -53,6 +53,7 @@ from reprintbuddy.ops.backup import (
     backup_database,
     backup_dir_for,
     connect_existing,
+    kept_for_running,
     prune_backups,
     restore_database,
 )
@@ -1022,7 +1023,9 @@ def replace_database(
     # From here the database is replaced: tidying up may fail, the restore has not.
     try:
         remove_database_files(candidate)
-        prune_backups(backup_dir, keep, protect=[before, *protect])
+        # Spec 11.3a: the backup from before a pre-release stays while one runs (this code is the one running).
+        kept = kept_for_running(backup_dir, f"v{__version__}")
+        prune_backups(backup_dir, keep, protect=[before, *protect, *kept])
     except OSError:
         pass
     return before

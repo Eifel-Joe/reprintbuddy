@@ -253,3 +253,83 @@ def test_check_of_a_git_copy_without_tag_offers_the_newest_without_notes(tmp_pat
     fake_runner.on(("git", "-C", str(folder), "remote", "get-url", "origin"), CommandResult(0, "https://github.com/owner/repo.git\n"))
     info = rl.check_versions(folder, fake_runner, answering(release("v1.0.0")), channel="stable", now=NOW)
     assert (info.installed, info.newest, info.update_available, info.notes) == (None, "v1.0.0", True, None)
+
+
+# --- the way back and the rework line (Spec 11.3a "Rückweg zur stabilen Version", "Umbau nur angekündigt") ---
+
+SPEC_LINE = (
+    "**Database rework:** going back to the stable version restores the backup from before this update; "
+    "entries made since then are lost."
+)
+
+
+def test_the_rework_line_is_the_one_of_the_spec():
+    assert rl.REWORK_LINE == SPEC_LINE
+
+
+@pytest.mark.parametrize(
+    "body",
+    [SPEC_LINE, SPEC_LINE + "\n\nMore.", "\n\n" + SPEC_LINE + "\r\nMore.", "\ufeff" + SPEC_LINE, "  " + SPEC_LINE + "  \n"],
+)
+def test_notes_that_begin_with_the_rework_line(body):
+    assert rl.starts_with_rework(body)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [None, "", "Notes.\n" + SPEC_LINE, SPEC_LINE.replace("lost.", "lost"), SPEC_LINE.lower(), "- " + SPEC_LINE],
+)
+def test_notes_that_do_not_begin_with_the_rework_line(body):
+    assert not rl.starts_with_rework(body)
+
+
+def parsed(*items):
+    return rl.parse_releases(list(items))
+
+
+def test_the_way_back_goes_to_the_newest_older_stable_version():
+    found = parsed(release("v1.1.0-beta.2"), release("v1.1.0-beta.1"), release("v1.0.1"), release("v1.0.0"))
+    assert rl.return_target(found, "v1.1.0-beta.2").tag == "v1.0.1"
+
+
+def test_no_way_back_when_a_newer_stable_version_exists():
+    """Spec 11.3a: then the ordinary update is the way back, without loss."""
+    found = parsed(release("v1.1.0"), release("v1.1.0-beta.1"), release("v1.0.0"))
+    assert rl.return_target(found, "v1.1.0-beta.1") is None
+
+
+@pytest.mark.parametrize("installed", ["v1.0.0", None])
+def test_no_way_back_from_a_stable_version_or_an_unknown_one(installed):
+    assert rl.return_target(parsed(release("v1.1.0-beta.1"), release("v1.0.0"), release("v0.9.0")), installed) is None
+
+
+def test_no_way_back_without_an_older_stable_version():
+    assert rl.return_target(parsed(release("v1.1.0-beta.1")), "v1.1.0-beta.1") is None
+
+
+def test_check_names_the_way_back_whatever_the_channel(tmp_path, fake_runner):
+    folder = package_installation(tmp_path, tag="v1.1.0-beta.1")
+    http = answering(release("v1.1.0-beta.2"), release("v1.1.0-beta.1"), release("v1.0.0"))
+    for channel in ("stable", "prerelease"):
+        info = rl.check_versions(folder, fake_runner, http, channel=channel, now=NOW)
+        assert info.return_to == "v1.0.0"
+    assert rl.check_versions(folder, fake_runner, http, channel="prerelease", now=NOW).newest == "v1.1.0-beta.2"
+
+
+def test_check_of_a_stable_installation_names_no_way_back(tmp_path, fake_runner):
+    info = rl.check_versions(package_installation(tmp_path), fake_runner, answering(release("v1.0.0")), channel="stable", now=NOW)
+    assert info.return_to is None
+
+
+def test_check_sees_the_rework_line_of_the_offered_version(tmp_path, fake_runner):
+    folder = package_installation(tmp_path)
+    http = answering(release("v1.1.0-beta.2", body=SPEC_LINE + "\n\nNew."), release("v1.1.0-beta.1"), release("v1.0.0"))
+    assert rl.check_versions(folder, fake_runner, http, channel="prerelease", now=NOW).rework_ahead
+    http = answering(release("v1.1.0-beta.1", body="New."), release("v1.0.0"))
+    assert not rl.check_versions(folder, fake_runner, http, channel="prerelease", now=NOW).rework_ahead
+
+
+def test_check_without_a_newer_version_warns_of_nothing(tmp_path, fake_runner):
+    folder = package_installation(tmp_path, tag="v1.1.0-beta.2")
+    http = answering(release("v1.1.0-beta.2", body=SPEC_LINE), release("v1.0.0"))
+    assert not rl.check_versions(folder, fake_runner, http, channel="prerelease", now=NOW).rework_ahead

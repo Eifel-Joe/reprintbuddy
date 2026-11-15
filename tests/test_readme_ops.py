@@ -301,7 +301,7 @@ OLD_STATUS = ("under development", "not ready for real use", "in Entwicklung", "
     ],
 )
 def test_status_line_says_stable_since_1_0(name, status):
-    """Spec 11.8 (decided 15.11.2026): from 1.0.0 on the status line says "stable", and where new features first appear."""
+    """Spec 11.8 (decided 14.11.2026): from 1.0.0 on the status line says "stable", and where new features first appear."""
     text = read(name).replace("\r\n", "\n")
     assert status in text
     assert "no release yet" not in text and "noch keine Version veröffentlicht" not in text
@@ -393,3 +393,53 @@ def test_p553_the_repair_of_a_missing_folder_is_described(name):
     text = read(name).replace("\n", " ")
     assert "/opt/reprintbuddy/releases/<tag>" in text
     assert ("downloads its package again" in text) or ("lädt das Skript dieser Version ihr Paket wieder" in text)
+
+
+# --- the way back to the stable version (Spec 11.3a "Rückweg zur stabilen Version", last point) ---------------
+
+WAY_BACK_WORDS = {
+    "en": (
+        "Back to the stable version", "no newer stable release", "only the program changes",
+        "removes exactly what it added", "restores the backup from before", "full backup", "**Database rework:**",
+    ),
+    "de": (
+        "Zurück zur stabilen Version", "keine neuere stabile Version", "nur die Programmversion wechselt",
+        "entfernt genau, was sie hinzugefügt hat", "spielt die Sicherung von vor", "vollständige Sicherung",
+        "**Database rework:**",
+    ),
+}
+
+
+@pytest.mark.parametrize("name", ["README.md", "README.de.md", "docs/operate/update-backup.md", "docs/operate/update-backup.de.md"])
+def test_the_way_back_to_the_stable_version_is_described(name):
+    """When the button appears, the three cases in a sentence each, the full backup first, and that pre-releases
+    with rework are announced in their release notes."""
+    text = " ".join(read(name).split())  # a sentence may break across lines
+    for words in WAY_BACK_WORDS["de" if name.endswith(".de.md") else "en"]:
+        assert words in text, words
+    assert "until a newer stable release comes" not in text  # the way back exists now
+
+
+def test_contributing_names_the_rule_for_database_steps():
+    """Spec 11.8: a new database step only adds and brings its downgrade, or is marked as rework; CI checks it."""
+    text = " ".join(read("CONTRIBUTING.md").split())
+    for words in ("return_note", "rework = True", "only add", "downgrade", "release notes", "CI"):
+        assert words in text, words
+    assert "rework" in read(".github/PULL_REQUEST_TEMPLATE.md")
+
+
+def test_the_german_contributing_names_the_rule_too():
+    """Review: CONTRIBUTING exists in both languages (Spec 11.8)."""
+    text = " ".join(read("CONTRIBUTING.de.md").split())
+    for words in ("return_note", "rework = True", "legt nur Neues an", "Rückbau", "Release-Notes", "CI",
+                  "zurück zur stabilen Version"):
+        assert words in text, words
+
+
+@pytest.mark.parametrize(("name", "first", "then"), [
+    ("docs/operate/update-backup.md", "The card then says", "The way back to an older stable release is described"),
+    ("docs/operate/update-backup.de.md", "Die Karte sagt dann", "Den Weg zurück zu einer älteren stabilen Version"),
+])
+def test_the_pointer_to_the_way_back_follows_the_sentence_about_the_card(name, first, then):
+    text = read(name)
+    assert text.index(first) < text.index(then)

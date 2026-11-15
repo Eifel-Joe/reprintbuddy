@@ -64,6 +64,11 @@ class VersionInfo:
     # The release notes of the newer versions (p143), from the same answer as the check (v0.4.9,
     # `releases.check_versions`); None when there is nothing newer or nothing was asked.
     notes: "ReleaseNotes | None" = None
+    # Spec 11.3a "Rückweg zur stabilen Version": the stable version a pre-release can go back to (the newest
+    # older stable one, whatever the channel), None when a stable one is installed or a newer stable exists.
+    return_to: str | None = None
+    # Spec 11.3a "Umbau nur angekündigt": the notes of the offered version begin with the rework line.
+    rework_ahead: bool = False
 
     @property
     def update_available(self) -> bool:

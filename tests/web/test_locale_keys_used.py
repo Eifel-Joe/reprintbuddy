@@ -29,7 +29,7 @@ from reprintbuddy.domain.stock import KINDS, Actor
 from reprintbuddy.domain.workqueue import Origin
 from reprintbuddy.labels import fields as label_fields, status as label_status
 from reprintbuddy.models import Article, Dispatch
-from reprintbuddy.ops import fullbackup
+from reprintbuddy.ops import fullbackup, stablereturn
 from reprintbuddy.ops.status import UPDATE_REASONS, UPDATE_STEPS, UpdateState
 from reprintbuddy.web.routes import ops as ops_routes, settings as settings_routes
 from reprintbuddy import settings as st
@@ -59,6 +59,9 @@ FAMILIES = {
     "ops.update.reason.": 'f"ops.update.reason.{status.reason}"',
     "ops.update.state.": 'f"ops.update.state.{view.update.state}"',
     "ops.update.step.": 'f"ops.update.step.{view.update.step}"',
+    # the way back to the stable version (Spec 11.3a "Rückweg"): its result on the card, why case 3 applies
+    "ops.return.state.": 'f"ops.return.state.{view.update.state}"',
+    "ops.return.why.": "'ops.return.why.' ~ plan.why3",
     "pause.reason.": 'f"pause.reason.{reason}"',
     "permission.": "'permission.' ~ code",  # one explanation per Bambuddy right
     "queue.bambuddy_state.": "'queue.bambuddy_state.' ~",  # state of an entry in Bambuddy's queue (p65)
@@ -184,6 +187,8 @@ DERIVED = {
     "ops.update.reason.": lambda text: set(UPDATE_REASONS),
     "ops.update.state.": lambda text: _update_states_shown(),
     "ops.update.step.": lambda text: set(UPDATE_STEPS),
+    "ops.return.state.": lambda text: _update_states_shown(),
+    "ops.return.why.": lambda text: set(get_args(stablereturn.Why3)),
     "pause.reason.": lambda text: set(PAUSE_REASONS),
     "permission.": lambda text: set(connection.EDITOR_LABELS)
     | set(connection.KEY_CREATION_LABELS)

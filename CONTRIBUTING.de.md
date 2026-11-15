@@ -41,6 +41,15 @@ Bitte angeben (die Fehler-Vorlage fragt jeden Punkt ab):
   und die Seiten unter `docs/` kommen im **selben Pull Request** mit, wenn sich
   Installation, Einrichtung oder Bedienung ändern; die Pull-Request-Vorlage fragt
   danach.
+- Ein **neuer Umbauschritt der Datenbank** (eine Alembic-Revision unter
+  `src/reprintbuddy/migrations/versions/`) legt nur Neues an: neue Tabellen, neue Felder, die leer bleiben
+  dürfen oder einen Vorgabewert haben (angefügt, ohne die Tabelle neu zu bauen), und Indizes auf neuen Feldern
+  oder neuen Tabellen. Er bringt seinen Rückbau mit, der genau das wieder entfernt, und trägt zwei
+  Kennzeichen: `return_note = {"de": "…", "en": "…"}` (was er anlegt; die Seite für den Weg zurück zur
+  stabilen Version nennt es) und `rework = False`. Ein Schritt, der vorhandene Daten umbauen muss, wird mit
+  `rework = True` gekennzeichnet, und die Release-Notes der Vorabversion, die ihn bringt, beginnen mit der
+  Zeile `**Database rework:** …`; der Weg zurück spielt dann die Sicherung von vor dem Update zurück. Die CI
+  prüft jeden Schritt nach der letzten stabilen Version auf diese Regel (`tests/test_migration_rules.py`).
 
 ## Zweige und Versionen
 
@@ -50,7 +59,7 @@ Bitte angeben (die Fehler-Vorlage fragt jeden Punkt ab):
   wird als `vX.Y.Z` veröffentlicht. Neue Funktionen kommen deshalb zuerst als Vorabversion.
 - Wer eine Vorabversion testen will, schaltet in Reprintbuddy unter *Einstellungen → Update und Sicherung*
   **Vorabversionen einschließen** ein. Wieder ausgeschaltet, bleibt eine installierte Vorabversion, bis eine neuere
-  stabile Version kommt.
+  stabile Version kommt oder du auf der Update-Karte zurück zur stabilen Version gehst.
 
 ## Dokumentation
 

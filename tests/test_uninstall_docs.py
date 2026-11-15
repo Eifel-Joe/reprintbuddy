@@ -1,6 +1,6 @@
 """The uninstall instructions (README and the page under docs/, EN and DE) name everything install.sh puts on the system.
 
-Spec 11.3a (decided 15.11.2026): there is no uninstall command in the installer; the way out is a list of steps,
+Spec 11.3a (decided 14.11.2026): there is no uninstall command in the installer; the way out is a list of steps,
 and the list must not go stale. The places are read from install/install.sh, not written down here: when the
 installer creates something new, a test below fails until the instructions know about it.
 """

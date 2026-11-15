@@ -29,13 +29,16 @@ def update_outcome(status: UpdateStatus) -> dict[str, Any] | None:
         return None
     if INTERRUPTED in status.message:
         result = "interrupted"
-    return {
+    outcome: dict[str, Any] = {
         "started_at": status.started_at.isoformat(),
         "finished_at": status.finished_at.isoformat() if status.finished_at else None,
         "from": status.from_tag,
         "to": status.to_tag,
         "result": result,
     }
+    if status.kind == "return":  # Spec 11.3a "Rückweg": start and result are named as the way back
+        outcome["return"] = True
+    return outcome
 
 
 def connection_state(engine_status: Any) -> str | None:
