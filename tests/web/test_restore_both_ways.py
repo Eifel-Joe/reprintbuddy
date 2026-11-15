@@ -314,6 +314,9 @@ def test_ctrl_c_on_the_command_line_while_it_checks_changes_nothing(ops_env, mon
     assert secrets_left(ops_env) == []
 
 
+# Serial part of the CI (tests/test_ci_split.py): the helpers of test_backup_abandon.py work with fixed
+# pauses (0.2 s before letting the worker go, 0.4 s of quiet) and a deadline of 10 s.
+@pytest.mark.serial
 async def test_a_page_closed_while_it_checks_changes_nothing(ops_env, monkeypatch):
     """The sister of the Ctrl-C above: the browser goes away while the rows are rebuilt."""
     content = made_backup(ops_env, BACKUP_PASSWORD)
