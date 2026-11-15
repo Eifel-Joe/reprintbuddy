@@ -509,16 +509,16 @@ Problem = tuple[str, str, str, dict[str, str]]  # (step, English line, reason co
 # "interrupted" (`activity.states.INTERRUPTED`).
 CUT_OFF_ROLLED_BACK = "interrupted, the previous version was put back"
 CUT_OFF_PARTIAL = "interrupted, the installation may be incomplete"
-CUT_OFF_AT_SHUTDOWN = "; it starts with the next boot"
+CUT_OFF_AT_SHUTDOWN = "; the system shuts down, it starts with the next boot at the latest"
 
 
 def _cut_off_line(runner: CommandRunner, put_back: bool, answers: bool) -> str | None:
     """The line of a rollback after a stop from outside that counts as done, or None (it failed).
 
     Done when everything is back in place and the previous version answers, or when it is back in place and the
-    system shuts down (review of p610): then the service is not running now, but the unit is enabled and starts
-    the previous version with the next boot (Spec 11.3a). Asked only then: systemd's answer to a start during a
-    shutdown is not documented, its state "stopping" is."""
+    system shuts down (review of p610): the service may not be running now, but the unit is enabled and starts
+    the previous version with the next boot at the latest (Spec 11.3a). Asked only then: systemd's answer to a
+    start during a shutdown is not documented, its state "stopping" is."""
     if put_back and answers:
         return CUT_OFF_ROLLED_BACK
     if put_back and shutting_down(runner):
@@ -793,7 +793,7 @@ def _run_return(
         if _service_command(runner, guard, START_CMD, 120.0).ok and wait_healthy():
             return finish("failed", step, message, reason, params)
         if cut_off and shutting_down(runner):
-            # nothing was changed; the enabled unit starts the pre-release with the next boot
+            # nothing was changed; the enabled unit starts the pre-release with the next boot at the latest
             return finish("failed", step, message + CUT_OFF_AT_SHUTDOWN, reason, params)
         return finish("rollback_failed", step, f"{message} – the pre-release did not answer after its start", reason, params)
 

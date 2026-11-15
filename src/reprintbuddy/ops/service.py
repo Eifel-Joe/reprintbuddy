@@ -34,7 +34,7 @@ def start_update_unit(runner: CommandRunner) -> CommandResult:
 
 
 def shutting_down(runner: CommandRunner) -> bool:
-    """Whether the system is shutting down (p610): then a service started now starts again only with the next boot."""
+    """Whether the system is shutting down (p610): the enabled service then starts with the next boot at the latest."""
     return runner(SYSTEM_STATE_CMD, timeout=5.0).stdout.strip() == "stopping"
 
 

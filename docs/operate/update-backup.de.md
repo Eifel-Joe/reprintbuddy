@@ -64,8 +64,8 @@ Reprintbuddy fragt beim Start und danach einmal täglich, ob es eine neuere Vers
 Beendet systemd das Update von außen (seine Zeitgrenze von 30 Minuten, `systemctl stop reprintbuddy-update`,
 Herunterfahren), gilt das als Fehlschlag: Reprintbuddy rollt genauso zurück und startet die vorige Version wieder.
 Die Karte sagt „Das Update wurde von außen beendet (Zeitgrenze oder Herunterfahren). Die vorige Version wurde
-zurückgeholt.“, und das [Protokoll](log.md) nennt das Ergebnis „unterbrochen“. Beim Herunterfahren startet die vorige
-Version mit dem nächsten Booten. Ein harter Neustart, ein Stromausfall oder ein
+zurückgeholt.“, und das [Protokoll](log.md) nennt das Ergebnis „unterbrochen“. Fährt das System dabei herunter, startet die
+vorige Version spätestens beim nächsten Booten. Ein harter Neustart, ein Stromausfall oder ein
 hartes Beenden (SIGKILL, zum Beispiel durch den OOM-Killer) lässt keine Zeit zum Zurückrollen; für den Rückweg zur
 stabilen Version steht dort, was dann gilt. An den systemd-Units ändert sich nichts; nach einem harten Beenden des
 Update-Helfers kann Reprintbuddy deshalb bis zum nächsten Start des Containers aus bleiben. Dann startet

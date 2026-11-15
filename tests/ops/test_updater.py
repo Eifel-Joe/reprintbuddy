@@ -1207,7 +1207,7 @@ def test_p610_on_shutdown_a_rollback_that_put_everything_back_is_a_rollback(upda
     e.wait_healthy = lambda: False
     result = e.update(guard=guard)
     assert (result.state, result.reason) == ("rolled_back", "interrupted_rolled_back")
-    assert result.message == "migrate: interrupted, the previous version was put back; it starts with the next boot"
+    assert result.message == "migrate: interrupted, the previous version was put back; the system shuts down, it starts with the next boot at the latest"
     assert marker.read_text(encoding="utf-8") == "old" and e.queue_cap() == 7
 
 
