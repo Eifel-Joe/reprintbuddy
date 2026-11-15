@@ -30,6 +30,10 @@ from reprintbuddy.bambuddy.client import (
 from reprintbuddy.web.app import shared_tls_client_factory
 from fixtures import API, KEY, client
 
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# real WebSocket servers with fixed short sleeps and close timeouts.
+pytestmark = pytest.mark.serial
+
 # The clients of this module are made the way the app makes its own: one shared TLS context, built
 # once (building it per call costs most of a second, and the listener asks for a token at almost
 # every attempt). Not an own `ssl` set-up of the test (v0.3.9 p79).

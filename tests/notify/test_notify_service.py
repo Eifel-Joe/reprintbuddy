@@ -21,6 +21,10 @@ from reprintbuddy.models import Article, NotifyMark
 from reprintbuddy.notify import events as ev
 from reprintbuddy.notify.service import TOPIC, Notifier
 
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# fixed short sleeps decide whether a message was sent or held back.
+pytestmark = pytest.mark.serial
+
 URL = "http://ha.test:8123"
 CALL = f"{URL}/api/services/notify/mobile_app_phone"
 PING = f"{URL}/api/"

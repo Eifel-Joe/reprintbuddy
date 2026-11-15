@@ -681,6 +681,7 @@ def sudo_until_told_to_stop(env, command):
     return started, seen_stop
 
 
+@pytest.mark.serial  # a bound on how long it takes
 async def test_a_hanging_sudo_holds_neither_the_loop_nor_lets_a_second_click_through(ops_env):
     git_env(ops_env)
     check(ops_env)
@@ -765,6 +766,7 @@ async def test_a_restore_that_begins_while_the_start_asks_systemd_wins(ops_env, 
     assert app.state.update_starting is False
 
 
+@pytest.mark.serial  # a bound on how long it takes
 async def test_cancelling_the_start_stops_sudo_and_frees_the_gate(ops_env):
     """A shutdown (or a closed request) does not wait for a sudo that hangs."""
     git_env(ops_env)
@@ -785,6 +787,7 @@ async def test_cancelling_the_start_stops_sudo_and_frees_the_gate(ops_env):
     assert read_status(data_dir(ops_env)).state == "queued"  # left as it is; believed for the grace only
 
 
+@pytest.mark.serial  # a bound on how long it takes
 async def test_cancelling_the_restart_stops_sudo(ops_env):
     started, seen_stop = sudo_until_told_to_stop(ops_env, RESTART_CMD)
     app = ops_env.client.app

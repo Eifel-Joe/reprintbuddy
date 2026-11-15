@@ -11,6 +11,10 @@ import pytest
 
 from reprintbuddy.ops import releasenotes as rn
 
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# bound on how fast a late answer is given up.
+pytestmark = pytest.mark.serial
+
 
 # --- which repository ---------------------------------------------------------------------------
 

@@ -7,6 +7,7 @@ import re
 import time
 from pathlib import Path
 
+import pytest
 from markupsafe import escape
 
 from conftest import run_tick, sm_of
@@ -171,6 +172,7 @@ def best_plan_time(client, runs: int = 7) -> float:
     return shortest
 
 
+@pytest.mark.serial  # compares measured times; the guard cannot see it, the time is measured in a helper
 def test_long_queue_is_planned_quickly(bb_client, fake_bambuddy):
     """Two things a slow plan would show, neither of which depends on the speed of the machine much:
     the time grows no faster than the queue does (a quadratic loop, a query per print: four times the
