@@ -42,7 +42,9 @@ NOW = datetime(2026, 11, 15, 12, 0, tzinfo=UTC)
 
 
 def database(path: Path, queue_cap: int) -> Path:
-    """A migrated database of this version with one value to tell it by, and one mark of the log."""
+    """A migrated database of this version with one value to tell it by, and one mark of the log that tells it
+    by too (a candidate and the database it replaces never carry the same mark here: reading the marks after
+    the replace instead of before would show)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     dbtemplate.copy_to(path)
     engine = make_engine(path)
@@ -54,7 +56,10 @@ def database(path: Path, queue_cap: int) -> Path:
         if con.execute("SELECT changes()").fetchone()[0] == 0:
             con.execute("INSERT INTO settings (key, value) VALUES ('queue_cap', ?)", (json.dumps(queue_cap),))
         con.execute("DELETE FROM activity_marks")
-        con.execute("INSERT INTO activity_marks (key, state, at) VALUES ('bambuddy', 'down', '2026-11-14 08:00:00')")
+        con.execute(
+            "INSERT INTO activity_marks (key, state, at) VALUES ('bambuddy', ?, '2026-11-14 08:00:00')",
+            (f"cap-{queue_cap}",),
+        )
         con.commit()
     finally:
         con.close()
@@ -78,7 +83,7 @@ def test_install_replaces_the_database_and_keeps_what_the_log_needs(tmp_path):
     assert queue_cap(db_path) == 3
     assert installed.before is not None and queue_cap(installed.before) == 9
     assert "before-restore" in installed.before.name
-    assert installed.marks == {"bambuddy": {"state": "down", "at": "2026-11-14T08:00:00"}}
+    assert installed.marks == {"bambuddy": {"state": "cap-9", "at": "2026-11-14T08:00:00"}}
     assert not candidate.exists()
 
 
@@ -145,7 +150,7 @@ def test_with_leave_a_readable_database_is_replaced_as_without(tmp_path):
 
     assert queue_cap(db_path) == 3
     assert "before-restore" in installed.before.name
-    assert installed.marks == {"bambuddy": {"state": "down", "at": "2026-11-14T08:00:00"}}
+    assert installed.marks == {"bambuddy": {"state": "cap-9", "at": "2026-11-14T08:00:00"}}
 
 
 # --- leave_note: the entry for the activity log, after the database was replaced -------------------------

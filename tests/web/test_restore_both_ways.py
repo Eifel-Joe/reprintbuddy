@@ -151,8 +151,15 @@ def marker(env) -> dict | None:
 
 
 def changed_since(env) -> dict:
-    """Change the running database after the backup was made, so that "old" and "backup" differ."""
+    """Change the running database after the backup was made, so that "old" and "backup" differ: a setting,
+    and a mark of the log the backup does not have (the marks must come from the database that is replaced)."""
     set_queue_cap(env, 9)
+    con = sqlite3.connect(env.db_path)
+    try:
+        con.execute("INSERT INTO activity_marks (key, state, at) VALUES ('only-in-the-old', 'seen', '2026-11-14 08:00:00')")
+        con.commit()
+    finally:
+        con.close()
     return rows(env.db_path)
 
 
@@ -184,7 +191,7 @@ def test_a_good_backup_ends_in_the_same_state_both_ways(ops_env, tmp_path, way, 
     assert datetime.fromisoformat(note["created_at"]) == manifest.created_at
     assert note["version"] == manifest.app_version
     assert note["via"] == (None if way == "page" else "cli")
-    assert note["marks"] == old_marks
+    assert note["marks"] == old_marks and "only-in-the-old" in old_marks
     assert secrets_left(ops_env) == []
 
 
