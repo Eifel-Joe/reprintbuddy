@@ -260,3 +260,29 @@ def test_no_bars_still_names_the_printers_out_of_service(bb_client, fake_bambudd
     part = plan_part(bb_client)
     assert en("overview.plan.none") in part
     assert en("overview.plan.without", names="Printer 3") in part
+
+
+def test_a_06_print_waits_for_the_printer_with_a_06_nozzle(bb_client, fake_bambuddy):
+    """Spec 10.2 "Düse passt" (p534, Bambuddy PR #3554): Printer 1 is free now but has a 0.4 nozzle, Printer 2
+    has 0.6 and prints for another 70 minutes; the 0.6 entry is drawn on Printer 2."""
+    fake = fake_bambuddy
+    fake.set_printer_status(1, nozzles=(0.4,))
+    fake.set_printer_status(2, state="RUNNING", progress=10.0, remaining_min=70, subtask_name="Other", nozzles=(0.6,))
+    fake.add_foreign_item("Big nozzle.gcode.3mf", target_model="A1", print_time_s=1800, nozzle_diameter=0.6)
+    query(bb_client)
+    part = plan_part(bb_client)
+    lane_1, lane_2 = part.split('<span class="plan-name">')[1:3]
+    assert "Big nozzle" not in lane_1
+    assert "Big nozzle" in lane_2
+
+
+def test_a_print_without_a_fitting_nozzle_is_counted_without_a_ready_printer(bb_client, fake_bambuddy):
+    """F2: no new text, it counts as "without a ready printer"."""
+    fake = fake_bambuddy
+    fake.set_printer_status(1, nozzles=(0.4,))
+    fake.set_printer_status(2, nozzles=(0.4,))
+    fake.add_foreign_item("Big nozzle.gcode.3mf", target_model="A1", nozzle_diameter=0.6)
+    query(bb_client)
+    part = plan_part(bb_client)
+    assert "Big nozzle" not in "".join(t for _, t in bars(part))
+    assert str(escape(translate_count("en", "overview.plan.unplaced", 1))) in part

@@ -2,8 +2,10 @@
 
 from datetime import datetime, timedelta
 
+import pytest
+
 from reprintbuddy.bambuddy.types import PrinterStatus
-from reprintbuddy.domain.printplan import GAP, PlanItem, PlanPrinter, build_plan, same_model
+from reprintbuddy.domain.printplan import GAP, PlanItem, PlanPrinter, build_plan, nozzle_fits, same_model
 
 NOW = datetime(2026, 11, 12, 10, 0)
 
@@ -27,12 +29,12 @@ _ids = iter(range(1, 10_000))
 
 
 def item(label="Clip", *, minutes: int | None = 50, own=True, printer_id=None, model="A1", location=None,
-         state="pending", manual=False, later=False, jumped=False) -> PlanItem:
+         state="pending", manual=False, later=False, jumped=False, nozzle: float | None = None) -> PlanItem:
     return PlanItem(
         item_id=next(_ids), label=label, own=own, status=state, printer_id=printer_id,
         target_model=None if printer_id else model, target_location=location,
         duration=None if minutes is None else timedelta(minutes=minutes),
-        manual_start=manual, starts_later=later, been_jumped=jumped,
+        manual_start=manual, starts_later=later, been_jumped=jumped, nozzle=nozzle,
     )
 
 
@@ -216,3 +218,63 @@ def test_rest_is_never_negative():
     printing = item("Clip", minutes=60, state="printing", printer_id=1)
     (bar,) = build_plan([over], [printing], NOW).lanes[0].bars
     assert bar.end >= NOW
+
+
+# ---- the nozzle (Spec 10.2 "Düse passt", p534; Bambuddy PR #3554) ---------------------------------------
+
+def with_nozzles(pid: int, *nozzles: float) -> PlanPrinter:
+    return printer(pid, st=status(pid, nozzles=tuple(nozzles)))
+
+
+def test_a_06_entry_waits_for_the_06_printer():
+    small = printer(1, st=status(1, nozzles=(0.4,)))                                  # free now
+    big = printer(2, st=status(2, "RUNNING", remaining_min=70, nozzles=(0.6,)))      # free 11:15
+    plan = build_plan([small, big], [item("Clip", nozzle=0.6)], NOW)
+    assert bars(plan, 1) == []
+    assert bars(plan, 2)[1] == ("planned", "Clip", at(11, 15), at(12, 5))
+
+
+def test_no_printer_with_a_fitting_nozzle_is_counted_not_placed():
+    plan = build_plan([with_nozzles(1, 0.4), with_nozzles(2, 0.4)], [item("Clip", nozzle=0.6)], NOW)
+    assert plan.unplaced == 1
+    assert bars(plan, 1) == [] and bars(plan, 2) == []
+    assert plan.finish is None
+
+
+def test_unknown_nozzle_of_the_file_or_the_printer_fits():
+    plan = build_plan([with_nozzles(1, 0.4)], [item("Clip")], NOW)  # file unknown
+    assert bars(plan, 1)[0][:2] == ("planned", "Clip")
+    plan = build_plan([printer(1, st=status(1, nozzles=()))], [item("Clip", nozzle=0.6)], NOW)  # none known
+    assert bars(plan, 1)[0][:2] == ("planned", "Clip")
+    plan = build_plan([printer(1)], [item("Clip", nozzle=0.6)], NOW)  # never reported
+    assert bars(plan, 1)[0][:2] == ("planned", "Clip")
+
+
+def test_a_second_nozzle_or_a_rack_dock_fits():
+    plan = build_plan([with_nozzles(1, 0.4, 0.6)], [item("Clip", nozzle=0.6)], NOW)
+    assert bars(plan, 1)[0][:2] == ("planned", "Clip")
+
+
+def test_a_fixed_entry_stays_on_its_printer_whatever_the_nozzle():
+    """Bambuddy leaves an entry assigned to a printer there (it fails at the start); PR #3554 only
+    changes the "Any <model>" pick, so the plan does too."""
+    plan = build_plan([with_nozzles(1, 0.4)], [item("Lid", printer_id=1, nozzle=0.6)], NOW)
+    assert bars(plan, 1)[0][:2] == ("fixed", "Lid")
+    assert plan.unplaced == 0
+
+
+def test_an_entry_without_a_fitting_printer_does_not_hold_up_the_next():
+    plan = build_plan([with_nozzles(1, 0.4)], [item("Big", nozzle=0.6), item("Small", nozzle=0.4)], NOW)
+    assert bars(plan, 1) == [("planned", "Small", NOW, at(10, 50))]
+    assert plan.unplaced == 1
+
+
+@pytest.mark.parametrize(("file", "printers", "fits"), [
+    (None, (0.4,), True), (0.0, (0.4,), True), (0.6, (), True), (0.6, None, True),
+    (0.6, (0.4,), False), (0.6, (0.62,), True), (0.6, (0.66,), False), (0.6, (0.551,), True),
+    (0.6, (0.4, 0.6), True), (0.2, (0.4, 0.6, 0.8), False),
+])
+def test_nozzle_fits_like_bambuddy(file, printers, fits):
+    """`_nozzle_mismatch_message` (`print_scheduler.py:1125-1151`): unknown on either side fits; otherwise
+    any reachable nozzle closer than 0.05 mm."""
+    assert nozzle_fits(file, printers) is fits

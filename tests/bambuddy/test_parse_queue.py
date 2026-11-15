@@ -195,3 +195,19 @@ def test_print_time_as_a_float_is_whole_seconds():
 def test_impossible_print_time_is_unknown(seconds):
     """More than 7 days is no slicer estimate of one plate: shown as unknown (review v0.4.2, 2)."""
     assert parse_queue_item(_q4(print_time_seconds=seconds)).print_time_seconds is None
+
+
+@pytest.mark.parametrize(("value", "expected"), [
+    (0.6, 0.6), (1, 1.0), (None, None), ("0.6", 0.6), ("abc", None), (0, None), (-0.4, None), (True, None),
+    (float("nan"), None), (float("inf"), None), (10 ** 400, None),
+])
+def test_queue_item_reads_the_files_nozzle(value, expected):
+    """The nozzle the file was sliced for (`nozzle_diameter`, `schemas/print_queue.py:277`, from the archive,
+    else the library file: `api/routes/print_queue.py:581`, `:634`), as Bambuddy's `_sliced_nozzle` takes it
+    (PR #3554, `float(raw)`): unreadable or not positive is unknown, and the entry still parses (Spec 10.2, p534)."""
+    assert parse_queue_item(_q4(nozzle_diameter=value)).nozzle_diameter == expected
+
+
+def test_queue_item_without_a_nozzle_is_unknown():
+    bare = parse_queue_item({k: v for k, v in load("q4.json").items() if k != "nozzle_diameter"})
+    assert bare.nozzle_diameter is None
