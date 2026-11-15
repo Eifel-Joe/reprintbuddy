@@ -172,6 +172,8 @@ def parse_queue_item(data: object) -> QueueItem:
         scheduled_time=_shown_time(d.get("scheduled_time")),
         been_jumped=bool(_shown(d, "been_jumped", bool)),
         file_name=file_name or None,
+        # Bambuddy's `_sliced_nozzle` (PR #3554): unreadable or not positive is unknown.
+        nozzle_diameter=_diameter(d.get("nozzle_diameter")),
     )
 
 

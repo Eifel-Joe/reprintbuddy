@@ -167,6 +167,7 @@ class QueueItem:
     scheduled_time: datetime | None = None  # naive UTC; a later start
     been_jumped: bool = False  # Bambuddy's guard against starving under "shortest first"
     file_name: str | None = None  # library file name, else archive name, without the plate
+    nozzle_diameter: float | None = None  # mm the file was sliced for; None unknown (Spec 10.2, p534)
 
 
 # Which spool management Bambuddy runs: its own ("builtin") or Spoolman ("spoolman").
