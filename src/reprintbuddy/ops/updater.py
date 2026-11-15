@@ -159,10 +159,13 @@ def run_update(
     target: str | None = None,
     keep_backups: int = KEEP_BACKUPS,
     script_location: Path | None = None,
+    guard: InterruptGuard | None = None,
 ) -> UpdateStatus:
-    """`script_location` (migration steps of the way back) exists for tests."""
+    """`script_location` (migration steps of the way back) exists for tests. `guard` is the one the SIGTERM
+    handler uses (p610); without one a run cannot be cut off."""
     data_dir = db_path.parent
     started = now()
+    guard = guard if guard is not None else InterruptGuard(db_path, now=now)
 
     previous = read_status(data_dir)
     # p91: one lock with the restore, also for an update typed by hand on the command line.
@@ -812,19 +815,81 @@ def _settle(install_dir: Path, installed: Installation, goal: str, sha256: str, 
         print(f"update: removed the unpacked version {name}", flush=True)
 
 
-def interrupt_handler(db_path: Path, *, now: Callable[[], datetime]) -> Callable[[int, object], None]:
-    """A SIGTERM handler for the helper: systemd stops a unit that runs past its timeout.
+class Interrupted(BaseException):
+    """SIGTERM while a run is armed. Not an `Exception`: it passes every `except Exception` (and the runner, which
+    kills its child on the way) up to the place that rolls back."""
 
-    Without it the state file would stay at "running" and the page would never say what
-    happened. The handler records the final state and exits.
-    """
 
-    def handle(signum: int, frame: object) -> None:
+# p610: what a rollback after SIGTERM may take per command. systemd sends SIGKILL `TimeoutStopSec` after SIGTERM,
+# 90 s by default (systemd-system.conf "DefaultTimeoutStopSec="); stop, restore, start and a short wait for the
+# answer (`HURRY_WAIT`) fit in.
+HURRY_TIMEOUT = 20.0
+HURRY_WAIT = 20.0
+
+
+class InterruptGuard:
+    """What SIGTERM does to the helper (p610, Spec 11.3a: stopped from outside counts as a failure).
+
+    Root: up to 1.2.0-beta.1 the handler wrote the final state and ended the process with `SystemExit`. The
+    rollback never ran (it catches `Exception` only), and on the way back the service it had stopped stayed
+    stopped until the next boot. Now three states:
+    - idle (before the lock, outside a run): as before, the final state is written and the process ends;
+    - armed (the steps that may be cut off): `Interrupted` is raised and the run rolls back;
+    - holding (rollback, final state): the signal is noted (`pending`) and nothing is cut off.
+    The first signal in "armed" switches to "holding": systemd sends SIGTERM to every process of the unit, and a
+    second one must not cut off the rollback. Rejected: a handler that only sets a flag and lets each step look
+    at it; pip, a download or a copy of the database would run on until they end, beyond the 90 s to SIGKILL.
+    Tests: tests/ops/test_updater_interrupt.py."""
+
+    def __init__(self, db_path: Path, *, now: Callable[[], datetime]) -> None:
+        self._db_path = db_path
+        self._now = now
+        self.state = "idle"
+        self.signals = 0
+
+    @property
+    def pending(self) -> bool:
+        return self.signals > 0
+
+    def signal(self, signum: int = 15) -> None:
+        """What the SIGTERM handler does."""
+        self.signals += 1
+        if self.state == "armed":
+            self.state = "holding"
+            raise Interrupted(signum)
+        if self.state == "holding":
+            return
         try:
-            mark_interrupted(db_path.parent, now())
+            mark_interrupted(self._db_path.parent, self._now())
         except OSError:
             pass  # nothing more can be done about a status file that cannot be written
         raise SystemExit(128 + signum)
+
+    def arm(self) -> None:
+        """From here a signal cuts the run off; one that came while holding does so at once."""
+        if self.pending:
+            self.state = "holding"
+            raise Interrupted(15)
+        self.state = "armed"
+
+    def hold(self) -> None:
+        self.state = "holding"
+
+    def timeout(self, seconds: float) -> float:
+        """The time a command may take: short once a signal came."""
+        return min(seconds, HURRY_TIMEOUT) if self.pending else seconds
+
+
+def interrupt_handler(
+    db_path: Path, *, now: Callable[[], datetime], guard: InterruptGuard | None = None
+) -> Callable[[int, object], None]:
+    """A SIGTERM handler for the helper: systemd stops a unit that runs past its timeout, that is stopped, or
+    on shutdown. It hands the signal to `guard` (see `InterruptGuard`); without one it writes the final state
+    and exits, as up to 1.2.0-beta.1."""
+    target = guard if guard is not None else InterruptGuard(db_path, now=now)
+
+    def handle(signum: int, frame: object) -> None:
+        target.signal(signum)
 
     return handle
 
@@ -854,7 +919,12 @@ def _read_address(db_path: Path) -> str:
 
 
 def http_health_waiter(
-    db_path: Path, *, timeout_s: float = 90.0, interval_s: float = 2.0
+    db_path: Path,
+    *,
+    timeout_s: float = 90.0,
+    interval_s: float = 2.0,
+    hurry: Callable[[], bool] | None = None,
+    hurry_s: float = HURRY_WAIT,
 ) -> Callable[[], bool]:
     """A function that waits until the service answers `/healthz`, or gives up.
 
@@ -863,6 +933,8 @@ def http_health_waiter(
     could be a different version than the ones the helper started with.
     Host, port and HTTPS are read from the database on every try: the update may have
     just migrated or restored it.
+    p610: once `hurry` says a SIGTERM came (also in the middle of the wait), the wait ends `hurry_s` after that
+    at the latest; SIGKILL follows 90 s after the signal, and the final state must be written before.
     """
     # Our own service on this machine, usually with a self-made certificate: not verified.
     context = ssl.create_default_context()
@@ -883,7 +955,11 @@ def http_health_waiter(
 
     def wait() -> bool:
         deadline = time.monotonic() + timeout_s
+        hurried = False
         while True:
+            if not hurried and hurry is not None and hurry():
+                hurried = True
+                deadline = min(deadline, time.monotonic() + hurry_s)
             if healthy_once():
                 return True
             if time.monotonic() + interval_s > deadline:
