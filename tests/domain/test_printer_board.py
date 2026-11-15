@@ -1,5 +1,6 @@
 """The printers' state in memory for the print plan (Spec 7.6 "Druckerzustand für den Druckplan", 0.4.2)."""
 
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 from reprintbuddy.bambuddy.types import Printer, PrinterStatus
@@ -153,3 +154,24 @@ def test_a_query_cancels_a_held_back_publish():
     clock.now = T0 + timedelta(seconds=30)
     board.update(status(progress=4.0))
     assert handles[-1] is not first and handles[-1].later == THROTTLE_SECONDS - 10
+
+
+def test_a_live_message_without_nozzles_keeps_the_known_ones():
+    """Every `printer_status` message of Bambuddy carries `nozzles` and `nozzle_rack` (`printer_state_to_dict`,
+    `printer_manager.py:1788`, `:1873`, since 1.3.0). Should one come without (shortened, another version),
+    the plan must not jump to "nozzle unknown" until the next query (p534)."""
+    board, _published, _clock, _later = make()
+    known = replace(status(1), nozzles=(0.6,))
+    board.replace(PRINTERS, {1: known})
+    board.update(replace(status(1, progress=20.0), nozzles=None))
+    assert board.statuses[1].nozzles == (0.6,)
+    assert board.statuses[1].progress == 20.0
+
+
+def test_a_live_message_with_nozzles_replaces_them():
+    board, _published, _clock, _later = make()
+    board.replace(PRINTERS, {1: replace(status(1), nozzles=(0.6,))})
+    board.update(replace(status(1), nozzles=(0.4,)))
+    assert board.statuses[1].nozzles == (0.4,)
+    board.update(replace(status(1), nozzles=()))  # reported, none known: that is what Bambuddy has now
+    assert board.statuses[1].nozzles == ()

@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from datetime import datetime
 
 from reprintbuddy.bambuddy.types import Printer, PrinterStatus
@@ -80,6 +81,11 @@ class PrinterBoard:
         """One printer's state from the live channel; only for a printer the last query listed."""
         if self.printers is None or all(p.id != status.printer_id for p in self.printers):
             return
+        before = self.statuses.get(status.printer_id)
+        if status.nozzles is None and before is not None and before.nozzles is not None:
+            # A message without the nozzles keeps the known ones; Bambuddy sends them in every message
+            # (`printer_manager.py:1788`, `:1873`), so this only guards the plan against jumping (p534).
+            status = replace(status, nozzles=before.nozzles)
         changed = self.statuses.get(status.printer_id) != status
         self.statuses[status.printer_id] = status
         self.at = self._now()
