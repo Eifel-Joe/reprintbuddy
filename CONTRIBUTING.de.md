@@ -102,6 +102,7 @@ also prüft, wie lange etwas gedauert hat, oder Takte innerhalb fester Wartezeit
 `@pytest.mark.serial` (eine ganze Datei: `pytestmark = pytest.mark.serial`), damit ausgelastete
 Prozesse ihn nicht scheitern lassen; `tests/test_ci_split.py` schlägt bei einem unmarkierten Test mit
 Zeitgrenze fehl.
+
 Einstellungen kommen nicht aus Dateien oder Umgebungsvariablen: Jede Einstellung
 liegt in der Datenbank und wird in der Weboberfläche geändert.
 

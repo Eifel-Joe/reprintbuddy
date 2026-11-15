@@ -98,6 +98,7 @@ the tests marked `serial` on their own (`pytest -m serial`). A test that depends
 is, one that checks how long something took or counts ticks within fixed sleeps, gets
 `@pytest.mark.serial` (a whole file: `pytestmark = pytest.mark.serial`), so that busy workers cannot
 make it fail; `tests/test_ci_split.py` fails for an unmarked test with a bound on its running time.
+
 Settings are not read from files or environment variables: every setting lives
 in the database and is edited in the web interface.
 

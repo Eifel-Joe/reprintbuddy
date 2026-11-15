@@ -26,9 +26,14 @@ import time
 import traceback
 
 import httpx
+import pytest
 import uvicorn
 
 from reprintbuddy.web.server import LiveClosingServer
+
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# bounds on how fast a server with an open stream stops (in the helper `_run`).
+pytestmark = pytest.mark.serial
 
 COOKIE = "reprintbuddy_session"
 GRACE_SECONDS = 1

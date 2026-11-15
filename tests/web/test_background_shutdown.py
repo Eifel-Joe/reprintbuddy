@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 import httpx
+import pytest
 from conftest import auth_me, http_client_factory, make_client
 
 from reprintbuddy.web import app as app_module
@@ -55,6 +56,7 @@ async def test_a_task_that_already_died_is_looked_at_too(caplog):
     assert "background task died-early ended with ValueError" in caplog.text
 
 
+@pytest.mark.serial  # a bound on how long it takes
 async def test_a_task_that_ignores_the_cancel_is_named_and_does_not_hold_the_shutdown(caplog):
     release = asyncio.Event()
 

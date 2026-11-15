@@ -20,7 +20,7 @@ TESTS = Path(__file__).resolve().parent
 ROOT = TESTS.parent
 CI = ROOT / ".github" / "workflows" / "ci.yml"
 
-_CLOCKS = {"monotonic", "perf_counter"}
+_CLOCKS = {"monotonic", "perf_counter", "time"}  # `time.time()` and `loop.time()` too
 
 
 def _is_serial_mark(node: ast.AST) -> bool:
@@ -48,6 +48,11 @@ def _is_clock_call(node: ast.AST) -> bool:
     return name in _CLOCKS
 
 
+def _is_limit(node: ast.AST) -> bool:
+    """A number, or a constant such as `STREAM_ENDS_WITHIN`."""
+    return isinstance(node, ast.Name) or (isinstance(node, ast.Constant) and isinstance(node.value, (int, float)))
+
+
 def _is_elapsed(node: ast.AST) -> bool:
     """`time.monotonic() - started`: a clock call minus something."""
     return isinstance(node, ast.BinOp) and isinstance(node.op, ast.Sub) and _is_clock_call(node.left)
@@ -56,7 +61,9 @@ def _is_elapsed(node: ast.AST) -> bool:
 def _bounds_elapsed_time(function: ast.AST) -> bool:
     """An `assert` with an upper bound on a time taken, inside the function. Two forms are found:
     `assert time.monotonic() - started < 5`, and `took = time.monotonic() - started` followed by
-    `assert took < 5` (the name must be assigned from such a difference in the same function)."""
+    `assert took < 5` (the name must be assigned from such a difference in the same function).
+    Not found: a time measured in a helper and returned (`assert best_plan_time() < 0.15`); such a test
+    is marked by hand, as tests/web/test_overview_plan.py does."""
     elapsed_names = set()
     for node in ast.walk(function):
         if isinstance(node, ast.Assign) and _is_elapsed(node.value):
@@ -70,7 +77,7 @@ def _bounds_elapsed_time(function: ast.AST) -> bool:
         if (
             subject
             and all(isinstance(op, (ast.Lt, ast.LtE)) for op in compare.ops)
-            and all(isinstance(c, ast.Constant) and isinstance(c.value, (int, float)) for c in compare.comparators)
+            and all(_is_limit(c) for c in compare.comparators)
         ):
             return True
     return False
@@ -106,6 +113,14 @@ def test_the_checker_sees_the_pattern_and_the_mark():
     assert _bounds_elapsed_time(bounded)
     deadline = ast.parse("def test_b():\n    assert time.monotonic() < deadline\n").body[0]
     assert not _bounds_elapsed_time(deadline)
+    for source, found in [
+        ("def test_c():\n    took = time.perf_counter() - t0\n    assert took <= 0.5\n", True),
+        ("def test_d():\n    took = time.monotonic() - t0\n    assert took >= 0.3\n", False),  # lower bound
+        ("async def test_e():\n    assert loop.time() - began < 2\n", True),
+        ("def test_f():\n    ended = time.monotonic() - t0\n    assert ended <= LIMIT, 'x'\n", True),
+        ("def test_g():\n    took = len(x) - 1\n    assert took < 5\n", False),
+    ]:
+        assert _bounds_elapsed_time(ast.parse(source).body[0]) is found, source
     assert _module_is_serial(ast.parse("import pytest\npytestmark = pytest.mark.serial\n"))
     assert _module_is_serial(ast.parse("import pytest\npytestmark = [pytest.mark.slow, pytest.mark.serial]\n"))
     assert not _module_is_serial(ast.parse("import pytest\npytestmark = pytest.mark.slow\n"))
@@ -128,7 +143,8 @@ def test_the_ci_runs_a_parallel_part_and_then_the_serial_part():
     assert '-m "not serial"' in parallel["run"]
     assert '-m serial' in serial["run"] and "-n " not in serial["run"]
     # a failure in the parallel part must not hide the result of the serial one (and the other way round)
-    assert serial["if"] == "${{ !cancelled() }}"
+    # (but not after a failed install: that would only add a second, misleading error)
+    assert serial["if"] == "${{ !cancelled() && steps.install.outcome == 'success' }}"
 
 
 def test_the_ci_keeps_the_names_the_branch_protection_waits_for():
@@ -148,19 +164,13 @@ def _marker_expressions() -> tuple[str, str]:
     return pick(parallel), pick(serial)
 
 
-def test_every_test_runs_in_exactly_one_of_the_two_steps(request):
-    """Nothing falls between the two `-m` filters of the workflow and nothing runs twice.
-    (`request.session.items` holds the tests of this run; with the full suite, all of them.)"""
-    from _pytest.mark.expression import Expression
-
-    parallel_expr, serial_expr = (Expression.compile(e) for e in _marker_expressions())
-    items = request.session.items
-    assert items
-    for item in items:
-        names = {mark.name for mark in item.iter_markers()}
-        in_parallel = parallel_expr.evaluate(lambda name: name in names)
-        in_serial = serial_expr.evaluate(lambda name: name in names)
-        assert in_parallel != in_serial, item.nodeid
+def test_every_test_runs_in_exactly_one_of_the_two_steps():
+    """Nothing falls between the two `-m` filters of the workflow and nothing runs twice: the parallel
+    step is exactly the negation of the serial one. (The report of p532 counts it for the whole suite:
+    `--collect-only` with no filter equals the two filtered counts added.)"""
+    parallel, serial = _marker_expressions()
+    assert serial == "serial"
+    assert parallel == f"not {serial}"
 
 
 def test_the_ci_installs_the_dev_extra_and_it_brings_xdist():
@@ -170,5 +180,6 @@ def test_the_ci_installs_the_dev_extra_and_it_brings_xdist():
     steps = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]["tests"]["steps"]
     install = [s for s in steps if s.get("name") == "Install"]
     assert len(install) == 1 and install[0]["run"] == 'python -m pip install -e ".[dev]"'
+    assert install[0]["id"] == "install"  # the serial step looks at its outcome
     dev = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["optional-dependencies"]["dev"]
     assert any(spec.replace(" ", "").lower().startswith("pytest-xdist") for spec in dev)
