@@ -660,8 +660,9 @@ def test_a_failed_snapshot_stops_before_pip_touches_anything(update_env, monkeyp
     assert result.state == "rolled_back"
     assert result.message.startswith("install: cannot back up the Python environment")
     assert (result.reason, result.params) == ("snapshot_failed", {"detail": "no space left on device"})  # p176
-    forward_pip = [c for c in e.runner.calls if c[:3] == (e.py, "-m", "pip")]
-    assert len(forward_pip) == 1  # only the rollback's own reinstall; the update never ran pip
+    # p610 review: the update never ran pip, so the environment is untouched and the rollback leaves it alone
+    # (before: it reinstalled the old version, which needs the network and could only break what was intact)
+    assert [c for c in e.runner.calls if c[:3] == (e.py, "-m", "pip")] == []
 
 
 def queue(e, to_tag):
@@ -1163,3 +1164,78 @@ def test_p610_a_signal_after_the_success_changes_nothing(update_env):
         result = e.update(guard=guard)
     assert result.state == "succeeded"
     assert e.installed().tag == "v0.2.0"
+
+
+# --- p610, review of the round: the rollback after a stop from outside ---------------------------------------
+
+
+def test_p610_a_cut_off_before_pip_ran_leaves_the_environment_alone(update_env, monkeypatch):
+    """Review finding 2: the signal came while the environment was copied (pip never ran). A reinstall of the old
+    version, cut at 20 s, could break an environment that was never touched."""
+    from reprintbuddy.ops import updater as module
+
+    e = update_env
+    marker = make_venv(e)
+    guard, hit = cut_off(e)
+    real = module.shutil.copytree
+
+    def copy_then_hit(source, target, **kwargs):
+        Path(target).mkdir(parents=True)  # half a copy
+        hit()
+        return real(source, target, **kwargs)
+
+    monkeypatch.setattr(module.shutil, "copytree", copy_then_hit)
+    result = e.update(guard=guard)
+    assert (result.state, result.reason) == ("rolled_back", "interrupted_rolled_back")
+    assert e.called(e.py, "-m", "pip") == []
+    assert marker.read_text(encoding="utf-8") == "old"
+    assert not (e.opt / ".venv.rollback").exists()
+
+
+def test_p610_on_shutdown_a_rollback_that_put_everything_back_is_a_rollback(update_env):
+    """Review finding 3: during a shutdown systemd may not start the service; the previous version is back in
+    place and starts with the next boot (the unit is enabled). The card must not say "may be incomplete"."""
+    from reprintbuddy.ops.service import SYSTEM_STATE_CMD
+
+    e = update_env
+    marker = make_venv(e)
+    guard, hit = cut_off(e)
+    pip_that_changes_the_environment(e, marker, ok=True)
+    signal_in_step(e, "migrate", hit)
+    e.runner.on(START_CMD, CommandResult(1, "", "Transaction is destructive"))
+    e.runner.on(SYSTEM_STATE_CMD, CommandResult(1, "stopping\n"))
+    e.wait_healthy = lambda: False
+    result = e.update(guard=guard)
+    assert (result.state, result.reason) == ("rolled_back", "interrupted_rolled_back")
+    assert result.message == "migrate: interrupted, the previous version was put back; it starts with the next boot"
+    assert marker.read_text(encoding="utf-8") == "old" and e.queue_cap() == 7
+
+
+def test_p610_a_failed_start_outside_a_shutdown_stays_a_failed_rollback(update_env):
+    from reprintbuddy.ops.service import SYSTEM_STATE_CMD
+
+    e = update_env
+    make_venv(e)
+    guard, hit = cut_off(e)
+    signal_in_step(e, "migrate", hit)
+    e.runner.on(START_CMD, CommandResult(1, "", "Job failed"))
+    e.runner.on(SYSTEM_STATE_CMD, CommandResult(1, "degraded\n"))
+    result = e.update(guard=guard)
+    assert (result.state, result.reason) == ("rollback_failed", "interrupted_partial")
+
+
+def test_p610_a_cut_off_while_unpacking_leaves_no_half_folder(update_env, monkeypatch):
+    """Review finding 4: `package.unpack` cleans up after an Exception only."""
+    from reprintbuddy.ops import updater as module
+
+    e = update_env
+    guard, hit = cut_off(e)
+
+    def unpack(package, releases_dir, tag):
+        (releases_dir / f".unpack-{tag}").mkdir(parents=True)
+        hit()
+
+    monkeypatch.setattr(module, "unpack", unpack)
+    result = e.update(guard=guard)
+    assert result.reason == "interrupted_untouched"
+    assert not (e.opt / "releases" / ".unpack-v0.2.0").exists()

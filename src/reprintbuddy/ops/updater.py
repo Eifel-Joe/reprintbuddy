@@ -61,8 +61,15 @@ from reprintbuddy.ops.releases import (
     return_target,
 )
 from reprintbuddy.ops.runner import CommandResult, CommandRunner
-from reprintbuddy.ops.service import RESTART_WAIT_CMD, START_CMD, STOP_CMD
-from reprintbuddy.ops.stablereturn import RETURN_DIR, ReturnPlan, assess, build_stable_db, copy_database
+from reprintbuddy.ops.service import RESTART_WAIT_CMD, START_CMD, STOP_CMD, shutting_down
+from reprintbuddy.ops.stablereturn import (
+    RETURN_DIR,
+    STARTED_MARK,
+    ReturnPlan,
+    assess,
+    build_stable_db,
+    copy_database,
+)
 from reprintbuddy.ops.status import UpdateStatus, is_busy, mark_interrupted, read_status, write_status
 from reprintbuddy.ops.versions import is_newer, is_prerelease_tag
 
@@ -325,18 +332,21 @@ def _run_update(
         discard_download()
         if new_source is not None:
             shutil.rmtree(new_source, ignore_errors=True)
+            # `package.unpack` cleans its folder after an Exception only (review of p610)
+            shutil.rmtree(new_source.with_name(f".unpack-{new_source.name}"), ignore_errors=True)
         step = str(info.get("step") or "backup")
         return finish("failed", step, f"{step}: interrupted, nothing was changed", "interrupted_untouched")
 
     # --- from pip on, any failure is rolled back ---------------------------------------
     current = "install"
+    pip_ran: list[bool] = []  # p610: a signal may come before pip; then the environment is untouched
 
     def forward() -> tuple[str, str, str, dict[str, str]] | None:
         """None when everything went through, else (step, English line, reason code, parameters)."""
         nonlocal current
         current = "install"
         put("running", "install")
-        problem = _install_package(py, venv_dir, snapshot_dir, new_source, runner, snapshot_taken)
+        problem = _install_package(py, venv_dir, snapshot_dir, new_source, runner, snapshot_taken, pip_ran)
         if problem is not None:
             return problem
 
@@ -364,11 +374,16 @@ def _run_update(
             return "health", "the new version did not answer after the restart", "health_failed", {}
         return None
 
-    def backward() -> bool:
-        """Previous environment, previous database, restart. True only if the old version answers.
+    def backward() -> tuple[bool, bool]:
+        """Previous environment, previous database, restart. Returns whether everything is back in place and
+        whether the old version answers.
 
-        p610: runs to its end whatever signal comes (the guard holds); after one, each command is short."""
+        p610: runs to its end whatever signal comes (the guard holds); after one, each command is short. A signal
+        that came before pip ran (while the environment was copied) leaves the environment as it is: a reinstall,
+        cut at 20 s, could break one that was never touched (review)."""
         ok = True
+        if not snapshot_taken:
+            shutil.rmtree(snapshot_dir, ignore_errors=True)  # half a copy, if any
         if snapshot_taken and snapshot_dir.is_dir():
             # The environment as it was before pip: no network, no reinstall needed.
             try:
@@ -376,6 +391,8 @@ def _run_update(
                 snapshot_dir.rename(venv_dir)
             except OSError:
                 ok = False
+            done = CommandResult(0)
+        elif not pip_ran:
             done = CommandResult(0)
         else:
             shutil.rmtree(installed.source_dir / "build", ignore_errors=True)
@@ -400,8 +417,7 @@ def _run_update(
         except (OSError, sqlite3.Error):
             ok = False
         done = _service_command(runner, guard, START_CMD if stopped.ok else RESTART_WAIT_CMD, 120.0)
-        ok &= done.ok
-        return bool(wait_healthy()) and ok
+        return ok, bool(wait_healthy()) and done.ok
 
     problem, cut_off = _armed(guard, forward, lambda: current)
     if problem is None:
@@ -412,13 +428,15 @@ def _run_update(
     cause = f"{problem[0]}: {problem[1]}"
     put("running", "rollback", cause, reason=problem[2], params=problem[3])
     try:
-        restored = backward()
+        put_back, answers = backward()
     except Exception:  # noqa: BLE001
-        restored = False
+        put_back = answers = False
+    restored = put_back and answers
     if cut_off:
         # p610 (Spec 11.3a): stopped from outside counts as a failure; the log says "interrupted" (": interrupted").
-        if restored:
-            return finish("rolled_back", "rollback", f"{problem[0]}: {CUT_OFF_ROLLED_BACK}", "interrupted_rolled_back")
+        line = _cut_off_line(runner, put_back, answers)
+        if line is not None:
+            return finish("rolled_back", "rollback", f"{problem[0]}: {line}", "interrupted_rolled_back")
         cause = f"{problem[0]}: {CUT_OFF_PARTIAL}"
         return finish("rollback_failed", "rollback", f"{cause} \u2013 backup: {backup}", "interrupted_partial")
     if restored:
@@ -491,6 +509,21 @@ Problem = tuple[str, str, str, dict[str, str]]  # (step, English line, reason co
 # "interrupted" (`activity.states.INTERRUPTED`).
 CUT_OFF_ROLLED_BACK = "interrupted, the previous version was put back"
 CUT_OFF_PARTIAL = "interrupted, the installation may be incomplete"
+CUT_OFF_AT_SHUTDOWN = "; it starts with the next boot"
+
+
+def _cut_off_line(runner: CommandRunner, put_back: bool, answers: bool) -> str | None:
+    """The line of a rollback after a stop from outside that counts as done, or None (it failed).
+
+    Done when everything is back in place and the previous version answers, or when it is back in place and the
+    system shuts down (review of p610): then the service is not running now, but the unit is enabled and starts
+    the previous version with the next boot (Spec 11.3a). Asked only then: systemd's answer to a start during a
+    shutdown is not documented, its state "stopping" is."""
+    if put_back and answers:
+        return CUT_OFF_ROLLED_BACK
+    if put_back and shutting_down(runner):
+        return CUT_OFF_ROLLED_BACK + CUT_OFF_AT_SHUTDOWN
+    return None
 
 
 def _armed(
@@ -528,9 +561,16 @@ def _service_command(
 
 
 def _install_package(
-    py: str, venv_dir: Path, snapshot_dir: Path, new_source: Path, runner: CommandRunner, snapshot_taken: list[bool]
+    py: str,
+    venv_dir: Path,
+    snapshot_dir: Path,
+    new_source: Path,
+    runner: CommandRunner,
+    snapshot_taken: list[bool],
+    pip_ran: list[bool],
 ) -> Problem | None:
-    """pip installs the unpacked version; a copy of the environment comes first (the way back to it)."""
+    """pip installs the unpacked version; a copy of the environment comes first (the way back to it). `pip_ran`
+    is set right before pip runs (p610: before it, the environment is untouched)."""
     # A pip that fails half way can leave the environment neither old nor new, and the
     # reinstall of the old version needs the network that just failed. Keep a copy.
     if venv_dir.is_dir():
@@ -543,6 +583,7 @@ def _install_package(
             detail = str(error)[:200]
             return "install", f"cannot back up the Python environment: {detail}", "snapshot_failed", {"detail": detail}
     shutil.rmtree(new_source / "build", ignore_errors=True)
+    pip_ran.append(True)
     done = runner((py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", str(new_source)), timeout=900.0)
     if not done.ok:
         too_old = _too_old_python(done)
@@ -738,6 +779,7 @@ def _run_return(
         shutil.rmtree(work_dir, ignore_errors=True)
         if new_source is not None:
             shutil.rmtree(new_source, ignore_errors=True)
+            shutil.rmtree(new_source.with_name(f".unpack-{new_source.name}"), ignore_errors=True)
         step = str(info.get("step") or "backup")
         return finish("failed", step, f"{step}: interrupted, nothing was changed", "interrupted_untouched")
 
@@ -750,8 +792,9 @@ def _run_return(
         shutil.rmtree(return_dir, ignore_errors=True)
         if _service_command(runner, guard, START_CMD, 120.0).ok and wait_healthy():
             return finish("failed", step, message, reason, params)
-        if cut_off:
-            reason, params = "interrupted_partial", {}
+        if cut_off and shutting_down(runner):
+            # nothing was changed; the enabled unit starts the pre-release with the next boot
+            return finish("failed", step, message + CUT_OFF_AT_SHUTDOWN, reason, params)
         return finish("rollback_failed", step, f"{message} – the pre-release did not answer after its start", reason, params)
 
     # p610: a SIGTERM while the service is stopped starts the pre-release again (it stayed stopped until the next
@@ -799,6 +842,7 @@ def _run_return(
 
     # --- from `swap` on, a failure brings back the database as it was and the pre-release -------------
     swapped: list[bool] = []
+    pip_ran: list[bool] = []
     current = "swap"
 
     def forward() -> Problem | None:
@@ -813,7 +857,7 @@ def _run_return(
             return "swap", detail, "swap_failed", {"detail": detail}
         current = "install"
         put("running", "install")
-        problem = _install_package(py, venv_dir, snapshot_dir, new_source, runner, snapshot_taken)
+        problem = _install_package(py, venv_dir, snapshot_dir, new_source, runner, snapshot_taken, pip_ran)
         if problem is not None:
             return problem
         current = "verify"
@@ -846,6 +890,8 @@ def _run_return(
         (`stablereturn.recover_cut_off_return`) and lose what the running pre-release took in meanwhile.
         Rejected: removing it only after the answer (as up to 1.2.0-beta.1); that leaves exactly this window."""
         ok = True
+        if not snapshot_taken:
+            shutil.rmtree(snapshot_dir, ignore_errors=True)  # half a copy, if any (p610)
         if snapshot_taken and snapshot_dir.is_dir():
             try:
                 shutil.rmtree(venv_dir, ignore_errors=True)
@@ -864,9 +910,15 @@ def _run_return(
                 ok = False
         if back_in_place:
             shutil.rmtree(return_dir, ignore_errors=True)
+        else:
+            # The pre-release now starts on the switched database and takes in entries: a later start must not
+            # put `before.db` back over them (review of p610, `stablereturn.recover_cut_off_return`).
+            try:
+                (return_dir / STARTED_MARK).write_text("", encoding="utf-8")
+            except OSError:
+                pass
         done = _service_command(runner, guard, START_CMD if stopped.ok else RESTART_WAIT_CMD, 120.0)
-        ok &= done.ok
-        return bool(wait_healthy()) and ok
+        return ok, bool(wait_healthy()) and done.ok
 
     problem, cut_off = _armed(guard, forward, lambda: current)
     if problem is None:
@@ -878,12 +930,15 @@ def _run_return(
     cause = f"{problem[0]}: {problem[1]}"
     put("running", "rollback", cause, reason=problem[2], params=problem[3])
     try:
-        restored = backward()
+        put_back, answers = backward()
     except Exception:  # noqa: BLE001
-        restored = False
+        put_back = answers = False
+    restored = put_back and answers
     if cut_off:
         # p610 (Spec 11.3a): stopped from outside counts as a failure; the log says "interrupted" (": interrupted").
-        line, code = (CUT_OFF_ROLLED_BACK, "interrupted_rolled_back") if restored else (CUT_OFF_PARTIAL, "interrupted_partial")
+        done_line = _cut_off_line(runner, put_back, answers)
+        restored = done_line is not None
+        line, code = (done_line, "interrupted_rolled_back") if done_line else (CUT_OFF_PARTIAL, "interrupted_partial")
         problem = (problem[0], line, code, {})
         cause = f"{problem[0]}: {line}"
     if restored:

@@ -312,9 +312,20 @@ def test_p610_a_way_back_cut_off_after_the_switch_is_put_back_at_the_start(tmp_p
     assert any("before.db" in record.getMessage() for record in caplog.records)  # a line in the system log
 
 
-def test_p610_a_failed_rollback_after_a_cut_off_is_put_back_too(tmp_path):
+def test_p610_a_failed_rollback_after_a_cut_off_is_not_put_back(tmp_path):
+    """Review finding 1: the helper had its time; it started the pre-release on the switched database (the card
+    names `before.db`). Putting it back at a later start would lose what was entered since."""
     env = CutOff(tmp_path, state="rollback_failed", step="rollback", reason="interrupted_partial")
-    assert env.recover() is not None and env.journal() == 3
+    assert env.recover() is None and env.journal() == 0
+
+
+def test_p610_a_cut_off_after_the_pre_release_was_started_on_the_switched_database_is_not_put_back(tmp_path):
+    """The helper died (SIGKILL) after it started the pre-release with `before.db` not back in place."""
+    from reprintbuddy.ops.stablereturn import STARTED_MARK
+
+    env = CutOff(tmp_path, step="rollback")
+    (env.data / ".return" / STARTED_MARK).write_text("", encoding="utf-8")
+    assert env.recover() is None and env.journal() == 0
 
 
 @pytest.mark.parametrize(

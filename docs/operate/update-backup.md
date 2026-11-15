@@ -64,8 +64,8 @@ Reprintbuddy asks at the start and then once a day whether a newer release exist
 If systemd stops the update from outside (its time limit of 30 minutes, `systemctl stop reprintbuddy-update`, a
 shutdown), that counts as a failure: Reprintbuddy rolls back in the same way and starts the previous version
 again. The card says "The update was stopped from outside (time limit or shutdown). The previous version was put
-back.", and the [Log](log.md) names the result "interrupted". On a shutdown systemd refuses the start; the previous
-version then starts with the next boot. A hard restart, a power cut or a hard kill (SIGKILL, for example by the
+back.", and the [Log](log.md) names the result "interrupted". On a shutdown the previous version
+starts with the next boot. A hard restart, a power cut or a hard kill (SIGKILL, for example by the
 out-of-memory killer) leaves no time for the rollback; for the way back to the stable version see there. The
 systemd units are unchanged, so after a hard kill of the update helper Reprintbuddy may stay stopped until the
 container starts again; start it with `systemctl start reprintbuddy`.

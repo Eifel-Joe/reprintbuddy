@@ -562,3 +562,69 @@ def test_p610_the_kept_database_goes_once_it_is_back_in_place(tmp_path, fake_run
     assert seen and not any(seen)  # gone before the start
     assert content(env.db) == before
     assert "before.db" not in result.message
+
+
+# --- p610, review of the round ---------------------------------------------------------------------------------
+
+
+def test_p610_a_start_on_the_switched_database_is_marked(tmp_path, fake_runner, monkeypatch):
+    """Review finding 1: when `before.db` could not be put back, the rollback still starts the pre-release (on the
+    stable version's database), and it takes in entries. The start after a later reboot must then not put
+    `before.db` back silently; the mark tells it that the pre-release has run."""
+    from reprintbuddy.ops.stablereturn import STARTED_MARK
+
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    fake_runner.on(env.pip(), CommandResult(1, "", "ERROR: no network"))
+    real = updater.restore_database
+
+    def restore(source, target):
+        if source.name == "before.db":
+            raise sqlite3.OperationalError("database is locked")
+        real(source, target)
+
+    monkeypatch.setattr(updater, "restore_database", restore)
+    seen = []
+    fake_runner.on(START_CMD, lambda call: seen.append((env.data / RETURN_DIR / STARTED_MARK).exists()) or CommandResult(0))
+    result = env.run()
+    assert result.state == "rollback_failed"
+    assert seen and all(seen)  # marked before the start
+    assert (env.data / RETURN_DIR / "before.db").is_file()
+
+
+def test_p610_on_shutdown_the_way_back_put_back_is_a_rollback(tmp_path, fake_runner):
+    from reprintbuddy.ops.service import SYSTEM_STATE_CMD
+
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    before = content(env.db)
+    guard, hit = cut_off(env)
+    fake_runner.on(env.pip(), lambda call: hit(CommandResult(0)))
+    fake_runner.on(START_CMD, CommandResult(1, "", "Transaction is destructive"))
+    fake_runner.on(SYSTEM_STATE_CMD, CommandResult(1, "stopping\n"))
+    env.health = [False]
+    result = env.run(guard=guard)
+    assert (result.state, result.reason) == ("rolled_back", "interrupted_rolled_back")
+    assert content(env.db) == before and not (env.data / RETURN_DIR).exists()
+
+
+def test_p610_on_shutdown_a_way_back_cut_off_while_stopped_changed_nothing(tmp_path, fake_runner, monkeypatch):
+    from reprintbuddy.ops.service import SYSTEM_STATE_CMD
+
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    guard, hit = cut_off(env)
+    signal_at(env, "database", hit, monkeypatch)
+    fake_runner.on(START_CMD, CommandResult(1, "", "Transaction is destructive"))
+    fake_runner.on(SYSTEM_STATE_CMD, CommandResult(1, "stopping\n"))
+    env.health = [False]
+    result = env.run(guard=guard)
+    assert (result.state, result.reason) == ("failed", "interrupted_untouched")
+
+
+def test_p610_a_failed_start_after_a_cut_off_while_stopped_says_nothing_was_changed(tmp_path, fake_runner, monkeypatch):
+    """Review: the reason must fit the message; the database and the program were never touched."""
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    guard, hit = cut_off(env)
+    signal_at(env, "database", hit, monkeypatch)
+    env.health = [False]
+    result = env.run(guard=guard)
+    assert (result.state, result.reason) == ("rollback_failed", "interrupted_untouched")
+    assert result.message.startswith("database: interrupted, nothing was changed")

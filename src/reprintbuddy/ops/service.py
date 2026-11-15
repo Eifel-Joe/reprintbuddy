@@ -18,6 +18,9 @@ START_UPDATE_CMD = ("sudo", "-n", SYSTEMCTL, "start", "--no-block", UPDATE_SERVI
 # A rollback restores the database while the service is stopped.
 STOP_CMD = ("sudo", "-n", SYSTEMCTL, "stop", SERVICE)
 START_CMD = ("sudo", "-n", SYSTEMCTL, "start", SERVICE)
+# Read-only, needs no sudo. "stopping" while the system shuts down (systemctl(1), "is-system-running", table
+# "Manager Operation States": "stopping: The manager is shutting down.").
+SYSTEM_STATE_CMD = (SYSTEMCTL, "is-system-running")
 
 
 def request_restart(runner: CommandRunner) -> CommandResult:
@@ -28,6 +31,11 @@ def request_restart(runner: CommandRunner) -> CommandResult:
 def start_update_unit(runner: CommandRunner) -> CommandResult:
     """Start the update helper as its own unit; it survives the restart of the service."""
     return runner(START_UPDATE_CMD, timeout=15.0)
+
+
+def shutting_down(runner: CommandRunner) -> bool:
+    """Whether the system is shutting down (p610): then a service started now starts again only with the next boot."""
+    return runner(SYSTEM_STATE_CMD, timeout=5.0).stdout.strip() == "stopping"
 
 
 def update_unit_state(runner: CommandRunner) -> str:

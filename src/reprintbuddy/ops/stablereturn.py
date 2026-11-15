@@ -60,6 +60,10 @@ TRIAL_COPY = "return-trial.db"
 # Beside the database while the way back runs: `before.db`, the database as it was when the service stopped, and
 # `stable.db`, the one the stable version will run on (`updater._run_return`).
 RETURN_DIR = ".return"
+# p610: written in `.return` by the rollback of the way back right before it starts the service while `before.db`
+# is not back in place: the pre-release then runs on the switched database and takes in entries, and a later
+# start must not put `before.db` back over them (`recover_cut_off_return`).
+STARTED_MARK = "service-started"
 
 log = logging.getLogger(__name__)
 
@@ -327,14 +331,19 @@ def prepare_target(release: Release, download: Download, work_dir: Path) -> dict
 _SWITCHED_STEPS = frozenset({"swap", "install", "verify", "migrate", "restart", "health", "rollback"})
 
 
-def _cut_off_after_the_switch(status: UpdateStatus, version: str) -> bool:
-    """A way back of THIS pre-release, cut off after the switch and never finished: the helper died ("running"), or
-    its rollback after a SIGTERM could not put `before.db` back ("rollback_failed", "interrupted_partial")."""
+def _cut_off_after_the_switch(status: UpdateStatus, version: str, return_dir: Path) -> bool:
+    """A way back of THIS pre-release, cut off after the switch, whose helper died ("running": no final state) before
+    the pre-release ran on the switched database (no `STARTED_MARK`).
+
+    Not a final "rollback_failed" (review of p610): that helper had its time, could not put `before.db` back and
+    started the pre-release anyway; the card names the file. Putting it back at some later start would lose what
+    was entered since, without anybody deciding it."""
     return (
         status.kind == "return"
+        and status.state == "running"
         and status.step in _SWITCHED_STEPS
-        and (status.state == "running" or (status.state == "rollback_failed" and status.reason == "interrupted_partial"))
         and status.from_tag == "v" + version
+        and not (return_dir / STARTED_MARK).exists()
     )
 
 
@@ -355,7 +364,7 @@ def recover_cut_off_return(db_path: Path, version: str, now: datetime) -> Update
     (a running helper may be using `before.db`). Tests: tests/ops/test_stablereturn.py "p610"."""
     data_dir = db_path.parent
     before = data_dir / RETURN_DIR / "before.db"
-    if not before.is_file() or not _cut_off_after_the_switch(read_status(data_dir), version):
+    if not before.is_file() or not _cut_off_after_the_switch(read_status(data_dir), version, data_dir / RETURN_DIR):
         return None
     try:
         lock = acquire(data_dir, "update")
@@ -363,7 +372,7 @@ def recover_cut_off_return(db_path: Path, version: str, now: datetime) -> Update
         return None
     try:
         status = read_status(data_dir)  # again, under the lock: a helper may have just finished
-        if not before.is_file() or not _cut_off_after_the_switch(status, version):
+        if not before.is_file() or not _cut_off_after_the_switch(status, version, data_dir / RETURN_DIR):
             return None
         try:
             restore_database(before, db_path)
