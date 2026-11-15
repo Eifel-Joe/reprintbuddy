@@ -33,6 +33,8 @@ UPDATE_REASONS = (
     "package_missing", "checksum_mismatch", "package_unusable",
     # the way back to the stable version (Spec 11.3a "Rückweg zur stabilen Version")
     "return_changed", "return_expired", "return_unavailable", "stop_failed", "database_failed", "swap_failed",
+    # p610: stopped from outside and rolled back; a way back cut off and put back at the start of the pre-release
+    "interrupted_rolled_back", "interrupted_recovered",
 )
 UpdateKind = Literal["update", "return"]
 RETURN_CASES = (1, 2, 3)
