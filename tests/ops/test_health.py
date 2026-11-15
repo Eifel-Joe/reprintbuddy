@@ -19,6 +19,10 @@ from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.ops import updater
 from reprintbuddy.ops.updater import http_health_waiter
 
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# polls for 0.3 s and counts the requests made in that time.
+pytestmark = pytest.mark.serial
+
 
 class Server:
     def __init__(self, status=200, body=b'{"status": "ok"}', tls_pair=None):

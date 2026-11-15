@@ -334,6 +334,7 @@ class FakeBambuddy:
         print_time_s: int | None = 3600,
         target_location: str | None = None,
         scheduled_time: datetime | None = None,
+        nozzle_diameter: float | None = None,
     ) -> QueueItem:
         """An entry made in Bambuddy without `enqueue`, at the end of the queue.
 
@@ -351,6 +352,7 @@ class FakeBambuddy:
             print_time_seconds=print_time_s,
             target_location=target_location,
             scheduled_time=scheduled_time,
+            nozzle_diameter=nozzle_diameter,
             file_name=label,
             label=label,
             status=status,

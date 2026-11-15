@@ -126,6 +126,10 @@ class PrinterStatus:
     subtask_name: str | None
     awaiting_plate_clear: bool
     stopped_error: bool
+    # The nozzle diameters (mm) the printer can print with: mounted hotends and the docks of a nozzle rack
+    # (Spec 7.6, p534; Bambuddy PR #3554). Empty: none known. None: the answer did not report them at all;
+    # the printer board then keeps the last known ones.
+    nozzles: tuple[float, ...] | None = None
 
 
 # The states of a queue entry as Bambuddy names them (PrintQueueItemResponse.status).
@@ -163,6 +167,7 @@ class QueueItem:
     scheduled_time: datetime | None = None  # naive UTC; a later start
     been_jumped: bool = False  # Bambuddy's guard against starving under "shortest first"
     file_name: str | None = None  # library file name, else archive name, without the plate
+    nozzle_diameter: float | None = None  # mm the file was sliced for; None unknown (Spec 10.2, p534)
 
 
 # Which spool management Bambuddy runs: its own ("builtin") or Spoolman ("spoolman").

@@ -11,6 +11,10 @@ from db_probes import Connections, CountingSessions
 
 from reprintbuddy import settings as st
 
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# bounds on how long concurrent requests take.
+pytestmark = pytest.mark.serial
+
 COOKIE = "reprintbuddy_session"
 TOKEN = re.compile(r'name="csrf_token" value="([^"]+)"')
 

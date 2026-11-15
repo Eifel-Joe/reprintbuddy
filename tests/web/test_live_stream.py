@@ -6,6 +6,10 @@ import re
 import time
 
 import pytest
+
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# short sleeps and a 0.5 s wait for the next event.
+pytestmark = pytest.mark.serial
 from conftest import make_client, sm_of
 from db_probes import Connections, CountingSessions
 from factories import make_part

@@ -11,6 +11,11 @@ printers the way Bambuddy's scheduler would (`backend/app/services/print_schedul
 - An entry pinned to a printer waits for that printer (`:2160 ff.`).
 - An "any printer of the model" entry takes a free printer of that model that is not in maintenance,
   at its place if it names one (`:2416 ff.`, `:3295-3311`); no entry blocks another across printers.
+- ... and whose nozzle fits the file (Spec 10.2 "Düse passt", p534): Bambuddy PR #3554 (commit d7e0c7e2d,
+  `print_scheduler.py` at f23e80954: the pick `:3679`, the test `_nozzle_mismatch_message` `:1125-1151`).
+  Unknown on either side fits. It holds whatever Bambuddy runs: an older one starts such an entry on the
+  wrong printer and aborts it there at once (start guard, v1.3.1 `:9411-9428`, `nozzle_mismatch`), so drawing
+  it on that printer would show a print that never runs. Entries pinned to a printer are left as they are.
 
 Left out on purpose, so everything is "voraussichtlich": the filament check (`:3516-3660`) and the
 printers' print hours (Bambuddy's tie-break, `_wear_order`). Among printers free at the same time the
@@ -65,6 +70,7 @@ class PlanItem:
     manual_start: bool
     starts_later: bool
     been_jumped: bool = False
+    nozzle: float | None = None  # mm the file was sliced for; None unknown
 
 
 @dataclass(frozen=True)
@@ -105,6 +111,22 @@ def _model(value: str | None) -> str:
 def same_model(a: str | None, b: str | None) -> bool:
     """Bambuddy's comparison: "Bambu Lab " dropped, spaces around dropped, case ignored (F-c)."""
     return bool(_model(a)) and _model(a) == _model(b)
+
+
+NOZZLE_TOLERANCE = 0.05  # mm; Bambuddy's, well inside the 0.2 between nozzle sizes (`:1151`)
+
+
+def nozzle_fits(file_nozzle: float | None, printer_nozzles: Sequence[float] | None) -> bool:
+    """Bambuddy's `_nozzle_mismatch_message` turned round: a printer is only ruled out on a positive
+    mismatch, so an unknown nozzle of the file or of the printer fits; otherwise one of the printer's
+    reachable nozzles (hotend or rack dock) must be within the tolerance."""
+    if not file_nozzle or not printer_nozzles:
+        return True
+    return any(abs(d - file_nozzle) < NOZZLE_TOLERANCE for d in printer_nozzles)
+
+
+def _nozzles(printer: PlanPrinter) -> tuple[float, ...] | None:
+    return printer.status.nozzles if printer.status is not None else None
 
 
 def _condition(printer: PlanPrinter) -> Condition:
@@ -188,6 +210,7 @@ def build_plan(
                 p.printer_id for p in printers
                 if p.printer_id in in_service and same_model(entry.target_model, p.model)
                 and (not entry.target_location or entry.target_location == p.location)
+                and nozzle_fits(entry.nozzle, _nozzles(p))
             ]
             if not candidates:
                 unplaced += 1

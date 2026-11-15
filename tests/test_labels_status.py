@@ -12,6 +12,10 @@ import pytest
 from reprintbuddy.labels import snmp, status
 from reprintbuddy.labels.rolls import DK_11209
 
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# real sockets with 0.3 s time limits and a bound on how long the call took.
+pytestmark = pytest.mark.serial
+
 OID = "1.3.6.1.4.1.2435.3.3.9.1.6.1.0"
 OID_BYTES = bytes.fromhex("2b0601040193030303090106" "0100")  # 1.3 6 1 4 1 2435 3 3 9 1 6 1 0
 
