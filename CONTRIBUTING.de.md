@@ -94,6 +94,14 @@ python -m venv .venv
 ```
 
 Die Tests sprechen nie mit Bambuddy; es wird mit `respx` nachgebildet.
+
+Die Tests sind tausende kleine Fälle. Ein schlichtes `pytest` lässt sie nacheinander laufen. Die CI
+startet sie auf vier Prozessen (`pytest -n 4 --dist loadfile -m "not serial"`, aus `pytest-xdist`) und
+danach die mit `serial` markierten Tests allein (`pytest -m serial`). Ein Test, der von der Uhr abhängt,
+also prüft, wie lange etwas gedauert hat, oder Takte innerhalb fester Wartezeiten zählt, bekommt
+`@pytest.mark.serial` (eine ganze Datei: `pytestmark = pytest.mark.serial`), damit ausgelastete
+Prozesse ihn nicht scheitern lassen; `tests/test_ci_split.py` schlägt bei einem unmarkierten Test mit
+Zeitgrenze fehl.
 Einstellungen kommen nicht aus Dateien oder Umgebungsvariablen: Jede Einstellung
 liegt in der Datenbank und wird in der Weboberfläche geändert.
 

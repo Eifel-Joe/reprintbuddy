@@ -159,6 +159,11 @@ def pytest_configure(config):
         "markers", "fresh_database: the app creates and migrates the test's database itself, as at a first start"
     )
     config.addinivalue_line("markers", "real_password_hash: passwords are hashed with the production parameters")
+    config.addinivalue_line(
+        "markers",
+        "serial: depends on the wall clock (a bound on the time it took, ticks counted within fixed sleeps); "
+        "the CI runs it after the parallel part, alone (tests/test_ci_split.py)",
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)

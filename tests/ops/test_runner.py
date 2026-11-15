@@ -50,6 +50,10 @@ import time  # noqa: E402
 
 import pytest  # noqa: E402
 
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# bounds on how fast a cancelled command is killed.
+pytestmark = pytest.mark.serial
+
 from reprintbuddy.ops import runner as runner_module  # noqa: E402
 from reprintbuddy.ops.runner import CANCELLED, cancel_flag, in_thread  # noqa: E402
 

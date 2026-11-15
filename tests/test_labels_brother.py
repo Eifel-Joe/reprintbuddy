@@ -11,6 +11,10 @@ from reprintbuddy.labels import brother
 from reprintbuddy.labels.errors import PrinterAddressRefused, PrinterUnreachable, SendAborted
 from reprintbuddy.labels.rolls import DK_11209, ROLLS, roll_by_key
 
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# real sockets with sub-second time limits and a bound on how long the call took.
+pytestmark = pytest.mark.serial
+
 ROW = 90  # bytes per raster line: the print head has 720 dots
 
 

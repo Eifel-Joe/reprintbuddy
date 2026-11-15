@@ -6,6 +6,10 @@ import time
 from types import SimpleNamespace
 
 import pytest
+
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# real throttle windows of 0.1 s.
+pytestmark = pytest.mark.serial
 from conftest import ADMIN, PASSWORD, csrf_of, login as _login, make_client
 from test_concurrency import asgi_client, token_of
 

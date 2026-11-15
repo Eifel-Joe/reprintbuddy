@@ -17,6 +17,10 @@ from reprintbuddy.ops import autocheck
 from reprintbuddy.ops.autocheck import CHECK_INTERVAL, RETRY_AFTER_FAILURE, UPDATE_RETRY, AutoCheck
 from reprintbuddy.ops.versions import UpdateCheckError, VersionInfo
 
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# bounds on how fast a running check stops.
+pytestmark = pytest.mark.serial
+
 INFO = VersionInfo("v0.1.0", "v0.2.0", datetime(2026, 11, 7, tzinfo=UTC))
 
 

@@ -37,8 +37,15 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install
         run: python -m pip install -e ".[dev]"
-      - name: Run tests
-        run: python -m pytest -q --durations=25
+      # A hosted runner has 4 cores: the bulk of the suite runs on 4 processes, whole files at a time
+      # (the files share nothing, a file keeps its own order). Tests that depend on the wall clock carry
+      # the mark `serial` (tests/test_ci_split.py) and run afterwards on their own, so that four busy
+      # workers cannot make them fail. Both steps always run, so that one failure does not hide the other.
+      - name: Run tests (parallel part)
+        run: python -m pytest -q --durations=25 -n 4 --dist loadfile -m "not serial"
+      - name: Run tests (serial part)
+        if: ${{ !cancelled() }}
+        run: python -m pytest -q --durations=25 -m serial
 
   install-script:
     name: Install script

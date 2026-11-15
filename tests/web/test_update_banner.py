@@ -10,6 +10,10 @@ import re
 from types import SimpleNamespace
 
 import pytest
+
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# fixed sleeps decide whether the loop has had its round.
+pytestmark = pytest.mark.serial
 from conftest import csrf_of, form_token_of, make_client, sm_of
 from github_support import FakeGitHub, github_of, use_github
 from test_ops_update import REMOTE_TWO, git_env
