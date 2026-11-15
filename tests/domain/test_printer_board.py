@@ -175,3 +175,13 @@ def test_a_live_message_with_nozzles_replaces_them():
     assert board.statuses[1].nozzles == (0.4,)
     board.update(replace(status(1), nozzles=()))  # reported, none known: that is what Bambuddy has now
     assert board.statuses[1].nozzles == ()
+
+
+def test_a_message_that_only_lacks_the_nozzles_changes_nothing():
+    """The known nozzles are kept before the comparison: otherwise every such message would publish."""
+    board, published, clock, _later = make()
+    board.replace(PRINTERS, {1: replace(status(1), nozzles=(0.6,))})
+    published.clear()
+    clock.now += timedelta(minutes=5)
+    board.update(replace(status(1), nozzles=None))
+    assert published == []

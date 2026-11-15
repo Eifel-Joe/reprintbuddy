@@ -185,3 +185,15 @@ def test_a_live_message_carries_the_nozzles():
     data = _row(1, nozzles=[_nozzle("0.6")], nozzle_rack=[])
     del data["id"]
     assert parse_printer_status(data, 7).nozzles == (0.6,)
+
+
+@pytest.mark.parametrize("rack", [
+    [{"id": float("inf"), "nozzle_diameter": "0.6"}],
+    [{"id": 16, "nozzle_diameter": 10 ** 400}],
+    [{"id": 1, "serial_number": "N/A", "max_temp": 10 ** 400}],
+])
+def test_absurd_numbers_never_break_the_state(rack):
+    """Python's JSON reader takes `Infinity` and endless integers; an overflow must not escape the parser
+    (review p534, 1): the hotends stay as read, the odd entry is unknown or counts as mounted."""
+    status = parse_printer_status(_row(1, nozzles=[_nozzle("0.4"), _nozzle(10 ** 400)], nozzle_rack=rack))
+    assert status.nozzles == (0.4,)

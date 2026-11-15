@@ -199,7 +199,7 @@ def test_impossible_print_time_is_unknown(seconds):
 
 @pytest.mark.parametrize(("value", "expected"), [
     (0.6, 0.6), (1, 1.0), (None, None), ("0.6", 0.6), ("abc", None), (0, None), (-0.4, None), (True, None),
-    (float("nan"), None),
+    (float("nan"), None), (float("inf"), None), (10 ** 400, None),
 ])
 def test_queue_item_reads_the_files_nozzle(value, expected):
     """The nozzle the file was sliced for (`nozzle_diameter`, `schemas/print_queue.py:277`, from the archive,

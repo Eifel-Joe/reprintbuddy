@@ -374,7 +374,7 @@ def _diameter(raw: object) -> float | None:
         return None
     try:
         value = float(raw)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # JSON allows Infinity and endless ints
         return None
     return value if value > 0 and math.isfinite(value) else None  # finite: no "nan"/"inf" from a broken answer
 
@@ -388,7 +388,7 @@ def _mounted(entry: dict | None) -> bool:
         return True
     try:
         max_temp = float(entry.get("max_temp") or 0)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # JSON allows Infinity and endless ints
         return True
     return max_temp > 0
 
@@ -406,7 +406,7 @@ def _nozzles(d: dict) -> tuple[float, ...] | None:
             continue
         try:
             by_id[int(entry.get("id"))] = entry  # type: ignore[arg-type]
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):  # JSON allows Infinity and endless ints
             continue
     found: list[float] = []
     hotends = d.get("nozzles")

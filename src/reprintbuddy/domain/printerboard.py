@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
+from dataclasses import replace as with_fields
 from datetime import datetime
 
 from reprintbuddy.bambuddy.types import Printer, PrinterStatus
@@ -85,7 +85,7 @@ class PrinterBoard:
         if status.nozzles is None and before is not None and before.nozzles is not None:
             # A message without the nozzles keeps the known ones; Bambuddy sends them in every message
             # (`printer_manager.py:1788`, `:1873`), so this only guards the plan against jumping (p534).
-            status = replace(status, nozzles=before.nozzles)
+            status = with_fields(status, nozzles=before.nozzles)
         changed = self.statuses.get(status.printer_id) != status
         self.statuses[status.printer_id] = status
         self.at = self._now()
