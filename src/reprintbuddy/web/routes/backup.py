@@ -38,11 +38,10 @@ from reprintbuddy.activity.writer import current_marks, current_notify_marks, wr
 from reprintbuddy.auth import MIN_PASSWORD_LENGTH
 from reprintbuddy.db import known_revisions
 from reprintbuddy.ops import fullbackup as fb
-from reprintbuddy.ops import oplock, running
+from reprintbuddy.ops import oplock, restore, running
 from reprintbuddy.ops.server import address_changed, base_url, effective_from_settings
 from reprintbuddy.ops.runner import in_thread
 from reprintbuddy.ops.service import request_restart
-from reprintbuddy.ops.status import read_status
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render
@@ -348,12 +347,6 @@ def _discard(request: Request) -> None:
         _remove(path)
 
 
-def _protected(request: Request) -> list[Path]:
-    """A backup named by a failed rollback must survive the pruning (as in the update)."""
-    status = read_status(request.app.state.db_path.parent)
-    return [Path(status.backup)] if status.state == "rollback_failed" and status.backup else []
-
-
 @router.post("/settings/restore/upload")
 async def restore_upload(request: Request) -> Response:
     # The size is checked before anything reads the body: the CSRF check would parse the
@@ -563,7 +556,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         try:
             marks = current_marks(app.state.db_path)  # p186: the log's marks belong to what has happened
             notify_marks = current_notify_marks(app.state.db_path)  # p220: so do those of the push messages
-            fb.replace_database(candidate, app.state.db_path, now=_now(), protect=_protected(request))
+            fb.replace_database(candidate, app.state.db_path, now=_now(), protect=restore.protected_backups(data_dir))
         except BaseException:
             _remove(candidate)  # nothing was replaced: the decrypted copy does not wait for the next start
             gate.fail()
