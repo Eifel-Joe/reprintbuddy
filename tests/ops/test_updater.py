@@ -995,3 +995,171 @@ def test_an_update_to_a_stable_version_lets_the_usual_limit_apply_again(update_e
     assert e.update().state == "succeeded"
     assert not switch.exists()
     assert len(list(backup_dir_for(e.db).iterdir())) == 5
+
+
+# --- p610: stopped from outside (systemd's time limit, a stop of the unit, shutdown) -------------------------
+# The signal comes through `InterruptGuard.signal`, the function the SIGTERM handler calls: in the middle of a
+# command (the stand-in raises, as the real runner does after it killed its child), a download or a wait.
+
+
+def cut_off(e):
+    """The guard of the run, and a function for the stand-ins that sends SIGTERM through it."""
+    from reprintbuddy.ops.updater import InterruptGuard
+
+    guard = InterruptGuard(e.db, now=lambda: NOW)
+
+    def hit(result=None):
+        guard.signal(15)  # raises while armed; while holding it returns
+        return result
+
+    return guard, hit
+
+
+def after_the_signal(e, guard_hits):
+    """The calls made after the first SIGTERM, with the time each was given."""
+    return list(zip(e.runner.calls, e.runner.timeouts))[guard_hits:]
+
+
+@pytest.mark.parametrize("step", ["backup", "fetch", "checkout"])
+def test_p610_cut_off_before_pip_changes_nothing_and_leaves_no_download(update_env, monkeypatch, step):
+    from reprintbuddy.ops import updater as module
+
+    e = update_env
+    guard, hit = cut_off(e)
+    if step == "backup":
+        real = module.backup_database
+        monkeypatch.setattr(module, "backup_database", lambda *a, **k: (real(*a, **k), hit())[0])
+    elif step == "fetch":
+        e.on_download = lambda url: hit() if url.endswith(".sha256") else None
+    else:
+        real_unpack = module.unpack
+
+        def unpack(*args):
+            real_unpack(*args)
+            hit()
+
+        monkeypatch.setattr(module, "unpack", unpack)
+    result = e.update(guard=guard)
+    assert (result.state, result.step, result.reason) == ("failed", step, "interrupted_untouched")
+    assert result.message == f"{step}: interrupted, nothing was changed"
+    assert not (e.opt / "releases" / ".download").exists()
+    assert not (e.opt / "releases" / "v0.2.0").exists()
+    assert e.called(e.py, "-m", "pip") == []
+    assert not {STOP_CMD, START_CMD, RESTART_WAIT_CMD} & set(e.runner.calls)
+    assert e.installed().tag == "v0.1.0"
+
+
+def signal_in_step(e, step, hit):
+    """SIGTERM while `step` runs. Before it, the database gets a change the rollback must undo."""
+
+    def change_then_hit(call=None):
+        with e.maker() as session:
+            st.set_setting(session, "queue_cap", 99)
+        hit()
+        return CommandResult(0)
+
+    if step == "install":
+        e.runner.on((e.py, "-m", "pip"), change_then_hit, CommandResult(0))
+    elif step == "verify":
+        e.runner.on((e.py, "-m", "reprintbuddy", "--version"), change_then_hit, CommandResult(0, "reprintbuddy 0.1.0\n"))
+    elif step == "migrate":
+        e.runner.on((e.py, "-m", "reprintbuddy", "migrate"), change_then_hit)
+    elif step == "restart":
+        e.runner.on(RESTART_WAIT_CMD, change_then_hit)
+    else:
+        def health():
+            if not getattr(health, "done", False):
+                health.done = True
+                change_then_hit()
+            return True
+
+        e.wait_healthy = health
+
+
+@pytest.mark.parametrize("step", ["install", "verify", "migrate", "restart", "health"])
+def test_p610_cut_off_from_pip_on_rolls_back_and_starts_the_previous_version(update_env, step):
+    e = update_env
+    marker = make_venv(e)
+    guard, hit = cut_off(e)
+    if step != "install":
+        pip_that_changes_the_environment(e, marker, ok=True)
+    signal_in_step(e, step, hit)
+    result = e.update(guard=guard)
+    assert (result.state, result.step, result.reason) == ("rolled_back", "rollback", "interrupted_rolled_back")
+    assert result.message == f"{step}: interrupted, the previous version was put back"
+    assert marker.read_text(encoding="utf-8") == "old"  # the environment from before pip
+    assert e.queue_cap() == 7  # the database from the backup
+    assert e.installed().tag == "v0.1.0" and not (e.opt / "releases" / "v0.2.0").exists()
+    calls = e.runner.calls
+    stop = len(calls) - 1 - calls[::-1].index(STOP_CMD)
+    assert START_CMD in calls[stop:]
+    # SIGKILL follows 90 s after SIGTERM: every command of the rollback is short
+    first = next(i for i, call in enumerate(calls) if call == STOP_CMD)
+    assert all(timeout <= 20.0 for timeout in e.runner.timeouts[first:])
+
+
+def test_p610_a_failed_start_after_a_cut_off_is_said(update_env):
+    e = update_env
+    make_venv(e)
+    guard, hit = cut_off(e)
+    signal_in_step(e, "migrate", hit)
+    e.runner.on(START_CMD, CommandResult(1, "", "Job failed"))
+    result = e.update(guard=guard)
+    assert (result.state, result.reason) == ("rollback_failed", "interrupted_partial")
+    assert result.message.startswith("migrate: interrupted, the installation may be incomplete")
+    assert f" – backup: {result.backup}" in result.message
+
+
+def test_p610_a_signal_during_the_rollback_does_not_cut_it_off(update_env):
+    """The mirror bug: STOP, restore, START. A SIGTERM after STOP left the service stopped (1.2.0-beta.1)."""
+    e = update_env
+    make_venv(e)
+    guard, hit = cut_off(e)
+
+    def broken_migration(call):
+        with e.maker() as session:
+            st.set_setting(session, "queue_cap", 99)
+        return CommandResult(1, "", "migration failed")
+
+    e.runner.on((e.py, "-m", "reprintbuddy", "migrate"), broken_migration)
+    e.runner.on(STOP_CMD, lambda call: hit(CommandResult(0)))
+    result = e.update(guard=guard)
+    assert (result.state, result.reason) == ("rolled_back", "migrate_failed")  # the cause stays the cause
+    assert e.queue_cap() == 7
+    calls = e.runner.calls
+    assert calls.index(STOP_CMD) < calls.index(START_CMD)
+    assert all(timeout <= 20.0 for timeout in e.runner.timeouts[calls.index(START_CMD):])
+    assert read_status(e.data).state == "rolled_back"
+
+
+def test_p610_a_start_the_signal_killed_runs_once_more(update_env):
+    """systemd sends SIGTERM to every process of the unit, also to a `systemctl start` running at that moment."""
+    e = update_env
+    make_venv(e)
+    guard, hit = cut_off(e)
+    e.runner.on((e.py, "-m", "reprintbuddy", "migrate"), CommandResult(1, "", "migration failed"))
+    e.runner.on(START_CMD, lambda call: hit(CommandResult(-15)), CommandResult(0))
+    result = e.update(guard=guard)
+    assert result.state == "rolled_back"
+    assert e.runner.calls.count(START_CMD) == 2
+
+
+def test_p610_a_signal_after_the_success_changes_nothing(update_env):
+    """Once the new version answers, the final state is written whatever comes."""
+    e = update_env
+    guard, hit = cut_off(e)
+    from reprintbuddy.ops import updater as module
+
+    real = module._settle
+
+    def settle(*args):
+        hit()
+        real(*args)
+
+    import pytest as _pytest
+
+    with _pytest.MonkeyPatch.context() as patch:
+        patch.setattr(module, "_settle", settle)
+        result = e.update(guard=guard)
+    assert result.state == "succeeded"
+    assert e.installed().tag == "v0.2.0"

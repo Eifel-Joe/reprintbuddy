@@ -193,10 +193,11 @@ def run_update(
         if target is None and previous.state == "queued" and previous.kind == "return":
             return _start_return(
                 db_path, install_dir, runner, wait_healthy, now, http_get, download, keep_backups, previous, started,
-                script_location,
+                script_location, guard,
             )
         return _run_update(
-            db_path, install_dir, runner, wait_healthy, now, http_get, download, target, keep_backups, previous, started
+            db_path, install_dir, runner, wait_healthy, now, http_get, download, target, keep_backups, previous, started,
+            guard,
         )
     finally:
         lock.release()
@@ -229,6 +230,7 @@ def _run_update(
     keep_backups: int,
     previous: UpdateStatus,
     started: datetime,
+    guard: InterruptGuard,
 ) -> UpdateStatus:
     data_dir = db_path.parent
     backup_dir = backup_dir_for(db_path)
@@ -245,75 +247,86 @@ def _run_update(
         "backup": None,
     }
 
-    put, finish = _reporter(data_dir, backup_dir, keep_backups, info, started, now)
-
-    # --- before anything is changed: a failure leaves everything as it was -------------
-    # v0.4.9 p500: what is installed comes from `release.json` (a package installation) or, for an
-    # installation made with git, from git; where the new version comes from is the release list.
-    put("running", "backup")
-    installed = read_installation(install_dir, runner)
-    if installed is None or installed.repo is None:
-        line = "no installation found" if installed is None else "the repository of the installation is unknown"
-        return finish("failed", "backup", "backup: " + line, "head_unreadable", {"detail": line})
-    info["from_tag"] = installed.tag
-    try:
-        backup = backup_database(db_path, backup_dir, label=installed.label, now=now())
-    except (OSError, sqlite3.Error) as error:
-        detail = str(error)[:MAX_REASON]
-        return finish("failed", "backup", f"backup: {detail}", "backup_failed", {"detail": detail})
-    info["backup"] = str(backup)
-
-    put("running", "fetch")
-    try:
-        releases = fetch_releases(installed.repo, http_get)
-    except ReleaseCheckError as error:
-        detail = str(error)[:MAX_REASON]
-        return finish("failed", "fetch", f"fetch: {detail}", "fetch_failed", {"detail": detail})
-    # The version the page offered (or the one asked for) is installed, not whatever is newest by now;
-    # if it is gone, the update stops instead of installing something else. Without one, the newest the
-    # chosen channel offers (Spec 11.3a "Vorabversionen").
-    wanted = target or info["to_tag"]
-    chosen = next((item for item in releases if item.tag == wanted), None) if wanted else newest_offered(
-        releases, _read_channel(db_path)
-    )
-    if chosen is None and not wanted:
-        return finish("failed", "fetch", "fetch: no newer release", "no_newer")
-    if chosen is None:
-        return finish("failed", "fetch", f"fetch: unknown target {wanted}", "unknown_target", {"detail": str(wanted)})
-    goal = chosen.tag
-    info["to_tag"] = goal
-    if not is_newer(goal, info["from_tag"]):
-        return finish("failed", "fetch", "fetch: no newer release", "no_newer")
-
-    # Download and check the package, then unpack it beside the installed version. Nothing of the running
-    # installation is touched yet: a failure here removes what was downloaded and changes nothing else.
-    package = work_dir / package_name(goal)
-    checksum_file = work_dir / checksum_name(goal)
-    new_source = releases_dir / goal
+    put, finish = _reporter(data_dir, backup_dir, keep_backups, info, started, now, guard=guard)
+    new_source: Path | None = None
 
     def discard_download() -> None:
         shutil.rmtree(work_dir, ignore_errors=True)
 
+    # --- before anything is changed: a failure leaves everything as it was -------------
+    # v0.4.9 p500: what is installed comes from `release.json` (a package installation) or, for an
+    # installation made with git, from git; where the new version comes from is the release list.
+    # p610: a SIGTERM here changes nothing either; what was downloaded or unpacked goes.
     try:
-        shutil.rmtree(work_dir, ignore_errors=True)
-        work_dir.mkdir(parents=True)
-        download(chosen.package_url, package)
-        download(chosen.checksum_url, checksum_file)
-        expected = expected_sha256(checksum_file.read_text(encoding="utf-8", errors="replace"), package_name(goal))
-        sha256 = verify(package, expected, chosen.digest)
-    except (PackageError, OSError) as error:
-        discard_download()
-        reason = error.reason if isinstance(error, PackageError) else "fetch_failed"
-        detail = (error.detail or error.reason) if isinstance(error, PackageError) else type(error).__name__
-        return finish("failed", "fetch", f"fetch: {detail}"[:MAX_REASON], reason, {"detail": detail[:MAX_REASON]})
+        guard.arm()
+        put("running", "backup")
+        installed = read_installation(install_dir, runner)
+        if installed is None or installed.repo is None:
+            line = "no installation found" if installed is None else "the repository of the installation is unknown"
+            return finish("failed", "backup", "backup: " + line, "head_unreadable", {"detail": line})
+        info["from_tag"] = installed.tag
+        try:
+            backup = backup_database(db_path, backup_dir, label=installed.label, now=now())
+        except (OSError, sqlite3.Error) as error:
+            detail = str(error)[:MAX_REASON]
+            return finish("failed", "backup", f"backup: {detail}", "backup_failed", {"detail": detail})
+        info["backup"] = str(backup)
 
-    put("running", "checkout")
-    try:
-        unpack(package, releases_dir, goal)
-    except PackageError as error:
+        put("running", "fetch")
+        try:
+            releases = fetch_releases(installed.repo, http_get)
+        except ReleaseCheckError as error:
+            detail = str(error)[:MAX_REASON]
+            return finish("failed", "fetch", f"fetch: {detail}", "fetch_failed", {"detail": detail})
+        # The version the page offered (or the one asked for) is installed, not whatever is newest by now;
+        # if it is gone, the update stops instead of installing something else. Without one, the newest the
+        # chosen channel offers (Spec 11.3a "Vorabversionen").
+        wanted = target or info["to_tag"]
+        chosen = next((item for item in releases if item.tag == wanted), None) if wanted else newest_offered(
+            releases, _read_channel(db_path)
+        )
+        if chosen is None and not wanted:
+            return finish("failed", "fetch", "fetch: no newer release", "no_newer")
+        if chosen is None:
+            return finish("failed", "fetch", f"fetch: unknown target {wanted}", "unknown_target", {"detail": str(wanted)})
+        goal = chosen.tag
+        info["to_tag"] = goal
+        if not is_newer(goal, info["from_tag"]):
+            return finish("failed", "fetch", "fetch: no newer release", "no_newer")
+
+        # Download and check the package, then unpack it beside the installed version. Nothing of the running
+        # installation is touched yet: a failure here removes what was downloaded and changes nothing else.
+        package = work_dir / package_name(goal)
+        checksum_file = work_dir / checksum_name(goal)
+        new_source = releases_dir / goal
+
+        try:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            work_dir.mkdir(parents=True)
+            download(chosen.package_url, package)
+            download(chosen.checksum_url, checksum_file)
+            expected = expected_sha256(checksum_file.read_text(encoding="utf-8", errors="replace"), package_name(goal))
+            sha256 = verify(package, expected, chosen.digest)
+        except (PackageError, OSError) as error:
+            discard_download()
+            reason = error.reason if isinstance(error, PackageError) else "fetch_failed"
+            detail = (error.detail or error.reason) if isinstance(error, PackageError) else type(error).__name__
+            return finish("failed", "fetch", f"fetch: {detail}"[:MAX_REASON], reason, {"detail": detail[:MAX_REASON]})
+
+        put("running", "checkout")
+        try:
+            unpack(package, releases_dir, goal)
+        except PackageError as error:
+            discard_download()
+            return finish("failed", "checkout", f"checkout: {error.detail or error.reason}", error.reason, {"detail": error.detail})
         discard_download()
-        return finish("failed", "checkout", f"checkout: {error.detail or error.reason}", error.reason, {"detail": error.detail})
-    discard_download()
+        guard.hold()
+    except Interrupted:
+        discard_download()
+        if new_source is not None:
+            shutil.rmtree(new_source, ignore_errors=True)
+        step = str(info.get("step") or "backup")
+        return finish("failed", step, f"{step}: interrupted, nothing was changed", "interrupted_untouched")
 
     # --- from pip on, any failure is rolled back ---------------------------------------
     current = "install"
@@ -352,7 +365,9 @@ def _run_update(
         return None
 
     def backward() -> bool:
-        """Previous environment, previous database, restart. True only if the old version answers."""
+        """Previous environment, previous database, restart. True only if the old version answers.
+
+        p610: runs to its end whatever signal comes (the guard holds); after one, each command is short."""
         ok = True
         if snapshot_taken and snapshot_dir.is_dir():
             # The environment as it was before pip: no network, no reinstall needed.
@@ -365,32 +380,30 @@ def _run_update(
         else:
             shutil.rmtree(installed.source_dir / "build", ignore_errors=True)
             done = runner(
-                (py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", str(installed.source_dir)), timeout=900.0
+                (py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", str(installed.source_dir)),
+                timeout=guard.timeout(900.0),
             )
         if not done.ok:
             # No network for pip is the usual reason the update failed, so the reinstall of
             # the old version fails too. What matters is whether the old version is the one
             # installed and answering, not pip's exit code.
             old = info["from_tag"]
-            shown = runner((py, "-m", "reprintbuddy", "--version"))
+            shown = _service_command(runner, guard, (py, "-m", "reprintbuddy", "--version"), 120.0)
             ok &= bool(old) and shown.ok and shown.stdout.strip() == "reprintbuddy " + str(old)[1:]
         # The new version's folder goes; `release.json` was never touched, so it still names the old one.
         shutil.rmtree(new_source, ignore_errors=True)
         # Restore the database while nothing has it open. If the service cannot be stopped it
         # may still run the new code: then a restart (below) is the way back.
-        stopped = runner(STOP_CMD, timeout=120.0)
+        stopped = _service_command(runner, guard, STOP_CMD, 120.0)
         try:
             restore_database(backup, db_path)
         except (OSError, sqlite3.Error):
             ok = False
-        done = runner(START_CMD if stopped.ok else RESTART_WAIT_CMD, timeout=120.0)
+        done = _service_command(runner, guard, START_CMD if stopped.ok else RESTART_WAIT_CMD, 120.0)
         ok &= done.ok
         return bool(wait_healthy()) and ok
 
-    try:
-        problem = forward()
-    except Exception as error:  # noqa: BLE001 - whatever happened, the rollback must still run
-        problem = (current, f"unexpected error: {type(error).__name__}", "unexpected", {"detail": type(error).__name__})
+    problem, cut_off = _armed(guard, forward, lambda: current)
     if problem is None:
         shutil.rmtree(snapshot_dir, ignore_errors=True)
         _settle(install_dir, installed, goal, sha256, db_path)
@@ -402,6 +415,12 @@ def _run_update(
         restored = backward()
     except Exception:  # noqa: BLE001
         restored = False
+    if cut_off:
+        # p610 (Spec 11.3a): stopped from outside counts as a failure; the log says "interrupted" (": interrupted").
+        if restored:
+            return finish("rolled_back", "rollback", f"{problem[0]}: {CUT_OFF_ROLLED_BACK}", "interrupted_rolled_back")
+        cause = f"{problem[0]}: {CUT_OFF_PARTIAL}"
+        return finish("rollback_failed", "rollback", f"{cause} \u2013 backup: {backup}", "interrupted_partial")
     if restored:
         return finish("rolled_back", "rollback", cause, problem[2], problem[3])
     return finish("rollback_failed", "rollback", f"{cause} – backup: {backup}", problem[2], problem[3])
@@ -414,10 +433,12 @@ def _reporter(
     info: dict[str, str | None],
     started: datetime,
     now: Callable[[], datetime],
+    guard: InterruptGuard | None = None,
     **extra: object,
 ) -> tuple[Callable[..., UpdateStatus], Callable[..., UpdateStatus]]:
     """`put` writes a state of the run, `finish` its final one (and prunes the backups). `extra` are the fields
-    of the way back (`kind`, `return_case`, ...), the same in every state of the run."""
+    of the way back (`kind`, `return_case`, ...), the same in every state of the run. `info["step"]` is the last
+    step written (p610: the step a SIGTERM cut off); from `finish` on a SIGTERM cuts nothing off."""
 
     def put(
         state: str, step: str, message: str = "", *, finished: bool = False,
@@ -436,6 +457,7 @@ def _reporter(
             params=params or {},
             **extra,  # type: ignore[arg-type]
         )
+        info["step"] = step
         try:
             write_status(data_dir, status)
         except OSError as error:
@@ -448,6 +470,8 @@ def _reporter(
     def finish(
         state: str, step: str, message: str, reason: str = "", params: dict[str, str] | None = None
     ) -> UpdateStatus:
+        if guard is not None:
+            guard.hold()
         if info["backup"]:
             # After a failed rollback the message names this backup as the one to restore.
             protect = [Path(info["backup"])] if state == "rollback_failed" else []
@@ -462,6 +486,45 @@ def _reporter(
 
 
 Problem = tuple[str, str, str, dict[str, str]]  # (step, English line, reason code, parameters)
+
+# p610: the English lines of a run stopped from outside (after "<step>: "); ": interrupted" makes the log say
+# "interrupted" (`activity.states.INTERRUPTED`).
+CUT_OFF_ROLLED_BACK = "interrupted, the previous version was put back"
+CUT_OFF_PARTIAL = "interrupted, the installation may be incomplete"
+
+
+def _armed(
+    guard: InterruptGuard, forward: Callable[[], Problem | None], current: Callable[[], str]
+) -> tuple[Problem | None, bool]:
+    """Run `forward` so that a SIGTERM cuts it off (p610). Returns its problem (None: it went through) and
+    whether a SIGTERM cut it off. Afterwards the guard holds: the rollback and the final state are not cut off.
+
+    The nesting matters: a signal in the `except Exception` branch, or right after `forward` returned, is still
+    caught by the outer `except Interrupted`; `guard.hold()` is the last thing inside it."""
+    try:
+        try:
+            guard.arm()
+            problem = forward()
+        except Exception as error:  # noqa: BLE001 - whatever happened, the rollback must still run
+            step = current()
+            problem = (step, f"unexpected error: {type(error).__name__}", "unexpected", {"detail": type(error).__name__})
+        guard.hold()
+        return problem, False
+    except Interrupted:
+        return (current(), "interrupted", "interrupted_partial", {}), True
+
+
+def _service_command(
+    runner: CommandRunner, guard: InterruptGuard, args: tuple[str, ...], timeout: float
+) -> CommandResult:
+    """A command of the rollback. p610: short once a SIGTERM came, and run once more if a SIGTERM came while it
+    ran and it failed: systemd sends SIGTERM to every process of the unit, also to a `systemctl` running then.
+    Starting or stopping twice is harmless."""
+    signals = guard.signals
+    done = runner(args, timeout=guard.timeout(timeout))
+    if not done.ok and guard.signals > signals:
+        done = runner(args, timeout=guard.timeout(timeout))
+    return done
 
 
 def _install_package(
@@ -513,6 +576,7 @@ def _start_return(
     previous: UpdateStatus,
     started: datetime,
     script_location: Path | None,
+    guard: InterruptGuard,
 ) -> UpdateStatus:
     """A request for the way back from the page. One that grew old changes nothing: a click on "back" must never
     lead forward, as an ordinary update to a newer pre-release would. The state it leaves makes the next run by
@@ -527,7 +591,7 @@ def _start_return(
         return finish("failed", "start", "start: the request for the way back is too old", "return_expired")
     return _run_return(
         db_path, install_dir, runner, wait_healthy, now, http_get, download, keep_backups, previous, started,
-        script_location,
+        script_location, guard,
     )
 
 
@@ -571,6 +635,7 @@ def _run_return(
     previous: UpdateStatus,
     started: datetime,
     script_location: Path | None,
+    guard: InterruptGuard,
 ) -> UpdateStatus:
     """The way back, in the order of Spec 11.3a: backup of the current state, the package of the stable version
     loaded and checked; then the service stops, the database, the package, the start, the check.
