@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import signal
 from pathlib import Path
 
@@ -11,6 +12,8 @@ INSTALL_DIR = Path("/opt/reprintbuddy")
 SERVICE = "reprintbuddy.service"
 UPDATE_SERVICE = "reprintbuddy-update.service"
 SYSTEMCTL = "/usr/bin/systemctl"
+
+log = logging.getLogger(__name__)
 
 # These command lines are the only ones install/reprintbuddy.sudoers allows.
 RESTART_CMD = ("sudo", "-n", SYSTEMCTL, "restart", "--no-block", SERVICE)
@@ -44,7 +47,12 @@ def request_restart(runner: CommandRunner) -> CommandResult:
 # Tests: tests/web/test_restart_under_way.py
 def restart_under_way(result: CommandResult) -> bool:
     """Whether a restart the service asked for itself went through (see above)."""
-    return result.ok or result.returncode == -int(signal.SIGTERM)
+    if result.ok:
+        return True
+    if result.returncode == -int(signal.SIGTERM):
+        log.debug("restart: sudo was stopped with the service (SIGTERM), the restart is under way")
+        return True
+    return False
 
 
 def start_update_unit(runner: CommandRunner) -> CommandResult:

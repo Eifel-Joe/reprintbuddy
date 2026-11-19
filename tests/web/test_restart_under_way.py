@@ -61,3 +61,22 @@ def test_only_sigterm_counts_as_under_way():
     assert not restart_under_way(CommandResult(1, "", "sudo: a password is required"))
     assert not restart_under_way(CommandResult(124, "", "timed out after 15 s"))
     assert not restart_under_way(CommandResult(130, "", "cancelled"))
+
+
+def test_the_restored_page_shows_the_restart_under_way_when_our_sudo_is_stopped_with_the_service(ops_env, fast_kdf):
+    """Review finding: the page after a restore took the result's `ok` and showed "could not restart"."""
+    import importlib.util
+    import pathlib
+
+    spec = importlib.util.spec_from_file_location(
+        "_restart_backup_helpers", pathlib.Path(__file__).resolve().parent / "test_ops_full_backup.py"
+    )
+    helpers = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helpers)
+    content = helpers.made_backup(ops_env)
+    ops_env.runner.on(RESTART_CMD, STOPPED_WITH_THE_SERVICE)
+    helpers.upload(ops_env, content)
+    response = helpers.confirm(ops_env)
+    assert response.status_code == 200
+    assert "Restart Reprintbuddy now" not in response.text
+    assert 'data-health-url="/healthz"' in response.text

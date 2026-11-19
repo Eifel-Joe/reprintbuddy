@@ -623,4 +623,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
     except Exception as error:  # noqa: BLE001 - only a hint; the restart must be asked for anyway
         log.warning("address after restore unreadable: %s", type(error).__name__)
     result = await _restart_after_restore(app.state.ops.runner)
-    return render(request, "restored.html", restarted=result.ok, new_url=new_url, active_nav="settings")
+    # p644 (review): our sudo stopped with the service is the restart under way, not "could not restart".
+    return render(
+        request, "restored.html", restarted=restart_under_way(result), new_url=new_url, active_nav="settings"
+    )
