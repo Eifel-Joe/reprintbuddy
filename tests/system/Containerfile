@@ -1,0 +1,14 @@
+FROM debian:13
+# The test bench of the end-to-end run (tests/system/README.md): a Debian 13 with systemd, as the installer expects
+# it (Reprintbuddy itself runs natively, without Docker; the container exists only on the CI runner). What the
+# installer installs itself (python3-venv, curl, sudo) is there already, so that its apt step is short; it runs it
+# anyway. openssl makes the certificate authority of the run.
+ENV container=docker DEBIAN_FRONTEND=noninteractive PYTHONDONTWRITEBYTECODE=1
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends systemd systemd-sysv dbus openssl ca-certificates python3 python3-venv curl sudo procps \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+# Units a container has no use for (consoles, the clock of the host)
+RUN systemctl mask getty.target console-getty.service systemd-timesyncd.service
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

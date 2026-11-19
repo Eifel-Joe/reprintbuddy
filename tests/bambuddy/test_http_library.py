@@ -184,6 +184,31 @@ def test_plate_name_is_optional():
     assert [(p.index, p.name) for p in plates] == [(1, None), (2, None)]
 
 
+def test_parse_plates_reads_print_time():
+    """The slicer's estimate per plate (Bambuddy `library.py:3785`), for the print plan (Spec 10.2, p646)."""
+    plates = parse_plates(load("plates.json"))
+    assert [p.print_time_seconds for p in plates] == [3720, 1510]
+
+
+@pytest.mark.parametrize("raw", [None, "x", -5, 1.5, True, [1]])
+def test_parse_plates_without_a_usable_print_time_is_none(raw):
+    """Only shown: an odd value makes the time unknown, it never breaks the plate list."""
+    plates = parse_plates({"plates": [{"index": 1, "print_time_seconds": raw}, {"index": 2}]})
+    assert [p.print_time_seconds for p in plates] == [None, None]
+
+
+def test_parse_file_reads_nozzle_from_metadata():
+    """The nozzle the file was sliced for (`metadata.nozzle_diameter`, Bambuddy `archive.py:582-584`)."""
+    assert parse_file(load("file.json")).nozzle_diameter == 0.4
+    assert parse_file({**load("file.json"), "metadata": {"nozzle_diameter": "0.6"}}).nozzle_diameter == 0.6
+
+
+@pytest.mark.parametrize("metadata", [None, {}, {"nozzle_diameter": None}, {"nozzle_diameter": 0},
+                                      {"nozzle_diameter": "x"}, "text"])
+def test_parse_file_nozzle_missing_or_bad_is_none(metadata):
+    assert parse_file({**load("file.json"), "metadata": metadata}).nozzle_diameter is None
+
+
 # ---- thumbnail --------------------------------------------------------------------
 
 

@@ -134,6 +134,8 @@ class BambuddyClient(Protocol):
 
     async def shortest_first(self) -> bool: ...
 
+    async def inventory_remain(self, printer_id: int) -> dict[tuple[int, int], float]: ...
+
 
 BambuddyFactory = Callable[[], BambuddyClient | None]
 
@@ -313,6 +315,10 @@ class HttpBambuddyClient:
             return {}
         data = await self._get("/bulk/printer-statuses", {"ids": ",".join(map(str, ids))})
         return {s.printer_id: s for s in _parse.parse_printer_statuses(data)}
+
+    async def inventory_remain(self, printer_id: int) -> dict[tuple[int, int], float]:
+        """Grams left per slot of the spools assigned in Bambuddy (Spec 7.6, p648), keyed (ams_id, tray_id)."""
+        return _parse.parse_inventory_remain(await self._get(f"/printers/{printer_id}/inventory-remain"))
 
     async def shortest_first(self) -> bool:
         """Bambuddy's "shortest job first" for the order of the print plan (`queue_shortest_first`,

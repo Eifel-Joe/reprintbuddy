@@ -106,7 +106,7 @@ def test_head_line_counts(db):
     queue = [item(1, seconds=None), item(2, manual_start=True)]
     with db() as s:
         view = pv.plan_view(s, board(idle(1), idle(2)), queue, NOW, "en", known=True)
-    assert view.waiting_here == 3
+    assert view.held == 3  # no print target: the hand-over skips the article (p646)
     assert view.manual == 1
     assert view.minimum is True
     assert view.finish == "11:00"

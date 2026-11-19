@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 
 from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable, DeleteResult
 from reprintbuddy.bambuddy.types import (
+    AmsSlot,
     EnqueueRequest,
     FilamentRequirement,
     LibraryFile,
@@ -35,6 +36,7 @@ _FAILABLE_METHODS = _EFFECT_METHODS | {
     "list_folders", "list_files", "get_file", "list_plates", "plate_thumbnail", "file_thumbnail",
     "filament_requirements", "list_printers", "spool_mode", "list_spools", "print_defaults",
     "get_queue_item", "list_queue", "list_all_items", "printer_statuses", "shortest_first",
+    "inventory_remain",
 }
 
 
@@ -90,6 +92,7 @@ class FakeBambuddy:
         # time in seconds (the slicer's estimate on the entry, `print_queue.py:575-645`) and
         # Bambuddy's setting "shortest job first".
         self._statuses: dict[int, PrinterStatus] = {}
+        self._grams: dict[int, dict[tuple[int, int], float]] = {}  # p648: grams of assigned spools per slot
         self._print_times: dict[int, int | None] = {}
         self.shortest = False
         self._next_folder = 1
@@ -133,9 +136,11 @@ class FakeBambuddy:
         has_thumbnail: bool = True,
         sliced: bool = True,
         print_time_s: int | None = 3600,
+        nozzle: float | None = None,
     ) -> LibraryFile:
         file = LibraryFile(
-            self._next_file, filename, folder_id, fingerprint, printer_model, has_thumbnail, sliced
+            self._next_file, filename, folder_id, fingerprint, printer_model, has_thumbnail, sliced,
+            nozzle_diameter=nozzle,
         )
         self._next_file += 1
         self._files[file.id] = file
@@ -197,7 +202,9 @@ class FakeBambuddy:
         self._enter("list_plates")
         if file_id not in self._files:
             raise BambuddyRejected(f"unknown file {file_id}")
-        return [Plate(i, None) for i in range(1, self._plates[file_id] + 1)]
+        # Every plate with the file's print time: enough for the print plan (p646).
+        seconds = self._print_times.get(file_id)
+        return [Plate(i, None, seconds) for i in range(1, self._plates[file_id] + 1)]
 
     async def plate_thumbnail(self, file_id: int, plate_index: int) -> bytes:
         self._enter("plate_thumbnail")
@@ -233,6 +240,19 @@ class FakeBambuddy:
     async def shortest_first(self) -> bool:
         self._enter("shortest_first")
         return self.shortest
+
+    def set_printer_slots(
+        self, printer_id: int, slots: Sequence[AmsSlot], *, backup: bool | None = None,
+        grams: dict[tuple[int, int], float] | None = None,
+    ) -> None:
+        """The printer's filament slots and backup switch as its state reports them, and the grams Bambuddy
+        holds for the spools assigned to its slots (`inventory-remain`, p648)."""
+        self.set_printer_status(printer_id, slots=tuple(slots), backup=backup)
+        self._grams[printer_id] = dict(grams or {})
+
+    async def inventory_remain(self, printer_id: int) -> dict[tuple[int, int], float]:
+        self._enter("inventory_remain")
+        return dict(self._grams.get(printer_id, {}))
 
     async def spool_mode(self) -> SpoolMode:
         self._enter("spool_mode")
@@ -335,6 +355,7 @@ class FakeBambuddy:
         target_location: str | None = None,
         scheduled_time: datetime | None = None,
         nozzle_diameter: float | None = None,
+        filament_short: bool = False,
     ) -> QueueItem:
         """An entry made in Bambuddy without `enqueue`, at the end of the queue.
 
@@ -353,6 +374,7 @@ class FakeBambuddy:
             target_location=target_location,
             scheduled_time=scheduled_time,
             nozzle_diameter=nozzle_diameter,
+            filament_short=filament_short,
             file_name=label,
             label=label,
             status=status,

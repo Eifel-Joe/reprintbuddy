@@ -185,3 +185,11 @@ def test_a_message_that_only_lacks_the_nozzles_changes_nothing():
     clock.now += timedelta(minutes=5)
     board.update(replace(status(1), nozzles=None))
     assert published == []
+
+
+def test_changed_file_facts_are_published_at_once():
+    """Print time and nozzle of a file in Reprintbuddy's queue changed (p646): open pages redraw the plan."""
+    board, published, _clock, _later = make()
+    board.facts_changed()
+    assert published == [frozenset({TOPIC})]
+    assert board.file_facts == {}  # filled by the engine, empty at the start

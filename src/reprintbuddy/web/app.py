@@ -24,6 +24,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.activity import states as activity_states
 from reprintbuddy.activity.writer import (
     ActivityLog,
+    read_pending,
     read_restored_marker,
     restore_marks,
     restore_notify_marks,
@@ -232,7 +233,7 @@ def _install_activity_log(app: FastAPI, sessionmaker, db_path: Path) -> None:
         may_write=may_write,
         begin_write=begin_write,
         end_write=end_write,
-        update_result=lambda: activity_states.update_outcome(read_status(db_path.parent)),
+        update_result=lambda: activity_states.update_outcomes(db_path.parent),  # p643: every run
     )
 
 
@@ -265,6 +266,11 @@ def _log_start(app: FastAPI) -> None:
         notify_marks = restored.pop("notify_marks", None)
         if notify_marks is not None:  # p220: before the first tick looks for events to report
             restore_notify_marks(app.state.sessionmaker, notify_marks)
+    # p660: what the command line refused or cancelled meanwhile, at the time it happened, before the restore
+    # it may have done after it.
+    for pending in read_pending(app.state.db_path.parent):
+        activity.record(pending["kind"], "user", pending["details"], via=pending["via"], at=pending["at"])
+    if restored is not None:
         activity.record("restore_done", "user", restored, via=via if via == "cli" else None)
     activity.record("started", "system", {"version": __version__})
 
@@ -323,6 +329,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         app.state.stopping = True
         await app.state.notifier.stop()  # a message on its way is ended, nothing new starts
+        await app.state.ticker.cancel_rereads()  # a filament re-read waiting after a print end (p648)
         background = list(tasks)
         check = app.state.rights.task  # a check of the key's rights started by a page
         if check is not None:
