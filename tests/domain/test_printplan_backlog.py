@@ -205,3 +205,12 @@ def test_gap_between_backlog_prints_on_one_printer():
     plan = build_plan([printer(1)], [], NOW, backlog=[waiting("A"), waiting("B")], free_slots=2)
     assert bars(plan, 1) == [("backlog", "A", NOW, at(10, 30)),
                              ("backlog", "B", at(10, 30) + GAP, at(11, 5))]
+
+
+def test_parked_prints_wait_in_their_lane_without_a_place():
+    """Prints the hand-over skips because their printer is in maintenance (p646): text in that lane."""
+    maintenance = printer(2, active=False)
+    plan = build_plan([printer(1), maintenance], [], NOW, backlog=[waiting("B")], free_slots=1,
+                      parked=[(2, "A"), (9, "unknown printer")])
+    assert plan.lanes[1].waiting == ("A",) and plan.without == ("Printer 2",)
+    assert bars(plan, 1) == [("backlog", "B", NOW, at(10, 30))]

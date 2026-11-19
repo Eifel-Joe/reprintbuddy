@@ -176,6 +176,7 @@ def _order(items: Sequence[PlanItem], shortest_first: bool) -> list[PlanItem]:
 def build_plan(
     printers: Sequence[PlanPrinter], items: Sequence[PlanItem], now: datetime, *, shortest_first: bool = False,
     backlog: Sequence[PlanItem] = (), free_slots: int = 0, insert_next: bool = False,
+    parked: Sequence[tuple[int, str]] = (),
 ) -> Plan:
     """Lay the queue onto the printers (see the module text). Pure: same input, same plan.
 
@@ -184,7 +185,9 @@ def build_plan(
     print is handed over while a place is free, else when a bar of an entry with `holds_slot` ends; then it
     goes to the end of Bambuddy's queue, or with `insert_next` behind the last waiting entry with
     `holds_slot` (at the top without one), as `dispatch.next_insert_position` does. The time to the next
-    query is not counted (Spec 10.2). What never gets a place counts as `no_slot`."""
+    query is not counted (Spec 10.2). What never gets a place counts as `no_slot`. `parked`: (printer id,
+    label) of prints the hand-over skips because their printer is in maintenance; shown in its lane as
+    waiting, without a place (a printer Bambuddy does not list is left out)."""
     conditions = {p.printer_id: _condition(p) for p in printers}
     in_service = {pid for pid, c in conditions.items() if c in ("ready", "plate")}
     bars: dict[int, list[Bar]] = {p.printer_id: [] for p in printers}
@@ -247,6 +250,9 @@ def build_plan(
     order = [i for i in items if i.status == "pending"]
     # In the order the scheduler walks them, so the texts "wartet: ..." keep that order.
     takeable = {id(e) for e in _order(order, shortest_first) if sort_out(e)}
+    for pid, label in parked:
+        if pid in waiting:
+            waiting[pid].append(label)
     from_backlog: set[int] = set()
     backlog_left = list(backlog)
     slots = free_slots

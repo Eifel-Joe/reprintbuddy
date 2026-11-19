@@ -51,6 +51,7 @@
   --plan-stripe-2: #232a35;
   --plan-planned-text: #c9d3e3;
   --plan-planned-edge: #4a5568;
+  --plan-backlog-edge: #8b97a8; /* still waiting in Reprintbuddy: a dotted edge, no fill (p646) */
   --plan-foreign-text: #a9b0bb; /* not from Reprintbuddy */
   --plan-kind-bg: rgba(0, 0, 0, 0.25); /* the kind as a badge in the phone list */
 }
@@ -1408,6 +1409,7 @@ td.target .target-form { display: inline-block; }
 .plan-fill { --done: 0%; position: absolute; inset: 0 auto 0 0; width: var(--done); background: var(--plan-done); }
 .plan-fixed { background: var(--plan-fixed); color: var(--plan-fixed-text); border: 1px solid var(--accent); }
 .plan-planned { background: repeating-linear-gradient(45deg, var(--plan-stripe), var(--plan-stripe) 6px, var(--plan-stripe-2) 6px, var(--plan-stripe-2) 12px); color: var(--plan-planned-text); border: 1px dashed var(--plan-planned-edge); }
+.plan-backlog { background: none; color: var(--plan-planned-text); border: 2px dotted var(--plan-backlog-edge); }
 .plan-foreign { color: var(--plan-foreign-text); }
 .plan-beyond { display: none; } /* starts after the end of the axis: only in the list on a phone */
 .plan-foreign .plan-label { font-style: italic; }
@@ -1421,6 +1423,7 @@ td.target .target-form { display: inline-block; }
 .plan-key-running { background: var(--plan-running); }
 .plan-key-fixed { background: var(--plan-fixed); border: 1px solid var(--accent); }
 .plan-key-planned { background: repeating-linear-gradient(45deg, var(--plan-stripe), var(--plan-stripe) 4px, var(--plan-stripe-2) 4px, var(--plan-stripe-2) 8px); border: 1px dashed var(--plan-planned-edge); }
+.plan-key-backlog { border: 2px dotted var(--plan-backlog-edge); }
 .plan-legend em { margin-left: 8px; }
 
 @media (max-width: 1100px) {

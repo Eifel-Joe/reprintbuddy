@@ -11,7 +11,7 @@ import pytest
 from markupsafe import escape
 
 from conftest import run_tick, sm_of
-from factories import make_article, make_entry
+from factories import make_article, make_dispatch, make_entry
 from texts import en_html as en
 from reprintbuddy import settings as st
 from reprintbuddy.i18n import translate_count
@@ -90,13 +90,14 @@ def test_unknown_duration_says_at_least(bb_client, fake_bambuddy):
     assert en("overview.plan.unknown_duration") in part
 
 
-def test_reprintbuddys_own_queue_only_counted(bb_client):
+def test_held_prints_of_reprintbuddys_queue_only_counted(bb_client):
+    """Held entries are skipped by the hand-over: counted, not planned (p646)."""
     with sm_of(bb_client).begin() as s:
-        a = make_article(s, name="Bracket")
+        a = make_article(s, name="Bracket", target_model="A1")
         make_entry(s, a.id, prints=3, held=True)
     query(bb_client)
     part = plan_part(bb_client)
-    assert str(escape(translate_count("en", "overview.plan.waiting_here", 3))) in part
+    assert str(escape(translate_count("en", "overview.plan.held", 3))) in part
     assert "Bracket" not in part
 
 
@@ -286,3 +287,59 @@ def test_a_print_without_a_fitting_nozzle_is_counted_without_a_ready_printer(bb_
     part = plan_part(bb_client)
     assert "Big nozzle" not in "".join(t for _, t in bars(part))
     assert str(escape(translate_count("en", "overview.plan.unplaced", 1))) in part
+
+
+def test_backlog_bar_and_legend_are_shown(bb_client):
+    """A print of Reprintbuddy's queue: a dotted bar of its own kind, and its entry in the legend (p646)."""
+    query(bb_client)  # the printers' state; afterwards no tick hands the entry over
+    with sm_of(bb_client).begin() as s:
+        st.set_setting(s, "queue_cap", 1, commit=False)
+        st.set_setting(s, "insert_next", False, commit=False)
+        a = make_article(s, name="Bracket", target_model="A1", file_fingerprint="v1")
+        make_dispatch(s, a.id, status="sending")  # holds the only place: the entry stays in Reprintbuddy
+        b = make_article(s, name="Clamp", target_model="A1", file_fingerprint="v1")
+        make_entry(s, b.id, prints=1)
+    part = plan_part(bb_client)
+    assert "plan-backlog" not in part  # the place never frees: counted, not drawn
+    assert str(escape(translate_count("en", "overview.plan.no_slot", 1))) in part
+    with sm_of(bb_client).begin() as s:
+        st.set_setting(s, "queue_cap", 2, commit=False)
+    part = plan_part(bb_client)
+    assert 'class="plan-bar plan-backlog"' in part
+    assert en("overview.plan.kind_backlog") in part and "Clamp" in part
+    assert en("overview.plan.legend_backlog") in part
+    assert "held in Reprintbuddy" not in part and "for a place under the limit" not in part
+
+
+def test_head_line_names_a_stopped_queue(bb_client):
+    query(bb_client)  # the printers' state; afterwards no tick hands the entries over
+    with sm_of(bb_client).begin() as s:
+        st.set_setting(s, "queue_running", False, commit=False)
+        a = make_article(s, name="Bracket", target_model="A1")
+        make_entry(s, a.id, prints=2)
+        make_entry(s, a.id, prints=1, held=True)
+    part = plan_part(bb_client)
+    assert str(escape(translate_count("en", "overview.plan.stopped", 3))) in part
+    assert "plan-backlog" not in part
+
+
+def test_head_line_has_no_waiting_count_while_the_queue_runs(bb_client):
+    query(bb_client)  # the printers' state; afterwards no tick hands the entries over
+    with sm_of(bb_client).begin() as s:
+        a = make_article(s, name="Bracket", target_model="A1")
+        make_entry(s, a.id, prints=2)
+    part = plan_part(bb_client)
+    assert "Reprintbuddy&#39;s queue" not in part and "Reprintbuddy's queue" not in part
+    assert part.count('class="plan-bar plan-backlog"') == 2
+
+
+def test_german_backlog_texts(bb_client):
+    query(bb_client)  # the printers' state; afterwards no tick hands the entries over
+    with sm_of(bb_client).begin() as s:
+        st.set_setting(s, "language", "de", commit=False)
+        a = make_article(s, name="Bracket", target_model="A1")
+        make_entry(s, a.id, prints=1)
+        make_entry(s, a.id, prints=2, held=True)
+    part = plan_part(bb_client)
+    assert "wartet in Reprintbuddy" in part and "wartet noch in Reprintbuddy" in part
+    assert "2 in Reprintbuddys Warteschlange zurückgehalten" in part
