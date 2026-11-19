@@ -20,6 +20,7 @@ Tests: tests/web/test_browser_zone.py.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from datetime import UTC, datetime, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
@@ -30,7 +31,19 @@ from reprintbuddy import localtime
 
 COOKIE = "rb_zone"
 MAX_LENGTH = 64
-KNOWN_ZONES: frozenset[str] = frozenset(available_timezones())
+# Zone files of the system that are no IANA names. Root cause (CI on Linux, 1.2.2): Debian and Ubuntu put
+# the link `/usr/share/zoneinfo/localtime -> /etc/localtime` into the zone folder, and
+# `available_timezones()` lists every zone file it finds there, so "localtime" was taken. Rejected: only the
+# names of the pip package tzdata (a system with newer zone data would lose names its browsers report).
+NOT_ZONES = frozenset({"localtime", "posixrules"})
+
+
+def known_zones(listed: Iterable[str]) -> frozenset[str]:
+    """The names a browser may report: what the zone data lists, without the entries of the system."""
+    return frozenset(listed) - NOT_ZONES
+
+
+KNOWN_ZONES: frozenset[str] = known_zones(available_timezones())
 LOCALTIME_LINK = "/etc/localtime"  # the link `timedatectl set-timezone` sets
 
 

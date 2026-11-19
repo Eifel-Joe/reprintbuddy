@@ -91,13 +91,41 @@ def test_only_names_of_the_list_up_to_64_characters(monkeypatch):
 
 
 def test_the_list_of_zones_is_built_once_at_start(monkeypatch):
-    assert zone.KNOWN_ZONES == frozenset(available_timezones())
+    assert zone.KNOWN_ZONES == zone.known_zones(available_timezones())
 
     def not_again():
         raise AssertionError("the list is read again for a request")
 
     monkeypatch.setattr("zoneinfo.available_timezones", not_again)
     assert zone.reported_zone("Europe/Vienna") == ZoneInfo("Europe/Vienna")
+
+
+def test_entries_of_the_system_are_no_zones():
+    """Debian and Ubuntu put `/usr/share/zoneinfo/localtime -> /etc/localtime` into the zone folder, and
+    `available_timezones()` lists every zone file it finds there: "localtime" was taken as a zone (CI on
+    Linux failed the test above). It and "posixrules" are no IANA names (Spec 10.5a "Sicherheit")."""
+    listed = ["Europe/Berlin", "localtime", "posixrules", "Etc/UTC"]
+    assert zone.known_zones(listed) == frozenset({"Europe/Berlin", "Etc/UTC"})
+    assert "localtime" not in zone.KNOWN_ZONES and "posixrules" not in zone.KNOWN_ZONES
+
+
+def test_a_zone_folder_like_debians_lists_no_localtime(tmp_path):
+    """The folder of a Debian system, rebuilt on any machine: a zone file named `localtime` next to a real one."""
+    import zoneinfo
+    from importlib import resources
+
+    folder = tmp_path / "zoneinfo"
+    (folder / "Etc").mkdir(parents=True)
+    utc = resources.files("tzdata").joinpath("zoneinfo/Etc/UTC").read_bytes()
+    (folder / "Etc" / "UTC").write_bytes(utc)
+    (folder / "localtime").write_bytes(utc)
+    zoneinfo.reset_tzpath(to=[str(folder)])
+    try:
+        listed = zoneinfo.available_timezones()
+    finally:
+        zoneinfo.reset_tzpath()
+    assert "localtime" in listed  # what the system offers
+    assert "localtime" not in zone.known_zones(listed) and "Etc/UTC" in zone.known_zones(listed)
 
 
 def test_a_region_is_shown_in_the_same_zone_as_the_page(new_york):
