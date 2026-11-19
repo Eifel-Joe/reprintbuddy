@@ -51,6 +51,7 @@ from reprintbuddy.web import qr as qr_view
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, BodyLimitMiddleware
 from reprintbuddy.web.securecookies import SecureCookiesOnHttps
 from reprintbuddy.web.subpath import SubPathWarning
+from reprintbuddy.web.zone import BrowserZone
 from reprintbuddy.web.flash import pop_flashes
 from reprintbuddy.web.formatting import decimal, fill_percent, local_date, local_day, local_dt, unit
 from reprintbuddy.web.notes_markdown import render_notes
@@ -520,6 +521,8 @@ def create_app(
     app.state.upload_lock = upload_routes.make_lock()  # one upload at a time (Spec 5.1a)
     app.add_middleware(BodyLimitMiddleware, limits=app.state.body_limits)
     app.add_middleware(SubPathWarning)  # a proxy sub-path is not supported: say so once (Spec 11.4)
+    # The zone of the browser for the whole request, the gate's error pages included (Spec 10.5a).
+    app.add_middleware(BrowserZone)
     app.middleware("http")(deps.security_headers)  # outermost: covers every response
 
     app.add_exception_handler(StarletteHTTPException, deps.http_error_handler)

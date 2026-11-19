@@ -13,14 +13,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from jinja2 import pass_context
 from sqlalchemy.orm import Session
 
-from reprintbuddy import auth, links
+from reprintbuddy import auth, links, localtime
 from reprintbuddy.bambuddy.client import BambuddyClient
 from reprintbuddy.bambuddy.connection import REMEMBERED_PERMISSIONS, ConnectionCheck
 from reprintbuddy import settings as st
 from reprintbuddy.activity import capture as activity_capture
 from reprintbuddy.models import User
 from reprintbuddy.ops.versions import parse_version
-from reprintbuddy.web import regions
+from reprintbuddy.web import regions, zone
 from reprintbuddy.web.csrf import csrf_token
 from reprintbuddy.web.i18n import translate, translate_count
 from reprintbuddy.web.installed import refresh as refresh_installed
@@ -143,6 +143,9 @@ def render(request: Request, name: str, status_code: int = 200, **context: objec
     # Where the page fetches its regions: its own address. A page that answers a POST has none.
     context["live_src"] = _own_address(request) if request.method == "GET" else None
     context["live_region_mode"] = bool(asked)  # base.html then leaves the queued messages
+    # The zone the page is computed in (Spec 10.5a): `data-zone` for zone.js, and the settings say it.
+    context["page_zone"] = zone.page_zone_name()
+    context["zone_from_browser"] = localtime.browser_zone() is not None
     _add_rights_notice(request, context)
     _add_update_notice(request, context, session)
     response = request.app.state.templates.TemplateResponse(

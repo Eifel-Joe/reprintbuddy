@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy.domain.errors import NotFoundError, StockLimitError, ValidationError
-from reprintbuddy.localtime import end_of_local_day, to_local
+from reprintbuddy.localtime import end_of_server_day, to_server_local
 from reprintbuddy.models import Article, ArticleOption, ArticlePart, JournalEntry, Part, utcnow
 
 Actor = Literal["user", "auto"]
@@ -519,11 +519,16 @@ def _holds_until(row: JournalEntry) -> datetime:
     took the offset of the day of typing (fixed offset of the machine zone, see `at_local_time`): a
     count typed at 23:30 in winter for a summer day lies on the next day in summer time; that offset,
     added back, gives the day that was picked.
+
+    Spec 10.5a (1.2.2): the old rows were typed in the zone of the server, and this is a rule that also
+    runs without a browser, so their day is taken in the zone of the server, never in the zone of the
+    browser that happens to book: a sale must be checked against the same end of the day from every
+    device. Rejected: the zone of the browser (the same sale refused on one device and taken on another).
     """
     if row.booked_at == row.at or row.booked_at.microsecond == 999_999:
         return row.booked_at
-    picked = (row.booked_at + to_local(row.at).utcoffset()).date()
-    return end_of_local_day(picked)
+    picked = (row.booked_at + to_server_local(row.at).utcoffset()).date()
+    return end_of_server_day(picked)
 
 
 def _inventories_after(

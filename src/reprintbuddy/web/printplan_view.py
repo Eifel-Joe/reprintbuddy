@@ -544,7 +544,9 @@ def in_progress_times(
             continue
         if bar.kind == "running":
             started = item.started_at if item is not None else None
-            start = to_local(started).strftime("%H:%M") if started is not None else translate(lang, "queue.running")
+            # The real start, without "about"; on another day with the weekday like every time of the plan
+            # (Spec 10.3a). It was a bare clock time: a start of yesterday evening read like one later today.
+            start = _when(started, now, lang) if started is not None else translate(lang, "queue.running")
         else:
             start = translate(lang, "queue.time_about", time=_when(bar.start, now, lang))
         end_key = "queue.time_about" if bar.duration_known else "queue.time_at_least"
