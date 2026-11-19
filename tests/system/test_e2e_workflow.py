@@ -34,7 +34,9 @@ def test_the_job_has_its_own_name_and_the_required_checks_stay_in_the_ci() -> No
 def test_it_runs_for_every_pull_request_and_by_hand() -> None:
     triggers = _load(E2E)["on"]
     assert "pull_request" in triggers
-    assert triggers["push"]["branches"] == ["main", "dev"]
+    # release/**: the branches a round is collected on run it on their push, before the pull request; a
+    # workflow_dispatch reaches only workflows that are on the default branch already
+    assert triggers["push"]["branches"] == ["main", "dev", "release/**"]
     assert "workflow_dispatch" in triggers
 
 

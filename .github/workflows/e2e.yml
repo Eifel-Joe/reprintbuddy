@@ -10,7 +10,9 @@ run-name: ${{ github.event_name == 'workflow_dispatch' && format('End-to-end {0}
 
 on:
   push:
-    branches: [main, dev]
+    # release/**: the branch a round is collected on runs it before its pull request (a workflow_dispatch reaches
+    # only workflows that are on the default branch already)
+    branches: [main, dev, "release/**"]
   pull_request:
   workflow_dispatch:
     inputs:
