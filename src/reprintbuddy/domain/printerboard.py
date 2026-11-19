@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from dataclasses import replace as with_fields
 from datetime import datetime
 
@@ -36,6 +37,18 @@ def _loop_call_later(delay: float, callback: Callable[[], None]) -> object | Non
     return loop.call_later(delay, callback)
 
 
+@dataclass(frozen=True)
+class FileFacts:
+    """What the print plan needs of a file still waiting in Reprintbuddy's queue (Spec 7.6, 10.2, p646): the
+    nozzle it was sliced for and the slicer's print time per plate, None where Bambuddy has none."""
+
+    nozzle: float | None
+    plate_seconds: dict[int, int | None]
+
+
+FileKey = tuple[int, str | None]  # (Bambuddy file id, fingerprint of the version the article prints)
+
+
 class PrinterBoard:
     def __init__(
         self,
@@ -52,6 +65,8 @@ class PrinterBoard:
         self.statuses: dict[int, PrinterStatus] = {}
         self.at: datetime | None = None  # the last answer, from a query or a live message
         self.shortest_first = False  # Bambuddy's "shortest job first", read with the query
+        # Files of Reprintbuddy's own queue (p646); kept across queries, so a known version is not asked again.
+        self.file_facts: dict[FileKey, FileFacts] = {}
         self._published_at: datetime | None = None
         self._pending = False
         self._handle: object | None = None  # the held-back publish, cancelled by any earlier one
@@ -66,6 +81,10 @@ class PrinterBoard:
         self.statuses = dict(statuses)
         self.shortest_first = shortest_first
         self.at = self._now()
+        self._send()
+
+    def facts_changed(self) -> None:
+        """The print times or nozzles of the files in Reprintbuddy's queue changed (p646): published at once."""
         self._send()
 
     def forget(self) -> None:

@@ -284,6 +284,18 @@ def delete_entry(session: Session, entry_id: int, actor: Actor) -> None:
 # ---- coverage and rule 7.1 -------------------------------------------------------------
 
 
+def queued_files(session: Session) -> set[tuple[int, str | None]]:
+    """(Bambuddy file id, fingerprint) of every article with an entry in the queue, held ones too: the files
+    whose print time and nozzle the print plan needs (Spec 7.6, p646)."""
+    rows = session.execute(
+        select(Article.library_file_id, Article.file_fingerprint)
+        .join(WorkQueueEntry, WorkQueueEntry.article_id == Article.id)
+        .where(Article.library_file_id.is_not(None))
+        .distinct()
+    )
+    return {(file_id, fingerprint) for file_id, fingerprint in rows}
+
+
 def queued_prints(session: Session) -> dict[int, int]:
     """Sum of `prints` per article, held entries included."""
     rows = session.execute(
