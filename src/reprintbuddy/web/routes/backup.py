@@ -34,13 +34,14 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
+from reprintbuddy.activity import kinds
 from reprintbuddy.auth import MIN_PASSWORD_LENGTH
 from reprintbuddy.db import known_revisions
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops import oplock, restore, running
 from reprintbuddy.ops.server import address_changed, base_url, effective_from_settings
 from reprintbuddy.ops.runner import in_thread
-from reprintbuddy.ops.service import request_restart
+from reprintbuddy.ops.service import request_restart, restart_under_way
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render
@@ -173,7 +174,7 @@ def _restart_finished(task: asyncio.Task) -> None:
     error = task.exception()
     if error is not None:
         log.warning("restart after restore failed: %s", type(error).__name__)
-    elif not task.result().ok:
+    elif not restart_under_way(task.result()):  # p644: our sudo stopped with the service is no failure
         log.warning("restart after restore failed: %s", (task.result().stderr or "").strip()[:300])
 
 
@@ -214,7 +215,7 @@ def _restart_from_worker(runner) -> None:
     except Exception as error:  # noqa: BLE001 - nobody waits: the log is the only place left
         log.warning("restart after restore failed: %s", type(error).__name__)
         return
-    if not result.ok:
+    if not restart_under_way(result):  # p644
         log.warning("restart after restore failed: %s", (result.stderr or "").strip()[:300])
 
 
@@ -222,13 +223,13 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-# The fixed reasons a refused restore is logged with (Spec 10.7, group 4); anything else is "failed".
-RESTORE_REASONS = frozenset({"foreign", "too_new", "too_large", "damaged", "incompatible", "failed", "busy"})
+# The fixed reasons a refused restore is logged with (Spec 10.7, group 4), shared with the command line (p660).
+RESTORE_REASONS = kinds.RESTORE_REASONS
 
 
 def _refused(request: Request, code: str) -> RedirectResponse:
     """Back to the card with the message of `code`, and the refusal in the activity log."""
-    reason = code if code in RESTORE_REASONS else "failed"
+    reason = kinds.restore_reason(code)
     request.app.state.activity.record("restore_rejected", "user", {"reason": reason})
     return maintenance_redirect(f"restore_{code}", "ops-restore")
 
@@ -622,4 +623,7 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
     except Exception as error:  # noqa: BLE001 - only a hint; the restart must be asked for anyway
         log.warning("address after restore unreadable: %s", type(error).__name__)
     result = await _restart_after_restore(app.state.ops.runner)
-    return render(request, "restored.html", restarted=result.ok, new_url=new_url, active_nav="settings")
+    # p644 (review): our sudo stopped with the service is the restart under way, not "could not restart".
+    return render(
+        request, "restored.html", restarted=restart_under_way(result), new_url=new_url, active_nav="settings"
+    )

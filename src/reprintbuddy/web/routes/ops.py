@@ -41,7 +41,7 @@ from reprintbuddy.ops.server import (
 )
 from reprintbuddy.ops.running import update_running, update_running_async
 from reprintbuddy.ops.runner import CommandResult, in_thread
-from reprintbuddy.ops.service import request_restart, start_update_unit
+from reprintbuddy.ops.service import request_restart, restart_under_way, start_update_unit
 from reprintbuddy.ops.stablereturn import ReturnPlan, assess, prepare_target
 from reprintbuddy.ops.status import (
     BUSY_STATES,
@@ -423,7 +423,7 @@ def export(request: Request, db: Session = Depends(get_db)):
 async def restart(request: Request, db: Session = Depends(get_db)):
     ops = request.app.state.ops
     result = await in_thread(request_restart, ops.runner)  # sudo may take seconds; a shutdown stops it
-    if not result.ok:
+    if not restart_under_way(result):  # p644: our sudo stopped with the service is the restart under way
         # The reason (sudo output) goes to the log only, never onto the page.
         log.warning("restart failed: %s", (result.stderr or "").strip()[:300])
         return RedirectResponse("/settings?tab=general&ops=restart_failed#ops-restart", status_code=303)

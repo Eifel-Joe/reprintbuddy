@@ -18,8 +18,11 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
+import secrets
 import sqlite3
 import threading
+import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -44,6 +47,7 @@ from reprintbuddy.models import (
     utcnow,
 )
 from reprintbuddy.ops.runner import in_thread
+from reprintbuddy.ops.status import started_key
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +59,8 @@ UPDATE_EVERY = 60.0  # seconds between looks at the state file of an update
 PRUNE_EVERY = 24 * 3600.0
 
 RESTORED_MARKER = "activity-restored.json"  # left by a restore, read by the next start
+PENDING_NOTE = "activity-pending-*.json"  # p660: lines left by the command line, written by the next start
+PENDING_KEEP = 20
 
 # The states a transition starts from silently: "unknown" -> one of these is no change.
 GOOD_STATES = frozenset({"ok"})
@@ -101,6 +107,21 @@ def write_transition(
     return True
 
 
+def _newer_run(started: str | None, logged: str | None) -> bool:
+    """Whether the run that started at `started` is newer than the one logged last (p643). Starts that cannot
+    be read compare as before: any other one is new.
+
+    Newer, not only other: several runs are read at once, and an older one must not follow a newer one. The
+    price: a run started after the clock was set back (a container booting before its time is synchronised)
+    sorts before the mark and is not logged."""
+    if logged is None:
+        return True
+    try:
+        return started_key(datetime.fromisoformat(str(started))) > started_key(datetime.fromisoformat(logged))
+    except (TypeError, ValueError):
+        return started != logged
+
+
 def line(kind: str, actor: Actor, details: dict[str, Any] | None = None, **extra: Any) -> ActivityEntry:
     """A line of `kind` (it must be in the fixed list)."""
     if kind not in KINDS:
@@ -116,7 +137,7 @@ class ActivityLog:
         may_write: Callable[[], bool] = lambda: True,
         begin_write: Callable[[], None] = lambda: None,
         end_write: Callable[[], None] = lambda: None,
-        update_result: Callable[[], dict[str, Any] | None] = lambda: None,
+        update_result: Callable[[], list[dict[str, Any]] | dict[str, Any] | None] = lambda: None,
         now: Callable[[], datetime] = utcnow,
     ) -> None:
         self.sm = maker
@@ -126,6 +147,7 @@ class ActivityLog:
         self.update_result = update_result
         self.now = now
         self._pending: deque[_Event] = deque(maxlen=MAX_PENDING)
+        self._update_queued: datetime | None = None  # the start of the newest run queued (p643)
         self._lock = threading.Lock()  # record() is called from the loop and from worker threads
 
     # ---- in ------------------------------------------------------------------------------------
@@ -138,23 +160,35 @@ class ActivityLog:
         *,
         address: str | None = None,
         via: str | None = None,
+        at: datetime | None = None,
     ) -> None:
-        """Queue one line; returns at once and never raises."""
+        """Queue one line (at `at`, by default now); returns at once and never raises."""
         try:
             if kind not in KINDS:
                 raise KeyError(kind)
             with self._lock:
-                self._pending.append(_Event(kind, actor, details, address, via, at=naive_utc(self.now())))
+                self._pending.append(_Event(kind, actor, details, address, via, at=naive_utc(at or self.now())))
         except Exception:
             log.exception("activity log: an event could not be queued")
 
-    def transition(self, key: str, state: str, kind: str, actor: Actor, details: dict[str, Any] | None = None) -> None:
-        """Queue a line that is written only when the state of `key` changes."""
+    def transition(
+        self,
+        key: str,
+        state: str,
+        kind: str,
+        actor: Actor,
+        details: dict[str, Any] | None = None,
+        *,
+        at: datetime | None = None,
+    ) -> None:
+        """Queue a line that is written only when the state of `key` changes (at `at`, by default now)."""
         try:
             if kind not in KINDS:
                 raise KeyError(kind)
             with self._lock:
-                self._pending.append(_Event(kind, actor, details, key=key, state=state, at=naive_utc(self.now())))
+                self._pending.append(
+                    _Event(kind, actor, details, key=key, state=state, at=naive_utc(at or self.now()))
+                )
         except Exception:
             log.exception("activity log: an event could not be queued")
 
@@ -214,6 +248,8 @@ class ActivityLog:
             session.add(entry)
             return
         mark = session.get(ActivityMark, event.key)
+        if event.kind == "update_result" and not _newer_run(event.state, mark.state if mark is not None else None):
+            return  # p643: this run or a later one is logged already (several runs are read at once)
         if event.kind == "update_result" and (mark is None or mark.state != event.state):
             # The start of the update, from its state file too, before its result: the old process
             # writes nothing while the update runs, and a rollback would take a line of that time with it
@@ -265,10 +301,27 @@ class ActivityLog:
         except Exception:  # noqa: BLE001 - a missing or broken file says nothing
             log.warning("activity log: the state of the last update could not be read", exc_info=True)
             return
-        if result is not None:
-            started = str(result.pop("started_at"))
-            result.pop("finished_at", None)
-            self.transition("update.result", started, "update_result", "system", result)
+        if result is None:
+            return
+        # p643: the result of each run the update helper kept, oldest first (`states.update_outcomes`); one
+        # run alone from a caller that knows one (the tests of older behaviour).
+        # The result stands at the end of its run, so the runs read at once keep their order on the page. A
+        # run is queued once per process (review v1.2.1, finding 2): while nothing may be written (a whole
+        # update), ten runs every minute would push real lines out of the bounded queue; the mark in the
+        # database decides at the write whether it is new.
+        for outcome in [result] if isinstance(result, dict) else result:
+            outcome = dict(outcome)
+            started = str(outcome.pop("started_at"))
+            finished = _moment(outcome.pop("finished_at", None))
+            try:
+                key = started_key(datetime.fromisoformat(started))
+            except ValueError:
+                key = None
+            if key is not None and self._update_queued is not None and key <= self._update_queued:
+                continue
+            self.transition("update.result", started, "update_result", "system", outcome, at=finished)
+            if key is not None:
+                self._update_queued = key
 
     # ---- the background task ---------------------------------------------------------------------
 
@@ -360,6 +413,74 @@ def write_restored_marker(
         (data_dir / RESTORED_MARKER).write_text(json.dumps(content), encoding="utf-8")
     except OSError:
         log.warning("activity log: the restore marker could not be written")
+
+
+# p660 (v1.2.1). Root: `reprintbuddy restore-backup` left a note for the log only when the restore was done; a
+# refusal was only printed, although Spec 10.7 (group 4) wants "restore refused" with its fixed reason and lines
+# for the commands on the server too. The command runs when the database may be broken and the service is
+# stopped, so it does not write the database: like the note of a done restore it leaves its lines next to it,
+# and the next start writes them with "command on the server" and the time they happened.
+# Rejected: writing into the database when it opens - the command would then have two ways to log, and a
+# broken database (the reason to use the command) would lose the line anyway.
+# Tests: tests/ops/test_restorecmd.py (p660), tests/activity/test_activity_ops.py (p660).
+
+
+def _write_pending(path: Path, entry: dict[str, Any]) -> None:
+    """One line in a file of its own, moved into place whole (a reader never sees half of it)."""
+    temp = path.with_name("." + path.name + ".tmp")
+    temp.write_text(json.dumps(entry), encoding="utf-8")
+    os.replace(temp, path)
+
+
+def _pending_files(data_dir: Path) -> list[Path]:
+    return sorted(data_dir.glob(PENDING_NOTE))
+
+
+def leave_pending(data_dir: Path, kind: str, details: dict[str, Any] | None, *, at: datetime) -> None:
+    """Leave a line for the next start to write (the command line, p660). Never raises: a line that cannot be
+    left loses that line of the log, never the outcome of the command.
+
+    Each line is a file of its own, written once (review v1.2.1, finding 3): a start that takes the lines
+    while the command adds one neither loses that one nor writes another twice, which one shared file read,
+    extended and written back would. At most `PENDING_KEEP` wait; the oldest go first."""
+    try:
+        if kind not in KINDS:
+            raise KeyError(kind)
+        # Named in the order they are left (a clock may give two the same time): after the last one there.
+        number = time.time_ns()
+        for path in _pending_files(data_dir)[-1:]:
+            with contextlib.suppress(ValueError):
+                number = max(number, int(path.name.split("-")[2]) + 1)
+        name = PENDING_NOTE.replace("*", f"{number:020d}-{secrets.token_hex(4)}")
+        _write_pending(data_dir / name, {"kind": kind, "details": details, "at": at.isoformat(), "via": "cli"})
+        for old in _pending_files(data_dir)[:-PENDING_KEEP]:
+            old.unlink(missing_ok=True)
+    except Exception as error:  # noqa: BLE001 - see above
+        log.warning("activity log: a line of the command line could not be left (%s)", type(error).__name__)
+
+
+def read_pending(data_dir: Path) -> list[dict[str, Any]]:
+    """The lines the command line left (and remove them), oldest first; what does not fit is left out."""
+    lines: list[dict[str, Any]] = []
+    for path in _pending_files(data_dir):
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        finally:
+            with contextlib.suppress(OSError):
+                path.unlink()
+        try:
+            entry = json.loads(raw)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        kind, details, at = entry.get("kind"), entry.get("details"), _moment(entry.get("at"))
+        if kind not in KINDS or at is None or not (details is None or isinstance(details, dict)):
+            continue
+        lines.append({"kind": kind, "details": details, "at": at, "via": "cli"})
+    return sorted(lines, key=lambda line: line["at"])
 
 
 # p186 (v0.3.14). Root: which states the log has written (`activity_marks`) is kept in the database, so a
