@@ -27,6 +27,10 @@ from reprintbuddy.domain.pauses import pause_article
 from reprintbuddy.models import Article, Dispatch
 from reprintbuddy.i18n import translate
 
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# loops that tick every few milliseconds; the tests count ticks within fixed sleeps.
+pytestmark = pytest.mark.serial
+
 
 # ---- helpers ---------------------------------------------------------------------------
 

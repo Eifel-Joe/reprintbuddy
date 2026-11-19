@@ -12,6 +12,10 @@ import pytest
 from reprintbuddy.labels import snmp, status
 from reprintbuddy.labels.rolls import DK_11209
 
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# real sockets with 0.3 s time limits and a bound on how long the call took.
+pytestmark = pytest.mark.serial
+
 OID = "1.3.6.1.4.1.2435.3.3.9.1.6.1.0"
 OID_BYTES = bytes.fromhex("2b0601040193030303090106" "0100")  # 1.3 6 1 4 1 2435 3 3 9 1 6 1 0
 
@@ -98,6 +102,20 @@ def test_anything_else_is_no_answer(answer):
 # ---- over the network: a stub on this machine, never a printer ----
 
 
+# Longer than any time limit a query in this file is given (at most 5 s): a stub that gives up first
+# would turn a slow start of the query into silence.
+STUB_WAIT = 10
+
+
+def request_id_of(request):
+    """The request id of our GetRequest: after the PDU tag and its length, an INTEGER of one to four
+    bytes (the id is random; one in 256 is shorter than four bytes)."""
+    at = request.index(bytes([0xA0])) + 2
+    assert request[at] == 0x02
+    size = request[at + 1]
+    return int.from_bytes(request[at + 2 : at + 2 + size], "big", signed=True)
+
+
 class SnmpStub:
     """Answers one request: with `value` in a proper answer, or `raw` bytes as they are; `wrong_first`
     sends an answer with a foreign request id before the right one; `silent` says nothing."""
@@ -111,7 +129,7 @@ class SnmpStub:
         threading.Thread(target=self.run, daemon=True).start()
 
     def run(self):
-        self.sock.settimeout(3)
+        self.sock.settimeout(STUB_WAIT)  # stop() closes the socket, so a long wait costs nothing
         try:
             data, peer = self.sock.recvfrom(2048)
         except OSError:
@@ -122,8 +140,7 @@ class SnmpStub:
         if self.raw is not None:
             self.sock.sendto(self.raw, peer)
             return
-        at = data.index(bytes([0xA0])) + 3  # tag, length, then the request id: 02 04 <4 bytes>
-        request_id = int.from_bytes(data[at + 1 : at + 5], "big")
+        request_id = request_id_of(data)
         if self.wrong_first:
             self.sock.sendto(response(self.value, request_id=request_id ^ 1), peer)
         self.sock.sendto(response(self.value, request_id=request_id), peer)
@@ -154,7 +171,17 @@ def test_the_status_block_comes_back_from_a_printer_that_answers(stub):
     s = stub(READY)
     # a generous limit: the case is "the printer answers", so a slow CI machine must not turn it into silence
     assert ask(s.port, timeout=5) == READY
-    assert len(s.seen) == 1 and s.seen[0][:2] == b"\x30\x2f"
+    assert len(s.seen) == 1 and s.seen[0] == snmp.build_get(OID, request_id=request_id_of(s.seen[0]))
+
+
+@pytest.mark.parametrize("request_id", [1, 0x7FFFFF, 0x800000, 0x7FFFFFFE])
+def test_a_request_id_of_any_length_is_answered(stub, monkeypatch, request_id):
+    """The request id is random, and its integer is one to four bytes long (one in 256 ids is shorter
+    than four): the stub must read it at any length, or it answers with a wrong id now and then."""
+    monkeypatch.setattr(snmp.secrets, "randbelow", lambda limit: request_id - 1)
+    s = stub(READY)
+    assert ask(s.port, timeout=5) == READY
+    assert s.seen == [snmp.build_get(OID, request_id=request_id)]
 
 
 def test_a_printer_that_stays_silent_is_no_answer_after_the_time_limit(stub):
@@ -285,13 +312,12 @@ def test_an_answer_from_another_port_of_the_printer_is_ignored(monkeypatch):
     """The printer answers from port 161; an answer from any other port is somebody else's."""
     class Wrong(SnmpStub):
         def run(self):
-            self.sock.settimeout(3)
+            self.sock.settimeout(STUB_WAIT)
             try:
                 data, peer = self.sock.recvfrom(2048)
             except OSError:
                 return
-            at = data.index(bytes([0xA0])) + 3
-            request_id = int.from_bytes(data[at + 1 : at + 5], "big")
+            request_id = request_id_of(data)
             other = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             other.sendto(response(self.value, request_id=request_id), peer)
             other.close()

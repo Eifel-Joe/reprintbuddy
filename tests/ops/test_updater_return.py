@@ -260,10 +260,19 @@ def test_entries_made_before_the_stop_reach_the_stable_version(tmp_path, fake_ru
     assert sql(env.db, "SELECT count(*) FROM journal") == [(3,)]
 
 
-def test_a_failed_rollback_names_the_database_as_it_was(tmp_path, fake_runner):
+def test_a_failed_rollback_names_the_database_as_it_was(tmp_path, fake_runner, monkeypatch):
+    """p610: only while it is still needed, that is when it could not be put back (before: on any failed
+    rollback; now it goes as soon as it is back in place, see test_p610_the_kept_database_goes_once_...)."""
     env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
     fake_runner.on(env.pip(), CommandResult(1, "", "ERROR: no network"))
-    env.health = [False]
+    real = updater.restore_database
+
+    def restore(source, target):
+        if source.name == "before.db":
+            raise sqlite3.OperationalError("disk I/O error")
+        real(source, target)
+
+    monkeypatch.setattr(updater, "restore_database", restore)
     result = env.run()
     assert result.state == "rollback_failed"
     kept = env.data / RETURN_DIR / "before.db"
@@ -377,3 +386,245 @@ def test_case_3_after_the_switch_brings_back_the_database_of_the_pre_release(tmp
     fake_runner.on(env.pip(), CommandResult(1, "", "ERROR: no network"))
     assert env.run().state == "rolled_back"
     assert content(env.db) == before
+
+
+# --- p610: stopped from outside (systemd's time limit, a stop of the unit, shutdown) -------------------------
+# The signal comes through `InterruptGuard.signal`, the function the SIGTERM handler calls (no real signal: the
+# tests run the same on Windows and Linux). Inside a command the stand-in raises, as the real runner does after
+# it killed its child.
+
+
+def cut_off(env):
+    guard = updater.InterruptGuard(env.db, now=lambda: NOW)
+
+    def hit(result=None):
+        guard.signal(15)  # raises while the run is armed; while it holds, it returns
+        return result
+
+    return guard, hit
+
+
+def signal_at(env, step, hit, monkeypatch):
+    """SIGTERM while `step` of the way back runs."""
+    if step in ("backup", "fetch", "checkout"):
+        if step == "backup":
+            real = updater.backup_database
+            monkeypatch.setattr(updater, "backup_database", lambda *a, **k: (real(*a, **k), hit())[0])
+        elif step == "fetch":
+            env.on_download = lambda url: hit() if url.endswith(".sha256") else None
+        else:
+            real_unpack = updater.unpack
+
+            def unpack(*args):
+                real_unpack(*args)
+                hit()
+
+            monkeypatch.setattr(updater, "unpack", unpack)
+    elif step == "stop":
+        env.runner.on(STOP_CMD, lambda call: hit(CommandResult(0)), CommandResult(0))
+    elif step == "database":
+        real_assess = updater.assess
+        monkeypatch.setattr(updater, "assess", lambda *a, **k: (real_assess(*a, **k), hit())[0])
+    elif step == "swap":
+        real_restore = updater.restore_database
+
+        def restore(source, target):
+            real_restore(source, target)
+            if source.name == "stable.db":
+                hit()
+
+        monkeypatch.setattr(updater, "restore_database", restore)
+    elif step == "install":
+        env.runner.on(env.pip(), lambda call: hit(CommandResult(0)))
+    elif step == "verify":
+        env.runner.on((env.py, "-m", "reprintbuddy", "--version"), lambda call: hit(CommandResult(0, "reprintbuddy 1.0.0\n")))
+    elif step == "migrate":
+        env.runner.on((env.py, "-m", "reprintbuddy", "migrate"), lambda call: hit(CommandResult(0)))
+    elif step == "restart":
+        env.runner.on(START_CMD, lambda call: hit(CommandResult(0)), CommandResult(0))
+    else:
+        answers = []
+
+        def health():
+            answers.append(1)
+            if len(answers) == 1:
+                hit()
+            return True
+
+        env.wait_healthy = health
+
+
+@pytest.mark.parametrize("step", ["backup", "fetch", "checkout"])
+def test_p610_cut_off_before_the_stop_changes_nothing(tmp_path, fake_runner, monkeypatch, step):
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    before = content(env.db)
+    guard, hit = cut_off(env)
+    signal_at(env, step, hit, monkeypatch)
+    result = env.run(guard=guard)
+    assert (result.state, result.step, result.reason, result.kind) == ("failed", step, "interrupted_untouched", "return")
+    assert result.message == f"{step}: interrupted, nothing was changed"
+    assert STOP_CMD not in fake_runner.calls and START_CMD not in fake_runner.calls
+    assert content(env.db) == before
+    assert not (env.opt / "releases" / ".download").exists() and not (env.opt / "releases" / STABLE).exists()
+    assert not (env.data / RETURN_DIR).exists()
+
+
+@pytest.mark.parametrize("step", ["stop", "database"])
+def test_p610_cut_off_while_the_service_is_stopped_starts_the_pre_release_again(tmp_path, fake_runner, monkeypatch, step):
+    """The bug of p610: the service stayed stopped until the next boot."""
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    before = content(env.db)
+    guard, hit = cut_off(env)
+    signal_at(env, step, hit, monkeypatch)
+    result = env.run(guard=guard)
+    assert (result.state, result.step, result.reason, result.kind) == ("failed", step, "interrupted_untouched", "return")
+    assert result.message == f"{step}: interrupted, nothing was changed"
+    assert START_CMD in fake_runner.calls[env.index(STOP_CMD):]
+    assert content(env.db) == before
+    assert not (env.data / RETURN_DIR).exists() and not (env.opt / "releases" / STABLE).exists()
+    assert all(timeout <= 20.0 for timeout in fake_runner.timeouts[fake_runner.calls.index(START_CMD):])
+
+
+@pytest.mark.parametrize("step", ["swap", "install", "verify", "migrate", "restart", "health"])
+def test_p610_cut_off_after_the_switch_brings_back_the_pre_release_with_its_data(tmp_path, fake_runner, monkeypatch, step):
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    sql(env.db, "INSERT INTO t_notes (order_id, text) VALUES (?, 'kept')", env.order)
+    before = content(env.db)
+    guard, hit = cut_off(env)
+    signal_at(env, step, hit, monkeypatch)
+    result = env.run(guard=guard)
+    assert (result.state, result.step, result.reason) == ("rolled_back", "rollback", "interrupted_rolled_back")
+    assert result.message == f"{step}: interrupted, the previous version was put back"
+    assert (result.kind, result.return_case, result.target_head) == ("return", 2, "0022")
+    assert content(env.db) == before
+    assert read_installation(env.opt, fake_runner).tag == BETA
+    assert (env.opt / ".venv" / "which").read_text(encoding="utf-8") == "beta"
+    stop = env.last_index(STOP_CMD)
+    assert START_CMD in fake_runner.calls[stop:]
+    assert all(timeout <= 20.0 for timeout in fake_runner.timeouts[stop:])
+    assert not (env.data / RETURN_DIR).exists()
+
+
+def test_p610_a_signal_during_the_rollback_does_not_cut_it_off(tmp_path, fake_runner):
+    """The mirror bug: STOP, restore `before.db`, START; a SIGTERM after STOP left the service stopped."""
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    before = content(env.db)
+    guard, hit = cut_off(env)
+    fake_runner.on(env.pip(), CommandResult(1, "", "ERROR: no network"))
+    fake_runner.on(STOP_CMD, CommandResult(0), lambda call: hit(CommandResult(0)))  # the second STOP: the rollback's
+    result = env.run(guard=guard)
+    assert (result.state, result.reason) == ("rolled_back", "install_failed")
+    assert content(env.db) == before
+    assert START_CMD in fake_runner.calls[env.last_index(STOP_CMD):]
+
+
+def test_p610_a_start_the_signal_killed_while_resuming_runs_once_more(tmp_path, fake_runner, monkeypatch):
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    guard, hit = cut_off(env)
+
+    def broken(*args, **kwargs):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(updater, "assess", broken)
+    fake_runner.on(START_CMD, lambda call: hit(CommandResult(-15)), CommandResult(0))
+    result = env.run(guard=guard)
+    assert (result.state, result.reason) == ("failed", "database_failed")
+    assert fake_runner.calls.count(START_CMD) == 2
+
+
+def test_p610_a_failed_start_after_a_cut_off_keeps_the_database_only_if_it_is_still_needed(tmp_path, fake_runner):
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    before = content(env.db)
+    guard, hit = cut_off(env)
+    fake_runner.on(env.pip(), lambda call: hit(CommandResult(0)))
+    fake_runner.on(START_CMD, CommandResult(1, "", "Job failed"))
+    result = env.run(guard=guard)
+    assert (result.state, result.reason) == ("rollback_failed", "interrupted_partial")
+    assert result.message.startswith("install: interrupted, the installation may be incomplete")
+    assert content(env.db) == before
+    assert "before.db" not in result.message and not (env.data / RETURN_DIR).exists()  # it is back in place
+
+
+# --- p610: `before.db` goes as soon as it is back in place ------------------------------------------------------
+
+
+def test_p610_the_kept_database_goes_once_it_is_back_in_place(tmp_path, fake_runner):
+    """Otherwise the start after a power cut (stablereturn.recover_cut_off_return) would put it back a second
+    time and lose what the pre-release took in meanwhile."""
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    before = content(env.db)
+    seen = []
+    fake_runner.on(env.pip(), CommandResult(1, "", "ERROR: no network"))
+    fake_runner.on(START_CMD, lambda call: seen.append((env.data / RETURN_DIR).exists()) or CommandResult(1, "", "x"))
+    env.health = [False]
+    result = env.run()
+    assert result.state == "rollback_failed"
+    assert seen and not any(seen)  # gone before the start
+    assert content(env.db) == before
+    assert "before.db" not in result.message
+
+
+# --- p610, review of the round ---------------------------------------------------------------------------------
+
+
+def test_p610_a_start_on_the_switched_database_is_marked(tmp_path, fake_runner, monkeypatch):
+    """Review finding 1: when `before.db` could not be put back, the rollback still starts the pre-release (on the
+    stable version's database), and it takes in entries. The start after a later reboot must then not put
+    `before.db` back silently; the mark tells it that the pre-release has run."""
+    from reprintbuddy.ops.stablereturn import STARTED_MARK
+
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    fake_runner.on(env.pip(), CommandResult(1, "", "ERROR: no network"))
+    real = updater.restore_database
+
+    def restore(source, target):
+        if source.name == "before.db":
+            raise sqlite3.OperationalError("database is locked")
+        real(source, target)
+
+    monkeypatch.setattr(updater, "restore_database", restore)
+    seen = []
+    fake_runner.on(START_CMD, lambda call: seen.append((env.data / RETURN_DIR / STARTED_MARK).exists()) or CommandResult(0))
+    result = env.run()
+    assert result.state == "rollback_failed"
+    assert seen and all(seen)  # marked before the start
+    assert (env.data / RETURN_DIR / "before.db").is_file()
+
+
+def test_p610_on_shutdown_the_way_back_put_back_is_a_rollback(tmp_path, fake_runner):
+    from reprintbuddy.ops.service import SYSTEM_STATE_CMD
+
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    before = content(env.db)
+    guard, hit = cut_off(env)
+    fake_runner.on(env.pip(), lambda call: hit(CommandResult(0)))
+    fake_runner.on(START_CMD, CommandResult(1, "", "Transaction is destructive"))
+    fake_runner.on(SYSTEM_STATE_CMD, CommandResult(1, "stopping\n"))
+    env.health = [False]
+    result = env.run(guard=guard)
+    assert (result.state, result.reason) == ("rolled_back", "interrupted_rolled_back")
+    assert content(env.db) == before and not (env.data / RETURN_DIR).exists()
+
+
+def test_p610_on_shutdown_a_way_back_cut_off_while_stopped_changed_nothing(tmp_path, fake_runner, monkeypatch):
+    from reprintbuddy.ops.service import SYSTEM_STATE_CMD
+
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    guard, hit = cut_off(env)
+    signal_at(env, "database", hit, monkeypatch)
+    fake_runner.on(START_CMD, CommandResult(1, "", "Transaction is destructive"))
+    fake_runner.on(SYSTEM_STATE_CMD, CommandResult(1, "stopping\n"))
+    env.health = [False]
+    result = env.run(guard=guard)
+    assert (result.state, result.reason) == ("failed", "interrupted_untouched")
+
+
+def test_p610_a_failed_start_after_a_cut_off_while_stopped_says_nothing_was_changed(tmp_path, fake_runner, monkeypatch):
+    """Review: the reason must fit the message; the database and the program were never touched."""
+    env = ReturnEnv(tmp_path, fake_runner, "add_table", case=2)
+    guard, hit = cut_off(env)
+    signal_at(env, "database", hit, monkeypatch)
+    env.health = [False]
+    result = env.run(guard=guard)
+    assert (result.state, result.reason) == ("rollback_failed", "interrupted_untouched")
+    assert result.message.startswith("database: interrupted, nothing was changed")

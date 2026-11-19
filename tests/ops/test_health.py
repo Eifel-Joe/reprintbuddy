@@ -19,6 +19,10 @@ from reprintbuddy.db import make_engine, make_sessionmaker, upgrade
 from reprintbuddy.ops import updater
 from reprintbuddy.ops.updater import http_health_waiter
 
+# Serial part of the CI (tests/test_ci_split.py), because of:
+# polls for 0.3 s and counts the requests made in that time.
+pytestmark = pytest.mark.serial
+
 
 class Server:
     def __init__(self, status=200, body=b'{"status": "ok"}', tls_pair=None):
@@ -146,3 +150,28 @@ def test_update_helper_modules_import_only_the_standard_library(module):
     for name in imported:
         top = name.split(".")[0]
         assert top in STDLIB or name.startswith("reprintbuddy.ops."), (module, name)
+
+
+def test_after_a_sigterm_the_waiter_gives_up_soon(tmp_path):
+    """p610: SIGKILL follows 90 s after SIGTERM; a wait of 90 s for the answer would leave no time to write the
+    final state. Once `hurry` says a signal came, the waiter stops at `hurry_s` from then."""
+    import time
+
+    db = database(tmp_path, port=free_port())
+    started = time.monotonic()
+    assert http_health_waiter(db, timeout_s=60, interval_s=0.1, hurry=lambda: True, hurry_s=0.3)() is False
+    took = time.monotonic() - started
+    assert took < 10
+
+
+def test_without_a_sigterm_the_waiter_keeps_its_time(tmp_path):
+    calls = []
+
+    def hurry():
+        calls.append(1)
+        return False
+
+    with Server(status=503) as server:
+        db = database(tmp_path, port=server.port)
+        assert http_health_waiter(db, timeout_s=0.3, interval_s=0.1, hurry=hurry)() is False
+    assert len(calls) >= 2  # asked on every try, and the wait went on

@@ -42,10 +42,13 @@
 
 <section class="card section" id="return-backup">
   {% call ui.card_head("archive", t('ops.backup.title')) %}<button class="btn" type="submit" form="return-backup-form">{{ t('ops.backup.button') }}</button>{% endcall %}
+  {# p611: an error of the form comes back to this page (`back`), its message stands here as on the card #}
+  {% if backup_message and backup_message != 'ops.msg.backup_login' %}<p class="alert" role="alert">{{ t(backup_message) }}</p>{% endif %}
   <p class="muted">{{ t('ops.return.backup_hint') }}</p>
   <form id="return-backup-form" method="post" action="/settings/backup">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    {% with login_error = false %}{% include "_backup_fields.html" %}{% endwith %}
+    <input type="hidden" name="back" value="return">
+    {% with login_error = (backup_message == 'ops.msg.backup_login') %}{% include "_backup_fields.html" %}{% endwith %}
   </form>
   <div class="warning-card tone-warn" role="note">{{ ui.icon('triangle-alert') }}<p>{{ t('ops.backup.warning') }}</p></div>
 </section>

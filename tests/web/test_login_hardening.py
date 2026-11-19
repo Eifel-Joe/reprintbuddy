@@ -28,6 +28,7 @@ def test_a_failed_login_is_delayed(logged_out):
     assert time.monotonic() - started >= 0.3
 
 
+@pytest.mark.serial  # a bound on how long it takes
 def test_a_successful_login_is_not_delayed(logged_out):
     logged_out.app.state.login_failure_delay = 5.0
     started = time.monotonic()

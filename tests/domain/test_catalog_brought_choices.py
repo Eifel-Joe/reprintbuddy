@@ -222,6 +222,7 @@ def test_nothing_to_mend(db, spec):
         assert catalog.sets_to_mend(s) == []
 
 
+@pytest.mark.serial  # a bound on how long it takes
 def test_many_fields_stay_fast(db):  # review focus 1; since p450 at most 100 variants: 3 ** 4 = 81
     with db.begin() as s:
         inner_ids = []
@@ -242,6 +243,7 @@ def test_many_fields_stay_fast(db):  # review focus 1; since p450 at most 100 va
 # ---- review of v0.4.4 ----------------------------------------------------------------------
 
 
+@pytest.mark.serial  # a bound on how long it takes
 def test_deep_chain_stays_quick(db):  # review finding 1: _incomplete_of went exponential with depth
     with db.begin() as s:
         a = articles(s, **{f"x{n}": 1 for n in range(32)})

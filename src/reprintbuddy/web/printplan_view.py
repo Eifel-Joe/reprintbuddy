@@ -153,6 +153,7 @@ def plan_items(db: Session, queue: Sequence[QueueItem], now: datetime) -> list[P
             manual_start=item.manual_start,
             starts_later=item.scheduled_time is not None and item.scheduled_time > now,
             been_jumped=item.been_jumped,
+            nozzle=item.nozzle_diameter,
         ))
     return found
 

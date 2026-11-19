@@ -159,6 +159,11 @@ def pytest_configure(config):
         "markers", "fresh_database: the app creates and migrates the test's database itself, as at a first start"
     )
     config.addinivalue_line("markers", "real_password_hash: passwords are hashed with the production parameters")
+    config.addinivalue_line(
+        "markers",
+        "serial: depends on the wall clock (a bound on the time it took, ticks counted within fixed sleeps); "
+        "the CI runs it after the parallel part, alone (tests/test_ci_split.py)",
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -342,6 +347,7 @@ class FakeRunner:
 
     def __init__(self):
         self.calls: list[tuple[str, ...]] = []
+        self.timeouts: list[float] = []  # the time each call was given, in the order of `calls`
         self._rules: list[tuple[tuple[str, ...], list, list[int]]] = []
 
     def on(self, prefix, *results):
@@ -352,6 +358,7 @@ class FakeRunner:
 
         call = tuple(args)
         self.calls.append(call)
+        self.timeouts.append(timeout)
         best = None
         for prefix, results, position in self._rules:
             if call[: len(prefix)] == prefix and (best is None or len(prefix) >= len(best[0])):

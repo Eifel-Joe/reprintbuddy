@@ -29,7 +29,7 @@ from reprintbuddy.ops.server import base_url, connect_host, effective_from_setti
 from reprintbuddy.ops.service import INSTALL_DIR
 from reprintbuddy.ops.package import urllib_download, urllib_get
 from reprintbuddy.ops.versions import is_prerelease_tag
-from reprintbuddy.ops.updater import http_health_waiter, interrupt_handler, run_update
+from reprintbuddy.ops.updater import InterruptGuard, http_health_waiter, interrupt_handler, run_update
 from reprintbuddy.db import DEFAULT_DB_PATH, make_engine, make_sessionmaker, upgrade
 from reprintbuddy.web import server as web_server
 from reprintbuddy.web.app import create_app
@@ -198,12 +198,16 @@ def _update(args: argparse.Namespace) -> int:
     if not args.db.is_file():
         _error(f"database not found: {args.db}")
         return 1
-    signal.signal(signal.SIGTERM, interrupt_handler(args.db, now=lambda: datetime.now(UTC)))
+    # p610: a SIGTERM (systemd's time limit, a stop of the unit, shutdown) rolls the run back like a failure.
+    guard = InterruptGuard(args.db, now=lambda: datetime.now(UTC))
+    signal.signal(signal.SIGTERM, interrupt_handler(args.db, now=lambda: datetime.now(UTC), guard=guard))
     result = run_update(
         args.db,
         install_dir=INSTALL_DIR,
         runner=subprocess_runner,
-        wait_healthy=http_health_waiter(args.db),
+        # after a SIGTERM the wait for the answer is short: SIGKILL follows 90 s after it
+        wait_healthy=http_health_waiter(args.db, hurry=lambda: guard.pending),
+        guard=guard,
         now=lambda: datetime.now(UTC),
         http_get=urllib_get,  # v0.4.9: the release list and the package, standard library only
         download=urllib_download,

@@ -249,3 +249,134 @@ def test_a_column_default_is_compared_as_a_value_not_as_sql(tmp_path):
     assert _count(con, "t", "mark", None) == 3
     assert _count(con, "t", "mark", "no_such_column") == 3  # not a value: counted as without a default
     con.close()
+
+
+# --- p610: the start after a way back that was cut off (Spec 11.3a "Rückweg", Ablauf) ---------------------------
+# A power cut, a hard restart or SIGKILL between the switch of the database and the end of pip leaves the
+# database of the stable version under the pre-release. Before the pre-release opens the database it puts back
+# the one kept when the service stopped (`.return/before.db`), and only then.
+
+CUT_AT = datetime(2026, 11, 15, 12, 0, tzinfo=UTC)
+BETA_TAG = "v1.2.0-beta.2"
+
+
+class CutOff:
+    """The live database as the stable version wants it, `before.db` as it was, a status of a way back cut off."""
+
+    def __init__(self, tmp_path, *, state="running", step="install", kind="return", reason="", before=True):
+        from reprintbuddy.ops.status import UpdateStatus, write_status
+
+        self.data = tmp_path / "data"
+        self.data.mkdir()
+        self.db = self.data / "r.db"
+        engine = make_engine(self.db)
+        upgrade(engine)
+        engine.dispose()
+        add_journal(self.db, 3)
+        self.before = self.data / ".return" / "before.db"
+        self.before.parent.mkdir()
+        if before:
+            backup_database(self.db, self.data / "tmp-backups", label="x", now=BACKUP_AT).rename(self.before)
+        sql(self.db, "DELETE FROM journal")  # what the stable database lacks
+        write_status(
+            self.data,
+            UpdateStatus(
+                state=state, step=step, from_tag=BETA_TAG, to_tag="v1.1.0", started_at=CUT_AT, kind=kind,
+                return_case=2, target_head="0022", reason=reason, backup=str(self.data / "backups" / "b.db"),
+            ),
+        )
+
+    def recover(self, version="1.2.0-beta.2"):
+        from reprintbuddy.ops.stablereturn import recover_cut_off_return
+
+        return recover_cut_off_return(self.db, version, CUT_AT.replace(minute=5))
+
+    def journal(self):
+        return sql(self.db, "SELECT count(*) FROM journal")[0][0]
+
+
+@pytest.mark.parametrize("step", ["swap", "install", "verify", "migrate", "restart", "health", "rollback"])
+def test_p610_a_way_back_cut_off_after_the_switch_is_put_back_at_the_start(tmp_path, caplog, step):
+    from reprintbuddy.ops.status import read_status
+
+    env = CutOff(tmp_path, step=step)
+    with caplog.at_level("WARNING"):
+        result = env.recover()
+    assert env.journal() == 3  # the database as it was when the service stopped
+    assert not (env.data / ".return").exists()
+    status = read_status(env.data)
+    assert result == status
+    assert (status.state, status.reason, status.kind, status.step) == ("rolled_back", "interrupted_recovered", "return", "rollback")
+    assert ": interrupted" in status.message  # the log says "interrupted"
+    assert status.finished_at == CUT_AT.replace(minute=5)
+    assert any("before.db" in record.getMessage() for record in caplog.records)  # a line in the system log
+
+
+def test_p610_a_failed_rollback_after_a_cut_off_is_not_put_back(tmp_path):
+    """Review finding 1: the helper had its time; it started the pre-release on the switched database (the card
+    names `before.db`). Putting it back at a later start would lose what was entered since."""
+    env = CutOff(tmp_path, state="rollback_failed", step="rollback", reason="interrupted_partial")
+    assert env.recover() is None and env.journal() == 0
+
+
+def test_p610_a_cut_off_after_the_pre_release_was_started_on_the_switched_database_is_not_put_back(tmp_path):
+    """The helper died (SIGKILL) after it started the pre-release with `before.db` not back in place."""
+    from reprintbuddy.ops.stablereturn import STARTED_MARK
+
+    env = CutOff(tmp_path, step="rollback")
+    (env.data / ".return" / STARTED_MARK).write_text("", encoding="utf-8")
+    assert env.recover() is None and env.journal() == 0
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"version": "1.1.0"},  # the stable version runs: program and database fit, nothing to do
+        {"step": "database"},  # before the switch: the live database is untouched
+        {"step": "stop"},
+        {"kind": "update"},
+        {"state": "succeeded"},
+        {"state": "rolled_back"},
+        {"state": "rollback_failed", "reason": "install_failed"},  # had its time; the card names the file
+        {"before": False},
+    ],
+)
+def test_p610_nothing_is_put_back_unless_every_condition_holds(tmp_path, change):
+    from reprintbuddy.ops.status import read_status
+
+    version = change.pop("version", "1.2.0-beta.2")
+    env = CutOff(tmp_path, **change)
+    status = read_status(env.data)
+    assert env.recover(version) is None
+    assert env.journal() == 0
+    assert read_status(env.data) == status
+
+
+def test_p610_nothing_is_put_back_while_a_helper_holds_the_lock(tmp_path):
+    """The helper itself starts the pre-release in its rollback; it holds the lock all along."""
+    from reprintbuddy.ops.oplock import acquire
+
+    env = CutOff(tmp_path)
+    lock = acquire(env.data, "update")
+    try:
+        assert env.recover() is None
+    finally:
+        lock.release()
+    assert env.journal() == 0 and env.before.is_file()
+
+
+def test_p610_a_failure_while_putting_back_leaves_everything_and_does_not_raise(tmp_path, monkeypatch, caplog):
+    from reprintbuddy.ops import stablereturn
+    from reprintbuddy.ops.status import read_status
+
+    env = CutOff(tmp_path)
+    status = read_status(env.data)
+
+    def broken(source, target):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(stablereturn, "restore_database", broken)
+    with caplog.at_level("WARNING"):
+        assert env.recover() is None
+    assert env.before.is_file() and read_status(env.data) == status
+    assert any(str(env.before) in record.getMessage() for record in caplog.records)

@@ -31,10 +31,8 @@ from datetime import datetime
 from pathlib import Path
 
 from reprintbuddy import settings as st
-from reprintbuddy.activity.writer import current_marks, current_notify_marks, write_restored_marker
 from reprintbuddy.ops import fullbackup as fb
-from reprintbuddy.ops import oplock
-from reprintbuddy.ops.backup import _copy, backup_dir_for, connect_existing
+from reprintbuddy.ops import oplock, restore
 from reprintbuddy.ops.runner import CommandRunner
 from reprintbuddy.ops.server import connect_host
 from reprintbuddy.ops.service import SERVICE, SYSTEMCTL, UPDATE_SERVICE
@@ -112,82 +110,6 @@ def service_running(
 def _say_when(manifest: fb.Manifest) -> str:
     stamp = manifest.created_at.astimezone().strftime("%Y-%m-%d %H:%M")
     return f"made on {stamp} by Reprintbuddy {manifest.app_version}"
-
-
-def _readable(db_path: Path) -> bool:
-    """Can SQLite read the database in place? A garbage file answers `PRAGMA page_size` all the same
-    (it needs no page), so the schema is read and a quick integrity check is made."""
-    if not db_path.is_file():
-        return False
-    try:
-        connection = connect_existing(db_path, timeout=5)
-        try:
-            connection.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()
-            return connection.execute("PRAGMA quick_check(1)").fetchone() == ("ok",)
-        finally:
-            connection.close()
-    except sqlite3.Error:
-        return False
-
-
-class RestoreNotUndone(Exception):
-    """Putting the new database in failed AND the old file could not be moved back: it lies at `where`."""
-
-    def __init__(self, where: Path) -> None:
-        super().__init__(str(where))
-        self.where = where
-
-
-def _private_folder(folder: Path) -> None:
-    if os.name == "posix":
-        folder.chmod(0o700)
-
-
-def _private_file(path: Path) -> None:
-    if os.name == "posix" and path.exists():
-        path.chmod(0o600)
-
-
-def _install_unreadable(candidate: Path, db_path: Path, now: datetime) -> Path | None:
-    """The database in place is missing or cannot be read: set it aside, put the candidate there.
-
-    Returns where the old file went, None when there was none. The old file is moved, not copied
-    (a broken file may not be copyable by SQLite) and its name matches no pattern of the pruning.
-    If putting the new one in fails, the old file is moved back: a refusal changes nothing. If even
-    that fails, `RestoreNotUndone` says where the old file is.
-    """
-    suffixes = ("-wal", "-shm", "-journal")
-    aside: Path | None = None
-    moved: list[tuple[Path, Path]] = []  # (where it was, where it is now), the main file first
-    installing = False
-    try:
-        if db_path.exists():
-            folder = backup_dir_for(db_path)
-            folder.mkdir(parents=True, exist_ok=True)
-            _private_folder(folder)
-            aside = folder / f"damaged-{now:%Y%m%dT%H%M%SZ}.db"
-            db_path.replace(aside)
-            moved.append((db_path, aside))
-            for suffix in suffixes:  # they belong to the file that was moved away
-                leftover = Path(f"{db_path}{suffix}")
-                if leftover.exists():
-                    leftover.replace(Path(f"{aside}{suffix}"))
-                    moved.append((leftover, Path(f"{aside}{suffix}")))
-        installing = True
-        fb._prepare(candidate, fb._page_size(candidate))
-        _copy(candidate, db_path)
-        _private_file(db_path)
-    except BaseException:
-        if installing:  # the files at the place are the new ones; before, they may still be the old ones
-            fb.remove_database_files(db_path)
-        try:
-            for origin, where in reversed(moved):
-                where.replace(origin)
-        except OSError as error:
-            raise RestoreNotUndone(aside or db_path) from error
-        raise
-    fb.remove_database_files(candidate)
-    return aside
 
 
 def restore_backup(
@@ -331,14 +253,15 @@ def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, 
                 f"Reprintbuddy was started meanwhile ({why}). Stop it first: systemctl stop reprintbuddy.",
             )
         state["touched"] = True
-        readable = _readable(db_path)
-        marks = current_marks(db_path) if readable else None  # p186: carried over to the next start
-        notify_marks = current_notify_marks(db_path) if readable else None  # p220: likewise
-        if readable:
-            before = fb.replace_database(candidate, db_path, now=now)
-        else:
-            before = _install_unreadable(candidate, db_path, now)
-    except RestoreNotUndone as error:
+        # The service is stopped: a database that is missing or cannot be read is set aside (p100).
+        # p531 (A4): the backup a failed rollback names survives the pruning, as on the page and in the
+        # update helper. This command is the way in when the service does not start after such an update;
+        # each try adds a backup of its own, and without the protection a few tries pruned the named one.
+        # Test: tests/web/test_restore_both_ways.py::test_the_backup_a_failed_rollback_names_survives_the_pruning
+        installed = restore.install(
+            candidate, db_path, now=now, protect=restore.protected_backups(db_path.parent), may_set_aside=True
+        )
+    except restore.RestoreNotUndone as error:
         complain(
             "reprintbuddy: the restore failed and the old database could not be put back. "
             f"It is at {error.where}; move it back to {db_path} by hand."
@@ -351,17 +274,11 @@ def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, 
         fb.remove_database_files(candidate)  # whatever happened, the decrypted copy does not stay
 
     # The next start logs the restore into the restored database (Spec 10.7, group 4).
-    write_restored_marker(
-        db_path.parent,
-        created_at=manifest.created_at,
-        version=manifest.app_version,
-        via="cli",
-        marks=marks,
-        notify_marks=notify_marks,
-    )
+    # A note that fails is logged, not raised: the database is replaced by now (p531, as on the page).
+    restore.leave_note(db_path.parent, manifest, installed, via="cli")
     say(f"Restored the backup {_say_when(manifest)}.")
-    if before is not None:
-        say(f"The database that was there was saved as {before}.")
+    if installed.before is not None:
+        say(f"The database that was there was saved as {installed.before}.")
     else:
         say("There was no database to save.")
     say("Everybody has to sign in again, with the account of the backup.")

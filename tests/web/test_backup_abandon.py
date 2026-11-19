@@ -30,6 +30,7 @@ from conftest import PASSWORD, csrf_of
 from starlette.requests import Request
 
 from reprintbuddy.ops import fullbackup as fb
+from reprintbuddy.ops import restore
 from reprintbuddy.ops.service import RESTART_CMD
 from reprintbuddy.web.routes import backup as backup_routes
 
@@ -672,7 +673,7 @@ async def test_a_failing_restore_note_after_the_replace_still_restarts(ops_env, 
         raise OSError(errno.ENOSPC, "No space left on device")
 
     upload(ops_env, made_backup(ops_env, BACKUP_PASSWORD))
-    monkeypatch.setattr(backup_routes, "write_restored_marker", fail)
+    monkeypatch.setattr(restore, "write_restored_marker", fail)
     async with async_client(ops_env) as ac:
         data = {
             "csrf_token": await token_of(ac),

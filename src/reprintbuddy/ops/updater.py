@@ -61,8 +61,15 @@ from reprintbuddy.ops.releases import (
     return_target,
 )
 from reprintbuddy.ops.runner import CommandResult, CommandRunner
-from reprintbuddy.ops.service import RESTART_WAIT_CMD, START_CMD, STOP_CMD
-from reprintbuddy.ops.stablereturn import ReturnPlan, assess, build_stable_db, copy_database
+from reprintbuddy.ops.service import RESTART_WAIT_CMD, START_CMD, STOP_CMD, shutting_down
+from reprintbuddy.ops.stablereturn import (
+    RETURN_DIR,
+    STARTED_MARK,
+    ReturnPlan,
+    assess,
+    build_stable_db,
+    copy_database,
+)
 from reprintbuddy.ops.status import UpdateStatus, is_busy, mark_interrupted, read_status, write_status
 from reprintbuddy.ops.versions import is_newer, is_prerelease_tag
 
@@ -79,8 +86,8 @@ DOWNLOAD_DIR = ".download"  # under releases/: the package and its checksum whil
 QUEUED_TARGET_WINDOW = timedelta(minutes=2)
 # Spec 11.3a "Rückweg zur stabilen Version": beside the database while the way back runs, the database as it
 # was when the service stopped (`before.db`, what a failure brings back) and the one the stable version will
-# run on (`stable.db`). Gone after the way back; after a failed rollback `before.db` stays and is named.
-RETURN_DIR = ".return"
+# run on (`stable.db`), in `RETURN_DIR` (from `stablereturn`). Gone after the way back, and in a rollback as soon
+# as `before.db` is back in place (p610); only when it could not be put back does it stay and is named.
 
 
 def venv_python(install_dir: Path) -> Path:
@@ -159,10 +166,13 @@ def run_update(
     target: str | None = None,
     keep_backups: int = KEEP_BACKUPS,
     script_location: Path | None = None,
+    guard: InterruptGuard | None = None,
 ) -> UpdateStatus:
-    """`script_location` (migration steps of the way back) exists for tests."""
+    """`script_location` (migration steps of the way back) exists for tests. `guard` is the one the SIGTERM
+    handler uses (p610); without one a run cannot be cut off."""
     data_dir = db_path.parent
     started = now()
+    guard = guard if guard is not None else InterruptGuard(db_path, now=now)
 
     previous = read_status(data_dir)
     # p91: one lock with the restore, also for an update typed by hand on the command line.
@@ -190,10 +200,11 @@ def run_update(
         if target is None and previous.state == "queued" and previous.kind == "return":
             return _start_return(
                 db_path, install_dir, runner, wait_healthy, now, http_get, download, keep_backups, previous, started,
-                script_location,
+                script_location, guard,
             )
         return _run_update(
-            db_path, install_dir, runner, wait_healthy, now, http_get, download, target, keep_backups, previous, started
+            db_path, install_dir, runner, wait_healthy, now, http_get, download, target, keep_backups, previous, started,
+            guard,
         )
     finally:
         lock.release()
@@ -226,6 +237,7 @@ def _run_update(
     keep_backups: int,
     previous: UpdateStatus,
     started: datetime,
+    guard: InterruptGuard,
 ) -> UpdateStatus:
     data_dir = db_path.parent
     backup_dir = backup_dir_for(db_path)
@@ -242,85 +254,99 @@ def _run_update(
         "backup": None,
     }
 
-    put, finish = _reporter(data_dir, backup_dir, keep_backups, info, started, now)
-
-    # --- before anything is changed: a failure leaves everything as it was -------------
-    # v0.4.9 p500: what is installed comes from `release.json` (a package installation) or, for an
-    # installation made with git, from git; where the new version comes from is the release list.
-    put("running", "backup")
-    installed = read_installation(install_dir, runner)
-    if installed is None or installed.repo is None:
-        line = "no installation found" if installed is None else "the repository of the installation is unknown"
-        return finish("failed", "backup", "backup: " + line, "head_unreadable", {"detail": line})
-    info["from_tag"] = installed.tag
-    try:
-        backup = backup_database(db_path, backup_dir, label=installed.label, now=now())
-    except (OSError, sqlite3.Error) as error:
-        detail = str(error)[:MAX_REASON]
-        return finish("failed", "backup", f"backup: {detail}", "backup_failed", {"detail": detail})
-    info["backup"] = str(backup)
-
-    put("running", "fetch")
-    try:
-        releases = fetch_releases(installed.repo, http_get)
-    except ReleaseCheckError as error:
-        detail = str(error)[:MAX_REASON]
-        return finish("failed", "fetch", f"fetch: {detail}", "fetch_failed", {"detail": detail})
-    # The version the page offered (or the one asked for) is installed, not whatever is newest by now;
-    # if it is gone, the update stops instead of installing something else. Without one, the newest the
-    # chosen channel offers (Spec 11.3a "Vorabversionen").
-    wanted = target or info["to_tag"]
-    chosen = next((item for item in releases if item.tag == wanted), None) if wanted else newest_offered(
-        releases, _read_channel(db_path)
-    )
-    if chosen is None and not wanted:
-        return finish("failed", "fetch", "fetch: no newer release", "no_newer")
-    if chosen is None:
-        return finish("failed", "fetch", f"fetch: unknown target {wanted}", "unknown_target", {"detail": str(wanted)})
-    goal = chosen.tag
-    info["to_tag"] = goal
-    if not is_newer(goal, info["from_tag"]):
-        return finish("failed", "fetch", "fetch: no newer release", "no_newer")
-
-    # Download and check the package, then unpack it beside the installed version. Nothing of the running
-    # installation is touched yet: a failure here removes what was downloaded and changes nothing else.
-    package = work_dir / package_name(goal)
-    checksum_file = work_dir / checksum_name(goal)
-    new_source = releases_dir / goal
+    put, finish = _reporter(data_dir, backup_dir, keep_backups, info, started, now, guard=guard)
+    new_source: Path | None = None
 
     def discard_download() -> None:
         shutil.rmtree(work_dir, ignore_errors=True)
 
+    # --- before anything is changed: a failure leaves everything as it was -------------
+    # v0.4.9 p500: what is installed comes from `release.json` (a package installation) or, for an
+    # installation made with git, from git; where the new version comes from is the release list.
+    # p610: a SIGTERM here changes nothing either; what was downloaded or unpacked goes.
     try:
-        shutil.rmtree(work_dir, ignore_errors=True)
-        work_dir.mkdir(parents=True)
-        download(chosen.package_url, package)
-        download(chosen.checksum_url, checksum_file)
-        expected = expected_sha256(checksum_file.read_text(encoding="utf-8", errors="replace"), package_name(goal))
-        sha256 = verify(package, expected, chosen.digest)
-    except (PackageError, OSError) as error:
-        discard_download()
-        reason = error.reason if isinstance(error, PackageError) else "fetch_failed"
-        detail = (error.detail or error.reason) if isinstance(error, PackageError) else type(error).__name__
-        return finish("failed", "fetch", f"fetch: {detail}"[:MAX_REASON], reason, {"detail": detail[:MAX_REASON]})
+        guard.arm()
+        put("running", "backup")
+        installed = read_installation(install_dir, runner)
+        if installed is None or installed.repo is None:
+            line = "no installation found" if installed is None else "the repository of the installation is unknown"
+            return finish("failed", "backup", "backup: " + line, "head_unreadable", {"detail": line})
+        info["from_tag"] = installed.tag
+        try:
+            backup = backup_database(db_path, backup_dir, label=installed.label, now=now())
+        except (OSError, sqlite3.Error) as error:
+            detail = str(error)[:MAX_REASON]
+            return finish("failed", "backup", f"backup: {detail}", "backup_failed", {"detail": detail})
+        info["backup"] = str(backup)
 
-    put("running", "checkout")
-    try:
-        unpack(package, releases_dir, goal)
-    except PackageError as error:
+        put("running", "fetch")
+        try:
+            releases = fetch_releases(installed.repo, http_get)
+        except ReleaseCheckError as error:
+            detail = str(error)[:MAX_REASON]
+            return finish("failed", "fetch", f"fetch: {detail}", "fetch_failed", {"detail": detail})
+        # The version the page offered (or the one asked for) is installed, not whatever is newest by now;
+        # if it is gone, the update stops instead of installing something else. Without one, the newest the
+        # chosen channel offers (Spec 11.3a "Vorabversionen").
+        wanted = target or info["to_tag"]
+        chosen = next((item for item in releases if item.tag == wanted), None) if wanted else newest_offered(
+            releases, _read_channel(db_path)
+        )
+        if chosen is None and not wanted:
+            return finish("failed", "fetch", "fetch: no newer release", "no_newer")
+        if chosen is None:
+            return finish("failed", "fetch", f"fetch: unknown target {wanted}", "unknown_target", {"detail": str(wanted)})
+        goal = chosen.tag
+        info["to_tag"] = goal
+        if not is_newer(goal, info["from_tag"]):
+            return finish("failed", "fetch", "fetch: no newer release", "no_newer")
+
+        # Download and check the package, then unpack it beside the installed version. Nothing of the running
+        # installation is touched yet: a failure here removes what was downloaded and changes nothing else.
+        package = work_dir / package_name(goal)
+        checksum_file = work_dir / checksum_name(goal)
+        new_source = releases_dir / goal
+
+        try:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            work_dir.mkdir(parents=True)
+            download(chosen.package_url, package)
+            download(chosen.checksum_url, checksum_file)
+            expected = expected_sha256(checksum_file.read_text(encoding="utf-8", errors="replace"), package_name(goal))
+            sha256 = verify(package, expected, chosen.digest)
+        except (PackageError, OSError) as error:
+            discard_download()
+            reason = error.reason if isinstance(error, PackageError) else "fetch_failed"
+            detail = (error.detail or error.reason) if isinstance(error, PackageError) else type(error).__name__
+            return finish("failed", "fetch", f"fetch: {detail}"[:MAX_REASON], reason, {"detail": detail[:MAX_REASON]})
+
+        put("running", "checkout")
+        try:
+            unpack(package, releases_dir, goal)
+        except PackageError as error:
+            discard_download()
+            return finish("failed", "checkout", f"checkout: {error.detail or error.reason}", error.reason, {"detail": error.detail})
         discard_download()
-        return finish("failed", "checkout", f"checkout: {error.detail or error.reason}", error.reason, {"detail": error.detail})
-    discard_download()
+        guard.hold()
+    except Interrupted:
+        discard_download()
+        if new_source is not None:
+            shutil.rmtree(new_source, ignore_errors=True)
+            # `package.unpack` cleans its folder after an Exception only (review of p610)
+            shutil.rmtree(new_source.with_name(f".unpack-{new_source.name}"), ignore_errors=True)
+        step = str(info.get("step") or "backup")
+        return finish("failed", step, f"{step}: interrupted, nothing was changed", "interrupted_untouched")
 
     # --- from pip on, any failure is rolled back ---------------------------------------
     current = "install"
+    pip_ran: list[bool] = []  # p610: a signal may come before pip; then the environment is untouched
 
     def forward() -> tuple[str, str, str, dict[str, str]] | None:
         """None when everything went through, else (step, English line, reason code, parameters)."""
         nonlocal current
         current = "install"
         put("running", "install")
-        problem = _install_package(py, venv_dir, snapshot_dir, new_source, runner, snapshot_taken)
+        problem = _install_package(py, venv_dir, snapshot_dir, new_source, runner, snapshot_taken, pip_ran)
         if problem is not None:
             return problem
 
@@ -348,9 +374,16 @@ def _run_update(
             return "health", "the new version did not answer after the restart", "health_failed", {}
         return None
 
-    def backward() -> bool:
-        """Previous environment, previous database, restart. True only if the old version answers."""
+    def backward() -> tuple[bool, bool]:
+        """Previous environment, previous database, restart. Returns whether everything is back in place and
+        whether the old version answers.
+
+        p610: runs to its end whatever signal comes (the guard holds); after one, each command is short. A signal
+        that came before pip ran (while the environment was copied) leaves the environment as it is: a reinstall,
+        cut at 20 s, could break one that was never touched (review)."""
         ok = True
+        if not snapshot_taken:
+            shutil.rmtree(snapshot_dir, ignore_errors=True)  # half a copy, if any
         if snapshot_taken and snapshot_dir.is_dir():
             # The environment as it was before pip: no network, no reinstall needed.
             try:
@@ -359,35 +392,34 @@ def _run_update(
             except OSError:
                 ok = False
             done = CommandResult(0)
+        elif not pip_ran:
+            done = CommandResult(0)
         else:
             shutil.rmtree(installed.source_dir / "build", ignore_errors=True)
             done = runner(
-                (py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", str(installed.source_dir)), timeout=900.0
+                (py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", str(installed.source_dir)),
+                timeout=guard.timeout(900.0),
             )
         if not done.ok:
             # No network for pip is the usual reason the update failed, so the reinstall of
             # the old version fails too. What matters is whether the old version is the one
             # installed and answering, not pip's exit code.
             old = info["from_tag"]
-            shown = runner((py, "-m", "reprintbuddy", "--version"))
+            shown = _service_command(runner, guard, (py, "-m", "reprintbuddy", "--version"), 120.0)
             ok &= bool(old) and shown.ok and shown.stdout.strip() == "reprintbuddy " + str(old)[1:]
         # The new version's folder goes; `release.json` was never touched, so it still names the old one.
         shutil.rmtree(new_source, ignore_errors=True)
         # Restore the database while nothing has it open. If the service cannot be stopped it
         # may still run the new code: then a restart (below) is the way back.
-        stopped = runner(STOP_CMD, timeout=120.0)
+        stopped = _service_command(runner, guard, STOP_CMD, 120.0)
         try:
             restore_database(backup, db_path)
         except (OSError, sqlite3.Error):
             ok = False
-        done = runner(START_CMD if stopped.ok else RESTART_WAIT_CMD, timeout=120.0)
-        ok &= done.ok
-        return bool(wait_healthy()) and ok
+        done = _service_command(runner, guard, START_CMD if stopped.ok else RESTART_WAIT_CMD, 120.0)
+        return ok, bool(wait_healthy()) and done.ok
 
-    try:
-        problem = forward()
-    except Exception as error:  # noqa: BLE001 - whatever happened, the rollback must still run
-        problem = (current, f"unexpected error: {type(error).__name__}", "unexpected", {"detail": type(error).__name__})
+    problem, cut_off = _armed(guard, forward, lambda: current)
     if problem is None:
         shutil.rmtree(snapshot_dir, ignore_errors=True)
         _settle(install_dir, installed, goal, sha256, db_path)
@@ -396,9 +428,17 @@ def _run_update(
     cause = f"{problem[0]}: {problem[1]}"
     put("running", "rollback", cause, reason=problem[2], params=problem[3])
     try:
-        restored = backward()
+        put_back, answers = backward()
     except Exception:  # noqa: BLE001
-        restored = False
+        put_back = answers = False
+    restored = put_back and answers
+    if cut_off:
+        # p610 (Spec 11.3a): stopped from outside counts as a failure; the log says "interrupted" (": interrupted").
+        line = _cut_off_line(runner, put_back, answers)
+        if line is not None:
+            return finish("rolled_back", "rollback", f"{problem[0]}: {line}", "interrupted_rolled_back")
+        cause = f"{problem[0]}: {CUT_OFF_PARTIAL}"
+        return finish("rollback_failed", "rollback", f"{cause} \u2013 backup: {backup}", "interrupted_partial")
     if restored:
         return finish("rolled_back", "rollback", cause, problem[2], problem[3])
     return finish("rollback_failed", "rollback", f"{cause} – backup: {backup}", problem[2], problem[3])
@@ -411,10 +451,12 @@ def _reporter(
     info: dict[str, str | None],
     started: datetime,
     now: Callable[[], datetime],
+    guard: InterruptGuard | None = None,
     **extra: object,
 ) -> tuple[Callable[..., UpdateStatus], Callable[..., UpdateStatus]]:
     """`put` writes a state of the run, `finish` its final one (and prunes the backups). `extra` are the fields
-    of the way back (`kind`, `return_case`, ...), the same in every state of the run."""
+    of the way back (`kind`, `return_case`, ...), the same in every state of the run. `info["step"]` is the last
+    step written (p610: the step a SIGTERM cut off); from `finish` on a SIGTERM cuts nothing off."""
 
     def put(
         state: str, step: str, message: str = "", *, finished: bool = False,
@@ -433,6 +475,7 @@ def _reporter(
             params=params or {},
             **extra,  # type: ignore[arg-type]
         )
+        info["step"] = step
         try:
             write_status(data_dir, status)
         except OSError as error:
@@ -445,6 +488,8 @@ def _reporter(
     def finish(
         state: str, step: str, message: str, reason: str = "", params: dict[str, str] | None = None
     ) -> UpdateStatus:
+        if guard is not None:
+            guard.hold()
         if info["backup"]:
             # After a failed rollback the message names this backup as the one to restore.
             protect = [Path(info["backup"])] if state == "rollback_failed" else []
@@ -460,11 +505,72 @@ def _reporter(
 
 Problem = tuple[str, str, str, dict[str, str]]  # (step, English line, reason code, parameters)
 
+# p610: the English lines of a run stopped from outside (after "<step>: "); ": interrupted" makes the log say
+# "interrupted" (`activity.states.INTERRUPTED`).
+CUT_OFF_ROLLED_BACK = "interrupted, the previous version was put back"
+CUT_OFF_PARTIAL = "interrupted, the installation may be incomplete"
+CUT_OFF_AT_SHUTDOWN = "; the system shuts down, it starts with the next boot at the latest"
+
+
+def _cut_off_line(runner: CommandRunner, put_back: bool, answers: bool) -> str | None:
+    """The line of a rollback after a stop from outside that counts as done, or None (it failed).
+
+    Done when everything is back in place and the previous version answers, or when it is back in place and the
+    system shuts down (review of p610): the service may not be running now, but the unit is enabled and starts
+    the previous version with the next boot at the latest (Spec 11.3a). Asked only then: systemd's answer to a
+    start during a shutdown is not documented, its state "stopping" is."""
+    if put_back and answers:
+        return CUT_OFF_ROLLED_BACK
+    if put_back and shutting_down(runner):
+        return CUT_OFF_ROLLED_BACK + CUT_OFF_AT_SHUTDOWN
+    return None
+
+
+def _armed(
+    guard: InterruptGuard, forward: Callable[[], Problem | None], current: Callable[[], str]
+) -> tuple[Problem | None, bool]:
+    """Run `forward` so that a SIGTERM cuts it off (p610). Returns its problem (None: it went through) and
+    whether a SIGTERM cut it off. Afterwards the guard holds: the rollback and the final state are not cut off.
+
+    The nesting matters: a signal in the `except Exception` branch, or right after `forward` returned, is still
+    caught by the outer `except Interrupted`; `guard.hold()` is the last thing inside it."""
+    try:
+        try:
+            guard.arm()
+            problem = forward()
+        except Exception as error:  # noqa: BLE001 - whatever happened, the rollback must still run
+            step = current()
+            problem = (step, f"unexpected error: {type(error).__name__}", "unexpected", {"detail": type(error).__name__})
+        guard.hold()
+        return problem, False
+    except Interrupted:
+        return (current(), "interrupted", "interrupted_partial", {}), True
+
+
+def _service_command(
+    runner: CommandRunner, guard: InterruptGuard, args: tuple[str, ...], timeout: float
+) -> CommandResult:
+    """A command of the rollback. p610: short once a SIGTERM came, and run once more if a SIGTERM came while it
+    ran and it failed: systemd sends SIGTERM to every process of the unit, also to a `systemctl` running then.
+    Starting or stopping twice is harmless."""
+    signals = guard.signals
+    done = runner(args, timeout=guard.timeout(timeout))
+    if not done.ok and guard.signals > signals:
+        done = runner(args, timeout=guard.timeout(timeout))
+    return done
+
 
 def _install_package(
-    py: str, venv_dir: Path, snapshot_dir: Path, new_source: Path, runner: CommandRunner, snapshot_taken: list[bool]
+    py: str,
+    venv_dir: Path,
+    snapshot_dir: Path,
+    new_source: Path,
+    runner: CommandRunner,
+    snapshot_taken: list[bool],
+    pip_ran: list[bool],
 ) -> Problem | None:
-    """pip installs the unpacked version; a copy of the environment comes first (the way back to it)."""
+    """pip installs the unpacked version; a copy of the environment comes first (the way back to it). `pip_ran`
+    is set right before pip runs (p610: before it, the environment is untouched)."""
     # A pip that fails half way can leave the environment neither old nor new, and the
     # reinstall of the old version needs the network that just failed. Keep a copy.
     if venv_dir.is_dir():
@@ -477,6 +583,7 @@ def _install_package(
             detail = str(error)[:200]
             return "install", f"cannot back up the Python environment: {detail}", "snapshot_failed", {"detail": detail}
     shutil.rmtree(new_source / "build", ignore_errors=True)
+    pip_ran.append(True)
     done = runner((py, "-m", "pip", "install", "--no-cache-dir", "--upgrade", str(new_source)), timeout=900.0)
     if not done.ok:
         too_old = _too_old_python(done)
@@ -510,6 +617,7 @@ def _start_return(
     previous: UpdateStatus,
     started: datetime,
     script_location: Path | None,
+    guard: InterruptGuard,
 ) -> UpdateStatus:
     """A request for the way back from the page. One that grew old changes nothing: a click on "back" must never
     lead forward, as an ordinary update to a newer pre-release would. The state it leaves makes the next run by
@@ -524,7 +632,7 @@ def _start_return(
         return finish("failed", "start", "start: the request for the way back is too old", "return_expired")
     return _run_return(
         db_path, install_dir, runner, wait_healthy, now, http_get, download, keep_backups, previous, started,
-        script_location,
+        script_location, guard,
     )
 
 
@@ -568,6 +676,7 @@ def _run_return(
     previous: UpdateStatus,
     started: datetime,
     script_location: Path | None,
+    guard: InterruptGuard,
 ) -> UpdateStatus:
     """The way back, in the order of Spec 11.3a: backup of the current state, the package of the stable version
     loaded and checked; then the service stops, the database, the package, the start, the check.
@@ -590,10 +699,11 @@ def _run_return(
     snapshot_taken: list[bool] = []
     info: dict[str, str | None] = {"from_tag": previous.from_tag, "to_tag": previous.to_tag, "backup": None}
     put, finish = _reporter(
-        data_dir, backup_dir, keep_backups, info, started, now,
+        data_dir, backup_dir, keep_backups, info, started, now, guard,
         kind="return", return_case=previous.return_case, target_head=previous.target_head,
         return_backup=previous.return_backup,
     )
+    new_source: Path | None = None
 
     # --- before the service stops: a failure changes nothing ------------------------------------------
     if before_db.exists():
@@ -601,112 +711,138 @@ def _run_return(
         # was) or that was cut off: it may be the only copy of those entries, so it is never deleted here.
         line = f"a database kept by an earlier way back lies at {before_db}; restore or move it first"
         return finish("failed", "start", "start: " + line, "return_unavailable", {"detail": line})
-    put("running", "backup")
-    installed = read_installation(install_dir, runner)
-    if installed is None or installed.repo is None:
-        line = "no installation found" if installed is None else "the repository of the installation is unknown"
-        return finish("failed", "backup", "backup: " + line, "head_unreadable", {"detail": line})
-    info["from_tag"] = installed.tag
-    if not installed.tag or not is_prerelease_tag(installed.tag):
-        line = "no pre-release is installed"
-        return finish("failed", "backup", "backup: " + line, "return_unavailable", {"detail": line})
+    # p610: a SIGTERM here changes nothing either; what was downloaded or unpacked goes.
     try:
-        backup = backup_database(db_path, backup_dir, label=installed.label, now=now())
-    except (OSError, sqlite3.Error) as error:
-        detail = str(error)[:MAX_REASON]
-        return finish("failed", "backup", f"backup: {detail}", "backup_failed", {"detail": detail})
-    info["backup"] = str(backup)
+        guard.arm()
+        put("running", "backup")
+        installed = read_installation(install_dir, runner)
+        if installed is None or installed.repo is None:
+            line = "no installation found" if installed is None else "the repository of the installation is unknown"
+            return finish("failed", "backup", "backup: " + line, "head_unreadable", {"detail": line})
+        info["from_tag"] = installed.tag
+        if not installed.tag or not is_prerelease_tag(installed.tag):
+            line = "no pre-release is installed"
+            return finish("failed", "backup", "backup: " + line, "return_unavailable", {"detail": line})
+        try:
+            backup = backup_database(db_path, backup_dir, label=installed.label, now=now())
+        except (OSError, sqlite3.Error) as error:
+            detail = str(error)[:MAX_REASON]
+            return finish("failed", "backup", f"backup: {detail}", "backup_failed", {"detail": detail})
+        info["backup"] = str(backup)
 
-    put("running", "fetch")
-    try:
-        releases = fetch_releases(installed.repo, http_get)
-    except ReleaseCheckError as error:
-        detail = str(error)[:MAX_REASON]
-        return finish("failed", "fetch", f"fetch: {detail}", "fetch_failed", {"detail": detail})
-    chosen = return_target(releases, installed.tag)
-    if chosen is None or chosen.tag != previous.to_tag:
-        detail = f"the stable version to go back to is now {chosen.tag if chosen else 'none'}, not {previous.to_tag}"
-        return finish("failed", "fetch", f"fetch: {detail}", "return_changed", {"detail": detail})
-    goal = chosen.tag
-    package = work_dir / package_name(goal)
-    checksum_file = work_dir / checksum_name(goal)
-    new_source = releases_dir / goal
-    try:
-        shutil.rmtree(work_dir, ignore_errors=True)
-        work_dir.mkdir(parents=True)
-        download(chosen.package_url, package)
-        download(chosen.checksum_url, checksum_file)
-        expected = expected_sha256(checksum_file.read_text(encoding="utf-8", errors="replace"), package_name(goal))
-        sha256 = verify(package, expected, chosen.digest)
-    except (PackageError, OSError) as error:
-        shutil.rmtree(work_dir, ignore_errors=True)
-        reason = error.reason if isinstance(error, PackageError) else "fetch_failed"
-        detail = (error.detail or error.reason) if isinstance(error, PackageError) else type(error).__name__
-        return finish("failed", "fetch", f"fetch: {detail}"[:MAX_REASON], reason, {"detail": detail[:MAX_REASON]})
+        put("running", "fetch")
+        try:
+            releases = fetch_releases(installed.repo, http_get)
+        except ReleaseCheckError as error:
+            detail = str(error)[:MAX_REASON]
+            return finish("failed", "fetch", f"fetch: {detail}", "fetch_failed", {"detail": detail})
+        chosen = return_target(releases, installed.tag)
+        if chosen is None or chosen.tag != previous.to_tag:
+            detail = f"the stable version to go back to is now {chosen.tag if chosen else 'none'}, not {previous.to_tag}"
+            return finish("failed", "fetch", f"fetch: {detail}", "return_changed", {"detail": detail})
+        goal = chosen.tag
+        package = work_dir / package_name(goal)
+        checksum_file = work_dir / checksum_name(goal)
+        new_source = releases_dir / goal
+        try:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            work_dir.mkdir(parents=True)
+            download(chosen.package_url, package)
+            download(chosen.checksum_url, checksum_file)
+            expected = expected_sha256(checksum_file.read_text(encoding="utf-8", errors="replace"), package_name(goal))
+            sha256 = verify(package, expected, chosen.digest)
+        except (PackageError, OSError) as error:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            reason = error.reason if isinstance(error, PackageError) else "fetch_failed"
+            detail = (error.detail or error.reason) if isinstance(error, PackageError) else type(error).__name__
+            return finish("failed", "fetch", f"fetch: {detail}"[:MAX_REASON], reason, {"detail": detail[:MAX_REASON]})
 
-    put("running", "checkout")
-    try:
-        unpack(package, releases_dir, goal)
-    except PackageError as error:
+        put("running", "checkout")
+        try:
+            unpack(package, releases_dir, goal)
+        except PackageError as error:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            return finish("failed", "checkout", f"checkout: {error.detail or error.reason}", error.reason, {"detail": error.detail})
         shutil.rmtree(work_dir, ignore_errors=True)
-        return finish("failed", "checkout", f"checkout: {error.detail or error.reason}", error.reason, {"detail": error.detail})
-    shutil.rmtree(work_dir, ignore_errors=True)
-    try:
-        target_graph = graph_of_dir(new_source / "src" / "reprintbuddy" / "migrations" / "versions")
-    except StepsError as error:
-        shutil.rmtree(new_source, ignore_errors=True)
-        return finish("failed", "checkout", f"checkout: {error}", "package_unusable", {"detail": str(error)})
-    head = single_head(target_graph)
-    if head != previous.target_head:
-        shutil.rmtree(new_source, ignore_errors=True)
-        detail = f"the steps of {goal} end at {head}, the check saw {previous.target_head}"
-        return finish("failed", "checkout", f"checkout: {detail}", "return_changed", {"detail": detail})
+        try:
+            target_graph = graph_of_dir(new_source / "src" / "reprintbuddy" / "migrations" / "versions")
+        except StepsError as error:
+            shutil.rmtree(new_source, ignore_errors=True)
+            return finish("failed", "checkout", f"checkout: {error}", "package_unusable", {"detail": str(error)})
+        head = single_head(target_graph)
+        if head != previous.target_head:
+            shutil.rmtree(new_source, ignore_errors=True)
+            detail = f"the steps of {goal} end at {head}, the check saw {previous.target_head}"
+            return finish("failed", "checkout", f"checkout: {detail}", "return_changed", {"detail": detail})
+        guard.hold()
+    except Interrupted:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        if new_source is not None:
+            shutil.rmtree(new_source, ignore_errors=True)
+            shutil.rmtree(new_source.with_name(f".unpack-{new_source.name}"), ignore_errors=True)
+        step = str(info.get("step") or "backup")
+        return finish("failed", step, f"{step}: interrupted, nothing was changed", "interrupted_untouched")
 
     # --- the service stops; until `swap` the live database is untouched ------------------------------
-    put("running", "stop")
-    stopped = runner(STOP_CMD, timeout=120.0)
-    if not stopped.ok:
-        shutil.rmtree(new_source, ignore_errors=True)
-        detail = _reason(stopped, "the service could not be stopped")
-        # whatever half of it happened, the pre-release runs on - if it answers (review: say so when not)
-        if runner(START_CMD, timeout=120.0).ok and wait_healthy():
-            return finish("failed", "stop", f"stop: {detail}", "stop_failed", {"detail": detail})
-        message = f"stop: {detail} – the pre-release did not answer after its start"
-        return finish("rollback_failed", "stop", message, "stop_failed", {"detail": detail})
-
-    def resume(step: str, message: str, reason: str, params: dict[str, str]) -> UpdateStatus:
-        """Nothing changed yet: the pre-release starts again on its own database."""
+    def resume(step: str, message: str, reason: str, params: dict[str, str], cut_off: bool = False) -> UpdateStatus:
+        """Nothing changed yet: the pre-release starts again on its own database. p610: not cut off by a signal,
+        and short after one."""
+        guard.hold()
         shutil.rmtree(new_source, ignore_errors=True)
         shutil.rmtree(return_dir, ignore_errors=True)
-        if runner(START_CMD, timeout=120.0).ok and wait_healthy():
+        if _service_command(runner, guard, START_CMD, 120.0).ok and wait_healthy():
             return finish("failed", step, message, reason, params)
+        if cut_off and shutting_down(runner):
+            # nothing was changed; the enabled unit starts the pre-release with the next boot at the latest
+            return finish("failed", step, message + CUT_OFF_AT_SHUTDOWN, reason, params)
         return finish("rollback_failed", step, f"{message} – the pre-release did not answer after its start", reason, params)
 
-    put("running", "database")
+    # p610: a SIGTERM while the service is stopped starts the pre-release again (it stayed stopped until the next
+    # boot up to 1.2.0-beta.1); the live database is untouched until `swap`.
     try:
-        shutil.rmtree(return_dir, ignore_errors=True)  # no `before.db` in it: checked at the start
-        return_dir.mkdir(parents=True)
-        copy_database(db_path, before_db)
-        print(f"update: way back: the database as it was is kept at {before_db} until the way back is through", flush=True)
-        plan = assess(
-            db_path, target=goal, target_graph=target_graph, backup_dir=backup_dir, work_dir=return_dir / "trial",
-            script_location=script_location,
-        )
-    except Exception as error:  # noqa: BLE001 - nothing has changed: whatever it was, the pre-release runs on
-        detail = f"{type(error).__name__}: {error}"[:MAX_REASON]
-        return resume("database", f"database: {detail}", "database_failed", {"detail": detail})
-    changed = _plan_changed(plan, previous)
-    if changed is not None:
-        return resume("database", f"database: {changed}", "return_changed", {"detail": changed})
-    _log_losses(plan)
-    try:
-        stable_db = build_stable_db(plan, db_path, return_dir / "stable.db", script_location)
-    except Exception as error:  # noqa: BLE001
-        detail = f"{type(error).__name__}: {error}"[:MAX_REASON]
-        return resume("database", f"database: {detail}", "database_failed", {"detail": detail})
+        guard.arm()
+        put("running", "stop")
+        stopped = runner(STOP_CMD, timeout=120.0)
+        if not stopped.ok:
+            guard.hold()
+            shutil.rmtree(new_source, ignore_errors=True)
+            detail = _reason(stopped, "the service could not be stopped")
+            # whatever half of it happened, the pre-release runs on - if it answers (review: say so when not)
+            if _service_command(runner, guard, START_CMD, 120.0).ok and wait_healthy():
+                return finish("failed", "stop", f"stop: {detail}", "stop_failed", {"detail": detail})
+            message = f"stop: {detail} – the pre-release did not answer after its start"
+            return finish("rollback_failed", "stop", message, "stop_failed", {"detail": detail})
+
+        put("running", "database")
+        try:
+            shutil.rmtree(return_dir, ignore_errors=True)  # no `before.db` in it: checked at the start
+            return_dir.mkdir(parents=True)
+            copy_database(db_path, before_db)
+            print(f"update: way back: the database as it was is kept at {before_db} until the way back is through", flush=True)
+            plan = assess(
+                db_path, target=goal, target_graph=target_graph, backup_dir=backup_dir, work_dir=return_dir / "trial",
+                script_location=script_location,
+            )
+        except Exception as error:  # noqa: BLE001 - nothing has changed: whatever it was, the pre-release runs on
+            detail = f"{type(error).__name__}: {error}"[:MAX_REASON]
+            return resume("database", f"database: {detail}", "database_failed", {"detail": detail})
+        changed = _plan_changed(plan, previous)
+        if changed is not None:
+            return resume("database", f"database: {changed}", "return_changed", {"detail": changed})
+        _log_losses(plan)
+        try:
+            stable_db = build_stable_db(plan, db_path, return_dir / "stable.db", script_location)
+        except Exception as error:  # noqa: BLE001
+            detail = f"{type(error).__name__}: {error}"[:MAX_REASON]
+            return resume("database", f"database: {detail}", "database_failed", {"detail": detail})
+        guard.hold()
+    except Interrupted:
+        step = str(info.get("step") or "stop")
+        return resume(step, f"{step}: interrupted, nothing was changed", "interrupted_untouched", {}, cut_off=True)
 
     # --- from `swap` on, a failure brings back the database as it was and the pre-release -------------
     swapped: list[bool] = []
+    pip_ran: list[bool] = []
     current = "swap"
 
     def forward() -> Problem | None:
@@ -721,7 +857,7 @@ def _run_return(
             return "swap", detail, "swap_failed", {"detail": detail}
         current = "install"
         put("running", "install")
-        problem = _install_package(py, venv_dir, snapshot_dir, new_source, runner, snapshot_taken)
+        problem = _install_package(py, venv_dir, snapshot_dir, new_source, runner, snapshot_taken, pip_ran)
         if problem is not None:
             return problem
         current = "verify"
@@ -746,8 +882,16 @@ def _run_return(
         return None
 
     def backward() -> bool:
-        """The environment and the database of the pre-release, its start. True only if it answers."""
+        """The environment and the database of the pre-release, its start. True only if it answers.
+
+        p610: runs to its end whatever signal comes (the guard holds); after one, each command is short.
+        `.return` goes as soon as the live database is the one from before the way back (or was never touched):
+        left there, the start after a power cut would put `before.db` back a second time
+        (`stablereturn.recover_cut_off_return`) and lose what the running pre-release took in meanwhile.
+        Rejected: removing it only after the answer (as up to 1.2.0-beta.1); that leaves exactly this window."""
         ok = True
+        if not snapshot_taken:
+            shutil.rmtree(snapshot_dir, ignore_errors=True)  # half a copy, if any (p610)
         if snapshot_taken and snapshot_dir.is_dir():
             try:
                 shutil.rmtree(venv_dir, ignore_errors=True)
@@ -755,20 +899,28 @@ def _run_return(
             except OSError:
                 ok = False
         shutil.rmtree(new_source, ignore_errors=True)
-        stopped = runner(STOP_CMD, timeout=120.0)  # the stable version may have started (restart, health)
+        # the stable version may have started (restart, health)
+        stopped = _service_command(runner, guard, STOP_CMD, 120.0)
+        back_in_place = not swapped
         if swapped:
             try:
                 restore_database(before_db, db_path)
+                back_in_place = True
             except (OSError, sqlite3.Error):
                 ok = False
-        done = runner(START_CMD if stopped.ok else RESTART_WAIT_CMD, timeout=120.0)
-        ok &= done.ok
-        return bool(wait_healthy()) and ok
+        if back_in_place:
+            shutil.rmtree(return_dir, ignore_errors=True)
+        else:
+            # The pre-release now starts on the switched database and takes in entries: a later start must not
+            # put `before.db` back over them (review of p610, `stablereturn.recover_cut_off_return`).
+            try:
+                (return_dir / STARTED_MARK).write_text("", encoding="utf-8")
+            except OSError:
+                pass
+        done = _service_command(runner, guard, START_CMD if stopped.ok else RESTART_WAIT_CMD, 120.0)
+        return ok, bool(wait_healthy()) and done.ok
 
-    try:
-        problem = forward()
-    except Exception as error:  # noqa: BLE001 - whatever happened, the rollback must still run
-        problem = (current, f"unexpected error: {type(error).__name__}", "unexpected", {"detail": type(error).__name__})
+    problem, cut_off = _armed(guard, forward, lambda: current)
     if problem is None:
         shutil.rmtree(snapshot_dir, ignore_errors=True)
         _settle(install_dir, installed, goal, sha256, db_path)
@@ -778,16 +930,25 @@ def _run_return(
     cause = f"{problem[0]}: {problem[1]}"
     put("running", "rollback", cause, reason=problem[2], params=problem[3])
     try:
-        restored = backward()
+        put_back, answers = backward()
     except Exception:  # noqa: BLE001
-        restored = False
+        put_back = answers = False
+    restored = put_back and answers
+    if cut_off:
+        # p610 (Spec 11.3a): stopped from outside counts as a failure; the log says "interrupted" (": interrupted").
+        done_line = _cut_off_line(runner, put_back, answers)
+        restored = done_line is not None
+        line, code = (done_line, "interrupted_rolled_back") if done_line else (CUT_OFF_PARTIAL, "interrupted_partial")
+        problem = (problem[0], line, code, {})
+        cause = f"{problem[0]}: {line}"
     if restored:
         shutil.rmtree(return_dir, ignore_errors=True)
         return finish("rolled_back", "rollback", cause, problem[2], problem[3])
-    print(f"update: way back: the database as it was before it stays at {before_db}", flush=True)
-    return finish(
-        "rollback_failed", "rollback", f"{cause} – database as it was: {before_db} – backup: {backup}", problem[2], problem[3]
-    )
+    kept = ""
+    if before_db.is_file():
+        print(f"update: way back: the database as it was before it stays at {before_db}", flush=True)
+        kept = f" – database as it was: {before_db}"
+    return finish("rollback_failed", "rollback", f"{cause}{kept} – backup: {backup}", problem[2], problem[3])
 
 
 def _settle(install_dir: Path, installed: Installation, goal: str, sha256: str, db_path: Path) -> None:
@@ -812,19 +973,81 @@ def _settle(install_dir: Path, installed: Installation, goal: str, sha256: str, 
         print(f"update: removed the unpacked version {name}", flush=True)
 
 
-def interrupt_handler(db_path: Path, *, now: Callable[[], datetime]) -> Callable[[int, object], None]:
-    """A SIGTERM handler for the helper: systemd stops a unit that runs past its timeout.
+class Interrupted(BaseException):
+    """SIGTERM while a run is armed. Not an `Exception`: it passes every `except Exception` (and the runner, which
+    kills its child on the way) up to the place that rolls back."""
 
-    Without it the state file would stay at "running" and the page would never say what
-    happened. The handler records the final state and exits.
-    """
 
-    def handle(signum: int, frame: object) -> None:
+# p610: what a rollback after SIGTERM may take per command. systemd sends SIGKILL `TimeoutStopSec` after SIGTERM,
+# 90 s by default (systemd-system.conf "DefaultTimeoutStopSec="); stop, restore, start and a short wait for the
+# answer (`HURRY_WAIT`) fit in.
+HURRY_TIMEOUT = 20.0
+HURRY_WAIT = 20.0
+
+
+class InterruptGuard:
+    """What SIGTERM does to the helper (p610, Spec 11.3a: stopped from outside counts as a failure).
+
+    Root: up to 1.2.0-beta.1 the handler wrote the final state and ended the process with `SystemExit`. The
+    rollback never ran (it catches `Exception` only), and on the way back the service it had stopped stayed
+    stopped until the next boot. Now three states:
+    - idle (before the lock, outside a run): as before, the final state is written and the process ends;
+    - armed (the steps that may be cut off): `Interrupted` is raised and the run rolls back;
+    - holding (rollback, final state): the signal is noted (`pending`) and nothing is cut off.
+    The first signal in "armed" switches to "holding": systemd sends SIGTERM to every process of the unit, and a
+    second one must not cut off the rollback. Rejected: a handler that only sets a flag and lets each step look
+    at it; pip, a download or a copy of the database would run on until they end, beyond the 90 s to SIGKILL.
+    Tests: tests/ops/test_updater_interrupt.py."""
+
+    def __init__(self, db_path: Path, *, now: Callable[[], datetime]) -> None:
+        self._db_path = db_path
+        self._now = now
+        self.state = "idle"
+        self.signals = 0
+
+    @property
+    def pending(self) -> bool:
+        return self.signals > 0
+
+    def signal(self, signum: int = 15) -> None:
+        """What the SIGTERM handler does."""
+        self.signals += 1
+        if self.state == "armed":
+            self.state = "holding"
+            raise Interrupted(signum)
+        if self.state == "holding":
+            return
         try:
-            mark_interrupted(db_path.parent, now())
+            mark_interrupted(self._db_path.parent, self._now())
         except OSError:
             pass  # nothing more can be done about a status file that cannot be written
         raise SystemExit(128 + signum)
+
+    def arm(self) -> None:
+        """From here a signal cuts the run off; one that came while holding does so at once."""
+        if self.pending:
+            self.state = "holding"
+            raise Interrupted(15)
+        self.state = "armed"
+
+    def hold(self) -> None:
+        self.state = "holding"
+
+    def timeout(self, seconds: float) -> float:
+        """The time a command may take: short once a signal came."""
+        return min(seconds, HURRY_TIMEOUT) if self.pending else seconds
+
+
+def interrupt_handler(
+    db_path: Path, *, now: Callable[[], datetime], guard: InterruptGuard | None = None
+) -> Callable[[int, object], None]:
+    """A SIGTERM handler for the helper: systemd stops a unit that runs past its timeout, that is stopped, or
+    on shutdown. It hands the signal to `guard` (see `InterruptGuard`); without one it writes the final state
+    and exits, as up to 1.2.0-beta.1."""
+    target = guard if guard is not None else InterruptGuard(db_path, now=now)
+
+    def handle(signum: int, frame: object) -> None:
+        target.signal(signum)
 
     return handle
 
@@ -854,7 +1077,12 @@ def _read_address(db_path: Path) -> str:
 
 
 def http_health_waiter(
-    db_path: Path, *, timeout_s: float = 90.0, interval_s: float = 2.0
+    db_path: Path,
+    *,
+    timeout_s: float = 90.0,
+    interval_s: float = 2.0,
+    hurry: Callable[[], bool] | None = None,
+    hurry_s: float = HURRY_WAIT,
 ) -> Callable[[], bool]:
     """A function that waits until the service answers `/healthz`, or gives up.
 
@@ -863,6 +1091,8 @@ def http_health_waiter(
     could be a different version than the ones the helper started with.
     Host, port and HTTPS are read from the database on every try: the update may have
     just migrated or restored it.
+    p610: once `hurry` says a SIGTERM came (also in the middle of the wait), the wait ends `hurry_s` after that
+    at the latest; SIGKILL follows 90 s after the signal, and the final state must be written before.
     """
     # Our own service on this machine, usually with a self-made certificate: not verified.
     context = ssl.create_default_context()
@@ -883,7 +1113,11 @@ def http_health_waiter(
 
     def wait() -> bool:
         deadline = time.monotonic() + timeout_s
+        hurried = False
         while True:
+            if not hurried and hurry is not None and hurry():
+                hurried = True
+                deadline = min(deadline, time.monotonic() + hurry_s)
             if healthy_once():
                 return True
             if time.monotonic() + interval_s > deadline:
