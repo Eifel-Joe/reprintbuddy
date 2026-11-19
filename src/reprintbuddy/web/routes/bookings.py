@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from reprintbuddy.domain import assembled, catalog, stock
 from reprintbuddy.domain.errors import NotFoundError, ValidationError
 from reprintbuddy.domain.stock import MAX_QTY
-from reprintbuddy.localtime import at_local_time, end_of_local_day
+from reprintbuddy.localtime import at_local_time, booked_day, end_of_local_day
 from reprintbuddy.models import Article, Part, utcnow
 from reprintbuddy.web import assembled_view
 from reprintbuddy.web.csrf import verify_csrf
@@ -164,7 +164,7 @@ def _inventory_done(request: Request, item: str, p: dict, diff: int) -> tuple[st
     params = {"item": item, "counted": p["counted"], "diff": f"{diff:+d}"}
     if p["booked_at"] is None:
         return "bookings.inventory_done", params
-    day = format_date(to_local(p["booked_at"]).date(), current_language(request))
+    day = format_date(booked_day(p["booked_at"]), current_language(request))
     return "bookings.inventory_done_then", {**params, "day": day, "then": p["counted"] - diff}
 
 
