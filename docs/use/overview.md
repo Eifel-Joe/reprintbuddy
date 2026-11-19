@@ -56,6 +56,19 @@ Above the lanes: **all probably done at about …** (with **at the earliest** wh
 
 A printer that is **offline**, in **maintenance** or in an **error** gets nothing probably assigned; entries Bambuddy assigned to it stand as **waiting: …** in its lane and do not count for "all done" (**without Printer 3**). A printer **waiting for the plate to be cleared** is planned as if you cleared it now. A **paused** print stays filled with its progress; its time left counts from now.
 
+### Filament in the printers
+
+Under each lane the plan says whether the filament loaded in the printer lasts for the prints of the lane. It only shows: Reprintbuddy books no filament and changes nothing in Bambuddy.
+
+- **Reload about 14:30 · PLA #000000 (AMS 1, slot 2)**, with a tick on the lane: at about that time the spool runs out, estimated evenly over the print that uses it up. **Reload now**: that moment has passed already. **at the latest**: a print before it has an unknown filament need, so it may come sooner.
+- **Not loaded: PETG #FF0000**: a print of the lane needs a sort that is in no slot of the printer.
+- **Stock unknown: …**: Bambuddy holds no grams for the spool in that slot (no spool assigned to the slot in Bambuddy). Reprintbuddy does not use the AMS percentage: it is too coarse and missing for spools without RFID.
+- **Filament need unknown** on a bar: the print's needs are not known (a print from Bambuddy's archive, or a deleted file).
+
+The need of a print is the grams per slot of its print file: own prints from the article's file, prints of others from Bambuddy's file manager. The running print counts whole, because Bambuddy takes the filament used off the spool only when the print ends. The stock is the grams Bambuddy holds for the spool assigned to the slot; with **AMS filament backup** on, loaded slots of the same material and colour count together. Reprintbuddy picks the slot as Bambuddy would without the filament preset: same material and colour, else a similar colour, else the same material. Each sort is named once per lane, the first time it runs out; at most three notes, then **+ n**. The head line adds **Reload needed: Printer 2 about 15:30** for the earliest of all printers (**and n more**), and how many entries Bambuddy held at their start for too little filament.
+
+Limits: Bambuddy chooses the slot only when the print starts and looks at the filament preset first, so it may take another slot. Reprintbuddy also does not follow the nozzle side of printers with two nozzles, Bambuddy's filament rules for user groups, or its setting to use the lowest spool first. For prints probably assigned, the note holds for the printer the plan assumes. There is no notification through Home Assistant for it.
+
 The printers' state comes with every regular query, in one request for all printers, and in between with the printer messages of Bambuddy's live channel (see [Automation](automation.md)). The plan follows at most about once a minute. While Bambuddy cannot be reached it says **Printer state unknown**.
 
 On a phone the page is one column: the head line becomes rows of label and value, the tiles stand one below the other, and each lane of the print plan becomes a list with times and the kind of each bar.

@@ -56,6 +56,19 @@ Die Länge eines Balkens ist die Druckdauer der Datei, wie der Slicer sie gesch�
 
 Ein Drucker, der **offline**, in **Wartung** oder im **Fehler** ist, bekommt nichts voraussichtlich zugeteilt; was Bambuddy ihm fest zugeteilt hat, steht als **wartet: …** in seiner Spur und zählt nicht für „alles fertig“ (**ohne Printer 3**). Ein Drucker, der **auf Platte freigeben wartet**, wird geplant, als würdest du die Platte jetzt freigeben. Ein **pausierter** Druck bleibt gefüllt mit seinem Fortschritt; seine Restzeit zählt ab jetzt.
 
+### Filament in den Druckern
+
+Unter jeder Spur steht, ob das Filament im Drucker für die Drucke der Spur reicht. Das ist nur Anzeige: Reprintbuddy bucht kein Filament und ändert in Bambuddy nichts.
+
+- **Nachladen ca. 14:30 · PLA #000000 (AMS 1, Slot 2)**, dazu ein Strich in der Spur: Etwa dann ist die Spule leer, gleichmäßig über den Druck geschätzt, in dem sie leer wird. **Nachladen jetzt**: Der Zeitpunkt ist schon vorbei. **spätestens**: Ein Druck davor hat einen unbekannten Filamentbedarf, es kann also früher sein.
+- **nicht geladen: PETG #FF0000**: Ein Druck der Spur braucht eine Sorte, die in keinem Slot des Druckers steckt.
+- **Restmenge unbekannt: …**: Bambuddy kennt für die Spule in diesem Slot keine Gramm (dem Slot ist in Bambuddy keine Spule zugewiesen). Die Prozentangabe des AMS nimmt Reprintbuddy nicht: Sie ist zu grob und fehlt bei Spulen ohne RFID.
+- **Filamentbedarf unbekannt** an einem Balken: Der Bedarf des Drucks ist nicht bekannt (ein Druck aus Bambuddys Archiv oder eine gelöschte Datei).
+
+Der Bedarf eines Drucks sind die Gramm je Slot seiner Druckdatei: bei eigenen Drucken aus der Datei des Artikels, bei Drucken anderer aus Bambuddys Dateimanager. Der laufende Druck zählt ganz, weil Bambuddy den Verbrauch erst am Druckende von der Spule abzieht. Der Vorrat sind die Gramm, die Bambuddy für die dem Slot zugewiesene Spule führt; ist die **Ersatzspule** (AMS Filament Backup) eingeschaltet, zählen geladene Slots mit gleichem Material und gleicher Farbe zusammen. Den Slot wählt Reprintbuddy so, wie Bambuddy es ohne Filament-Voreinstellung täte: gleiches Material und gleiche Farbe, sonst ähnliche Farbe, sonst gleiches Material. Je Spur steht jede Sorte nur einmal, an der Stelle, an der sie zuerst leer wird; höchstens drei Hinweise, dann **+ n**. Die Kopfzeile nennt zusätzlich **Nachladen nötig: Printer 2 ca. 15:30** für den frühesten Zeitpunkt aller Drucker (**und n weitere**) und wie viele Einträge Bambuddy beim Start wegen Filamentmangel angehalten hat.
+
+Grenzen: Bambuddy wählt den Slot erst beim Start und schaut zuerst auf die Filament-Voreinstellung; es kann also einen anderen Slot nehmen. Die Düsenseite bei Druckern mit zwei Düsen, Bambuddys Filament-Regeln für Benutzergruppen und seine Einstellung „niedrigste Spule zuerst“ bildet Reprintbuddy nicht nach. Bei voraussichtlich zugeteilten Drucken gilt der Hinweis für den Drucker, den der Plan annimmt. Eine Benachrichtigung über Home Assistant gibt es dafür nicht.
+
 Den Druckerzustand liest Reprintbuddy bei jeder regulären Abfrage mit einer Anfrage für alle Drucker und dazwischen aus den Druckermeldungen von Bambuddys Live-Kanal (siehe [Automatik](automation.md)). Der Plan folgt höchstens etwa einmal je Minute. Solange Bambuddy nicht erreichbar ist, steht dort **Druckerzustand unbekannt**.
 
 Am Handy ist die Seite einspaltig: Die Kopfzeile wird zu Zeilen aus Bezeichnung und Wert, die Kacheln stehen untereinander, und jede Spur des Druckplans wird zu einer Liste mit Uhrzeiten und der Art jedes Balkens.

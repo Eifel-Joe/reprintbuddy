@@ -77,6 +77,8 @@ class PlanItem:
     # place for the next print of Reprintbuddy's queue (p646). Not the same as `own`, which also takes
     # entries made in Bambuddy with the key's user.
     holds_slot: bool = False
+    # What the caller needs to find the print again (the article of a print in Reprintbuddy's queue, p648).
+    ref: int | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,7 @@ class Bar:
     # queue entry). The queue page reads the times of its prints by it (p647). Not compared: plans equal in
     # what they show stay equal.
     item_id: int | None = field(default=None, compare=False)
+    ref: int | None = field(default=None, compare=False)  # `PlanItem.ref` of its entry (p648)
 
 
 @dataclass(frozen=True)
@@ -224,7 +227,8 @@ def build_plan(
         label, own = (entry.label, entry.own) if entry is not None else (status.subtask_name or "", False)
         bar = Bar("running", label, own, now, now + rest, progress=status.progress,
                   paused=status.state == "PAUSE", duration_known=known,
-                  item_id=entry.item_id if entry is not None else None)
+                  item_id=entry.item_id if entry is not None else None,
+                  ref=entry.ref if entry is not None else None)
         bars[pid].append(bar)
         free_at[pid] = bar.end + GAP
         if entry is not None and entry.holds_slot:
@@ -329,7 +333,7 @@ def build_plan(
         kind: Kind = "backlog" if id(entry) in from_backlog else "fixed" if entry.printer_id is not None else "planned"
         bars[target].append(Bar(kind, entry.label, entry.own, start, start + duration,
                                 duration_known=entry.duration is not None,
-                                item_id=None if kind == "backlog" else entry.item_id))
+                                item_id=None if kind == "backlog" else entry.item_id, ref=entry.ref))
         free_at[target] = start + duration + GAP
         if entry.holds_slot:
             heapq.heappush(openings, start + duration)
