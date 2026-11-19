@@ -105,10 +105,10 @@ def make_authority(folder: Path) -> Authority:
 
 def append_once(bundle: Path, pem: str) -> bool:
     """Append `pem` to a bundle of certificates unless it is there; True when it was appended."""
-    text = bundle.read_text(encoding="ascii")
+    text = bundle.read_text(encoding="utf-8")  # older bundles of certifi had comment lines in UTF-8
     if pem.strip() in text:
         return False
-    with bundle.open("a", encoding="ascii") as file:
+    with bundle.open("a", encoding="utf-8") as file:
         file.write(("" if text.endswith("\n") else "\n") + pem.strip() + "\n")
     return True
 
@@ -222,6 +222,11 @@ def sh(*args: str, check: bool = True, timeout: float = 1800.0) -> subprocess.Co
     return done
 
 
+def as_service_user(*args: str) -> tuple[str, ...]:
+    """A command of the installed environment as the service user, not as root: no file of root's lands in it."""
+    return ("runuser", "-u", "reprintbuddy", "--", *args)
+
+
 def healthy(timeout: float = 120.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -315,7 +320,11 @@ class Run:
         """The pages ask GitHub with httpx, which trusts only certifi's list (`trust_env=False`): the authority of
         the run goes there too, in the installed environment only. Looked at before every check: pip could have
         put in a new certifi."""
-        where = sh(str(VENV_PYTHON), "-c", "import certifi; print(certifi.where())").stdout.strip()
+        found = sh(*as_service_user(str(VENV_PYTHON), "-c", "import certifi; print(certifi.where())"), check=False)
+        if found.returncode != 0:  # a later httpx without certifi reads the system's list, which has the authority
+            say("no certifi in the installed environment: the system's list of authorities is used")
+            return
+        where = found.stdout.strip()
         if append_once(Path(where), self.ca_pem):
             say(f"the authority of the run added to {where}")
 
@@ -323,7 +332,8 @@ class Run:
         for server in self.servers:
             server.terminate()
 
-    def check_stand_ins(self) -> None:
+    def check_stand_ins(self, *, failing: bool = False) -> None:
+        """No request the stand-ins did not expect. After a failure of the run they are only shown."""
         github = (self.logs / "fake-github.log").read_text(encoding="utf-8") if (self.logs / "fake-github.log").exists() else ""
         bambuddy = (self.logs / "fake-bambuddy.log").read_text(encoding="utf-8") if (self.logs / "fake-bambuddy.log").exists() else ""
         unknown = [line for line in bambuddy.splitlines() if line.startswith("UNKNOWN")]
@@ -331,7 +341,11 @@ class Run:
             say("readings the Bambuddy stand-in does not know (404, not a failure):\n" + "\n".join(sorted(set(unknown))))
         unexpected = [line for line in (github + bambuddy).splitlines() if line.startswith("UNEXPECTED")]
         if unexpected:
-            raise RunFailed("requests the stand-ins did not expect:\n" + "\n".join(unexpected))
+            text = "requests the stand-ins did not expect:\n" + "\n".join(unexpected)
+            if failing:
+                say(text)
+                return
+            raise RunFailed(text)
 
     # -- what is checked after each step ------------------------------------------------------------------------
 
@@ -339,7 +353,7 @@ class Run:
         marker = json.loads((INSTALL_DIR / "release.json").read_text(encoding="utf-8"))
         if marker.get("tag") != tag or marker.get("repo") != REPO:
             raise RunFailed(f"release.json says {marker}, expected {tag} of {REPO}")
-        said = sh(str(INSTALL_DIR / ".venv" / "bin" / "reprintbuddy"), "--version").stdout.strip()
+        said = sh(*as_service_user(str(INSTALL_DIR / ".venv" / "bin" / "reprintbuddy"), "--version")).stdout.strip()
         if said != f"reprintbuddy {tag[1:]}":
             raise RunFailed(f"the program says {said!r}, expected {tag}")
         healthy()
@@ -370,6 +384,23 @@ class Run:
             if text not in log:
                 raise RunFailed(f"the log does not say {text!r}")
         say(f"the log says: {list(texts)}")
+
+    def log_count(self, text: str) -> int:
+        return websteps.log_text(self.web).count(text)
+
+    def wait_for_log(self, text: str, *, more_than: int, timeout: float = 150.0) -> None:
+        """Until the log says `text` more often than before. The result of an update reaches the log when the
+        program next looks at the state file of the update: at its start and then once a minute
+        (activity/writer.py UPDATE_EVERY); the new process starts before the helper writes the result."""
+        deadline = time.monotonic() + timeout
+        while True:
+            seen = self.log_count(text)
+            if seen > more_than:
+                say(f"the log says {text!r} ({seen}x, before {more_than}x)")
+                return
+            if time.monotonic() > deadline:
+                raise RunFailed(f"the log does not say {text!r} once more within {timeout:.0f} s")
+            time.sleep(5)
 
     def wait_for_end(self, timeout: float = 1200.0) -> dict[str, object]:
         """Until the helper has written its result and its unit is over; then until Reprintbuddy answers."""
@@ -413,6 +444,7 @@ class Run:
             rework_warning = texts["ops.update.rework_warning"] if "ops.update.rework_warning" in texts.texts else None
             if rework_warning and (rework_warning in page) != bool(self.plan["rework"]):
                 raise RunFailed(f"the rework warning is {'missing' if self.plan['rework'] else 'shown'}")
+            results_before = self.log_count(texts["activity.kind.update_result"])
             websteps.start_update(self.web)
             status = self.wait_for_end()
             if (status.get("state"), status.get("to_tag")) != ("succeeded", self.pre):
@@ -421,8 +453,7 @@ class Run:
             self.expect_card(Texts(INSTALL_DIR, self.pre)["ops.update.state.succeeded"])
             self.expect_version(self.pre)
             self.expect_parts(["E2E part A"])
-            texts = Texts(INSTALL_DIR, self.pre)
-            self.expect_log(texts.fixed("activity.kind.update_result"))
+            self.wait_for_log(Texts(INSTALL_DIR, self.pre)["activity.kind.update_result"], more_than=results_before)
 
     def reinstall_prerelease(self) -> None:
         with self.step(f"run the installer of {self.pre} again (repair run)"):
@@ -482,6 +513,8 @@ class Run:
 
     def way_back_stopped(self, at: str) -> None:
         with self.step(f"go back to {self.stable}, stopped from outside at {at!r}"):
+            interrupted = Texts(INSTALL_DIR, self.pre)["activity.update.interrupted"]
+            interrupted_before = self.log_count(interrupted)  # the first stop's entry must not count for the second
             self._start_way_back()
             hit = wait_for_step(STATUS, ("install",) if at == "install" else ("stop", "database"), timeout=600)
             say(f"step {hit!r} reached: systemctl stop reprintbuddy-update")
@@ -500,7 +533,7 @@ class Run:
             self.expect_parts(["E2E part A"])
             texts = Texts(INSTALL_DIR, self.pre)
             self.expect_card(texts[f"ops.update.reason.{status['reason']}"])
-            self.expect_log(texts["activity.update.interrupted"])
+            self.wait_for_log(interrupted, more_than=interrupted_before)
 
     def way_back_to_the_end(self) -> None:
         with self.step(f"go back to {self.stable} to the end"):
@@ -528,6 +561,9 @@ class Run:
             self.way_back_to_the_end()
             with self.step("no request the stand-ins did not expect"):
                 self.check_stand_ins()
+        except BaseException:
+            self.check_stand_ins(failing=True)
+            raise
         finally:
             self.stop_stand_ins()
 
@@ -547,6 +583,9 @@ def main(argv: list[str] | None = None) -> int:
     except (RunFailed, websteps.StepFailed) as error:
         say(f"::error::end-to-end run failed in step {run.number}: {error}")
         return 1
+    except Exception as error:  # a form not found, a connection lost: named with its step, then the traceback
+        say(f"::error::end-to-end run failed in step {run.number}: {type(error).__name__}: {error}")
+        raise
     say("\nend-to-end run passed")
     return 0
 

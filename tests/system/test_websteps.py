@@ -7,6 +7,7 @@ restore it cannot restart itself (no sudo), so the test restarts it, as systemd 
 
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 import sys
@@ -49,7 +50,7 @@ class Service:
     def start(self) -> None:
         self.process = subprocess.Popen(
             [sys.executable, "-m", "reprintbuddy", "serve", "--db", str(self.db)], cwd=self.cwd,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=self._env(),
         )
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
@@ -59,6 +60,20 @@ class Service:
             except OSError:
                 time.sleep(0.2)
         raise AssertionError("the service did not answer")
+
+    def _env(self) -> dict[str, str]:
+        """After a restore the service restarts itself with `sudo -n systemctl restart`. On a machine with a real
+        installation that would restart it: a `sudo` that refuses comes first in the PATH (not on Windows,
+        which has none)."""
+        env = dict(os.environ)
+        if os.name == "posix":
+            bin_dir = self.cwd / "bin"
+            bin_dir.mkdir(exist_ok=True)
+            stub = bin_dir / "sudo"
+            stub.write_text("#!/bin/sh\necho 'sudo is not allowed in this test' >&2\nexit 1\n", encoding="ascii")
+            stub.chmod(0o755)
+            env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+        return env
 
     def stop(self) -> None:
         if self.process is not None:

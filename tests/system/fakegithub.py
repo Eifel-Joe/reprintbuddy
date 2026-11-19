@@ -100,6 +100,14 @@ class FakeGitHub:
 
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
+            timeout = 30  # seconds for a stalled client, the TLS handshake included (see `setup`)
+
+            def setup(self) -> None:
+                # The handshake runs here, in the thread of this request and within its time limit, not in the
+                # accepting thread, where a client that connects and says nothing would hold every other one.
+                self.request.settimeout(self.timeout)
+                self.request.do_handshake()
+                super().setup()
 
             def do_GET(self) -> None:  # noqa: N802 - the name http.server calls
                 host = (self.headers.get("Host") or "").split(":")[0].lower()
@@ -124,7 +132,7 @@ class FakeGitHub:
                 pass  # the log file says what came
 
         self._server = ThreadingHTTPServer((bind, port), Handler)
-        self._server.socket = self.context.wrap_socket(self._server.socket, server_side=True)
+        self._server.socket = self.context.wrap_socket(self._server.socket, server_side=True, do_handshake_on_connect=False)
         self._thread = threading.Thread(target=self._server.serve_forever, name="fake-github", daemon=True)
         self._thread.start()
 

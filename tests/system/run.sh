@@ -11,12 +11,16 @@ set -Eeuo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "${here}/../.." && pwd)"
-out="${1:-${repo}/e2e-out}"
+out="${1:-$(mktemp -d)}" # a folder of its own: the container writes its logs there as root
 name="reprintbuddy-e2e-$$"
 image="reprintbuddy-e2e:local"
 
-rm -rf "${out}"
+if [ -e "${out}/build" ] || [ -e "${out}/logs" ]; then
+    echo "${out} holds an earlier run; give an empty or new folder." >&2
+    exit 2
+fi
 mkdir -p "${out}/build" "${out}/logs"
+echo "packages and logs: ${out}"
 
 python3 "${repo}/tests/system/packages.py" --repo "${repo}" --out "${out}/build"
 
@@ -37,7 +41,16 @@ docker run -d --name "${name}" --privileged --cgroupns=host -v /sys/fs/cgroup:/s
     -v "${here}:/e2e/system:ro" -v "${out}/build:/e2e/build:ro" -v "${out}/logs:/e2e/logs" \
     "${image}" >/dev/null
 
-state="$(docker exec "${name}" systemctl is-system-running --wait || true)"
+# Right after the start systemd may not listen yet ("offline"): ask again for a while; the boot itself may take
+# up to 5 minutes before the run gives up.
+state=""
+for _ in $(seq 60); do
+    state="$(docker exec "${name}" timeout 300 systemctl is-system-running --wait 2>/dev/null || true)"
+    case "${state}" in
+        "" | offline) sleep 1 ;;
+        *) break ;;
+    esac
+done
 echo "systemd in the container: ${state}"
 case "${state}" in
     running | degraded) ;;
