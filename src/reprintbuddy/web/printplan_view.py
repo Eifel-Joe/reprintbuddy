@@ -23,7 +23,8 @@ from reprintbuddy.domain.filamentplan import LaneFilament, LanePrint, Marker, Ne
 from reprintbuddy.domain.printplan import Bar, Plan, PlanItem, PlanPrinter, build_plan
 from reprintbuddy.localtime import to_local
 from reprintbuddy.domain.workqueue import OPEN_STATES
-from reprintbuddy.models import Article, ArticleFilament, Dispatch, WorkQueueEntry
+from reprintbuddy.domain import color as color_mod
+from reprintbuddy.models import Article, ArticleFilament, Dispatch, FilamentSort, WorkQueueEntry
 from reprintbuddy.web.i18n import translate
 
 MIN_SPAN = timedelta(hours=2)  # the axis reaches from now to "alles fertig", at least 2 h (Spec 10.2)
@@ -313,6 +314,7 @@ def plan_view(
     plan, own = built
     ax = axis(now, plan.finish)
     filament = _filament(db, board, queue or [], plan, now)
+    names = color_names(db) if filament else {}
     lanes = tuple(
         LaneView(
             lane.name, lane.condition,
@@ -321,7 +323,7 @@ def plan_view(
                   for n, bar in enumerate(lane.bars)) if lane.printer_id in filament
             else tuple(_bar_view(bar, ax, now, lang) for bar in lane.bars),
             lane.waiting,
-            *_markers(filament.get(lane.printer_id), ax, now, lang),
+            *_markers(filament.get(lane.printer_id), ax, now, lang, names),
         )
         for lane in plan.lanes
     )
@@ -350,8 +352,33 @@ def slot_name(lang: str, slot: AmsSlot) -> str:
     return translate(lang, "overview.plan.slot_ams", unit=slot.ams_id + 1, slot=slot.tray_id + 1)
 
 
-def _sort(lang: str, material: str | None, color: str | None) -> str:
-    text = " ".join(part for part in (material, color) if part)
+ColorNames = dict[tuple[str, tuple[int, int, int]], str | None]
+
+
+def color_names(db: Session) -> ColorNames:
+    """(material, RGB) -> the colour name of Reprintbuddy's spool sorts (Nachtrag p648), as the filament page
+    and the article page show it. Two different names for one material and value: None (the value is shown);
+    legacy sorts show nowhere and are left out."""
+    found: dict[tuple[str, tuple[int, int, int]], set[str]] = {}
+    for material, value, name in db.execute(
+        select(FilamentSort.material, FilamentSort.color_hex, FilamentSort.color_name)
+        .where(FilamentSort.legacy.is_(False))
+    ):
+        rgb = color_mod.parse_hex(value)
+        if rgb is None:
+            continue
+        names = found.setdefault(((material or "").strip().casefold(), rgb), set())
+        if name and name.strip():
+            names.add(name.strip())
+    return {key: next(iter(names)) if len(names) == 1 else None for key, names in found.items()}
+
+
+def _sort(lang: str, material: str | None, color: str | None, names: ColorNames | None = None) -> str:
+    """"PLA Black" when a spool sort names the colour, else "PLA #000000" (`color.display_hex`)."""
+    rgb = color_mod.parse_hex(color)
+    name = (names or {}).get(((material or "").strip().casefold(), rgb)) if rgb is not None else None
+    shown = name or (color_mod.display_hex(color) if color else None)
+    text = " ".join(part for part in (material, shown) if part)
     return text or translate(lang, "overview.plan.sort_unknown")
 
 
@@ -415,8 +442,8 @@ def _filament(
     return found
 
 
-def _marker_text(lang: str, marker: Marker, now: datetime) -> str:
-    sort = _sort(lang, marker.material, marker.color)
+def _marker_text(lang: str, marker: Marker, now: datetime, names: ColorNames | None = None) -> str:
+    sort = _sort(lang, marker.material, marker.color, names)
     if marker.kind == "not_loaded":
         return translate(lang, "overview.plan.not_loaded", sort=sort)
     where = slot_name(lang, marker.slot) if marker.slot is not None else ""
@@ -428,7 +455,9 @@ def _marker_text(lang: str, marker: Marker, now: datetime) -> str:
     return translate(lang, key, time=_when(marker.at, now, lang), sort=sort, slot=where)
 
 
-def _markers(found: LaneFilament | None, ax: Axis, now: datetime, lang: str) -> tuple[tuple[MarkerView, ...], int]:
+def _markers(
+    found: LaneFilament | None, ax: Axis, now: datetime, lang: str, names: ColorNames | None = None,
+) -> tuple[tuple[MarkerView, ...], int]:
     if found is None:
         return (), 0
     total = (ax.end - ax.start).total_seconds()
@@ -440,7 +469,7 @@ def _markers(found: LaneFilament | None, ax: Axis, now: datetime, lang: str) -> 
             if moment <= ax.end:
                 left = round(100 * (moment - ax.start).total_seconds() / total, 2)
         color = marker.color if marker.color and _HEX_COLOR.match(marker.color) else None
-        views.append(MarkerView(marker.kind, _marker_text(lang, marker, now), left, color))
+        views.append(MarkerView(marker.kind, _marker_text(lang, marker, now, names), left, color))
     return tuple(views), found.more
 
 

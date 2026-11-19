@@ -60,8 +60,10 @@ Ein Drucker, der **offline**, in **Wartung** oder im **Fehler** ist, bekommt nic
 
 Unter jeder Spur steht, ob das Filament im Drucker für die Drucke der Spur reicht. Das ist nur Anzeige: Reprintbuddy bucht kein Filament und ändert in Bambuddy nichts.
 
-- **Nachladen ca. 14:30 · PLA #000000 (AMS 1, Slot 2)**, dazu ein Strich in der Spur: Etwa dann ist die Spule leer, gleichmäßig über den Druck geschätzt, in dem sie leer wird. **Nachladen jetzt**: Der Zeitpunkt ist schon vorbei. **spätestens**: Ein Druck davor hat einen unbekannten Filamentbedarf, es kann also früher sein.
-- **nicht geladen: PETG #FF0000**: Ein Druck der Spur braucht eine Sorte, die in keinem Slot des Druckers steckt.
+- **Nachladen ca. 14:30 · PLA Schwarz (AMS 1, Slot 2)**, dazu ein Strich in der Spur: Etwa dann ist die Spule leer, gleichmäßig über den Druck geschätzt, in dem sie leer wird. **Nachladen jetzt**: Der Zeitpunkt ist schon vorbei. **spätestens**: Ein Druck davor hat einen unbekannten Filamentbedarf, es kann also früher sein.
+- **nicht geladen: PETG Rot**: Ein Druck der Spur braucht eine Sorte, die in keinem Slot des Druckers steckt.
+
+Die Farbe heißt wie auf der Seite *Filament*, wenn eine Spulensorte dasselbe Material, denselben Farbwert und einen Farbnamen hat; sonst steht der Farbwert, etwa #FF0000.
 - **Restmenge unbekannt: …**: Bambuddy kennt für die Spule in diesem Slot keine Gramm (dem Slot ist in Bambuddy keine Spule zugewiesen). Die Prozentangabe des AMS nimmt Reprintbuddy nicht: Sie ist zu grob und fehlt bei Spulen ohne RFID.
 - **Filamentbedarf unbekannt** an einem Balken: Der Bedarf des Drucks ist nicht bekannt (ein Druck aus Bambuddys Archiv oder eine gelöschte Datei).
 
