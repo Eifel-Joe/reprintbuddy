@@ -123,6 +123,22 @@ def test_an_old_count_just_after_midnight_holds_until_late_that_day(db):  # revi
         counted_that_day(lambda: stock.sell_unreserved(s, a, 1, "user", booked_at=at_local_time(day(3), time(23, 30))))
 
 
+@pytest.mark.parametrize("browser", ["Asia/Tokyo", "America/New_York"])
+def test_an_old_count_holds_for_its_day_in_the_zone_of_the_server_whoever_books(db, browser):
+    """Spec 10.5a: old counts are a rule of the server. A booking typed in a browser in another zone is
+    checked against the same end of the day as one of the engine or of a browser in the server's zone."""
+    from zoneinfo import ZoneInfo
+
+    from reprintbuddy import localtime
+
+    with db.begin() as s:
+        a = make_article(s, stock=10).id
+        old_count(s, a, 3, time(0, 30), 10)
+        late_that_day = at_local_time(day(3), time(23, 30))  # in the zone of the server, outside the browser's
+        with localtime.shown_in(ZoneInfo(browser)):
+            counted_that_day(lambda: stock.sell_unreserved(s, a, 1, "user", booked_at=late_that_day))
+
+
 def test_a_count_of_0_3_16_stays_at_its_end_of_day_when_the_zone_changes(db, monkeypatch):  # review finding 1
     """A count dated back with 0.3.16 is stored at the end of its day in the zone of then. After a change
     of the zone (UTC to Berlin) it falls on 00:59 of the next day there; it must not hold until the end
