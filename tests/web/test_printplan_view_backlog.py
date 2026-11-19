@@ -107,10 +107,11 @@ def test_article_waiting_for_its_printer_shows_in_that_lane(db):
         make_entry(s, a.id)
         make_entry(s, article(s, "Other", plate_id=2).id)
         st.set_setting(s, "queue_cap", 1, commit=False)
-    v = view(db, board(idle(1), idle(2), printers=printers, facts=facts(seconds=1800) | facts(plate=2)),
-             waiting_for_printer=[a.id])
+    both = {(1, "v1"): FileFacts(nozzle=None, plate_seconds={1: 1800, 2: 3600})}
+    v = view(db, board(idle(1), idle(2), printers=printers, facts=both), waiting_for_printer=[a.id])
     assert v.lanes[1].waiting == ("Clip",) and v.without == ("Printer 2",)
-    assert [b[2] for b in bars(v)] == ["Other"]  # it took the only place
+    # the parked print takes no place under the limit of 1: "Other" gets it
+    assert bars(v) == [("Printer 1", "backlog", "Other", "10:00", "11:00")] and v.no_slot == 0
 
 
 def test_model_with_every_printer_in_maintenance_counts_without_ready_printer(db):

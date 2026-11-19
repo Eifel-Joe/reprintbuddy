@@ -165,7 +165,7 @@ def plan_items(db: Session, queue: Sequence[QueueItem], now: datetime) -> list[P
     return found
 
 
-@dataclass(frozen=True)
+@dataclass
 class Backlog:
     """Reprintbuddy's own queue as the print plan takes it (Spec 10.2, p646)."""
 
@@ -196,19 +196,18 @@ def backlog(db: Session, board: PrinterBoard, waiting_for_printer: Collection[in
         free_slots=int(st.get_setting(db, "queue_cap")) - dispatch.open_count(db),
         insert_next=bool(st.get_setting(db, "insert_next")),
     )
-    held = unplaced = 0
     skip = set(waiting_for_printer)
     for entry, article in rows:
         if entry.held or article.paused or article.archived_at is not None or (
             not article.target_model and article.printer_id is None
         ):
-            held += entry.prints
+            found.held += entry.prints
             continue
         if article.id in skip:
             if article.printer_id is not None:
                 found.parked.extend([(article.printer_id, article.name)] * entry.prints)
             else:
-                unplaced += entry.prints
+                found.unplaced += entry.prints
             continue
         facts = board.file_facts.get((article.library_file_id, article.file_fingerprint))
         seconds = facts.plate_seconds.get(article.plate_id) if facts is not None else None
@@ -226,7 +225,7 @@ def backlog(db: Session, board: PrinterBoard, waiting_for_printer: Collection[in
             nozzle=facts.nozzle if facts is not None else None,
         )
         found.items.extend([item] * entry.prints)
-    return Backlog(found.items, found.parked, held, unplaced, 0, found.free_slots, found.insert_next)
+    return found
 
 
 def plan_printers(board: PrinterBoard) -> list[PlanPrinter] | None:

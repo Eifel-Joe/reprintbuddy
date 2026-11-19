@@ -277,13 +277,14 @@ class Engine:
 
         with self.sm.begin() as session:
             created = len(workqueue.apply_rule(session))
-        # After the rule, so the prints it just queued are known at once, not a query later (p646).
-        if client is not None and self._checked_files is not None and status.reachable:
-            await self._read_file_facts(client, self._checked_files)
 
         dispatched = 0
         if client is not None and self._may_hand_over(poll):
             dispatched = await self._hand_over(client)
+        # After the rule, so what it just queued is known at once, not a query later; after the hand-over, so
+        # a print that went to Bambuddy (which names its print time) costs no request (p646, review).
+        if client is not None and self._checked_files is not None and status.reachable:
+            await self._read_file_facts(client, self._checked_files)
 
         with self.sm() as session:
             status.cap_reached = self._cap_reached(session)
@@ -448,9 +449,12 @@ class Engine:
             file_id, _fingerprint = key
             try:
                 plates = await client.list_plates(file_id)
-            except (BambuddyRejected, BambuddyUnavailable):
+            except BambuddyRejected:
                 log.info("engine: the plates of file %s could not be read; its print time stays unknown", file_id)
                 continue
+            except BambuddyUnavailable:  # gone: the next file would only wait for the same timeout (review p646)
+                log.info("engine: Bambuddy did not answer for the plates; the print times stay unknown")
+                break
             file = files.get(file_id)
             facts[key] = FileFacts(
                 nozzle=file.nozzle_diameter if file is not None else None,

@@ -149,6 +149,7 @@ def random_case(rng: random.Random):
                                  timedelta(minutes=50)]),
             manual_start=rng.random() < 0.08, starts_later=rng.random() < 0.08,
             been_jumped=rng.random() < 0.1, nozzle=rng.choice([None, 0.4, 0.6]),
+            holds_slot=rng.random() < 0.3,  # counts against the limit: no effect without a backlog (p646)
         ))
     return printers, items, rng.random() < 0.4
 

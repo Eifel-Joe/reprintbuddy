@@ -227,3 +227,44 @@ def test_bars_carry_the_bambuddy_id_of_their_entry():
     assert ids == {"Halter": printing.item_id, "Fest": fixed.item_id, "Frei": planned.item_id, "Clip": None}
     foreign_running = build_plan([running(1, 30)], [], NOW).lanes[0].bars[0]
     assert foreign_running.item_id is None  # a print without a queue entry
+
+
+def test_negative_free_slots_need_several_ends_before_a_hand_over():
+    """Limit lowered below the open prints (-1): the print goes only at the second end (review p646)."""
+    a = item("A", state="printing", printer_id=1, holds_slot=True)
+    b = item("B", state="printing", printer_id=2, holds_slot=True)
+    plan = build_plan([running(1, 30), running(2, 60), printer(3)], [a, b], NOW, backlog=[waiting()],
+                      free_slots=-1)
+    backlog_bars = [b for pid in (1, 2, 3) for b in bars(plan, pid) if b[0] == "backlog"]
+    assert backlog_bars == [("backlog", "Clip", at(11), at(11, 30))]  # printers 1 and 3 free then: lower id
+
+
+def test_shortest_first_orders_a_print_released_later():
+    """Released at 10:30 by an ending own print, the short print goes before the long foreign one that
+    has not started yet, with Bambuddy's "shortest job first"."""
+    own = item("Halter", state="printing", printer_id=1, holds_slot=True)
+    long_foreign = item("Fremd", minutes=120)
+    plan = build_plan([running(1, 30), running(2, 40)], [own, long_foreign], NOW, backlog=[waiting(minutes=10)],
+                      free_slots=0, shortest_first=True)
+    assert bars(plan, 1)[1] == ("backlog", "Clip", at(10, 35), at(10, 45))
+    assert bars(plan, 2)[1] == ("planned", "Fremd", at(10, 45), at(12, 45))
+
+
+@pytest.mark.parametrize("st", [
+    status(1, "RUNNING", progress=50.0, remaining_min=60, connected=False),  # offline: no bar
+    "maintenance",
+])
+def test_own_print_on_a_printer_out_of_service_still_frees_its_place(st):
+    """A printing own print without a bar (printer offline or in maintenance) ends anyway; its place frees
+    when its time is up, at the latest now (review p646, risk 2)."""
+    one = printer(1, active=False) if st == "maintenance" else printer(1, st=st)
+    own = item("Halter", state="printing", printer_id=1, holds_slot=True, minutes=60)
+    plan = build_plan([one, printer(2)], [own], NOW, backlog=[waiting()], free_slots=0)
+    assert plan.no_slot == 0 and bars(plan, 2) == [("backlog", "Clip", NOW, at(10, 30))]
+
+
+def test_own_print_reported_idle_frees_its_place_now():
+    """The live channel already says IDLE while the stored queue still says printing (review p646)."""
+    own = item("Halter", state="printing", printer_id=1, holds_slot=True)
+    plan = build_plan([printer(1)], [own], NOW, backlog=[waiting()], free_slots=0)
+    assert bars(plan, 1) == [("backlog", "Clip", NOW, at(10, 30))]

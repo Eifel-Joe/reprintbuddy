@@ -229,6 +229,19 @@ def build_plan(
         free_at[pid] = bar.end + GAP
         if entry is not None and entry.holds_slot:
             heapq.heappush(openings, bar.end)
+    # Review p646, risk 2 - root cause: an own print counts against the limit while it prints, but only a drawn
+    # bar gave an opening; one on a printer out of service, or one Bambuddy's queue still lists as printing
+    # while the printer already reports idle, never freed its place, so everything behind it showed "no place".
+    # Fix: such a print frees its place when the printer says it ends (connected and a time left), else now.
+    # NOT-TO-DO: never freeing it - the print does end; Spec 7.6: a printer not connected has no valid values.
+    drawn = {bar.item_id for lane_bars in bars.values() for bar in lane_bars}
+    by_printer = {p.printer_id: p for p in printers}
+    for entry in items:
+        if entry.status != "printing" or not entry.holds_slot or entry.item_id in drawn:
+            continue
+        state = by_printer[entry.printer_id].status if entry.printer_id in by_printer else None
+        rest = state.remaining_min if state is not None and state.connected and state.remaining_min else 0
+        heapq.heappush(openings, now + timedelta(minutes=rest))
 
     # Sorted out first, as Bambuddy's scheduler skips them or as they wait for one printer (module text).
     unplaced = manual = 0
@@ -258,7 +271,8 @@ def build_plan(
     for pid, label in parked:
         if pid in waiting:
             waiting[pid].append(label)
-    from_backlog: set[int] = set()
+    # Holds the handed-over objects too, so no id of theirs can be reused by a later object (review p646).
+    from_backlog: dict[int, PlanItem] = {}
     backlog_left = list(backlog)
     slots = free_slots
 
@@ -268,7 +282,7 @@ def build_plan(
         while backlog_left and slots > 0:
             slots -= 1
             entry = with_fields(backlog_left.pop(0), holds_slot=True)  # a new object: identity stays unique
-            from_backlog.add(id(entry))
+            from_backlog[id(entry)] = entry
             if insert_next:
                 own = [n for n, e in enumerate(order) if e.holds_slot]
                 order.insert(own[-1] + 1 if own else 0, entry)

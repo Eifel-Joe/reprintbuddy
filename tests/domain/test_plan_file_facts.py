@@ -106,3 +106,27 @@ async def test_a_short_tick_reads_no_plates(engine_env):
     _stop_queue(env)
     await env.engine.tick(poll=False)
     assert "list_plates" not in env.fake.calls
+
+
+async def test_bambuddy_gone_while_reading_plates_stops_at_the_first_file(engine_env):
+    """Unreachable: the next file would only wait for the same timeout under the engine's lock (review p646)."""
+    env = engine_env
+    _stop_queue(env)
+    from factories import make_article, make_entry
+
+    with env.sm.begin() as s:
+        make_entry(s, make_article(s, name="Template B", library_file_id=2, plate_id=1, file_fingerprint="v1",
+                                   target_model="A1").id)
+    env.fake.fail_next("list_plates", BambuddyUnavailable("gone"))
+
+    await env.engine.tick(poll=True)
+
+    assert env.fake.calls.count("list_plates") == 1
+
+
+async def test_a_print_handed_over_in_the_same_round_costs_no_plates_request(engine_env):
+    """The rule queues a print and the hand-over takes it at once: Bambuddy names its print time (review p646)."""
+    env = engine_env
+    await env.engine.tick(poll=True)
+    assert len(env.fake.enqueued) == 1
+    assert "list_plates" not in env.fake.calls
