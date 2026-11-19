@@ -268,3 +268,11 @@ def test_own_print_reported_idle_frees_its_place_now():
     own = item("Halter", state="printing", printer_id=1, holds_slot=True)
     plan = build_plan([printer(1)], [own], NOW, backlog=[waiting()], free_slots=0)
     assert bars(plan, 1) == [("backlog", "Clip", NOW, at(10, 30))]
+
+
+def test_bars_of_reprintbuddys_queue_carry_their_reference():
+    """The reload hint finds the article of a print still in Reprintbuddy through `ref` (p648)."""
+    from dataclasses import replace
+
+    plan = build_plan([printer(1)], [], NOW, backlog=[replace(waiting(), ref=42)], free_slots=1)
+    assert plan.lanes[0].bars[0].ref == 42
