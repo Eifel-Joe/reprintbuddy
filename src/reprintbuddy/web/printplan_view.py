@@ -18,9 +18,10 @@ from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.types import QueueItem
 from reprintbuddy.domain import dispatch
 from reprintbuddy.domain.printerboard import PrinterBoard
-from reprintbuddy.domain.printplan import Bar, PlanItem, PlanPrinter, build_plan
+from reprintbuddy.domain.printplan import Bar, Plan, PlanItem, PlanPrinter, build_plan
 from reprintbuddy.localtime import to_local
-from reprintbuddy.models import Article, WorkQueueEntry
+from reprintbuddy.domain.workqueue import OPEN_STATES
+from reprintbuddy.models import Article, Dispatch, WorkQueueEntry
 from reprintbuddy.web.i18n import translate
 
 MIN_SPAN = timedelta(hours=2)  # the axis reaches from now to "alles fertig", at least 2 h (Spec 10.2)
@@ -263,6 +264,23 @@ def _bar_view(bar: Bar, ax: Axis, now: datetime, lang: str) -> BarView:
     )
 
 
+def _plan(
+    db: Session, board: PrinterBoard, queue: Sequence[QueueItem] | None, now: datetime, *, known: bool,
+    waiting_for_printer: Collection[int],
+) -> tuple[Plan, Backlog] | None:
+    """The one calculation behind the overview's plan and the queue page's times (Spec 10.3a); None while
+    the printers' state is not known."""
+    printers = plan_printers(board)
+    if not known or printers is None:
+        return None
+    own = backlog(db, board, waiting_for_printer)
+    plan = build_plan(
+        printers, plan_items(db, queue or [], now), now, shortest_first=board.shortest_first,
+        backlog=own.items, free_slots=own.free_slots, insert_next=own.insert_next, parked=own.parked,
+    )
+    return plan, own
+
+
 def plan_view(
     db: Session, board: PrinterBoard, queue: Sequence[QueueItem] | None, now: datetime, lang: str, *, known: bool,
     live: bool = False, waiting_for_printer: Collection[int] = (),
@@ -270,14 +288,10 @@ def plan_view(
     """The print plan for the page. `known` False (Bambuddy not set up or not answering) or a board
     without printers: "Druckerzustand unbekannt". `live`: Bambuddy's live channel is connected; it reports
     every change of a printer, so the state is current however old its last message is (no "as of")."""
-    printers = plan_printers(board)
-    if not known or printers is None:
+    built = _plan(db, board, queue, now, known=known, waiting_for_printer=waiting_for_printer)
+    if built is None:
         return PlanView(known=False)
-    own = backlog(db, board, waiting_for_printer)
-    plan = build_plan(
-        printers, plan_items(db, queue or [], now), now, shortest_first=board.shortest_first,
-        backlog=own.items, free_slots=own.free_slots, insert_next=own.insert_next, parked=own.parked,
-    )
+    plan, own = built
     ax = axis(now, plan.finish)
     lanes = tuple(
         LaneView(
@@ -294,3 +308,56 @@ def plan_view(
         minimum=plan.finish_is_minimum, without=plan.without, unplaced=plan.unplaced + own.unplaced,
         manual=plan.manual, held=own.held, no_slot=plan.no_slot, stopped=own.stopped, stale=stale,
     )
+
+
+# ---- the queue page: times of the prints in progress (Spec 10.3a, p647) -------------------------
+
+
+@dataclass(frozen=True)
+class PrintTimes:
+    start: str  # "" when not in the lanes; a running print: Bambuddy's start without "about", or "running"
+    end: str
+    duration: str  # the slicer's print time of the file, "Duration unknown"
+
+
+def in_progress_times(
+    db: Session, board: PrinterBoard, queue: Sequence[QueueItem] | None, now: datetime, lang: str, *,
+    known: bool, waiting_for_printer: Collection[int] = (),
+) -> dict[int, PrintTimes]:
+    """Per open print (`Dispatch.id`): start, end and print time, from the same plan as the overview's bars
+    (Spec 10.3a). A print found in no lane - not yet in Bambuddy's list, without a ready printer, waiting
+    for a start by hand or for a printer out of service, or the printers' state unknown - keeps its print
+    time but no start or end. The print time comes from Bambuddy's entry, for a print not in its list from
+    the file's facts of the last query (p646)."""
+    built = _plan(db, board, queue, now, known=known, waiting_for_printer=waiting_for_printer)
+    bars = {} if built is None else {
+        bar.item_id: bar for lane in built[0].lanes for bar in lane.bars if bar.item_id is not None
+    }
+    items = {item.id: item for item in queue or []}
+    rows = db.execute(
+        select(Dispatch, Article.file_fingerprint)
+        .join(Article, Article.id == Dispatch.article_id)
+        .where(Dispatch.status.in_(OPEN_STATES))
+    ).all()
+    found: dict[int, PrintTimes] = {}
+    for row, fingerprint in rows:
+        item = items.get(row.bambuddy_item_id) if row.bambuddy_item_id is not None else None
+        if item is not None:
+            seconds = item.print_time_seconds
+        else:
+            facts = board.file_facts.get((row.library_file_id, fingerprint)) if row.library_file_id else None
+            seconds = facts.plate_seconds.get(row.plate_id) if facts is not None and row.plate_id else None
+        duration = (translate(lang, "overview.plan.unknown_duration") if seconds is None
+                    else _span(timedelta(seconds=seconds)))
+        bar = bars.get(row.bambuddy_item_id) if row.bambuddy_item_id is not None else None
+        if bar is None:
+            found[row.id] = PrintTimes("", "", duration)
+            continue
+        if bar.kind == "running":
+            started = item.started_at if item is not None else None
+            start = to_local(started).strftime("%H:%M") if started is not None else translate(lang, "queue.running")
+        else:
+            start = translate(lang, "queue.time_about", time=_when(bar.start, now, lang))
+        end_key = "queue.time_about" if bar.duration_known else "queue.time_at_least"
+        found[row.id] = PrintTimes(start, translate(lang, end_key, time=_when(bar.end, now, lang)), duration)
+    return found

@@ -133,8 +133,9 @@
 </section>
 {% endcall %}
 
-{# Prints handed over to Bambuddy and not finished (Spec 7.1 "in progress"). #}
-{% call ui.region("in-progress", "queue") %}
+{# Prints handed over to Bambuddy and not finished (Spec 7.1 "in progress"), with start, end and print time from
+   the overview's print plan (Spec 10.3a, p647); they follow the printers' state too. #}
+{% call ui.region("in-progress", "queue printers") %}
 <section class="queue-section" id="in-progress">
   <div class="section-head"><h2>{{ ui.icon('printer') }}{{ t('queue.in_progress') }}</h2></div>
   {% if in_progress %}
@@ -145,20 +146,23 @@
           <th>{{ t('queue.col.article') }}</th>
           <th>{{ t('queue.col.origin') }}</th>
           <th>{{ t('queue.col.state') }}</th>
-          <th>{{ t('queue.col.handed_over') }}</th>
-          <th class="num">{{ t('queue.col.bambuddy_id') }}</th>
+          <th>{{ t('queue.col.start') }}</th>
+          <th>{{ t('queue.col.end') }}</th>
+          <th>{{ t('queue.col.print_time') }}</th>
         </tr>
       </thead>
       <tbody>
       {% for d, name in in_progress %}
       {% set origin_key = 'queue.origin.' ~ d.origin %}
       {% set status_key = 'dispatch.status.' ~ d.status %}
+      {% set times = progress_times.get(d.id) %}
         <tr>
           <td class="name"><a class="progress-name" href="/articles/{{ d.article_id }}">{{ name }}</a></td>
           <td>{{ t(origin_key) }}</td>
           <td><span class="badge tone-{{ dispatch_tones.get(d.status, 'neutral') }}">{{ t(status_key) }}</span></td>
-          <td class="nowrap">{{ d.dispatched_at|local_dt }}</td>
-          <td class="num">{{ d.bambuddy_item_id if d.bambuddy_item_id is not none else '' }}</td>
+          <td class="nowrap">{{ times.start if times else '' }}</td>
+          <td class="nowrap">{{ times.end if times else '' }}</td>
+          <td class="nowrap">{{ times.duration if times else '' }}</td>
         </tr>
       {% endfor %}
       </tbody>

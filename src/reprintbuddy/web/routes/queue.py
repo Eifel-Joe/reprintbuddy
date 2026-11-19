@@ -28,8 +28,8 @@ from reprintbuddy.bambuddy.types import QUEUE_STATUSES
 from reprintbuddy.domain import dispatch, workqueue
 from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.errors import DomainError, ValidationError
-from reprintbuddy.models import Article, Dispatch, WorkQueueEntry
-from reprintbuddy.web import regions
+from reprintbuddy.models import Article, Dispatch, WorkQueueEntry, utcnow
+from reprintbuddy.web import printplan_view, regions
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import current_language, db_session, get_bambuddy, render
 from reprintbuddy.web.engine_view import warnings_context
@@ -139,6 +139,18 @@ def _bambuddy_view(request: Request, db: Session, fresh: bool | None) -> dict[st
     }
 
 
+def _progress_times(request: Request, db: Session, lang: str) -> dict[int, printplan_view.PrintTimes]:
+    """Start, end and print time of each print in progress, from the overview's print plan (Spec 10.3a, p647):
+    the same calculation and the same inputs as `routes.overview`."""
+    ticker = request.app.state.ticker
+    status = ticker.status
+    return printplan_view.in_progress_times(
+        db, ticker.board, status.bambuddy_queue, utcnow(), lang,
+        known=status.configured and status.reachable is not False and status.bambuddy_queue_ok,
+        waiting_for_printer=status.waiting_for_printer,
+    )
+
+
 def _page(
     request: Request,
     *,
@@ -180,6 +192,7 @@ def _page(
         pause_reasons=reasons,
         cards=kpi_cards(lambda key: translate(lang, key), entries, len(in_progress)),
         in_progress=in_progress,
+        progress_times=_progress_times(request, db, lang),
         dispatch_tones=DISPATCH_TONES,
         articles=articles,
         manual=manual_values or dict(MANUAL_DEFAULTS),

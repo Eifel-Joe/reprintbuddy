@@ -214,3 +214,16 @@ def test_parked_prints_wait_in_their_lane_without_a_place():
                       parked=[(2, "A"), (9, "unknown printer")])
     assert plan.lanes[1].waiting == ("A",) and plan.without == ("Printer 2",)
     assert bars(plan, 1) == [("backlog", "B", NOW, at(10, 30))]
+
+
+def test_bars_carry_the_bambuddy_id_of_their_entry():
+    """The queue page takes the times of its prints from the plan by Bambuddy's id (p647)."""
+    printing = item("Halter", state="printing", printer_id=1)
+    fixed = item("Fest", printer_id=2)
+    planned = item("Frei")
+    plan = build_plan([running(1, 30), printer(2), printer(3)], [printing, fixed, planned], NOW,
+                      backlog=[waiting()], free_slots=1)
+    ids = {b.label: b.item_id for lane in plan.lanes for b in lane.bars}
+    assert ids == {"Halter": printing.item_id, "Fest": fixed.item_id, "Frei": planned.item_id, "Clip": None}
+    foreign_running = build_plan([running(1, 30)], [], NOW).lanes[0].bars[0]
+    assert foreign_running.item_id is None  # a print without a queue entry

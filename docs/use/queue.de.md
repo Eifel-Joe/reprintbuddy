@@ -59,7 +59,9 @@ Geht Bambuddys Antwort auf einen Druck verloren, sendet Reprintbuddy ihn nicht n
 
 ## In Arbeit
 
-Der Abschnitt **In Arbeit** listet die Drucke, die übergeben und noch nicht fertig sind: **Artikel**, **Herkunft**, **Zustand**, **Übergeben am** und die **Bambuddy-Kennung**. Der Zustand ist **wird übergeben**, **unklar**, **eingereiht** oder **druckt**. Ein nach einem Storno zurückgenommener Druck verschwindet aus der Liste; auf der Seite des Artikels steht er als **zurückgenommen (Storno)**.
+Der Abschnitt **In Arbeit** listet die Drucke, die übergeben und noch nicht fertig sind: **Artikel**, **Herkunft**, **Zustand**, **Start (voraussichtlich)**, **Ende (voraussichtlich)** und **Druckzeit**. Der Zustand ist **wird übergeben**, **unklar**, **eingereiht** oder **druckt**.
+
+Die Zeiten kommen aus dem Druckplan der [Übersicht](overview.md), aus derselben Rechnung wie seine Balken. Ein Druck, der gerade druckt, zeigt, wann Bambuddy ihn gestartet hat (oder **läuft**, wenn Bambuddy es nicht sagt), und **ca.** sein Ende; ein eingereihter Druck zeigt **ca.** Start und Ende seines Balkens. Ein Druck, der nicht in den Spuren des Plans steht – ohne druckbereiten Drucker, wartend auf einen Start von Hand, einen späteren Termin oder einen Drucker ohne Betrieb, noch nicht in Bambuddys Warteschlange oder solange der Druckerzustand unbekannt ist –, hat keinen Start und kein Ende. **Druckzeit** ist die Schätzung des Slicers für die Datei; ist sie unbekannt, steht dort **Dauer unbekannt** und beim Ende **mindestens** (der Plan rechnet eine Stunde). An einem anderen Tag steht der Wochentag dabei. Die Bambuddy-Kennung eines Drucks steht auf der Seite des Artikels. Am Handy lässt sich die Tabelle seitlich verschieben. Ein nach einem Storno zurückgenommener Druck verschwindet aus der Liste; auf der Seite des Artikels steht er als **zurückgenommen (Storno)**.
 
 ## Bambuddys Warteschlange
 
