@@ -232,7 +232,7 @@ def _install_activity_log(app: FastAPI, sessionmaker, db_path: Path) -> None:
         may_write=may_write,
         begin_write=begin_write,
         end_write=end_write,
-        update_result=lambda: activity_states.update_outcome(read_status(db_path.parent)),
+        update_result=lambda: activity_states.update_outcomes(db_path.parent),  # p643: every run
     )
 
 

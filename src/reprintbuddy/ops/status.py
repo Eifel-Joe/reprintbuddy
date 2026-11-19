@@ -10,11 +10,13 @@ import json
 import os
 import shutil
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal, Mapping, get_args
 
 STATUS_FILENAME = "update-status.json"
+HISTORY_FILENAME = "update-history.json"  # p643: the final state of the last runs, for the activity log
+HISTORY_KEEP = 10
 
 UpdateState = Literal["idle", "queued", "running", "succeeded", "failed", "rolled_back", "rollback_failed"]
 UPDATE_STEPS = (
@@ -142,14 +144,74 @@ def read_status(data_dir: Path) -> UpdateStatus:
         return UpdateStatus()
 
 
-def write_status(data_dir: Path, status: UpdateStatus) -> None:
-    """Write atomically: a reader sees the old or the new state, never half of one."""
-    path = status_path(data_dir)
+def _write_atomically(path: Path, content: object) -> None:
+    """A reader sees the old or the new content, never half of it."""
     temp = path.with_name(path.name + ".tmp")
-    temp.write_text(json.dumps(status.to_json(), indent=2), encoding="utf-8")
+    temp.write_text(json.dumps(content, indent=2), encoding="utf-8")
     if os.name == "posix":
         temp.chmod(0o600)
     os.replace(temp, path)
+
+
+def write_status(data_dir: Path, status: UpdateStatus) -> None:
+    """Write atomically; a final state goes into the history of the last runs too (p643)."""
+    _write_atomically(status_path(data_dir), status.to_json())
+    if status.state not in BUSY_STATES and status.state != "idle" and status.started_at is not None:
+        _add_to_history(data_dir, status)
+
+
+# p643 (v1.2.1). Root: the state file holds one run, and the activity log reads it at the start of the service
+# and once a minute. The new process starts while the helper still checks its health ("running"); a run that
+# starts within that minute (the way back, another try) overwrote the file, and start and result of the run
+# before never reached the log (Spec 11.3a, 10.7: start and result of every update). So every final state is
+# kept in a second file, the last `HISTORY_KEEP` runs by their start, and the log reads all of them
+# (`activity.states.update_outcomes`). Written here, so every writer of a final state is covered: the helper,
+# `mark_interrupted`, the page. One run is one entry: a later write of the same run (the card acknowledged)
+# replaces it.
+# Not in the database for the reason the state file is not (a rollback restores it); not in the full backup
+# either: it describes this installation, and the log of a restored database keeps its marks (p186).
+# Rejected: reading the state file every second - the run before can still be overwritten before the new
+# process has started at all; keeping the runs inside the state file - a helper of an older version rewrites
+# it whole and would drop them.
+# Tests: tests/activity/test_update_history.py
+
+
+def started_key(moment: datetime) -> datetime:
+    """A start to compare with another: a start without zone is UTC (as every writer writes it)."""
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+
+
+def history_path(data_dir: Path) -> Path:
+    return data_dir / HISTORY_FILENAME
+
+
+def read_history(data_dir: Path) -> list[UpdateStatus]:
+    """The final states of the last runs, oldest first; a missing or unreadable file is an empty history."""
+    try:
+        data = json.loads(history_path(data_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    runs: list[UpdateStatus] = []
+    for item in data:
+        try:
+            run = UpdateStatus.from_json(item) if isinstance(item, dict) else None
+        except (ValueError, TypeError):
+            run = None
+        if run is not None and run.started_at is not None:
+            runs.append(run)
+    return sorted(runs, key=lambda run: started_key(run.started_at))  # type: ignore[arg-type]
+
+
+def _add_to_history(data_dir: Path, status: UpdateStatus) -> None:
+    """Never raises: the history serves the log, the update must not fail over it."""
+    try:
+        runs = [run for run in read_history(data_dir) if run.started_at != status.started_at] + [status]
+        runs.sort(key=lambda run: started_key(run.started_at))  # type: ignore[arg-type]
+        _write_atomically(history_path(data_dir), [run.to_json() for run in runs[-HISTORY_KEEP:]])
+    except (OSError, TypeError, ValueError):
+        pass
 
 
 def is_busy(status: UpdateStatus, now: datetime) -> bool:

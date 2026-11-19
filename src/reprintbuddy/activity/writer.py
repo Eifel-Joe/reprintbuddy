@@ -44,6 +44,7 @@ from reprintbuddy.models import (
     utcnow,
 )
 from reprintbuddy.ops.runner import in_thread
+from reprintbuddy.ops.status import started_key
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +102,17 @@ def write_transition(
     return True
 
 
+def _newer_run(started: str | None, logged: str | None) -> bool:
+    """Whether the run that started at `started` is newer than the one logged last (p643). Starts that cannot
+    be read compare as before: any other one is new."""
+    if logged is None:
+        return True
+    try:
+        return started_key(datetime.fromisoformat(str(started))) > started_key(datetime.fromisoformat(logged))
+    except (TypeError, ValueError):
+        return started != logged
+
+
 def line(kind: str, actor: Actor, details: dict[str, Any] | None = None, **extra: Any) -> ActivityEntry:
     """A line of `kind` (it must be in the fixed list)."""
     if kind not in KINDS:
@@ -116,7 +128,7 @@ class ActivityLog:
         may_write: Callable[[], bool] = lambda: True,
         begin_write: Callable[[], None] = lambda: None,
         end_write: Callable[[], None] = lambda: None,
-        update_result: Callable[[], dict[str, Any] | None] = lambda: None,
+        update_result: Callable[[], list[dict[str, Any]] | dict[str, Any] | None] = lambda: None,
         now: Callable[[], datetime] = utcnow,
     ) -> None:
         self.sm = maker
@@ -138,23 +150,35 @@ class ActivityLog:
         *,
         address: str | None = None,
         via: str | None = None,
+        at: datetime | None = None,
     ) -> None:
-        """Queue one line; returns at once and never raises."""
+        """Queue one line (at `at`, by default now); returns at once and never raises."""
         try:
             if kind not in KINDS:
                 raise KeyError(kind)
             with self._lock:
-                self._pending.append(_Event(kind, actor, details, address, via, at=naive_utc(self.now())))
+                self._pending.append(_Event(kind, actor, details, address, via, at=naive_utc(at or self.now())))
         except Exception:
             log.exception("activity log: an event could not be queued")
 
-    def transition(self, key: str, state: str, kind: str, actor: Actor, details: dict[str, Any] | None = None) -> None:
-        """Queue a line that is written only when the state of `key` changes."""
+    def transition(
+        self,
+        key: str,
+        state: str,
+        kind: str,
+        actor: Actor,
+        details: dict[str, Any] | None = None,
+        *,
+        at: datetime | None = None,
+    ) -> None:
+        """Queue a line that is written only when the state of `key` changes (at `at`, by default now)."""
         try:
             if kind not in KINDS:
                 raise KeyError(kind)
             with self._lock:
-                self._pending.append(_Event(kind, actor, details, key=key, state=state, at=naive_utc(self.now())))
+                self._pending.append(
+                    _Event(kind, actor, details, key=key, state=state, at=naive_utc(at or self.now()))
+                )
         except Exception:
             log.exception("activity log: an event could not be queued")
 
@@ -214,6 +238,8 @@ class ActivityLog:
             session.add(entry)
             return
         mark = session.get(ActivityMark, event.key)
+        if event.kind == "update_result" and not _newer_run(event.state, mark.state if mark is not None else None):
+            return  # p643: this run or a later one is logged already (several runs are read at once)
         if event.kind == "update_result" and (mark is None or mark.state != event.state):
             # The start of the update, from its state file too, before its result: the old process
             # writes nothing while the update runs, and a rollback would take a line of that time with it
@@ -265,10 +291,16 @@ class ActivityLog:
         except Exception:  # noqa: BLE001 - a missing or broken file says nothing
             log.warning("activity log: the state of the last update could not be read", exc_info=True)
             return
-        if result is not None:
-            started = str(result.pop("started_at"))
-            result.pop("finished_at", None)
-            self.transition("update.result", started, "update_result", "system", result)
+        if result is None:
+            return
+        # p643: the result of each run the update helper kept, oldest first (`states.update_outcomes`); one
+        # run alone from a caller that knows one (the tests of older behaviour).
+        # The result stands at the end of its run, so the runs read at once keep their order on the page.
+        for outcome in [result] if isinstance(result, dict) else result:
+            outcome = dict(outcome)
+            started = str(outcome.pop("started_at"))
+            finished = _moment(outcome.pop("finished_at", None))
+            self.transition("update.result", started, "update_result", "system", outcome, at=finished)
 
     # ---- the background task ---------------------------------------------------------------------
 
