@@ -5,7 +5,8 @@ lets the setup pass (`GET /api/v1/auth/me`: a user with every required right, no
 and answers the readings in the background with an empty printer farm. It only reads, like Reprintbuddy's tests
 it never prints anything:
 
-- a write (POST, PUT, PATCH, DELETE) gets 405 and is written to the log as UNEXPECTED; the run fails on it;
+- the token of the live channel (`POST /auth/ws-token`) gets 403, as Bambuddy answers without `websocket:connect`;
+- any other write (POST, PUT, PATCH, DELETE) gets 405 and is written to the log as UNEXPECTED; the run fails on it;
 - a reading it does not know gets 404 and is written as UNKNOWN; the run shows it but goes on (a new reading of a
   later version is no failure of the update).
 
@@ -104,7 +105,13 @@ class FakeBambuddy:
 
             def _refuse(self) -> None:
                 self.rfile.read(int(self.headers.get("Content-Length") or 0))  # else it is read as the next request
-                fake._record(f"{self.command} {urlsplit(self.path).path}", "UNEXPECTED")
+                path = urlsplit(self.path).path
+                if self.command == "POST" and path == "/api/v1/auth/ws-token":
+                    # the token of the live channel changes nothing; without `websocket:connect` Bambuddy says 403
+                    fake._record(f"POST {path} 403")
+                    self._send(403, b'{"detail":"Missing permission: websocket:connect"}')
+                    return
+                fake._record(f"{self.command} {path}", "UNEXPECTED")
                 self._send(405, b'{"detail":"Method Not Allowed"}')
 
             do_POST = do_PUT = do_PATCH = do_DELETE = _refuse  # noqa: N815

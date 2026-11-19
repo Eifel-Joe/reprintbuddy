@@ -75,3 +75,11 @@ async def test_a_write_is_refused_and_recorded_and_an_unknown_reading_is_noted(s
     text = server.log.read_text(encoding="utf-8")
     assert "UNEXPECTED POST /api/v1/queue/" in text and "UNKNOWN GET /api/v1/archives/" in text
     assert KEY not in text
+
+
+async def test_the_live_channel_is_refused_as_bambuddy_refuses_it_without_the_right(server) -> None:
+    from reprintbuddy.bambuddy.client import BambuddyRejected
+
+    with pytest.raises(BambuddyRejected):
+        await _client(server).ws_token()
+    assert server.unexpected == []
