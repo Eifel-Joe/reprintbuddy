@@ -18,6 +18,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import sqlite3
 import threading
 from collections import deque
@@ -56,6 +57,8 @@ UPDATE_EVERY = 60.0  # seconds between looks at the state file of an update
 PRUNE_EVERY = 24 * 3600.0
 
 RESTORED_MARKER = "activity-restored.json"  # left by a restore, read by the next start
+PENDING_NOTE = "activity-pending.json"  # p660: lines left by the command line, written by the next start
+PENDING_KEEP = 20
 
 # The states a transition starts from silently: "unknown" -> one of these is no change.
 GOOD_STATES = frozenset({"ok"})
@@ -392,6 +395,76 @@ def write_restored_marker(
         (data_dir / RESTORED_MARKER).write_text(json.dumps(content), encoding="utf-8")
     except OSError:
         log.warning("activity log: the restore marker could not be written")
+
+
+# p660 (v1.2.1). Root: `reprintbuddy restore-backup` left a note for the log only when the restore was done; a
+# refusal was only printed, although Spec 10.7 (group 4) wants "restore refused" with its fixed reason and lines
+# for the commands on the server too. The command runs when the database may be broken and the service is
+# stopped, so it does not write the database: like the note of a done restore it leaves its lines next to it,
+# and the next start writes them with "command on the server" and the time they happened.
+# Rejected: writing into the database when it opens - the command would then have two ways to log, and a
+# broken database (the reason to use the command) would lose the line anyway.
+# Tests: tests/ops/test_restorecmd.py (p660), tests/activity/test_activity_ops.py (p660).
+
+
+def _write_pending(path: Path, entries: list[dict[str, Any]]) -> None:
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text(json.dumps(entries), encoding="utf-8")
+    os.replace(temp, path)
+
+
+def _pending_entries(raw: str) -> list[dict[str, Any]]:
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return []
+    return [entry for entry in data if isinstance(entry, dict)] if isinstance(data, list) else []
+
+
+def leave_pending(data_dir: Path, kind: str, details: dict[str, Any] | None, *, at: datetime) -> None:
+    """Add a line for the next start to write (the command line, p660). Never raises: a line that cannot be
+    left loses that line of the log, never the outcome of the command."""
+    try:
+        if kind not in KINDS:
+            raise KeyError(kind)
+        path = data_dir / PENDING_NOTE
+        try:
+            entries = _pending_entries(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            entries = []
+        entries.append({"kind": kind, "details": details, "at": at.isoformat(), "via": "cli"})
+        _write_pending(path, entries[-PENDING_KEEP:])
+    except Exception as error:  # noqa: BLE001 - see above
+        log.warning("activity log: a line of the command line could not be left (%s)", type(error).__name__)
+
+
+def read_pending(data_dir: Path) -> list[dict[str, Any]]:
+    """The lines the command line left (and remove them), oldest first; what does not fit is left out.
+
+    The note is moved aside before it is read: a command that adds a line meanwhile starts a new note."""
+    path = data_dir / PENDING_NOTE
+    taken = path.with_name(path.name + ".reading")
+    try:
+        os.replace(path, taken)
+    except FileNotFoundError:
+        return []
+    except OSError:
+        log.warning("activity log: the lines of the command line could not be taken")
+        return []
+    try:
+        raw = taken.read_text(encoding="utf-8")
+    except OSError:
+        raw = ""
+    finally:
+        with contextlib.suppress(OSError):
+            taken.unlink()
+    lines: list[dict[str, Any]] = []
+    for entry in _pending_entries(raw):
+        kind, details, at = entry.get("kind"), entry.get("details"), _moment(entry.get("at"))
+        if kind not in KINDS or at is None or not (details is None or isinstance(details, dict)):
+            continue
+        lines.append({"kind": kind, "details": details, "at": at, "via": "cli"})
+    return sorted(lines, key=lambda line: line["at"])
 
 
 # p186 (v0.3.14). Root: which states the log has written (`activity_marks`) is kept in the database, so a

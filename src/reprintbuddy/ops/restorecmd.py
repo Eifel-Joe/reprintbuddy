@@ -31,6 +31,8 @@ from datetime import datetime
 from pathlib import Path
 
 from reprintbuddy import settings as st
+from reprintbuddy.activity.kinds import restore_reason
+from reprintbuddy.activity.writer import leave_pending
 from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops import oplock, restore
 from reprintbuddy.ops.runner import CommandRunner
@@ -144,6 +146,7 @@ def restore_backup(
                 complain("Nothing was changed.")
                 return EXIT_NOT_DONE
             except oplock.Held as held:
+                _note(db_path, now, "restore_rejected", {"reason": "busy"})  # as on the page (p660)
                 complain(
                     "reprintbuddy: "
                     + (
@@ -157,6 +160,8 @@ def restore_backup(
         return _restore(archive, db_path, runner, ask_password, say, complain, now, probe, state)
     except KeyboardInterrupt:
         complain("reprintbuddy: interrupted.")
+        if not state["touched"]:  # p660: cancelled, nothing changed; once replacing, which database holds is open
+            _note(db_path, now, "restore_cancelled", None)
         complain(
             "The database was being replaced: check it before you start Reprintbuddy."
             if state["touched"]
@@ -170,8 +175,19 @@ def restore_backup(
             os.umask(previous_umask)
 
 
+def _note(db_path: Path, now: datetime, kind: str, details: dict[str, str] | None) -> None:
+    """A line for the activity log, written by the next start of the service (p660, Spec 10.7 group 4)."""
+    if db_path.parent.is_dir():
+        leave_pending(db_path.parent, kind, details, at=now)
+
+
 def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, state) -> int:
-    def refuse(code: int, text: str) -> int:
+    def refuse(code: int, text: str, reason: str | None = None) -> int:
+        """`reason`: a backup was looked at and refused, logged as on the page (`restore_reason`). Without
+        one the command was asked wrongly (no file, the service runs) and nothing is logged: the page has
+        no such case."""
+        if reason is not None:
+            _note(db_path, now, "restore_rejected", {"reason": restore_reason(reason)})
         complain(f"reprintbuddy: {text}")
         complain("Nothing was changed.")
         return code
@@ -204,7 +220,7 @@ def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, 
     try:
         manifest = fb.read_manifest(archive)
     except fb.BackupError as error:
-        return refuse(EXIT_REFUSED, MESSAGES.get(error.code, MESSAGES["foreign"]))
+        return refuse(EXIT_REFUSED, MESSAGES.get(error.code, MESSAGES["foreign"]), error.code)
     except OSError as error:
         return refuse(EXIT_NOT_DONE, f"cannot read {archive} ({type(error).__name__}).")
 
@@ -235,10 +251,10 @@ def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, 
         fb.verify_database(candidate, manifest, work_dir=work)
     except fb.BackupError as error:
         fb.remove_database_files(candidate)
-        return refuse(EXIT_REFUSED, MESSAGES.get(error.code, MESSAGES["foreign"]))
+        return refuse(EXIT_REFUSED, MESSAGES.get(error.code, MESSAGES["foreign"]), error.code)
     except Exception as error:  # noqa: BLE001 - a full disk in a trial migration, say: nothing was changed
         fb.remove_database_files(candidate)
-        return refuse(EXIT_REFUSED, f"the check failed ({type(error).__name__}).")
+        return refuse(EXIT_REFUSED, f"the check failed ({type(error).__name__}).", "failed")
     except KeyboardInterrupt:  # Ctrl-C while checking: the decrypted copy must not stay
         fb.remove_database_files(candidate)
         raise
@@ -262,6 +278,7 @@ def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, 
             candidate, db_path, now=now, protect=restore.protected_backups(db_path.parent), may_set_aside=True
         )
     except restore.RestoreNotUndone as error:
+        _note(db_path, now, "restore_rejected", {"reason": "failed"})
         complain(
             "reprintbuddy: the restore failed and the old database could not be put back. "
             f"It is at {error.where}; move it back to {db_path} by hand."
@@ -269,7 +286,7 @@ def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, 
         return EXIT_REFUSED
     except Exception as error:  # noqa: BLE001 - before or in the one-step copy
         state["touched"] = False
-        return refuse(EXIT_REFUSED, f"the restore failed ({type(error).__name__}).")
+        return refuse(EXIT_REFUSED, f"the restore failed ({type(error).__name__}).", "failed")
     finally:
         fb.remove_database_files(candidate)  # whatever happened, the decrypted copy does not stay
 

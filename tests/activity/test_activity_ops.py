@@ -219,3 +219,47 @@ def test_an_older_backup_does_not_bring_back_push_messages_already_sent(ops_env)
     with restarted.app.state.sessionmaker() as s:
         marks = {(m.kind, m.ref): m.state for m in s.scalars(select(NotifyMark))}
     assert marks == {("below_min", article_ref): "sent", ("print_done", print_ref): "sent"}
+
+
+# --- p660: the refusals of the command line, written by the next start --------------------------------------
+
+
+def test_a_refusal_on_the_command_line_is_logged_by_the_next_start(ops_env):
+    from datetime import UTC, datetime
+
+    from conftest import make_client
+
+    from reprintbuddy.activity.writer import PENDING_NOTE, leave_pending
+
+    at = datetime(2026, 11, 19, 7, 30, tzinfo=UTC)
+    leave_pending(ops_env.db_path.parent, "restore_rejected", {"reason": "damaged"}, at=at)
+    leave_pending(ops_env.db_path.parent, "restore_cancelled", None, at=at)
+    restarted = make_client(ops_env.db_path)
+    with restarted:
+        restarted.app.state.activity.drain()
+    with restarted.app.state.sessionmaker() as s:
+        found = [
+            (row.kind, row.actor, row.via, row.details, row.at)
+            for row in s.scalars(select(ActivityEntry).where(ActivityEntry.kind.like("restore_%")).order_by(ActivityEntry.id))
+        ]
+    assert found == [
+        ("restore_rejected", "user", "cli", {"reason": "damaged"}, at.replace(tzinfo=None)),
+        ("restore_cancelled", "user", "cli", None, at.replace(tzinfo=None)),
+    ]
+    assert not (ops_env.db_path.parent / PENDING_NOTE).exists()
+
+
+def test_a_broken_note_of_the_command_line_is_dropped_and_the_start_goes_on(ops_env):
+    from conftest import make_client
+
+    from reprintbuddy.activity.writer import PENDING_NOTE
+
+    note = ops_env.db_path.parent / PENDING_NOTE
+    note.write_text('[{"kind": "no_such_kind"}, {"kind": "restore_rejected", "at": "yesterday"}, 7, "x"]', encoding="utf-8")
+    restarted = make_client(ops_env.db_path)
+    with restarted:
+        restarted.app.state.activity.drain()
+    with restarted.app.state.sessionmaker() as s:
+        kinds = [row.kind for row in s.scalars(select(ActivityEntry))]
+    assert "started" in kinds and "restore_rejected" not in kinds
+    assert not note.exists()

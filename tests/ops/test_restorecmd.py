@@ -669,3 +669,101 @@ def test_a_note_for_the_log_that_fails_after_the_replace_is_no_failure_of_the_re
     assert code == 0, said.text()
     assert cap_of(target) == 7
     assert "Restored the backup" in said.text()
+
+
+# --- p660: a refusal on the command line stands in the activity log (Spec 10.7, group 4) -------------------
+# The command runs when the database may be broken: like the note of a done restore, it leaves a note that
+# the next start writes into the log ("command on the server").
+
+
+def noted(db_path: Path) -> list[tuple[str, dict | None]]:
+    from reprintbuddy.activity.writer import read_pending
+
+    return [(entry["kind"], entry["details"]) for entry in read_pending(db_path.parent)]
+
+
+def test_a_foreign_file_refused_leaves_a_note_for_the_log(tmp_path, target):
+    stranger = tmp_path / "stranger.zip"
+    with zipfile.ZipFile(stranger, "w") as archive:
+        archive.writestr("hello.txt", "hi")
+    run(stranger, target)
+    assert noted(target) == [("restore_rejected", {"reason": "foreign"})]
+
+
+def test_a_backup_of_a_newer_version_refused_leaves_its_reason(tmp_path, source, target):
+    newer = rewritten(
+        backup_of(source, tmp_path), tmp_path / "newer.zip", manifest=lambda m: m.update(app_version="99.0.0")
+    )
+    run(newer, target)
+    assert noted(target) == [("restore_rejected", {"reason": "too_new"})]
+
+
+def test_a_damaged_backup_refused_leaves_its_reason(tmp_path, source, target):
+    good = backup_of(source, tmp_path)
+    with zipfile.ZipFile(good) as archive:
+        cut = archive.read("database.sqlite")[:200]
+    run(rewritten(good, tmp_path / "broken.zip", **{"database.sqlite": cut}), target)
+    assert noted(target) == [("restore_rejected", {"reason": "damaged"})]
+
+
+def test_a_check_that_fails_otherwise_is_noted_as_failed(tmp_path, source, target, monkeypatch):
+    def full_disk(*args, **kwargs):
+        raise OSError("no space left")
+
+    monkeypatch.setattr(fb, "verify_database", full_disk)
+    code, _, _ = run(backup_of(source, tmp_path), target)
+    assert code == restorecmd.EXIT_REFUSED
+    assert noted(target) == [("restore_rejected", {"reason": "failed"})]
+
+
+def test_a_refusal_while_an_update_holds_the_lock_is_noted_as_busy(tmp_path, source, target):
+    from reprintbuddy.ops import oplock
+
+    held = oplock.acquire(target.parent, "update")
+    try:
+        run(backup_of(source, tmp_path), target)
+    finally:
+        held.release()
+    assert noted(target) == [("restore_rejected", {"reason": "busy"})]
+
+
+def test_ctrl_c_before_anything_was_replaced_is_noted_as_cancelled(tmp_path, source, target, monkeypatch):
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(fb, "verify_database", interrupted)
+    run(backup_of(source, tmp_path), target)
+    assert noted(target) == [("restore_cancelled", None)]
+
+
+@pytest.mark.parametrize("case", ["missing file", "service running"])
+def test_a_command_that_looked_at_no_backup_leaves_no_note(tmp_path, source, target, case):
+    if case == "missing file":
+        run(tmp_path / "not-there.zip", target)
+    else:
+        run(backup_of(source, tmp_path), target, probe=lambda: "systemd reports it as active")
+    assert noted(target) == []
+
+
+def test_refusals_add_up_until_the_next_start(tmp_path, target):
+    stranger = tmp_path / "stranger.zip"
+    with zipfile.ZipFile(stranger, "w") as archive:
+        archive.writestr("hello.txt", "hi")
+    run(stranger, target)
+    run(stranger, target)
+    assert noted(target) == [("restore_rejected", {"reason": "foreign"})] * 2
+    assert noted(target) == []  # read once
+
+
+def test_a_note_that_cannot_be_written_changes_nothing_about_the_refusal(tmp_path, target, monkeypatch):
+    from reprintbuddy.activity import writer
+
+    def no_room(*args, **kwargs):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(writer, "_write_pending", no_room)
+    stranger = tmp_path / "stranger.zip"
+    with zipfile.ZipFile(stranger, "w") as archive:
+        archive.writestr("hello.txt", "hi")
+    code, said, _ = run(stranger, target)
+    assert code == restorecmd.EXIT_REFUSED and "not a Reprintbuddy backup" in said.text()

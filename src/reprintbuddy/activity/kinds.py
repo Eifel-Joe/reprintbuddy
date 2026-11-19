@@ -68,6 +68,15 @@ KINDS: dict[str, str] = {
 }
 
 
+# The fixed reasons a refused restore is logged with (Spec 10.7, group 4), on the page and on the command line;
+# anything else is "failed".
+RESTORE_REASONS = frozenset({"foreign", "too_new", "too_large", "damaged", "incompatible", "failed", "busy"})
+
+
+def restore_reason(code: str) -> str:
+    return code if code in RESTORE_REASONS else "failed"
+
+
 def area_of(kind: str) -> str:
     """The group of `kind`; an unknown kind is a programming error."""
     return KINDS[kind]

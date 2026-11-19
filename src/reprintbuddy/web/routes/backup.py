@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
+from reprintbuddy.activity import kinds
 from reprintbuddy.auth import MIN_PASSWORD_LENGTH
 from reprintbuddy.db import known_revisions
 from reprintbuddy.ops import fullbackup as fb
@@ -222,13 +223,13 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-# The fixed reasons a refused restore is logged with (Spec 10.7, group 4); anything else is "failed".
-RESTORE_REASONS = frozenset({"foreign", "too_new", "too_large", "damaged", "incompatible", "failed", "busy"})
+# The fixed reasons a refused restore is logged with (Spec 10.7, group 4), shared with the command line (p660).
+RESTORE_REASONS = kinds.RESTORE_REASONS
 
 
 def _refused(request: Request, code: str) -> RedirectResponse:
     """Back to the card with the message of `code`, and the refusal in the activity log."""
-    reason = code if code in RESTORE_REASONS else "failed"
+    reason = kinds.restore_reason(code)
     request.app.state.activity.record("restore_rejected", "user", {"reason": reason})
     return maintenance_redirect(f"restore_{code}", "ops-restore")
 
