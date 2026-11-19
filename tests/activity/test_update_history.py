@@ -8,8 +8,10 @@ restart) and was overwritten by the next run within that minute never reached th
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select
 
 from reprintbuddy.activity import states
@@ -110,3 +112,39 @@ def test_an_interrupted_run_goes_into_the_history(tmp_path):
     write_status(tmp_path, UpdateStatus(state="running", step="install", started_at=A))
     st.mark_interrupted(tmp_path, A + timedelta(minutes=30))
     assert [h.state for h in read_history(tmp_path)] == ["rollback_failed"]
+
+
+def test_a_run_is_queued_once_while_nothing_may_be_written(db, tmp_path):
+    """Review finding 2: during an update nothing is written; the runs read every minute must not fill the
+    bounded queue and push real lines out."""
+    for n in range(st.HISTORY_KEEP):
+        write_status(tmp_path, UpdateStatus(state="failed", started_at=A + timedelta(hours=n)))
+    activity = log_for(db, tmp_path)
+    for _ in range(5):
+        activity.check_update()
+    assert activity.pending == st.HISTORY_KEEP
+    write_status(tmp_path, UpdateStatus(state="succeeded", started_at=A + timedelta(days=1)))
+    activity.check_update()
+    assert activity.pending == st.HISTORY_KEEP + 1
+
+
+def test_the_result_stands_at_the_end_of_its_run(db, tmp_path):
+    finished = A + timedelta(minutes=7)
+    write_status(tmp_path, UpdateStatus(state="succeeded", started_at=A, finished_at=finished))
+    activity = log_for(db, tmp_path)
+    activity.check_update()
+    activity.drain()
+    with db() as s:
+        at = s.scalars(select(ActivityEntry.at).where(ActivityEntry.kind == "update_result")).one()
+    assert at == finished.replace(tzinfo=None)
+
+
+def test_no_temporary_file_is_left_beside_the_history(tmp_path):
+    write_status(tmp_path, UpdateStatus(state="succeeded", started_at=A))
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["update-history.json", "update-status.json"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="file modes are posix")
+def test_the_history_is_private_to_the_service_user(tmp_path):
+    write_status(tmp_path, UpdateStatus(state="succeeded", started_at=A))
+    assert st.history_path(tmp_path).stat().st_mode & 0o777 == 0o600

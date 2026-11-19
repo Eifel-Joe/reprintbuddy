@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import tempfile
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -145,12 +146,20 @@ def read_status(data_dir: Path) -> UpdateStatus:
 
 
 def _write_atomically(path: Path, content: object) -> None:
-    """A reader sees the old or the new content, never half of it."""
-    temp = path.with_name(path.name + ".tmp")
-    temp.write_text(json.dumps(content, indent=2), encoding="utf-8")
-    if os.name == "posix":
-        temp.chmod(0o600)
-    os.replace(temp, path)
+    """A reader sees the old or the new content, never half of it. The temporary file has a name of its own:
+    the helper and the page may write at the same time (review v1.2.1, finding 4), and one must not move the
+    other's half-written file into place."""
+    handle, name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    temp = Path(name)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(content, indent=2))
+        if os.name == "posix":
+            temp.chmod(0o600)
+        os.replace(temp, path)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
 
 
 def write_status(data_dir: Path, status: UpdateStatus) -> None:

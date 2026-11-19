@@ -107,7 +107,11 @@ def write_transition(
 
 def _newer_run(started: str | None, logged: str | None) -> bool:
     """Whether the run that started at `started` is newer than the one logged last (p643). Starts that cannot
-    be read compare as before: any other one is new."""
+    be read compare as before: any other one is new.
+
+    Newer, not only other: several runs are read at once, and an older one must not follow a newer one. The
+    price: a run started after the clock was set back (a container booting before its time is synchronised)
+    sorts before the mark and is not logged."""
     if logged is None:
         return True
     try:
@@ -141,6 +145,7 @@ class ActivityLog:
         self.update_result = update_result
         self.now = now
         self._pending: deque[_Event] = deque(maxlen=MAX_PENDING)
+        self._update_queued: datetime | None = None  # the start of the newest run queued (p643)
         self._lock = threading.Lock()  # record() is called from the loop and from worker threads
 
     # ---- in ------------------------------------------------------------------------------------
@@ -298,12 +303,23 @@ class ActivityLog:
             return
         # p643: the result of each run the update helper kept, oldest first (`states.update_outcomes`); one
         # run alone from a caller that knows one (the tests of older behaviour).
-        # The result stands at the end of its run, so the runs read at once keep their order on the page.
+        # The result stands at the end of its run, so the runs read at once keep their order on the page. A
+        # run is queued once per process (review v1.2.1, finding 2): while nothing may be written (a whole
+        # update), ten runs every minute would push real lines out of the bounded queue; the mark in the
+        # database decides at the write whether it is new.
         for outcome in [result] if isinstance(result, dict) else result:
             outcome = dict(outcome)
             started = str(outcome.pop("started_at"))
             finished = _moment(outcome.pop("finished_at", None))
+            try:
+                key = started_key(datetime.fromisoformat(started))
+            except ValueError:
+                key = None
+            if key is not None and self._update_queued is not None and key <= self._update_queued:
+                continue
             self.transition("update.result", started, "update_result", "system", outcome, at=finished)
+            if key is not None:
+                self._update_queued = key
 
     # ---- the background task ---------------------------------------------------------------------
 
