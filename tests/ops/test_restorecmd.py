@@ -4,7 +4,7 @@ import json
 import socket
 import sqlite3
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -776,3 +776,47 @@ def test_a_wrong_or_missing_password_is_not_noted(tmp_path, source, target, pass
     code, _, asked = run(backup_of(source, tmp_path, SECRET_BACKUP_PASSWORD), target, passwords=passwords)
     assert code == restorecmd.EXIT_REFUSED and len(asked) == 3
     assert noted(target) == []
+
+
+def test_a_restore_that_could_not_be_undone_is_noted_as_failed(tmp_path, source, target, monkeypatch):
+    def not_undone(*args, **kwargs):
+        raise restore.RestoreNotUndone(tmp_path / "somewhere.db")
+
+    monkeypatch.setattr(restore, "install", not_undone)
+    code, said, _ = run(backup_of(source, tmp_path), target)
+    assert code == restorecmd.EXIT_REFUSED and "could not be put back" in said.text()
+    assert noted(target) == [("restore_rejected", {"reason": "failed"})]
+
+
+def test_the_note_has_the_time_of_the_refusal_not_of_the_start_of_the_command(tmp_path, target):
+    """Review finding 5: three password prompts and a long check may lie between the two."""
+    from reprintbuddy.activity.writer import read_pending
+
+    stranger = tmp_path / "stranger.zip"
+    with zipfile.ZipFile(stranger, "w") as archive:
+        archive.writestr("hello.txt", "hi")
+    before = datetime.now(UTC).replace(tzinfo=None)
+    run(stranger, target)
+    (entry,) = read_pending(target.parent)
+    assert entry["at"] >= before.replace(microsecond=0) and entry["at"] != NOW.replace(tzinfo=None)
+
+
+def test_a_start_taking_the_lines_while_the_command_adds_one_neither_loses_nor_doubles_a_line(tmp_path, target, monkeypatch):
+    """Review finding 3: the start of the service takes the lines while the command line adds one."""
+    from reprintbuddy.activity import writer
+
+    data = target.parent
+    at = datetime(2026, 11, 19, 8, 0, tzinfo=UTC)
+    writer.leave_pending(data, "restore_rejected", {"reason": "foreign"}, at=at)
+    taken: list = []
+    real = writer._write_pending
+
+    def the_service_starts_meanwhile(*args, **kwargs):
+        taken.extend(writer.read_pending(data))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(writer, "_write_pending", the_service_starts_meanwhile)
+    writer.leave_pending(data, "restore_cancelled", None, at=at + timedelta(minutes=1))
+    monkeypatch.setattr(writer, "_write_pending", real)
+    later = writer.read_pending(data)
+    assert [line["kind"] for line in taken + later] == ["restore_rejected", "restore_cancelled"]

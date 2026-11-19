@@ -19,8 +19,10 @@ import contextlib
 import json
 import logging
 import os
+import secrets
 import sqlite3
 import threading
+import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -57,7 +59,7 @@ UPDATE_EVERY = 60.0  # seconds between looks at the state file of an update
 PRUNE_EVERY = 24 * 3600.0
 
 RESTORED_MARKER = "activity-restored.json"  # left by a restore, read by the next start
-PENDING_NOTE = "activity-pending.json"  # p660: lines left by the command line, written by the next start
+PENDING_NOTE = "activity-pending-*.json"  # p660: lines left by the command line, written by the next start
 PENDING_KEEP = 20
 
 # The states a transition starts from silently: "unknown" -> one of these is no change.
@@ -423,59 +425,57 @@ def write_restored_marker(
 # Tests: tests/ops/test_restorecmd.py (p660), tests/activity/test_activity_ops.py (p660).
 
 
-def _write_pending(path: Path, entries: list[dict[str, Any]]) -> None:
-    temp = path.with_name(path.name + ".tmp")
-    temp.write_text(json.dumps(entries), encoding="utf-8")
+def _write_pending(path: Path, entry: dict[str, Any]) -> None:
+    """One line in a file of its own, moved into place whole (a reader never sees half of it)."""
+    temp = path.with_name("." + path.name + ".tmp")
+    temp.write_text(json.dumps(entry), encoding="utf-8")
     os.replace(temp, path)
 
 
-def _pending_entries(raw: str) -> list[dict[str, Any]]:
-    try:
-        data = json.loads(raw)
-    except ValueError:
-        return []
-    return [entry for entry in data if isinstance(entry, dict)] if isinstance(data, list) else []
+def _pending_files(data_dir: Path) -> list[Path]:
+    return sorted(data_dir.glob(PENDING_NOTE))
 
 
 def leave_pending(data_dir: Path, kind: str, details: dict[str, Any] | None, *, at: datetime) -> None:
-    """Add a line for the next start to write (the command line, p660). Never raises: a line that cannot be
-    left loses that line of the log, never the outcome of the command."""
+    """Leave a line for the next start to write (the command line, p660). Never raises: a line that cannot be
+    left loses that line of the log, never the outcome of the command.
+
+    Each line is a file of its own, written once (review v1.2.1, finding 3): a start that takes the lines
+    while the command adds one neither loses that one nor writes another twice, which one shared file read,
+    extended and written back would. At most `PENDING_KEEP` wait; the oldest go first."""
     try:
         if kind not in KINDS:
             raise KeyError(kind)
-        path = data_dir / PENDING_NOTE
-        try:
-            entries = _pending_entries(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            entries = []
-        entries.append({"kind": kind, "details": details, "at": at.isoformat(), "via": "cli"})
-        _write_pending(path, entries[-PENDING_KEEP:])
+        # Named in the order they are left (a clock may give two the same time): after the last one there.
+        number = time.time_ns()
+        for path in _pending_files(data_dir)[-1:]:
+            with contextlib.suppress(ValueError):
+                number = max(number, int(path.name.split("-")[2]) + 1)
+        name = PENDING_NOTE.replace("*", f"{number:020d}-{secrets.token_hex(4)}")
+        _write_pending(data_dir / name, {"kind": kind, "details": details, "at": at.isoformat(), "via": "cli"})
+        for old in _pending_files(data_dir)[:-PENDING_KEEP]:
+            old.unlink(missing_ok=True)
     except Exception as error:  # noqa: BLE001 - see above
         log.warning("activity log: a line of the command line could not be left (%s)", type(error).__name__)
 
 
 def read_pending(data_dir: Path) -> list[dict[str, Any]]:
-    """The lines the command line left (and remove them), oldest first; what does not fit is left out.
-
-    The note is moved aside before it is read: a command that adds a line meanwhile starts a new note."""
-    path = data_dir / PENDING_NOTE
-    taken = path.with_name(path.name + ".reading")
-    try:
-        os.replace(path, taken)
-    except FileNotFoundError:
-        return []
-    except OSError:
-        log.warning("activity log: the lines of the command line could not be taken")
-        return []
-    try:
-        raw = taken.read_text(encoding="utf-8")
-    except OSError:
-        raw = ""
-    finally:
-        with contextlib.suppress(OSError):
-            taken.unlink()
+    """The lines the command line left (and remove them), oldest first; what does not fit is left out."""
     lines: list[dict[str, Any]] = []
-    for entry in _pending_entries(raw):
+    for path in _pending_files(data_dir):
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        finally:
+            with contextlib.suppress(OSError):
+                path.unlink()
+        try:
+            entry = json.loads(raw)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict):
+            continue
         kind, details, at = entry.get("kind"), entry.get("details"), _moment(entry.get("at"))
         if kind not in KINDS or at is None or not (details is None or isinstance(details, dict)):
             continue

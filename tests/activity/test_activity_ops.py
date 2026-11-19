@@ -246,7 +246,7 @@ def test_a_refusal_on_the_command_line_is_logged_by_the_next_start(ops_env):
         ("restore_rejected", "user", "cli", {"reason": "damaged"}, at.replace(tzinfo=None)),
         ("restore_cancelled", "user", "cli", None, at.replace(tzinfo=None)),
     ]
-    assert not (ops_env.db_path.parent / PENDING_NOTE).exists()
+    assert not list(ops_env.db_path.parent.glob(PENDING_NOTE))
 
 
 def test_a_broken_note_of_the_command_line_is_dropped_and_the_start_goes_on(ops_env):
@@ -254,12 +254,53 @@ def test_a_broken_note_of_the_command_line_is_dropped_and_the_start_goes_on(ops_
 
     from reprintbuddy.activity.writer import PENDING_NOTE
 
-    note = ops_env.db_path.parent / PENDING_NOTE
-    note.write_text('[{"kind": "no_such_kind"}, {"kind": "restore_rejected", "at": "yesterday"}, 7, "x"]', encoding="utf-8")
+    data = ops_env.db_path.parent
+    for n, content in enumerate(
+        ['{"kind": "no_such_kind", "at": "2026-11-19T07:00:00"}', '{"kind": "restore_rejected", "at": "yesterday"}',
+         "7", "{not json", '{"kind": "restore_rejected", "at": "2026-11-19T07:00:00", "details": "x"}']
+    ):
+        (data / PENDING_NOTE.replace("*", str(n))).write_text(content, encoding="utf-8")
     restarted = make_client(ops_env.db_path)
     with restarted:
         restarted.app.state.activity.drain()
     with restarted.app.state.sessionmaker() as s:
         kinds = [row.kind for row in s.scalars(select(ActivityEntry))]
     assert "started" in kinds and "restore_rejected" not in kinds
-    assert not note.exists()
+    assert not list(data.glob(PENDING_NOTE))
+
+
+def test_a_refusal_and_then_a_restore_on_the_command_line_both_reach_the_restored_database(ops_env, tmp_path):
+    """The command refuses a file, then restores a backup; the next start writes both into the restored
+    database, the refusal first, both as commands on the server."""
+    import zipfile
+    from datetime import UTC, datetime
+
+    from conftest import make_client
+
+    from reprintbuddy.ops import restorecmd
+
+    good = tmp_path / "good.zip"
+    good.write_bytes(backup_tests.made_backup(ops_env))
+    stranger = tmp_path / "stranger.zip"
+    with zipfile.ZipFile(stranger, "w") as archive:
+        archive.writestr("hello.txt", "hi")
+
+    def restore_with(path):
+        return restorecmd.restore_backup(
+            path, ops_env.db_path, runner=ops_env.runner, ask_password=lambda: "", say=lambda _: None,
+            now=datetime.now(UTC), probe=lambda: None,
+        )
+
+    assert restore_with(stranger) == restorecmd.EXIT_REFUSED
+    assert restore_with(good) == restorecmd.EXIT_OK
+    restarted = make_client(ops_env.db_path)
+    with restarted:
+        restarted.app.state.activity.drain()
+    with restarted.app.state.sessionmaker() as s:
+        found = [
+            (row.kind, row.via, row.details if row.kind == "restore_rejected" else None)
+            for row in s.scalars(
+                select(ActivityEntry).where(ActivityEntry.kind.like("restore_%")).order_by(ActivityEntry.at, ActivityEntry.id)
+            )
+        ]
+    assert found[-2:] == [("restore_rejected", "cli", {"reason": "foreign"}), ("restore_done", "cli", None)]
