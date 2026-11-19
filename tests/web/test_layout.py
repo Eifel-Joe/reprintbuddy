@@ -100,7 +100,8 @@ def test_logout_form_posts_with_csrf(ready_client):
 def test_mobile_menu_without_javascript(ready_client):
     html = ready_client.get("/").text
     assert "<details" in html
-    # The menu opens without a script; the scripts only keep the page live, keep the place after a form, fold the menu faster and close the info notes.
+    # The menu opens without a script; the scripts only keep the page live, keep the place after a form, fold the menu faster,
+    # close the info notes and report the zone of the browser (Spec 10.5a).
     assert re.findall(r"<script[^>]*>", html) == [
         f'<script src="/static/js/keepscroll.js?v={__version__}" defer>',
         f'<script src="/static/js/live.js?v={__version__}" defer>',
@@ -109,6 +110,7 @@ def test_mobile_menu_without_javascript(ready_client):
         f'<script src="/static/js/thumbs.js?v={__version__}" defer>',
         f'<script src="/static/js/spinbox.js?v={__version__}" defer>',
         f'<script src="/static/js/flash.js?v={__version__}" defer>',
+        f'<script src="/static/js/zone.js?v={__version__}" defer>',
     ]
 
 

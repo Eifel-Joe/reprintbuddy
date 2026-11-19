@@ -127,5 +127,9 @@
 {# Scripts of one page only (the queue's drag script). #}
 {% block scripts %}{% endblock %}
 {% endblock %}
+{# Tells the server the zone of this browser and loads the page once more when it was computed in another
+   one (Spec 10.5a). On every page, so outside the block the pages without the menu replace; after live.js,
+   which clears the mark of an automatic reload as soon as it runs. #}
+<script src="/static/js/zone.js?v={{ app_version }}" defer></script>
 </body>
 </html>
