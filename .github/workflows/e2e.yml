@@ -1,0 +1,54 @@
+name: End-to-end
+
+# The test plans of the pre-releases, played by the CI (tests/system/README.md): in a Debian 13 container with
+# systemd the installer of the last stable version installs it, the page updates it to this state (built as the
+# pre-release after it), restores a backup through the page and the command line, goes back to the stable version
+# twice stopped from outside (systemctl stop reprintbuddy-update) and once to the end. GitHub and Bambuddy are
+# stand-ins inside the container: no secret, no home network, no release needed, also for pull requests from forks.
+# Not a required check (yet): the required ones are the jobs of ci.yml.
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('End-to-end {0} ({1})', github.ref_name, inputs.purpose) || ' ' }}
+
+on:
+  push:
+    # release/**: the branch a round is collected on runs it before its pull request (a workflow_dispatch reaches
+    # only workflows that are on the default branch already)
+    branches: [main, dev, "release/**"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      purpose:
+        description: Why this run is started (shown in the name of the run)
+        required: false
+        default: by hand
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  e2e:
+    name: End-to-end (Debian 13)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the last stable version is found among the tags
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install the code for the package build
+        run: python -m pip install --quiet .
+      - name: Run (install, update, restore, way back stopped and to the end)
+        run: bash tests/system/run.sh "$RUNNER_TEMP/e2e"
+      - name: Keep the logs of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: end-to-end-logs
+          path: ${{ runner.temp }}/e2e/logs
+          if-no-files-found: ignore

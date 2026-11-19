@@ -28,6 +28,7 @@ def test_protocol_matches_master_plan():
         "print_defaults",  # p342, 0.4.0: Bambuddy's default print options (read)
         "delete_queue_item",  # p382, 0.4.1: withdraw an own waiting entry after a cancel (Spec 7.2a)
         "printer_statuses", "shortest_first",  # 0.4.2: the print plan of the overview (Spec 7.6, 10.2)
+        "inventory_remain",  # p648, 1.2.1: grams of the spools assigned to a printer's slots
     }
     for name in names:
         assert inspect.iscoroutinefunction(getattr(BambuddyClient, name)), name
@@ -55,6 +56,17 @@ async def test_plates_numbered_from_one():
     fake = FakeBambuddy()
     f = fake.add_file("Template B.gcode.3mf", plates=2)
     assert [p.index for p in await fake.list_plates(f.id)] == [1, 2]
+
+
+async def test_plates_carry_the_print_time_and_the_file_its_nozzle():
+    """As Bambuddy's `/plates` and `/files/{id}` (p646): the file's print time on every plate, the nozzle on the file."""
+    fake = FakeBambuddy()
+    f = fake.add_file("Template B.gcode.3mf", plates=2, print_time_s=1800, nozzle=0.6)
+    assert [p.print_time_seconds for p in await fake.list_plates(f.id)] == [1800, 1800]
+    assert (await fake.get_file(f.id)).nozzle_diameter == 0.6
+    plain = fake.add_file("Template C.gcode.3mf", print_time_s=None)
+    assert [p.print_time_seconds for p in await fake.list_plates(plain.id)] == [None]
+    assert (await fake.get_file(plain.id)).nozzle_diameter is None
 
 
 async def test_thumbnail_png():

@@ -33,6 +33,9 @@ class LibraryFile:
     created_by: str | None = None
     size: int | None = None
     created_at: datetime | None = None
+    # The nozzle the file was sliced for (`metadata.nozzle_diameter`); None unknown. For the print plan of
+    # prints still waiting in Reprintbuddy (Spec 10.2, p646).
+    nozzle_diameter: float | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +52,7 @@ class UploadedFile:
 class Plate:
     index: int  # starts at 1
     name: str | None
+    print_time_seconds: int | None = None  # the slicer's estimate for this plate; None unknown (p646)
 
 
 @dataclass(frozen=True)
@@ -109,6 +113,22 @@ class Printer:
 
 
 @dataclass(frozen=True)
+class AmsSlot:
+    """One filament slot of a printer as its state reports it, for the print plan (Spec 7.6, 10.2, p648).
+
+    Keyed as Bambuddy stores a spool's slot (`models/spool_assignment.py:17`): an AMS slot by (unit id,
+    slot), an AMS-HT by (unit id >= 128, 0), an external spool by (255, index) with index 0/1 for the ids
+    254/255 and 2-8 for a rack's 247-253 (`utils/tray_ids.py:55-58, 190-194`).
+    """
+
+    ams_id: int
+    tray_id: int
+    material: str | None  # `tray_type`, e.g. "PLA"
+    color: str | None  # "#RRGGBB", alpha dropped
+    loaded: bool  # a material and not empty (state 9): what Bambuddy's slot choice considers
+
+
+@dataclass(frozen=True)
 class PrinterStatus:
     """What the print plan reads of a printer's state (`PrinterStatus`, Bambuddy `schemas/printer.py:448`).
 
@@ -130,6 +150,9 @@ class PrinterStatus:
     # (Spec 7.6, p534; Bambuddy PR #3554). Empty: none known. None: the answer did not report them at all;
     # the printer board then keeps the last known ones.
     nozzles: tuple[float, ...] | None = None
+    # The filament slots (p648). None: the answer did not report them (the board keeps the last known ones).
+    slots: tuple[AmsSlot, ...] | None = None
+    backup: bool | None = None  # Bambuddy's "AMS filament backup"; None unknown
 
 
 # The states of a queue entry as Bambuddy names them (PrintQueueItemResponse.status).
@@ -168,6 +191,8 @@ class QueueItem:
     been_jumped: bool = False  # Bambuddy's guard against starving under "shortest first"
     file_name: str | None = None  # library file name, else archive name, without the plate
     nozzle_diameter: float | None = None  # mm the file was sliced for; None unknown (Spec 10.2, p534)
+    # Bambuddy held the entry at its start for too little filament (`schemas/print_queue.py:236-239`, p648).
+    filament_short: bool = False
 
 
 # Which spool management Bambuddy runs: its own ("builtin") or Spoolman ("spoolman").

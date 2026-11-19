@@ -4,9 +4,11 @@ writer compares it with the last one logged."""
 
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
-from reprintbuddy.ops.status import UpdateStatus
+from reprintbuddy.ops.status import UpdateStatus, read_history, read_status, started_key
 
 # The final states of an update and their fixed result (Spec 10.7, group 4).
 _RESULTS = {
@@ -39,6 +41,19 @@ def update_outcome(status: UpdateStatus) -> dict[str, Any] | None:
     if status.kind == "return":  # Spec 11.3a "Rückweg": start and result are named as the way back
         outcome["return"] = True
     return outcome
+
+
+def update_outcomes(data_dir: Path) -> list[dict[str, Any]]:
+    """The results of the last finished runs, oldest first, one per run (p643).
+
+    The history of the runs and the state file: a helper of a version before the history writes only the
+    state file (an update from such a version runs its helper)."""
+    outcomes: dict[str, dict[str, Any]] = {}
+    for status in [*read_history(data_dir), read_status(data_dir)]:
+        outcome = update_outcome(status)
+        if outcome is not None:
+            outcomes[outcome["started_at"]] = outcome
+    return sorted(outcomes.values(), key=lambda outcome: started_key(datetime.fromisoformat(outcome["started_at"])))
 
 
 def connection_state(engine_status: Any) -> str | None:

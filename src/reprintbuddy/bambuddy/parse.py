@@ -15,6 +15,7 @@ from typing import Any
 
 from reprintbuddy.bambuddy.client import BambuddyUnexpected
 from reprintbuddy.bambuddy.types import (
+    AmsSlot,
     FilamentRequirement,
     LibraryFile,
     LibraryFolder,
@@ -174,6 +175,7 @@ def parse_queue_item(data: object) -> QueueItem:
         file_name=file_name or None,
         # Bambuddy's `_sliced_nozzle` (PR #3554): unreadable or not positive is unknown.
         nozzle_diameter=_diameter(d.get("nozzle_diameter")),
+        filament_short=_shown(d, "filament_short", bool) is True,
     )
 
 
@@ -254,7 +256,19 @@ def parse_file(data: object) -> LibraryFile:
         created_by=_opt(d, "created_by_username", str) or None,
         size=_opt(d, "file_size", int),
         created_at=_utc(d.get("created_at")),
+        nozzle_diameter=_file_nozzle(d.get("metadata")),
     )
+
+
+def _file_nozzle(metadata: object) -> float | None:
+    """`metadata.nozzle_diameter` of a file (Bambuddy's 3MF parser, `services/archive.py:582-584`), read like
+    the queue's (`_diameter`). Only shown in the print plan (p646): anything odd is unknown, never an error."""
+    return _diameter(metadata.get("nozzle_diameter")) if isinstance(metadata, dict) else None
+
+
+def _seconds(raw: object) -> int | None:
+    """A whole, not negative number of seconds; anything else unknown (only shown, p646)."""
+    return raw if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0 else None
 
 
 def parse_files(data: object) -> list[LibraryFile]:
@@ -285,7 +299,8 @@ def parse_plates(data: object) -> list[Plate]:
     out: list[Plate] = []
     for entry in plates:
         d = _object(entry, "plate")
-        out.append(Plate(index=_req(d, "index", int), name=_opt(d, "name", str)))
+        out.append(Plate(index=_req(d, "index", int), name=_opt(d, "name", str),
+                         print_time_seconds=_seconds(d.get("print_time_seconds"))))
     return out
 
 
@@ -444,8 +459,10 @@ def parse_printer_status(data: object, printer_id: int | None = None) -> Printer
     if remaining is not None and not 0 <= remaining <= MAX_PLAUSIBLE_MINUTES:
         remaining = None
     state = _opt(d, "state", str) or None
+    slots, backup = _slots(d), _shown(d, "ams_filament_backup", bool)
     if not connected:
         state, progress, remaining = None, None, None
+        slots, backup = None, None  # Spec 7.6: the last values of a printer not connected do not count
     return PrinterStatus(
         printer_id=pid,
         connected=connected,
@@ -456,7 +473,83 @@ def parse_printer_status(data: object, printer_id: int | None = None) -> Printer
         awaiting_plate_clear=bool(_opt(d, "awaiting_plate_clear", bool)),
         stopped_error=stopped,
         nozzles=_nozzles(d),
+        slots=slots,
+        backup=backup,
     )
+
+
+# ---- filament in the printers (Spec 7.6, 10.2, p648) ------------------------------------------
+
+_EMPTY_TRAY = 9  # `AMSTray.state` (Bambuddy `schemas/printer.py:315`): 9 empty, 10 present, 11 loaded
+_EXTERNAL_AMS_ID = 255  # how Bambuddy stores an external spool's slot (`utils/tray_ids.py:55`)
+
+
+def _external_index(tray_id: int) -> int | None:
+    """Bambuddy's `external_tray_id` turned round (`utils/tray_ids.py:190-194`): 254/255 -> 0/1, 247-253 -> 2-8."""
+    if tray_id in (254, 255):
+        return tray_id - 254
+    if 247 <= tray_id <= 253:
+        return tray_id - 247 + 2
+    return None
+
+
+def _slot(entry: object, ams_id: int | None) -> AmsSlot | None:
+    if not isinstance(entry, dict):
+        return None
+    tray_id = entry.get("id")
+    if isinstance(tray_id, bool) or not isinstance(tray_id, int):
+        return None
+    if ams_id is None:  # an external spool
+        index = _external_index(tray_id)
+        if index is None:
+            return None
+        ams_id, tray_id = _EXTERNAL_AMS_ID, index
+    material = entry.get("tray_type")
+    material = material.strip() if isinstance(material, str) and material.strip() else None
+    state = entry.get("state")
+    return AmsSlot(ams_id, tray_id, material, normalize_color(entry.get("tray_color")),
+                   loaded=material is not None and state != _EMPTY_TRAY)
+
+
+def _slots(d: dict) -> tuple[AmsSlot, ...] | None:
+    """The slots of `ams` and `vt_tray`; None when neither field came (only shown: odd entries are left out)."""
+    units, external = d.get("ams"), d.get("vt_tray")
+    if units is None and external is None:
+        return None
+    found: list[AmsSlot] = []
+    for unit in units if isinstance(units, list) else []:
+        unit_id = unit.get("id") if isinstance(unit, dict) else None
+        if isinstance(unit_id, bool) or not isinstance(unit_id, int):
+            continue
+        trays = unit.get("tray")
+        for entry in trays if isinstance(trays, list) else []:
+            slot = _slot(entry, unit_id)
+            if slot is not None:
+                found.append(slot)
+    for entry in external if isinstance(external, list) else []:
+        slot = _slot(entry, None)
+        if slot is not None:
+            found.append(slot)
+    return tuple(found)
+
+
+def parse_inventory_remain(data: object) -> dict[tuple[int, int], float]:
+    """Grams left per slot of the spools Bambuddy assigned to a slot (`GET /printers/{id}/inventory-remain`,
+    `slot_materials[]`, Bambuddy `services/filament_deficit.py:471-503`), keyed (ams_id, tray_id). A slot
+    without a usable number is left out: unknown, never 0."""
+    d = _object(data, "inventory remain answer")
+    rows = d.get("slot_materials")
+    found: dict[tuple[int, int], float] = {}
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        ams_id, tray_id, grams = row.get("ams_id"), row.get("tray_id"), row.get("remaining_g")
+        if any(isinstance(v, bool) or not isinstance(v, int) for v in (ams_id, tray_id)):
+            continue
+        if isinstance(grams, bool) or not isinstance(grams, (int, float)) or not grams >= 0 or grams == float("inf"):
+            continue
+        found[(ams_id, tray_id)] = float(grams)
+    return found
 
 
 def parse_printer_statuses(data: object) -> list[PrinterStatus]:

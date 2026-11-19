@@ -4,7 +4,7 @@ import json
 import socket
 import sqlite3
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -669,3 +669,154 @@ def test_a_note_for_the_log_that_fails_after_the_replace_is_no_failure_of_the_re
     assert code == 0, said.text()
     assert cap_of(target) == 7
     assert "Restored the backup" in said.text()
+
+
+# --- p660: a refusal on the command line stands in the activity log (Spec 10.7, group 4) -------------------
+# The command runs when the database may be broken: like the note of a done restore, it leaves a note that
+# the next start writes into the log ("command on the server").
+
+
+def noted(db_path: Path) -> list[tuple[str, dict | None]]:
+    from reprintbuddy.activity.writer import read_pending
+
+    return [(entry["kind"], entry["details"]) for entry in read_pending(db_path.parent)]
+
+
+def test_a_foreign_file_refused_leaves_a_note_for_the_log(tmp_path, target):
+    stranger = tmp_path / "stranger.zip"
+    with zipfile.ZipFile(stranger, "w") as archive:
+        archive.writestr("hello.txt", "hi")
+    run(stranger, target)
+    assert noted(target) == [("restore_rejected", {"reason": "foreign"})]
+
+
+def test_a_backup_of_a_newer_version_refused_leaves_its_reason(tmp_path, source, target):
+    newer = rewritten(
+        backup_of(source, tmp_path), tmp_path / "newer.zip", manifest=lambda m: m.update(app_version="99.0.0")
+    )
+    run(newer, target)
+    assert noted(target) == [("restore_rejected", {"reason": "too_new"})]
+
+
+def test_a_damaged_backup_refused_leaves_its_reason(tmp_path, source, target):
+    good = backup_of(source, tmp_path)
+    with zipfile.ZipFile(good) as archive:
+        cut = archive.read("database.sqlite")[:200]
+    run(rewritten(good, tmp_path / "broken.zip", **{"database.sqlite": cut}), target)
+    assert noted(target) == [("restore_rejected", {"reason": "damaged"})]
+
+
+def test_a_check_that_fails_otherwise_is_noted_as_failed(tmp_path, source, target, monkeypatch):
+    def full_disk(*args, **kwargs):
+        raise OSError("no space left")
+
+    monkeypatch.setattr(fb, "verify_database", full_disk)
+    code, _, _ = run(backup_of(source, tmp_path), target)
+    assert code == restorecmd.EXIT_REFUSED
+    assert noted(target) == [("restore_rejected", {"reason": "failed"})]
+
+
+def test_a_refusal_while_an_update_holds_the_lock_is_noted_as_busy(tmp_path, source, target):
+    from reprintbuddy.ops import oplock
+
+    held = oplock.acquire(target.parent, "update")
+    try:
+        run(backup_of(source, tmp_path), target)
+    finally:
+        held.release()
+    assert noted(target) == [("restore_rejected", {"reason": "busy"})]
+
+
+def test_ctrl_c_before_anything_was_replaced_is_noted_as_cancelled(tmp_path, source, target, monkeypatch):
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(fb, "verify_database", interrupted)
+    run(backup_of(source, tmp_path), target)
+    assert noted(target) == [("restore_cancelled", None)]
+
+
+@pytest.mark.parametrize("case", ["missing file", "service running"])
+def test_a_command_that_looked_at_no_backup_leaves_no_note(tmp_path, source, target, case):
+    if case == "missing file":
+        run(tmp_path / "not-there.zip", target)
+    else:
+        run(backup_of(source, tmp_path), target, probe=lambda: "systemd reports it as active")
+    assert noted(target) == []
+
+
+def test_refusals_add_up_until_the_next_start(tmp_path, target):
+    stranger = tmp_path / "stranger.zip"
+    with zipfile.ZipFile(stranger, "w") as archive:
+        archive.writestr("hello.txt", "hi")
+    run(stranger, target)
+    run(stranger, target)
+    assert noted(target) == [("restore_rejected", {"reason": "foreign"})] * 2
+    assert noted(target) == []  # read once
+
+
+def test_a_note_that_cannot_be_written_changes_nothing_about_the_refusal(tmp_path, target, monkeypatch):
+    from reprintbuddy.activity import writer
+
+    def no_room(*args, **kwargs):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(writer, "_write_pending", no_room)
+    stranger = tmp_path / "stranger.zip"
+    with zipfile.ZipFile(stranger, "w") as archive:
+        archive.writestr("hello.txt", "hi")
+    code, said, _ = run(stranger, target)
+    assert code == restorecmd.EXIT_REFUSED and "not a Reprintbuddy backup" in said.text()
+
+
+@pytest.mark.parametrize("passwords", [["nope-1", "nope-2", "nope-3"], ["", "", ""]], ids=["wrong", "missing"])
+def test_a_wrong_or_missing_password_is_not_noted(tmp_path, source, target, passwords):
+    """Decision: as on the page, which keeps the upload and lets the password be tried again, a wrong or
+    missing password is no refusal for the log, also after the last try on the command line."""
+    code, _, asked = run(backup_of(source, tmp_path, SECRET_BACKUP_PASSWORD), target, passwords=passwords)
+    assert code == restorecmd.EXIT_REFUSED and len(asked) == 3
+    assert noted(target) == []
+
+
+def test_a_restore_that_could_not_be_undone_is_noted_as_failed(tmp_path, source, target, monkeypatch):
+    def not_undone(*args, **kwargs):
+        raise restore.RestoreNotUndone(tmp_path / "somewhere.db")
+
+    monkeypatch.setattr(restore, "install", not_undone)
+    code, said, _ = run(backup_of(source, tmp_path), target)
+    assert code == restorecmd.EXIT_REFUSED and "could not be put back" in said.text()
+    assert noted(target) == [("restore_rejected", {"reason": "failed"})]
+
+
+def test_the_note_has_the_time_of_the_refusal_not_of_the_start_of_the_command(tmp_path, target):
+    """Review finding 5: three password prompts and a long check may lie between the two."""
+    from reprintbuddy.activity.writer import read_pending
+
+    stranger = tmp_path / "stranger.zip"
+    with zipfile.ZipFile(stranger, "w") as archive:
+        archive.writestr("hello.txt", "hi")
+    before = datetime.now(UTC).replace(tzinfo=None)
+    run(stranger, target)
+    (entry,) = read_pending(target.parent)
+    assert entry["at"] >= before.replace(microsecond=0) and entry["at"] != NOW.replace(tzinfo=None)
+
+
+def test_a_start_taking_the_lines_while_the_command_adds_one_neither_loses_nor_doubles_a_line(tmp_path, target, monkeypatch):
+    """Review finding 3: the start of the service takes the lines while the command line adds one."""
+    from reprintbuddy.activity import writer
+
+    data = target.parent
+    at = datetime(2026, 11, 19, 8, 0, tzinfo=UTC)
+    writer.leave_pending(data, "restore_rejected", {"reason": "foreign"}, at=at)
+    taken: list = []
+    real = writer._write_pending
+
+    def the_service_starts_meanwhile(*args, **kwargs):
+        taken.extend(writer.read_pending(data))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(writer, "_write_pending", the_service_starts_meanwhile)
+    writer.leave_pending(data, "restore_cancelled", None, at=at + timedelta(minutes=1))
+    monkeypatch.setattr(writer, "_write_pending", real)
+    later = writer.read_pending(data)
+    assert [line["kind"] for line in taken + later] == ["restore_rejected", "restore_cancelled"]

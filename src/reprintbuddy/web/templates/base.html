@@ -114,6 +114,8 @@
 {% endif %}
 {# Keeps the page live (Spec 10.5); bare.html replaces this block, so pages without the menu
    have no live channel. Without JavaScript the page works as before. #}
+{# Sets the place on the page again after a form came back to it (p645, Spec 10.8). #}
+<script src="/static/js/keepscroll.js?v={{ app_version }}" defer></script>
 <script src="/static/js/live.js?v={{ app_version }}" defer></script>
 <script src="/static/js/sidebar.js?v={{ app_version }}" defer></script>
 <script src="/static/js/info.js?v={{ app_version }}" defer></script>

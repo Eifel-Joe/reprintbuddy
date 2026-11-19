@@ -59,7 +59,9 @@ If Bambuddy's answer to a print gets lost, Reprintbuddy does not send it again. 
 
 ## In progress
 
-The section **In progress** lists the prints that were handed over and are not finished: **Article**, **Origin**, **State**, **Handed over** and the **Bambuddy id**. The state is **being handed over**, **unclear**, **queued** or **printing**. A print taken back after a cancel leaves the list; on the article page it shows as **taken back (cancel)**.
+The section **In progress** lists the prints that were handed over and are not finished: **Article**, **Origin**, **State**, **Start (expected)**, **End (expected)** and **Print time**. The state is **being handed over**, **unclear**, **queued** or **printing**.
+
+The times come from the print plan of the [Overview](overview.md), the same calculation as its bars. A print that is printing shows when Bambuddy started it (or **running** when Bambuddy does not say) and **about** the time it ends; a queued print shows **about** the start and end of its bar. A print that is not in the plan's lanes – without a ready printer, waiting for a manual or later start or for a printer that is out of service, not yet in Bambuddy's queue, or while the printers' state is unknown – has no start and end. **Print time** is the slicer's estimate for the file; when it is unknown, the print time says **Duration unknown** and the end **at the earliest** (the plan counts one hour). On another day the time names the weekday. Bambuddy's id of a print is on the article's page. On a phone the table scrolls sideways. A print taken back after a cancel leaves the list; on the article page it shows as **taken back (cancel)**.
 
 ## Bambuddy's queue
 
