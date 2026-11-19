@@ -60,8 +60,10 @@ A printer that is **offline**, in **maintenance** or in an **error** gets nothin
 
 Under each lane the plan says whether the filament loaded in the printer lasts for the prints of the lane. It only shows: Reprintbuddy books no filament and changes nothing in Bambuddy.
 
-- **Reload about 14:30 · PLA #000000 (AMS 1, slot 2)**, with a tick on the lane: at about that time the spool runs out, estimated evenly over the print that uses it up. **Reload now**: that moment has passed already. **at the latest**: a print before it has an unknown filament need, so it may come sooner.
-- **Not loaded: PETG #FF0000**: a print of the lane needs a sort that is in no slot of the printer.
+- **Reload about 14:30 · PLA Black (AMS 1, slot 2)**, with a tick on the lane: at about that time the spool runs out, estimated evenly over the print that uses it up. **Reload now**: that moment has passed already. **at the latest**: a print before it has an unknown filament need, so it may come sooner.
+- **Not loaded: PETG Red**: a print of the lane needs a sort that is in no slot of the printer.
+
+The colour is named as on the *Filament* page when a spool sort has the same material and colour value and one colour name; otherwise the notes show the value, such as #FF0000.
 - **Stock unknown: …**: Bambuddy holds no grams for the spool in that slot (no spool assigned to the slot in Bambuddy). Reprintbuddy does not use the AMS percentage: it is too coarse and missing for spools without RFID.
 - **Filament need unknown** on a bar: the print's needs are not known (a print from Bambuddy's archive, or a deleted file).
 
