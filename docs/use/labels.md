@@ -63,7 +63,7 @@ The QR code of the article is always on the label, on the left. Tick what else s
 | **Units per print** | With its word. |
 | **Print target** | The model or printer the article prints on, with its word. |
 | **Label text** | The label text of the article, for example the shelf compartment. You enter it in the article. |
-| **Print date** | Today's date. |
+| **Print date** | Today's date in the time zone of the browser you print from. |
 
 The details always appear in this order, whichever order you ticked them. A detail without a value, for example an article without article number, gives no line. **Name**, **Article number** and **Label text** are ticked at the start.
 

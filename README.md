@@ -253,8 +253,9 @@ There is **no configuration file**. Every setting lives in the database and is
 changed under *Settings* in the web interface: language, QR code address, Bambuddy connection,
 automation, labels, push messages, password, listen address, port, optional HTTPS certificate,
 restart, update check, update and backup, and export. *Settings → Log* only shows what happened (who changed what, sign-ins, updates, messages), see the documentation pages. The only thing
-given on the command line is the database path (`--db`). Times are shown in the time zone of the
-server (`timedatectl set-timezone …`, then restart).
+given on the command line is the database path (`--db`). Every page shows its times in the time zone
+of the browser that opens it; the time zone of the server (`timedatectl set-timezone …`, then restart)
+holds without JavaScript and for the rules that run without a browser.
 
 ## Update
 

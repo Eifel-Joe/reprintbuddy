@@ -265,8 +265,9 @@ Es gibt **keine Konfigurationsdatei**. Jede Einstellung liegt in der Datenbank
 und wird in der Weboberfläche unter *Einstellungen* geändert: Sprache, Adresse für QR-Codes,
 Bambuddy-Verbindung, Automatik, Etiketten, Push-Nachrichten, Passwort, Adresse, Port, optionales
 HTTPS-Zertifikat, Neustart, Update-Prüfung, Update und Sicherung sowie Export. *Einstellungen → Protokoll* zeigt nur, was passiert ist (wer was geändert hat, Anmeldungen, Updates, Nachrichten), siehe die Doku-Seiten.
-Nur der Pfad der Datenbank wird auf der Kommandozeile angegeben (`--db`). Zeitpunkte erscheinen in
-der Zeitzone des Servers (`timedatectl set-timezone …`, danach neu starten).
+Nur der Pfad der Datenbank wird auf der Kommandozeile angegeben (`--db`). Jede Seite zeigt ihre Zeiten
+in der Zeitzone des Browsers, der sie öffnet; die Zeitzone des Servers (`timedatectl set-timezone …`,
+danach neu starten) gilt ohne JavaScript und für die Regeln, die ohne Browser laufen.
 
 ## Update
 
