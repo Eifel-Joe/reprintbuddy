@@ -133,9 +133,11 @@ class FakeBambuddy:
         has_thumbnail: bool = True,
         sliced: bool = True,
         print_time_s: int | None = 3600,
+        nozzle: float | None = None,
     ) -> LibraryFile:
         file = LibraryFile(
-            self._next_file, filename, folder_id, fingerprint, printer_model, has_thumbnail, sliced
+            self._next_file, filename, folder_id, fingerprint, printer_model, has_thumbnail, sliced,
+            nozzle_diameter=nozzle,
         )
         self._next_file += 1
         self._files[file.id] = file
@@ -197,7 +199,9 @@ class FakeBambuddy:
         self._enter("list_plates")
         if file_id not in self._files:
             raise BambuddyRejected(f"unknown file {file_id}")
-        return [Plate(i, None) for i in range(1, self._plates[file_id] + 1)]
+        # Every plate with the file's print time: enough for the print plan (p646).
+        seconds = self._print_times.get(file_id)
+        return [Plate(i, None, seconds) for i in range(1, self._plates[file_id] + 1)]
 
     async def plate_thumbnail(self, file_id: int, plate_index: int) -> bytes:
         self._enter("plate_thumbnail")

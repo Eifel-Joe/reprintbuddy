@@ -254,7 +254,19 @@ def parse_file(data: object) -> LibraryFile:
         created_by=_opt(d, "created_by_username", str) or None,
         size=_opt(d, "file_size", int),
         created_at=_utc(d.get("created_at")),
+        nozzle_diameter=_file_nozzle(d.get("metadata")),
     )
+
+
+def _file_nozzle(metadata: object) -> float | None:
+    """`metadata.nozzle_diameter` of a file (Bambuddy's 3MF parser, `services/archive.py:582-584`), read like
+    the queue's (`_diameter`). Only shown in the print plan (p646): anything odd is unknown, never an error."""
+    return _diameter(metadata.get("nozzle_diameter")) if isinstance(metadata, dict) else None
+
+
+def _seconds(raw: object) -> int | None:
+    """A whole, not negative number of seconds; anything else unknown (only shown, p646)."""
+    return raw if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0 else None
 
 
 def parse_files(data: object) -> list[LibraryFile]:
@@ -285,7 +297,8 @@ def parse_plates(data: object) -> list[Plate]:
     out: list[Plate] = []
     for entry in plates:
         d = _object(entry, "plate")
-        out.append(Plate(index=_req(d, "index", int), name=_opt(d, "name", str)))
+        out.append(Plate(index=_req(d, "index", int), name=_opt(d, "name", str),
+                         print_time_seconds=_seconds(d.get("print_time_seconds"))))
     return out
 
 
