@@ -37,7 +37,7 @@ from reprintbuddy.domain import filament, status
 from reprintbuddy.domain.engine import Engine
 from reprintbuddy.notify.events import Rights
 from reprintbuddy.notify.service import Notifier
-from reprintbuddy.ops import fullbackup
+from reprintbuddy.ops import fullbackup, stablereturn
 from reprintbuddy.ops.autocheck import AutoCheck
 from reprintbuddy.ops.context import OpsContext
 from reprintbuddy.ops.installation import is_installation
@@ -365,6 +365,10 @@ def create_app(
     live_connect: Callable[..., Any] | None = None,
     live_sleep: Callable[[float], Awaitable[None]] | None = None,
 ) -> FastAPI:
+    # p610 (Spec 11.3a "Rückweg"): a way back cut off after the switch (power cut, hard restart) left the stable
+    # version's database here; put back the one from before it, before `upgrade` raises the wrong one to our steps.
+    # Only `serve` builds the app (cli.py); `migrate` and `restore-backup` do not come here.
+    stablereturn.recover_cut_off_return(db_path, __version__, datetime.now(UTC))
     engine = make_engine(db_path)
     upgrade(engine)
     # Uploads and half-written files of a restore or backup the last process did not finish.

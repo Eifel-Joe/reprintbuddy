@@ -61,7 +61,14 @@ Reprintbuddy asks at the start and then once a day whether a newer release exist
 | **The update did not start. Please start it again.** (or: please check for updates first) | The helper never began; nothing was changed. | Press **Check for updates**, then the update button. |
 | **The update was started but could not save its state, and the new version is not running.** | The helper ran but could not write its state file. | Read the system log: `journalctl -u reprintbuddy-update` |
 
-systemd stops an update that runs longer than 30 minutes. The card then reports a failure whose message says "interrupted".
+If systemd stops the update from outside (its time limit of 30 minutes, `systemctl stop reprintbuddy-update`, a
+shutdown), that counts as a failure: Reprintbuddy rolls back in the same way and starts the previous version
+again. The card says "The update was stopped from outside (time limit or shutdown). The previous version was put
+back.", and the [Log](log.md) names the result "interrupted". If the system shuts down meanwhile, the previous
+version starts with the next boot at the latest. A hard restart, a power cut or a hard kill (SIGKILL, for example by the
+out-of-memory killer) leaves no time for the rollback; for the way back to the stable version see there. The
+systemd units are unchanged, so after a hard kill of the update helper Reprintbuddy may stay stopped until the
+container starts again; start it with `systemctl start reprintbuddy`.
 
 For **Update failed and the previous version could not be restored** and **Update was interrupted**:
 
@@ -121,7 +128,12 @@ one of three cases:
 
 Download a full backup first (the page has the button) if you want to keep the state of the pre-release; it can
 only be restored into this pre-release or a newer version. Afterwards **Include pre-releases** is off. The way
-back runs like an update; if it fails, the pre-release keeps running with its data. While a pre-release is
+back runs like an update; if it fails, the pre-release keeps running with its data. The same holds when it is
+stopped from outside. If there was no time for that (a hard restart, a power cut, SIGKILL) after the database had
+been switched, the pre-release puts back the database from before the way back at its next start, before it opens
+it; the card then says so. That works only if the pre-release still starts: if pip had already half replaced its
+Python environment, the file `/var/lib/reprintbuddy/.return/before.db` stays, and the card or the system log names
+it. While a pre-release is
 installed, the backup from before it is kept beyond the last 5. A pre-release whose database steps rework existing
 data says so beforehand: its release notes begin with **Database rework:** …, and the update card shows a warning
 and the button **Update anyway**.

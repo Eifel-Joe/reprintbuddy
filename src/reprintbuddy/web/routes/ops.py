@@ -716,7 +716,13 @@ async def return_check(request: Request):
     return RedirectResponse("/settings/update/return", status_code=303)
 
 
-def _return_page(request: Request, db: Session, plan: ReturnPlan, *, error: str | None = None) -> Response:
+# p611: the messages of the backup form that the confirmation page shows in its card "Backup" (`backup._backup_error`).
+RETURN_BACKUP_MESSAGES = frozenset({"backup_mismatch", "backup_length", "backup_login", "backup_failed"})
+
+
+def _return_page(
+    request: Request, db: Session, plan: ReturnPlan, *, error: str | None = None, backup_code: str | None = None
+) -> Response:
     rows: list[dict[str, Any]] = []
     if plan.case == 3 and plan.journal_ids:
         wanted = set(plan.journal_ids)
@@ -735,6 +741,7 @@ def _return_page(request: Request, db: Session, plan: ReturnPlan, *, error: str 
         list_open=len(rows) <= RETURN_OPEN_UP_TO,
         lang=lang,
         error=error,
+        backup_message=f"ops.msg.{backup_code}" if backup_code in RETURN_BACKUP_MESSAGES else None,
     )
 
 
@@ -744,7 +751,7 @@ async def return_page(request: Request, db: Session = Depends(get_db)):
     plan = _prepared(request)
     if plan is None:
         return _back("return_expired")
-    return _return_page(request, db, plan)
+    return _return_page(request, db, plan, backup_code=request.query_params.get("ops"))
 
 
 @router.post("/settings/update/return", dependencies=[Depends(verify_csrf)])

@@ -26,7 +26,7 @@ import sqlite3
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
@@ -34,15 +34,13 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
-from reprintbuddy.activity.writer import current_marks, current_notify_marks, write_restored_marker
 from reprintbuddy.auth import MIN_PASSWORD_LENGTH
 from reprintbuddy.db import known_revisions
 from reprintbuddy.ops import fullbackup as fb
-from reprintbuddy.ops import oplock, running
+from reprintbuddy.ops import oplock, restore, running
 from reprintbuddy.ops.server import address_changed, base_url, effective_from_settings
 from reprintbuddy.ops.runner import in_thread
 from reprintbuddy.ops.service import request_restart
-from reprintbuddy.ops.status import read_status
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render
@@ -268,17 +266,28 @@ class RemovedAfterSending(FileResponse):
             _remove(Path(self.path))
 
 
+def _backup_error(form: Any, code: str) -> RedirectResponse:
+    """Back to the page the backup form was on, with the message `code`.
+
+    p611: the confirmation page of the way back (Spec 11.3a) has the form too; an error there led to the update
+    card, and the way back had to be checked again. Its form says `back=return`. Only that one fixed target
+    exists: anything else leads to the maintenance card as before, never to an address taken from the request."""
+    if str(form.get("back") or "") == "return":
+        return RedirectResponse(f"/settings/update/return?ops={code}#return-backup", status_code=303)
+    return maintenance_redirect(code, "ops-backup")
+
+
 @router.post("/settings/backup", dependencies=[Depends(verify_csrf)])
 async def download_backup(request: Request, db: Session = Depends(get_db)) -> Response:
     form = await request.form()
     password = str(form.get("backup_password") or "")
     if password != str(form.get("backup_password_repeat") or ""):
-        return maintenance_redirect("backup_mismatch", "ops-backup")
+        return _backup_error(form, "backup_mismatch")
     if password and not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
-        return maintenance_redirect("backup_length", "ops-backup")
+        return _backup_error(form, "backup_length")
     login = str(form.get("login_password") or "")[: 4 * MAX_PASSWORD_LENGTH]
     if not await password_confirmed(request, db, login):
-        return maintenance_redirect("backup_login", "ops-backup")
+        return _backup_error(form, "backup_login")
     work = fb.ensure_work_dir(_work_dir(request))
     fb.clear_work_dir(work, older_than=fb.STALE_AFTER)
     # v0.3.12 p149: the route names the file and holds a flag, as the restore does (p140). Root: a
@@ -300,7 +309,7 @@ async def download_backup(request: Request, db: Session = Depends(get_db)) -> Re
         )
     except (OSError, sqlite3.Error, fb.BackupError) as error:
         log.warning("backup failed: %s", type(error).__name__)  # never the message: no paths, no values
-        return maintenance_redirect("backup_failed", "ops-backup")
+        return _backup_error(form, "backup_failed")
     except BaseException:  # cancelled (a closed browser, a shutdown): the flag first, then the file
         abandoned.set()
         _remove(target)
@@ -346,12 +355,6 @@ def _discard(request: Request) -> None:
     request.session.pop(SESSION_KEY, None)
     if path is not None:
         _remove(path)
-
-
-def _protected(request: Request) -> list[Path]:
-    """A backup named by a failed rollback must survive the pruning (as in the update)."""
-    status = read_status(request.app.state.db_path.parent)
-    return [Path(status.backup)] if status.state == "rollback_failed" and status.backup else []
 
 
 @router.post("/settings/restore/upload")
@@ -561,25 +564,18 @@ async def restore_confirm(request: Request, db: Session = Depends(get_db)) -> Re
         if not gate.begin():  # the request was cancelled before this thread got going: replace nothing
             return
         try:
-            marks = current_marks(app.state.db_path)  # p186: the log's marks belong to what has happened
-            notify_marks = current_notify_marks(app.state.db_path)  # p220: so do those of the push messages
-            fb.replace_database(candidate, app.state.db_path, now=_now(), protect=_protected(request))
+            # Never `may_set_aside`: this service holds the database open (see `restore.install`).
+            installed = restore.install(
+                candidate, app.state.db_path, now=_now(), protect=restore.protected_backups(data_dir)
+            )
         except BaseException:
             _remove(candidate)  # nothing was replaced: the decrypted copy does not wait for the next start
             gate.fail()
             raise
         try:
-            # The restored database is migrated at the next start; that start logs the restore into it.
-            write_restored_marker(
-                data_dir,
-                created_at=manifest.created_at,
-                version=manifest.app_version,
-                via=None,
-                marks=marks,
-                notify_marks=notify_marks,
-            )
-        except Exception as error:  # noqa: BLE001 - p164: the restore has happened; only its log entry is lost
-            log.warning("restore note for the activity log not written: %s", type(error).__name__)
+            # The restored database is migrated at the next start; that start logs the restore into it. A note
+            # that fails is logged there (p164: the restore has happened; only its log entry is lost).
+            restore.leave_note(data_dir, manifest, installed, via=None)
         finally:
             # p164: the database is replaced. Was the request cancelled meanwhile, nobody else asks for the
             # restart (see `_ReplaceGate`); the old process must not go on with the state of the old database.

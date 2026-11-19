@@ -411,3 +411,133 @@ def test_the_rework_warning_names_the_backup_from_before_the_pre_release():
 
     assert "before the switch to the pre-release" in translate("en", "ops.update.rework_warning")
     assert "von vor dem Wechsel auf die Vorabversion" in translate("de", "ops.update.rework_warning")
+
+
+# --- p610: the start after a way back that was cut off ---------------------------------------------------------
+
+
+def test_p610_the_pre_release_puts_back_the_database_of_a_cut_off_way_back_before_it_opens_it(tmp_path):
+    """A power cut during pip: the live database is the stable version's (an older head, without the newer
+    entries). The start of the pre-release must not raise it to its own head first (`upgrade`), but put back
+    `.return/before.db`, the database as it was when the service stopped."""
+    from reprintbuddy import __version__
+    from reprintbuddy.ops.migrationsteps import current_revision
+    from reprintbuddy.web.app import create_app
+
+    data = tmp_path / "data"
+    data.mkdir()
+    db = data / "live.db"
+    before = data / ".return" / "before.db"
+    before.parent.mkdir()
+    source = tmp_path / "pre-release.db"
+    engine = make_engine(source)
+    upgrade(engine)
+    engine.dispose()
+    add_journal(source, 3)
+    backup_database(source, tmp_path / "copies", label="x", now=datetime(2026, 11, 15, tzinfo=UTC)).rename(before)
+    engine = make_engine(db)
+    upgrade(engine, revision="0022")  # the stable version's head
+    engine.dispose()
+    write_status(
+        data,
+        UpdateStatus(
+            state="running", step="install", from_tag="v" + __version__, to_tag=STABLE, kind="return", return_case=3,
+            started_at=datetime(2026, 11, 15, tzinfo=UTC), target_head="0022",
+        ),
+    )
+    app = create_app(db, run_engine=False)
+    app.state.engine.dispose()
+    assert sql(db, "SELECT count(*) FROM journal") == [(3,)]
+    assert current_revision(db) == current_revision(source)
+    status = read_status(data)
+    assert (status.state, status.reason) == ("rolled_back", "interrupted_recovered")
+    assert not before.exists()
+
+
+# --- p611: the backup form of the confirmation page stays on the page -----------------------------------------
+# Up to 1.2.0-beta.1 any error of the backup download (a wrong sign-in password above all) led to the update card,
+# and the way back had to be checked again. Now the form says where it comes from (`back=return`); the page shows
+# the message in its own card "Backup" and keeps the check. Only this one target exists: any other `back` leads to
+# the maintenance card as before, never to an address from the request.
+
+
+def backup_from_the_page(env, **data):
+    fields = {"backup_password": "", "backup_password_repeat": "", "login_password": PASSWORD, "back": "return", **data}
+    return post(env, "/settings/backup", **fields)
+
+
+@pytest.mark.parametrize(
+    ("fields", "code", "text"),
+    [
+        ({"login_password": "wrong password!"}, "backup_login", "The sign-in password is wrong. Nothing was downloaded."),
+        ({"backup_password": "a" * 12, "backup_password_repeat": "b" * 12}, "backup_mismatch", "The two passwords do not match."),
+        ({"backup_password": "short", "backup_password_repeat": "short"}, "backup_length", "The password needs 8 to 1024 characters."),
+        ({"broken": True}, "backup_failed", "The backup could not be made. Nothing was downloaded."),
+    ],
+)
+def test_p611_an_error_of_the_backup_form_stays_on_the_confirmation_page(ops_env, tmp_path, monkeypatch, fields, code, text):
+    from reprintbuddy.ops import fullbackup
+
+    beta(ops_env, tmp_path, "rework_marked")
+    checked(ops_env)
+    if fields.pop("broken", False):
+        def broken(*args, **kwargs):
+            raise OSError("no space left on device")
+
+        monkeypatch.setattr(fullbackup, "create_backup", broken)
+    response = backup_from_the_page(ops_env, **fields)
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/settings/update/return?ops={code}#return-backup"
+    page = ops_env.client.get(response.headers["location"])
+    assert page.status_code == 200
+    backup_card = page.text.split('id="return-backup"')[1].split("</section>")[0]
+    assert text in backup_card
+    assert 'id="return-confirm"' in page.text  # the check is kept: the page is still the confirmation page
+    assert (code == "backup_login") == ('aria-invalid="true"' in backup_card)
+    assert backup_card.count(text) == 1
+
+
+def test_p611_after_the_error_the_way_back_goes_without_a_new_check(ops_env, tmp_path):
+    beta(ops_env, tmp_path)
+    checked(ops_env)
+    backup_from_the_page(ops_env, login_password="wrong password!")
+    response = confirm(ops_env, 1)
+    assert response.status_code == 303
+    assert read_status(ops_env.db_path.parent).kind == "return"
+    assert START_UPDATE_CMD in ops_env.runner.calls
+
+
+def test_p611_the_confirmation_page_passes_over_an_unknown_message(ops_env, tmp_path):
+    beta(ops_env, tmp_path)
+    checked(ops_env)
+    page = ops_env.client.get("/settings/update/return?ops=<script>").text
+    backup_card = page.split('id="return-backup"')[1].split("</section>")[0]
+    assert 'role="alert"' not in backup_card and "<script>" not in page
+    page = ops_env.client.get("/settings/update/return?ops=update_failed").text  # a code of another card
+    assert 'role="alert"' not in page.split('id="return-backup"')[1].split("</section>")[0]
+
+
+@pytest.mark.parametrize("back", ["", "elsewhere", "https://example.com/", "/settings/update/return"])
+def test_p611_any_other_origin_leads_to_the_maintenance_card_as_before(ops_env, tmp_path, back):
+    beta(ops_env, tmp_path)
+    checked(ops_env)
+    response = backup_from_the_page(ops_env, login_password="wrong password!", back=back)
+    assert response.headers["location"] == "/settings?tab=maintenance&ops=backup_login#ops-backup"
+
+
+def test_p611_the_backup_form_of_the_page_says_where_it_comes_from(ops_env, tmp_path):
+    beta(ops_env, tmp_path)
+    checked(ops_env)
+    page = ops_env.client.get("/settings/update/return").text
+    form = page.split('id="return-backup-form"')[1].split("</form>")[0]
+    assert '<input type="hidden" name="back" value="return">' in form
+
+
+def test_p611_a_check_that_grew_old_meanwhile_leads_to_the_card(ops_env, tmp_path):
+    beta(ops_env, tmp_path)
+    checked(ops_env)
+    plan, at = ops_env.client.app.state.return_prepared
+    ops_env.client.app.state.return_prepared = (plan, at - timedelta(minutes=31))
+    response = backup_from_the_page(ops_env, login_password="wrong password!")
+    follow = ops_env.client.get(response.headers["location"])
+    assert follow.status_code == 303 and "return_expired" in follow.headers["location"]

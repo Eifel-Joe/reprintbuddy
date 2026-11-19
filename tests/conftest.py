@@ -347,6 +347,7 @@ class FakeRunner:
 
     def __init__(self):
         self.calls: list[tuple[str, ...]] = []
+        self.timeouts: list[float] = []  # the time each call was given, in the order of `calls`
         self._rules: list[tuple[tuple[str, ...], list, list[int]]] = []
 
     def on(self, prefix, *results):
@@ -357,6 +358,7 @@ class FakeRunner:
 
         call = tuple(args)
         self.calls.append(call)
+        self.timeouts.append(timeout)
         best = None
         for prefix, results, position in self._rules:
             if call[: len(prefix)] == prefix and (best is None or len(prefix) >= len(best[0])):

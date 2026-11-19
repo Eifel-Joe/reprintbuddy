@@ -15,7 +15,7 @@ from reprintbuddy import settings as st
 from reprintbuddy.cli import main
 from reprintbuddy.db import known_revisions, make_engine, make_sessionmaker, upgrade
 from reprintbuddy.ops import fullbackup as fb
-from reprintbuddy.ops import restorecmd
+from reprintbuddy.ops import restore, restorecmd
 from reprintbuddy.ops.runner import CommandResult
 from reprintbuddy.ops.service import SERVICE, SYSTEMCTL, UPDATE_SERVICE
 
@@ -362,7 +362,7 @@ def test_a_failing_install_into_a_broken_place_puts_the_old_file_back(tmp_path, 
     def fails(*args, **kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(restorecmd, "_copy", fails)
+    monkeypatch.setattr(restore, "_copy", fails)
     code, said, _ = run(backup_of(source, tmp_path), broken)
     assert code == restorecmd.EXIT_REFUSED
     assert broken.read_bytes().startswith(b"this is not a database")  # as it was
@@ -505,7 +505,7 @@ def test_a_move_that_fails_half_way_puts_the_old_files_back(tmp_path, monkeypatc
 
     monkeypatch.setattr(Path, "replace", failing)
     with pytest.raises(PermissionError):
-        restorecmd._install_unreadable(tmp_path / "unused.db", db_path, NOW)
+        restore.set_aside_and_install(tmp_path / "unused.db", db_path, NOW)
     assert db_path.read_bytes() == b"old main file"  # the main file is back where it was
     assert Path(f"{db_path}-wal").read_bytes() == b"old wal"
 
@@ -525,7 +525,7 @@ def test_when_even_the_way_back_fails_the_message_says_where_the_file_is(tmp_pat
         raise OSError("disk full")
 
     monkeypatch.setattr(Path, "replace", failing)
-    monkeypatch.setattr(restorecmd, "_copy", copy_fails)
+    monkeypatch.setattr(restore, "_copy", copy_fails)
     code, said, _ = run(backup_of(source, tmp_path), broken)
     assert code == restorecmd.EXIT_REFUSED
     text = said.text()
@@ -655,3 +655,17 @@ def test_a_lock_file_that_cannot_be_opened_is_a_clean_refusal(tmp_path, source, 
     code, said, _ = run(backup_of(source, tmp_path), target)
     assert code == restorecmd.EXIT_NOT_DONE and cap_of(target) == 3
     assert "maintenance.lock" in said.text() and "Nothing was changed." in said.text()
+
+
+def test_a_note_for_the_log_that_fails_after_the_replace_is_no_failure_of_the_restore(tmp_path, source, target, monkeypatch):
+    """p531 (A6), as on the page (p164): once the database is replaced, a failing note for the activity log loses
+    only that entry. The command used to end with a traceback here although the restore had happened."""
+
+    def broken(*args, **kwargs):
+        raise TypeError("not serializable")
+
+    monkeypatch.setattr(restore, "write_restored_marker", broken)
+    code, said, _ = run(backup_of(source, tmp_path), target)
+    assert code == 0, said.text()
+    assert cap_of(target) == 7
+    assert "Restored the backup" in said.text()

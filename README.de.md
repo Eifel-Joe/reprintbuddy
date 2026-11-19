@@ -90,16 +90,16 @@ Erfundene Beispieldaten. Weitere Bilder stehen auf den [Doku-Seiten](https://eif
 ## Installation
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.0-beta.1/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.0-beta.2/install/install.sh)"
 ```
 
 Als root auf diesem System ausführen. Frische Debian-Systeme bringen oft kein curl mit; der erste Teil installiert es.
-Das Skript legt das Release auf, dessen Tag in der Adresse steht (hier `v1.2.0-beta.1`): Skript und Release sind eine
+Das Skript legt das Release auf, dessen Tag in der Adresse steht (hier `v1.2.0-beta.2`): Skript und Release sind eine
 Version.
 Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.0-beta.1/install/install.sh)" _ --language de
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.0-beta.2/install/install.sh)" _ --language de
 ```
 
 Willst du eine andere Version installieren, setzt du ihren Tag anstelle von `<tag>` in die Adresse (ab v0.3.14; die
@@ -285,6 +285,16 @@ Scheitert ein Schritt, geht Reprintbuddy auf die vorige Version zurück **und** 
 Datenbank aus der Sicherung zurück; die Seite nennt den gescheiterten Schritt. Änderungen aus
 der Zeit des Updates gingen dabei verloren, darum sind alle Änderungen gesperrt, bis es fertig ist.
 
+Beendet systemd das Update von außen (seine Zeitgrenze von 30 Minuten, `systemctl stop reprintbuddy-update`,
+Herunterfahren), gilt das als Fehlschlag: Reprintbuddy rollt genauso zurück und startet die vorige Version wieder.
+Die Karte sagt „Das Update wurde von außen beendet (Zeitgrenze oder Herunterfahren). Die vorige Version wurde
+zurückgeholt.“, und das Protokoll nennt das Ergebnis „unterbrochen“. Fährt das System dabei herunter, startet die
+vorige Version spätestens beim nächsten Booten. Ein harter Neustart, ein Stromausfall oder ein
+hartes Beenden (SIGKILL, zum Beispiel durch den OOM-Killer) lässt keine Zeit zum Zurückrollen; für den Rückweg zur
+stabilen Version steht dort, was dann gilt. An den systemd-Units ändert sich nichts; nach einem harten Beenden des
+Update-Helfers kann Reprintbuddy deshalb bis zum nächsten Start des Containers aus bleiben. Dann startet
+`systemctl start reprintbuddy` es.
+
 Zeigt die Seite **Update wurde unterbrochen** oder **Update fehlgeschlagen, vorige Version ließ sich nicht wiederherstellen**,
 führe das Installationsskript erneut aus: Es repariert Pakete, Einheiten und den Dienst und lässt die Datenbank
 stehen. Startet Reprintbuddy danach nicht, spiele die auf der Seite genannte Sicherung zurück (siehe
@@ -324,7 +334,12 @@ die sagt, was passiert, in einem von drei Fällen:
 Lade vorher eine vollständige Sicherung herunter (die Seite hat den Knopf), wenn du den Stand der Vorabversion
 behalten willst; sie lässt sich nur in diese Vorabversion oder eine neuere Version zurückspielen. Danach ist
 **Vorabversionen einschließen** aus. Der Rückweg läuft wie ein Update; schlägt er fehl, läuft die Vorabversion mit
-ihren Daten weiter. Solange eine Vorabversion installiert ist, bleibt die Sicherung von vor ihr auch über die
+ihren Daten weiter. Das gilt auch, wenn er von außen beendet wird. Fehlte dafür nach dem Umstellen der Datenbank
+die Zeit (harter Neustart, Stromausfall, SIGKILL), spielt die Vorabversion bei ihrem nächsten Start die Datenbank
+von vor dem Rückweg zurück, bevor sie sie öffnet; die Karte sagt das dann. Das gelingt nur, wenn die Vorabversion
+noch startet: Hat pip ihre Python-Umgebung schon halb ersetzt, bleibt die Datei
+`/var/lib/reprintbuddy/.return/before.db` liegen, und die Karte bzw. das Systemprotokoll nennt sie. Solange eine
+Vorabversion installiert ist, bleibt die Sicherung von vor ihr auch über die
 letzten 5 hinaus. Eine Vorabversion, deren Umbauschritte vorhandene Daten umbauen, sagt das vorher: Die
 Release-Notes beginnen mit **Database rework:** …, und die Update-Karte zeigt einen Warnkasten und den Knopf
 **Trotzdem aktualisieren**.
