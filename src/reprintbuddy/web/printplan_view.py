@@ -7,6 +7,7 @@ and turns its times into positions on the axis and local clock times. Nothing he
 
 from __future__ import annotations
 
+import re
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -15,10 +16,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy import settings as st
-from reprintbuddy.bambuddy.types import QueueItem
 from reprintbuddy.domain import dispatch
 from reprintbuddy.domain.printerboard import PrinterBoard
-from reprintbuddy.bambuddy.types import AmsSlot
+from reprintbuddy.bambuddy.types import AmsSlot, QueueItem
 from reprintbuddy.domain.filamentplan import LaneFilament, LanePrint, Marker, Need, lane_filament
 from reprintbuddy.domain.printplan import Bar, Plan, PlanItem, PlanPrinter, build_plan
 from reprintbuddy.localtime import to_local
@@ -350,8 +350,12 @@ def slot_name(lang: str, slot: AmsSlot) -> str:
     return translate(lang, "overview.plan.slot_ams", unit=slot.ams_id + 1, slot=slot.tray_id + 1)
 
 
-def _sort(material: str | None, color: str | None) -> str:
-    return " ".join(part for part in (material, color) if part)
+def _sort(lang: str, material: str | None, color: str | None) -> str:
+    text = " ".join(part for part in (material, color) if part)
+    return text or translate(lang, "overview.plan.sort_unknown")
+
+
+_HEX_COLOR = re.compile(r"^#[0-9A-F]{6}$")  # the only form a colour may take in the style attribute
 
 
 def _needs_of_articles(db: Session, article_ids: Collection[int]) -> dict[int, tuple[Need, ...] | None]:
@@ -382,7 +386,9 @@ def _filament(
     found: dict[int, LaneFilament] = {}
     for lane in plan.lanes:
         state = board.statuses.get(lane.printer_id)
-        if lane.condition not in ("ready", "plate") or state is None or state.slots is None or not lane.bars:
+        # Review p648, 2: Bambuddy sends empty lists for a printer without AMS (schema defaults), so "no slots"
+        # is an empty tuple as well as None; either way the lane gets no notes (Spec 10.2).
+        if lane.condition not in ("ready", "plate") or state is None or not state.slots or not lane.bars:
             continue
         prints: list[LanePrint] = []
         for bar in lane.bars:
@@ -399,6 +405,9 @@ def _filament(
             start = bar.start
             if bar.kind == "running" and item is not None and item.print_time_seconds:
                 start = bar.end - timedelta(seconds=item.print_time_seconds)  # the whole print, for the share
+            elif bar.kind == "running" and bar.progress and 0 < bar.progress < 100:
+                # no print time: the part done so far, from the progress and the time left (review p648, 9)
+                start = now - (bar.end - now) * (bar.progress / (100 - bar.progress))
             prints.append(LanePrint(bar.start, bar.end, start, needs))
         found[lane.printer_id] = lane_filament(
             prints, state.slots, board.slot_grams.get(lane.printer_id, {}), state.backup, now,
@@ -407,7 +416,7 @@ def _filament(
 
 
 def _marker_text(lang: str, marker: Marker, now: datetime) -> str:
-    sort = _sort(marker.material, marker.color)
+    sort = _sort(lang, marker.material, marker.color)
     if marker.kind == "not_loaded":
         return translate(lang, "overview.plan.not_loaded", sort=sort)
     where = slot_name(lang, marker.slot) if marker.slot is not None else ""
@@ -430,7 +439,8 @@ def _markers(found: LaneFilament | None, ax: Axis, now: datetime, lang: str) -> 
             moment = max(marker.at, ax.start)
             if moment <= ax.end:
                 left = round(100 * (moment - ax.start).total_seconds() / total, 2)
-        views.append(MarkerView(marker.kind, _marker_text(lang, marker, now), left, marker.color))
+        color = marker.color if marker.color and _HEX_COLOR.match(marker.color) else None
+        views.append(MarkerView(marker.kind, _marker_text(lang, marker, now), left, color))
     return tuple(views), found.more
 
 

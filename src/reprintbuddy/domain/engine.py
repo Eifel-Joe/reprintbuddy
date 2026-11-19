@@ -37,7 +37,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy import settings
-from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable
+from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable, BambuddyUnexpected
 from reprintbuddy.bambuddy.types import LibraryFile, Printer, QueueItem
 from reprintbuddy.domain import dispatch, tracking, withdraw, workqueue
 from reprintbuddy.domain.printerboard import FileFacts, PrinterBoard
@@ -59,7 +59,9 @@ DEFAULT_POLL_SECONDS = 60.0
 UPDATE_RETRY_SECONDS = 5.0
 # p648: after a print ended, Bambuddy books the filament used; the grams are read again this much later,
 # at most once a minute per printer (Spec 7.6).
-REREAD_AFTER_END_SECONDS = 60.0
+# 120, not 60 (review p648, 3): between the report and the booking Bambuddy waits up to 45 s for the SD card
+# to be cleaned (`main.py:9324`, `:9694`), then retries, relays and notifies.
+REREAD_AFTER_END_SECONDS = 120.0
 REREAD_MIN_INTERVAL_SECONDS = 60.0
 
 
@@ -462,7 +464,7 @@ class Engine:
             file_id, _fingerprint = key
             try:
                 plates = await client.list_plates(file_id)
-            except BambuddyRejected:
+            except (BambuddyRejected, BambuddyUnexpected):
                 log.info("engine: the plates of file %s could not be read; its print time stays unknown", file_id)
                 continue
             except BambuddyUnavailable:  # gone: the next file would only wait for the same timeout (review p646)
@@ -509,17 +511,17 @@ class Engine:
         that printer or file unknown, an unreachable Bambuddy ends the reading; nothing else changes."""
         board = self.board
         before = (dict(board.slot_grams), dict(board.needs))
-        grams: dict[int, dict[tuple[int, int], float]] = {}
-        gone = False
-        for pid in self._printers_with_work():
+        working = self._printers_with_work()
+        for pid in [p for p in board.slot_grams if p not in working]:
+            del board.slot_grams[pid]
+        for pid in working:
             try:
-                grams[pid] = await client.inventory_remain(pid)
-            except BambuddyRejected:
+                board.slot_grams[pid] = await client.inventory_remain(pid)
+            except (BambuddyRejected, BambuddyUnexpected):  # odd is no "gone" (review p648, 5)
                 log.info("engine: the grams of printer %s could not be read; its stock stays unknown", pid)
+                board.slot_grams.pop(pid, None)
             except BambuddyUnavailable:
-                gone = True
-                break
-        board.slot_grams = grams if not gone else {**board.slot_grams, **grams}  # gone: keep what was known
+                break  # gone: what was known stays
         with self.sm() as session:
             own = dispatch.own_item_ids(session)
         wanted = {
@@ -531,14 +533,15 @@ class Engine:
         for key in [k for k in board.needs if k not in wanted]:
             del board.needs[key]
         for file_id, plate_id in sorted(wanted - board.needs.keys()):
-            if gone:
-                break
             try:
-                board.needs[(file_id, plate_id)] = tuple(await client.filament_requirements(file_id, plate_id))
-            except BambuddyRejected:
-                board.needs[(file_id, plate_id)] = None  # e.g. the file is gone: unknown, not asked again
+                found = tuple(await client.filament_requirements(file_id, plate_id))
+            except (BambuddyRejected, BambuddyUnexpected):
+                found = ()  # e.g. the file is gone: unknown, not asked again
             except BambuddyUnavailable:
                 break
+            # Review p648, 1: Bambuddy answers an empty list for a file it cannot read the needs of
+            # (`library.py:3932-3938`): unknown, not "needs nothing".
+            board.needs[(file_id, plate_id)] = found or None
         return (board.slot_grams, board.needs) != before
 
     def print_ended(self, printer_id: int) -> None:
@@ -563,20 +566,41 @@ class Engine:
         task.add_done_callback(self._rereads.discard)
 
     async def _reread(self, printer_id: int) -> None:
+        """Under the engine's lock and not while an update runs, like a tick (review p648, 4): the client
+        opens a database session, which a restore must not meet. Only shown: any failure is logged."""
         await asyncio.sleep(REREAD_AFTER_END_SECONDS)
-        client = self.client_provider()
-        if client is None:
-            return
         try:
-            grams = await client.inventory_remain(printer_id)
-        except (BambuddyRejected, BambuddyUnavailable):
-            return
-        if self.board.slot_grams.get(printer_id) != grams:
-            self.board.slot_grams[printer_id] = grams
-            self.board.facts_changed()
+            async with self._acquired():
+                if await self._update_is_running():
+                    return
+                client = self.client_provider()
+                if client is None:
+                    return
+                try:
+                    grams = await client.inventory_remain(printer_id)
+                except (BambuddyRejected, BambuddyUnavailable):
+                    return
+                if self.board.slot_grams.get(printer_id) != grams:
+                    self.board.slot_grams[printer_id] = grams
+                    self.board.facts_changed()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.warning("engine: the re-read of printer %s after a print end failed", printer_id, exc_info=True)
+
+    def reread_tasks(self) -> list[asyncio.Task]:
+        return list(self._rereads)
+
+    async def cancel_rereads(self) -> None:
+        """At shutdown: a re-read waiting its minute must not outlive the app (review p648, 4)."""
+        tasks = list(self._rereads)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._rereads.clear()
 
     async def wait_for_rereads(self) -> None:
-        """For tests and shutdown: let the scheduled re-reads finish."""
+        """For tests: let the scheduled re-reads finish."""
         while self._rereads:
             await asyncio.gather(*list(self._rereads), return_exceptions=True)
 

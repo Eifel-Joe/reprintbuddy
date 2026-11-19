@@ -1615,6 +1615,7 @@
   "overview.plan.reload": "Nachladen ca. {time} · {sort} ({slot})",
   "overview.plan.reload_latest": "Nachladen spätestens ca. {time} · {sort} ({slot})",
   "overview.plan.reload_now": "Nachladen jetzt · {sort} ({slot})",
+  "overview.plan.sort_unknown": "unbekanntes Filament",
   "overview.plan.not_loaded": "nicht geladen: {sort}",
   "overview.plan.stock_unknown": "Restmenge unbekannt: {sort} ({slot})",
   "overview.plan.markers_more": "+ {n}",

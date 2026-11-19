@@ -323,6 +323,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         app.state.stopping = True
         await app.state.notifier.stop()  # a message on its way is ended, nothing new starts
+        await app.state.ticker.cancel_rereads()  # a filament re-read waiting after a print end (p648)
         background = list(tasks)
         check = app.state.rights.task  # a check of the key's rights started by a page
         if check is not None:

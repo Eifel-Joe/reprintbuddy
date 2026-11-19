@@ -1615,6 +1615,7 @@
   "overview.plan.reload": "Reload about {time} · {sort} ({slot})",
   "overview.plan.reload_latest": "Reload at the latest about {time} · {sort} ({slot})",
   "overview.plan.reload_now": "Reload now · {sort} ({slot})",
+  "overview.plan.sort_unknown": "unknown filament",
   "overview.plan.not_loaded": "Not loaded: {sort}",
   "overview.plan.stock_unknown": "Stock unknown: {sort} ({slot})",
   "overview.plan.markers_more": "+ {n}",

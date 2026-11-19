@@ -147,3 +147,9 @@ def test_length_is_from_print_start_to_end():
     long = LanePrint(start=at(10), end=at(14), print_start=at(10), needs=(pla(400),))
     r = lane_filament([long], [BLACK], {(0, 0): 100.0}, None, NOW)
     assert r.markers[0].at == at(10) + timedelta(hours=1)
+
+
+def test_each_sort_only_once_even_over_two_slots():
+    """Review p648, 7: backup off, two slots of black PLA both run dry: one note for the sort (Spec 10.2)."""
+    r = lane_filament([job(10, 11, pla(50), pla(50))], [BLACK, BLACK_2], {(0, 0): 10.0, (0, 1): 10.0}, False, NOW)
+    assert len(r.markers) == 1

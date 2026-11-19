@@ -158,3 +158,38 @@ def test_without_filament_data_the_plan_is_unchanged(db):
     v = view(db, board(status(1, slots=None)), q)
     assert v.lanes[0].markers == () and v.reload == "" and v.filament_short == 0
     assert [b.detail for b in v.lanes[0].bars] == [""]
+
+
+def test_printer_reporting_empty_slot_lists_gets_no_notes(db):
+    """Review p648, 2: Bambuddy sends `ams: []`, `vt_tray: []` for a printer without AMS (schema defaults):
+    no notes, not "Not loaded" for every need (Spec 10.2: a printer that reports no slots)."""
+    with db.begin() as s:
+        make_entry(s, article(s).id)
+    v = view(db, board(status(1, slots=())))
+    assert v.lanes[0].markers == () and v.reload == ""
+
+
+def test_need_without_material_and_colour_is_named():
+    from reprintbuddy.domain.filamentplan import Marker as M
+
+    assert pv._marker_text("en", M("not_loaded", None, None, None, None), NOW) == "Not loaded: unknown filament"
+
+
+def test_marker_colour_must_be_a_plain_hex(db):
+    """Review p648, 10: the colour goes into a style attribute; anything but #RRGGBB is dropped."""
+    from reprintbuddy.domain.filamentplan import LaneFilament, Marker as M
+
+    lane = LaneFilament((M("not_loaded", "PLA", "red;x:y", None, None),), 0, ())
+    (view_,), _more = pv._markers(lane, pv.axis(NOW, None), NOW, "en")
+    assert view_.color is None
+
+
+def test_running_print_without_print_time_starts_from_its_progress(db):
+    """Review p648, 9: 75 % done, 15 min left → it began 45 min ago (09:15 local); 100 g of 30 g: dry at 09:33."""
+    with db.begin() as s:
+        a = article(s, grams=100)
+        make_dispatch(s, a.id, status="printing", bambuddy_item_id=7)
+    running = status(1, "RUNNING", progress=75.0, remaining=15)
+    v = view(db, board(running, grams={1: {(0, 1): 30.0}}),
+             [queue_item(7, status="printing", printer_id=1, seconds=None)])
+    assert texts(v.lanes[0]) == ["Reload now · PLA #000000 (AMS 1, slot 2)"]

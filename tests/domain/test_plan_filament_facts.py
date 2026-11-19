@@ -164,3 +164,69 @@ async def test_board_reports_a_print_end_from_a_query_or_a_live_message():
     board.replace(printers, {1: running})
     board.replace(printers, {1: PrinterStatus(1, False, None, None, None, None, False, False)})
     assert ended == [1]  # gone offline: not an end
+
+
+async def test_an_empty_requirements_list_is_unknown_not_nothing(engine_env):
+    """Review p648, 1: Bambuddy answers `filaments: []` for a file it cannot read the needs of."""
+    env = engine_env
+    _no_rule(env)
+    env.fake.add_foreign_item("B.gcode.3mf", library_file_id=2, plate_id=1, target_model="A1")
+    await env.engine.tick(poll=True)
+    assert env.engine.board.needs == {(2, 1): None}
+
+
+async def test_an_odd_answer_is_a_refusal_not_gone(engine_env):
+    """Review p648, 5: `BambuddyUnexpected` is a kind of unavailable; one odd answer must not end the reading."""
+    from reprintbuddy.bambuddy.client import BambuddyUnexpected
+
+    env = engine_env
+    _stop_queue(env)
+    env.fake.fail_next("inventory_remain", BambuddyUnexpected("odd"))
+    await env.engine.tick(poll=True)
+    assert env.fake.calls.count("inventory_remain") == 2 and set(env.engine.board.slot_grams) == {2}
+
+
+async def test_reread_waits_for_the_tick_and_skips_during_an_update(engine_env, monkeypatch):
+    """Review p648, 4: the re-read takes the engine's lock and does nothing while an update runs."""
+    env = engine_env
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(engine_module.asyncio, "sleep", no_sleep)
+    await env.engine.tick(poll=True)
+    before = env.fake.calls.count("inventory_remain")
+    env.engine.update_running = lambda: True
+    env.engine.print_ended(1)
+    await env.engine.wait_for_rereads()
+    assert env.fake.calls.count("inventory_remain") == before
+
+
+async def test_reread_failure_of_any_kind_is_logged_not_raised(engine_env, monkeypatch, caplog):
+    env = engine_env
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(engine_module.asyncio, "sleep", no_sleep)
+    env.fake.fail_next("inventory_remain", RuntimeError("boom"))
+    env.engine.print_ended(1)
+    await env.engine.wait_for_rereads()  # no exception escapes
+    assert "re-read" in caplog.text
+
+
+async def test_rereads_are_cancelled_on_stop(engine_env):
+    env = engine_env
+    env.engine.print_ended(1)
+    (task,) = env.engine.reread_tasks()
+    await env.engine.cancel_rereads()
+    assert task.cancelled() and env.engine.reread_tasks() == []
+
+
+async def test_a_regular_read_keeps_grams_of_printers_it_did_not_ask(engine_env):
+    """Review p648, 4 (race): the reading merges per printer instead of replacing what a re-read stored."""
+    env = engine_env
+    _stop_queue(env)
+    env.engine.board.slot_grams[3] = {(0, 0): 5.0}  # printer 3 has no work: dropped, printers 1, 2 set
+    await env.engine.tick(poll=True)
+    assert set(env.engine.board.slot_grams) == {1, 2}

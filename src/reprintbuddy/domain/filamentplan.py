@@ -119,6 +119,7 @@ def lane_filament(
     reloads: list[Marker] = []
     others: list[Marker] = []
     seen_missing: set[tuple[str, str]] = set()
+    reloaded: set[tuple[str, str]] = set()  # sorts with a reload note: each sort only once (Spec 10.2)
     unknown_needs: list[int] = []
     unknown_before = False
     for index, job in enumerate(prints):
@@ -155,9 +156,13 @@ def lane_filament(
             consumed[pool_key] = before + need.grams
             if consumed[pool_key] <= supply:
                 continue
+            done.add(pool_key)
+            sort = (_material(slot.material), (slot.color or "").upper())
+            if sort in reloaded:  # a second slot of the same sort (backup off): already named
+                continue
+            reloaded.add(sort)
             share = min(1.0, max(0.0, (supply - before) / need.grams))
             moment = job.print_start + (job.end - job.print_start) * share
-            done.add(pool_key)
             reloads.append(Marker("reload", slot.material, slot.color, slot, moment,
                                   due=moment <= now, latest=unknown_before))
     ordered = sorted(reloads, key=lambda m: m.at or now) + others

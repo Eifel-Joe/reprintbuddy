@@ -140,6 +140,8 @@ class PrinterBoard:
         """A print ended: the printer printed and now, still connected, does not (p648). Offline is no end."""
         if self._on_print_end is None or before is None or not before.connected or not after.connected:
             return
+        if after.state is None:  # a message without a state says nothing about an end (review p648, 12)
+            return
         if before.state in PRINTING_STATES and after.state not in PRINTING_STATES:
             try:
                 self._on_print_end(after.printer_id)
