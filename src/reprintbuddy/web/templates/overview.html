@@ -45,7 +45,8 @@
 
 {# The print plan (Spec 10.2, 0.4.2): one lane per printer; filled = printing, outlined = assigned by Bambuddy,
    dashed = probably assigned (shown only, nothing is assigned in Bambuddy), dotted = still waiting in
-   Reprintbuddy's own queue (p646), italic = not from Reprintbuddy.
+   Reprintbuddy's own queue (p646), italic = not from Reprintbuddy. Under a lane the filament of its printer
+   (p648): when to reload, with a tick on the track, what is not loaded or of unknown stock.
    Each bar names its kind and times in words (hidden on a wide screen, shown in the list on a phone). #}
 {% call ui.region("plan", "printers bambuddy queue article settings live-channel") %}
 {% if plan %}<section class="card plan">
@@ -58,11 +59,14 @@
 {%- if plan.no_slot %}{% set _ = parts.append(tc('overview.plan.no_slot', plan.no_slot)) %}{% endif %}
 {%- if plan.held %}{% set _ = parts.append(tc('overview.plan.held', plan.held)) %}{% endif %}
 {%- if plan.stopped %}{% set _ = parts.append(tc('overview.plan.stopped', plan.stopped)) %}{% endif %}
+{%- if plan.reload %}{% set _ = parts.append(plan.reload) %}{% endif %}
+{%- if plan.filament_short %}{% set _ = parts.append(tc('overview.plan.filament_short', plan.filament_short)) %}{% endif %}
 {%- if plan.stale %}{% set _ = parts.append(t('overview.plan.stale', time=plan.stale)) %}{% endif %}
 {{- parts|join(' · ') }}{% endif %}</span></div>
 {% if plan.known %}
 {% for lane in plan.lanes %}<div class="plan-lane plan-{{ lane.condition }}"><span class="plan-name">{{ lane.name }}{% if lane.condition_text %} <span class="badge tone-neutral">{{ lane.condition_text }}</span>{% endif %}</span>
-<ol class="plan-track">{% for b in lane.bars %}<li class="plan-bar plan-{{ b.kind }}{% if not b.own %} plan-foreign{% endif %}{% if b.beyond %} plan-beyond{% endif %}" style="--start:{{ b.left }}%;--width:{{ b.width }}%" title="{{ b.kind_text }} {{ b.start_text }}–{{ b.end_text }}: {{ b.label }}{% if not b.own %} {{ t('overview.plan.foreign') }}{% endif %}{% if b.detail %} · {{ b.detail }}{% endif %}">{% if b.kind == 'running' and b.progress is not none %}<span class="plan-fill" style="--done:{{ b.progress }}%" aria-hidden="true"></span>{% endif %}<span class="plan-kind">{{ b.kind_text }}</span> <span class="plan-when">{{ b.start_text }}–{{ b.end_text }}</span> <span class="plan-label">{{ b.label }}{% if not b.own %} {{ t('overview.plan.foreign') }}{% endif %}</span>{% if b.detail %} <span class="plan-detail">{{ b.detail }}</span>{% endif %}{% if b.cut %} <span class="plan-cut">{{ b.cut }}</span>{% endif %}</li>{% endfor %}{% if lane.waiting %}<li class="plan-waiting">{{ t('overview.plan.waiting', items=lane.waiting|join(', ')) }}</li>{% endif %}</ol></div>
+<ol class="plan-track">{% for b in lane.bars %}<li class="plan-bar plan-{{ b.kind }}{% if not b.own %} plan-foreign{% endif %}{% if b.beyond %} plan-beyond{% endif %}" style="--start:{{ b.left }}%;--width:{{ b.width }}%" title="{{ b.kind_text }} {{ b.start_text }}–{{ b.end_text }}: {{ b.label }}{% if not b.own %} {{ t('overview.plan.foreign') }}{% endif %}{% if b.detail %} · {{ b.detail }}{% endif %}">{% if b.kind == 'running' and b.progress is not none %}<span class="plan-fill" style="--done:{{ b.progress }}%" aria-hidden="true"></span>{% endif %}<span class="plan-kind">{{ b.kind_text }}</span> <span class="plan-when">{{ b.start_text }}–{{ b.end_text }}</span> <span class="plan-label">{{ b.label }}{% if not b.own %} {{ t('overview.plan.foreign') }}{% endif %}</span>{% if b.detail %} <span class="plan-detail">{{ b.detail }}</span>{% endif %}{% if b.cut %} <span class="plan-cut">{{ b.cut }}</span>{% endif %}</li>{% endfor %}{% if lane.waiting %}<li class="plan-waiting">{{ t('overview.plan.waiting', items=lane.waiting|join(', ')) }}</li>{% endif %}{% for m in lane.markers if m.left is not none %}<li class="plan-tick" style="--at:{{ m.left }}%" aria-hidden="true"></li>{% endfor %}</ol></div>
+{% if lane.markers %}<p class="plan-filament">{% for m in lane.markers %}<span class="plan-mark plan-mark-{{ m.kind }}">{% if m.color %}<span class="plan-swatch" style="--swatch:{{ m.color }}" aria-hidden="true"></span>{% endif %}{{ m.text }}</span>{% endfor %}{% if lane.more %}<span class="plan-mark">{{ t('overview.plan.markers_more', n=lane.more) }}</span>{% endif %}</p>{% endif %}
 {% endfor %}
 {% if plan.lanes %}<div class="plan-axis" aria-hidden="true">{% for pos, label in plan.ticks %}<span style="--at:{{ pos|round(2) }}%">{{ label }}</span>{% endfor %}</div>
 <p class="plan-legend"><span class="plan-key plan-key-running"></span>{{ t('overview.plan.kind_running') }} <span class="plan-key plan-key-fixed"></span>{{ t('overview.plan.kind_fixed') }} <span class="plan-key plan-key-planned"></span>{{ t('overview.plan.kind_planned') }} <span class="plan-key plan-key-backlog"></span>{{ t('overview.plan.legend_backlog') }} <em>{{ t('overview.plan.legend_foreign') }}</em></p>{% endif %}

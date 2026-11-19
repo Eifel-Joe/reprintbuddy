@@ -67,6 +67,7 @@ class LaneFilament:
     markers: tuple[Marker, ...]
     more: int  # markers beyond MAX_MARKERS
     unknown_needs: tuple[int, ...]  # indexes of the prints whose need is unknown
+    hidden_reloads: tuple[Marker, ...] = ()  # reloads beyond MAX_MARKERS: the head line still counts them
 
 
 def _material(value: str | None) -> str:
@@ -160,4 +161,6 @@ def lane_filament(
             reloads.append(Marker("reload", slot.material, slot.color, slot, moment,
                                   due=moment <= now, latest=unknown_before))
     ordered = sorted(reloads, key=lambda m: m.at or now) + others
-    return LaneFilament(tuple(ordered[:MAX_MARKERS]), max(0, len(ordered) - MAX_MARKERS), tuple(unknown_needs))
+    hidden = tuple(m for m in ordered[MAX_MARKERS:] if m.kind == "reload")
+    return LaneFilament(tuple(ordered[:MAX_MARKERS]), max(0, len(ordered) - MAX_MARKERS), tuple(unknown_needs),
+                        hidden)

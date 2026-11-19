@@ -343,3 +343,32 @@ def test_german_backlog_texts(bb_client):
     part = plan_part(bb_client)
     assert "wartet in Reprintbuddy" in part and "wartet noch in Reprintbuddy" in part
     assert "2 in Reprintbuddys Warteschlange zurückgehalten" in part
+
+
+def test_reload_marker_and_head_line(bb_client, fake_bambuddy):
+    """The filament of the printers in the plan (p648): a foreign print needs 500 g of black PLA, printer 1
+    has 300 g: a reload marker under its lane, a tick on the track and the head line."""
+    from reprintbuddy.bambuddy.types import AmsSlot, FilamentRequirement
+
+    fake = fake_bambuddy
+    fake.set_requirements(2, 1, [FilamentRequirement(1, 500.0, "PLA", "#000000")])
+    black = AmsSlot(0, 0, "PLA", "#000000", True)
+    fake.set_printer_slots(1, [black], grams={(0, 0): 300.0})
+    fake.set_printer_slots(2, [], grams={})
+    fake.add_foreign_item("B.gcode.3mf", library_file_id=2, plate_id=1, printer_id=1, print_time_s=3600)
+    fake.add_foreign_item("Short.gcode.3mf", target_model="A1", filament_short=True)
+    with sm_of(bb_client).begin() as s:
+        st.set_setting(s, "automation", False, commit=False)
+    query(bb_client)
+    part = plan_part(bb_client)
+    assert 'class="plan-filament"' in part and 'class="plan-tick"' in part
+    assert "Reload about" in part and "PLA #000000 (AMS 1, slot 1)" in part
+    assert "Reload needed: Printer 1 about" in part
+    assert str(escape(translate_count("en", "overview.plan.filament_short", 1))) in part
+
+
+def test_no_marker_without_slots(bb_client, fake_bambuddy):
+    fake_bambuddy.add_foreign_item("B.gcode.3mf", library_file_id=2, plate_id=1, printer_id=1)
+    query(bb_client)
+    part = plan_part(bb_client)
+    assert "plan-filament" not in part and "Reload needed" not in part

@@ -18,10 +18,12 @@ from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.types import QueueItem
 from reprintbuddy.domain import dispatch
 from reprintbuddy.domain.printerboard import PrinterBoard
+from reprintbuddy.bambuddy.types import AmsSlot
+from reprintbuddy.domain.filamentplan import LaneFilament, LanePrint, Marker, Need, lane_filament
 from reprintbuddy.domain.printplan import Bar, Plan, PlanItem, PlanPrinter, build_plan
 from reprintbuddy.localtime import to_local
 from reprintbuddy.domain.workqueue import OPEN_STATES
-from reprintbuddy.models import Article, Dispatch, WorkQueueEntry
+from reprintbuddy.models import Article, ArticleFilament, Dispatch, WorkQueueEntry
 from reprintbuddy.web.i18n import translate
 
 MIN_SPAN = timedelta(hours=2)  # the axis reaches from now to "alles fertig", at least 2 h (Spec 10.2)
@@ -66,12 +68,25 @@ class BarView:
 
 
 @dataclass(frozen=True)
+class MarkerView:
+    """A filament note of a lane (p648): "Reload about 14:30 · PLA #000000 (AMS 1, slot 2)" and its place on
+    the axis (percent), None without a time or beyond the axis."""
+
+    kind: str  # reload, not_loaded, unknown_stock
+    text: str
+    left: float | None
+    color: str | None  # "#RRGGBB" for the swatch
+
+
+@dataclass(frozen=True)
 class LaneView:
     name: str
     condition: str
     condition_text: str
     bars: tuple[BarView, ...]
     waiting: tuple[str, ...]
+    markers: tuple[MarkerView, ...] = ()  # the filament of the printer (p648), at most three
+    more: int = 0  # further markers: "+ n"
 
 
 @dataclass(frozen=True)
@@ -87,6 +102,8 @@ class PlanView:
     held: int = 0  # prints of Reprintbuddy's queue the hand-over skips: held entries, paused articles (p646)
     no_slot: int = 0  # prints of Reprintbuddy's queue that never get a place under the limit
     stopped: int = 0  # prints of Reprintbuddy's stopped queue (held ones too); then none is planned
+    reload: str = ""  # "Reload needed: Printer 1 about 14:30 and 2 more" (p648)
+    filament_short: int = 0  # entries Bambuddy held at their start for too little filament
     stale: str = ""  # local time of the printers' state when older than 5 minutes
 
 
@@ -223,6 +240,7 @@ def backlog(db: Session, board: PrinterBoard, waiting_for_printer: Collection[in
             manual_start=False,
             starts_later=False,
             nozzle=facts.nozzle if facts is not None else None,
+            ref=article.id,  # the reload hint finds its filament through the article (p648)
         )
         found.items.extend([item] * entry.prints)
     return found
@@ -241,7 +259,7 @@ def plan_printers(board: PrinterBoard) -> list[PlanPrinter] | None:
 # ---- the view -----------------------------------------------------------------------------------
 
 
-def _bar_view(bar: Bar, ax: Axis, now: datetime, lang: str) -> BarView:
+def _bar_view(bar: Bar, ax: Axis, now: datetime, lang: str, *, need_unknown: bool = False) -> BarView:
     total = (ax.end - ax.start).total_seconds()
     left = max(0.0, min(100.0, 100 * (bar.start - ax.start).total_seconds() / total))
     right = max(0.0, min(100.0, 100 * (bar.end - ax.start).total_seconds() / total))
@@ -254,6 +272,8 @@ def _bar_view(bar: Bar, ax: Axis, now: datetime, lang: str) -> BarView:
         parts.append(translate(lang, "overview.plan.unknown_duration"))
     elif bar.kind == "running":
         parts.append(translate(lang, "overview.plan.rest", time=_span(bar.end - now)))
+    if need_unknown:
+        parts.append(translate(lang, "overview.plan.need_unknown"))
     cut = translate(lang, "overview.plan.cut", time=_when(bar.end, now, lang)) if bar.end > ax.end else ""
     return BarView(
         kind=bar.kind, kind_text=translate(lang, _KIND_KEYS[bar.kind]), label=bar.label, own=bar.own,
@@ -292,11 +312,16 @@ def plan_view(
         return PlanView(known=False)
     plan, own = built
     ax = axis(now, plan.finish)
+    filament = _filament(db, board, queue or [], plan, now)
     lanes = tuple(
         LaneView(
             lane.name, lane.condition,
             translate(lang, _CONDITION_KEYS[lane.condition]) if lane.condition in _CONDITION_KEYS else "",
-            tuple(_bar_view(bar, ax, now, lang) for bar in lane.bars), lane.waiting,
+            tuple(_bar_view(bar, ax, now, lang, need_unknown=n in filament[lane.printer_id].unknown_needs)
+                  for n, bar in enumerate(lane.bars)) if lane.printer_id in filament
+            else tuple(_bar_view(bar, ax, now, lang) for bar in lane.bars),
+            lane.waiting,
+            *_markers(filament.get(lane.printer_id), ax, now, lang),
         )
         for lane in plan.lanes
     )
@@ -306,7 +331,130 @@ def plan_view(
         finish=_when(plan.finish, now, lang) if plan.finish is not None else "",
         minimum=plan.finish_is_minimum, without=plan.without, unplaced=plan.unplaced + own.unplaced,
         manual=plan.manual, held=own.held, no_slot=plan.no_slot, stopped=own.stopped, stale=stale,
+        reload=_reload_line(plan, filament, now, lang),
+        filament_short=sum(1 for i in queue or [] if i.status == "pending" and i.filament_short),
     )
+
+
+# ---- filament in the printers (Spec 10.2, p648) ------------------------------------------------
+
+
+def slot_name(lang: str, slot: AmsSlot) -> str:
+    """"AMS 1, slot 2", "AMS-HT 1", "external spool" (a second one numbered), as Bambuddy stores the slot."""
+    if slot.ams_id == 255:
+        if slot.tray_id == 0:
+            return translate(lang, "overview.plan.slot_external")
+        return translate(lang, "overview.plan.slot_external_n", n=slot.tray_id + 1)
+    if slot.ams_id >= 128:
+        return translate(lang, "overview.plan.slot_ht", n=slot.ams_id - 127)
+    return translate(lang, "overview.plan.slot_ams", unit=slot.ams_id + 1, slot=slot.tray_id + 1)
+
+
+def _sort(material: str | None, color: str | None) -> str:
+    return " ".join(part for part in (material, color) if part)
+
+
+def _needs_of_articles(db: Session, article_ids: Collection[int]) -> dict[int, tuple[Need, ...] | None]:
+    found: dict[int, list[Need]] = {}
+    if article_ids:
+        for row in db.scalars(
+            select(ArticleFilament).where(ArticleFilament.article_id.in_(article_ids)).order_by(ArticleFilament.slot)
+        ):
+            found.setdefault(row.article_id, []).append(Need(row.material, row.color_hex, row.grams))
+    # an article without filament rows: the need is not known
+    return {a: tuple(found[a]) if a in found else None for a in article_ids}
+
+
+def _filament(
+    db: Session, board: PrinterBoard, queue: Sequence[QueueItem], plan: Plan, now: datetime,
+) -> dict[int, LaneFilament]:
+    """Per lane in service that reports its slots: whether the filament lasts (`domain.filamentplan`). The
+    need of a print: own (handed over or still in Reprintbuddy) from the article's print file, foreign from
+    Bambuddy's file manager as the last query read it; a running print without a queue entry is unknown."""
+    items = {i.id: i for i in queue}
+    articles_by_item = dict(db.execute(
+        select(Dispatch.bambuddy_item_id, Dispatch.article_id)
+        .where(Dispatch.status.in_(OPEN_STATES), Dispatch.bambuddy_item_id.is_not(None))
+    ).all())
+    wanted = {bar.ref for lane in plan.lanes for bar in lane.bars if bar.ref is not None}
+    wanted |= {articles_by_item[b.item_id] for lane in plan.lanes for b in lane.bars if b.item_id in articles_by_item}
+    article_needs = _needs_of_articles(db, wanted)
+    found: dict[int, LaneFilament] = {}
+    for lane in plan.lanes:
+        state = board.statuses.get(lane.printer_id)
+        if lane.condition not in ("ready", "plate") or state is None or state.slots is None or not lane.bars:
+            continue
+        prints: list[LanePrint] = []
+        for bar in lane.bars:
+            item = items.get(bar.item_id) if bar.item_id is not None else None
+            if bar.ref is not None:
+                needs = article_needs.get(bar.ref)
+            elif bar.item_id in articles_by_item:
+                needs = article_needs.get(articles_by_item[bar.item_id])
+            elif item is not None and item.library_file_id is not None and item.plate_id is not None:
+                known = board.needs.get((item.library_file_id, item.plate_id))
+                needs = None if known is None else tuple(Need(r.material, r.color_hex, r.grams) for r in known)
+            else:
+                needs = None
+            start = bar.start
+            if bar.kind == "running" and item is not None and item.print_time_seconds:
+                start = bar.end - timedelta(seconds=item.print_time_seconds)  # the whole print, for the share
+            prints.append(LanePrint(bar.start, bar.end, start, needs))
+        found[lane.printer_id] = lane_filament(
+            prints, state.slots, board.slot_grams.get(lane.printer_id, {}), state.backup, now,
+        )
+    return found
+
+
+def _marker_text(lang: str, marker: Marker, now: datetime) -> str:
+    sort = _sort(marker.material, marker.color)
+    if marker.kind == "not_loaded":
+        return translate(lang, "overview.plan.not_loaded", sort=sort)
+    where = slot_name(lang, marker.slot) if marker.slot is not None else ""
+    if marker.kind == "unknown_stock":
+        return translate(lang, "overview.plan.stock_unknown", sort=sort, slot=where)
+    if marker.due:
+        return translate(lang, "overview.plan.reload_now", sort=sort, slot=where)
+    key = "overview.plan.reload_latest" if marker.latest else "overview.plan.reload"
+    return translate(lang, key, time=_when(marker.at, now, lang), sort=sort, slot=where)
+
+
+def _markers(found: LaneFilament | None, ax: Axis, now: datetime, lang: str) -> tuple[tuple[MarkerView, ...], int]:
+    if found is None:
+        return (), 0
+    total = (ax.end - ax.start).total_seconds()
+    views = []
+    for marker in found.markers:
+        left = None
+        if marker.at is not None:
+            moment = max(marker.at, ax.start)
+            if moment <= ax.end:
+                left = round(100 * (moment - ax.start).total_seconds() / total, 2)
+        views.append(MarkerView(marker.kind, _marker_text(lang, marker, now), left, marker.color))
+    return tuple(views), found.more
+
+
+def _reload_line(plan: Plan, found: dict[int, LaneFilament], now: datetime, lang: str) -> str:
+    """"Reload needed: <printer> about 14:30", the earliest of all lanes, "and n more" for the others."""
+    names = {lane.printer_id: lane.name for lane in plan.lanes}
+    reloads = sorted(
+        ((m.at, names[pid], m) for pid, lane in found.items() for m in _all_reloads(lane)),
+        key=lambda x: (x[0], x[1]),
+    )
+    if not reloads:
+        return ""
+    _at, name, first = reloads[0]
+    when = (translate(lang, "overview.plan.now") if first.due
+            else translate(lang, "queue.time_about", time=_when(first.at, now, lang)))
+    text = translate(lang, "overview.plan.reload_needed", printer=name, when=when)
+    if len(reloads) > 1:
+        text += " " + translate(lang, "overview.plan.reload_more", n=len(reloads) - 1)
+    return text
+
+
+def _all_reloads(lane: LaneFilament) -> list[Marker]:
+    shown = [m for m in lane.markers if m.kind == "reload"]
+    return shown + list(lane.hidden_reloads)
 
 
 # ---- the queue page: times of the prints in progress (Spec 10.3a, p647) -------------------------
