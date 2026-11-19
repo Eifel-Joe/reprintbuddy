@@ -73,3 +73,19 @@ def test_the_date_on_a_label_is_the_day_of_the_browser(zone):
     with localtime.shown_in(ZoneInfo(zone)):
         shown = labels_view.today_text("en")
     assert shown == datetime.now(ZoneInfo(zone)).date().isoformat()
+
+
+@pytest.mark.usefixtures("server_zone")
+def test_the_name_of_the_zone_of_the_server(monkeypatch):
+    """Settings and `data-zone` name the zone of the server: `TZ` of the service, the zone file
+    /etc/localtime links to, else the short name of the machine's zone."""
+    from reprintbuddy.web import zone
+
+    monkeypatch.setenv("TZ", "America/Chicago")
+    assert zone.server_zone_name() == "America/Chicago"
+    monkeypatch.setenv("TZ", "not a zone")
+    linked = {zone.LOCALTIME_LINK: "/usr/share/zoneinfo/Europe/Vienna"}
+    monkeypatch.setattr(zone.os.path, "realpath", lambda path: linked.get(path, path))
+    assert zone.server_zone_name() == "Europe/Vienna"
+    monkeypatch.setattr(zone.os.path, "realpath", lambda path: path)  # a copied file, no link
+    assert zone.server_zone_name() == datetime.now(UTC).astimezone().tzname()
