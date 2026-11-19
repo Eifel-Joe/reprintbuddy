@@ -4,7 +4,7 @@ static/js/zone.js writes the browser's zone into the cookie `rb_zone` on every p
 the setup pages included. `BrowserZone` reads it for every request and shows the whole request in it
 (`localtime.shown_in`): the page, a fetch of its regions (the same request again, Spec 10.5.3), the
 answer to a form, an error page. Without a valid cookie the zone of the server holds, as before 1.2.2.
-The page names the zone it was computed in (`data-zone` on `<html>`); zone.js loads it once more when
+The page names the zone it was computed in (`data-zone` on `<body>`); zone.js loads it once more when
 that is not the browser's zone.
 
 The check (Spec 10.5a "Sicherheit"): a name from the IANA list (`zoneinfo.available_timezones()`, read

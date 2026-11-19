@@ -7,7 +7,9 @@ Times are stored as naive UTC. Two zones (Spec 10.5a, 1.2.2):
   (the engine, the command line, the domain in the tests), the zone of the server. `to_local`,
   `local_date`, `at_local_time`, `end_of_local_day` and `booked_day` read it: everything a page shows,
   and the days of a booking typed in that browser (the date field's "today", the end of the day of an
-  inventory dated back, p260).
+  inventory dated back, p260). A form with a date carries the zone its page was computed in, and its
+  answer is computed in that one (`web.zone.zone_of_form`). Only the web layer uses these helpers
+  (tests/test_zone_helpers_guard.py): a task started in a request keeps the request's zone.
 - The zone of the server (p183, v0.3.14: the zone the machine is set to, `timedatectl set-timezone` or
   `TZ` for the service): `to_server_local`, `server_date`, `end_of_server_day`. For the rules that
   compare stored days and also run without a browser (the day of marking, Spec 9.4; old counts dated
@@ -128,7 +130,10 @@ def booked_day(moment: datetime) -> date:
     its day in the zone it was booked in (`end_of_local_day`, the only stored times with 999999
     microseconds, see `stock._holds_until`). In another zone that moment may be early on the next day:
     the end of 18 November in UTC is 00:59 on the 19th in Berlin. Such a moment shows the day before the
-    nearest midnight of the display zone, which is the day that was booked for zones up to 12 hours apart.
+    nearest midnight of the display zone, which is the day that was booked for zones less than 12 hours
+    apart. At exactly 12 hours it fails one way (review finding 4): the end of a day shown 12 hours to the
+    west is 11:59:59.999999 of that day, 12 hours to the east 11:59:59.999999 of the next, the same clock
+    time, so no rule can tell the two apart (Spec 10.5a: "weniger als 12 Stunden").
     Any other moment shows its own day.
     Rejected: storing the booked day as a date of its own (a new column and a migration, later as a
     point of its own); the zone of the server for these days (a browser elsewhere would see its own

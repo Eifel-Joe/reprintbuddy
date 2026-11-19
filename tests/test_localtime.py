@@ -140,7 +140,8 @@ def test_the_rules_of_the_server_ignore_the_browser():
 # ---- the midnight rule (Spec 10.5a "Tage beim Buchen") ------------------------------------------------
 # An inventory dated back is stored at the end of its day (23:59:59.999999) in the zone it was booked in.
 # Shown in another zone, that moment may fall early on the next day; the day shown is the day before the
-# nearest midnight, so it stays the day that was booked (up to 12 hours apart).
+# nearest midnight, so it stays the day that was booked (less than 12 hours apart; at exactly 12 hours
+# it fails one way, see `localtime.booked_day`).
 
 END_OF_18_NOV_UTC = datetime(2026, 11, 18, 23, 59, 59, 999999)  # booked on a server or browser in UTC
 END_OF_18_NOV_BERLIN = datetime(2026, 11, 18, 22, 59, 59, 999999)  # booked in Berlin (UTC+1)
