@@ -40,7 +40,7 @@ from reprintbuddy.ops import fullbackup as fb
 from reprintbuddy.ops import oplock, restore, running
 from reprintbuddy.ops.server import address_changed, base_url, effective_from_settings
 from reprintbuddy.ops.runner import in_thread
-from reprintbuddy.ops.service import request_restart
+from reprintbuddy.ops.service import request_restart, restart_under_way
 from reprintbuddy.web.bodylimit import MULTIPART_OVERHEAD, upload_length_ok
 from reprintbuddy.web.csrf import verify_csrf
 from reprintbuddy.web.deps import get_db, render
@@ -173,7 +173,7 @@ def _restart_finished(task: asyncio.Task) -> None:
     error = task.exception()
     if error is not None:
         log.warning("restart after restore failed: %s", type(error).__name__)
-    elif not task.result().ok:
+    elif not restart_under_way(task.result()):  # p644: our sudo stopped with the service is no failure
         log.warning("restart after restore failed: %s", (task.result().stderr or "").strip()[:300])
 
 
@@ -214,7 +214,7 @@ def _restart_from_worker(runner) -> None:
     except Exception as error:  # noqa: BLE001 - nobody waits: the log is the only place left
         log.warning("restart after restore failed: %s", type(error).__name__)
         return
-    if not result.ok:
+    if not restart_under_way(result):  # p644
         log.warning("restart after restore failed: %s", (result.stderr or "").strip()[:300])
 
 
