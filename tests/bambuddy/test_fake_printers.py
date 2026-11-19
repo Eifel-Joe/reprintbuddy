@@ -88,3 +88,22 @@ async def test_foreign_item_for_any_printer_of_a_model():
     fake = FakeBambuddy()
     item = fake.add_foreign_item("Spare part", target_model="A1")
     assert (item.printer_id, item.target_model) == (None, "A1")
+
+
+async def test_filament_slots_grams_and_shortage():
+    """The stand-in for p648: slots in the printer's state, grams of assigned spools, Bambuddy's shortage flag."""
+    from reprintbuddy.bambuddy.types import AmsSlot
+
+    fake = FakeBambuddy()
+    fake.add_printer("Printer 1", "A1")
+    fake.set_printer_slots(1, [AmsSlot(0, 0, "PLA", "#000000", True), AmsSlot(0, 1, "PETG", "#FF0000", True)],
+                           backup=True, grams={(0, 0): 640.0})
+    status = (await fake.printer_statuses([1]))[1]
+    assert [s.material for s in status.slots] == ["PLA", "PETG"] and status.backup is True
+    assert await fake.inventory_remain(1) == {(0, 0): 640.0}
+    assert await fake.inventory_remain(9) == {}
+    item = fake.add_foreign_item("Short", filament_short=True)
+    assert (await fake.list_queue())[-1].filament_short is True and item.filament_short is True
+    fake.fail_next("inventory_remain", BambuddyRejected("no", status=403))
+    with pytest.raises(BambuddyRejected):
+        await fake.inventory_remain(1)

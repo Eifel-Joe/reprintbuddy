@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 
 from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable, DeleteResult
 from reprintbuddy.bambuddy.types import (
+    AmsSlot,
     EnqueueRequest,
     FilamentRequirement,
     LibraryFile,
@@ -35,6 +36,7 @@ _FAILABLE_METHODS = _EFFECT_METHODS | {
     "list_folders", "list_files", "get_file", "list_plates", "plate_thumbnail", "file_thumbnail",
     "filament_requirements", "list_printers", "spool_mode", "list_spools", "print_defaults",
     "get_queue_item", "list_queue", "list_all_items", "printer_statuses", "shortest_first",
+    "inventory_remain",
 }
 
 
@@ -90,6 +92,7 @@ class FakeBambuddy:
         # time in seconds (the slicer's estimate on the entry, `print_queue.py:575-645`) and
         # Bambuddy's setting "shortest job first".
         self._statuses: dict[int, PrinterStatus] = {}
+        self._grams: dict[int, dict[tuple[int, int], float]] = {}  # p648: grams of assigned spools per slot
         self._print_times: dict[int, int | None] = {}
         self.shortest = False
         self._next_folder = 1
@@ -238,6 +241,19 @@ class FakeBambuddy:
         self._enter("shortest_first")
         return self.shortest
 
+    def set_printer_slots(
+        self, printer_id: int, slots: Sequence[AmsSlot], *, backup: bool | None = None,
+        grams: dict[tuple[int, int], float] | None = None,
+    ) -> None:
+        """The printer's filament slots and backup switch as its state reports them, and the grams Bambuddy
+        holds for the spools assigned to its slots (`inventory-remain`, p648)."""
+        self.set_printer_status(printer_id, slots=tuple(slots), backup=backup)
+        self._grams[printer_id] = dict(grams or {})
+
+    async def inventory_remain(self, printer_id: int) -> dict[tuple[int, int], float]:
+        self._enter("inventory_remain")
+        return dict(self._grams.get(printer_id, {}))
+
     async def spool_mode(self) -> SpoolMode:
         self._enter("spool_mode")
         return "spoolman" if self.spoolman_enabled else "builtin"
@@ -339,6 +355,7 @@ class FakeBambuddy:
         target_location: str | None = None,
         scheduled_time: datetime | None = None,
         nozzle_diameter: float | None = None,
+        filament_short: bool = False,
     ) -> QueueItem:
         """An entry made in Bambuddy without `enqueue`, at the end of the queue.
 
@@ -357,6 +374,7 @@ class FakeBambuddy:
             target_location=target_location,
             scheduled_time=scheduled_time,
             nozzle_diameter=nozzle_diameter,
+            filament_short=filament_short,
             file_name=label,
             label=label,
             status=status,

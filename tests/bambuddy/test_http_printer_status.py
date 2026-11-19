@@ -31,6 +31,7 @@ async def test_bulk_asks_once_for_all_printers(respx_mock):
     assert first == PrinterStatus(
         printer_id=1, connected=True, state="RUNNING", progress=63.0, remaining_min=70,
         subtask_name="Bracket small", awaiting_plate_clear=False, stopped_error=False,
+        slots=(),  # the answer reports no AMS and no external spool (p648)
     )
     assert found[2].state == "IDLE"
 
