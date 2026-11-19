@@ -105,6 +105,11 @@ def test_a_refused_target_stands_at_its_field_as_the_script_expects(ready_client
     page = ready_client.get("/articles").text
     assert 'class="field-error"' in page
     assert page.count(TAG) == 1
+    # The field is called "target", which hides `form.target` in the browser: the script must read
+    # the attribute (test_keepscroll_script.py), or the main list never keeps its place.
+    assert re.search(r'<form class="target-form"[^>]*>.*?<input[^>]*name="target"', page, re.S)
+    # and there is a page head to measure a message above the content against
+    assert 'class="page-head"' in page
 
 
 @pytest.mark.parametrize("name", ["keepscroll.js"])
