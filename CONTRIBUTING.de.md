@@ -103,6 +103,16 @@ also prüft, wie lange etwas gedauert hat, oder Takte innerhalb fester Wartezeit
 Prozesse ihn nicht scheitern lassen; `tests/test_ci_split.py` schlägt bei einem unmarkierten Test mit
 Zeitgrenze fehl.
 
+Jeder Pull Request durchläuft außerdem den Job **End-to-end (Debian 13)** (`.github/workflows/e2e.yml`): In einem
+Debian-13-Container mit systemd installiert er die letzte stabile Version mit ihrem Installer, aktualisiert sie
+über die Einstellungsseite auf den Stand des Pull Requests (gebaut als Vorabversion danach), spielt eine Sicherung
+über die Seite und über die Kommandozeile zurück, geht zweimal mit Abbruch von außen und einmal bis zum Ende
+zurück zur stabilen Version und prüft nach jedem Schritt Version, Daten, die Karte des Updates und das Protokoll.
+GitHub und Bambuddy sind Nachbildungen im Container (`tests/system/`); der Job braucht deshalb kein Geheimnis und
+kein eigenes Netz. Unter Linux mit Docker lässt er sich selbst starten: `bash tests/system/run.sh` (nach
+`pip install .`). Docker ist dabei nur der Prüfstand auf dem Läufer und keine Abhängigkeit von Reprintbuddy, das
+weiterhin nativ auf Debian mit systemd installiert wird.
+
 Einstellungen kommen nicht aus Dateien oder Umgebungsvariablen: Jede Einstellung
 liegt in der Datenbank und wird in der Weboberfläche geändert.
 

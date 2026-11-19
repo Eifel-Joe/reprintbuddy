@@ -99,6 +99,15 @@ is, one that checks how long something took or counts ticks within fixed sleeps,
 `@pytest.mark.serial` (a whole file: `pytestmark = pytest.mark.serial`), so that busy workers cannot
 make it fail; `tests/test_ci_split.py` fails for an unmarked test with a bound on its running time.
 
+Every pull request also runs the job **End-to-end (Debian 13)** (`.github/workflows/e2e.yml`): in a Debian 13
+container with systemd it installs the last stable version with its installer, updates it from the settings page
+to the state of the pull request (built as the pre-release after it), restores a backup through the page and the
+command line, goes back to the stable version twice stopped from outside and once to the end, and checks version,
+data, the card of the update and the log after each step. GitHub and Bambuddy are stand-ins inside the container
+(`tests/system/`), so the job needs no secret and no network of your own. On Linux with Docker you can start it
+yourself with `bash tests/system/run.sh` (after `pip install .`). Docker is only the test bench on the runner and
+not a dependency of Reprintbuddy, which still installs natively on Debian with systemd.
+
 Settings are not read from files or environment variables: every setting lives
 in the database and is edited in the web interface.
 
