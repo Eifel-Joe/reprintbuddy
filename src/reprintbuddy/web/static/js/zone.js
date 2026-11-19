@@ -3,8 +3,10 @@
    on <body>. This script writes the cookie on every page, the sign-in and setup pages too, so the first
    page with times is already right. When the page was computed in another zone than the browser's, it
    loads the page once more - not while a form of the page is changed (Spec 10.5.6), not on the answer
-   to a form (data-form-answer: loading it again would send the form again), and not when the cookie
-   does not hold (blocked cookies would load the page again and again). No texts in here.
+   to a form (data-form-answer: loading it again would send the form again), not while the page shows a
+   message (a page after a saved form carries "Booked" once; loaded again it is gone, and somebody might
+   book a second time), and not when the cookie does not hold (blocked cookies would load the page again
+   and again). No texts in here.
 
    Root of the "once": the page is loaded again only when the cookie the request carried was not yet the
    browser's zone. A server that does not take the name (its list of zones does not have it) answers in
@@ -121,7 +123,8 @@
   if (cookie(COOKIE) !== zone || carried === zone) {
     return; // the cookie does not hold, or the server had this zone already: never a loop
   }
-  if (body.getAttribute("data-zone") === zone || body.hasAttribute("data-form-answer") || anyFormChanged()) {
+  if (body.getAttribute("data-zone") === zone || body.hasAttribute("data-form-answer") || anyFormChanged() ||
+      document.querySelector("[data-flashes]")) {
     return;
   }
   // Only where live.js runs on the next page to clear the mark; after the sign-in page it would keep the

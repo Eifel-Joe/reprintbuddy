@@ -68,6 +68,13 @@ def test_no_reload_of_the_answer_to_a_form(result):
     assert case["reloads"] == 0 and zone_cookie(case)
 
 
+def test_no_reload_while_the_page_shows_a_message(result):
+    """The page after a saved form carries its message once: loaded again, "Booked" would be gone, and
+    somebody might book a second time. The next page is in the right zone anyway."""
+    case = result["flashes"]
+    assert case["reloads"] == 0 and zone_cookie(case)
+
+
 @pytest.mark.parametrize("name", ["blocked", "throws"])
 def test_no_reload_when_the_cookie_does_not_hold(result, name):
     case = result[name]

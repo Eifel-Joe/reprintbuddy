@@ -28,6 +28,7 @@ function page(options) {
       throws: false, // writing a cookie throws (a sandboxed frame)
       https: false,
       forms: [],
+      flashes: false, // the page shows messages (a booking was saved)
       intlThrows: false,
     },
     options || {},
@@ -45,6 +46,7 @@ function page(options) {
     body,
     forms: opts.forms,
     getElementById: (id) => (id === "app" && opts.app ? {} : null),
+    querySelector: (sel) => (sel === "[data-flashes]" && opts.flashes ? {} : null),
   };
   Object.defineProperty(document, "cookie", {
     get: () => Object.keys(jar).map((name) => name + "=" + jar[name]).join("; "),
@@ -108,6 +110,7 @@ out.unchanged_form = page({
   ])],
 });
 out.form_answer = page({ formAnswer: true });
+out.flashes = page({ flashes: true });
 out.blocked = page({ blocked: true });
 out.throws = page({ throws: true });
 // The sign-in page (no menu, no live.js that would clear the mark): reloaded without the mark.
