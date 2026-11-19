@@ -129,13 +129,13 @@ def test_a_count_of_0_3_16_stays_at_its_end_of_day_when_the_zone_changes(db, mon
     of that next day."""
     from reprintbuddy import localtime
 
-    berlin = localtime.LOCAL_ZONE
+    berlin = localtime.SERVER_ZONE
     with db.begin() as s:
         a = make_article(s, stock=10).id
-        monkeypatch.setattr(localtime, "LOCAL_ZONE", UTC)
+        monkeypatch.setattr(localtime, "SERVER_ZONE", UTC)
         counted_on = day(3)
         stock.count_article(s, a, "stock", 10, "user", booked_at=localtime.end_of_local_day(counted_on))
-        monkeypatch.setattr(localtime, "LOCAL_ZONE", berlin)
+        monkeypatch.setattr(localtime, "SERVER_ZONE", berlin)
         next_morning = at_local_time(counted_on + timedelta(days=1), time(9, 0))
         stock.sell_unreserved(s, a, 1, "user", booked_at=next_morning)
         assert s.get(Article, a).stock == 9
