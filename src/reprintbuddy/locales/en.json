@@ -1621,6 +1621,7 @@
   "overview.plan.reload_needed": "Reload needed: {printer} {when}",
   "overview.plan.reload_more": "and {n} more",
   "overview.plan.now": "now",
+  "overview.plan.at_latest_about": "at the latest about {time}",
   "overview.plan.filament_short.one": "{n} held by Bambuddy for too little filament",
   "overview.plan.filament_short.other": "{n} held by Bambuddy for too little filament",
   "overview.plan.legend_backlog": "still waiting in Reprintbuddy",

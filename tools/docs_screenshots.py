@@ -70,7 +70,7 @@ from reprintbuddy import settings as st  # noqa: E402
 from reprintbuddy.activity import capture as activity_capture  # noqa: E402
 from reprintbuddy.bambuddy.connection import REQUIRED_PERMISSIONS  # noqa: E402
 from reprintbuddy.bambuddy.fake import FakeBambuddy  # noqa: E402
-from reprintbuddy.bambuddy.types import FilamentRequirement  # noqa: E402
+from reprintbuddy.bambuddy.types import AmsSlot, FilamentRequirement  # noqa: E402
 from reprintbuddy.domain import assembled, catalog, filament, orders, pauses, reorder, seen, stock, workqueue  # noqa: E402
 from reprintbuddy.ops.context import OpsContext  # noqa: E402
 from reprintbuddy.ops.runner import CommandResult  # noqa: E402
@@ -926,6 +926,13 @@ def run_prints(server: Server, scn: Scenario) -> None:
     # The print plan (0.4.2): Printer 1 prints the large bracket, 63 % done, 70 minutes left; Printer 2 has an
     # entry Bambuddy assigned to it (somebody else's); the rest of the queue is expected on the free printers.
     fake.set_printer_status(1, state="RUNNING", progress=63.0, remaining_min=70, subtask_name="Bracket large")
+    # The filament in the printers (p648): Printer 1 has plenty of white PLA and a black spool Bambuddy holds
+    # no grams for ("stock unknown"); Printer 2 has little white PLA left, so the plan asks to reload it.
+    white, black = "#FFFFFF", "#000000"
+    fake.set_printer_slots(1, [AmsSlot(0, 0, "PLA", white, True), AmsSlot(0, 1, "PLA", black, True)],
+                           backup=True, grams={(0, 0): 640.0})
+    fake.set_printer_slots(2, [AmsSlot(0, 0, "PLA", white, True), AmsSlot(0, 1, "PETG", black, True)],
+                           backup=False, grams={(0, 0): 50.0, (0, 1): 260.0})
     fake.add_foreign_item(tr("Spare knob", "Ersatzknauf"), status="pending", created_by="admin", printer_id=2,
                           print_time_s=35 * 60)
     CLOCK.set(at(9, 10, 5))

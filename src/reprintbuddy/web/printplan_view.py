@@ -444,8 +444,11 @@ def _reload_line(plan: Plan, found: dict[int, LaneFilament], now: datetime, lang
     if not reloads:
         return ""
     _at, name, first = reloads[0]
-    when = (translate(lang, "overview.plan.now") if first.due
-            else translate(lang, "queue.time_about", time=_when(first.at, now, lang)))
+    if first.due:
+        when = translate(lang, "overview.plan.now")
+    else:
+        key = "overview.plan.at_latest_about" if first.latest else "queue.time_about"
+        when = translate(lang, key, time=_when(first.at, now, lang))
     text = translate(lang, "overview.plan.reload_needed", printer=name, when=when)
     if len(reloads) > 1:
         text += " " + translate(lang, "overview.plan.reload_more", n=len(reloads) - 1)

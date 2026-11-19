@@ -105,6 +105,7 @@ def test_unknown_need_before_makes_it_at_the_latest(db):
     q = [queue_item(9, file_id=None, seconds=3600), queue_item(8, seconds=3600)]
     v = view(db, board(status(1), grams={1: {(0, 1): 300.0}}, needs={(9, 1): need}), q)
     assert texts(v.lanes[0]) == ["Reload at the latest about 11:41 · PLA #000000 (AMS 1, slot 2)"]
+    assert v.reload == "Reload needed: Printer 1 at the latest about 11:41"
 
 
 def test_not_loaded_and_unknown_stock(db):

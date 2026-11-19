@@ -1621,6 +1621,7 @@
   "overview.plan.reload_needed": "Nachladen nötig: {printer} {when}",
   "overview.plan.reload_more": "und {n} weitere",
   "overview.plan.now": "jetzt",
+  "overview.plan.at_latest_about": "spätestens ca. {time}",
   "overview.plan.filament_short.one": "{n} von Bambuddy wegen Filamentmangel angehalten",
   "overview.plan.filament_short.other": "{n} von Bambuddy wegen Filamentmangel angehalten",
   "overview.plan.legend_backlog": "wartet noch in Reprintbuddy",
