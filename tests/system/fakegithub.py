@@ -112,6 +112,7 @@ class FakeGitHub:
                 self.wfile.write(body)
 
             def _refuse(self) -> None:
+                self.rfile.read(int(self.headers.get("Content-Length") or 0))  # else it is read as the next request
                 fake._record(f"{self.command} {self.headers.get('Host')}{self.path}", unexpected=True)
                 self.send_response(405)
                 self.send_header("Content-Length", "0")
