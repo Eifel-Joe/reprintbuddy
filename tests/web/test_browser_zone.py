@@ -240,10 +240,24 @@ def test_the_order_date_is_today_in_the_browser(utc_server_at_half_past_midnight
         client.cookies.delete(zone.COOKIE)
 
 
-def test_the_zone_ends_with_the_request(new_york):
-    new_york.get("/journal")
-    assert localtime.browser_zone() is None
-    assert localtime.local_date(datetime(2026, 7, 15, 23, 0)) == date(2026, 7, 16)  # Berlin again
+def test_the_zone_ends_with_the_request():
+    """Straight through the middleware, in the task of the test: the request of a browser in New York
+    leaves no zone behind. Review finding 5: through the test client the request runs in another thread,
+    where a zone left behind could never be seen, so that test could not fail."""
+    import asyncio
+
+    seen = []
+
+    async def page(scope, receive, send):
+        seen.append(localtime.browser_zone())
+
+    async def one_request():
+        scope = {"type": "http", "headers": [(b"cookie", b"rb_zone=America/New_York")]}
+        await zone.BrowserZone(page)(scope, None, None)
+        return localtime.browser_zone(), localtime.local_date(datetime(2026, 7, 15, 23, 0))
+
+    assert asyncio.run(one_request()) == (None, date(2026, 7, 16))  # Berlin again (conftest)
+    assert seen == [ZoneInfo("America/New_York")]
 
 
 # ---- the form carries the zone of its page (Spec 10.5a "Tage beim Buchen", review finding 2) ---------
