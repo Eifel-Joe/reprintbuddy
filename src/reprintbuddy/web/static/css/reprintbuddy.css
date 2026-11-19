@@ -1427,7 +1427,7 @@ td.target .target-form { display: inline-block; }
 .plan-filament { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 3px 0 0 calc(9rem + 10px); color: var(--text-2); font-size: 11px; }
 .plan-mark { display: inline-flex; align-items: center; gap: 5px; }
 .plan-mark-reload { color: var(--warn); }
-.plan-swatch { --swatch: transparent; display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--swatch); border: 1px solid var(--line); }
+.plan-swatch { --swatch: transparent; display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--swatch); border: 1px solid var(--muted); } /* light edge: black shows on the dark plan */
 .plan-key-backlog { border: 2px dotted var(--plan-backlog-edge); }
 .plan-legend em { margin-left: 8px; }
 

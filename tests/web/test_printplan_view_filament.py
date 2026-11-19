@@ -193,3 +193,63 @@ def test_running_print_without_print_time_starts_from_its_progress(db):
     v = view(db, board(running, grams={1: {(0, 1): 30.0}}),
              [queue_item(7, status="printing", printer_id=1, seconds=None)])
     assert texts(v.lanes[0]) == ["Reload now · PLA #000000 (AMS 1, slot 2)"]
+
+
+# ---- colour names instead of the hex value (Nachtrag p648) ------------------------------------------------
+
+
+def _sorts(db, *rows):
+    from factories import make_legacy_sort, make_sort
+
+    with db.begin() as s:
+        for brand, material, color, name, legacy in rows:
+            if legacy:
+                make_legacy_sort(s, material=material, color_hex=color, color_name=name)
+            else:
+                make_sort(s, brand=brand, material=material, color_hex=color, color_name=name)
+
+
+def test_marker_names_the_colour_of_a_known_sort(db):
+    """A spool sort with the same material and colour value and a colour name: "PLA Black" (as the filament
+    page shows it), the swatch stays."""
+    _sorts(db, ("Brand A", "PLA", "#000000FF", "Black", False), ("Brand B", "pla", "#000000", "Black", False))
+    with db.begin() as s:
+        make_entry(s, article(s, grams=200).id, 2)
+    facts = {(1, "v1"): FileFacts(None, {1: 3600})}
+    v = view(db, board(status(1), grams={1: {(0, 1): 300.0}}, facts=facts))
+    (marker,) = v.lanes[0].markers
+    assert marker.text == "Reload about 11:35 · PLA Black (AMS 1, slot 2)"
+    assert marker.color == "#000000"
+
+
+def test_two_different_names_or_none_fall_back_to_the_value(db):
+    _sorts(db, ("Brand A", "PLA", "#000000", "Black", False), ("Brand B", "PLA", "#000000", "Jet", False),
+           ("Brand A", "PETG", "#FF0000", None, False), ("Brand A", "ABS", "#FFFFFF", "White", True))
+    with db.begin() as s:
+        make_entry(s, article(s, "Black").id)
+        make_entry(s, article(s, "Red", material="PETG", color="#FF0000", plate=2).id)
+        make_entry(s, article(s, "White", material="ABS", color="#FFFFFF", plate=3).id)
+    v = view(db, board(status(1)))
+    assert texts(v.lanes[0]) == [  # in the order of the prints: Black, Red, White
+        "Stock unknown: PLA #000000 (AMS 1, slot 2)",  # two different names: the value
+        "Not loaded: PETG #FF0000",  # no name
+        "Not loaded: ABS #FFFFFF",  # only a legacy sort has the name: it shows nowhere
+    ]
+
+
+def test_german_colour_name(db):
+    _sorts(db, ("Brand A", "PLA", "#000000", "Schwarz", False))
+    with db.begin() as s:
+        make_entry(s, article(s).id)
+    v = view(db, board(status(1)), lang="de")
+    assert texts(v.lanes[0]) == ["Restmenge unbekannt: PLA Schwarz (AMS 1, Slot 2)"]
+
+
+def test_black_swatch_has_a_visible_edge():
+    """The swatch's edge is light, so a black colour shows on the dark plan (Nachtrag p648)."""
+    import re
+    from pathlib import Path
+
+    css = (Path(pv.__file__).parent / "static" / "css" / "reprintbuddy.css").read_text(encoding="utf-8")
+    rule = re.search(r"\.plan-swatch \{([^}]*)\}", css).group(1)
+    assert "var(--muted)" in rule
