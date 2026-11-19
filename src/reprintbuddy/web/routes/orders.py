@@ -31,6 +31,7 @@ from reprintbuddy.web.forms import (
 from reprintbuddy.web.filament_view import may_write
 from reprintbuddy.web.formtoken import write_transaction
 from reprintbuddy.web.i18n import translate
+from reprintbuddy.web.zone import zone_of_form
 
 router = APIRouter()
 
@@ -190,36 +191,38 @@ async def orders_create(request: Request, db: Session = Depends(get_db)):
             fresh=before if more and rows > before else None,
         )
 
-    if more:  # show more rows; nothing is booked and the token stays unused
-        return page()
+    # Spec 10.5a: the answer (also the form shown again) in the zone the form's page was computed in.
+    with zone_of_form(form):
+        if more:  # show more rows; nothing is booked and the token stays unused
+            return page()
 
-    def check():
-        order_date = _parse_date(form.get("order_date"))
-        order_items: list[ArticleItem | SetItem | AssembledItem] = []
-        for row in items:
-            if not row["item"].strip():
-                continue
-            kind, ident, key = _parse_item(row["item"].strip())
-            qty = parse_int(row["qty"], field="orders.field.qty", min=1, max=MAX_QTY)
-            if kind == "assembled":
-                order_items.append(AssembledItem(ident, qty, ":".join(str(k) for k in key)))
-            else:
-                order_items.append(ArticleItem(ident, qty) if kind == "article" else SetItem(ident, qty, key))
-        return order_date, order_items
+        def check():
+            order_date = _parse_date(form.get("order_date"))
+            order_items: list[ArticleItem | SetItem | AssembledItem] = []
+            for row in items:
+                if not row["item"].strip():
+                    continue
+                kind, ident, key = _parse_item(row["item"].strip())
+                qty = parse_int(row["qty"], field="orders.field.qty", min=1, max=MAX_QTY)
+                if kind == "assembled":
+                    order_items.append(AssembledItem(ident, qty, ":".join(str(k) for k in key)))
+                else:
+                    order_items.append(ArticleItem(ident, qty) if kind == "article" else SetItem(ident, qty, key))
+            return order_date, order_items
 
-    def save(tx, checked):
-        order_date, order_items = checked
-        order = orders.create_order(
-            tx, reference=values["reference"], order_date=order_date, items=order_items,
-            actor="user", note=values["note"],
+        def save(tx, checked):
+            order_date, order_items = checked
+            order = orders.create_order(
+                tx, reference=values["reference"], order_date=order_date, items=order_items,
+                actor="user", note=values["note"],
+            )
+            return order.id, order.reference
+
+        return await run_form_action(
+            request, check=check, work=save, duplicate_url="/orders",
+            done=lambda result: saved_redirect(request, f"/orders/{result[0]}", "orders.created", reference=result[1]),
+            on_error=lambda text, status, exc: page(error=text, status=status),
         )
-        return order.id, order.reference
-
-    return await run_form_action(
-        request, check=check, work=save, duplicate_url="/orders",
-        done=lambda result: saved_redirect(request, f"/orders/{result[0]}", "orders.created", reference=result[1]),
-        on_error=lambda text, status, exc: page(error=text, status=status),
-    )
 
 
 # ---- detail, ship, cancel ---------------------------------------------------------------------

@@ -244,3 +244,129 @@ def test_the_zone_ends_with_the_request(new_york):
     new_york.get("/journal")
     assert localtime.browser_zone() is None
     assert localtime.local_date(datetime(2026, 7, 15, 23, 0)) == date(2026, 7, 16)  # Berlin again
+
+
+# ---- the form carries the zone of its page (Spec 10.5a "Tage beim Buchen", review finding 2) ---------
+# A page computed without the cookie (zone of the server) can be sent after zone.js wrote the cookie
+# without loading it again (a changed form, a message on the page, the answer to a form). Its date field
+# offers the server's "today"; read in the browser's zone, that day became yesterday between midnight and
+# 1 o'clock in Berlin on a server in UTC.
+
+import re  # noqa: E402
+
+_CSRF = re.compile(r'name="csrf_token" value="([^"]+)"')
+_FORM_TOKEN = re.compile(r'name="form_token" value="([^"]+)"')
+_PAGE_ZONE = re.compile(r'name="page_zone" value="([^"]*)"')
+
+
+def form_of(html: str, action: str) -> str:
+    forms = re.findall(rf'<form[^>]*action="{re.escape(action)}"[^>]*>(.*?)</form>', html, re.S)
+    assert forms, f"no form {action}"
+    return forms[0]
+
+
+def page_zone_field(html: str, action: str) -> str | None:
+    found = _PAGE_ZONE.search(form_of(html, action))
+    return found.group(1) if found else None
+
+
+def send_from(client, page: str, action: str, **fields):
+    """Send the form `action` of a page fetched earlier, with what that page carried."""
+    form = form_of(page, action)
+    data = {"csrf_token": _CSRF.search(page).group(1), "form_token": _FORM_TOKEN.search(form).group(1)}
+    carried = page_zone_field(page, action)
+    if carried is not None:
+        data["page_zone"] = carried
+    return client.post(action, data={**data, **fields})
+
+
+def test_a_count_from_a_page_of_the_servers_zone_counts_for_its_today(utc_server_at_half_past_midnight_in_berlin, monkeypatch):
+    """The review's case: sold 1 at 00:10 in Berlin (the 19th), counted 4 on the shelf at 00:30 on a page
+    computed without the cookie (its "today" is the server's 18th), sent with the cookie. The count must
+    hold now: 4 in stock. It used to hold for the end of the 18th in Berlin, the sale after it was taken
+    off again, and the stock was 3."""
+    from reprintbuddy.domain import stock
+    from reprintbuddy.models import Article
+    from reprintbuddy.web.routes import bookings
+
+    client = utc_server_at_half_past_midnight_in_berlin
+    with sm_of(client).begin() as s:
+        a = make_article(s, name="Template A", stock=5).id
+    sale_time = datetime(2026, 11, 18, 23, 10)  # 00:10 on the 19th in Berlin
+    for module in (bookings, stock):
+        monkeypatch.setattr(module, "utcnow", lambda: sale_time)
+    client.cookies.set(zone.COOKIE, "Europe/Berlin")
+    try:
+        assert post_booking(client, "sale", article_id=a, qty="1", booked_on="2026-11-19").status_code == 303
+        for module in (bookings, stock):
+            monkeypatch.setattr(module, "utcnow", lambda: LATE_EVENING_UTC)
+        client.cookies.delete(zone.COOKIE)
+        stale = client.get("/bookings").text  # no cookie: the page of the server's zone
+        assert 'value="2026-11-18" max="2026-11-18"' in stale
+        client.cookies.set(zone.COOKIE, "Europe/Berlin")  # written by zone.js meanwhile
+        response = send_from(client, stale, "/bookings/inventory", article_id=a, field="stock", counted="4",
+                             booked_on="2026-11-18")
+    finally:
+        client.cookies.delete(zone.COOKIE)
+    assert response.status_code == 303
+    with sm_of(client).begin() as s:
+        assert s.get(Article, a).stock == 4
+        count = s.scalars(select(JournalEntry).where(JournalEntry.kind == "inventory")).one()
+        assert count.booked_at == count.at  # today, as the page offered it
+
+
+def test_a_sale_from_a_page_of_the_servers_zone_stays_today(utc_server_at_half_past_midnight_in_berlin):
+    client = utc_server_at_half_past_midnight_in_berlin
+    with sm_of(client).begin() as s:
+        a = make_article(s, name="Template A", stock=5).id
+    stale = client.get("/bookings").text
+    client.cookies.set(zone.COOKIE, "Europe/Berlin")
+    try:
+        response = send_from(client, stale, "/bookings/sale", article_id=a, qty="1", booked_on="2026-11-18")
+    finally:
+        client.cookies.delete(zone.COOKIE)
+    assert response.status_code == 303
+    with sm_of(client).begin() as s:
+        row = s.scalars(select(JournalEntry)).one()
+        assert row.booked_at == row.at  # it used to be dated back to the 18th in Berlin
+
+
+@pytest.mark.parametrize("action", ["/bookings/inventory", "/bookings/part-inventory", "/bookings/part-receipt",
+                                    "/bookings/sale", "/bookings/stock-in"])
+def test_every_booking_form_carries_the_zone_of_its_page(new_york, action):
+    assert page_zone_field(new_york.get("/bookings").text, action) == "America/New_York"
+
+
+def test_without_a_cookie_the_form_names_the_zone_of_the_server(ready_client):
+    page = ready_client.get("/bookings").text
+    assert page_zone_field(page, "/bookings/sale") == zone.SERVER_MARK
+
+
+def test_the_order_form_carries_the_zone_of_its_page(new_york):
+    assert page_zone_field(new_york.get("/orders/new").text, "/orders/new") == "America/New_York"
+
+
+@pytest.mark.parametrize(
+    ("carried", "latest"),
+    [
+        ("Asia/Tokyo", "2026-11-19"),  # a zone of the list: the form's (08:30 on the 19th there)
+        ("server", "2026-11-18"),  # the zone of the server (UTC)
+        ("Mars/Olympus_Mons", "2026-11-19"),  # not a zone: the zone of the request, the cookie's (Berlin)
+        ("../../etc/passwd", "2026-11-19"),
+        ("", "2026-11-19"),
+    ],
+)
+def test_the_zone_of_the_form_is_checked_like_the_cookie(utc_server_at_half_past_midnight_in_berlin, carried, latest):
+    """The 19th is a future day in the zone of the server only: refused there, taken in the others."""
+    client = utc_server_at_half_past_midnight_in_berlin
+    with sm_of(client).begin() as s:
+        a = make_article(s, name="Template A", stock=5).id
+    client.cookies.set(zone.COOKIE, "Europe/Berlin")
+    try:
+        response = post_booking(client, "sale", article_id=a, qty="1", booked_on="2026-11-19", page_zone=carried)
+    finally:
+        client.cookies.delete(zone.COOKIE)
+    future = en_html("bookings.date_future") in response.text
+    assert future is (latest == "2026-11-18")
+    if carried not in ("", "server", "Asia/Tokyo"):
+        assert carried not in response.text  # a forged value is never written into a page

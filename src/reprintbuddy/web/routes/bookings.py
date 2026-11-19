@@ -23,6 +23,7 @@ from reprintbuddy.web.flash import flash
 from reprintbuddy.web.formatting import format_date, to_local
 from reprintbuddy.web.forms import MAX_ID, parse_bool, parse_int, parse_text, run_form_action
 from reprintbuddy.web.journal_view import journal_rows
+from reprintbuddy.web.zone import zone_of_form
 
 router = APIRouter()
 
@@ -151,12 +152,15 @@ async def _book(
             flash(request, key, warning=key in WARNING_KEYS, **message_params)
         return RedirectResponse("/bookings", status_code=303)
 
-    return await run_form_action(
-        request, check=lambda: prepare(form), work=book, done=booked, duplicate_url="/bookings",
-        on_error=lambda text, status, exc: _page(
-            request, db, error_form=name, error=text, values=values, status=status
-        ),
-    )
+    # The day, "today", the latest day and the end of a day in the zone the form's page was computed in
+    # (Spec 10.5a, `zone.zone_of_form`); the answer, a page with the same forms, in it too.
+    with zone_of_form(form):
+        return await run_form_action(
+            request, check=lambda: prepare(form), work=book, done=booked, duplicate_url="/bookings",
+            on_error=lambda text, status, exc: _page(
+                request, db, error_form=name, error=text, values=values, status=status
+            ),
+        )
 
 
 def _inventory_done(request: Request, item: str, p: dict, diff: int) -> tuple[str, dict]:

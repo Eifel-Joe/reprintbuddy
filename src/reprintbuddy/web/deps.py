@@ -146,6 +146,7 @@ def render(request: Request, name: str, status_code: int = 200, **context: objec
     # The zone the page is computed in (Spec 10.5a): `data-zone` for zone.js, and the settings say it.
     context["page_zone"] = zone.page_zone_name()
     context["zone_from_browser"] = localtime.browser_zone() is not None
+    context["form_zone"] = zone.form_zone_value()  # carried by the forms with a date (`page_zone`)
     _add_rights_notice(request, context)
     _add_update_notice(request, context, session)
     response = request.app.state.templates.TemplateResponse(
