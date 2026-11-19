@@ -143,6 +143,19 @@ def _condition(printer: PlanPrinter) -> Condition:
     return "ready"
 
 
+def _fits(entry: PlanItem, printer: PlanPrinter, in_service: set[int]) -> bool:
+    """May this printer take the entry: its own printer, or one of the model (place, nozzle) in service."""
+    if printer.printer_id not in in_service:
+        return False
+    if entry.printer_id is not None:
+        return entry.printer_id == printer.printer_id
+    return (
+        same_model(entry.target_model, printer.model)
+        and (not entry.target_location or entry.target_location == printer.location)
+        and nozzle_fits(entry.nozzle, _nozzles(printer))
+    )
+
+
 def _order(items: Sequence[PlanItem], shortest_first: bool) -> list[PlanItem]:
     if not shortest_first:
         return list(items)
@@ -191,36 +204,52 @@ def build_plan(
         bars[pid].append(bar)
         free_at[pid] = bar.end + GAP
 
+    # Sorted out first, as Bambuddy's scheduler skips them or as they wait for one printer (module text).
     unplaced = manual = 0
     known_ids = set(conditions)
-    for entry in _order([i for i in items if i.status == "pending"], shortest_first):
+    pending = [i for i in items if i.status == "pending"]
+    taken: set[int] = set()
+    # In the order the scheduler walks them, so the texts "wartet: …" keep that order.
+    for entry in _order(pending, shortest_first):
         if entry.manual_start or entry.starts_later:
             manual += 1
-            continue
-        if entry.printer_id is not None:
-            if entry.printer_id not in known_ids:
-                unplaced += 1
-                continue
-            if entry.printer_id not in in_service:
-                waiting[entry.printer_id].append(entry.label)
-                continue
-            target, kind = entry.printer_id, "fixed"
+        elif entry.printer_id is not None and entry.printer_id not in known_ids:
+            unplaced += 1
+        elif entry.printer_id is not None and entry.printer_id not in in_service:
+            waiting[entry.printer_id].append(entry.label)
+        elif entry.printer_id is None and not any(_fits(entry, p, in_service) for p in printers):
+            unplaced += 1
         else:
-            candidates = [
-                p.printer_id for p in printers
-                if p.printer_id in in_service and same_model(entry.target_model, p.model)
-                and (not entry.target_location or entry.target_location == p.location)
-                and nozzle_fits(entry.nozzle, _nozzles(p))
-            ]
-            if not candidates:
-                unplaced += 1
-                continue
-            target = min(candidates, key=lambda pid: (free_at[pid], pid))
-            kind = "planned"
+            taken.add(id(entry))
+    queue = [e for e in pending if id(e) in taken]  # what printers may take, in the order of the queue
+
+    # p646 - root cause: the list rule ("each entry in turn takes the fitting printer free first") cannot
+    # put in an entry that reaches Bambuddy's queue only later, after entries behind it have started.
+    # Fix: walk the time. The printer free first that some waiting entry fits takes the first fitting
+    # entry of the queue; equal times go to the lower id. Without late entries this is the same list
+    # scheduling: the printer free first is also the first among the candidates of that entry, and the
+    # entries before it fit no such printer (test_printplan_simulation.py holds both equal on random cases).
+    # NOT-TO-DO: keeping the list rule and giving late entries a start "not before" their hand-over leaves
+    # a printer idle that Bambuddy would fill with a later entry in the meantime.
+    by_id = {p.printer_id: p for p in printers}
+    clock = now
+    while queue:
+        ordered = _order(queue, shortest_first)
+        pick: tuple[datetime, int, PlanItem] | None = None
+        for pid in sorted(free_at, key=lambda pid: (max(free_at[pid], clock), pid)):
+            fitting = next((e for e in ordered if _fits(e, by_id[pid], in_service)), None)
+            if fitting is not None:
+                pick = (max(free_at[pid], clock), pid, fitting)
+                break
+        if pick is None:  # cannot be: every entry left fits a printer in service (sorted out above)
+            break
+        start, target, entry = pick
+        clock = start
+        queue.remove(entry)
         duration = entry.duration
         if duration is None:
             duration, minimum = UNKNOWN_DURATION, True
-        start = free_at[target]
+        kind: Kind = "fixed" if entry.printer_id is not None else "planned"
         bars[target].append(Bar(kind, entry.label, entry.own, start, start + duration,
                                 duration_known=entry.duration is not None))
         free_at[target] = start + duration + GAP
