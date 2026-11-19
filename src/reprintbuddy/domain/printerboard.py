@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from dataclasses import replace as with_fields
 from datetime import datetime
 
-from reprintbuddy.bambuddy.types import Printer, PrinterStatus
+from reprintbuddy.bambuddy.types import FilamentRequirement, Printer, PrinterStatus
+from reprintbuddy.domain.printplan import PRINTING_STATES
 from reprintbuddy.models import utcnow
 
 log = logging.getLogger(__name__)
@@ -56,8 +57,12 @@ class PrinterBoard:
         *,
         now: Callable[[], datetime] | None = None,
         call_later: CallLater | None = None,
+        on_print_end: Callable[[int], None] | None = None,
     ) -> None:
         self._publish = publish
+        # Called with a printer's id when a print ended there (p648): Bambuddy books the filament used only
+        # after it reports the end, so the engine reads the grams of that printer again a little later.
+        self._on_print_end = on_print_end
         # Looked up at each call, not bound at import: a fixed clock set later (the picture tool) holds here too.
         self._now = now or (lambda: utcnow())
         self._call_later = call_later
@@ -67,6 +72,10 @@ class PrinterBoard:
         self.shortest_first = False  # Bambuddy's "shortest job first", read with the query
         # Files of Reprintbuddy's own queue (p646); kept across queries, so a known version is not asked again.
         self.file_facts: dict[FileKey, FileFacts] = {}
+        # p648: grams left per slot (ams_id, tray_id) of the spools Bambuddy assigned, per printer with work;
+        # a printer missing here is unknown. Needs of foreign prints per (file, plate); None: not readable.
+        self.slot_grams: dict[int, dict[tuple[int, int], float]] = {}
+        self.needs: dict[tuple[int, int], tuple[FilamentRequirement, ...] | None] = {}
         self._published_at: datetime | None = None
         self._pending = False
         self._handle: object | None = None  # the held-back publish, cancelled by any earlier one
@@ -77,6 +86,8 @@ class PrinterBoard:
         self, printers: Sequence[Printer], statuses: Mapping[int, PrinterStatus], *, shortest_first: bool = False
     ) -> None:
         """A regular query answered: the whole state, published at once."""
+        for pid, status in statuses.items():
+            self._note_end(self.statuses.get(pid), status)
         self.printers = tuple(printers)
         self.statuses = dict(statuses)
         self.shortest_first = shortest_first
@@ -105,6 +116,9 @@ class PrinterBoard:
             # A message without the nozzles keeps the known ones; Bambuddy sends them in every message
             # (`printer_manager.py:1788`, `:1873`), so this only guards the plan against jumping (p534).
             status = with_fields(status, nozzles=before.nozzles)
+        if status.slots is None and before is not None and before.slots is not None:
+            status = with_fields(status, slots=before.slots, backup=before.backup)  # the same for the slots (p648)
+        self._note_end(before, status)
         changed = self.statuses.get(status.printer_id) != status
         self.statuses[status.printer_id] = status
         self.at = self._now()
@@ -121,6 +135,16 @@ class PrinterBoard:
         self._handle = schedule(THROTTLE_SECONDS - elapsed, self._flush)
         if self._handle is None and self._call_later is None:
             self._flush()  # no running loop (a script, a test without background tasks): at once
+
+    def _note_end(self, before: PrinterStatus | None, after: PrinterStatus) -> None:
+        """A print ended: the printer printed and now, still connected, does not (p648). Offline is no end."""
+        if self._on_print_end is None or before is None or not before.connected or not after.connected:
+            return
+        if before.state in PRINTING_STATES and after.state not in PRINTING_STATES:
+            try:
+                self._on_print_end(after.printer_id)
+            except Exception:  # only shown: a failing re-read never breaks the state
+                log.warning("printer board: noting a print end failed", exc_info=True)
 
     # ---- publishing -----------------------------------------------------------------------
 

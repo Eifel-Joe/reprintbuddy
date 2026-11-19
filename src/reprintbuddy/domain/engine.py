@@ -27,6 +27,7 @@ import contextlib
 import copy
 import dataclasses
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -40,6 +41,7 @@ from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, Bambu
 from reprintbuddy.bambuddy.types import LibraryFile, Printer, QueueItem
 from reprintbuddy.domain import dispatch, tracking, withdraw, workqueue
 from reprintbuddy.domain.printerboard import FileFacts, PrinterBoard
+from reprintbuddy.domain.printplan import PRINTING_STATES, same_model
 from reprintbuddy.domain import articlesets
 from reprintbuddy.models import Article, Dispatch, Withdrawal, WorkQueueEntry, utcnow
 from reprintbuddy.i18n import translate
@@ -55,6 +57,10 @@ TOPIC = "bambuddy"
 DEFAULT_POLL_SECONDS = 60.0
 # After a tick held back by an update, the next regular tick comes this soon (p41).
 UPDATE_RETRY_SECONDS = 5.0
+# p648: after a print ended, Bambuddy books the filament used; the grams are read again this much later,
+# at most once a minute per printer (Spec 7.6).
+REREAD_AFTER_END_SECONDS = 60.0
+REREAD_MIN_INTERVAL_SECONDS = 60.0
 
 
 @dataclass
@@ -135,7 +141,11 @@ class Engine:
         self.status = EngineStatus()
         # The printers' state for the print plan (Spec 7.6, 0.4.2): beside the status, not in it, so a
         # live percent does not wake every page that follows "bambuddy".
-        self.board = PrinterBoard(publish)
+        self.board = PrinterBoard(publish, on_print_end=self.print_ended)
+        # p648: re-reads of a printer's grams after a print ended there, and when each was last scheduled.
+        self._rereads: set[asyncio.Task] = set()
+        self._reread_at: dict[int, float] = {}
+        self._monotonic = time.monotonic
         # The files the regular query of this tick read (None: no complete check), for `_read_file_facts`.
         self._checked_files: dict[int, LibraryFile | None] | None = None
         # Known before the first tick, so a page right after the start does not say
@@ -284,7 +294,10 @@ class Engine:
         # After the rule, so what it just queued is known at once, not a query later; after the hand-over, so
         # a print that went to Bambuddy (which names its print time) costs no request (p646, review).
         if client is not None and self._checked_files is not None and status.reachable:
-            await self._read_file_facts(client, self._checked_files)
+            changed = await self._read_file_facts(client, self._checked_files)
+            changed = await self._read_filament(client) or changed
+            if changed:
+                self.board.facts_changed()  # once per round, for both
 
         with self.sm() as session:
             status.cap_reached = self._cap_reached(session)
@@ -433,7 +446,7 @@ class Engine:
             shortest = False  # the queue order, as Bambuddy's default
         self.board.replace(printers, statuses, shortest_first=shortest)
 
-    async def _read_file_facts(self, client: BambuddyClient, files: dict[int, LibraryFile | None]) -> None:
+    async def _read_file_facts(self, client: BambuddyClient, files: dict[int, LibraryFile | None]) -> bool:
         """Print time per plate and nozzle of the files in Reprintbuddy's own queue, for the print plan
         (Spec 7.6, 10.2, p646). A version already known is not asked again; one no entry needs any more is
         dropped. The nozzle comes from the file `check_articles` just read, the print time from `/plates`, the
@@ -460,8 +473,112 @@ class Engine:
                 nozzle=file.nozzle_diameter if file is not None else None,
                 plate_seconds={plate.index: plate.print_time_seconds for plate in plates},
             )
-        if facts != before:
+        return facts != before
+
+    def _printers_with_work(self) -> list[int]:
+        """Printers in service with at least one print in their lane, without laying out the whole plan
+        (Spec 7.6, p648): printing, or an entry of Bambuddy's queue pinned to it or for its model, or an
+        article of Reprintbuddy's queue aimed at it or its model. One request too many rather than a lane
+        without its stock."""
+        board = self.board
+        queue = [i for i in (self.status.bambuddy_queue or []) if i.status in ("pending", "printing")]
+        with self.sm() as session:
+            targets = session.execute(
+                select(Article.target_model, Article.printer_id)
+                .join(WorkQueueEntry, WorkQueueEntry.article_id == Article.id)
+                .distinct()
+            ).all()
+        found: list[int] = []
+        for printer in board.printers or ():
+            state = board.statuses.get(printer.id)
+            if not printer.active or state is None or not state.connected:
+                continue
+            printing = state.state in PRINTING_STATES
+            if state.stopped_error and not printing:
+                continue
+            if printing or any(
+                pid == printer.id or (pid is None and same_model(model, printer.model))
+                for model, pid in [(i.target_model, i.printer_id) for i in queue] + [tuple(t) for t in targets]
+            ):
+                found.append(printer.id)
+        return found
+
+    async def _read_filament(self, client: BambuddyClient) -> bool:
+        """The grams of the spools in the printers with work, and the needs of foreign prints from the file
+        manager, for the reload hint of the print plan (Spec 7.6, 10.2, p648). Only shown: a refusal leaves
+        that printer or file unknown, an unreachable Bambuddy ends the reading; nothing else changes."""
+        board = self.board
+        before = (dict(board.slot_grams), dict(board.needs))
+        grams: dict[int, dict[tuple[int, int], float]] = {}
+        gone = False
+        for pid in self._printers_with_work():
+            try:
+                grams[pid] = await client.inventory_remain(pid)
+            except BambuddyRejected:
+                log.info("engine: the grams of printer %s could not be read; its stock stays unknown", pid)
+            except BambuddyUnavailable:
+                gone = True
+                break
+        board.slot_grams = grams if not gone else {**board.slot_grams, **grams}  # gone: keep what was known
+        with self.sm() as session:
+            own = dispatch.own_item_ids(session)
+        wanted = {
+            (i.library_file_id, i.plate_id)
+            for i in self.status.bambuddy_queue or []
+            if i.status in ("pending", "printing") and i.id not in own
+            and i.library_file_id is not None and i.plate_id is not None
+        }
+        for key in [k for k in board.needs if k not in wanted]:
+            del board.needs[key]
+        for file_id, plate_id in sorted(wanted - board.needs.keys()):
+            if gone:
+                break
+            try:
+                board.needs[(file_id, plate_id)] = tuple(await client.filament_requirements(file_id, plate_id))
+            except BambuddyRejected:
+                board.needs[(file_id, plate_id)] = None  # e.g. the file is gone: unknown, not asked again
+            except BambuddyUnavailable:
+                break
+        return (board.slot_grams, board.needs) != before
+
+    def print_ended(self, printer_id: int) -> None:
+        """A print ended on this printer (`PrinterBoard`): read its grams again after
+        `REREAD_AFTER_END_SECONDS`, at most once a minute per printer (Spec 7.6, p648).
+
+        Root cause: Bambuddy reports the end on its live channel (`main.py:9501`) before it books the
+        filament used (`:9930`); the query the report triggers would still see the old stock, until the
+        next regular query (default 15 min). Rejected: reading at once (the stale stock); a fixed second
+        regular query (it asks Bambuddy for everything)."""
+        now = self._monotonic()
+        last = self._reread_at.get(printer_id)
+        if last is not None and now - last < REREAD_MIN_INTERVAL_SECONDS:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._reread_at[printer_id] = now
+        task = loop.create_task(self._reread(printer_id))
+        self._rereads.add(task)
+        task.add_done_callback(self._rereads.discard)
+
+    async def _reread(self, printer_id: int) -> None:
+        await asyncio.sleep(REREAD_AFTER_END_SECONDS)
+        client = self.client_provider()
+        if client is None:
+            return
+        try:
+            grams = await client.inventory_remain(printer_id)
+        except (BambuddyRejected, BambuddyUnavailable):
+            return
+        if self.board.slot_grams.get(printer_id) != grams:
+            self.board.slot_grams[printer_id] = grams
             self.board.facts_changed()
+
+    async def wait_for_rereads(self) -> None:
+        """For tests and shutdown: let the scheduled re-reads finish."""
+        while self._rereads:
+            await asyncio.gather(*list(self._rereads), return_exceptions=True)
 
     def _may_hand_over(self, poll: bool) -> bool:
         status = self.status
