@@ -124,7 +124,7 @@ def test_queue_regions(bb_client):
         "warnings": "bambuddy queue article settings notify",
         "entries": "queue article",
         "manual": "queue article",
-        "in-progress": "queue",
+        "in-progress": "queue printers",  # the times follow the printers' state (Spec 10.3a)
         "bambuddy": "bambuddy queue",
     }
     found = dict(re.findall(r'data-live-region="([^"]+)" data-live-topics="([^"]+)"', page))
@@ -495,8 +495,23 @@ def test_in_progress_table(bb_client):
     part = region(bb_client.get("/queue").text, "in-progress")
     assert "Template A" in part and en("dispatch.status.printing") in part
     assert en("queue.origin.manual") in part
-    assert ">5<" in part and "77" not in part
+    assert "77" not in part
     assert "<form" not in part
+
+
+def test_in_progress_columns(bb_client):
+    """Start, end and print time instead of the hand-over time and Bambuddy's id (Spec 10.3a, p647)."""
+    a = article(bb_client)
+    with sm_of(bb_client).begin() as s:
+        make_dispatch(s, a, status="queued", bambuddy_item_id=5)
+    part = region(bb_client.get("/queue").text, "in-progress")
+    heads = re.findall(r"<th[^>]*>(.*?)</th>", part)
+    assert heads == [en("queue.col.article"), en("queue.col.origin"),
+                     en("queue.col.state"), en("queue.col.start"), en("queue.col.end"), en("queue.col.print_time")]
+    assert en("queue.col.bambuddy_id") not in part and ">5<" not in part
+    # Bambuddy is not queried in this test: no printers' state, so no times; the print time is unknown too
+    cells = re.findall(r"<td[^>]*>(.*?)</td>", part, re.S)
+    assert cells[3:] == ["", "", en("overview.plan.unknown_duration")]
 
 
 def test_every_dispatch_state_has_a_text():

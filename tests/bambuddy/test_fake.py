@@ -57,6 +57,17 @@ async def test_plates_numbered_from_one():
     assert [p.index for p in await fake.list_plates(f.id)] == [1, 2]
 
 
+async def test_plates_carry_the_print_time_and_the_file_its_nozzle():
+    """As Bambuddy's `/plates` and `/files/{id}` (p646): the file's print time on every plate, the nozzle on the file."""
+    fake = FakeBambuddy()
+    f = fake.add_file("Template B.gcode.3mf", plates=2, print_time_s=1800, nozzle=0.6)
+    assert [p.print_time_seconds for p in await fake.list_plates(f.id)] == [1800, 1800]
+    assert (await fake.get_file(f.id)).nozzle_diameter == 0.6
+    plain = fake.add_file("Template C.gcode.3mf", print_time_s=None)
+    assert [p.print_time_seconds for p in await fake.list_plates(plain.id)] == [None]
+    assert (await fake.get_file(plain.id)).nozzle_diameter is None
+
+
 async def test_thumbnail_png():
     fake = FakeBambuddy()
     f = fake.add_file("Template B.gcode.3mf", plates=2)

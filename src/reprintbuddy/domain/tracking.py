@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable
-from reprintbuddy.bambuddy.types import Printer, QueueItem
+from reprintbuddy.bambuddy.types import LibraryFile, Printer, QueueItem
 from reprintbuddy.domain.inspection import open_inspection
 from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.pauses import pause_article
@@ -229,6 +229,9 @@ class ArticleCheck:
     # Bambuddy's printer list as the check read it; the print plan uses it, so a regular query asks
     # for the printers once (0.4.2). Empty when the check failed. Not part of the comparison.
     printers: tuple[Printer, ...] = field(default=(), compare=False)
+    # The files as the check read them (None: gone), so the print plan takes the nozzle of a file waiting in
+    # Reprintbuddy's queue without asking again (p646). Empty when the check failed. Not compared.
+    files: dict[int, LibraryFile | None] = field(default_factory=dict, compare=False)
 
 
 async def check_articles(client: BambuddyClient, sm: sessionmaker) -> ArticleCheck:
@@ -311,4 +314,4 @@ async def check_articles(client: BambuddyClient, sm: sessionmaker) -> ArticleChe
                 ):
                     break
                 pause_article(session, row.id, reason, "auto", details=details)
-    return ArticleCheck(None, frozenset(waiting), tuple(printers))
+    return ArticleCheck(None, frozenset(waiting), tuple(printers), files)

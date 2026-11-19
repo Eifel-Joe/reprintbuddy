@@ -37,9 +37,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy import settings
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable
-from reprintbuddy.bambuddy.types import Printer, QueueItem
+from reprintbuddy.bambuddy.types import LibraryFile, Printer, QueueItem
 from reprintbuddy.domain import dispatch, tracking, withdraw, workqueue
-from reprintbuddy.domain.printerboard import PrinterBoard
+from reprintbuddy.domain.printerboard import FileFacts, PrinterBoard
 from reprintbuddy.domain import articlesets
 from reprintbuddy.models import Article, Dispatch, Withdrawal, WorkQueueEntry, utcnow
 from reprintbuddy.i18n import translate
@@ -136,6 +136,8 @@ class Engine:
         # The printers' state for the print plan (Spec 7.6, 0.4.2): beside the status, not in it, so a
         # live percent does not wake every page that follows "bambuddy".
         self.board = PrinterBoard(publish)
+        # The files the regular query of this tick read (None: no complete check), for `_read_file_facts`.
+        self._checked_files: dict[int, LibraryFile | None] | None = None
         # Known before the first tick, so a page right after the start does not say
         # "not configured" wrongly. A provider that fails leaves it False; the tick tells.
         try:
@@ -262,6 +264,7 @@ class Engine:
         status = self.status
         client = self.client_provider()
         status.configured = client is not None
+        self._checked_files = None
         if client is None:
             status.reachable = None
         else:
@@ -278,6 +281,10 @@ class Engine:
         dispatched = 0
         if client is not None and self._may_hand_over(poll):
             dispatched = await self._hand_over(client)
+        # After the rule, so what it just queued is known at once, not a query later; after the hand-over, so
+        # a print that went to Bambuddy (which names its print time) costs no request (p646, review).
+        if client is not None and self._checked_files is not None and status.reachable:
+            await self._read_file_facts(client, self._checked_files)
 
         with self.sm() as session:
             status.cap_reached = self._cap_reached(session)
@@ -373,6 +380,7 @@ class Engine:
             error = str(exc)
         status.poll_error = error  # the poll reached its end
         if check.error is None:
+            self._checked_files = check.files
             await self._read_printers(client, check.printers)
 
         for name, hook in list(self.hooks.items()):
@@ -424,6 +432,36 @@ class Engine:
         except (BambuddyRejected, BambuddyUnavailable):
             shortest = False  # the queue order, as Bambuddy's default
         self.board.replace(printers, statuses, shortest_first=shortest)
+
+    async def _read_file_facts(self, client: BambuddyClient, files: dict[int, LibraryFile | None]) -> None:
+        """Print time per plate and nozzle of the files in Reprintbuddy's own queue, for the print plan
+        (Spec 7.6, 10.2, p646). A version already known is not asked again; one no entry needs any more is
+        dropped. The nozzle comes from the file `check_articles` just read, the print time from `/plates`, the
+        only new request. Only shown: a failure leaves the file unknown until the next query and changes
+        nothing else (no poll error, no warning, no `reachable`), like `_read_printers`."""
+        with self.sm() as session:
+            wanted = workqueue.queued_files(session)
+        facts = self.board.file_facts
+        before = dict(facts)
+        for key in [k for k in facts if k not in wanted]:
+            del facts[key]
+        for key in sorted(wanted - facts.keys(), key=lambda k: (k[0], k[1] or "")):
+            file_id, _fingerprint = key
+            try:
+                plates = await client.list_plates(file_id)
+            except BambuddyRejected:
+                log.info("engine: the plates of file %s could not be read; its print time stays unknown", file_id)
+                continue
+            except BambuddyUnavailable:  # gone: the next file would only wait for the same timeout (review p646)
+                log.info("engine: Bambuddy did not answer for the plates; the print times stay unknown")
+                break
+            file = files.get(file_id)
+            facts[key] = FileFacts(
+                nozzle=file.nozzle_diameter if file is not None else None,
+                plate_seconds={plate.index: plate.print_time_seconds for plate in plates},
+            )
+        if facts != before:
+            self.board.facts_changed()
 
     def _may_hand_over(self, poll: bool) -> bool:
         status = self.status

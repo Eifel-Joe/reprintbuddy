@@ -33,6 +33,9 @@ class LibraryFile:
     created_by: str | None = None
     size: int | None = None
     created_at: datetime | None = None
+    # The nozzle the file was sliced for (`metadata.nozzle_diameter`); None unknown. For the print plan of
+    # prints still waiting in Reprintbuddy (Spec 10.2, p646).
+    nozzle_diameter: float | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +52,7 @@ class UploadedFile:
 class Plate:
     index: int  # starts at 1
     name: str | None
+    print_time_seconds: int | None = None  # the slicer's estimate for this plate; None unknown (p646)
 
 
 @dataclass(frozen=True)

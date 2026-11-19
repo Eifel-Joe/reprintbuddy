@@ -27,8 +27,10 @@ running without a queue entry is shown under its subtask name as somebody else's
 
 from __future__ import annotations
 
+import heapq
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from dataclasses import replace as with_fields
 from datetime import datetime, timedelta
 from typing import Literal
 
@@ -39,7 +41,7 @@ UNKNOWN_DURATION = timedelta(hours=1)  # an entry without print time: an edge ca
 
 PRINTING_STATES = frozenset({"RUNNING", "PREPARE", "SLICING", "PAUSE"})
 
-Kind = Literal["running", "fixed", "planned"]
+Kind = Literal["running", "fixed", "planned", "backlog"]  # backlog: still waiting in Reprintbuddy (p646)
 Condition = Literal["ready", "offline", "maintenance", "error", "plate"]
 
 
@@ -71,6 +73,10 @@ class PlanItem:
     starts_later: bool
     been_jumped: bool = False
     nozzle: float | None = None  # mm the file was sliced for; None unknown
+    # A print Reprintbuddy handed over and counts against its limit (an open `Dispatch`); its end frees a
+    # place for the next print of Reprintbuddy's queue (p646). Not the same as `own`, which also takes
+    # entries made in Bambuddy with the key's user.
+    holds_slot: bool = False
 
 
 @dataclass(frozen=True)
@@ -83,6 +89,10 @@ class Bar:
     progress: float | None = None
     paused: bool = False
     duration_known: bool = True
+    # Bambuddy's id of the entry; None for a print without one (still in Reprintbuddy, or running without a
+    # queue entry). The queue page reads the times of its prints by it (p647). Not compared: plans equal in
+    # what they show stay equal.
+    item_id: int | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -102,6 +112,7 @@ class Plan:
     without: tuple[str, ...]  # printers out of service with entries waiting for them
     unplaced: int  # entries without a ready printer
     manual: int  # manual start or a later start
+    no_slot: int = 0  # prints of Reprintbuddy's queue that never get a place under the limit (p646)
 
 
 def _model(value: str | None) -> str:
@@ -143,6 +154,19 @@ def _condition(printer: PlanPrinter) -> Condition:
     return "ready"
 
 
+def _fits(entry: PlanItem, printer: PlanPrinter, in_service: set[int]) -> bool:
+    """May this printer take the entry: its own printer, or one of the model (place, nozzle) in service."""
+    if printer.printer_id not in in_service:
+        return False
+    if entry.printer_id is not None:
+        return entry.printer_id == printer.printer_id
+    return (
+        same_model(entry.target_model, printer.model)
+        and (not entry.target_location or entry.target_location == printer.location)
+        and nozzle_fits(entry.nozzle, _nozzles(printer))
+    )
+
+
 def _order(items: Sequence[PlanItem], shortest_first: bool) -> list[PlanItem]:
     if not shortest_first:
         return list(items)
@@ -154,15 +178,27 @@ def _order(items: Sequence[PlanItem], shortest_first: bool) -> list[PlanItem]:
 
 
 def build_plan(
-    printers: Sequence[PlanPrinter], items: Sequence[PlanItem], now: datetime, *, shortest_first: bool = False
+    printers: Sequence[PlanPrinter], items: Sequence[PlanItem], now: datetime, *, shortest_first: bool = False,
+    backlog: Sequence[PlanItem] = (), free_slots: int = 0, insert_next: bool = False,
+    parked: Sequence[tuple[int, str]] = (),
 ) -> Plan:
-    """Lay the queue onto the printers (see the module text). Pure: same input, same plan."""
+    """Lay the queue onto the printers (see the module text). Pure: same input, same plan.
+
+    `backlog`: the prints of Reprintbuddy's own queue that the hand-over would take, top down, one item per
+    print (Spec 10.2, p646). `free_slots`: the limit less Reprintbuddy's open prints (may be negative). A
+    print is handed over while a place is free, else when a bar of an entry with `holds_slot` ends; then it
+    goes to the end of Bambuddy's queue, or with `insert_next` behind the last waiting entry with
+    `holds_slot` (at the top without one), as `dispatch.next_insert_position` does. The time to the next
+    query is not counted (Spec 10.2). What never gets a place counts as `no_slot`. `parked`: (printer id,
+    label) of prints the hand-over skips because their printer is in maintenance; shown in its lane as
+    waiting, without a place (a printer Bambuddy does not list is left out)."""
     conditions = {p.printer_id: _condition(p) for p in printers}
     in_service = {pid for pid, c in conditions.items() if c in ("ready", "plate")}
     bars: dict[int, list[Bar]] = {p.printer_id: [] for p in printers}
     waiting: dict[int, list[str]] = {p.printer_id: [] for p in printers}
     free_at: dict[int, datetime] = {}
     minimum = False
+    openings: list[datetime] = []  # when places under the limit become free (ends of `holds_slot` bars)
     printing_items = {i.printer_id: i for i in items if i.status == "printing" and i.printer_id is not None}
 
     for printer in printers:
@@ -187,43 +223,116 @@ def build_plan(
             minimum = True
         label, own = (entry.label, entry.own) if entry is not None else (status.subtask_name or "", False)
         bar = Bar("running", label, own, now, now + rest, progress=status.progress,
-                  paused=status.state == "PAUSE", duration_known=known)
+                  paused=status.state == "PAUSE", duration_known=known,
+                  item_id=entry.item_id if entry is not None else None)
         bars[pid].append(bar)
         free_at[pid] = bar.end + GAP
+        if entry is not None and entry.holds_slot:
+            heapq.heappush(openings, bar.end)
+    # Review p646, risk 2 - root cause: an own print counts against the limit while it prints, but only a drawn
+    # bar gave an opening; one on a printer out of service, or one Bambuddy's queue still lists as printing
+    # while the printer already reports idle, never freed its place, so everything behind it showed "no place".
+    # Fix: such a print frees its place when the printer says it ends (connected and a time left), else now.
+    # NOT-TO-DO: never freeing it - the print does end; Spec 7.6: a printer not connected has no valid values.
+    drawn = {bar.item_id for lane_bars in bars.values() for bar in lane_bars}
+    by_printer = {p.printer_id: p for p in printers}
+    for entry in items:
+        if entry.status != "printing" or not entry.holds_slot or entry.item_id in drawn:
+            continue
+        state = by_printer[entry.printer_id].status if entry.printer_id in by_printer else None
+        rest = state.remaining_min if state is not None and state.connected and state.remaining_min else 0
+        heapq.heappush(openings, now + timedelta(minutes=rest))
 
+    # Sorted out first, as Bambuddy's scheduler skips them or as they wait for one printer (module text).
     unplaced = manual = 0
     known_ids = set(conditions)
-    for entry in _order([i for i in items if i.status == "pending"], shortest_first):
+
+    def sort_out(entry: PlanItem) -> bool:
+        """Counted or noted for a lane instead of laid out; True when a printer may take it."""
+        nonlocal unplaced, manual
         if entry.manual_start or entry.starts_later:
             manual += 1
-            continue
-        if entry.printer_id is not None:
-            if entry.printer_id not in known_ids:
-                unplaced += 1
-                continue
-            if entry.printer_id not in in_service:
-                waiting[entry.printer_id].append(entry.label)
-                continue
-            target, kind = entry.printer_id, "fixed"
+        elif entry.printer_id is not None and entry.printer_id not in known_ids:
+            unplaced += 1
+        elif entry.printer_id is not None and entry.printer_id not in in_service:
+            waiting[entry.printer_id].append(entry.label)
+        elif entry.printer_id is None and not any(_fits(entry, p, in_service) for p in printers):
+            unplaced += 1
         else:
-            candidates = [
-                p.printer_id for p in printers
-                if p.printer_id in in_service and same_model(entry.target_model, p.model)
-                and (not entry.target_location or entry.target_location == p.location)
-                and nozzle_fits(entry.nozzle, _nozzles(p))
-            ]
-            if not candidates:
-                unplaced += 1
-                continue
-            target = min(candidates, key=lambda pid: (free_at[pid], pid))
-            kind = "planned"
+            return True
+        return False
+
+    # `order`: Bambuddy's queue as it waits, sorted-out entries too (they decide where "insert next" puts a
+    # print); `takeable`: the entries a printer may take. Compared by identity: the prints of one entry of
+    # Reprintbuddy's queue are equal as values.
+    order = [i for i in items if i.status == "pending"]
+    # In the order the scheduler walks them, so the texts "wartet: ..." keep that order.
+    takeable = {id(e) for e in _order(order, shortest_first) if sort_out(e)}
+    for pid, label in parked:
+        if pid in waiting:
+            waiting[pid].append(label)
+    # Holds the handed-over objects too, so no id of theirs can be reused by a later object (review p646).
+    from_backlog: dict[int, PlanItem] = {}
+    backlog_left = list(backlog)
+    slots = free_slots
+
+    def hand_over() -> None:
+        """Every print a free place allows goes into Bambuddy's queue, top down (Spec 7.3)."""
+        nonlocal slots
+        while backlog_left and slots > 0:
+            slots -= 1
+            entry = with_fields(backlog_left.pop(0), holds_slot=True)  # a new object: identity stays unique
+            from_backlog[id(entry)] = entry
+            if insert_next:
+                own = [n for n, e in enumerate(order) if e.holds_slot]
+                order.insert(own[-1] + 1 if own else 0, entry)
+            else:
+                order.append(entry)
+            if sort_out(entry):  # one that is not laid out keeps its place: it would stay in Bambuddy
+                takeable.add(id(entry))
+
+    # p646 - root cause: the list rule ("each entry in turn takes the fitting printer free first") cannot
+    # put in an entry that reaches Bambuddy's queue only later, after entries behind it have started.
+    # Fix: walk the time. The printer free first that some waiting entry fits takes the first fitting
+    # entry of the queue; equal times go to the lower id. Without late entries this is the same list
+    # scheduling: the printer free first is also the first among the candidates of that entry, and the
+    # entries before it fit no such printer (test_printplan_simulation.py holds both equal on random cases).
+    # A hand-over at the same moment as a printer frees comes first: Reprintbuddy hands over in the round
+    # of the query that sees the end (`engine._locked_tick`).
+    # NOT-TO-DO: keeping the list rule and giving late entries a start "not before" their hand-over leaves
+    # a printer idle that Bambuddy would fill with a later entry in the meantime.
+    by_id = {p.printer_id: p for p in printers}
+    clock = now
+    hand_over()
+    while True:
+        ordered = _order([e for e in order if id(e) in takeable], shortest_first)
+        pick: tuple[datetime, int, PlanItem] | None = None
+        for pid in sorted(free_at, key=lambda pid: (max(free_at[pid], clock), pid)):
+            fitting = next((e for e in ordered if _fits(e, by_id[pid], in_service)), None)
+            if fitting is not None:
+                pick = (max(free_at[pid], clock), pid, fitting)
+                break
+        if backlog_left and openings and (pick is None or openings[0] <= pick[0]):
+            clock = max(clock, heapq.heappop(openings))
+            slots += 1
+            hand_over()
+            continue
+        if pick is None:  # nothing left a printer may take (every one left fits one: sorted out above)
+            break
+        start, target, entry = pick
+        clock = start
+        takeable.discard(id(entry))
+        order[:] = [e for e in order if e is not entry]  # started: no longer waiting in Bambuddy
         duration = entry.duration
         if duration is None:
             duration, minimum = UNKNOWN_DURATION, True
-        start = free_at[target]
+        kind: Kind = "backlog" if id(entry) in from_backlog else "fixed" if entry.printer_id is not None else "planned"
         bars[target].append(Bar(kind, entry.label, entry.own, start, start + duration,
-                                duration_known=entry.duration is not None))
+                                duration_known=entry.duration is not None,
+                                item_id=None if kind == "backlog" else entry.item_id))
         free_at[target] = start + duration + GAP
+        if entry.holds_slot:
+            heapq.heappush(openings, start + duration)
 
     lanes = tuple(
         Lane(p.printer_id, p.name, conditions[p.printer_id], tuple(bars[p.printer_id]), tuple(waiting[p.printer_id]))
@@ -237,4 +346,5 @@ def build_plan(
         without=tuple(lane.name for lane in lanes if lane.waiting),
         unplaced=unplaced,
         manual=manual,
+        no_slot=len(backlog_left),
     )

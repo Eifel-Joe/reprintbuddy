@@ -7,18 +7,21 @@ and turns its times into positions on the axis and local clock times. Nothing he
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Collection, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.types import QueueItem
-from reprintbuddy.domain import dispatch, workqueue
+from reprintbuddy.domain import dispatch
 from reprintbuddy.domain.printerboard import PrinterBoard
-from reprintbuddy.domain.printplan import Bar, PlanItem, PlanPrinter, build_plan
+from reprintbuddy.domain.printplan import Bar, Plan, PlanItem, PlanPrinter, build_plan
 from reprintbuddy.localtime import to_local
+from reprintbuddy.domain.workqueue import OPEN_STATES
+from reprintbuddy.models import Article, Dispatch, WorkQueueEntry
 from reprintbuddy.web.i18n import translate
 
 MIN_SPAN = timedelta(hours=2)  # the axis reaches from now to "alles fertig", at least 2 h (Spec 10.2)
@@ -29,6 +32,7 @@ _KIND_KEYS = {
     "running": "overview.plan.kind_running",
     "fixed": "overview.plan.kind_fixed",
     "planned": "overview.plan.kind_planned",
+    "backlog": "overview.plan.kind_backlog",
 }
 _CONDITION_KEYS = {
     "offline": "overview.plan.condition_offline",
@@ -80,7 +84,9 @@ class PlanView:
     without: tuple[str, ...] = ()
     unplaced: int = 0
     manual: int = 0
-    waiting_here: int = 0  # prints in Reprintbuddy's own queue (held ones too)
+    held: int = 0  # prints of Reprintbuddy's queue the hand-over skips: held entries, paused articles (p646)
+    no_slot: int = 0  # prints of Reprintbuddy's queue that never get a place under the limit
+    stopped: int = 0  # prints of Reprintbuddy's stopped queue (held ones too); then none is planned
     stale: str = ""  # local time of the printers' state when older than 5 minutes
 
 
@@ -154,7 +160,71 @@ def plan_items(db: Session, queue: Sequence[QueueItem], now: datetime) -> list[P
             starts_later=item.scheduled_time is not None and item.scheduled_time > now,
             been_jumped=item.been_jumped,
             nozzle=item.nozzle_diameter,
+            holds_slot=item.id in own_ids,
         ))
+    return found
+
+
+@dataclass
+class Backlog:
+    """Reprintbuddy's own queue as the print plan takes it (Spec 10.2, p646)."""
+
+    items: list[PlanItem] = field(default_factory=list)  # one per print, top down, as the hand-over takes them
+    parked: list[tuple[int, str]] = field(default_factory=list)  # (printer, article) skipped for maintenance
+    held: int = 0
+    unplaced: int = 0  # skipped because every printer of the model is in maintenance
+    stopped: int = 0
+    free_slots: int = 0
+    insert_next: bool = False
+
+
+def backlog(db: Session, board: PrinterBoard, waiting_for_printer: Collection[int]) -> Backlog:
+    """The prints of Reprintbuddy's queue under the rules of the hand-over (`dispatch.reserve_next`,
+    `engine._hand_over`): top down, print by print; held entries and paused, archived or target-less
+    articles are skipped (counted as held), an article whose printers are in maintenance
+    (`waiting_for_printer`) is skipped too: in the lane of its own printer, or, with a model, counted
+    without a ready printer. A stopped queue hands over nothing. Duration and nozzle come from the
+    files' facts the regular query read (`engine._read_file_facts`); unknown until then."""
+    rows = db.execute(
+        select(WorkQueueEntry, Article)
+        .join(Article, Article.id == WorkQueueEntry.article_id)
+        .order_by(WorkQueueEntry.position, WorkQueueEntry.id)
+    ).all()
+    if not st.get_setting(db, "queue_running"):
+        return Backlog(stopped=sum(entry.prints for entry, _article in rows))
+    found = Backlog(
+        free_slots=int(st.get_setting(db, "queue_cap")) - dispatch.open_count(db),
+        insert_next=bool(st.get_setting(db, "insert_next")),
+    )
+    skip = set(waiting_for_printer)
+    for entry, article in rows:
+        if entry.held or article.paused or article.archived_at is not None or (
+            not article.target_model and article.printer_id is None
+        ):
+            found.held += entry.prints
+            continue
+        if article.id in skip:
+            if article.printer_id is not None:
+                found.parked.extend([(article.printer_id, article.name)] * entry.prints)
+            else:
+                found.unplaced += entry.prints
+            continue
+        facts = board.file_facts.get((article.library_file_id, article.file_fingerprint))
+        seconds = facts.plate_seconds.get(article.plate_id) if facts is not None else None
+        item = PlanItem(
+            item_id=0,  # not in Bambuddy yet
+            label=article.name,
+            own=True,
+            status="pending",
+            printer_id=article.printer_id,  # the chosen printer wins over the model (`dispatch._reserve`)
+            target_model=None if article.printer_id is not None else article.target_model,
+            target_location=None,
+            duration=None if seconds is None else timedelta(seconds=seconds),
+            manual_start=False,
+            starts_later=False,
+            nozzle=facts.nozzle if facts is not None else None,
+        )
+        found.items.extend([item] * entry.prints)
     return found
 
 
@@ -193,17 +263,34 @@ def _bar_view(bar: Bar, ax: Axis, now: datetime, lang: str) -> BarView:
     )
 
 
+def _plan(
+    db: Session, board: PrinterBoard, queue: Sequence[QueueItem] | None, now: datetime, *, known: bool,
+    waiting_for_printer: Collection[int],
+) -> tuple[Plan, Backlog] | None:
+    """The one calculation behind the overview's plan and the queue page's times (Spec 10.3a); None while
+    the printers' state is not known."""
+    printers = plan_printers(board)
+    if not known or printers is None:
+        return None
+    own = backlog(db, board, waiting_for_printer)
+    plan = build_plan(
+        printers, plan_items(db, queue or [], now), now, shortest_first=board.shortest_first,
+        backlog=own.items, free_slots=own.free_slots, insert_next=own.insert_next, parked=own.parked,
+    )
+    return plan, own
+
+
 def plan_view(
     db: Session, board: PrinterBoard, queue: Sequence[QueueItem] | None, now: datetime, lang: str, *, known: bool,
-    live: bool = False,
+    live: bool = False, waiting_for_printer: Collection[int] = (),
 ) -> PlanView:
     """The print plan for the page. `known` False (Bambuddy not set up or not answering) or a board
     without printers: "Druckerzustand unbekannt". `live`: Bambuddy's live channel is connected; it reports
     every change of a printer, so the state is current however old its last message is (no "as of")."""
-    printers = plan_printers(board)
-    if not known or printers is None:
+    built = _plan(db, board, queue, now, known=known, waiting_for_printer=waiting_for_printer)
+    if built is None:
         return PlanView(known=False)
-    plan = build_plan(printers, plan_items(db, queue or [], now), now, shortest_first=board.shortest_first)
+    plan, own = built
     ax = axis(now, plan.finish)
     lanes = tuple(
         LaneView(
@@ -217,6 +304,59 @@ def plan_view(
     return PlanView(
         known=True, lanes=lanes, ticks=ax.ticks,
         finish=_when(plan.finish, now, lang) if plan.finish is not None else "",
-        minimum=plan.finish_is_minimum, without=plan.without, unplaced=plan.unplaced, manual=plan.manual,
-        waiting_here=sum(workqueue.queued_prints(db).values()), stale=stale,
+        minimum=plan.finish_is_minimum, without=plan.without, unplaced=plan.unplaced + own.unplaced,
+        manual=plan.manual, held=own.held, no_slot=plan.no_slot, stopped=own.stopped, stale=stale,
     )
+
+
+# ---- the queue page: times of the prints in progress (Spec 10.3a, p647) -------------------------
+
+
+@dataclass(frozen=True)
+class PrintTimes:
+    start: str  # "" when not in the lanes; a running print: Bambuddy's start without "about", or "running"
+    end: str
+    duration: str  # the slicer's print time of the file, "Duration unknown"
+
+
+def in_progress_times(
+    db: Session, board: PrinterBoard, queue: Sequence[QueueItem] | None, now: datetime, lang: str, *,
+    known: bool, waiting_for_printer: Collection[int] = (),
+) -> dict[int, PrintTimes]:
+    """Per open print (`Dispatch.id`): start, end and print time, from the same plan as the overview's bars
+    (Spec 10.3a). A print found in no lane - not yet in Bambuddy's list, without a ready printer, waiting
+    for a start by hand or for a printer out of service, or the printers' state unknown - keeps its print
+    time but no start or end. The print time comes from Bambuddy's entry, for a print not in its list from
+    the file's facts of the last query (p646)."""
+    built = _plan(db, board, queue, now, known=known, waiting_for_printer=waiting_for_printer)
+    bars = {} if built is None else {
+        bar.item_id: bar for lane in built[0].lanes for bar in lane.bars if bar.item_id is not None
+    }
+    items = {item.id: item for item in queue or []}
+    rows = db.execute(
+        select(Dispatch, Article.file_fingerprint)
+        .join(Article, Article.id == Dispatch.article_id)
+        .where(Dispatch.status.in_(OPEN_STATES))
+    ).all()
+    found: dict[int, PrintTimes] = {}
+    for row, fingerprint in rows:
+        item = items.get(row.bambuddy_item_id) if row.bambuddy_item_id is not None else None
+        if item is not None:
+            seconds = item.print_time_seconds
+        else:
+            facts = board.file_facts.get((row.library_file_id, fingerprint)) if row.library_file_id else None
+            seconds = facts.plate_seconds.get(row.plate_id) if facts is not None and row.plate_id else None
+        duration = (translate(lang, "overview.plan.unknown_duration") if seconds is None
+                    else _span(timedelta(seconds=seconds)))
+        bar = bars.get(row.bambuddy_item_id) if row.bambuddy_item_id is not None else None
+        if bar is None:
+            found[row.id] = PrintTimes("", "", duration)
+            continue
+        if bar.kind == "running":
+            started = item.started_at if item is not None else None
+            start = to_local(started).strftime("%H:%M") if started is not None else translate(lang, "queue.running")
+        else:
+            start = translate(lang, "queue.time_about", time=_when(bar.start, now, lang))
+        end_key = "queue.time_about" if bar.duration_known else "queue.time_at_least"
+        found[row.id] = PrintTimes(start, translate(lang, end_key, time=_when(bar.end, now, lang)), duration)
+    return found
