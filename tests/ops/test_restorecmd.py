@@ -767,3 +767,12 @@ def test_a_note_that_cannot_be_written_changes_nothing_about_the_refusal(tmp_pat
         archive.writestr("hello.txt", "hi")
     code, said, _ = run(stranger, target)
     assert code == restorecmd.EXIT_REFUSED and "not a Reprintbuddy backup" in said.text()
+
+
+@pytest.mark.parametrize("passwords", [["nope-1", "nope-2", "nope-3"], ["", "", ""]], ids=["wrong", "missing"])
+def test_a_wrong_or_missing_password_is_not_noted(tmp_path, source, target, passwords):
+    """Decision: as on the page, which keeps the upload and lets the password be tried again, a wrong or
+    missing password is no refusal for the log, also after the last try on the command line."""
+    code, _, asked = run(backup_of(source, tmp_path, SECRET_BACKUP_PASSWORD), target, passwords=passwords)
+    assert code == restorecmd.EXIT_REFUSED and len(asked) == 3
+    assert noted(target) == []

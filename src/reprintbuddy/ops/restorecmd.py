@@ -184,8 +184,9 @@ def _note(db_path: Path, now: datetime, kind: str, details: dict[str, str] | Non
 def _restore(archive, db_path, runner, ask_password, say, complain, now, probe, state) -> int:
     def refuse(code: int, text: str, reason: str | None = None) -> int:
         """`reason`: a backup was looked at and refused, logged as on the page (`restore_reason`). Without
-        one the command was asked wrongly (no file, the service runs) and nothing is logged: the page has
-        no such case."""
+        one nothing is logged: the command was asked wrongly (no file, the service runs), which the page has
+        no case for, or the password was wrong or missing, which the page lets try again and does not log
+        either (decision for the command line: the same)."""
         if reason is not None:
             _note(db_path, now, "restore_rejected", {"reason": restore_reason(reason)})
         complain(f"reprintbuddy: {text}")
