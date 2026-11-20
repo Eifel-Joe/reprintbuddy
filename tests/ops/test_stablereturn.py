@@ -19,12 +19,13 @@ from package_support import build_archive
 
 from reprintbuddy.db import MIGRATIONS_DIR, make_engine, upgrade
 from reprintbuddy.ops.backup import backup_database, backup_dir_for
-from reprintbuddy.ops.migrationsteps import current_revision, graph_of_dir
+from reprintbuddy.ops.migrationsteps import current_revision, graph_of_dir, head_of_dir
 from reprintbuddy.ops.package import PackageError
 from reprintbuddy.ops.releases import Release, checksum_name, package_name
 from reprintbuddy.ops.stablereturn import Loss, assess, build_stable_db, entries_since, prepare_target
 
-STABLE = graph_of_dir(MIGRATIONS_DIR / "versions")  # head 0022, as the package of v1.0.0 carries it
+STABLE = graph_of_dir(MIGRATIONS_DIR / "versions")  # this code's steps, as the package of v1.0.0 carries them
+HEAD = head_of_dir(MIGRATIONS_DIR / "versions")  # the stable head in these tests
 BACKUP_AT = datetime(2026, 11, 10, 9, 30, tzinfo=UTC)
 
 
@@ -53,7 +54,7 @@ def add_activity(path, n=1):
 
 
 class Beta:
-    """A data folder whose database stands on a pre-release with `steps` after the stable head 0022."""
+    """A data folder whose database stands on a pre-release with `steps` after the stable head (`HEAD`)."""
 
     def __init__(self, tmp_path: Path, *steps: str):
         self.scripts = beta_scripts(tmp_path, *steps) if steps else None
@@ -62,7 +63,7 @@ class Beta:
         self.db = self.data / "r.db"
         self.work = self.data / ".return"
         engine = make_engine(self.db)
-        upgrade(engine, revision="0022")
+        upgrade(engine, revision=HEAD)
         engine.dispose()
         self.order = add_order(self.db)
         add_journal(self.db, 2)
@@ -81,7 +82,7 @@ class Beta:
 
 def test_case_1_when_the_database_stands_on_the_stable_head(tmp_path):
     plan = Beta(tmp_path).assess()
-    assert (plan.case, plan.target, plan.target_head, plan.db_revision) == (1, "v1.0.0", "0022", "0022")
+    assert (plan.case, plan.target, plan.target_head, plan.db_revision) == (1, "v1.0.0", HEAD, HEAD)
     assert plan.losses == () and plan.unavailable is None
 
 
@@ -128,9 +129,9 @@ def test_case_3_for_rework_unmarked_steps_and_a_failed_rehearsal(tmp_path, steps
 
 def test_case_3_when_the_stable_head_is_not_in_the_history_of_the_pre_release(tmp_path):
     beta = Beta(tmp_path, "add_table")
-    other = dict(STABLE) | {"0023x": "0022"}  # a stable version with a step this pre-release does not know
+    other = dict(STABLE) | {f"{HEAD}x": HEAD}  # a stable version with a step this pre-release does not know
     plan = beta.assess(other)
-    assert (plan.case, plan.why3, plan.target_head) == (3, "not_in_history", "0023x")
+    assert (plan.case, plan.why3, plan.target_head) == (3, "not_in_history", f"{HEAD}x")
 
 
 def test_no_way_back_without_the_backup_from_before_the_pre_release(tmp_path):
@@ -175,7 +176,7 @@ def test_build_case_2_removes_what_was_added_and_switches_the_channel(tmp_path):
     sql(beta.db, "INSERT INTO settings (key, value) VALUES ('update_channel', ?)", json.dumps("prerelease"))
     sql(beta.db, "INSERT INTO t_notes (order_id, text) VALUES (?, 'a')", beta.order)
     out = build_stable_db(beta.assess(), beta.db, tmp_path / "stable.db", script_location=beta.scripts)
-    assert current_revision(out) == "0022"
+    assert current_revision(out) == HEAD
     assert "t_notes" not in tables(out)
     assert sql(out, "SELECT reference FROM orders") == [("A-1",)]
     assert channel(out) == "stable"
@@ -194,7 +195,7 @@ def test_build_case_3_is_the_backup_with_the_channel_switched(tmp_path):
 def test_build_case_1_is_a_copy_with_the_channel_switched(tmp_path):
     beta = Beta(tmp_path)
     out = build_stable_db(beta.assess(), beta.db, tmp_path / "stable.db")
-    assert current_revision(out) == "0022" and channel(out) == "stable"
+    assert current_revision(out) == HEAD and channel(out) == "stable"
 
 
 def test_build_refuses_a_plan_without_a_way_back(tmp_path):
@@ -282,7 +283,7 @@ class CutOff:
             self.data,
             UpdateStatus(
                 state=state, step=step, from_tag=BETA_TAG, to_tag="v1.1.0", started_at=CUT_AT, kind=kind,
-                return_case=2, target_head="0022", reason=reason, backup=str(self.data / "backups" / "b.db"),
+                return_case=2, target_head=HEAD, reason=reason, backup=str(self.data / "backups" / "b.db"),
             ),
         )
 

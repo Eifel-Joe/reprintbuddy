@@ -346,7 +346,8 @@ def _entry(sort: FilamentSort, grams: float, spools: int) -> SortStock:
 
 def stock_from_snapshots(session: Session) -> tuple[dict[int, SortStock], date | None]:
     """Stock from the rows of the latest recorded day; `({}, None)` without any record. Rows of a
-    legacy sort (not yet converted) count for nothing."""
+    legacy sort (not yet converted) and the last rows of archived spools (Spec 9.2, p717) count for
+    nothing."""
     latest = session.scalar(select(func.max(FilamentSnapshot.day)))
     if latest is None:
         return {}, None
@@ -355,7 +356,9 @@ def stock_from_snapshots(session: Session) -> tuple[dict[int, SortStock], date |
     rows = session.scalars(
         select(FilamentSnapshot)
         .join(FilamentSort, FilamentSort.id == FilamentSnapshot.spool_filament_id)
-        .where(FilamentSnapshot.day == latest, FilamentSort.legacy.is_(False))
+        .where(
+            FilamentSnapshot.day == latest, FilamentSort.legacy.is_(False), FilamentSnapshot.archived.is_(False)
+        )
     )
     for row in rows:
         grams[row.spool_filament_id] += row.remaining_g
@@ -367,9 +370,11 @@ def stock_from_snapshots(session: Session) -> tuple[dict[int, SortStock], date |
 
 
 def record_snapshot(session: Session, spools: Sequence[Spool], day: date) -> int:
-    """One row per non-archived spool and day; a second call on the same day overwrites."""
+    """One row per non-archived spool and day; a second call on the same day overwrites. An archived
+    spool keeps one last row (`_record_archived`). Returns the number of living spools."""
     live = [s for s in spools if not s.archived]
-    ids = sync_sorts(session, live, [s for s in spools if s.archived])
+    archived = [s for s in spools if s.archived]
+    ids = sync_sorts(session, live, archived)
     for spool in live:
         row = session.scalar(
             select(FilamentSnapshot).where(
@@ -383,14 +388,72 @@ def record_snapshot(session: Session, spools: Sequence[Spool], day: date) -> int
         row.remaining_g = spool.remaining_g
         row.label_g = spool.label_g
         row.spool_created_at = spool.created_at
-    # a spool recorded earlier today that is archived or gone now must not count any more
+        row.archived = False  # taken out of the archive again
+    kept = _record_archived(session, archived, day)
+    # a spool recorded earlier today that is gone from the list now must not count any more; an
+    # archived one keeps its row, marked (Spec 9.2, p717)
     gone = select(FilamentSnapshot).where(FilamentSnapshot.day == day)
-    if live:
-        gone = gone.where(FilamentSnapshot.spool_id.not_in([s.id for s in live]))
+    if live or kept:
+        gone = gone.where(FilamentSnapshot.spool_id.not_in([s.id for s in live] + kept))
     for row in session.scalars(gone).all():
         session.delete(row)
     session.flush()
     return len(live)
+
+
+def _record_archived(session: Session, archived: Sequence[Spool], today: date) -> list[int]:
+    """The last row of each archived spool whose latest row is still a living one; returns the ids of
+    the archived spools that have a row today.
+
+    Root (p717): until 1.2.1 the row of a spool archived on the same day was deleted, so a spool printed
+    empty and archived that day lost its use of the day. Spec 9.2: its use counts up to its last weight,
+    also on that day; the stock and the number of spools leave it out (`stock_from_snapshots`).
+
+    The row lands on the day of `archived_at` (UTC), never before the spool's latest row (that row is
+    overwritten) and never after today; without a time it is today. So a pause of the record, or the
+    update from 1.2.1 (which had dropped that row), does not move the use to today. In Spoolman mode
+    Bambuddy sends the spool's last use there (else its registration): the day of its last print, as
+    right for the use. Its spool sort is that of the latest row, so the spool's series stays in one sort.
+    After that the spool gets no row any more: the record does not grow with the archive.
+    Rejected: a row on every day for every archived spool (the table would grow with the archive, and
+    nothing changes); always today (a pause or the update would put old use on today).
+    Tests: tests/domain/test_filament_archived.py.
+    """
+    if not archived:
+        return []
+    by_id = {s.id: s for s in archived}
+    latest_day = (
+        select(FilamentSnapshot.spool_id, func.max(FilamentSnapshot.day).label("day"))
+        .where(FilamentSnapshot.spool_id.in_(list(by_id)))
+        .group_by(FilamentSnapshot.spool_id)
+        .subquery()
+    )
+    latest = session.scalars(
+        select(FilamentSnapshot).join(
+            latest_day,
+            (FilamentSnapshot.spool_id == latest_day.c.spool_id) & (FilamentSnapshot.day == latest_day.c.day),
+        )
+    ).all()
+    today_ids: list[int] = []
+    for last in latest:
+        spool = by_id[last.spool_id]
+        if last.archived:
+            if last.day == today:
+                today_ids.append(spool.id)
+            continue
+        wanted = spool.archived_at.date() if spool.archived_at is not None else today
+        target = min(max(wanted, last.day), today)
+        row = last
+        if target != last.day:
+            row = FilamentSnapshot(day=target, spool_id=spool.id, spool_filament_id=last.spool_filament_id)
+            session.add(row)
+        row.remaining_g = spool.remaining_g
+        row.label_g = spool.label_g
+        row.spool_created_at = spool.created_at
+        row.archived = True
+        if target == today:
+            today_ids.append(spool.id)
+    return today_ids
 
 
 def consumption(session: Session, sort_ids: int | Collection[int], today: date) -> tuple[float, int]:

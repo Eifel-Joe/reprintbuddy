@@ -258,7 +258,10 @@ def _spools_seen(session: Session, spools: Sequence[Spool] | None) -> list[_NewS
     latest = session.scalar(select(func.max(FilamentSnapshot.day)))
     if latest is None:
         return []
-    rows = session.scalars(select(FilamentSnapshot).where(FilamentSnapshot.day == latest))
+    # the last row of an archived spool is no spool there (Spec 9.2, p717)
+    rows = session.scalars(
+        select(FilamentSnapshot).where(FilamentSnapshot.day == latest, FilamentSnapshot.archived.is_(False))
+    )
     return [_NewSpool(r.spool_filament_id, r.label_g, r.spool_created_at) for r in rows]
 
 

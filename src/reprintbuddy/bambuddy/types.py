@@ -223,3 +223,6 @@ class Spool:
     remaining_g: float  # `label_weight - weight_used`, never below 0
     archived: bool  # `archived_at` is set
     created_at: datetime | None  # naive UTC
+    # naive UTC; in Spoolman mode Bambuddy sends the spool's last use (else its registration) here.
+    # The day of an archived spool's last row in the record (Spec 9.2, p717).
+    archived_at: datetime | None = None
