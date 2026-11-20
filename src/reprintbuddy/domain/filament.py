@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Date, Float, Select, and_, case, func, literal, select, type_coerce
 from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy.activity.capture import quiet
@@ -475,6 +475,113 @@ def consumption(session: Session, sort_ids: int | Collection[int], today: date) 
     for spool_id, day, grams in rows:
         series[spool_id].append((day, grams))
     return rules.consumption_per_day(series)
+
+
+# ---- the views of the column "Verbrauch" on the filament page (Spec 9.3, p717) ----------------
+
+USAGE_VIEWS = ("avg30", "avg7", "today", "yesterday", "week", "month", "year", "total")
+USAGE_DEFAULT = "avg30"  # the base of the reorder suggestions
+USAGE_AVERAGES = frozenset({"avg30", "avg7"})
+# days of the window; None: since the record began
+USAGE_WINDOW: dict[str, int | None] = {
+    "avg30": WINDOW_DAYS, "avg7": 7, "today": 1, "yesterday": 1, "week": 7, "month": 30, "year": 365, "total": None,
+}
+# (first, last) day of the window, counted back from today; the first row is the base of the first drop
+_USAGE_RANGE: dict[str, tuple[int | None, int]] = {
+    "avg30": (WINDOW_DAYS, 0), "avg7": (7, 0), "today": (1, 0), "yesterday": (2, 1),
+    "week": (7, 0), "month": (30, 0), "year": (365, 0), "total": (None, 0),
+}
+
+
+@dataclass(frozen=True)
+class Usage:
+    grams: float  # per day for an average, else the sum of the window
+    days: int  # days between the first and the last row of the window (an average divides by them)
+
+
+def usage(session: Session, sort_ids: Collection[int], today: date) -> dict[str, dict[int, Usage]]:
+    """Every view of the column "Verbrauch" for each spool sort: view -> sort id -> `Usage`. A sort
+    without two days of record in a window is missing in that view (the page says "noch kein Verlauf").
+
+    The rule of `consumption` (Spec 9.2), which the reorder suggestions keep using: per spool only the
+    decreases between two consecutive rows count, both inside the window; an average divides by the days
+    between the first and the last row of the sort in the window, at most the window. So Ø 30 days on the
+    page is the reorder's number, and the month is that average times its days. The last row of an
+    archived spool counts (p717).
+
+    Two queries for all views and sorts (`LAG` per spool, sums per window): one over the last year for
+    every window up to it, one over the whole record for the total (the record is never deleted). The
+    total is the costly part, the year keeps the others from reading the whole record (measured with
+    80 spools over 3 years, 87 680 rows: p717 report).
+    Rejected: `consumption` per sort and view (eight queries per row), and loading every row into Python
+    (the total would carry the whole record over to Python on every view of the page).
+    Tests: tests/domain/test_filament_usage.py.
+    """
+    ids = list(sort_ids)
+    found: dict[str, dict[int, Usage]] = {view: {} for view in USAGE_VIEWS}
+    if not ids:
+        return found
+    ranges = set(_USAGE_RANGE.values())
+    total = (None, 0)
+    sums = _window_sums(session, ids, today, sorted(ranges - {total}))
+    for sort_id, values in _window_sums(session, ids, today, [total]).items():
+        sums.setdefault(sort_id, {}).update(values)
+    for sort_id, per_range in sums.items():
+        for view in USAGE_VIEWS:
+            used, first_day, last_day = per_range[_USAGE_RANGE[view]]
+            if first_day is None or last_day is None or last_day <= first_day:
+                continue  # under two days of record in the window
+            days = (last_day - first_day).days
+            window = USAGE_WINDOW[view]
+            if window is not None:
+                days = min(days, window)
+            grams = float(used)
+            found[view][sort_id] = Usage(grams / days if view in USAGE_AVERAGES else grams, days)
+    return found
+
+
+def _window_sums(
+    session: Session, ids: list[int], today: date, ranges: list[tuple[int | None, int]]
+) -> dict[int, dict[tuple[int | None, int], tuple[float, date | None, date | None]]]:
+    """Per sort and range (first, last day back from today; first None: since the record began): the sum
+    of the decreases between consecutive rows of each spool inside the range, and the first and last day
+    of a row inside it. Only the rows from the earliest first day on are read."""
+    snap = FilamentSnapshot
+    partition = (snap.spool_filament_id, snap.spool_id)
+    firsts = [first for first, _ in ranges]
+    where = [snap.spool_filament_id.in_(ids), snap.day <= today]
+    if None not in firsts:
+        where.append(snap.day >= today - timedelta(days=max(firsts)))
+    lagged = (
+        select(
+            snap.spool_filament_id.label("sort_id"),
+            snap.day.label("day"),
+            snap.remaining_g.label("grams"),
+            type_coerce(func.lag(snap.day).over(partition_by=partition, order_by=snap.day), Date).label("prev_day"),
+            type_coerce(func.lag(snap.remaining_g).over(partition_by=partition, order_by=snap.day), Float).label("prev_g"),
+        )
+        .where(*where)
+        .subquery()
+    )
+    columns = [lagged.c.sort_id]
+    for first, last in ranges:
+        hi = literal(today - timedelta(days=last), Date)
+        if first is None:
+            inside, pair = lagged.c.day <= hi, lagged.c.prev_day.is_not(None)
+        else:
+            lo = literal(today - timedelta(days=first), Date)
+            inside, pair = and_(lagged.c.day >= lo, lagged.c.day <= hi), lagged.c.prev_day >= lo
+        drop = and_(pair, lagged.c.day <= hi, lagged.c.prev_g > lagged.c.grams)
+        columns += [
+            func.coalesce(func.sum(case((drop, lagged.c.prev_g - lagged.c.grams), else_=0.0)), 0.0),
+            type_coerce(func.min(case((inside, lagged.c.day))), Date),
+            type_coerce(func.max(case((inside, lagged.c.day))), Date),
+        ]
+    out: dict[int, dict[tuple[int | None, int], tuple[float, date | None, date | None]]] = {}
+    for row in session.execute(select(*columns).group_by(lagged.c.sort_id)):
+        values = row[1:]
+        out[row[0]] = {r: tuple(values[3 * n: 3 * n + 3]) for n, r in enumerate(ranges)}
+    return out
 
 
 def known_sorts(

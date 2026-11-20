@@ -51,10 +51,11 @@ async def filament_list(request: Request):
     directory = [s for s in db.scalars(select(FilamentSort)) if s.id in ticked and not s.legacy]
     configured = set(db.scalars(select(FilamentSettings.spool_filament_id)))
     demand = reorder.filament_demand(db)
+    # every view of the column "Verbrauch" in one query; the page shows Ø 30 days, the script the choice
+    usage = filament.usage(db, [sort.id for sort in directory], today)
     rows = []
     for sort in directory:
         entry = sorts.get(sort.id) if sorts is not None else None
-        per_day, days = filament.consumption(db, sort.id, today)
         is_reordered = sort.id in reordered
         rows.append({
             "id": sort.id,
@@ -63,7 +64,7 @@ async def filament_list(request: Request):
             "swatch": sort.color_hex if sort.color_hex and COLOR.fullmatch(sort.color_hex) else None,
             "stock": f"{entry.stock_g:.0f}" if entry is not None else None,
             "spools": entry.spools if entry is not None else None,
-            "per_day": per_day if days else None,  # `num` filter
+            "usage": {view: usage[view].get(sort.id) for view in filament.USAGE_VIEWS},  # `num` filter
             "demand": f"{demand.get(sort.id, 0.0):.0f}" if is_reordered else None,
             "reordered": is_reordered,
             "configured": sort.id in configured,
@@ -87,7 +88,29 @@ async def filament_list(request: Request):
     return render(
         request, "filament_list.html", active_nav="filament", rows=rows, unmapped=unmapped, cards=cards,
         live=sorts is not None and day is None, stale_day=stale_day, as_of=as_of,
+        usage_views=_usage_views(lang, rows),
     )
+
+
+def _usage_views(lang: str, rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """The views of the column "Verbrauch" for the head and the switch (Spec 9.3, p717).
+
+    The head names the view; an average adds over how many days, while the record is shorter than its
+    window ("Ø 30 Tage, bisher 6"). Those days are the longest of the rows shown: a sort recorded for
+    fewer days says its own days in its cell (`short` there), so the head never claims more than a row has.
+    """
+    views = []
+    for view in filament.USAGE_VIEWS:
+        name = translate(lang, f"filament.usage.view.{view}")
+        average = view in filament.USAGE_AVERAGES
+        days = max((u.days for r in rows if (u := r["usage"][view]) is not None), default=0)
+        window = filament.USAGE_WINDOW[view]
+        note = translate(lang, "filament.usage.so_far", view=name, days=days) if average and 0 < days < window else name
+        views.append({
+            "view": view, "average": average, "name": name, "note": note, "days": days,
+            "title": translate(lang, "filament.col.per_day" if average else "filament.usage.head_sum"),
+        })
+    return views
 
 
 def _settings_page(request: Request, sort: FilamentSort, values: dict[str, object],
