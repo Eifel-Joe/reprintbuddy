@@ -57,7 +57,7 @@ Mit **Speichern** auf der Karte werden alle fünf Werte zusammen gespeichert. Ei
 - **Automatik je Artikel.** Zum Einschalten braucht der Artikel ein Druckziel. Ohne eines würde die Automatik ihn sofort pausieren.
 - **Warteschlange anhalten.** Reprintbuddy übergibt nichts an Bambuddy, aber Einträge werden weiter in seiner Warteschlange angelegt. Ein Hinweis auf der Übersicht und der Warteschlange sagt das.
 - **Obergrenze offener Drucke in Bambuddy.** Sie zählt die Drucke von Reprintbuddy, die in Bambuddy eingereiht sind oder drucken. Ist die Obergrenze erreicht, wartet der Rest in Reprintbuddy. Mit mehr Druckern in Produktion erhöhst du sie.
-- **Als nächsten Druck einfügen.** An: Jeder Druck, den Reprintbuddy übergibt, kommt vor alle Drucke in Bambuddy, die nicht von Reprintbuddy stammen. Hinter seine eigenen wartenden Drucke, damit sie in Reprintbuddys Reihenfolge bleiben. Ein Druck, der schon läuft, wird nicht unterbrochen. Aus: Der Druck wird hinten angehängt.
+- **Als nächsten Druck einfügen.** An: Jeder Druck, den Reprintbuddy übergibt, kommt in Bambuddys Warteschlange vor alle Drucke, die nicht von Reprintbuddy stammen. Hinter seine eigenen wartenden Drucke, damit sie in Reprintbuddys Reihenfolge bleiben. Ein Druck, der schon läuft, wird nicht unterbrochen. Aus: Der Druck wird hinten an Bambuddys Warteschlange angehängt. Ersatzdrucke kommen in Bambuddys Warteschlange immer nach vorn, egal wie der Schalter steht: vor alle wartenden Drucke, auch vor Reprintbuddys eigene, und hinter die Ersatzdrucke von Reprintbuddy, die dort schon warten, damit sie in der Reihenfolge ihrer Übergabe bleiben. Ein laufender Druck bleibt. Ist auf Bambuddys Seite Warteschlange **SJF** (kürzester Auftrag zuerst) eingeschaltet, startet Bambuddy den kürzeren Druck zuerst und nimmt die Stelle in seiner Warteschlange nur bei gleicher Druckzeit; das gilt auch für Ersatzdrucke.
 - **Abfrage-Abstand (Minuten).** Wie oft Reprintbuddy Bambuddy nach seinen Drucken fragt. Änderst du ihn, kommt die nächste Abfrage sofort.
 
 ## Die regelmäßige Abfrage und der Live-Kanal
@@ -69,18 +69,18 @@ Außerdem hört Reprintbuddy auf Bambuddys **Live-Kanal**. Meldet Bambuddy, dass
 Was ein fertiger, fehlgeschlagener oder verschwundener Druck bewirkt:
 
 - **Fertig:** Die Einheiten werden vorläufig und warten in der Liste **Zu prüfen**. Ein Platz unter der Obergrenze wird frei. Siehe [Zu prüfen und Montage](inspection.md).
-- **Fehlgeschlagen:** Der Druck zählt nicht mehr als in Arbeit, und ein Ersatz über einen Druck kommt an den Anfang der Warteschlange (bei einem Druck aus dem Mindestbestand nur, wenn die Zielmenge ihn braucht, siehe unten). Zwei Fehlschläge hintereinander pausieren den Artikel. Ein fertiger Druck setzt die Zählung zurück.
+- **Fehlgeschlagen:** Der Druck zählt nicht mehr als in Arbeit, und ein Ersatz über einen Druck kommt an den Anfang von Reprintbuddys Warteschlange (bei einem Druck aus dem Mindestbestand nur, wenn die Zielmenge ihn braucht, siehe unten). Zwei Fehlschläge hintereinander pausieren den Artikel. Ein fertiger Druck setzt die Zählung zurück.
 - **In Bambuddy abgebrochen, übersprungen oder gelöscht:** Er zählt nicht mehr als in Arbeit, und die Automatik pausiert für diesen Artikel, damit sie nicht gegen das arbeitet, was du in Bambuddy getan hast. Ausgenommen sind Drucke, die Reprintbuddy nach einem Storno selbst gelöscht hat: Sie pausieren nichts (siehe [Was ein Storno zurücknimmt](inspection.md#was-ein-storno-zurucknimmt)).
 
 Drucke, die du direkt in Bambuddy startest, kennt Reprintbuddy nicht. Buche sie unter *Buchen* mit **Einbuchen ohne Druck**.
 
 ## Ersatz für Ausschuss und Fehlschläge
 
-Bestätigst du bei der Prüfung weniger gute Einheiten, als gedruckt wurden, legt Reprintbuddy sofort einen Ersatz-Eintrag an den Anfang der Warteschlange. Er enthält den Ausschuss, aufgerundet auf ganze Drucke, und ist mit **Ersatz für Ausschuss** gekennzeichnet. Ein fehlgeschlagener Druck bekommt einen Eintrag über einen Druck, gekennzeichnet mit **Ersatz für Fehlschlag**.
+Bestätigst du bei der Prüfung weniger gute Einheiten, als gedruckt wurden, legt Reprintbuddy sofort einen Ersatz-Eintrag an den Anfang seiner Warteschlange. Er enthält den Ausschuss, aufgerundet auf ganze Drucke, und ist mit **Ersatz für Ausschuss** gekennzeichnet. Ein fehlgeschlagener Druck bekommt einen Eintrag über einen Druck, gekennzeichnet mit **Ersatz für Fehlschlag**.
 
 Ersatz entsteht unabhängig von Hauptschalter und Artikelschalter. Drucke von Hand und Ersatz-Drucke werden immer voll ersetzt. Ein Druck aus dem Mindestbestand wird nur ersetzt, soweit die Zielmenge (Mindestbestand + Puffer, bei Teilen plus Bedarf aus Montage) ohne ihn nicht erreicht ist, gerechnet nach dem Ausschuss bzw. Fehlschlag: höchstens so viele Drucke, wie bis zur Zielmenge fehlen. Fehlt nichts, entsteht kein Ersatz, und das Journal sagt **Kein Ersatz nötig (Zielmenge erreicht)**. Das kommt vor, wenn ein Storno einen Druck über der Zielmenge übrig ließ, der schon druckte (siehe [Was ein Storno zurücknimmt](inspection.md#was-ein-storno-zurucknimmt)).
 
-Übergeben wird Ersatz wie jeder Eintrag, also nicht bei pausiertem Artikel oder angehaltener Warteschlange.
+Übergeben wird Ersatz wie jeder Eintrag, also nicht bei pausiertem Artikel oder angehaltener Warteschlange. In Bambuddys Warteschlange kommt er nach vorn, siehe **Als nächsten Druck einfügen** unter [Schalter und Einstellungen](#schalter-und-einstellungen).
 
 ## Pausen
 

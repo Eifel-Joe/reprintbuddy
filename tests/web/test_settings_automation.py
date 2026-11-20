@@ -178,3 +178,15 @@ def test_invalid_value_reopens_the_automation_tab(ready_client):
     assert 'id="automation-form"' in response.text
     assert en("settings.invalid_queue_cap") in response.text
     assert value(response.text, "queue_cap") == "abc"
+
+
+@pytest.mark.parametrize(("lang", "words"), [
+    ("en", ("Bambuddy's queue", "Replacement prints always go to the front of Bambuddy's queue", "SJF")),
+    ("de", ("Bambuddys Warteschlange", "Ersatzdrucke kommen in Bambuddys Warteschlange immer nach vorn", "SJF")),
+])
+def test_insert_next_hint_says_which_queue_and_names_replacements(lang, words):
+    """1.2.2 (Spec 7.3 "Ausnahme Ersatzdrucke"): the hint says it is Bambuddy's queue, that replacements
+    always go to its front, and that Bambuddy's "shortest job first" puts the print time first."""
+    hint = translate(lang, "settings.insert_next_hint")
+    for text in words:
+        assert text in hint, text

@@ -24,7 +24,7 @@ Jeder Nachdruck entsteht zuerst als Eintrag hier und wird von oben nach unten an
 | **Angelegt** | Wann der Eintrag entstand. |
 | **Zustand** | **wartet**, **zurückgehalten** oder **Artikel pausiert** (der Grund steht beim Darüberfahren). |
 
-Wohin neue Einträge kommen: Einträge der Regel ans Ende. Ersatz an den Anfang, weil du ihn sofort willst. Einträge von Hand dorthin, wo du sie hinsetzt, vorgegeben ans Ende.
+Wohin neue Einträge in Reprintbuddys Warteschlange kommen: Einträge der Regel ans Ende. Ersatz an den Anfang, weil du ihn sofort willst; bei der Übergabe kommt er auch in Bambuddys Warteschlange nach vorn (siehe unten). Einträge von Hand dorthin, wo du sie hinsetzt, vorgegeben ans Ende.
 
 ### Reihenfolge ändern
 
@@ -51,7 +51,7 @@ Das geht auch bei ausgeschalteter Automatik und über die Zielmenge hinaus. Ein 
 
 ## Wie Drucke zu Bambuddy kommen
 
-Reprintbuddy übergibt Einträge von oben nach unten, einen Druck nach dem anderen. Ein Eintrag über drei Drucke wird zu drei einzelnen Einträgen in Bambuddys Warteschlange und verschwindet aus Reprintbuddys Warteschlange, wenn sein letzter Druck übergeben ist. Jeder Druck geht mit Druckdatei, Platte und Druckziel des Artikels und startet ohne Freigabe; er bekommt die in Bambuddy eingestellten *Standard-Druckoptionen*. Wohin er in Bambuddys Warteschlange kommt, hängt von **Als nächsten Druck einfügen** ab, siehe [Automatik](automation.md#schalter-und-einstellungen).
+Reprintbuddy übergibt Einträge von oben nach unten, einen Druck nach dem anderen. Ein Eintrag über drei Drucke wird zu drei einzelnen Einträgen in Bambuddys Warteschlange und verschwindet aus Reprintbuddys Warteschlange, wenn sein letzter Druck übergeben ist. Jeder Druck geht mit Druckdatei, Platte und Druckziel des Artikels und startet ohne Freigabe; er bekommt die in Bambuddy eingestellten *Standard-Druckoptionen*. Wohin er in Bambuddys Warteschlange kommt, hängt von **Als nächsten Druck einfügen** ab, siehe [Automatik](automation.md#schalter-und-einstellungen). Ersatzdrucke kommen in Bambuddys Warteschlange immer nach vorn: vor alle wartenden Drucke und hinter die Ersatzdrucke von Reprintbuddy, die dort schon warten; ein laufender Druck bleibt. Ist in Bambuddy **SJF** (kürzester Auftrag zuerst) eingeschaltet, startet Bambuddy den kürzeren Druck zuerst und nimmt die Stelle nur bei gleicher Druckzeit.
 
 Reprintbuddy übergibt nur, solange in Bambuddy weniger eigene Drucke offen sind als die **Obergrenze offener Drucke in Bambuddy**. Übersprungen werden zurückgehaltene Einträge, Einträge pausierter Artikel und Einträge von Artikeln, deren Drucker alle im Wartungsmodus sind. Nichts wird übergeben, solange die Warteschlange angehalten ist, Bambuddy nicht erreichbar ist oder die Abfrage ablehnt, eine Übergabe unklar ist oder ein Update läuft.
 

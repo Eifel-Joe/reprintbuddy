@@ -40,7 +40,7 @@ All five settings of the card **Automation** are saved together; a wrong number 
 | **Automation (main switch)** | Off: the rule adds no entries to the queue. Replacements and manual prints still work. | off | Switch |
 | **Stop the queue (nothing is handed over to Bambuddy)** | Entries are still added to the queue, but nothing goes to Bambuddy. | off | Switch |
 | **Limit of open prints in Bambuddy** | How many prints may be queued or printing in Bambuddy at once. The rest waits in Reprintbuddy. | 10 | Whole number, 1 to 999 |
-| **Insert as next print** | On: ahead of all prints in Bambuddy that do not come from Reprintbuddy. Off: at the end. | off | Switch |
+| **Insert as next print** | On: in Bambuddy's queue ahead of all prints that do not come from Reprintbuddy. Off: at the end. Replacement prints always go to the front of Bambuddy's queue. If SJF (shortest job first) is on in Bambuddy, the print time decides there first. | off | Switch |
 | **Poll interval (minutes)** | How often Reprintbuddy asks Bambuddy about its prints. While the live channel is connected (see the *Bambuddy* tab), Bambuddy reports finished prints at once. | 15 | Whole number, 1 to 1440 |
 
 ## Labels

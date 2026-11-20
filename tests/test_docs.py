@@ -242,3 +242,25 @@ def test_contributing_explains_the_branches_and_the_way_to_a_stable_version(name
     # the pull request rule is in the list of rules above, too
     rules = text.split("\n## Pull requests\n" if lang == "en" else "\n## Pull Requests\n", 1)[1].split("\n## ", 1)[0]
     assert "`dev`" in rules, name
+
+
+# --- 1.2.2: replacement prints go to the front of Bambuddy's queue (Spec 7.3 "Ausnahme Ersatzdrucke") -------------
+
+REPLACEMENTS_FIRST = {
+    "en": "Replacement prints always go to the front of Bambuddy's queue",
+    "de": "Ersatzdrucke kommen in Bambuddys Warteschlange immer nach vorn",
+}
+
+
+@pytest.mark.parametrize("lang", ["en", "de"])
+@pytest.mark.parametrize(("page", "sjf"), [
+    ("use/automation", True), ("use/queue", True), ("operate/settings", True), ("help/limits", False),
+])
+def test_pages_say_replacements_go_to_the_front_of_bambuddys_queue(page, sjf, lang):
+    """The rule for "insert next" and its exception name Bambuddy's queue; where the place is explained, so is
+    Bambuddy's SJF ("shortest job first"), which puts the print time before the place."""
+    path = DOCS / (f"{page}.md" if lang == "en" else f"{page}.de.md")
+    text = " ".join(path.read_text(encoding="utf-8").split())
+    assert REPLACEMENTS_FIRST[lang] in text, path.name
+    if sjf:
+        assert "SJF" in text, path.name

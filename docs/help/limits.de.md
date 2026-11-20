@@ -21,7 +21,7 @@ Am sichersten hältst du deine Druckdateien in Bambuddys eigenem Dateimanager. N
 ## Was Reprintbuddy in Bambuddy nie tut
 
 - **Es steuert nie einen Drucker.** Kein Start, Stopp, keine Pause, kein Druckerbefehl. Welcher Drucker wann druckt, entscheidet Bambuddy.
-- **Es legt Einträge in Bambuddys Warteschlange an und sonst nichts.** Schaltest du **Als nächsten Druck einfügen** ein (*Einstellungen → Automatik*), setzt es den Eintrag beim Anlegen vor die Drucke, die nicht von Reprintbuddy stammen; ein laufender Druck wird nie unterbrochen. Siehe [Automatik](../use/automation.md).
+- **Es legt Einträge in Bambuddys Warteschlange an und sonst nichts.** Schaltest du **Als nächsten Druck einfügen** ein (*Einstellungen → Automatik*), setzt es den Eintrag beim Anlegen vor die Drucke, die nicht von Reprintbuddy stammen; ein laufender Druck wird nie unterbrochen. Ersatzdrucke kommen in Bambuddys Warteschlange immer nach vorn, auch bei ausgeschaltetem Schalter. Siehe [Automatik](../use/automation.md).
 - **Es ändert, sortiert, nimmt zurück oder löscht** übergebene Einträge **nie**. Was in Bambuddy liegt, gehört Bambuddy; Reihenfolge, Vorziehen und Löschen machst du dort.
 - **Es ändert, ersetzt, verschiebt und löscht keine vorhandenen Dateien oder Ordner** in Bambuddy. Das Einzige, was es in Bambuddys Dateimanager schreibt, ist eine **neue Druckdatei**, die du aus Reprintbuddy hochlädst, nie unter einem schon vorhandenen Namen. Ordner legt es nicht an, und eine Datei, die es hochgeladen hat, kann es nicht löschen; das geschieht in Bambuddy. Deshalb prüft es eine Datei, bevor es etwas sendet (siehe [Artikel](../use/articles.md)).
 - **Es schreibt nie in Spoolman** und spricht gar nicht mit Spoolman. Den Filamentbestand liest es über Bambuddy.

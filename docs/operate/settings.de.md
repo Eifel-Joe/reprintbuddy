@@ -40,7 +40,7 @@ Alle fünf Einstellungen der Karte **Automatik** werden zusammen gespeichert; ei
 | **Automatik (Hauptschalter)** | Aus: Die Regel legt keine Einträge in der Warteschlange an. Ersatz und von Hand drucken gehen weiter. | aus | Schalter |
 | **Warteschlange anhalten (nichts wird an Bambuddy übergeben)** | Einträge werden weiter angelegt, aber nichts geht an Bambuddy. | aus | Schalter |
 | **Obergrenze offener Drucke in Bambuddy** | Wie viele Drucke gleichzeitig in Bambuddy eingereiht oder im Druck sein dürfen. Der Rest wartet in Reprintbuddy. | 10 | Ganze Zahl, 1 bis 999 |
-| **Als nächsten Druck einfügen** | An: vor alle Drucke in Bambuddy, die nicht von Reprintbuddy stammen. Aus: hinten anhängen. | aus | Schalter |
+| **Als nächsten Druck einfügen** | An: in Bambuddys Warteschlange vor alle Drucke, die nicht von Reprintbuddy stammen. Aus: hinten anhängen. Ersatzdrucke kommen in Bambuddys Warteschlange immer nach vorn. Ist in Bambuddy SJF (kürzester Auftrag zuerst) an, entscheidet dort zuerst die Druckzeit. | aus | Schalter |
 | **Abfrage-Abstand (Minuten)** | Wie oft Reprintbuddy Bambuddy nach seinen Drucken fragt. Solange der Live-Kanal verbunden ist (siehe Reiter *Bambuddy*), meldet Bambuddy fertige Drucke sofort. | 15 | Ganze Zahl, 1 bis 1440 |
 
 ## Etiketten
