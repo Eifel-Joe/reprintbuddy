@@ -979,6 +979,7 @@
   "inspections.group_changed": "Die Drucke dieser Zeile haben sich inzwischen geändert (einer ist schon geprüft oder gehört nicht dazu). Es wurde nichts gebucht; bitte die Zeile neu zählen.",
   "inspections.field.scrap": "Ausschuss",
   "inspections.invalid_body": "Der Anfragekörper muss ein JSON-Objekt mit der ganzen Zahl scrap_units (oder good_units) sein.",
+  "inspections.invalid_group_body": "Der Anfragekörper muss ein JSON-Objekt mit inspection_ids (Liste ganzer Zahlen, mindestens eine) und der ganzen Zahl good_units sein.",
   "inspections.counts_mismatch": "good_units und scrap_units müssen zusammen {units} ergeben.",
   "inspections.subtitle": "Fertige Drucke, die auf die Zählung der guten Stücke warten",
   "inspections.empty": "Es warten keine Drucke auf die Prüfung.",

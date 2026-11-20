@@ -979,6 +979,7 @@
   "inspections.group_changed": "The prints of this row have changed meanwhile (one is already inspected or does not belong to it). Nothing was booked; please count the row again.",
   "inspections.field.scrap": "Scrap",
   "inspections.invalid_body": "The request body must be a JSON object with the whole number scrap_units (or good_units).",
+  "inspections.invalid_group_body": "The request body must be a JSON object with inspection_ids (a list of whole numbers, at least one) and the whole number good_units.",
   "inspections.counts_mismatch": "good_units and scrap_units must add up to {units}.",
   "inspections.subtitle": "Finished prints waiting for the count of good pieces",
   "inspections.empty": "No prints are waiting for inspection.",

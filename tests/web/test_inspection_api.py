@@ -48,7 +48,7 @@ def test_api_list(ready_client):
 
 def test_api_list_empty(ready_client):
     response = ready_client.get(LIST_URL)
-    assert response.status_code == 200 and response.json() == {"inspections": []}
+    assert response.status_code == 200 and response.json() == {"inspections": [], "articles": []}
 
 
 def test_api_resolve_good(ready_client):
@@ -62,7 +62,7 @@ def test_api_resolve_good(ready_client):
     assert count(ready_client, Article, a, "stock") == 1
     assert count(ready_client, Article, a, "provisional") == 0
     assert open_count(ready_client) == 0
-    assert ready_client.get(LIST_URL).json() == {"inspections": []}
+    assert ready_client.get(LIST_URL).json() == {"inspections": [], "articles": []}
 
 
 def test_api_resolve_scrap(ready_client):
@@ -314,4 +314,109 @@ def test_api_good_units_error_names_the_range_of_the_print(ready_client, body): 
     message = response.json()["message"]
     assert message == en("form.invalid_number", field=en("inspections.field.good"), min=0, max=1)
     assert "1000" not in message
+    assert open_count(ready_client) == 1
+
+
+# ---- per article (p713, Spec 8.2: browser and display use the same check) -----------------------------
+
+
+def api_post_article(client, article_id, body=None, *, raw=None, token=True):
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["X-CSRF-Token"] = csrf_of(client, PAGE)
+    content = raw if raw is not None else json.dumps(body)
+    return client.post(f"{LIST_URL}/articles/{article_id}", content=content, headers=headers)
+
+
+def test_api_list_has_articles(ready_client):
+    a, i1 = finished(ready_client, "Template A", units=2, needs_assembly=True)
+    b, i2 = finished(ready_client, "Template B", units=3)
+    _a, i3 = finished(ready_client, "Template A", units=2)
+    body = ready_client.get(LIST_URL).json()
+    assert [r["id"] for r in body["inspections"]] == [i1, i2, i3]  # unchanged: one per print
+    first, second = body["articles"]
+    assert first == {
+        "article_id": a, "article_name": "Template A", "needs_assembly": True, "units": 4,
+        "inspection_ids": [i1, i3], "finished_at": first["finished_at"],
+    }
+    assert len(first["finished_at"]) == 2 and all(t.endswith("+00:00") for t in first["finished_at"])
+    assert second["article_id"] == b and second["inspection_ids"] == [i2] and second["units"] == 3
+
+
+def test_api_list_of_one_article_has_its_row_only(ready_client):
+    a, _ = finished(ready_client, "Template A")
+    finished(ready_client, "Template B")
+    body = ready_client.get(LIST_URL, params={"article": a}).json()
+    assert [r["article_id"] for r in body["articles"]] == [a]
+
+
+def test_api_resolve_article(ready_client):
+    a, i1 = finished(ready_client, units=4, origin="manual")
+    _a, i2 = finished(ready_client, units=4, origin="manual")
+    ticks = []
+    ready_client.app.state.ticker.request_tick = lambda: ticks.append(1)
+    response = api_post_article(ready_client, a, {"inspection_ids": [i1, i2], "good_units": 5})
+    assert response.status_code == 200 and len(ticks) == 1
+    body = response.json()
+    assert (body["article_id"], body["good"], body["scrap"]) == (a, 5, 3)
+    assert [(p["id"], p["good"], p["scrap"]) for p in body["prints"]] == [(i1, 1, 3), (i2, 4, 0)]
+    assert body["prints"][0]["replacement_entry_id"] == body["replacement_entry_ids"][0]
+    assert len(body["replacement_entry_ids"]) == 1 and body["part_shortages"] == []
+    assert count(ready_client, Article, a, "stock") == 5
+
+
+def test_browser_and_api_share_the_group_domain(ready_client):
+    a, i1 = finished(ready_client, units=2)
+    _a, i2 = finished(ready_client, units=2)
+    api_post_article(ready_client, a, {"inspection_ids": [i1, i2], "good_units": 4})
+    page = ready_client.get(PAGE).text
+    assert en("inspections.empty") in page
+    assert journal_kinds(ready_client).count("inspection_good") == 2
+
+
+def test_api_article_changed_is_409(ready_client):  # Review Focus 2, p713 F3
+    a, i1 = finished(ready_client, units=2)
+    _a, i2 = finished(ready_client, units=2)
+    assert api_post(ready_client, i2, {"good_units": 2}).status_code == 200
+    response = api_post_article(ready_client, a, {"inspection_ids": [i1, i2], "good_units": 4})
+    assert response.status_code == 409
+    assert response.json()["error"] == "inspections.group_changed"
+    assert count(ready_client, Inspection, i1, "resolved_at") is None
+
+
+def test_api_article_good_out_of_range_names_the_target(ready_client):  # Review Focus 3
+    a, i1 = finished(ready_client, units=2)
+    _a, i2 = finished(ready_client, units=2)
+    response = api_post_article(ready_client, a, {"inspection_ids": [i1, i2], "good_units": 5})
+    assert response.status_code == 422
+    assert response.json()["message"] == en("form.invalid_number", field=en("inspections.field.good"), min=0, max=4)
+
+
+@pytest.mark.parametrize("body,raw", [
+    ({"good_units": 1}, None),                                # no ids
+    ({"inspection_ids": [], "good_units": 1}, None),          # empty ids
+    ({"inspection_ids": "1", "good_units": 1}, None),         # ids not a list
+    ({"inspection_ids": ["1"], "good_units": 1}, None),       # an id as text
+    ({"inspection_ids": [True], "good_units": 1}, None),      # an id as bool
+    ({"inspection_ids": [1.0], "good_units": 1}, None),       # an id as float
+    ({"inspection_ids": [1]}, None),                          # no count
+    ({"inspection_ids": [1], "good_units": True}, None),
+    ({"inspection_ids": [1], "good_units": 1.0}, None),
+    ({"inspection_ids": [1], "good_units": "1"}, None),
+    ({"inspection_ids": [1], "good_units": None}, None),
+    ([1], None),
+    (None, "not json"),
+])
+def test_api_article_invalid_body(ready_client, body, raw):
+    a, i = finished(ready_client, units=1)
+    response = api_post_article(ready_client, a, body, raw=raw)
+    assert response.status_code == 422
+    assert set(response.json()) == {"error", "message"}
+    assert open_count(ready_client) == 1
+
+
+def test_api_article_requires_csrf_header(ready_client):
+    a, i = finished(ready_client)
+    response = api_post_article(ready_client, a, {"inspection_ids": [i], "good_units": 1}, token=False)
+    assert response.status_code in (400, 403)
     assert open_count(ready_client) == 1

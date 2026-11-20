@@ -282,7 +282,7 @@ async def api_list(request: Request, db: Session = Depends(get_db)):
         return _api_error(request, ValidationError(
             "form.invalid_number", field="articles.title", min=1, max=MAX_QTY
         ))
-    rows = inspection.list_open(db, article_id=article_id)
+    groups = inspection.list_groups(db, article_id=article_id)
     return {
         "inspections": [
             {
@@ -292,10 +292,77 @@ async def api_list(request: Request, db: Session = Depends(get_db)):
                 "units": r.units,
                 "needs_assembly": r.needs_assembly,
                 # The database holds naive UTC; the interface says so.
-                "created_at": r.created_at.replace(tzinfo=UTC).isoformat(),
+                "created_at": _utc(r.created_at),
             }
-            for r in rows
-        ]
+            for r in sorted((p for g in groups for p in g.prints), key=lambda r: (r.created_at, r.id))
+        ],
+        # p713 (Spec 8.2): the rows of the page, one per article, for a display that books like the browser.
+        "articles": [
+            {
+                "article_id": g.article_id,
+                "article_name": g.article_name,
+                "needs_assembly": g.needs_assembly,
+                "units": g.units,
+                "inspection_ids": g.ids,
+                "finished_at": [_utc(p.created_at) for p in g.prints],
+            }
+            for g in groups
+        ],
+    }
+
+
+def _utc(at) -> str:
+    return at.replace(tzinfo=UTC).isoformat()
+
+
+def _group_body(raw: bytes) -> tuple[list[int], int | str]:
+    """`(inspection_ids, good_units)` of a JSON body for the row of an article (p713).
+
+    Both are needed: the ids are the prints the display showed, so a print reported after it drew
+    the row is not booked unseen (as on the page). Ids are whole numbers (no bool, no 1.0, no text)
+    and at least one; a count of the wrong type is handed on as text, so the domain refuses it with
+    the range of the row (the same text as on the page)."""
+    try:
+        body = json.loads(raw)
+    except (ValueError, RecursionError):
+        raise ValidationError("inspections.invalid_group_body") from None
+    if not isinstance(body, dict) or "good_units" not in body:
+        raise ValidationError("inspections.invalid_group_body")
+    ids = body.get("inspection_ids")
+    if (
+        not isinstance(ids, list) or not ids
+        or any(isinstance(i, bool) or not isinstance(i, int) for i in ids)
+    ):
+        raise ValidationError("inspections.invalid_group_body")
+    good = body["good_units"]
+    if isinstance(good, bool) or not isinstance(good, int):
+        good = str(good)
+    return ids, good
+
+
+@router.post("/api/inspections/articles/{article_id:int}", dependencies=[Depends(verify_csrf)])
+async def api_resolve_article(article_id: int, request: Request):
+    """The row of an article by its good pieces: the same domain function as the page (Spec 8.2)."""
+    try:
+        raw = await request.body()
+    except RuntimeError:
+        raw = b""
+    try:
+        ids, good = _group_body(raw)
+        with write_transaction(request) as tx:
+            result = inspection.resolve_group(tx, article_id, ids, good, "user")
+    except DomainError as exc:
+        return _api_error(request, exc)
+    return {
+        "article_id": result.article_id,
+        "good": result.good,
+        "scrap": result.scrap,
+        "prints": [
+            {"id": p.inspection_id, "good": p.good, "scrap": p.scrap, "replacement_entry_id": p.replacement_entry_id}
+            for p in result.prints
+        ],
+        "replacement_entry_ids": [p.replacement_entry_id for p in result.prints if p.replacement_entry_id is not None],
+        "part_shortages": [{"part_id": s.part_id, "needed": s.needed, "had": s.had} for s in result.shortages],
     }
 
 
