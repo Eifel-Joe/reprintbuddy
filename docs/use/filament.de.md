@@ -7,7 +7,8 @@ Reprintbuddy beobachtet dein Filament, damit es rechtzeitig Bestellungen vorschl
 - Bambuddy führt das Filament, entweder mit seiner eigenen Spulenverwaltung oder im Spoolman-Modus. **Spoolman ist optional.** Reprintbuddy liest die Spulenliste über Bambuddy, aus der Betriebsart, die gerade läuft, und schreibt nie hinein. Mit Spoolman selbst spricht es nie. Dafür braucht die Bambuddy-Gruppe die Rechte aus der [Ersteinrichtung](../start/setup.md).
 - Bambuddy gibt Spulen keine Kennung, die sie zusammenfasst. Eine **Spulensorte** sind deshalb alle Spulen mit gleicher Marke, gleichem Material, gleichem Untertyp und gleichem Farbwert. Der Farbname zählt nicht. Sorten werden nie zusammengelegt: zwei Spulen, deren Farbwerte sich leicht unterscheiden, sind zwei Sorten (du kannst für einen Artikel beide ankreuzen).
 - Der **Bestand** einer Spulensorte ist die Summe der Restgewichte ihrer Spulen, die nicht archiviert sind, in Gramm.
-- Bei jeder regelmäßigen Abfrage hält Reprintbuddy das Restgewicht jeder Spule für den Tag fest. Aus den letzten 30 Tagen errechnet es den **Verbrauch je Tag** einer Sorte.
+- Bei jeder regelmäßigen Abfrage hält Reprintbuddy das Restgewicht jeder Spule für den Tag fest. Aus den letzten 30 Tagen errechnet es den **Verbrauch je Tag** einer Sorte. Nur Abnahmen zählen; eine neue oder nachgefüllte Spule bringt nichts. Tage sind die Tage dieser Aufzeichnung, in UTC.
+- Archivierst du eine Spule, zählt ihr Verbrauch bis zu ihrem letzten Restgewicht weiter, auch am Tag des Archivierens: Eine Spule, die leer gedruckt und gleich archiviert wird, verliert ihren letzten Verbrauch nicht. Im Bestand und bei den Spulen zählt sie ab dann nicht mehr. Wird eine Spule in Bambuddy gelöscht statt archiviert, fällt ihr Verbrauch des laufenden Tages weg.
 
 ## Einem Artikel sagen, welches Filament er nutzen darf
 
@@ -37,7 +38,7 @@ Die Zuordnung eines archivierten Artikels lässt sich nur ansehen. Nach **Druckd
 
 *Filament* listet die Spulensorten, die in mindestens einem aktiven Artikel angekreuzt sind.
 
-![Die Seite Filament mit den Spulensorten, ihrem Bestand, Verbrauch je Tag und geplantem Bedarf](../assets/images/de/filament-page.png)
+![Die Seite Filament mit den Spulensorten, ihrem Bestand, dem Verbrauch mit der Wahl „Spalte Verbrauch“ darüber und dem geplanten Bedarf](../assets/images/de/filament-page.png)
 
 | Spalte | Bedeutung |
 |---|---|
@@ -45,8 +46,24 @@ Die Zuordnung eines archivierten Artikels lässt sich nur ansehen. Nach **Druckd
 | **Material** | Das Material der Sorte. |
 | **Bestand** | Summe der Restgewichte in Gramm. |
 | **Spulen** | Die Zahl der Spulen dieser Sorte. |
-| **Verbrauch je Tag** | Gramm je Tag aus den letzten 30 Tagen, oder „noch kein Verlauf“, bis zwei verschiedene Tage festgehalten sind. |
+| **Verbrauch** | Umschaltbar, siehe unten. Vorgabe: Gramm je Tag aus den letzten 30 Tagen (**Ø 30 Tage**), oder „noch kein Verlauf“, bis zwei verschiedene Tage festgehalten sind. |
 | **Geplanter Bedarf** | Nur bei nachgekauften Sorten: die Gramm für die Drucke in Reprintbuddys Warteschlange und in Arbeit, dazu die Drucke, die bis zur Zielmenge der Artikel noch fehlen. |
+
+### Die Spalte Verbrauch umschalten
+
+Über der Tabelle wählst du unter **Spalte Verbrauch**, was die Spalte zeigt:
+
+| Wahl | Bedeutung |
+|---|---|
+| **Ø 30 Tage** | Gramm je Tag im Schnitt der letzten 30 Tage. Die Vorgabe und die Grundlage der [Bestellvorschläge](reorder.md) und der Reichweite auf der [Übersicht](overview.md). |
+| **Ø 7 Tage** | Gramm je Tag im Schnitt der letzten 7 Tage. |
+| **heute**, **gestern** | Gramm, die an diesem Tag verbraucht wurden. |
+| **Woche (letzte 7 Tage)**, **Monat (letzte 30 Tage)**, **Jahr (letzte 365 Tage)** | Gramm, die in diesen Tagen zusammen verbraucht wurden. |
+| **gesamt (seit Beginn der Aufzeichnung)** | Gramm, seit Reprintbuddy die Sorte aufzeichnet. Die Aufzeichnung wird nie gelöscht. |
+
+Der Kopf der Spalte nennt die Wahl. Bei einem Schnitt steht dabei, über wie viele Tage gemittelt ist, solange es weniger Aufzeichnung gibt als die Tage der Wahl, zum Beispiel **Ø 30 Tage, bisher 6**. Hat eine Sorte weniger Tage als die anderen, steht ihre Zahl in ihrer Zeile (**bisher 3 Tage**). Gezählt wird überall gleich: die Abnahmen zwischen zwei Aufzeichnungen derselben Spule, beide in den gewählten Tagen. Darum ist **Monat** der **Ø 30 Tage** mal seine Tage.
+
+Dein Browser merkt sich die Wahl für den nächsten Besuch, jedes Gerät seine eigene. Ohne JavaScript zeigt die Seite **Ø 30 Tage** und keine Wahl. Die Kachel **Filament** der Übersicht und die Bestellvorschläge rechnen immer mit **Ø 30 Tage**.
 
 Die Karten oben zählen Spulensorten, Gesamtbestand, Spulen und die nachgekauften Sorten **Ohne Einstellungen**. Ein Hinweis über der Tabelle sagt, ob der Bestand **Live aus Bambuddy.** kommt oder wie alt er ist. Sind es die zuletzt aufgezeichneten Zahlen, steht der Tag außerdem unter den Karten für Bestand und Spulen und im Kopf der Spalten **Bestand** und **Spulen**, als **Stand vom …**, damit niemand sie für Live-Zahlen hält. Unter der Tabelle nennt ein Hinweis Filament-Slots, die noch keine angekreuzte Spulensorte haben; jeder Eintrag führt zur Zuordnung.
 
