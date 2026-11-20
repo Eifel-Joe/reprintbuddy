@@ -4,7 +4,7 @@ static/js/zone.js writes the browser's zone into the cookie `rb_zone` on every p
 the setup pages included. `BrowserZone` reads it for every request and shows the whole request in it
 (`localtime.shown_in`): the page, a fetch of its regions (the same request again, Spec 10.5.3), the
 answer to a form, an error page. Without a valid cookie the zone of the server holds, as before 1.2.2.
-The page names the zone it was computed in (`data-zone` on `<html>`); zone.js loads it once more when
+The page names the zone it was computed in (`data-zone` on `<body>`); zone.js loads it once more when
 that is not the browser's zone.
 
 The check (Spec 10.5a "Sicherheit"): a name from the IANA list (`zoneinfo.available_timezones()`, read
@@ -20,7 +20,10 @@ Tests: tests/web/test_browser_zone.py.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable, Mapping
+from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime, tzinfo
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from starlette.requests import HTTPConnection
@@ -30,7 +33,19 @@ from reprintbuddy import localtime
 
 COOKIE = "rb_zone"
 MAX_LENGTH = 64
-KNOWN_ZONES: frozenset[str] = frozenset(available_timezones())
+# Zone files of the system that are no IANA names. Root cause (CI on Linux, 1.2.2): Debian and Ubuntu put
+# the link `/usr/share/zoneinfo/localtime -> /etc/localtime` into the zone folder, and
+# `available_timezones()` lists every zone file it finds there, so "localtime" was taken. Rejected: only the
+# names of the pip package tzdata (a system with newer zone data would lose names its browsers report).
+NOT_ZONES = frozenset({"localtime", "posixrules"})
+
+
+def known_zones(listed: Iterable[str]) -> frozenset[str]:
+    """The names a browser may report: what the zone data lists, without the entries of the system."""
+    return frozenset(listed) - NOT_ZONES
+
+
+KNOWN_ZONES: frozenset[str] = known_zones(available_timezones())
 LOCALTIME_LINK = "/etc/localtime"  # the link `timedatectl set-timezone` sets
 
 
@@ -83,6 +98,36 @@ def server_zone_name() -> str:
     if "/zoneinfo/" in target and (linked := target.split("/zoneinfo/", 1)[1]) in KNOWN_ZONES:
         return linked
     return datetime.now(UTC).astimezone().tzname() or "UTC"
+
+
+# ---- the zone a form was computed in (Spec 10.5a "Tage beim Buchen", review finding 2) ------------------
+# Root cause: a page computed without the cookie (zone of the server) offers the server's "today" in its
+# date field. zone.js writes the cookie on that page without loading it again when a form is changed, a
+# message is shown or the page answers a form; the next POST then carried the browser's zone, and the
+# offered "today" was read as yesterday between midnight and 1 o'clock in Berlin on a server in UTC (a
+# count held for the end of yesterday and a sale after it was taken off once more). Fix: every form with
+# a date field or a "today" carries the zone its page was computed in, and the answer is computed in it.
+# Rejected: reloading such pages anyway (a changed form or a message would be lost); a note in the docs only
+# (the stock would be wrong).
+
+FORM_FIELD = "page_zone"
+SERVER_MARK = "server"  # the page was computed in the zone of the server (its name may be no IANA name)
+
+
+def form_zone_value() -> str:
+    """What a form of this page carries in `page_zone`: the browser's zone, or `SERVER_MARK`."""
+    key = getattr(localtime.browser_zone(), "key", None)  # a reported zone is a ZoneInfo of the list
+    return key or SERVER_MARK
+
+
+def zone_of_form(form: Mapping[str, Any]) -> AbstractContextManager[None]:
+    """Compute the answer to `form` in the zone its page was computed in. The value is checked like the
+    cookie; a value that is not valid, or none, leaves the zone of the request."""
+    value = form.get(FORM_FIELD)
+    if value == SERVER_MARK:
+        return localtime.shown_in(None)
+    carried = reported_zone(value if isinstance(value, str) else None)
+    return localtime.shown_in(carried) if carried is not None else nullcontext()
 
 
 def page_zone_name() -> str:
