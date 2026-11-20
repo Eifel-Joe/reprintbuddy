@@ -410,6 +410,41 @@ async def test_replacements_keep_the_order_of_their_hand_over(db, fake_bambuddy,
     assert places == [(True, None), (False, 2), normal, (False, 3)]
 
 
+async def test_replacement_stays_behind_an_earlier_one_when_a_print_was_put_on_top_in_bambuddy(db, fake_bambuddy):
+    """Review 1.2.2, 3: somebody puts a print on top in Bambuddy after the first replacement; the second
+    replacement still goes behind the first, not before it (they keep the order of their hand-over)."""
+    f1 = fake_bambuddy.add_foreign_item("Other 1")
+    with db.begin() as s:
+        a = article(s).id
+        entry(s, a, origin="scrap")
+    r1, _ = await hand(db, fake_bambuddy)
+    x = fake_bambuddy.add_foreign_item("Put on top")
+    fake_bambuddy.reorder([x.id, item_of(db, r1), f1.id])
+    with db.begin() as s:
+        entry(s, a, origin="failure")
+    r2, _ = await hand(db, fake_bambuddy)
+    assert await pending_ids(fake_bambuddy) == [x.id, item_of(db, r1), item_of(db, r2), f1.id]
+    req = fake_bambuddy.enqueued[-1]
+    assert (req.insert_at_top, req.insert_position) == (False, 3)
+
+
+async def test_replacement_follows_an_earlier_one_moved_back_in_bambuddy(db, fake_bambuddy):
+    """Decided in round 1.2.2 (review 2): the new replacement goes behind the last replacement of
+    Reprintbuddy still waiting in Bambuddy, wherever it stands there, as "insert next" does with all own
+    prints. Moved back by hand, the earlier one keeps the new one behind it."""
+    f1 = fake_bambuddy.add_foreign_item("Other 1")
+    f2 = fake_bambuddy.add_foreign_item("Other 2")
+    with db.begin() as s:
+        a = article(s).id
+        entry(s, a, origin="scrap")
+    r1, _ = await hand(db, fake_bambuddy)
+    fake_bambuddy.reorder([f1.id, f2.id, item_of(db, r1)])
+    with db.begin() as s:
+        entry(s, a, origin="scrap")
+    r2, _ = await hand(db, fake_bambuddy)
+    assert await pending_ids(fake_bambuddy) == [f1.id, f2.id, item_of(db, r1), item_of(db, r2)]
+
+
 async def test_replacement_into_an_empty_queue(db, fake_bambuddy):
     with db.begin() as s:
         entry(s, article(s).id, origin="failure")

@@ -333,10 +333,27 @@ def test_replacement_released_later_overtakes_entries_not_yet_started():
                                  ("planned", "Fremd", at(11, 10), at(12, 10))]
 
 
-@pytest.mark.parametrize("shortest_first, order", [(False, ["Ersatz", "Fremd"]), (True, ["Fremd", "Ersatz"])])
-def test_shortest_first_decides_over_the_place_of_a_replacement(shortest_first, order):
+@pytest.mark.parametrize("shortest_first, foreign_minutes, order", [
+    (False, 10, ["Ersatz", "Fremd"]),
+    (True, 10, ["Fremd", "Ersatz"]),  # the shorter print first
+    (True, 60, ["Ersatz", "Fremd"]),  # equal print time: the place decides (review 1.2.2, 4)
+])
+def test_shortest_first_decides_over_the_place_of_a_replacement(shortest_first, foreign_minutes, order):
     """With Bambuddy's "shortest job first" the print time decides, the place only on a tie."""
-    foreign = item("Fremd", minutes=10)
+    foreign = item("Fremd", minutes=foreign_minutes)
     plan = build_plan([printer(1)], [foreign], NOW, backlog=[replacement(minutes=60)], free_slots=1,
                       shortest_first=shortest_first)
     assert [b[1] for b in bars(plan, 1)] == order
+
+
+def test_replacement_stays_behind_an_earlier_one_when_a_print_was_put_on_top_in_bambuddy():
+    """Review 1.2.2, 3: as the hand-over, the new replacement goes behind the replacement already waiting,
+    though a print put on top in Bambuddy stands before it."""
+    from dataclasses import replace
+
+    on_top = item("Oben", minutes=20)
+    waiting_replacement = replace(item("Deckel", minutes=20, holds_slot=True), replacement=True)
+    foreign = item("Fremd", minutes=20)
+    plan = build_plan([printer(1)], [on_top, waiting_replacement, foreign], NOW, backlog=[replacement()],
+                      free_slots=1)
+    assert [b[1] for b in bars(plan, 1)] == ["Oben", "Deckel", "Ersatz", "Fremd"]

@@ -264,3 +264,17 @@ def test_pages_say_replacements_go_to_the_front_of_bambuddys_queue(page, sjf, la
     assert REPLACEMENTS_FIRST[lang] in text, path.name
     if sjf:
         assert "SJF" in text, path.name
+
+
+@pytest.mark.parametrize(("page", "words"), [
+    ("automation.md", ("ahead of every other waiting print", "even if you moved that one there",
+                       "only breaks a tie of equal print time")),
+    ("automation.de.md", ("vor alle anderen wartenden Drucke", "auch wenn du diesen dort verschoben hast",
+                          "zählt dann nur bei gleicher Druckzeit")),
+])
+def test_automation_page_says_where_a_new_replacement_goes(page, words):
+    """Decided in round 1.2.2 (review 2, 8): behind the last replacement still waiting in Bambuddy, wherever it
+    stands; "other" waiting prints, so the rule does not contradict itself; SJF puts the print time first."""
+    text = " ".join((DOCS / "use" / page).read_text(encoding="utf-8").split())
+    for phrase in words:
+        assert phrase in text, phrase

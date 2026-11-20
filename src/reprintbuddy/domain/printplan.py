@@ -292,10 +292,12 @@ def build_plan(
             slots -= 1
             entry = with_fields(backlog_left.pop(0), holds_slot=True)  # a new object: identity stays unique
             from_backlog[id(entry)] = entry
-            # 1.2.2 (Spec 10.2 "Ersatzdrucke vorn"): the place the hand-over gives, `dispatch.hand_over` with
-            # `next_insert_position` - a replacement behind the last replacement of Reprintbuddy still waiting
-            # (top without one), whatever the switch says; others as before. `order` holds only what still
-            # waits, so a replacement that started no longer counts.
+            # 1.2.2 (Spec 10.2 "Ersatzdrucke vorn") - root cause: the plan put a replacement where every print
+            # goes, while the hand-over now puts it in front, so the plan showed it behind prints it overtakes.
+            # Fix: the place the hand-over gives (`dispatch.hand_over` with `next_insert_position`) - a
+            # replacement behind the last replacement of Reprintbuddy still waiting, wherever it stands (top
+            # without one), whatever the switch says; others as before. `order` holds only what still waits,
+            # so a replacement that started no longer counts.
             # NOT-TO-DO: the replacement at index 0 - the second of two would overtake the first.
             if entry.replacement:
                 ahead = [n for n, e in enumerate(order) if e.holds_slot and e.replacement]

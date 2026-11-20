@@ -140,26 +140,34 @@ def _reserve(
 
 
 def next_insert_position(
-    queue: Sequence[QueueItem], own_item_ids: Collection[int]
+    queue: Sequence[QueueItem], ahead_ids: Collection[int]
 ) -> tuple[bool, int | None]:
-    """Where the next print goes ahead of others (Spec 7.3): behind the last waiting entry of `own_item_ids`.
+    """Where the next print goes ahead of others (Spec 7.3): behind the last waiting entry of `ahead_ids`.
 
-    So those entries keep their order; to the top when none of them waits (a running one does not
-    wait). Returns `(insert_at_top, insert_position)`. With "insert next" the ids are all own prints;
-    for a replacement only the own replacements (`own_replacement_item_ids`, 1.2.2).
+    So those entries keep their order, wherever they stand in Bambuddy's queue; to the top when none of
+    them waits (a running one does not wait). Returns `(insert_at_top, insert_position)`. With "insert
+    next" the ids are all own prints; for a replacement only the own replacements
+    (`own_replacement_item_ids`, 1.2.2).
 
     Positions are compared over all printers, not per printer: Bambuddy keeps one sequence over
     every pending entry, pinned or "any <model>" (`backend/app/services/queue_position.py`,
     `max_queue_position`; `api/routes/print_queue.py`, `add_to_queue`: "Positions are one sequence
     across every pending item (#3200)"; read in v1.3.1b1-daily.20261104 and on `main`, file last
     changed 2026-09-30). Checked in v0.3.17 (p320), no per-printer numbering.
+
+    Limit (review 1.2.2, 5): Bambuddy orders by (position, id) and takes no position below 1. An entry
+    with the same position as the last of `ahead_ids` and a higher id (`reorder_queue` keeps the places
+    of entries on printers the caller cannot see), or with position 0 (made without one, e.g. by a
+    pipeline run), stays ahead of the new print. The position at creation cannot do better, and nothing
+    in Bambuddy is moved (Spec 7.3).
     """
-    own = [i for i in queue if i.id in own_item_ids and i.status == "pending"]
-    if not own:
+    waiting = [i for i in queue if i.id in ahead_ids and i.status == "pending"]
+    if not waiting:
         return True, None
-    positions = [i.position for i in own if i.position is not None]
+    positions = [i.position for i in waiting if i.position is not None]
     if not positions:
-        # Own entries wait but Bambuddy names no position: appending keeps them in front.
+        # They wait but Bambuddy names no position (never seen: its column defaults to 0): appending at
+        # least keeps the new print behind them; it does not put it ahead of anybody else.
         return False, None
     return False, max(positions) + 1
 
@@ -424,10 +432,12 @@ async def hand_over(
         # Fix: a replacement goes behind the last own replacement still waiting in Bambuddy, at the top
         # when none waits - ahead of every other waiting print, whatever the switch says; replacements
         # keep their order. Only the position at creation, nothing in Bambuddy is moved (Spec 7.3).
+        # Decided in round 1.2.2 (review 2): "the last waiting one" wherever it stands, as "insert next"
+        # does with all own prints; one moved back by hand in Bambuddy keeps the next one behind it.
         # NOT-TO-DO: always `insert_at_top` - a second replacement would overtake the first. Counting only
         # the replacements in an unbroken run at the top - a print put at the top in Bambuddy after the
         # first replacement breaks the run, and the next replacement would overtake the first.
-        # Tests: test_dispatch.py::test_replacements_keep_the_order_of_their_hand_over and around it.
+        # Tests: test_dispatch.py::test_replacements_keep_the_order_of_their_hand_over and the ones around it.
         if replacement or insert_next:
             queue = await client.list_queue()
             with sm() as session:

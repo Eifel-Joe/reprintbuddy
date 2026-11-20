@@ -402,6 +402,14 @@ class FakeBambuddy:
     def set_manual_start(self, item_id: int, value: bool) -> None:
         self._put(dataclasses.replace(self._items[item_id], manual_start=value))
 
+    def reorder(self, item_ids: Sequence[int]) -> None:
+        """What dragging on Bambuddy's queue page does (`reorder_queue`, `print_queue.py:2752-2768`): the
+        page sends the entries with their new places 1 to n; only pending entries take theirs."""
+        for position, item_id in enumerate(item_ids, start=1):
+            item = self._items[item_id]
+            if item.status == "pending":
+                self._put(dataclasses.replace(item, position=position))
+
     def delete_item(self, item_id: int) -> None:
         """What deleting an entry in Bambuddy does: it is gone, the positions keep their gaps."""
         self._items.pop(item_id, None)
