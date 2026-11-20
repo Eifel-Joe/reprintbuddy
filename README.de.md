@@ -90,16 +90,16 @@ Erfundene Beispieldaten. Weitere Bilder stehen auf den [Doku-Seiten](https://eif
 ## Installation
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.1/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.2/install/install.sh)"
 ```
 
 Als root auf diesem System ausführen. Frische Debian-Systeme bringen oft kein curl mit; der erste Teil installiert es.
-Das Skript legt das Release auf, dessen Tag in der Adresse steht (hier `v1.2.2-beta.1`): Skript und Release sind eine
+Das Skript legt das Release auf, dessen Tag in der Adresse steht (hier `v1.2.2-beta.2`): Skript und Release sind eine
 Version.
 Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.1/install/install.sh)" _ --language de
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.2/install/install.sh)" _ --language de
 ```
 
 Danach zeigt das Skript die Zeitzone des Servers und die Uhrzeit, die sich daraus ergibt, zum Beispiel
@@ -113,7 +113,7 @@ Skript an, bevor es etwas ändert (auf einem System ohne das Paket `tzdata` erst
 mitbringen):
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.1/install/install.sh)" _ --timezone Europe/Berlin
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.2/install/install.sh)" _ --timezone Europe/Berlin
 ```
 
 Unter Proxmox kann ein Container auch die Zeitzone des Hosts übernehmen: `pct set <ID> --timezone host` auf dem
