@@ -481,16 +481,33 @@ def consumption(session: Session, sort_ids: int | Collection[int], today: date) 
 
 USAGE_VIEWS = ("avg30", "avg7", "today", "yesterday", "week", "month", "year", "total")
 USAGE_DEFAULT = "avg30"  # the base of the reorder suggestions
-USAGE_AVERAGES = frozenset({"avg30", "avg7"})
-# days of the window; None: since the record began
-USAGE_WINDOW: dict[str, int | None] = {
-    "avg30": WINDOW_DAYS, "avg7": 7, "today": 1, "yesterday": 1, "week": 7, "month": 30, "year": 365, "total": None,
-}
-# (first, last) day of the window, counted back from today; the first row is the base of the first drop
-_USAGE_RANGE: dict[str, tuple[int | None, int]] = {
-    "avg30": (WINDOW_DAYS, 0), "avg7": (7, 0), "today": (1, 0), "yesterday": (2, 1),
-    "week": (7, 0), "month": (30, 0), "year": (365, 0), "total": (None, 0),
-}
+# the averages and the days of their window
+USAGE_WINDOW: dict[str, int] = {"avg30": WINDOW_DAYS, "avg7": 7}
+
+
+def usage_starts(today: date) -> dict[str, date]:
+    """The first day of this calendar week (ISO, from Monday), month and year (Spec 9.3, p717)."""
+    return {
+        "week": today - timedelta(days=today.weekday()),
+        "month": today.replace(day=1),
+        "year": today.replace(month=1, day=1),
+    }
+
+
+def _usage_ranges(today: date) -> dict[str, tuple[int | None, int]]:
+    """view -> (first, last) day of its window, counted back from today; the row of the first day is the
+    base of the first drop, so a period from day S starts at S − 1 (as "today" starts at yesterday)."""
+    ranges: dict[str, tuple[int | None, int]] = {
+        "avg30": (WINDOW_DAYS, 0), "avg7": (7, 0), "today": (1, 0), "yesterday": (2, 1), "total": (None, 0),
+    }
+    for view, start in usage_starts(today).items():
+        ranges[view] = ((today - start).days + 1, 0)
+    return ranges
+
+
+def first_record_day(session: Session) -> date | None:
+    """The first day of the daily record ("gesamt (seit …)", Spec 9.3); None without any record."""
+    return session.scalar(select(func.min(FilamentSnapshot.day)))
 
 
 @dataclass(frozen=True)
@@ -506,12 +523,14 @@ def usage(session: Session, sort_ids: Collection[int], today: date) -> dict[str,
     The rule of `consumption` (Spec 9.2), which the reorder suggestions keep using: per spool only the
     decreases between two consecutive rows count, both inside the window; an average divides by the days
     between the first and the last row of the sort in the window, at most the window. So Ø 30 days on the
-    page is the reorder's number, and the month is that average times its days. The last row of an
-    archived spool counts (p717).
+    page is the reorder's number. The calendar periods (this week from Monday, this month, this year;
+    `usage_starts`) count the drops that arrive from their first day to today, the first one from the row
+    of the day before, as "today" counts the drop from yesterday's row. The last row of an archived spool
+    counts (p717).
 
-    Two queries for all views and sorts (`LAG` per spool, sums per window): one over the last year for
-    every window up to it, one over the whole record for the total (the record is never deleted). The
-    total is the costly part, the year keeps the others from reading the whole record (measured with
+    Two queries for all views and sorts (`LAG` per spool, sums per window): one from the day before this
+    year (at most 366 days back) for every other window, one over the whole record for the total (the
+    record is never deleted). The total is the costly part (measured with
     80 spools over 3 years, 87 680 rows: p717 report).
     Rejected: `consumption` per sort and view (eight queries per row), and loading every row into Python
     (the total would carry the whole record over to Python on every view of the page).
@@ -521,22 +540,23 @@ def usage(session: Session, sort_ids: Collection[int], today: date) -> dict[str,
     found: dict[str, dict[int, Usage]] = {view: {} for view in USAGE_VIEWS}
     if not ids:
         return found
-    ranges = set(_USAGE_RANGE.values())
+    view_range = _usage_ranges(today)
+    ranges = set(view_range.values())
     total = (None, 0)
     sums = _window_sums(session, ids, today, sorted(ranges - {total}))
     for sort_id, values in _window_sums(session, ids, today, [total]).items():
         sums.setdefault(sort_id, {}).update(values)
     for sort_id, per_range in sums.items():
         for view in USAGE_VIEWS:
-            used, first_day, last_day = per_range[_USAGE_RANGE[view]]
+            used, first_day, last_day = per_range[view_range[view]]
             if first_day is None or last_day is None or last_day <= first_day:
                 continue  # under two days of record in the window
             days = (last_day - first_day).days
-            window = USAGE_WINDOW[view]
-            if window is not None:
-                days = min(days, window)
             grams = float(used)
-            found[view][sort_id] = Usage(grams / days if view in USAGE_AVERAGES else grams, days)
+            if view in USAGE_WINDOW:
+                days = min(days, USAGE_WINDOW[view])
+                grams /= days
+            found[view][sort_id] = Usage(grams, days)
     return found
 
 

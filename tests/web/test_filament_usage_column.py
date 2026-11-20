@@ -6,8 +6,10 @@ names the choice; an average says over how many days while the record is shorter
 """
 
 import re
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
+
+import pytest
 
 from conftest import sm_of
 from factories import assign_sort, make_snapshot, make_sort
@@ -15,6 +17,7 @@ from texts import de, en, en_html
 from reprintbuddy import settings as st
 from reprintbuddy.domain import filament
 from reprintbuddy.models import utcnow
+from reprintbuddy.web.routes.filament import _usage_views
 
 JS = Path(__file__).resolve().parents[2] / "src" / "reprintbuddy" / "web" / "static" / "js" / "filament_usage.js"
 
@@ -65,10 +68,41 @@ def test_every_view_is_in_the_row(bb_client, fake_bambuddy):
     fake_bambuddy.add_spool("PLA")
     sort = _sort_with_record(bb_client, 400, 10.0)
     row = _row(bb_client.get("/filament").text, sort)
+    today = utcnow().date()
+    days = {view: (today - start).days + 1 for view, start in filament.usage_starts(today).items()}
     assert {view: _cell(row, view) for view in filament.USAGE_VIEWS} == {
-        "avg30": "10.0 g", "avg7": "10.0 g", "today": "10 g", "yesterday": "10 g",
-        "week": "70 g", "month": "300 g", "year": "3650 g", "total": "4000 g",  # whole grams like the stock column
+        "avg30": "10.0 g", "avg7": "10.0 g", "today": "10 g", "yesterday": "10 g",  # whole grams like the stock column
+        "week": f"{10 * days['week']} g", "month": f"{10 * days['month']} g", "year": f"{10 * days['year']} g",
+        "total": "4000 g",
     }
+
+
+@pytest.mark.parametrize(("today", "week", "month", "year", "lang"), [
+    (date(2026, 11, 20), "diese Woche (KW 47)", "dieser Monat (November)", "dieses Jahr (2026)", "de"),
+    (date(2026, 3, 2), "this week (week 10)", "this month (March)", "this year (2026)", "en"),
+    (date(2026, 3, 2), "diese Woche (KW 10)", "dieser Monat (März)", "dieses Jahr (2026)", "de"),
+    # the turn of the year: ISO weeks (week 53 of 2026 reaches into 2027, week 1 of 2026 began in 2025)
+    (date(2026, 12, 31), "diese Woche (KW 53)", "dieser Monat (Dezember)", "dieses Jahr (2026)", "de"),
+    (date(2027, 1, 1), "diese Woche (KW 53)", "dieser Monat (Januar)", "dieses Jahr (2027)", "de"),
+    (date(2027, 1, 4), "diese Woche (KW 1)", "dieser Monat (Januar)", "dieses Jahr (2027)", "de"),
+    (date(2025, 12, 29), "this week (week 1)", "this month (December)", "this year (2025)", "en"),
+])
+def test_the_calendar_periods_are_named_unambiguously(today, week, month, year, lang):
+    """Spec 9.3: "diese Woche (KW 47)", "dieser Monat (November)", "dieses Jahr (2026)"."""
+    views = {v["view"]: v["name"] for v in _usage_views(lang, [], today, date(2026, 11, 14))}
+    assert (views["week"], views["month"], views["year"]) == (week, month, year)
+
+
+@pytest.mark.parametrize(("lang", "first", "name"), [
+    ("de", date(2026, 11, 14), "gesamt (seit 14.11.2026)"),
+    ("en", date(2026, 11, 14), "total (since 2026-11-14)"),
+    ("de", None, "gesamt (seit Beginn der Aufzeichnung)"),
+    ("en", None, "total (since the record began)"),
+])
+def test_total_names_the_first_day_of_the_record(lang, first, name):
+    views = {v["view"]: v["name"] for v in _usage_views(lang, [], date(2026, 11, 20), first)}
+    assert views["total"] == name
+    assert views["today"] == ("heute" if lang == "de" else "today")
 
 
 def test_the_head_names_the_choice(bb_client, fake_bambuddy):
@@ -76,10 +110,12 @@ def test_the_head_names_the_choice(bb_client, fake_bambuddy):
     _sort_with_record(bb_client, 40, 10.0)
     page = bb_client.get("/filament").text
     head = re.search(r"<thead>(.*?)</thead>", page, re.S).group(1)
+    names = {v["view"]: v["name"] for v in _usage_views("en", [], utcnow().date(), utcnow().date() - timedelta(days=40))}
     for view in filament.USAGE_VIEWS:
-        title = en("filament.col.per_day" if view in filament.USAGE_AVERAGES else "filament.usage.head_sum")
+        title = en("filament.col.per_day" if view in filament.USAGE_WINDOW else "filament.usage.head_sum")
         part = re.search(rf'<span data-usage-head="{view}"[^>]*>(.*?)</span></span>', head, re.S).group(1)
-        assert title in part and en_html(f"filament.usage.view.{view}") in part
+        assert title in part and names[view] in part
+    assert "total (since " in head and "this week (week " in head
     assert ", so far" not in head  # 40 days of record: longer than every window but the year
 
 
@@ -130,8 +166,9 @@ def test_german_texts(bb_client, fake_bambuddy):
         st.set_setting(s, "language", "de", commit=False)
     page = bb_client.get("/filament").text
     assert "Ø 30 Tage, bisher 6" in page
-    for view in ("today", "yesterday", "week", "month", "year", "total"):
-        assert de(f"filament.usage.view.{view}") in page
+    first = utcnow().date() - timedelta(days=6)
+    for text in ("heute", "gestern", "diese Woche (KW ", "dieser Monat (", "dieses Jahr (", f"gesamt (seit {first:%d.%m.%Y})"):
+        assert text in page
     assert de("filament.usage.choose") in page
 
 

@@ -1,10 +1,12 @@
 """The views of the column "Verbrauch" on the filament page (Spec 9.3, p717).
 
-Ø 30 days (the default and the base of the reorder suggestions), Ø 7 days, today, yesterday, week (last 7
-days), month (last 30 days), year (last 365 days) and total (since the record began). Days are the days of
-the record (UTC, Spec 10.5a). The rule is that of `consumption` (Spec 9.2): only the decreases between two
-consecutive rows of a spool count, both inside the window; an average divides by the days between the
-first and the last row of the window, at most the window.
+Ø 30 days (the default and the base of the reorder suggestions), Ø 7 days, today, yesterday, this week
+(ISO calendar week from Monday), this month, this year (calendar periods) and total (since the record
+began). Days are the days of the record (UTC, Spec 10.5a). The rule is that of `consumption` (Spec 9.2):
+only the decreases between two consecutive rows of a spool count. A drop belongs to the day of its later
+row: a period from day S counts the drops that arrive on S up to today, from the row of the day before S
+on (as "today" counts the drop from yesterday's row). An average divides by the days between the first
+and the last row of the window, at most the window.
 """
 
 import random
@@ -15,55 +17,94 @@ import pytest
 from factories import make_snapshot, make_sort
 from reprintbuddy.domain import filament
 
-TODAY = date(2026, 11, 20)
+TODAY = date(2026, 11, 20)  # a Friday in ISO week 47
 
 
 def _views(s, sort_ids, today=TODAY):
     return filament.usage(s, sort_ids, today)
 
 
+def _daily(s, sort, today, drops, start_back=400, spool=1):
+    """Rows of one spool from `start_back` days before `today` to today; `drops`: day -> grams used that day."""
+    grams = 100_000.0
+    for back in range(start_back, -1, -1):
+        day = today - timedelta(days=back)
+        grams -= drops.get(day, 0)
+        make_snapshot(s, day, spool, sort, grams)
+
+
 def test_the_views_and_their_order():
     assert filament.USAGE_VIEWS == ("avg30", "avg7", "today", "yesterday", "week", "month", "year", "total")
     assert filament.USAGE_DEFAULT == "avg30"
-    assert {view: filament.USAGE_WINDOW[view] for view in filament.USAGE_VIEWS} == {
-        "avg30": 30, "avg7": 7, "today": 1, "yesterday": 1, "week": 7, "month": 30, "year": 365, "total": None,
-    }
+    assert filament.USAGE_WINDOW == {"avg30": 30, "avg7": 7}  # the averages and their days
+
+
+@pytest.mark.parametrize(("today", "week", "month", "year"), [
+    (date(2026, 11, 20), date(2026, 11, 16), date(2026, 11, 1), date(2026, 1, 1)),
+    (date(2026, 11, 16), date(2026, 11, 16), date(2026, 11, 1), date(2026, 1, 1)),  # a Monday
+    (date(2026, 11, 1), date(2026, 10, 26), date(2026, 11, 1), date(2026, 1, 1)),  # the 1st, a Sunday
+    (date(2027, 1, 1), date(2026, 12, 28), date(2027, 1, 1), date(2027, 1, 1)),  # the week began last year
+    (date(2026, 12, 31), date(2026, 12, 28), date(2026, 12, 1), date(2026, 1, 1)),
+])
+def test_the_first_day_of_each_calendar_period(today, week, month, year):
+    assert filament.usage_starts(today) == {"week": week, "month": month, "year": year}
 
 
 def test_every_view_of_a_steady_use(db):
-    """10 g a day for 400 days: the sums cover their days, the averages give 10 g."""
+    """10 g a day for 400 days, on Friday 20 November 2026: week from Monday 16th (5 days), month from the
+    1st (20 days), year from 1 January (324 days)."""
     with db.begin() as s:
         sort = make_sort(s).id
         for back in range(401):
             make_snapshot(s, TODAY - timedelta(days=back), 1, sort, 5000.0 - 10.0 * (400 - back))
     with db.begin() as s:
         got = _views(s, [sort])
-    assert {view: (round(got[view][sort].grams, 6), got[view][sort].days) for view in filament.USAGE_VIEWS} == {
-        "avg30": (10.0, 30), "avg7": (10.0, 7), "today": (10.0, 1), "yesterday": (10.0, 1),
-        "week": (70.0, 7), "month": (300.0, 30), "year": (3650.0, 365), "total": (4000.0, 400),
+    grams = {view: round(got[view][sort].grams, 6) for view in filament.USAGE_VIEWS}
+    assert grams == {
+        "avg30": 10.0, "avg7": 10.0, "today": 10.0, "yesterday": 10.0,
+        "week": 50.0, "month": 200.0, "year": 3240.0, "total": 4000.0,
     }
+    assert (got["avg30"][sort].days, got["avg7"][sort].days) == (30, 7)
 
 
-def test_the_edges_of_the_windows(db):
-    """One drop on each of the days around the edges: 1 g today, 2 g yesterday, 4 g the day before,
-    8 g on day −6, 16 g on day −7, 32 g on day −29, 64 g on day −30, 128 g on day −364, 256 g on day −365.
-    A drop on day d is the decrease from the row of day d−1 to that of day d."""
-    drops = {0: 1, 1: 2, 2: 4, 6: 8, 7: 16, 29: 32, 30: 64, 364: 128, 365: 256}
+@pytest.mark.parametrize(("today", "inside", "outside", "view"), [
+    (date(2026, 11, 20), date(2026, 11, 16), date(2026, 11, 15), "week"),  # Monday counts, Sunday not
+    (date(2027, 1, 1), date(2026, 12, 28), date(2026, 12, 27), "week"),  # across the turn of the year
+    (date(2026, 11, 20), date(2026, 11, 1), date(2026, 10, 31), "month"),
+    (date(2026, 3, 2), date(2026, 3, 1), date(2026, 2, 28), "month"),
+    (date(2026, 11, 20), date(2026, 1, 1), date(2025, 12, 31), "year"),
+    (date(2027, 1, 1), date(2027, 1, 1), date(2026, 12, 31), "year"),  # on 1 January: only that day
+])
+def test_the_edges_of_the_calendar_periods(db, today, inside, outside, view):
+    """1 g on the first day of the period, 100 g on the day before: only the 1 g is in it."""
     with db.begin() as s:
         sort = make_sort(s).id
-        grams = 10_000.0
-        for back in range(400, -1, -1):
-            grams -= drops.get(back, 0)
-            make_snapshot(s, TODAY - timedelta(days=back), 1, sort, grams)
+        _daily(s, sort, today, {inside: 1.0, outside: 100.0})
+    with db.begin() as s:
+        assert _views(s, [sort], today)[view][sort].grams == 1.0
+
+
+def test_the_edges_of_the_other_views(db):
+    """1 g today, 2 g yesterday, 4 g the day before, 8 g on day −6, 16 g on day −7, 32 g on day −29,
+    64 g on day −30. A drop on day d is the decrease from the row of day d−1 to that of day d."""
+    drops = {TODAY - timedelta(days=back): grams for back, grams in {0: 1, 1: 2, 2: 4, 6: 8, 7: 16, 29: 32, 30: 64}.items()}
+    with db.begin() as s:
+        sort = make_sort(s).id
+        _daily(s, sort, TODAY, drops)
     with db.begin() as s:
         got = _views(s, [sort])
-    sums = {view: got[view][sort].grams for view in ("today", "yesterday", "week", "month", "year", "total")}
-    assert sums == {
-        "today": 1, "yesterday": 2, "week": 1 + 2 + 4 + 8, "month": 1 + 2 + 4 + 8 + 16 + 32,
-        "year": 1 + 2 + 4 + 8 + 16 + 32 + 64 + 128, "total": 511,
-    }
+    assert (got["today"][sort].grams, got["yesterday"][sort].grams, got["total"][sort].grams) == (1, 2, 127)
     assert got["avg7"][sort].grams == pytest.approx(15 / 7)
     assert got["avg30"][sort].grams == pytest.approx(63 / 30)
+
+
+def test_the_first_day_of_the_record(db):
+    with db.begin() as s:
+        assert filament.first_record_day(s) is None
+        sort = make_sort(s).id
+        make_snapshot(s, date(2026, 11, 14), 1, sort, 500.0)
+        make_snapshot(s, date(2026, 11, 19), 2, sort, 500.0)
+        assert filament.first_record_day(s) == date(2026, 11, 14)
 
 
 def test_averages_say_over_how_many_days_while_the_record_is_short(db):
@@ -76,7 +117,7 @@ def test_averages_say_over_how_many_days_while_the_record_is_short(db):
         got = _views(s, [sort])
     assert (got["avg30"][sort].grams, got["avg30"][sort].days) == (12.0, 6)
     assert (got["avg7"][sort].grams, got["avg7"][sort].days) == (12.0, 6)
-    assert (got["total"][sort].grams, got["month"][sort].grams) == (72.0, 72.0)
+    assert got["total"][sort].grams == 72.0
 
 
 def test_without_two_days_of_record_a_view_has_nothing(db):
