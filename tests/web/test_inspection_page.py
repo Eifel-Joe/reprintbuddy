@@ -232,7 +232,7 @@ def test_confirm_article_row_of_several_prints(ready_client):  # Spec 8.2: scrap
     assert count(ready_client, Inspection, i2, "good_units") == 4
     page = ready_client.get(PAGE).text
     assert en("inspections.group_done", name="Template A", good=5, scrap=3, prints=2) in page
-    assert en("inspections.replacement_created") in page
+    assert en_html("inspections.replacement_created") in page
     queue = ready_client.get("/queue").text
     assert queue.index("Template A") < queue.index("Template Z")  # at the front
 
@@ -243,7 +243,7 @@ def test_several_replacements_are_named_with_their_number(ready_client):
     finished(ready_client, units=2, origin="manual")
     response, _ = confirm_row(ready_client, a, "1")  # scrap 5: 2 + 2 + 1, one replacement per print
     assert response.status_code == 303
-    assert en("inspections.replacements_created", n=3) in ready_client.get(PAGE).text
+    assert en_html("inspections.replacements_created", n=3) in ready_client.get(PAGE).text
 
 
 def test_confirm_scrap_creates_replacement(ready_client):  # Spec 12 step 6
