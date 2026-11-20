@@ -90,6 +90,41 @@ def list_open(session: Session, article_id: int | None = None) -> list[Inspectio
     return [InspectionRow(*row) for row in session.execute(query).all()]
 
 
+@dataclass(frozen=True)
+class ArticleGroup:
+    """The prints of one article waiting for inspection: one row of the list (Spec 8.2, p713).
+
+    The origin of the prints (minimum stock, by hand, replacement) does not split the row."""
+
+    article_id: int
+    article_name: str
+    needs_assembly: bool
+    has_thumbnail: bool
+    prints: list[InspectionRow]
+
+    @property
+    def ids(self) -> list[int]:
+        return [p.id for p in self.prints]
+
+    @property
+    def units(self) -> int:
+        """The target number of the row: units per print × prints, as each print was handed over."""
+        return sum(p.units for p in self.prints)
+
+
+def list_groups(session: Session, article_id: int | None = None) -> list[ArticleGroup]:
+    """One row per article, the prints oldest first; the rows by their oldest print (p713 F6)."""
+    groups: dict[int, ArticleGroup] = {}
+    for row in list_open(session, article_id=article_id):
+        group = groups.get(row.article_id)
+        if group is None:
+            group = groups[row.article_id] = ArticleGroup(
+                row.article_id, row.article_name, row.needs_assembly, row.has_thumbnail, []
+            )
+        group.prints.append(row)
+    return list(groups.values())
+
+
 def _current(session: Session, inspection_id: int) -> Inspection | None:
     """The stored state of an inspection, read anew.
 

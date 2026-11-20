@@ -25,9 +25,9 @@ from reprintbuddy.models import (
 # ---- helpers ---------------------------------------------------------------------------
 
 
-def finished_print(s, article_id, units=1):
+def finished_print(s, article_id, units=1, origin="rule"):
     """A queued print that Bambuddy reports as completed: provisional units + open inspection."""
-    dispatch = make_dispatch(s, article_id, status="queued", units=units)
+    dispatch = make_dispatch(s, article_id, status="queued", units=units, origin=origin)
     assert tracking.apply_outcome(s, dispatch.id, "completed", "completed")
     return s.scalar(select(Inspection).where(Inspection.dispatch_id == dispatch.id)), dispatch
 
@@ -435,3 +435,55 @@ def test_resolve_all_good_of_one_article_leaves_the_others_open(db):
         assert counters(s, ids[0]) == (0, 4, 0)
         assert counters(s, ids[1]) == (3, 0, 0)  # still provisional, still waiting
         assert s.get(Inspection, ids[4]).resolved_at is None
+
+
+# ---- one row per article (p713, Spec 8.2 since 20.11.2026) -------------------------------------
+
+
+def aged(s, row, hours):
+    """Set the finish time of an open inspection `hours` back."""
+    row.created_at = utcnow() - timedelta(hours=hours)
+    s.flush()
+    return row.id
+
+
+def test_groups_one_row_per_article_oldest_print_first(db):
+    with db.begin() as s:
+        a = make_article(s, name="Template A", needs_assembly=True)
+        b = make_article(s, name="Template B", thumbnail=b"png")
+        a1 = aged(s, finished_print(s, a.id, units=2)[0], 3)
+        b1 = aged(s, finished_print(s, b.id, units=4)[0], 2)
+        a2 = aged(s, finished_print(s, a.id, units=3)[0], 1)
+        ids = (a.id, b.id, a1, a2, b1)
+    with db.begin() as s:
+        groups = inspection.list_groups(s)
+        assert [g.article_id for g in groups] == [ids[0], ids[1]]
+        first, second = groups
+        assert isinstance(first, inspection.ArticleGroup)
+        assert first.article_name == "Template A" and first.needs_assembly is True
+        assert first.has_thumbnail is False and second.has_thumbnail is True
+        assert [p.id for p in first.prints] == [ids[2], ids[3]]
+        assert first.ids == [ids[2], ids[3]]
+        assert first.units == 5 and second.units == 4
+        assert second.ids == [ids[4]]
+
+
+def test_groups_do_not_split_by_origin(db):  # Spec 8.2: the origin does not split the row
+    with db.begin() as s:
+        a = make_article(s).id
+        for origin in ("rule", "manual", "scrap"):
+            finished_print(s, a, origin=origin)
+    with db.begin() as s:
+        groups = inspection.list_groups(s)
+        assert len(groups) == 1 and len(groups[0].prints) == 3 and groups[0].units == 3
+
+
+def test_groups_of_one_article(db):
+    with db.begin() as s:
+        a = make_article(s).id
+        b = make_article(s, name="Template B").id
+        finished_print(s, a)
+        finished_print(s, b)
+    with db.begin() as s:
+        assert [g.article_id for g in inspection.list_groups(s, article_id=b)] == [b]
+        assert inspection.list_groups(s, article_id=b + 100) == []
