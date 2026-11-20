@@ -87,15 +87,15 @@ Invented example data. More pictures are on the [documentation pages](https://ei
 ## Installation
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.2/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2/install/install.sh)"
 ```
 
 Run it as root on that system. Fresh Debian systems often come without curl; the first part installs it.
-The installer puts the release in place whose tag is in the address (`v1.2.2-beta.2` here): script and release are one
+The installer puts the release in place whose tag is in the address (`v1.2.2` here): script and release are one
 version. To skip the language question, add the language:
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.2/install/install.sh)" _ --language de
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2/install/install.sh)" _ --language de
 ```
 
 The installer then shows the time zone of the server and the time it gives, for example
@@ -108,7 +108,7 @@ zone as an option, a name from `timedatectl list-timezones`. An unknown name sto
 anything (on a system without the package `tzdata`, after installing the packages, which brings the list):
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.2/install/install.sh)" _ --timezone Europe/Berlin
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2/install/install.sh)" _ --timezone Europe/Berlin
 ```
 
 On Proxmox a container can also take the time zone of the host: run `pct set <ID> --timezone host` on the Proxmox
