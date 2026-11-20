@@ -46,6 +46,19 @@ def test_axis_spans_now_to_finish_at_least_two_hours():
     assert later.ticks[0][0] == 100 * 60 / 200
 
 
+def test_axis_ticks_on_full_hours_of_the_browser():
+    """Spec 10.5a: the full hours of the axis are the browser's; in India (UTC+5:30) they lie half an hour
+    off the full hours of Berlin."""
+    from zoneinfo import ZoneInfo
+
+    from reprintbuddy import localtime
+
+    with localtime.shown_in(ZoneInfo("Asia/Kolkata")):  # now is 14:30 there
+        later = pv.axis(NOW, NOW + timedelta(hours=3, minutes=20))
+    assert [label for _pos, label in later.ticks] == ["15:00", "16:00", "17:00"]
+    assert later.ticks[0][0] == 100 * 30 / 200
+
+
 def test_axis_caps_at_24_hours():
     axis = pv.axis(NOW, NOW + timedelta(hours=30))
     assert axis.end == NOW + timedelta(hours=24)

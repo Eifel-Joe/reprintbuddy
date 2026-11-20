@@ -19,7 +19,7 @@ Es gibt **keine Konfigurationsdatei**. Jede Einstellung liegt in der Datenbank. 
 
 | Karte und Einstellung | Wirkung | Vorgabe | Erlaubt |
 |---|---|---|---|
-| **Sprache** | Sprache der Seiten. | Englisch (das Installationsskript und die Ersteinrichtung fragen danach) | English, Deutsch |
+| **Sprache** | Sprache der Seiten. Darunter sagt die Karte, in welcher Zeitzone dieser Browser die Zeiten sieht, siehe [Was nicht auf dieser Seite steht](#was-nicht-auf-dieser-seite-steht). | Englisch (das Installationsskript und die Ersteinrichtung fragen danach) | English, Deutsch |
 | **QR-Codes**: **Adresse für QR-Codes (nur für Sonderfälle)** | Der Anfang der Adresse in den QR-Codes. Nur nötig, wenn Reprintbuddy über einen Namen oder einen Proxy erreicht wird, zum Beispiel `https://lager.example.com`. Leer: Reprintbuddy trägt seine eigene Netzwerkadresse mit Port in die Codes ein; die Karte zeigt, welche („Ohne Eintrag tragen die Codes: …“). | leer | Eine Adresse mit `http://` oder `https://`, Rechnername und wahlweise Port. Ohne Benutzername, ohne `?` und `#`. |
 | **Neustart**: **Reprintbuddy neu starten** | Startet den Dienst neu, siehe [Update und Sicherung](update-backup.md#neustart). | | |
 | **Server**: **Lauschadresse** | Die Adresse, auf der Reprintbuddy lauscht. `0.0.0.0` heißt: alle Adressen des Rechners. | `0.0.0.0` | Eine Adresse, auf der dieser Rechner lauschen kann. Sonst wird das Speichern abgelehnt („Dieser Rechner kann auf dieser Adresse nicht lauschen“), weil es dich aussperren würde. |
@@ -105,7 +105,8 @@ Dieser Reiter enthält das Update, die vollständige Sicherung, das Wiederherste
 ## Was nicht auf dieser Seite steht
 
 - Der **Pfad der Datenbank** ist keine Einstellung. Der Dienst übergibt ihn mit `--db`.
-- Die **Zeitzone** ist keine Einstellung. Alle Zeitpunkte (Journal, Protokoll, Meldungen, Versionshinweise, das Datum auf einem Etikett) erscheinen in der Zeitzone des Servers, mit deren Sommerzeit. Um sie zu ändern, stelle die Zone auf dem Server ein, zum Beispiel `timedatectl set-timezone Europe/Vienna`, und starte Reprintbuddy neu.
+- Die **Zeitzone** ist keine Einstellung. Jede Seite zeigt ihre Zeiten (Journal, Protokoll, Meldungen, Druckplan, Versionshinweise, das Datum auf einem Etikett) in der Zeitzone des Browsers, der sie öffnet, mit deren Sommerzeit; PC und Handy in verschiedenen Zonen sehen jeweils ihre eigene. Die Seite meldet dem Server die Zone des Browsers, schon auf der Anmeldeseite. Die Karte **Sprache** im Reiter *Allgemein* sagt, welche Zone dieser Browser sieht, zum Beispiel „Zeiten erscheinen in der Zeitzone dieses Browsers: Europe/Berlin“. Auch das Datum einer Buchung ist ein Tag in dieser Zone: „heute“ im Datumsfeld und das Ende des Tages einer rückdatierten Inventur.
+- Ohne JavaScript, oder bevor der Browser seine Zone gemeldet hat, gilt die Zeitzone des **Servers** („… in der Zeitzone des Servers: Etc/UTC“ auf einem Server in UTC). Sie gilt auch für die Regeln, die ohne Browser laufen (welche Eingänge zu einer als bestellt markierten Bestellung gehören, Zählungen, die mit Versionen vor 0.3.16 rückdatiert wurden), und für die Kommandozeile. Um sie zu ändern, stelle die Zone auf dem Server ein, zum Beispiel `timedatectl set-timezone Europe/Vienna`, und starte Reprintbuddy neu. Export und Sicherung behalten ihre Zeiten in UTC (`+00:00`).
 - Werte, die Reprintbuddy für sich behält, werden nie angezeigt: das Geheimnis, mit dem die Sitzungs-Cookies signiert werden und das Reprintbuddy beim ersten Start selbst erzeugt, und die Merker der Verbindungsprüfung.
 - Einstellungen einzelner Artikel, Filamentsorten und Zukaufteile stehen auf deren eigenen Seiten, nicht hier.
 

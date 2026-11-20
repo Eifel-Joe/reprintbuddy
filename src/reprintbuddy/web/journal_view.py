@@ -8,8 +8,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from reprintbuddy.localtime import booked_day
 from reprintbuddy.models import Article, JournalEntry, Order, Part
-from reprintbuddy.web.formatting import to_local
 
 CHANGE_LABELS = {
     "stock": "articles.col.stock",
@@ -46,8 +46,9 @@ def journal_rows(db: Session, entries: Sequence[JournalEntry]) -> list[dict[str,
         rows.append(
             {
                 "at": entry.booked_at,  # when it counts (p172)
-                # dated back: the row shows the day it counts and, below, when it was saved
-                "day": to_local(entry.booked_at).date() if entry.booked_at != entry.at else None,
+                # dated back: the row shows the day it counts and, below, when it was saved; the day by
+                # the midnight rule, so a count keeps its day in a browser elsewhere (Spec 10.5a)
+                "day": booked_day(entry.booked_at) if entry.booked_at != entry.at else None,
                 "saved_at": entry.at if entry.booked_at != entry.at else None,
                 "actor_key": f"journal.actor.{entry.actor}",
                 "kind_key": f"journal.kind.{entry.kind}",

@@ -25,6 +25,8 @@
       </select>
     {% endcall %}
   </form>
+  {# Spec 10.5a: the zone is no setting; this browser's when it reported a valid one, else the server's. #}
+  <p class="muted" id="time-zone">{{ t('settings.zone_browser', zone=page_zone) if zone_from_browser else t('settings.zone_server', zone=page_zone) }}</p>
 </section>
 
 <section class="card" id="qr-address">

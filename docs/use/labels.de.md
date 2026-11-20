@@ -63,7 +63,7 @@ Der QR-Code des Artikels ist immer auf dem Etikett, links. Hake in der Karte **W
 | **Einheiten je Druck** | Mit ihrem Wort. |
 | **Druckziel** | Das Modell oder den Drucker, auf dem der Artikel gedruckt wird, mit seinem Wort. |
 | **Etikettentext** | Den Etikettentext des Artikels, zum Beispiel das Regalfach. Den trägst du im Artikel ein. |
-| **Druckdatum** | Das heutige Datum. |
+| **Druckdatum** | Das heutige Datum in der Zeitzone des Browsers, aus dem du druckst. |
 
 Die Angaben stehen immer in dieser Reihenfolge, gleich in welcher du sie angehakt hast. Eine Angabe ohne Wert, etwa bei einem Artikel ohne Artikelnummer, ergibt keine Zeile. Zu Beginn sind **Name**, **Artikelnummer** und **Etikettentext** angehakt.
 

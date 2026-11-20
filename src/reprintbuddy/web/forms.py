@@ -12,8 +12,9 @@ from fastapi import Request
 from fastapi.responses import RedirectResponse
 
 from reprintbuddy.domain.errors import DomainError, ValidationError
+from reprintbuddy.localtime import booked_day
 from reprintbuddy.web.flash import flash
-from reprintbuddy.web.formatting import format_date, to_local
+from reprintbuddy.web.formatting import format_date
 from reprintbuddy.web.formtoken import FormTokenInvalid, FormTokenUsed, form_transaction, write_transaction
 from reprintbuddy.web.i18n import translate
 
@@ -86,7 +87,8 @@ def error_text(lang: str, err: DomainError | FormTokenInvalid) -> str:
         params["field"] = translate(lang, params["field"])
     for name, value in params.items():
         if isinstance(value, datetime):  # naive UTC from the domain: shown as the local day (p210)
-            params[name] = format_date(to_local(value).date(), lang)
+            # by the midnight rule: the end of a day a count was dated back to keeps its day (Spec 10.5a)
+            params[name] = format_date(booked_day(value), lang)
         elif isinstance(value, list):  # (name, archived) pairs: an archived one is marked (0.4.3, condition A1)
             mark = translate(lang, "sets.archived_mark")
             params[name] = ", ".join(f"{n} {mark}" if archived else n for n, archived in value)

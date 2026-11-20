@@ -1021,6 +1021,8 @@
   "settings.tab.maintenance": "Update und Sicherung",
   "settings.tab.automation": "Automatik",
   "settings.language_hint": "Sprache der Seiten",
+  "settings.zone_browser": "Zeiten erscheinen in der Zeitzone dieses Browsers: {zone}",
+  "settings.zone_server": "Zeiten erscheinen in der Zeitzone des Servers: {zone}",
   "settings.host_hint": "Adresse, auf der Reprintbuddy lauscht; 0.0.0.0 heißt alle Adressen",
   "settings.port_hint": "Port der Weboberfläche",
   "settings.bambuddy_address_hint": "Adresse von Bambuddy mit http:// oder https:// und dem Port",
