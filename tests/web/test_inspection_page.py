@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from conftest import csrf_of, sm_of
 from factories import make_article, make_dispatch, make_entry, make_part
-from texts import de, en
+from texts import de, en, en_html
 from reprintbuddy import settings as st
 from reprintbuddy.domain import inspection, rules, tracking
 from reprintbuddy.models import Article, ArticlePart, Inspection, JournalEntry
@@ -139,7 +139,7 @@ def test_confirm_good(ready_client):  # Spec 12 step 4
     page = ready_client.get(PAGE).text
     assert en("inspections.done", name="Template A", good=1, scrap=0) in page
     assert en("inspections.empty") in page
-    assert en("inspections.replacement_created") not in page
+    assert en_html("inspections.replacement_created") not in page
 
 
 def test_confirm_scrap_creates_replacement(ready_client):  # Spec 12 step 6
@@ -152,7 +152,7 @@ def test_confirm_scrap_creates_replacement(ready_client):  # Spec 12 step 6
     assert count(ready_client, Article, a, "stock") == 0
     page = ready_client.get(PAGE).text
     assert en("inspections.done", name="Template A", good=0, scrap=2) in page
-    assert en("inspections.replacement_created") in page
+    assert en_html("inspections.replacement_created") in page
     queue = ready_client.get("/queue").text
     assert en("queue.origin.scrap") in queue
     assert queue.index("Template A") < queue.index("Template Z")  # at the front
@@ -410,5 +410,5 @@ def test_p411_scrap_with_the_target_reached_says_no_replacement_is_needed(ready_
     assert response.status_code == 303
     page = ready_client.get(PAGE).text
     assert en("inspections.replacement_not_needed") in page
-    assert en("inspections.replacement_created") not in page
+    assert en_html("inspections.replacement_created") not in page
     assert en("queue.origin.scrap") not in ready_client.get("/queue").text
