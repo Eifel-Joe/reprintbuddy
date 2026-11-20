@@ -1170,6 +1170,19 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
 .inspect-all { display: flex; align-items: center; justify-content: center; gap: 0; min-width: 2.75rem; min-height: 2.75rem; margin: 0; cursor: pointer; text-transform: none; letter-spacing: normal; font-size: 13px; }
 .inspect-all-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .inspect-soll { font-size: 15px; font-weight: 600; }
+/* The single prints of an article row (Spec 8.2, p713): a <details> under the row, 44 px to tap, the prints
+   in the columns of the row, a little set off. */
+.inspect-prints { margin: 0 14px 8px calc(14px + 2.75rem); border: 1px solid var(--line); border-radius: 8px; background: var(--neutral-soft); }
+.inspect-prints > summary { display: flex; align-items: center; min-height: 2.75rem; padding: 0 12px; color: var(--text-2); font-size: 13px; cursor: pointer; }
+.inspect-prints > summary:hover { color: var(--accent); }
+/* A flex summary loses the browser's marker: its own arrow, turned down when open, so it reads as something to tap. */
+.inspect-prints > summary { gap: 10px; list-style: none; }
+.inspect-prints > summary::-webkit-details-marker { display: none; }
+.inspect-prints > summary::before { content: ""; flex: 0 0 auto; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s; }
+.inspect-prints[open] > summary::before { transform: rotate(45deg); }
+.inspect-prints > .alert { margin: 8px 12px 0; }
+.inspect-prints .inspect-print { padding: 6px 12px; border-top: 1px solid var(--line); grid-template-columns: 0 minmax(0, 1fr) 5rem 7rem 8.5rem; column-gap: 14px; }
+.inspect-print .inspect-select { width: 0; min-height: 0; }
 @media (max-width: 699px) {
   .line-head { display: none; }
   .line-head:has(.inspect-all) { display: flex; padding: 0 14px; }
@@ -1177,12 +1190,15 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
   .inspect-head-select { justify-content: flex-start; }
   .inspect-all { justify-content: flex-start; }
   .inspect-all-text { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; color: var(--text-2); }
-  .inspect-cols.line { grid-template-columns: 2.75rem minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "sel main main" ". soll scrap" "btn btn btn"; }
+  .inspect-cols.line { grid-template-columns: 2.75rem minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "sel main main" ". soll good" "btn btn btn"; }
   .inspect-line .inspect-select { grid-area: sel; }
-  .inspect-line .line-main { grid-area: main; }
-  .inspect-line .line-cell.num { grid-area: soll; text-align: left; }
-  .inspect-line .line-cell:not(.num) { grid-area: scrap; }
-  .inspect-line .btn { grid-area: btn; width: 100%; }
+  .inspect-line .line-main, .inspect-print .line-main { grid-area: main; }
+  .inspect-line .line-cell.num, .inspect-print .line-cell.num { grid-area: soll; text-align: left; }
+  .inspect-line .line-cell:not(.num), .inspect-print .line-cell:not(.num) { grid-area: good; }
+  .inspect-line .btn, .inspect-print .btn { grid-area: btn; width: 100%; }
+  .inspect-prints { margin: 0 14px 8px; }
+  .inspect-prints .inspect-print.line { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "main main" "soll good" "btn btn"; }
+  .inspect-print .inspect-select { display: none; }
   .assembly-cols.line { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "main main" "awaiting qty" "btn btn"; }
   .assembly-line .line-main { grid-area: main; }
   .assembly-line .line-cell.num { grid-area: awaiting; text-align: left; }

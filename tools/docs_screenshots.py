@@ -914,7 +914,8 @@ def run_prints(server: Server, scn: Scenario) -> None:
         return next((i for i, n in named if n == name and i.id not in done), None)
 
     CLOCK.set(at(9, 9, 10))
-    for name, printer in (("Bracket large", 1), ("Cable guide", 3)):
+    # Two finished prints of the cable guide: "To check" shows one row per article with its prints (p713).
+    for name, printer in (("Bracket large", 1), ("Cable guide", 3), ("Cable guide", 2)):
         item = first(name)
         if item is not None:
             fake.set_status(item.id, "completed", printer_id=printer)
@@ -1143,7 +1144,9 @@ def take_pages(shot: Shooter, scn: Scenario) -> None:
     shot.page("article-filaments", f"/articles/{a['bracket_small']}/filaments")
     shot.page("article-detail", f"/articles/{cable}", cap=1400, before=slim_detail)
     shot.page("queue", "/queue", cap=1350, before=lambda b: b.evaluate("document.getElementById('manual').style.display='none'"))  # the form is not the point here
-    shot.page("inspection", "/inspection")
+    # the row with two prints unfolded (Spec 8.2, p713): the single prints with their own field
+    shot.page("inspection", "/inspection", before=lambda b: b.evaluate(
+        "(()=>{const d=document.querySelector('details.inspect-prints');if(d)d.open=true})()"))
     shot.page("assembly", "/assembly")
     shot.page("label-preview", f"/articles/{cable}", before=wait_label, element="#label")
     shot.page("reorder", "/reorder")
