@@ -43,20 +43,23 @@ def kpi_cards(lang: str, rows: list[inspection.InspectionRow]) -> list[Kpi]:
 
 
 def _inspection_page(request: Request, db: Session, *, article: object = None,
-                     error_inspection: int | None = None, error: str | None = None,
-                     values: dict[str, str] | None = None, status: int = 200):
-    """The list; `article` is the raw `article` value of the address or the form (the filter)."""
+                     error_inspection: int | None = None, error_article: int | None = None,
+                     error: str | None = None, values: dict[str, str] | None = None, status: int = 200):
+    """The list, one row per article (Spec 8.2, p713); `article` is the raw `article` value of the
+    address or the form (the filter). An error belongs to a row (`error_article`), to an unfolded
+    print (`error_inspection`) or, if neither is shown, to the top of the list."""
     flt = listing.article_filter(db, article, INSPECTION_URL)
-    rows = inspection.list_open(db, article_id=flt.id if flt else None)
+    groups = inspection.list_groups(db, article_id=flt.id if flt else None)
     return render(
         request,
         "inspection.html",
         status_code=status,
         active_nav="inspection",
-        rows=rows,
-        cards=kpi_cards(current_language(request), rows),
+        groups=groups,
+        cards=kpi_cards(current_language(request), [p for g in groups for p in g.prints]),
         article_filter=flt,
         error_inspection=error_inspection,
+        error_article=error_article,
         error=error,
         values=values or {},
     )
@@ -71,6 +74,36 @@ def _scrap_value(raw: object) -> int | str:
     if not text:
         return 0
     return int(text) if _NUMBER.fullmatch(text) else text
+
+
+def _good_value(raw: object) -> int | str:
+    """The field "good" (Spec 8.2, p713): a whole number, or the text as it came (empty too).
+
+    The domain refuses anything that is no whole number from 0 to the target number with that one
+    text, "from 0 to the target number" (p93). Empty is no answer (p713 F1): it could mean none or
+    all, so it is refused like any other text, not read as either."""
+    text = str(raw or "").strip()
+    return int(text) if _NUMBER.fullmatch(text) else text
+
+
+def _picked_ids(form) -> list[int]:
+    """The prints of "Selected all good" / "All good": the ticked rows (`group`, the ids of an
+    article row joined by spaces, p713) and single ids (`ids`, "All good" and pages from before
+    the update). Words that are no id are dropped; the same id twice counts once."""
+    words = [str(v) for v in form.getlist("ids")]
+    for group in form.getlist("group"):
+        words += str(group).split()
+    return list(dict.fromkeys(int(w) for w in words if _ID.fullmatch(w)))
+
+
+def _flash_replacements(request: Request, made: int, scrap: int) -> None:
+    """One message on the replacement of a confirmed row or print (p713 F5; p411, Spec 7.5)."""
+    if made == 1:
+        flash(request, "inspections.replacement_created")
+    elif made > 1:
+        flash(request, "inspections.replacements_created", n=made)
+    elif scrap > 0:  # the target is reached without it
+        flash(request, "inspections.replacement_not_needed")
 
 
 def _back(article: object) -> str:
@@ -96,8 +129,7 @@ async def resolve_all_good(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     article = form.get("article")
     article_id = listing.article_id_of(article)
-    # Words that are no id are dropped; the same id twice counts once.
-    ids = list(dict.fromkeys(int(v) for v in form.getlist("ids") if _ID.fullmatch(str(v))))
+    ids = _picked_ids(form)
     if not ids:
         return _inspection_page(
             request, db, article=article,
@@ -120,22 +152,60 @@ async def resolve_all_good(request: Request, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/inspection/{inspection_id:int}", dependencies=[Depends(verify_csrf)])
-async def resolve_inspection(inspection_id: int, request: Request, db: Session = Depends(get_db)):
+@router.post("/inspection/articles/{article_id:int}", dependencies=[Depends(verify_csrf)])
+async def resolve_article(article_id: int, request: Request, db: Session = Depends(get_db)):
+    """The row of an article (Spec 8.2, p713): the good pieces of the prints the row showed."""
     form = await request.form()
     article = form.get("article")
-    values = {k: str(v) for k, v in form.items() if k not in ("csrf_token", "form_token", "article")}
+    ids = [int(v) for v in form.getlist("ids") if _ID.fullmatch(str(v))]
+    values = {"good": str(form.get("good") or "")}
+
+    def save(tx, good):
+        result = inspection.resolve_group(tx, article_id, ids, good, "user")
+        return result, tx.get(Article, article_id).name, _shortages(tx, result.shortages)
+
+    def done(outcome):
+        result, name, messages = outcome
+        if len(result.prints) == 1:
+            flash(request, "inspections.done", name=name, good=result.good, scrap=result.scrap)
+        else:
+            flash(request, "inspections.group_done", name=name, good=result.good, scrap=result.scrap,
+                  prints=len(result.prints))
+        _flash_replacements(request, result.replacements, result.scrap)
+        return _with_shortages(request, messages, _back(article))
+
+    return await run_form_action(
+        request, check=lambda: _good_value(form.get("good")), work=save, done=done,
+        duplicate_url=_back(article),
+        # A changed row (p713 F3) comes back with its new target: the typed count belonged to the old prints,
+        # and refilled it would book with one tap against the new ones (review p713).
+        on_error=lambda text, status, exc: _inspection_page(
+            request, db, article=article, error_article=article_id, error=text,
+            values=None if isinstance(exc, ConflictError) else values, status=status,
+        ),
+    )
+
+
+@router.post("/inspection/{inspection_id:int}", dependencies=[Depends(verify_csrf)])
+async def resolve_inspection(inspection_id: int, request: Request, db: Session = Depends(get_db)):
+    """One print, unfolded under its article: its good pieces (Spec 8.2, p713)."""
+    form = await request.form()
+    article = form.get("article")
+    values = {k: str(v) for k, v in form.items() if k in ("good", "scrap")}
 
     def check():
-        # A page opened before the update still posts the old field `good`. Reading only `scrap`
-        # (default 0) would book every unit as good and lose the scrap: refuse, book nothing.
-        if "good" in form:
-            raise ValidationError("inspections.form_outdated")
-        # "Ausschuss", default 0 (Spec 8.2): good units are the units of the print minus the scrap.
-        return _scrap_value(form.get("scrap"))
+        # p713 F7: "good" is the field of the page; a page opened before the update still posts the
+        # scrap, which is just as clear (good = units − scrap), so it is booked, not refused.
+        if "good" not in form and "scrap" in form:
+            return "scrap", _scrap_value(form.get("scrap"))
+        return "good", _good_value(form.get("good"))
 
-    def save(tx, scrap):
-        result = inspection.resolve_scrap(tx, inspection_id, scrap, "user")
+    def save(tx, checked):
+        kind, n = checked
+        if kind == "scrap":
+            result = inspection.resolve_scrap(tx, inspection_id, n, "user")
+        else:
+            result = inspection.resolve(tx, inspection_id, n, "user")
         name = tx.scalar(
             select(Article.name).join(Inspection, Inspection.article_id == Article.id)
             .where(Inspection.id == inspection_id)
@@ -145,10 +215,7 @@ async def resolve_inspection(inspection_id: int, request: Request, db: Session =
     def done(outcome):
         result, name, messages = outcome
         flash(request, "inspections.done", name=name, good=result.good, scrap=result.scrap)
-        if result.replacement_entry_id is not None:
-            flash(request, "inspections.replacement_created")
-        elif result.scrap > 0:  # p411 (Spec 7.5): the target is reached without it
-            flash(request, "inspections.replacement_not_needed")
+        _flash_replacements(request, int(result.replacement_entry_id is not None), result.scrap)
         return _with_shortages(request, messages, _back(article))
 
     return await run_form_action(
@@ -218,7 +285,7 @@ async def api_list(request: Request, db: Session = Depends(get_db)):
         return _api_error(request, ValidationError(
             "form.invalid_number", field="articles.title", min=1, max=MAX_QTY
         ))
-    rows = inspection.list_open(db, article_id=article_id)
+    groups = inspection.list_groups(db, article_id=article_id)
     return {
         "inspections": [
             {
@@ -228,10 +295,77 @@ async def api_list(request: Request, db: Session = Depends(get_db)):
                 "units": r.units,
                 "needs_assembly": r.needs_assembly,
                 # The database holds naive UTC; the interface says so.
-                "created_at": r.created_at.replace(tzinfo=UTC).isoformat(),
+                "created_at": _utc(r.created_at),
             }
-            for r in rows
-        ]
+            for r in sorted((p for g in groups for p in g.prints), key=lambda r: (r.created_at, r.id))
+        ],
+        # p713 (Spec 8.2): the rows of the page, one per article, for a display that books like the browser.
+        "articles": [
+            {
+                "article_id": g.article_id,
+                "article_name": g.article_name,
+                "needs_assembly": g.needs_assembly,
+                "units": g.units,
+                "inspection_ids": g.ids,
+                "finished_at": [_utc(p.created_at) for p in g.prints],
+            }
+            for g in groups
+        ],
+    }
+
+
+def _utc(at) -> str:
+    return at.replace(tzinfo=UTC).isoformat()
+
+
+def _group_body(raw: bytes) -> tuple[list[int], int | str]:
+    """`(inspection_ids, good_units)` of a JSON body for the row of an article (p713).
+
+    Both are needed: the ids are the prints the display showed, so a print reported after it drew
+    the row is not booked unseen (as on the page). Ids are whole numbers (no bool, no 1.0, no text)
+    and at least one; a count of the wrong type is handed on as text, so the domain refuses it with
+    the range of the row (the same text as on the page)."""
+    try:
+        body = json.loads(raw)
+    except (ValueError, RecursionError):
+        raise ValidationError("inspections.invalid_group_body") from None
+    if not isinstance(body, dict) or "good_units" not in body:
+        raise ValidationError("inspections.invalid_group_body")
+    ids = body.get("inspection_ids")
+    if (
+        not isinstance(ids, list) or not ids
+        or any(isinstance(i, bool) or not isinstance(i, int) for i in ids)
+    ):
+        raise ValidationError("inspections.invalid_group_body")
+    good = body["good_units"]
+    if isinstance(good, bool) or not isinstance(good, int):
+        good = str(good)
+    return ids, good
+
+
+@router.post("/api/inspections/articles/{article_id:int}", dependencies=[Depends(verify_csrf)])
+async def api_resolve_article(article_id: int, request: Request):
+    """The row of an article by its good pieces: the same domain function as the page (Spec 8.2)."""
+    try:
+        raw = await request.body()
+    except RuntimeError:
+        raw = b""
+    try:
+        ids, good = _group_body(raw)
+        with write_transaction(request) as tx:
+            result = inspection.resolve_group(tx, article_id, ids, good, "user")
+    except DomainError as exc:
+        return _api_error(request, exc)
+    return {
+        "article_id": result.article_id,
+        "good": result.good,
+        "scrap": result.scrap,
+        "prints": [
+            {"id": p.inspection_id, "good": p.good, "scrap": p.scrap, "replacement_entry_id": p.replacement_entry_id}
+            for p in result.prints
+        ],
+        "replacement_entry_ids": [p.replacement_entry_id for p in result.prints if p.replacement_entry_id is not None],
+        "part_shortages": [{"part_id": s.part_id, "needed": s.needed, "had": s.had} for s in result.shortages],
     }
 
 

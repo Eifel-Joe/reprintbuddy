@@ -75,6 +75,7 @@ LOGGED = {
 
 # Bookings, the queue, prints and pauses: the journal's (Spec 6.3).
 JOURNAL = {
+    "/api/inspections/articles/{article_id:int}",  # the row of an article by its good pieces (p713)
     "/api/inspections/{inspection_id:int}",
     "/articles/{article_id:int}/confirm-file",
     "/articles/{article_id:int}/resume",
@@ -86,6 +87,7 @@ JOURNAL = {
     "/bookings/sale",
     "/bookings/stock-in",
     "/inspection/all-good",
+    "/inspection/articles/{article_id:int}",  # the row of an article by its good pieces (p713)
     "/inspection/{inspection_id:int}",
     "/orders/new",
     "/orders/{order_id:int}/cancel",

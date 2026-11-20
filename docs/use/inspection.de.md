@@ -18,24 +18,30 @@ Reprintbuddy unterscheidet nicht, ob ein Stück im Regal liegt oder noch an der 
 
 ## Zu prüfen
 
-Meldet Bambuddy einen Druck als fertig, bucht Reprintbuddy dessen Stücke als **Vorläufig** und legt eine Zeile in **Zu prüfen** an. Vorläufige Stücke lassen sich nicht verkaufen, zählen aber mit, wenn Reprintbuddy über einen Nachdruck entscheidet.
+Meldet Bambuddy einen Druck als fertig, bucht Reprintbuddy dessen Stücke als **Vorläufig** und nimmt den Druck in **Zu prüfen** auf. Vorläufige Stücke lassen sich nicht verkaufen, zählen aber mit, wenn Reprintbuddy über einen Nachdruck entscheidet.
 
-![Die Liste Zu prüfen mit einer Zeile je fertigem Druck](../assets/images/de/inspection.png)
+![Die Liste Zu prüfen mit einer Zeile je Artikel, eine Zeile zu ihren einzelnen Drucken aufgeklappt](../assets/images/de/inspection.png)
 
-Jede Zeile zeigt den Artikel, wann der Druck fertig gemeldet wurde, und das **Soll**: die Zahl der Stücke, die der Druck liefern sollte. Bei Artikeln mit Handarbeit steht dazu die Plakette **Geht danach in die Montage**.
+Die Liste hat eine Zeile je Artikel, egal woher die Drucke kommen (Mindestbestand, von Hand oder Ersatz). Die Zeile zeigt den Artikel, wie viele Drucke warten, mit der Zeit, zu der jeder fertig gemeldet wurde, und das **Soll**: die Stücke, die diese Drucke zusammen liefern sollten (Stück je Druck mal Drucke). Bei Artikeln mit Handarbeit steht dazu die Plakette **Geht danach in die Montage**.
 
-1. Zähle die guten Stücke des Drucks.
-2. Trage die Stücke, die nicht gut sind, bei **Ausschuss** ein. Vorgabe ist 0, höchstens kannst du das Soll eintragen. Leer heißt 0; alles, was keine ganze Zahl von 0 bis zum Soll ist, wird mit einer Meldung abgelehnt, die diesen Bereich nennt.
+1. Zähle die guten Stücke aller Drucke der Zeile.
+2. Trage sie bei **Gut** ein. Vorgegeben ist das Soll, mehr geht nicht. Alles, was keine ganze Zahl von 0 bis zum Soll ist, wird mit einer Meldung abgelehnt, die diesen Bereich nennt; auch ein leeres Feld, denn es könnte „keins“ oder „alle“ heißen.
 3. Klicke auf **Bestätigen**.
 
-Die guten Stücke sind das Soll minus Ausschuss. Sie werden **Bestand**, bei Handarbeit **Wartet auf Montage**. Der Ausschuss wird abgeschrieben, und Reprintbuddy stellt einen Ersatzdruck vorn in die Warteschlange, aufgerundet auf ganze Drucke. Der Ersatz kommt auch dann, wenn die Automatik für den Artikel pausiert ist. Bei einem Druck aus dem Mindestbestand wird nur ersetzt, was bis zur Zielmenge fehlt; fehlt nichts, sagt die Meldung **Kein Ersatz nötig** (siehe [Ersatz für Ausschuss und Fehlschläge](automation.md#ersatz-fur-ausschuss-und-fehlschlage)).
+Die guten Stücke werden **Bestand**, bei Handarbeit **Wartet auf Montage**. Der Rest, Soll minus gut, ist Ausschuss: Er wird abgeschrieben, zuerst beim ältesten Druck der Zeile, und jeder Druck mit Ausschuss bekommt seinen Ersatzdruck vorn in Reprintbuddys Warteschlange, aufgerundet auf ganze Drucke; bei der Übergabe kommt er auch in Bambuddys Warteschlange nach vorn. Der Ersatz kommt auch dann, wenn die Automatik für den Artikel pausiert ist. Bei einem Druck aus dem Mindestbestand wird nur ersetzt, was bis zur Zielmenge fehlt; fehlt nichts, sagt die Meldung **Kein Ersatz nötig** (siehe [Ersatz für Ausschuss und Fehlschläge](automation.md#ersatz-fur-ausschuss-und-fehlschlage)). Das Journal zeigt jeden Druck in einer eigenen Zeile.
 
-Mehrere Drucke bestätigst du auf einmal so:
+Die Zeile bucht genau die Drucke, die sie gezeigt hat. Hat inzwischen jemand einen davon anderswo bestätigt, wird nichts gebucht, und eine Meldung bittet, die Zeile neu zu zählen; ein Druck, der erst nach dem Laden der Seite fertig gemeldet wurde, bleibt in der Liste.
 
-- Hake die Zeilen an (das Kästchen im Tabellenkopf wählt alle) und klicke auf **Ausgewählte alle gut**. Der Knopf bleibt aus, solange nichts angehakt ist.
-- Klicke auf **Alle gut**, um jede Zeile der Seite als ganz gut zu bestätigen.
+### Einzelne Drucke
 
-Drucke, die inzwischen jemand anderes bestätigt hat, werden übersprungen; die Meldung nennt, wie viele.
+Unter einer Zeile mit mehr als einem Druck steht **Einzelne Drucke (n)**. Aufgeklappt zeigt sie jeden Druck mit eigener Fertigzeit, eigenem Soll, eigenem Feld **Gut** und eigenem Knopf **Bestätigen**, etwa wenn von mehreren Drucken einer misslungen ist. Ein dort bestätigter Druck verschwindet aus der Zeile. Eine aufgeklappte Zeile bleibt offen, während sich die Liste selbst aktualisiert und nachdem du einen ihrer Drucke bestätigt hast.
+
+### Mehrere Artikel auf einmal
+
+- Hake die Zeilen an (das Kästchen im Tabellenkopf wählt alle) und klicke auf **Ausgewählte alle gut**. Jeder Druck einer angehakten Zeile wird als ganz gut bestätigt. Der Knopf bleibt aus, solange nichts angehakt ist.
+- Klicke auf **Alle gut**, um jeden Druck der Seite als ganz gut zu bestätigen.
+
+Drucke, die inzwischen jemand anderes bestätigt hat, werden übersprungen; die Meldung nennt, wie viele. Drucke, die nach dem Laden der Seite dazugekommen sind, bleiben unberührt.
 
 Die Prüfung nimmt keine Notiz auf. Die Montage weiter unten auch nicht. Beide buchen mit einem Klick, und das Journal zeigt die Buchung ohne Notiz (alte Einträge behalten ihre).
 

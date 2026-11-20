@@ -19,6 +19,7 @@ from reprintbuddy.bambuddy.types import (
     LibraryFile,
     LibraryFolder,
     Plate,
+    PlanSettings,
     PrintOptions,
     Printer,
     PrinterStatus,
@@ -35,7 +36,7 @@ _EFFECT_METHODS = frozenset({"enqueue", "upload_file", "delete_queue_item"})
 _FAILABLE_METHODS = _EFFECT_METHODS | {
     "list_folders", "list_files", "get_file", "list_plates", "plate_thumbnail", "file_thumbnail",
     "filament_requirements", "list_printers", "spool_mode", "list_spools", "print_defaults",
-    "get_queue_item", "list_queue", "list_all_items", "printer_statuses", "shortest_first",
+    "get_queue_item", "list_queue", "list_all_items", "printer_statuses", "plan_settings",
     "inventory_remain",
 }
 
@@ -90,11 +91,12 @@ class FakeBambuddy:
         self._printers: list[Printer] = []
         # The print plan (0.4.2): each printer's state (Bambuddy `PrinterStatus`), each file's print
         # time in seconds (the slicer's estimate on the entry, `print_queue.py:575-645`) and
-        # Bambuddy's setting "shortest job first".
+        # Bambuddy's settings "shortest job first" and "lowest spool first" (p716; None: not in the answer).
         self._statuses: dict[int, PrinterStatus] = {}
         self._grams: dict[int, dict[tuple[int, int], float]] = {}  # p648: grams of assigned spools per slot
         self._print_times: dict[int, int | None] = {}
         self.shortest = False
+        self.prefer_lowest: bool | None = None
         self._next_folder = 1
         self._next_file = 1
         self._items: dict[int, QueueItem] = {}
@@ -237,9 +239,9 @@ class FakeBambuddy:
         self._enter("printer_statuses")
         return {i: self._statuses[i] for i in printer_ids if i in self._statuses}
 
-    async def shortest_first(self) -> bool:
-        self._enter("shortest_first")
-        return self.shortest
+    async def plan_settings(self) -> PlanSettings:
+        self._enter("plan_settings")
+        return PlanSettings(shortest_first=self.shortest, prefer_lowest=self.prefer_lowest)
 
     def set_printer_slots(
         self, printer_id: int, slots: Sequence[AmsSlot], *, backup: bool | None = None,
@@ -287,8 +289,8 @@ class FakeBambuddy:
     def set_remaining(self, spool_id: int, grams: float) -> None:
         self._spools[spool_id] = dataclasses.replace(self._spools[spool_id], remaining_g=grams)
 
-    def archive_spool(self, spool_id: int) -> None:
-        self._spools[spool_id] = dataclasses.replace(self._spools[spool_id], archived=True)
+    def archive_spool(self, spool_id: int, at: datetime | None = None) -> None:
+        self._spools[spool_id] = dataclasses.replace(self._spools[spool_id], archived=True, archived_at=at)
 
     async def list_spools(self) -> list[Spool]:
         self._enter("list_spools")
@@ -401,6 +403,14 @@ class FakeBambuddy:
 
     def set_manual_start(self, item_id: int, value: bool) -> None:
         self._put(dataclasses.replace(self._items[item_id], manual_start=value))
+
+    def reorder(self, item_ids: Sequence[int]) -> None:
+        """What dragging on Bambuddy's queue page does (`reorder_queue`, `print_queue.py:2752-2768`): the
+        page sends the entries with their new places 1 to n; only pending entries take theirs."""
+        for position, item_id in enumerate(item_ids, start=1):
+            item = self._items[item_id]
+            if item.status == "pending":
+                self._put(dataclasses.replace(item, position=position))
 
     def delete_item(self, item_id: int) -> None:
         """What deleting an entry in Bambuddy does: it is gone, the positions keep their gaps."""

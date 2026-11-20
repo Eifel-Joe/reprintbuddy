@@ -29,6 +29,10 @@ from reprintbuddy.ops.runner import CommandResult
 from reprintbuddy.ops.service import RESTART_WAIT_CMD, START_CMD, STOP_CMD
 from reprintbuddy.ops.status import UpdateStatus, read_status, write_status
 from reprintbuddy.ops.updater import RETURN_DIR, run_update, venv_python
+from reprintbuddy.db import MIGRATIONS_DIR as _MIGRATIONS_DIR
+from reprintbuddy.ops.migrationsteps import head_of_dir as _head_of_dir
+
+HEAD = _head_of_dir(_MIGRATIONS_DIR / "versions")  # the head of this code: the stable head in these tests
 
 NOW = datetime(2026, 11, 14, 12, 0, tzinfo=UTC)
 BACKUP_AT = datetime(2026, 11, 10, 9, 30, tzinfo=UTC)
@@ -70,7 +74,7 @@ class ReturnEnv:
         self.data.mkdir()
         self.db = self.data / "r.db"
         engine = make_engine(self.db)
-        upgrade(engine, revision="0022")
+        upgrade(engine, revision=HEAD)
         engine.dispose()
         self.order = sql(self.db, "INSERT INTO orders (reference, order_date) VALUES ('A-1', '2026-11-01') RETURNING id")[0][0]
         add_journal(self.db)
@@ -98,7 +102,7 @@ class ReturnEnv:
         self.health = [True]
         self.queue(case)
 
-    def queue(self, case, *, age=timedelta(seconds=30), head="0022", backup=None):
+    def queue(self, case, *, age=timedelta(seconds=30), head=HEAD, backup=None):
         write_status(
             self.data,
             UpdateStatus(
@@ -166,7 +170,7 @@ def test_the_database_is_switched_before_pip(tmp_path, fake_runner):
     seen = []
     fake_runner.on(env.pip(), lambda call: seen.append(current_revision(env.db)) or CommandResult(0))
     assert env.run().state == "succeeded"
-    assert seen == ["0022"]
+    assert seen == [HEAD]
 
 
 def test_case_2_removes_what_the_pre_release_added(tmp_path, fake_runner, capsys):
@@ -174,7 +178,7 @@ def test_case_2_removes_what_the_pre_release_added(tmp_path, fake_runner, capsys
     for text in ("a", "b", "c"):
         sql(env.db, "INSERT INTO t_notes (order_id, text) VALUES (?, ?)", env.order, text)
     assert env.run().state == "succeeded"
-    assert current_revision(env.db) == "0022"
+    assert current_revision(env.db) == HEAD
     assert not sql(env.db, "SELECT name FROM sqlite_master WHERE name = 't_notes'")
     assert sql(env.db, "SELECT reference FROM orders") == [("A-1",)]
     assert sql(env.db, "SELECT count(*) FROM journal") == [(2,)]
@@ -186,7 +190,7 @@ def test_case_3_brings_back_the_backup_from_before_the_pre_release(tmp_path, fak
     env = ReturnEnv(tmp_path, fake_runner, "rework_marked", case=3)
     add_journal(env.db)
     assert env.run().state == "succeeded"
-    assert current_revision(env.db) == "0022"
+    assert current_revision(env.db) == HEAD
     assert sql(env.db, "SELECT reference FROM orders") == [("A-1",)]  # the reference before the rework
     assert sql(env.db, "SELECT count(*) FROM journal") == [(2,)]  # the booking since then is gone
     assert channel(env.db) == "stable"
@@ -495,7 +499,7 @@ def test_p610_cut_off_after_the_switch_brings_back_the_pre_release_with_its_data
     result = env.run(guard=guard)
     assert (result.state, result.step, result.reason) == ("rolled_back", "rollback", "interrupted_rolled_back")
     assert result.message == f"{step}: interrupted, the previous version was put back"
-    assert (result.kind, result.return_case, result.target_head) == ("return", 2, "0022")
+    assert (result.kind, result.return_case, result.target_head) == ("return", 2, HEAD)
     assert content(env.db) == before
     assert read_installation(env.opt, fake_runner).tag == BETA
     assert (env.opt / ".venv" / "which").read_text(encoding="utf-8") == "beta"

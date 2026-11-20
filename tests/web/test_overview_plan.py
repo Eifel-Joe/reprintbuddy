@@ -367,6 +367,38 @@ def test_reload_marker_and_head_line(bb_client, fake_bambuddy):
     assert str(escape(translate_count("en", "overview.plan.filament_short", 1))) in part
 
 
+def test_slot_note_in_the_page_calm_and_a_line_of_its_own_on_the_phone(bb_client, fake_bambuddy):
+    """p716: two slots of black PLA with the backup on and "lowest spool first" read from Bambuddy's settings:
+    slot 2 (100 g) runs empty first. The note stands in the filament line like the others (on the phone each one
+    a line of its own), in the calm colour with a calm tick; the reload keeps its orange tick."""
+    from reprintbuddy.bambuddy.types import AmsSlot, FilamentRequirement
+
+    fake = fake_bambuddy
+    fake.prefer_lowest = True
+    fake.set_requirements(2, 1, [FilamentRequirement(1, 500.0, "PLA", "#000000")])
+    fake.set_printer_slots(1, [AmsSlot(0, 0, "PLA", "#000000", True), AmsSlot(0, 1, "PLA", "#000000", True)],
+                           backup=True, grams={(0, 0): 300.0, (0, 1): 100.0})
+    fake.set_printer_slots(2, [], grams={})
+    fake.add_foreign_item("B.gcode.3mf", library_file_id=2, plate_id=1, printer_id=1, print_time_s=3600)
+    with sm_of(bb_client).begin() as s:
+        st.set_setting(s, "automation", False, commit=False)
+    query(bb_client)
+    part = plan_part(bb_client)
+    marks = re.findall(r'<span class="plan-mark (plan-mark-[a-z_]+)">(?:<span[^>]*></span>)?([^<]*)</span>', part)
+    assert [kind for kind, _ in marks] == ["plan-mark-slot_empty", "plan-mark-reload"]
+    assert re.fullmatch(r"AMS 1, slot 2 empty about \d\d:\d\d, continuing with AMS 1, slot 1", marks[0][1])
+    assert 'class="plan-tick plan-tick-slot"' in part and 'class="plan-tick"' in part
+    assert "Reload needed: Printer 1 about" in part and "slot 2 empty" not in part.split("plan-lane")[0]
+
+    css = CSS.read_text(encoding="utf-8")
+    calm = re.search(r"\.plan-tick-slot \{([^}]*)\}", css)
+    assert calm and "--warn" not in calm.group(1)
+    assert ".plan-mark-slot_empty" not in css  # the filament line's own calm colour, not the orange of a reload
+    mobile = next(b for b in re.findall(r"@media \(max-width: 699px\) \{(.*?)\n\}", css, re.S) if ".plan-track" in b)
+    assert re.search(r"\.plan-filament \{[^}]*flex-direction: column", mobile)
+    assert re.search(r"\.plan-tick \{[^}]*display: none", mobile)
+
+
 def test_no_marker_without_slots(bb_client, fake_bambuddy):
     fake_bambuddy.add_foreign_item("B.gcode.3mf", library_file_id=2, plate_id=1, printer_id=1)
     query(bb_client)

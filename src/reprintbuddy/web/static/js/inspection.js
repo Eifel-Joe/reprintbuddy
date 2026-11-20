@@ -1,13 +1,20 @@
-/* "To check": a box in the table head that picks all prints (half state when only some are picked),
+/* "To check": a box in the table head that picks all article rows (half state when only some are picked),
    and "Selected all good" stays off while nothing is picked (p117). Without this file the head has no
    box and the button is on; the server then answers "nothing is selected". The text of the box comes
    from the page (data-label). The list is swapped by live.js now and then, so the box is put back
-   whenever the page changes. */
+   whenever the page changes.
+
+   p713 (Spec 8.2): a row with several prints unfolds (details.inspect-prints). live.js swaps the list
+   now and then, and confirming one print loads the page anew; both would fold the row again while
+   somebody is counting at the shelf. So the open rows (their article ids) are kept in the tab's store
+   and opened again after every swap and every load. Rejected: holding the list while a row is open
+   (as the queue holds it while a menu is open): a row stays open for long at the shelf, and the list
+   would not show new prints meanwhile. Without the store (blocked, private mode) the rows just fold. */
 (function () {
   "use strict";
 
   var HEAD = ".inspect-head-select";
-  var ROWS = 'input[type="checkbox"][name="ids"][form="inspect-selected"]';
+  var ROWS = 'input[type="checkbox"][name="group"][form="inspect-selected"]'; // one box per article row (p713)
   var BUTTON = '#inspect-selected button[type="submit"]';
 
   // What the head box and the button show for `total` rows of which `ticked` are picked.
@@ -17,6 +24,61 @@
       half: ticked > 0 && ticked < total,
       none: ticked === 0
     };
+  }
+
+  var STORE = "rb_inspect_open";
+  var MAX_OPEN = 50; // the newest ones; older ids of articles long inspected drop out
+
+  // The article ids kept open, from the stored text (a JSON list of strings); anything else is none.
+  function openIds(stored) {
+    var list;
+    try {
+      list = JSON.parse(stored || "[]");
+    } catch (e) {
+      return [];
+    }
+    if (!Array.isArray(list)) {
+      return [];
+    }
+    return list.filter(function (id) {
+      return typeof id === "string";
+    });
+  }
+
+  // The stored text after the row of `id` was opened (`open`) or folded.
+  function remember(stored, id, open) {
+    var list = openIds(stored).filter(function (other) {
+      return other !== id;
+    });
+    if (open) {
+      list.push(id);
+    }
+    return JSON.stringify(list.slice(-MAX_OPEN));
+  }
+
+  function load() {
+    try {
+      return window.sessionStorage.getItem(STORE);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function save(text) {
+    try {
+      window.sessionStorage.setItem(STORE, text);
+    } catch (e) {
+      return; // blocked: the rows fold on the next swap, nothing else changes
+    }
+  }
+
+  function reopen() {
+    var ids = openIds(load());
+    Array.prototype.forEach.call(document.querySelectorAll("details.inspect-prints"), function (details) {
+      if (!details.open && ids.indexOf(details.getAttribute("data-article")) >= 0) {
+        details.open = true;
+      }
+    });
   }
 
   function rows() {
@@ -64,12 +126,21 @@
   function enhance() {
     build();
     sync();
+    reopen();
   }
 
   if (typeof document === "undefined") {
-    module.exports = { state: state };
+    module.exports = { state: state, openIds: openIds, remember: remember };
     return;
   }
+
+  // "toggle" does not bubble: listen while it goes down. An error opens its row from the server; that is kept too.
+  document.addEventListener("toggle", function (event) {
+    var details = event.target;
+    if (details && details.matches && details.matches("details.inspect-prints")) {
+      save(remember(load(), details.getAttribute("data-article"), details.open));
+    }
+  }, true);
 
   document.addEventListener("change", function (event) {
     var target = event.target;

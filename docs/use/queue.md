@@ -24,7 +24,7 @@ Every reprint starts as an entry here and is handed over to Bambuddy from the to
 | **Added** | When the entry was made. |
 | **State** | **waiting**, **held**, or **article paused** (hover for the reason). |
 
-Where new entries go: entries of the rule go to the end. Replacements go to the front, because you want them at once. Manual entries go where you put them, by default at the end.
+Where new entries go in Reprintbuddy's queue: entries of the rule go to the end. Replacements go to the front, because you want them at once; at the hand-over they go to the front of Bambuddy's queue too (see below). Manual entries go where you put them, by default at the end.
 
 ### Change the order
 
@@ -51,7 +51,7 @@ This works with the automation switched off and beyond the target quantity. Such
 
 ## How prints reach Bambuddy
 
-Reprintbuddy hands entries over from the top down, one print at a time. An entry of three prints becomes three single entries in Bambuddy's queue, and it disappears from Reprintbuddy's queue when its last print is handed over. Each print goes with the article's print file, plate and print target and starts without approval; it takes the *Default Print Options* set in Bambuddy. Where it lands in Bambuddy's queue depends on **Insert as next print**, see [Automation](automation.md#switches-and-settings).
+Reprintbuddy hands entries over from the top down, one print at a time. An entry of three prints becomes three single entries in Bambuddy's queue, and it disappears from Reprintbuddy's queue when its last print is handed over. Each print goes with the article's print file, plate and print target and starts without approval; it takes the *Default Print Options* set in Bambuddy. Where it lands in Bambuddy's queue depends on **Insert as next print**, see [Automation](automation.md#switches-and-settings). Replacement prints always go to the front of Bambuddy's queue: ahead of every other waiting print, but behind the last replacement of Reprintbuddy still waiting there, so replacements keep their order; a running print stays. If **SJF** (shortest job first) is switched on in Bambuddy, Bambuddy starts the shorter print first; the place in the queue then only breaks a tie of equal print time.
 
 Reprintbuddy hands over only while fewer prints of its own are open in Bambuddy than the **Limit of open prints in Bambuddy**. Skipped are held entries, entries of paused articles and entries of articles whose printers are all in maintenance mode. Nothing is handed over while the queue is stopped, Bambuddy cannot be reached or refuses the query, a hand-over is unclear, or an update is running.
 

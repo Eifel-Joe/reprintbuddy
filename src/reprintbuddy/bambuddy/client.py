@@ -18,6 +18,7 @@ from reprintbuddy.bambuddy.types import (
     LibraryFile,
     LibraryFolder,
     Plate,
+    PlanSettings,
     PrintOptions,
     Printer,
     PrinterStatus,
@@ -132,7 +133,7 @@ class BambuddyClient(Protocol):
 
     async def printer_statuses(self, printer_ids: Sequence[int]) -> dict[int, PrinterStatus]: ...
 
-    async def shortest_first(self) -> bool: ...
+    async def plan_settings(self) -> PlanSettings: ...
 
     async def inventory_remain(self, printer_id: int) -> dict[tuple[int, int], float]: ...
 
@@ -320,10 +321,12 @@ class HttpBambuddyClient:
         """Grams left per slot of the spools assigned in Bambuddy (Spec 7.6, p648), keyed (ams_id, tray_id)."""
         return _parse.parse_inventory_remain(await self._get(f"/printers/{printer_id}/inventory-remain"))
 
-    async def shortest_first(self) -> bool:
-        """Bambuddy's "shortest job first" for the order of the print plan (`queue_shortest_first`,
-        `print_scheduler.py:1700-1711`), read from `GET /settings/` (`settings:read`, Spec 11.3)."""
-        return _parse.parse_shortest_first(await self._get("/settings/"))
+    async def plan_settings(self) -> PlanSettings:
+        """Bambuddy's settings the print plan follows, read from `GET /settings/` (`settings:read`, Spec 11.3):
+        "shortest job first" for the order of the queue (`queue_shortest_first`, `print_scheduler.py:1700-1711`)
+        and "lowest spool first" for the order in which the slots of one sort run empty (`prefer_lowest_filament`,
+        `:4761-4784`, p716). One request for both, as there was one for the first before p716."""
+        return _parse.parse_plan_settings(await self._get("/settings/"))
 
     async def spool_mode(self) -> SpoolMode:
         """Which spool management Bambuddy runs right now (Decision 17)."""

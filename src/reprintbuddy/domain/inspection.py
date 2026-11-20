@@ -90,6 +90,41 @@ def list_open(session: Session, article_id: int | None = None) -> list[Inspectio
     return [InspectionRow(*row) for row in session.execute(query).all()]
 
 
+@dataclass(frozen=True)
+class ArticleGroup:
+    """The prints of one article waiting for inspection: one row of the list (Spec 8.2, p713).
+
+    The origin of the prints (minimum stock, by hand, replacement) does not split the row."""
+
+    article_id: int
+    article_name: str
+    needs_assembly: bool
+    has_thumbnail: bool
+    prints: list[InspectionRow]
+
+    @property
+    def ids(self) -> list[int]:
+        return [p.id for p in self.prints]
+
+    @property
+    def units(self) -> int:
+        """The target number of the row: units per print × prints, as each print was handed over."""
+        return sum(p.units for p in self.prints)
+
+
+def list_groups(session: Session, article_id: int | None = None) -> list[ArticleGroup]:
+    """One row per article, the prints oldest first; the rows by their oldest print (p713 F6)."""
+    groups: dict[int, ArticleGroup] = {}
+    for row in list_open(session, article_id=article_id):
+        group = groups.get(row.article_id)
+        if group is None:
+            group = groups[row.article_id] = ArticleGroup(
+                row.article_id, row.article_name, row.needs_assembly, row.has_thumbnail, []
+            )
+        group.prints.append(row)
+    return list(groups.values())
+
+
 def _current(session: Session, inspection_id: int) -> Inspection | None:
     """The stored state of an inspection, read anew.
 
@@ -175,6 +210,80 @@ def resolve_scrap(
             "form.invalid_number", field="inspections.field.scrap", min=0, max=row.units
         )
     return _book(session, row, row.units - scrap_units, actor)
+
+
+@dataclass(frozen=True)
+class GroupResult:
+    article_id: int
+    good: int
+    scrap: int
+    prints: list[ResolveResult]
+    shortages: list[PartShortage]
+
+    @property
+    def replacements(self) -> int:
+        """Replacement entries made for the scrap of the row (one per print at most, Spec 7.5)."""
+        return sum(1 for p in self.prints if p.replacement_entry_id is not None)
+
+    @property
+    def replacement_not_needed(self) -> bool:
+        """Scrap without any replacement: the target is reached without it (p411, Spec 7.5)."""
+        return self.scrap > 0 and self.replacements == 0
+
+
+def _merged(shortages: list[PartShortage]) -> list[PartShortage]:
+    """One shortage per part: the first booking says what was there, the needs add up.
+
+    Each print books on its own; after the first one a short part stands at 0, so without this the
+    message would name the part once per print ("0 there")."""
+    merged: dict[int, PartShortage] = {}
+    for s in shortages:
+        before = merged.get(s.part_id)
+        merged[s.part_id] = s if before is None else PartShortage(s.part_id, before.needed + s.needed, before.had)
+    return list(merged.values())
+
+
+def resolve_group(
+    session: Session,
+    article_id: int,
+    inspection_ids: Sequence[int],
+    good_units: int,
+    actor: Actor,
+) -> GroupResult:
+    """Confirm the row of an article by its good units (Spec 8.2, p713).
+
+    The row is the prints the page (or display) showed: `inspection_ids`. If one of them is gone
+    (inspected meanwhile, another article, unknown), the count no longer belongs to the row and
+    nothing is booked (p713 F3); a print reported after the page was loaded is not in the ids and
+    stays open. The scrap (target − good) goes to the prints oldest first, so at most one print gets
+    part of it; each print is then booked by `_book` as before, which keeps rule 7.5 per print
+    (p411 limit, rounding to whole prints). Rejected: one replacement for the whole row, since 7.5
+    decides by the origin of each print and the row mixes origins (Spec 8.2).
+    Tests: test_inspection.py "group".
+    """
+    ids = list(dict.fromkeys(inspection_ids))
+    if not ids:
+        raise ValidationError("inspections.none_selected")
+    rows = [_current(session, i) for i in ids]
+    if any(r is None or r.resolved_at is not None or r.article_id != article_id for r in rows):
+        raise ConflictError("inspections.group_changed")
+    rows.sort(key=lambda r: (r.created_at, r.id))
+    target = sum(r.units for r in rows)
+    if isinstance(good_units, bool) or not isinstance(good_units, int) or not 0 <= good_units <= target:
+        raise ValidationError("form.invalid_number", field="inspections.field.good", min=0, max=target)
+    scrap_left = target - good_units
+    results: list[ResolveResult] = []
+    for row in rows:
+        scrap = min(scrap_left, row.units)
+        scrap_left -= scrap
+        results.append(_book(session, row, row.units - scrap, actor))
+    return GroupResult(
+        article_id,
+        good_units,
+        target - good_units,
+        results,
+        _merged([s for r in results for s in r.shortages]),
+    )
 
 
 def resolve_all_good(

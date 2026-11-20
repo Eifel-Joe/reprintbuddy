@@ -38,7 +38,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy import settings
 from reprintbuddy.bambuddy.client import BambuddyClient, BambuddyRejected, BambuddyUnavailable, BambuddyUnexpected
-from reprintbuddy.bambuddy.types import LibraryFile, Printer, QueueItem
+from reprintbuddy.bambuddy.types import LibraryFile, PlanSettings, Printer, QueueItem
 from reprintbuddy.domain import dispatch, tracking, withdraw, workqueue
 from reprintbuddy.domain.printerboard import FileFacts, PrinterBoard
 from reprintbuddy.domain.printplan import PRINTING_STATES, same_model
@@ -433,9 +433,10 @@ class Engine:
             log.warning("engine: the check of the key's rights failed", exc_info=True)
 
     async def _read_printers(self, client: BambuddyClient, printers: tuple[Printer, ...]) -> None:
-        """The printers' state for the print plan (Spec 7.6, 0.4.2): one request for all printers and
-        Bambuddy's "shortest job first", once per regular query. Only shown: a failure makes the state
-        unknown and changes nothing else (no poll error, no warning, no `reachable`)."""
+        """The printers' state for the print plan (Spec 7.6, 0.4.2): one request for all printers and one for
+        Bambuddy's settings ("shortest job first", and "lowest spool first" since p716), once per regular query.
+        Only shown: a failure makes the state unknown and changes nothing else (no poll error, no warning, no
+        `reachable`)."""
         try:
             statuses = await client.printer_statuses([p.id for p in printers])
         except (BambuddyRejected, BambuddyUnavailable):
@@ -443,10 +444,12 @@ class Engine:
             self.board.forget()
             return
         try:
-            shortest = await client.shortest_first()
+            plan = await client.plan_settings()
         except (BambuddyRejected, BambuddyUnavailable):
-            shortest = False  # the queue order, as Bambuddy's default
-        self.board.replace(printers, statuses, shortest_first=shortest)
+            # The queue order, as Bambuddy's default, and "lowest spool first" unknown: the slots of a sort run
+            # empty in slot order (Spec 10.2, p716).
+            plan = PlanSettings()
+        self.board.replace(printers, statuses, shortest_first=plan.shortest_first, prefer_lowest=plan.prefer_lowest)
 
     async def _read_file_facts(self, client: BambuddyClient, files: dict[int, LibraryFile | None]) -> bool:
         """Print time per plate and nozzle of the files in Reprintbuddy's own queue, for the print plan

@@ -169,6 +169,23 @@ async def test_completion_no_reprint(engine_env):
     assert env.engine.status.last_poll_at is not None
 
 
+async def test_replacement_after_a_failure_goes_to_the_top_of_bambuddys_queue(engine_env):
+    """Spec 7.3 "Ausnahme Ersatzdrucke" (1.2.2): failed in Bambuddy, replaced, handed over in the same
+    tick ahead of the prints waiting there, with "insert next" off (the default)."""
+    env = engine_env
+    await env.engine.tick(poll=False)
+    (item_id,) = item_ids(env.sm)
+    foreign = [env.fake.add_foreign_item("Other 1").id, env.fake.add_foreign_item("Other 2").id]
+    env.fake.set_status(item_id, "failed")
+
+    await env.engine.tick(poll=True)
+
+    assert statuses(env.sm) == ["failed", "queued"]
+    replacement = item_ids(env.sm)[1]
+    assert [i.id for i in await env.fake.list_queue()] == [replacement, *foreign]
+    assert (env.fake.enqueued[-1].insert_at_top, env.fake.enqueued[-1].insert_position) == (True, None)
+
+
 async def test_queue_stopped_creates_but_does_not_dispatch(engine_env):
     env = engine_env
     setting(env.sm, "queue_running", False)
@@ -1453,6 +1470,7 @@ async def test_poll_reads_printer_states_once(engine_env):
     env = engine_env  # the fake has Printer 1, 2 (A1) and 3 (P1S)
     env.fake.set_printer_status(1, state="RUNNING", progress=63.0, remaining_min=70)
     env.fake.shortest = True
+    env.fake.prefer_lowest = True
 
     await env.engine.tick(poll=True)
 
@@ -1460,8 +1478,9 @@ async def test_poll_reads_printer_states_once(engine_env):
     assert [p.id for p in board.printers] == [1, 2, 3]
     assert board.statuses[1].remaining_min == 70 and board.statuses[2].state == "IDLE"
     assert board.at is not None and board.shortest_first is True
+    assert board.prefer_lowest is True  # p716: with the same read of the settings
     assert env.fake.calls.count("printer_statuses") == 1
-    assert env.fake.calls.count("shortest_first") == 1
+    assert env.fake.calls.count("plan_settings") == 1
 
 
 async def test_a_short_tick_does_not_read_printer_states(engine_env):
@@ -1490,13 +1509,20 @@ async def test_refused_status_leaves_poll_untouched(engine_env, exc):
     assert keys(env.sm, status) == []
 
 
-async def test_unreadable_setting_keeps_the_queue_order(engine_env):
+@pytest.mark.parametrize("exc", [BambuddyRejected("Forbidden", status=403), BambuddyUnavailable("timeout")])
+async def test_unreadable_setting_keeps_the_queue_order(engine_env, exc):
+    """The settings unread: the queue order, and "lowest spool first" unknown, so the slots of a sort run empty
+    in slot order (Spec 10.2, p716). A value known from an earlier read does not stay."""
     env = engine_env
     env.fake.shortest = True
-    env.fake.fail_next("shortest_first", BambuddyRejected("Forbidden", status=403))
+    env.fake.prefer_lowest = True
+    await env.engine.tick(poll=True)
+    assert env.engine.board.prefer_lowest is True
+    env.fake.fail_next("plan_settings", exc)
     await env.engine.tick(poll=True)
     assert env.engine.board.printers is not None
     assert env.engine.board.shortest_first is False
+    assert env.engine.board.prefer_lowest is None
 
 
 async def test_unreachable_poll_forgets_the_board(engine_env):

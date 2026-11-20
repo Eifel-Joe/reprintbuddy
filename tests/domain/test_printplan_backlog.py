@@ -276,3 +276,84 @@ def test_bars_of_reprintbuddys_queue_carry_their_reference():
 
     plan = build_plan([printer(1)], [], NOW, backlog=[replace(waiting(), ref=42)], free_slots=1)
     assert plan.lanes[0].bars[0].ref == 42
+
+
+# ---- replacements to the top of Bambuddy's queue (Spec 7.3 "Ausnahme Ersatzdrucke", 10.2; 1.2.2) ---------
+
+
+def replacement(label="Ersatz", *, minutes: int | None = 30) -> PlanItem:
+    """A replacement print of Reprintbuddy's queue (origin scrap or failure)."""
+    from dataclasses import replace
+
+    return replace(waiting(label, minutes=minutes), replacement=True)
+
+
+@pytest.mark.parametrize("insert_next", [False, True])
+def test_replacement_is_handed_over_ahead_of_every_waiting_entry(insert_next):
+    own_waiting = item("Halter", minutes=20, holds_slot=True)
+    foreign = item("Fremd", minutes=60)
+    plan = build_plan([running(1, 30)], [own_waiting, foreign], NOW, backlog=[replacement()], free_slots=1,
+                      insert_next=insert_next)
+    assert [b[1] for b in bars(plan, 1)] == ["", "Ersatz", "Halter", "Fremd"]
+
+
+@pytest.mark.parametrize("insert_next, rest", [
+    (False, ["Halter", "Fremd", "Clip"]),
+    (True, ["Halter", "Clip", "Fremd"]),  # behind the last own waiting entry, as before
+])
+def test_replacement_goes_behind_the_replacements_waiting_in_front(insert_next, rest):
+    """An own replacement already waiting in Bambuddy stays first; the new one follows it, the entries of
+    the minimum stock follow the switch as before."""
+    from dataclasses import replace
+
+    waiting_replacement = replace(item("Deckel", minutes=20, holds_slot=True), replacement=True)
+    own_waiting = item("Halter", minutes=20, holds_slot=True)
+    foreign = item("Fremd", minutes=60)
+    plan = build_plan([running(1, 30)], [waiting_replacement, own_waiting, foreign], NOW,
+                      backlog=[replacement(), replacement("Ersatz 2"), waiting()], free_slots=3,
+                      insert_next=insert_next)
+    assert [b[1] for b in bars(plan, 1)] == ["", "Deckel", "Ersatz", "Ersatz 2", *rest]
+
+
+def test_a_running_replacement_does_not_hold_the_new_one_back():
+    from dataclasses import replace
+
+    printing = replace(item("Deckel", state="printing", printer_id=1, holds_slot=True), replacement=True)
+    foreign = item("Fremd", minutes=60)
+    plan = build_plan([running(1, 30)], [printing, foreign], NOW, backlog=[replacement()], free_slots=1)
+    assert [b[1] for b in bars(plan, 1)] == ["Deckel", "Ersatz", "Fremd"]
+
+
+def test_replacement_released_later_overtakes_entries_not_yet_started():
+    """Limit reached: handed over when the own print ends at 10:30, ahead of the foreign entry still waiting."""
+    own = item("Halter", state="printing", printer_id=1, holds_slot=True)
+    foreign = item("Fremd", minutes=60)
+    plan = build_plan([running(1, 30)], [own, foreign], NOW, backlog=[replacement()], free_slots=0)
+    assert bars(plan, 1)[1:] == [("backlog", "Ersatz", at(10, 35), at(11, 5)),
+                                 ("planned", "Fremd", at(11, 10), at(12, 10))]
+
+
+@pytest.mark.parametrize("shortest_first, foreign_minutes, order", [
+    (False, 10, ["Ersatz", "Fremd"]),
+    (True, 10, ["Fremd", "Ersatz"]),  # the shorter print first
+    (True, 60, ["Ersatz", "Fremd"]),  # equal print time: the place decides (review 1.2.2, 4)
+])
+def test_shortest_first_decides_over_the_place_of_a_replacement(shortest_first, foreign_minutes, order):
+    """With Bambuddy's "shortest job first" the print time decides, the place only on a tie."""
+    foreign = item("Fremd", minutes=foreign_minutes)
+    plan = build_plan([printer(1)], [foreign], NOW, backlog=[replacement(minutes=60)], free_slots=1,
+                      shortest_first=shortest_first)
+    assert [b[1] for b in bars(plan, 1)] == order
+
+
+def test_replacement_stays_behind_an_earlier_one_when_a_print_was_put_on_top_in_bambuddy():
+    """Review 1.2.2, 3: as the hand-over, the new replacement goes behind the replacement already waiting,
+    though a print put on top in Bambuddy stands before it."""
+    from dataclasses import replace
+
+    on_top = item("Oben", minutes=20)
+    waiting_replacement = replace(item("Deckel", minutes=20, holds_slot=True), replacement=True)
+    foreign = item("Fremd", minutes=20)
+    plan = build_plan([printer(1)], [on_top, waiting_replacement, foreign], NOW, backlog=[replacement()],
+                      free_slots=1)
+    assert [b[1] for b in bars(plan, 1)] == ["Oben", "Deckel", "Ersatz", "Fremd"]

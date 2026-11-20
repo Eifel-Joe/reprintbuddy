@@ -20,6 +20,7 @@ from reprintbuddy.bambuddy.types import (
     LibraryFile,
     LibraryFolder,
     Plate,
+    PlanSettings,
     PrintOptions,
     Printer,
     PrinterStatus,
@@ -557,10 +558,19 @@ def parse_printer_statuses(data: object) -> list[PrinterStatus]:
     return [parse_printer_status(entry) for entry in _list(data, "printer status list")]
 
 
-def parse_shortest_first(data: object) -> bool:
-    """Bambuddy's setting "shortest job first" (`queue_shortest_first`, `schemas/settings.py:490`)
-    from `GET /settings/`; missing (an older Bambuddy) is off, its default."""
-    return bool(_opt(_object(data, "settings"), "queue_shortest_first", bool))
+def parse_plan_settings(data: object) -> PlanSettings:
+    """Bambuddy's settings for the print plan from `GET /settings/` (`AppSettings`, `schemas/settings.py`).
+
+    "Shortest job first" (`queue_shortest_first`, `:493`): missing (an older Bambuddy) is off, its default.
+    "Lowest spool first" (`prefer_lowest_filament`, `:105`, p716): missing or of another form is unknown, so
+    the plan takes the slot order (Spec 10.2). Only shown, so an odd value of it never fails the read; the
+    queue order keeps its setting.
+    """
+    d = _object(data, "settings")
+    return PlanSettings(
+        shortest_first=bool(_opt(d, "queue_shortest_first", bool)),
+        prefer_lowest=_flag(d.get("prefer_lowest_filament")),
+    )
 
 
 def parse_spool_mode(data: object) -> SpoolMode:
@@ -612,6 +622,19 @@ def parse_print_defaults(data: object) -> PrintOptions:
     )
 
 
+def _archive_time(value: object) -> datetime | None:
+    """The time of `archived_at` as naive UTC, or None when it is not a time.
+
+    Until 1.2.1 only its presence counted (`archived`); the time only places the last row of the spool
+    in the record (Spec 9.2, p717). A text of another form must not make the whole spool list unreadable,
+    so it gives None (the record then takes today) instead of `BambuddyUnexpected`.
+    """
+    try:
+        return _utc(value)
+    except BambuddyUnexpected:
+        return None
+
+
 def parse_spools(data: object) -> list[Spool]:
     """The spools of either list (`GET /inventory/spools`, `GET /spoolman/inventory/spools`).
 
@@ -640,6 +663,7 @@ def parse_spools(data: object) -> list[Spool]:
                 remaining_g=max(0.0, float(label) - float(used)),
                 archived=bool(d.get("archived_at")),
                 created_at=_utc(d.get("created_at")),
+                archived_at=_archive_time(d.get("archived_at")),
             )
         )
     return out

@@ -27,7 +27,8 @@ def test_protocol_matches_master_plan():
         "upload_file",  # v0.3.9 p20, Spec 5.1a
         "print_defaults",  # p342, 0.4.0: Bambuddy's default print options (read)
         "delete_queue_item",  # p382, 0.4.1: withdraw an own waiting entry after a cancel (Spec 7.2a)
-        "printer_statuses", "shortest_first",  # 0.4.2: the print plan of the overview (Spec 7.6, 10.2)
+        "printer_statuses",  # 0.4.2: the print plan of the overview (Spec 7.6, 10.2)
+        "plan_settings",  # 0.4.2 "shortest job first", p716 "lowest spool first": one read of the settings
         "inventory_remain",  # p648, 1.2.1: grams of the spools assigned to a printer's slots
     }
     for name in names:

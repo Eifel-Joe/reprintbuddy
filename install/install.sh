@@ -10,14 +10,14 @@
 # permissions, units and the service are repaired. Versions change only through the update on the
 # settings page.
 #
-# Options: --language en|de   --repo URL   --dry-run   -h|--help
+# Options: --language en|de   --timezone ZONE   --repo URL   --dry-run   -h|--help
 set -Eeuo pipefail
 
 # The release this script belongs to: the tag in its address, and the one it installs (v0.3.14 p168).
 # A script cannot see its own address, so the tag is written into it. It is set with every version and
 # must equal the package version (tests/install/test_install_script.py checks that); the files of the
 # system that the script embeds below belong to this release and to no other.
-RELEASE_TAG="v1.2.2-beta.1"
+RELEASE_TAG="v1.2.2-beta.2"
 
 # The GitHub repository whose releases hold the packages (v0.4.9 p500). The script refuses a placeholder.
 REPO_URL_DEFAULT="https://github.com/Eifel-Joe/reprintbuddy"
@@ -33,9 +33,12 @@ DATA_DIR="/var/lib/reprintbuddy"
 DB_FILE="${DATA_DIR}/reprintbuddy.db"
 VENV_DIR="${INSTALL_DIR}/.venv"
 SERVICE="reprintbuddy.service"
+ZONEINFO_DIR="/usr/share/zoneinfo" # the installed zone files (tzdata), only read
 
 DRY_RUN=0
 LANGUAGE_CHOICE=""
+TIME_ZONE_CHOICE="" # --timezone: set this zone, ask nothing (p718)
+TIME_ZONE_GIVEN=0   # --timezone was given, even with an empty name (which is refused, not ignored)
 REPO_URL="${REPRINTBUDDY_REPO:-${REPO_URL_DEFAULT}}"
 # Test hook: where existing files are looked for. Only allowed together with --dry-run.
 DESTDIR="${REPRINTBUDDY_DESTDIR:-}"
@@ -63,9 +66,11 @@ die() {
 
 usage() {
     cat <<'EOF'
-Usage: install.sh [--language en|de] [--repo URL] [--dry-run] [-h|--help]
+Usage: install.sh [--language en|de] [--timezone ZONE] [--repo URL] [--dry-run] [-h|--help]
 
   --language en|de   interface language (default: ask, or en without a terminal)
+  --timezone ZONE    set the time zone of the server, a name from `timedatectl list-timezones`
+                     such as Europe/Berlin (default: show it and ask, or keep it without a terminal)
   --repo URL         GitHub repository whose release to install (https://github.com/<owner>/<name>,
                      or set REPRINTBUDDY_REPO)
   --dry-run          print what would be changed, change nothing
@@ -104,6 +109,12 @@ parse_args() {
                 LANGUAGE_CHOICE="$2"
                 shift 2
                 ;;
+            --timezone)
+                [ "$#" -ge 2 ] || die 2 "Missing value for --timezone."
+                TIME_ZONE_CHOICE="$2"
+                TIME_ZONE_GIVEN=1
+                shift 2
+                ;;
             --repo)
                 [ "$#" -ge 2 ] || die 2 "Missing value for --repo."
                 REPO_URL="$2"
@@ -127,6 +138,13 @@ parse_args() {
         "" | en | de) ;;
         *) die 2 "Unknown language: ${LANGUAGE_CHOICE} (use en or de)." ;;
     esac
+    # Only the characters of zone names (letters, digits, _ + - /), and no option: `--timezone --dry-run` would
+    # otherwise take the dry run for a zone and go on for real (review p718). The list comes later.
+    if [ "${TIME_ZONE_GIVEN}" -eq 1 ]; then
+        case "${TIME_ZONE_CHOICE}" in
+            "" | -* | *[!A-Za-z0-9_+/-]*) refuse_time_zone ;;
+        esac
+    fi
     if [ -n "${DESTDIR}" ] && [ "${DRY_RUN}" -ne 1 ]; then
         die 2 "REPRINTBUDDY_DESTDIR is only allowed with --dry-run."
     fi
@@ -209,7 +227,7 @@ choose_language() {
         local answer
         while true; do
             printf 'Language for Reprintbuddy [en/de] (default: en): '
-            read -r answer || answer=""
+            read -r answer || true # at the end of input: what came before it, or nothing (= the default)
             case "${answer}" in
                 "") break ;;
                 en | de)
@@ -219,6 +237,121 @@ choose_language() {
             esac
         done
     fi
+}
+
+# Asked through a function so that a test can answer it; the same question as the language's.
+stdin_is_terminal() {
+    [ -t 0 ]
+}
+
+# The time zone of the server (Spec 11.3a "Time zone", p718). Since 1.2.2 the pages show the zone of the browser;
+# the server's zone still holds for the command line, the system log and the rules that run without a browser.
+# A Debian container from a template is often on Etc/UTC. In a terminal every run shows the zone and the time it
+# gives and asks (default yes, nothing changes); no opens Debian's full selection, region first, then place.
+# Nothing is typed in freely. Without a terminal nothing is asked; --timezone sets a zone from the list. The name
+# is checked before anything changes (main); the question and the setting come after the packages, since tzdata
+# comes with them. On a system without tzdata there is no list before that, and the check waits for the packages.
+# The service reads the zone when it starts: start_service restarts it at the end of every run.
+# Tests: tests/install/test_install_time_zone.py.
+current_time_zone() {
+    local zone
+    zone="$(timedatectl show --property=Timezone --value 2>/dev/null || true)"
+    printf '%s' "${zone:-unknown}"
+}
+
+# The time in the zone of the server: a TZ in root's shell would show another one.
+time_now() {
+    env -u TZ date '+%H:%M'
+}
+
+say_time_zone_now() {
+    say "Time zone of this server is now $(current_time_zone), time now $(time_now)."
+}
+
+# Debian's selection needs the terminal and a frontend that asks: `run` cuts stdin, and main exports the
+# noninteractive frontend. Without whiptail or dialog, debconf falls back to a numbered list by itself.
+select_time_zone() {
+    if [ "${DRY_RUN}" -eq 1 ]; then
+        say "+ DEBIAN_FRONTEND=dialog dpkg-reconfigure tzdata"
+        return 0
+    fi
+    if ! DEBIAN_FRONTEND=dialog dpkg-reconfigure tzdata; then
+        say "The time zone selection did not finish."
+    fi
+    # tzdata writes /etc/localtime itself; timedated read the zone for the question above and keeps answering
+    # that one until it starts again (seen in a Debian 13 container, review p718). An on-demand service: a
+    # restart only makes it read the zone anew.
+    systemctl try-restart systemd-timedated.service >/dev/null 2>&1 || true
+    say_time_zone_now
+}
+
+refuse_time_zone() {
+    die 2 "Unknown time zone: ${TIME_ZONE_CHOICE}. Use a name from \`timedatectl list-timezones\`, for example Europe/Berlin." \
+        "The time zone was not changed, and Reprintbuddy was not set up or changed."
+}
+
+# --timezone: only a name from the list of the system, compared line by line, whose file is installed.
+# "localtime" or "posixrules" are files in the zone folder, not zones, and are not on the list. Since Debian 13
+# the old names (US/Eastern, Europe/Kiev, ...) come with tzdata-legacy: they stay on the list, but without that
+# package `timedatectl set-timezone` refuses them (113 of 598 names in a Debian 13 container, review p718).
+# Before the packages ("early") a missing list is no error yet: tzdata comes with them.
+check_time_zone_choice() {
+    local zone="${TIME_ZONE_CHOICE}" zones
+    zones="$(timedatectl list-timezones 2>/dev/null || true)"
+    if [ -z "${zones}" ]; then
+        if [ "${1:-}" = early ]; then
+            return 0
+        fi
+        die 1 "The time zone cannot be checked here: \`timedatectl list-timezones\` gave no list." \
+            "Set the time zone of the system yourself, or run the installer without --timezone."
+    fi
+    # Again only the characters of zone names, as in parse_args: grep -F would take two names on two lines for
+    # two patterns, and either would do.
+    case "${zone}" in
+        "" | -* | *[!A-Za-z0-9_+/-]*) refuse_time_zone ;;
+    esac
+    if ! grep -Fxq -- "${zone}" <<<"${zones}"; then
+        refuse_time_zone
+    fi
+    if [ ! -f "${DESTDIR}${ZONEINFO_DIR}/${zone}" ]; then
+        die 2 "Unknown time zone: ${zone} is not installed on this system (old names come with the package tzdata-legacy)." \
+            "Use a name from \`timedatectl list-timezones\`, for example Europe/Berlin." \
+            "The time zone was not changed, and Reprintbuddy was not set up or changed."
+    fi
+}
+
+set_time_zone() {
+    local zone="${TIME_ZONE_CHOICE}"
+    check_time_zone_choice
+    if ! run timedatectl set-timezone "${zone}"; then
+        die 1 "The time zone could not be set (timedatectl set-timezone ${zone})."
+    fi
+    if [ "${DRY_RUN}" -ne 1 ]; then
+        say_time_zone_now
+    fi
+}
+
+choose_time_zone() {
+    if [ "${TIME_ZONE_GIVEN}" -eq 1 ]; then
+        set_time_zone
+        return 0
+    fi
+    if ! stdin_is_terminal; then
+        return 0
+    fi
+    local answer
+    printf 'Time zone of this server: %s, time now %s. ' "$(current_time_zone)" "$(time_now)"
+    while true; do
+        printf 'Is that right? [Y/n] '
+        read -r answer || true # at the end of input: what came before it, or nothing (= the default)
+        case "${answer}" in
+            "" | y | Y | yes | Yes | YES) return 0 ;;
+            n | N | no | No | NO)
+                select_time_zone
+                return 0
+                ;;
+        esac
+    done
 }
 
 # The update helper and this script both change the installation: never at the same time.
@@ -248,7 +381,7 @@ require_repo_url() {
 
 install_packages() {
     run apt-get update
-    run apt-get install -y --no-install-recommends python3 python3-venv curl sudo ca-certificates
+    run apt-get install -y --no-install-recommends python3 python3-venv curl sudo ca-certificates tzdata
 }
 
 create_user() {
@@ -601,9 +734,13 @@ main() {
     require_debian
     require_repo_url
     refuse_during_update
+    if [ "${TIME_ZONE_GIVEN}" -eq 1 ]; then
+        check_time_zone_choice early # an unknown name stops the run before anything changes
+    fi
     choose_language
     install_packages
     require_python
+    choose_time_zone
     create_user
     prepare_dirs
     fetch_code

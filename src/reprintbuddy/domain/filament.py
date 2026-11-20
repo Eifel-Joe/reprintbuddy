@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Date, Float, Select, and_, case, func, literal, select, type_coerce
 from sqlalchemy.orm import Session, sessionmaker
 
 from reprintbuddy.activity.capture import quiet
@@ -346,7 +346,8 @@ def _entry(sort: FilamentSort, grams: float, spools: int) -> SortStock:
 
 def stock_from_snapshots(session: Session) -> tuple[dict[int, SortStock], date | None]:
     """Stock from the rows of the latest recorded day; `({}, None)` without any record. Rows of a
-    legacy sort (not yet converted) count for nothing."""
+    legacy sort (not yet converted) and the last rows of archived spools (Spec 9.2, p717) count for
+    nothing."""
     latest = session.scalar(select(func.max(FilamentSnapshot.day)))
     if latest is None:
         return {}, None
@@ -355,7 +356,9 @@ def stock_from_snapshots(session: Session) -> tuple[dict[int, SortStock], date |
     rows = session.scalars(
         select(FilamentSnapshot)
         .join(FilamentSort, FilamentSort.id == FilamentSnapshot.spool_filament_id)
-        .where(FilamentSnapshot.day == latest, FilamentSort.legacy.is_(False))
+        .where(
+            FilamentSnapshot.day == latest, FilamentSort.legacy.is_(False), FilamentSnapshot.archived.is_(False)
+        )
     )
     for row in rows:
         grams[row.spool_filament_id] += row.remaining_g
@@ -367,9 +370,11 @@ def stock_from_snapshots(session: Session) -> tuple[dict[int, SortStock], date |
 
 
 def record_snapshot(session: Session, spools: Sequence[Spool], day: date) -> int:
-    """One row per non-archived spool and day; a second call on the same day overwrites."""
+    """One row per non-archived spool and day; a second call on the same day overwrites. An archived
+    spool keeps one last row (`_record_archived`). Returns the number of living spools."""
     live = [s for s in spools if not s.archived]
-    ids = sync_sorts(session, live, [s for s in spools if s.archived])
+    archived = [s for s in spools if s.archived]
+    ids = sync_sorts(session, live, archived)
     for spool in live:
         row = session.scalar(
             select(FilamentSnapshot).where(
@@ -383,14 +388,72 @@ def record_snapshot(session: Session, spools: Sequence[Spool], day: date) -> int
         row.remaining_g = spool.remaining_g
         row.label_g = spool.label_g
         row.spool_created_at = spool.created_at
-    # a spool recorded earlier today that is archived or gone now must not count any more
+        row.archived = False  # taken out of the archive again
+    kept = _record_archived(session, archived, day)
+    # a spool recorded earlier today that is gone from the list now must not count any more; an
+    # archived one keeps its row, marked (Spec 9.2, p717)
     gone = select(FilamentSnapshot).where(FilamentSnapshot.day == day)
-    if live:
-        gone = gone.where(FilamentSnapshot.spool_id.not_in([s.id for s in live]))
+    if live or kept:
+        gone = gone.where(FilamentSnapshot.spool_id.not_in([s.id for s in live] + kept))
     for row in session.scalars(gone).all():
         session.delete(row)
     session.flush()
     return len(live)
+
+
+def _record_archived(session: Session, archived: Sequence[Spool], today: date) -> list[int]:
+    """The last row of each archived spool whose latest row is still a living one; returns the ids of
+    the archived spools that have a row today.
+
+    Root (p717): until 1.2.1 the row of a spool archived on the same day was deleted, so a spool printed
+    empty and archived that day lost its use of the day. Spec 9.2: its use counts up to its last weight,
+    also on that day; the stock and the number of spools leave it out (`stock_from_snapshots`).
+
+    The row lands on the day of `archived_at` (UTC), never before the spool's latest row (that row is
+    overwritten) and never after today; without a time it is today. So a pause of the record, or the
+    update from 1.2.1 (which had dropped that row), does not move the use to today. In Spoolman mode
+    Bambuddy sends the spool's last use there (else its registration): the day of its last print, as
+    right for the use. Its spool sort is that of the latest row, so the spool's series stays in one sort.
+    After that the spool gets no row any more: the record does not grow with the archive.
+    Rejected: a row on every day for every archived spool (the table would grow with the archive, and
+    nothing changes); always today (a pause or the update would put old use on today).
+    Tests: tests/domain/test_filament_archived.py.
+    """
+    if not archived:
+        return []
+    by_id = {s.id: s for s in archived}
+    latest_day = (
+        select(FilamentSnapshot.spool_id, func.max(FilamentSnapshot.day).label("day"))
+        .where(FilamentSnapshot.spool_id.in_(list(by_id)))
+        .group_by(FilamentSnapshot.spool_id)
+        .subquery()
+    )
+    latest = session.scalars(
+        select(FilamentSnapshot).join(
+            latest_day,
+            (FilamentSnapshot.spool_id == latest_day.c.spool_id) & (FilamentSnapshot.day == latest_day.c.day),
+        )
+    ).all()
+    today_ids: list[int] = []
+    for last in latest:
+        spool = by_id[last.spool_id]
+        if last.archived:
+            if last.day == today:
+                today_ids.append(spool.id)
+            continue
+        wanted = spool.archived_at.date() if spool.archived_at is not None else today
+        target = min(max(wanted, last.day), today)
+        row = last
+        if target != last.day:
+            row = FilamentSnapshot(day=target, spool_id=spool.id, spool_filament_id=last.spool_filament_id)
+            session.add(row)
+        row.remaining_g = spool.remaining_g
+        row.label_g = spool.label_g
+        row.spool_created_at = spool.created_at
+        row.archived = True
+        if target == today:
+            today_ids.append(spool.id)
+    return today_ids
 
 
 def consumption(session: Session, sort_ids: int | Collection[int], today: date) -> tuple[float, int]:
@@ -412,6 +475,134 @@ def consumption(session: Session, sort_ids: int | Collection[int], today: date) 
     for spool_id, day, grams in rows:
         series[spool_id].append((day, grams))
     return rules.consumption_per_day(series)
+
+
+# ---- the views of the column "Verbrauch" on the filament page (Spec 9.3, p717) ----------------
+
+USAGE_VIEWS = ("avg30", "avg7", "today", "yesterday", "week", "month", "year", "total")
+USAGE_DEFAULT = "avg30"  # the base of the reorder suggestions
+# the averages and the days of their window
+USAGE_WINDOW: dict[str, int] = {"avg30": WINDOW_DAYS, "avg7": 7}
+
+
+def usage_starts(today: date) -> dict[str, date]:
+    """The first day of this calendar week (ISO, from Monday), month and year (Spec 9.3, p717)."""
+    return {
+        "week": today - timedelta(days=today.weekday()),
+        "month": today.replace(day=1),
+        "year": today.replace(month=1, day=1),
+    }
+
+
+def _usage_ranges(today: date) -> dict[str, tuple[int | None, int]]:
+    """view -> (first, last) day of its window, counted back from today; the row of the first day is the
+    base of the first drop, so a period from day S starts at S − 1 (as "today" starts at yesterday)."""
+    ranges: dict[str, tuple[int | None, int]] = {
+        "avg30": (WINDOW_DAYS, 0), "avg7": (7, 0), "today": (1, 0), "yesterday": (2, 1), "total": (None, 0),
+    }
+    for view, start in usage_starts(today).items():
+        ranges[view] = ((today - start).days + 1, 0)
+    return ranges
+
+
+def first_record_day(session: Session) -> date | None:
+    """The first day of the daily record ("gesamt (seit …)", Spec 9.3); None without any record."""
+    return session.scalar(select(func.min(FilamentSnapshot.day)))
+
+
+@dataclass(frozen=True)
+class Usage:
+    grams: float  # per day for an average, else the sum of the window
+    days: int  # days between the first and the last row of the window (an average divides by them)
+
+
+def usage(session: Session, sort_ids: Collection[int], today: date) -> dict[str, dict[int, Usage]]:
+    """Every view of the column "Verbrauch" for each spool sort: view -> sort id -> `Usage`. A sort
+    without two days of record in a window is missing in that view (the page says "noch kein Verlauf").
+
+    The rule of `consumption` (Spec 9.2), which the reorder suggestions keep using: per spool only the
+    decreases between two consecutive rows count, both inside the window; an average divides by the days
+    between the first and the last row of the sort in the window, at most the window. So Ø 30 days on the
+    page is the reorder's number. The calendar periods (this week from Monday, this month, this year;
+    `usage_starts`) count the drops that arrive from their first day to today, the first one from the row
+    of the day before, as "today" counts the drop from yesterday's row. The last row of an archived spool
+    counts (p717).
+
+    Two queries for all views and sorts (`LAG` per spool, sums per window): one from the day before this
+    year (at most 366 days back) for every other window, one over the whole record for the total (the
+    record is never deleted). The total is the costly part (measured with
+    80 spools over 3 years, 87 680 rows: p717 report).
+    Rejected: `consumption` per sort and view (eight queries per row), and loading every row into Python
+    (the total would carry the whole record over to Python on every view of the page).
+    Tests: tests/domain/test_filament_usage.py.
+    """
+    ids = list(sort_ids)
+    found: dict[str, dict[int, Usage]] = {view: {} for view in USAGE_VIEWS}
+    if not ids:
+        return found
+    view_range = _usage_ranges(today)
+    ranges = set(view_range.values())
+    total = (None, 0)
+    sums = _window_sums(session, ids, today, sorted(ranges - {total}))
+    for sort_id, values in _window_sums(session, ids, today, [total]).items():
+        sums.setdefault(sort_id, {}).update(values)
+    for sort_id, per_range in sums.items():
+        for view in USAGE_VIEWS:
+            # a sort with rows older than a year only is missing in the first query (review p717, 1)
+            used, first_day, last_day = per_range.get(view_range[view], (0.0, None, None))
+            if first_day is None or last_day is None or last_day <= first_day:
+                continue  # under two days of record in the window
+            days = (last_day - first_day).days
+            grams = float(used)
+            if view in USAGE_WINDOW:
+                days = min(days, USAGE_WINDOW[view])
+                grams /= days
+            found[view][sort_id] = Usage(grams, days)
+    return found
+
+
+def _window_sums(
+    session: Session, ids: list[int], today: date, ranges: list[tuple[int | None, int]]
+) -> dict[int, dict[tuple[int | None, int], tuple[float, date | None, date | None]]]:
+    """Per sort and range (first, last day back from today; first None: since the record began): the sum
+    of the decreases between consecutive rows of each spool inside the range, and the first and last day
+    of a row inside it. Only the rows from the earliest first day on are read."""
+    snap = FilamentSnapshot
+    partition = (snap.spool_filament_id, snap.spool_id)
+    firsts = [first for first, _ in ranges]
+    where = [snap.spool_filament_id.in_(ids), snap.day <= today]
+    if None not in firsts:
+        where.append(snap.day >= today - timedelta(days=max(firsts)))
+    lagged = (
+        select(
+            snap.spool_filament_id.label("sort_id"),
+            snap.day.label("day"),
+            snap.remaining_g.label("grams"),
+            type_coerce(func.lag(snap.day).over(partition_by=partition, order_by=snap.day), Date).label("prev_day"),
+            type_coerce(func.lag(snap.remaining_g).over(partition_by=partition, order_by=snap.day), Float).label("prev_g"),
+        )
+        .where(*where)
+        .subquery()
+    )
+    columns = [lagged.c.sort_id]
+    for first, last in ranges:
+        hi = literal(today - timedelta(days=last), Date)
+        if first is None:
+            inside, pair = lagged.c.day <= hi, lagged.c.prev_day.is_not(None)
+        else:
+            lo = literal(today - timedelta(days=first), Date)
+            inside, pair = and_(lagged.c.day >= lo, lagged.c.day <= hi), lagged.c.prev_day >= lo
+        drop = and_(pair, lagged.c.day <= hi, lagged.c.prev_g > lagged.c.grams)
+        columns += [
+            func.coalesce(func.sum(case((drop, lagged.c.prev_g - lagged.c.grams), else_=0.0)), 0.0),
+            type_coerce(func.min(case((inside, lagged.c.day))), Date),
+            type_coerce(func.max(case((inside, lagged.c.day))), Date),
+        ]
+    out: dict[int, dict[tuple[int | None, int], tuple[float, date | None, date | None]]] = {}
+    for row in session.execute(select(*columns).group_by(lagged.c.sort_id)):
+        values = row[1:]
+        out[row[0]] = {r: tuple(values[3 * n: 3 * n + 3]) for n, r in enumerate(ranges)}
+    return out
 
 
 def known_sorts(
