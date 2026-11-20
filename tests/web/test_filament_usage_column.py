@@ -144,7 +144,7 @@ def test_a_sort_with_a_shorter_record_says_its_days_in_the_row(bb_client, fake_b
     short = _sort_with_record(bb_client, 3, 10.0, material="PETG", color_hex="#FFFFFF", color_name="White")
     page = bb_client.get("/filament").text
     assert "Ø 30 days, so far 20" in page
-    assert en("filament.usage.cell_so_far", days=3) in _cell(_row(page, short), "avg30")
+    assert "so far 3 days" in _cell(_row(page, short), "avg30")
     assert "so far" not in _cell(_row(page, long), "avg30")
 
 
@@ -190,3 +190,13 @@ def test_the_script_keeps_the_choice_in_the_browser_and_survives_blocked_storage
             before = "\n".join(script.splitlines()[max(0, line_no - 3): line_no])
             assert "try" in before, line
     assert "rb_usage_view" in script
+
+
+def test_one_day_in_the_row_is_singular(bb_client, fake_bambuddy):
+    """Review p717, 4: "so far 1 day", not "1 days"."""
+    fake_bambuddy.add_spool("PLA")
+    fake_bambuddy.add_spool("PETG", color_hex="#FFFFFF")
+    _sort_with_record(bb_client, 5, 10.0)
+    short = _sort_with_record(bb_client, 1, 10.0, material="PETG", color_hex="#FFFFFF", color_name="White")
+    cell = _cell(_row(bb_client.get("/filament").text, short), "avg30")
+    assert "so far 1 day" in cell and "1 days" not in cell

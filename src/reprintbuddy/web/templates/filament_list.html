@@ -30,7 +30,7 @@
         <td>{{ r.material }}</td>
         <td class="num nowrap">{% if r.stock is not none %}{{ r.stock }} g{% else %}—{% endif %}</td>
         <td class="num nowrap">{% if r.spools is not none %}{{ r.spools }}{% else %}—{% endif %}</td>
-        <td class="num">{% for v in usage_views %}{% set u = r.usage[v.view] %}<span data-usage="{{ v.view }}"{% if not loop.first %} hidden{% endif %}>{% if u is not none %}<span class="nowrap">{{ u.grams|num if v.average else u.grams|num(0) }} g</span>{% if v.average and u.days < v.days %}<span class="col-note muted">{{ t('filament.usage.cell_so_far', days=u.days) }}</span>{% endif %}{% else %}<span class="muted">{{ t('filament.no_history') }}</span>{% endif %}</span>{% endfor %}</td>
+        <td class="num">{% for v in usage_views %}{% set u = r.usage[v.view] %}<span data-usage="{{ v.view }}"{% if not loop.first %} hidden{% endif %}>{% if u is not none %}<span class="nowrap">{{ u.grams|num if v.average else u.grams|num(0) }} g</span>{% if v.average and u.days < v.days %}<span class="col-note muted">{{ tc('filament.usage.cell_so_far', u.days) }}</span>{% endif %}{% else %}<span class="muted">{{ t('filament.no_history') }}</span>{% endif %}</span>{% endfor %}</td>
         <td class="num nowrap">{% if r.demand is not none %}{{ r.demand }} g{% else %}—{% endif %}</td>
         <td class="actions-col">{% call ui.row_actions() -%}
           {{ ui.icon_button('pencil' if r.configured else 'settings', t('filament.edit_settings' if r.configured else 'filament.configure'), '/filament/' ~ r.id, r.label) }}
