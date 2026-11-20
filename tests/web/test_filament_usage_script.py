@@ -53,3 +53,17 @@ def test_the_choice_comes_back_after_a_live_refresh(result):
 
 def test_a_page_without_the_list_is_left_alone(result):
     assert result["no_list"] == {"error": None, "start": None, "stored": None}
+
+
+def test_with_blocked_storage_the_choice_survives_a_live_refresh(result):
+    """Review p717, 2: the choice is kept in memory too, for the time the page is open."""
+    case = result["blocked_and_swapped"]
+    assert case["error"] is None
+    assert case["afterSwap"] == {"choiceShown": True, "selected": "week", "shown": BOTH("week")}
+
+
+def test_the_list_is_not_swapped_while_the_switch_is_in_use(result):
+    """Review p717, 3: live.js leaves a region with `data-live-busy` alone and fetches it after "live-idle"."""
+    case = result["focused"]
+    assert case["busyWhileFocused"] is True and case["busyAfterBlur"] is False
+    assert case["events"] == ["live-idle"]

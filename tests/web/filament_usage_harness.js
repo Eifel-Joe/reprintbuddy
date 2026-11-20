@@ -27,12 +27,16 @@ function element(attrs, hidden) {
     hidden,
     getAttribute: (n) => (Object.prototype.hasOwnProperty.call(attrs, n) ? attrs[n] : null),
     hasAttribute: (n) => Object.prototype.hasOwnProperty.call(attrs, n),
+    setAttribute: (n, v) => { attrs[n] = String(v); },
+    removeAttribute: (n) => { delete attrs[n]; },
   };
 }
 
 // The list region as the server renders it.
 function region() {
+  const live = element({ "data-live-region": "list" }, false);
   const select = element({ "data-usage-select": "" }, false);
+  select.closest = (sel) => (sel === "[data-live-region]" ? live : null);
   select.options = VIEWS.map((v) => ({ value: v }));
   select.value = "avg30";
   const choice = element({ "data-usage-choice": "" }, true);
@@ -42,7 +46,7 @@ function region() {
     spans.push(element({ "data-usage-head": view }, view !== "avg30"));
     spans.push(element({ "data-usage": view }, view !== "avg30"));
   }
-  return { select, choice, spans };
+  return { live, select, choice, spans };
 }
 
 function run(options) {
@@ -50,8 +54,10 @@ function run(options) {
   let page = options.noList ? null : region();
   const listeners = {};
   let observer = null;
+  const events = [];
   const doc = {
     body: {},
+    dispatchEvent: (event) => { events.push(event.type); },
     querySelector: (sel) => (sel === "[data-usage-choice]" && page ? page.choice : null),
     querySelectorAll: (sel) => (sel === "[data-usage], [data-usage-head]" && page ? page.spans : []),
     addEventListener: (n, fn) => { (listeners[n] = listeners[n] || []).push(fn); },
@@ -60,6 +66,7 @@ function run(options) {
   const context = {
     window: win,
     document: doc,
+    CustomEvent: function (type) { this.type = type; },
     MutationObserver: function (fn) {
       observer = fn;
       this.observe = () => {};
@@ -88,6 +95,14 @@ function run(options) {
     }
     out.afterChange = state();
   }
+  if (options.focus && page) {
+    const fire = (name) => (listeners[name] || []).forEach((fn) => fn({ target: page.select }));
+    fire("focusin");
+    out.busyWhileFocused = page.live.hasAttribute("data-live-busy");
+    fire("focusout");
+    out.busyAfterBlur = page.live.hasAttribute("data-live-busy");
+    out.events = events.slice();
+  }
   if (options.swap && page) {
     page = region(); // live.js put a fresh list region in
     out.beforeObserver = state();
@@ -105,6 +120,8 @@ const cases = {
   chosen: run({ choose: "today" }),
   blocked_storage: run({ storageThrows: true, choose: "week" }),
   swapped: run({ stored: "year", swap: true }),
+  blocked_and_swapped: run({ storageThrows: true, choose: "week", swap: true }),
+  focused: run({ focus: true }),
   no_list: run({ noList: true }),
 };
 process.stdout.write(JSON.stringify(cases));
