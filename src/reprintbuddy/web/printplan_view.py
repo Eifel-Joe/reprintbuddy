@@ -73,7 +73,7 @@ class MarkerView:
     """A filament note of a lane (p648): "Reload about 14:30 · PLA #000000 (AMS 1, slot 2)" and its place on
     the axis (percent), None without a time or beyond the axis."""
 
-    kind: str  # reload, not_loaded, unknown_stock
+    kind: str  # reload, slot_empty (p716), not_loaded, unknown_stock
     text: str
     left: float | None
     color: str | None  # "#RRGGBB" for the swatch
@@ -441,11 +441,28 @@ def _filament(
             prints.append(LanePrint(bar.start, bar.end, start, needs))
         found[lane.printer_id] = lane_filament(
             prints, state.slots, board.slot_grams.get(lane.printer_id, {}), state.backup, now,
+            prefer_lowest=board.prefer_lowest,
         )
     return found
 
 
+def _slot_empty_text(lang: str, marker: Marker, now: datetime) -> str:
+    """"AMS 1, slot 3 empty about 10:30, continuing with AMS 1, slot 2" (Spec 10.2 "Nachladen", p716): the
+    slots named as in the other notes, so the sentence may begin with "external spool"; its first letter is
+    made a capital."""
+    where = slot_name(lang, marker.slot) if marker.slot is not None else ""
+    following = slot_name(lang, marker.next_slot) if marker.next_slot is not None else ""
+    if marker.due:
+        text = translate(lang, "overview.plan.slot_empty_now", slot=where, next=following)
+    else:
+        key = "overview.plan.slot_empty_latest" if marker.latest else "overview.plan.slot_empty"
+        text = translate(lang, key, slot=where, time=_when(marker.at, now, lang), next=following)
+    return text[:1].upper() + text[1:]
+
+
 def _marker_text(lang: str, marker: Marker, now: datetime, names: ColorNames | None = None) -> str:
+    if marker.kind == "slot_empty":
+        return _slot_empty_text(lang, marker, now)
     sort = _sort(lang, marker.material, marker.color, names)
     if marker.kind == "not_loaded":
         return translate(lang, "overview.plan.not_loaded", sort=sort)

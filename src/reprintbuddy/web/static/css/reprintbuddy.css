@@ -1424,6 +1424,7 @@ td.target .target-form { display: inline-block; }
 .plan-key-fixed { background: var(--plan-fixed); border: 1px solid var(--accent); }
 .plan-key-planned { background: repeating-linear-gradient(45deg, var(--plan-stripe), var(--plan-stripe) 4px, var(--plan-stripe-2) 4px, var(--plan-stripe-2) 8px); border: 1px dashed var(--plan-planned-edge); }
 .plan-tick { position: absolute; top: -3px; bottom: -3px; left: var(--at); width: 2px; margin-left: -1px; background: var(--warn); border-radius: 1px; z-index: 2; }
+.plan-tick-slot { background: var(--text-2); } /* p716: a slot runs empty, the printer goes on: calm, not orange */
 .plan-filament { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 3px 0 0 calc(9rem + 10px); color: var(--text-2); font-size: 11px; }
 .plan-mark { display: inline-flex; align-items: center; gap: 5px; }
 .plan-mark-reload { color: var(--warn); }

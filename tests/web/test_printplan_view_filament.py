@@ -5,6 +5,7 @@
 
 from datetime import datetime, timedelta
 
+import pytest
 from factories import make_article, make_dispatch, make_entry
 from reprintbuddy.bambuddy.types import AmsSlot, FilamentRequirement, Printer, PrinterStatus, QueueItem
 from reprintbuddy.domain.printerboard import FileFacts, PrinterBoard
@@ -243,6 +244,109 @@ def test_german_colour_name(db):
         make_entry(s, article(s).id)
     v = view(db, board(status(1)), lang="de")
     assert texts(v.lanes[0]) == ["Restmenge unbekannt: PLA Schwarz (AMS 1, Slot 2)"]
+
+
+# ---- p716: the slots of one sort one after the other ------------------------------------------------------
+
+
+SECOND = AmsSlot(0, 2, "PLA", "#000000", True)  # "AMS 1, slot 3"
+
+
+def two_slots(db, *, prefer_lowest=None, lang="en", grams=None):
+    """Two prints of 200 g, 10:00-11:00 and 11:05-12:05; black PLA in slot 2 (250 g) and slot 3 (100 g)."""
+    with db.begin() as s:
+        make_entry(s, article(s, grams=200).id, 2)
+    facts = {(1, "v1"): FileFacts(None, {1: 3600})}
+    b = board(status(1, slots=(BLACK, SECOND), backup=True),
+              grams={1: grams or {(0, 1): 250.0, (0, 2): 100.0}}, facts=facts)
+    b.prefer_lowest = prefer_lowest
+    return view(db, b, lang=lang)
+
+
+def test_lowest_spool_first_slot_note_then_reload(db):
+    """Lowest spool first: slot 3 (100 g) empty half way through the first print; the sort (350 g) at 11:50 in
+    slot 2, the slot then in use. The head line names only the reload (Spec 10.2)."""
+    v = two_slots(db, prefer_lowest=True)
+    (lane,) = v.lanes
+    assert texts(lane) == ["AMS 1, slot 3 empty about 10:30, continuing with AMS 1, slot 2",
+                           "Reload about 11:50 · PLA #000000 (AMS 1, slot 2)"]
+    assert [m.kind for m in lane.markers] == ["slot_empty", "reload"]
+    assert all(m.left is not None for m in lane.markers) and lane.markers[0].color == "#000000"
+    assert v.reload == "Reload needed: Printer 1 about 11:50"
+
+
+@pytest.mark.parametrize("prefer_lowest", [False, None])
+def test_lowest_spool_first_off_or_unknown_takes_the_slot_order(db, prefer_lowest):
+    v = two_slots(db, prefer_lowest=prefer_lowest)
+    assert texts(v.lanes[0]) == ["AMS 1, slot 2 empty about 11:20, continuing with AMS 1, slot 3",
+                                 "Reload about 11:50 · PLA #000000 (AMS 1, slot 3)"]
+
+
+def test_german_slot_note(db):
+    v = two_slots(db, prefer_lowest=True, lang="de")
+    assert texts(v.lanes[0]) == ["AMS 1, Slot 3 leer ca. 10:30, weiter mit AMS 1, Slot 2",
+                                 "Nachladen ca. 11:50 · PLA #000000 (AMS 1, Slot 2)"]
+    assert v.reload == "Nachladen nötig: Printer 1 ca. 11:50"
+
+
+def test_slot_notes_alone_leave_the_head_line_empty(db):
+    """Together the slots last: a calm note, no reload, nothing in the head line."""
+    v = two_slots(db, grams={(0, 1): 300.0, (0, 2): 300.0})
+    assert texts(v.lanes[0]) == ["AMS 1, slot 2 empty about 11:35, continuing with AMS 1, slot 3"]
+    assert v.reload == ""
+
+
+def test_backup_off_stays_as_before(db):
+    with db.begin() as s:
+        make_entry(s, article(s, grams=200).id, 2)
+    facts = {(1, "v1"): FileFacts(None, {1: 3600})}
+    b = board(status(1, slots=(BLACK, SECOND), backup=False), grams={1: {(0, 1): 300.0, (0, 2): 100.0}},
+              facts=facts)
+    b.prefer_lowest = True
+    assert texts(view(db, b).lanes[0]) == ["Reload about 11:35 · PLA #000000 (AMS 1, slot 2)"]
+
+
+@pytest.mark.parametrize("lang, expected", [
+    ("en", "AMS 1, slot 2 empty now, continuing with AMS 1, slot 3"),
+    ("de", "AMS 1, Slot 2 jetzt leer, weiter mit AMS 1, Slot 3"),
+])
+def test_past_slot_note_says_now(db, lang, expected):
+    """The running print counts whole: begun 08:12, 100 g, 30 g in slot 2: empty at 08:48, already past."""
+    with db.begin() as s:
+        a = article(s, grams=100)
+        make_dispatch(s, a.id, status="printing", bambuddy_item_id=7)
+    running = status(1, "RUNNING", progress=90.0, remaining=12, slots=(BLACK, SECOND), backup=True)
+    v = view(db, board(running, grams={1: {(0, 1): 30.0, (0, 2): 500.0}}),
+             [queue_item(7, status="printing", printer_id=1, seconds=7200)], lang=lang)
+    assert texts(v.lanes[0]) == [expected]
+    assert v.reload == ""
+
+
+@pytest.mark.parametrize("lang, expected", [
+    ("en", "AMS 1, slot 2 empty at the latest about 11:17, continuing with AMS 1, slot 3"),
+    ("de", "AMS 1, Slot 2 leer spätestens ca. 11:17, weiter mit AMS 1, Slot 3"),
+])
+def test_slot_note_after_an_unknown_need_is_at_the_latest(db, lang, expected):
+    need = (FilamentRequirement(1, 500.0, "PLA", "#000000"),)
+    q = [queue_item(9, file_id=None, seconds=3600), queue_item(8, seconds=3600)]
+    b = board(status(1, slots=(BLACK, SECOND), backup=True), grams={1: {(0, 1): 100.0, (0, 2): 900.0}},
+              needs={(9, 1): need})
+    assert texts(view(db, b, q, lang=lang).lanes[0]) == [expected]
+
+
+@pytest.mark.parametrize("lang, expected", [
+    ("en", "External spool empty about 10:30, continuing with AMS 1, slot 2"),
+    ("de", "Externe Spule leer ca. 10:30, weiter mit AMS 1, Slot 2"),
+])
+def test_slot_note_starts_with_a_capital(db, lang, expected):
+    external = AmsSlot(255, 0, "PLA", "#000000", True)
+    with db.begin() as s:
+        make_entry(s, article(s, grams=200).id)
+    facts = {(1, "v1"): FileFacts(None, {1: 3600})}
+    b = board(status(1, slots=(BLACK, external), backup=True), grams={1: {(0, 1): 900.0, (255, 0): 100.0}},
+              facts=facts)
+    b.prefer_lowest = True
+    assert texts(view(db, b, lang=lang).lanes[0]) == [expected]
 
 
 def test_black_swatch_has_a_visible_edge():
