@@ -335,18 +335,25 @@ def test_slot_note_after_an_unknown_need_is_at_the_latest(db, lang, expected):
 
 
 @pytest.mark.parametrize("lang, expected", [
-    ("en", "External spool empty about 10:30, continuing with AMS 1, slot 2"),
-    ("de", "Externe Spule leer ca. 10:30, weiter mit AMS 1, Slot 2"),
+    ("en", "External spool empty about 10:30, continuing with external spool 2"),
+    ("de", "Externe Spule leer ca. 10:30, weiter mit externe Spule 2"),
 ])
 def test_slot_note_starts_with_a_capital(db, lang, expected):
-    external = AmsSlot(255, 0, "PLA", "#000000", True)
+    """Two external spools of one sort (a printer with two of them), in slot order (review p716, 3)."""
+    external, external_2 = AmsSlot(255, 0, "PLA", "#000000", True), AmsSlot(255, 1, "PLA", "#000000", True)
     with db.begin() as s:
         make_entry(s, article(s, grams=200).id)
     facts = {(1, "v1"): FileFacts(None, {1: 3600})}
-    b = board(status(1, slots=(BLACK, external), backup=True), grams={1: {(0, 1): 900.0, (255, 0): 100.0}},
-              facts=facts)
+    b = board(status(1, slots=(external, external_2), backup=True),
+              grams={1: {(255, 0): 100.0, (255, 1): 900.0}}, facts=facts)
     b.prefer_lowest = True
     assert texts(view(db, b, lang=lang).lanes[0]) == [expected]
+
+
+def test_stock_unknown_names_the_slot_without_grams(db):
+    """Review p716, 2: the note sends you to the slot Bambuddy holds no grams for."""
+    v = two_slots(db, grams={(0, 1): 900.0})
+    assert texts(v.lanes[0]) == ["Stock unknown: PLA #000000 (AMS 1, slot 3)"]
 
 
 def test_black_swatch_has_a_visible_edge():
