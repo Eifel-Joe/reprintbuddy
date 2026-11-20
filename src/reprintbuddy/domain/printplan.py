@@ -77,6 +77,10 @@ class PlanItem:
     # place for the next print of Reprintbuddy's queue (p646). Not the same as `own`, which also takes
     # entries made in Bambuddy with the key's user.
     holds_slot: bool = False
+    # A replacement print of Reprintbuddy (scrap or failure, Spec 7.5): handed over to the top of Bambuddy's
+    # queue, behind the replacements waiting there (Spec 7.3, 10.2; 1.2.2). For an entry in Bambuddy's queue
+    # only with `holds_slot`, as `dispatch.own_replacement_item_ids` takes only open prints.
+    replacement: bool = False
     # What the caller needs to find the print again (the article of a print in Reprintbuddy's queue, p648).
     ref: int | None = field(default=None, compare=False)
 
@@ -191,7 +195,8 @@ def build_plan(
     print (Spec 10.2, p646). `free_slots`: the limit less Reprintbuddy's open prints (may be negative). A
     print is handed over while a place is free, else when a bar of an entry with `holds_slot` ends; then it
     goes to the end of Bambuddy's queue, or with `insert_next` behind the last waiting entry with
-    `holds_slot` (at the top without one), as `dispatch.next_insert_position` does. The time to the next
+    `holds_slot` (at the top without one), as `dispatch.next_insert_position` does; a `replacement` always
+    behind the last waiting entry with `holds_slot` and `replacement` (at the top without one). The time to the next
     query is not counted (Spec 10.2). What never gets a place counts as `no_slot`. `parked`: (printer id,
     label) of prints the hand-over skips because their printer is in maintenance; shown in its lane as
     waiting, without a place (a printer Bambuddy does not list is left out)."""
@@ -287,11 +292,21 @@ def build_plan(
             slots -= 1
             entry = with_fields(backlog_left.pop(0), holds_slot=True)  # a new object: identity stays unique
             from_backlog[id(entry)] = entry
-            if insert_next:
-                own = [n for n, e in enumerate(order) if e.holds_slot]
-                order.insert(own[-1] + 1 if own else 0, entry)
+            # 1.2.2 (Spec 10.2 "Ersatzdrucke vorn"): the place the hand-over gives, `dispatch.hand_over` with
+            # `next_insert_position` - a replacement behind the last replacement of Reprintbuddy still waiting
+            # (top without one), whatever the switch says; others as before. `order` holds only what still
+            # waits, so a replacement that started no longer counts.
+            # NOT-TO-DO: the replacement at index 0 - the second of two would overtake the first.
+            if entry.replacement:
+                ahead = [n for n, e in enumerate(order) if e.holds_slot and e.replacement]
+            elif insert_next:
+                ahead = [n for n, e in enumerate(order) if e.holds_slot]
             else:
+                ahead = None
+            if ahead is None:
                 order.append(entry)
+            else:
+                order.insert(ahead[-1] + 1 if ahead else 0, entry)
             if sort_out(entry):  # one that is not laid out keeps its place: it would stay in Bambuddy
                 takeable.add(id(entry))
 

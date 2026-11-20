@@ -158,6 +158,7 @@ def plan_items(db: Session, queue: Sequence[QueueItem], now: datetime) -> list[P
     """Bambuddy's pending and printing entries in the order of its queue. Own entries (by id, or by the
     own Bambuddy user as on the queue page) carry the article's name, others the name of their file."""
     own_ids = dispatch.own_item_ids(db)
+    replacement_ids = dispatch.own_replacement_item_ids(db)  # Spec 10.2 "Ersatzdrucke vorn" (1.2.2)
     names = dispatch.article_names_by_item(db)
     username = st.get_setting(db, "bambuddy_username")
     found: list[PlanItem] = []
@@ -179,6 +180,7 @@ def plan_items(db: Session, queue: Sequence[QueueItem], now: datetime) -> list[P
             been_jumped=item.been_jumped,
             nozzle=item.nozzle_diameter,
             holds_slot=item.id in own_ids,
+            replacement=item.id in replacement_ids,
         ))
     return found
 
@@ -241,6 +243,7 @@ def backlog(db: Session, board: PrinterBoard, waiting_for_printer: Collection[in
             manual_start=False,
             starts_later=False,
             nozzle=facts.nozzle if facts is not None else None,
+            replacement=entry.origin in dispatch.REPLACEMENT_ORIGINS,  # to the top of Bambuddy's queue (1.2.2)
             ref=article.id,  # the reload hint finds its filament through the article (p648)
         )
         found.items.extend([item] * entry.prints)
