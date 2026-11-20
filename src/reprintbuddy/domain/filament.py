@@ -548,7 +548,8 @@ def usage(session: Session, sort_ids: Collection[int], today: date) -> dict[str,
         sums.setdefault(sort_id, {}).update(values)
     for sort_id, per_range in sums.items():
         for view in USAGE_VIEWS:
-            used, first_day, last_day = per_range[view_range[view]]
+            # a sort with rows older than a year only is missing in the first query (review p717, 1)
+            used, first_day, last_day = per_range.get(view_range[view], (0.0, None, None))
             if first_day is None or last_day is None or last_day <= first_day:
                 continue  # under two days of record in the window
             days = (last_day - first_day).days

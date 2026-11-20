@@ -210,3 +210,20 @@ def test_the_page_average_of_30_days_is_the_reorder_one(db, seed):
                 assert got["avg30"][sort].days == days
             else:
                 assert sort not in got["avg30"]
+
+
+def test_a_sort_with_rows_older_than_a_year_only_has_only_its_total(db):
+    """Review p717, 1: the query of the last year has no group for such a sort; the page must not fail."""
+    with db.begin() as s:
+        old = make_sort(s).id
+        recent = make_sort(s, brand="Brand B").id
+        make_snapshot(s, TODAY - timedelta(days=400), 1, old, 500.0)
+        make_snapshot(s, TODAY - timedelta(days=399), 1, old, 450.0)
+        make_snapshot(s, TODAY - timedelta(days=1), 2, recent, 500.0)
+        make_snapshot(s, TODAY, 2, recent, 480.0)
+    with db.begin() as s:
+        got = _views(s, [old, recent])
+        assert filament.consumption(s, old, TODAY) == (0.0, 0)
+    assert [view for view in filament.USAGE_VIEWS if old in got[view]] == ["total"]
+    assert got["total"][old].grams == 50.0
+    assert got["today"][recent].grams == 20.0
