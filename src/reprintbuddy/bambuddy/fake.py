@@ -289,8 +289,8 @@ class FakeBambuddy:
     def set_remaining(self, spool_id: int, grams: float) -> None:
         self._spools[spool_id] = dataclasses.replace(self._spools[spool_id], remaining_g=grams)
 
-    def archive_spool(self, spool_id: int) -> None:
-        self._spools[spool_id] = dataclasses.replace(self._spools[spool_id], archived=True)
+    def archive_spool(self, spool_id: int, at: datetime | None = None) -> None:
+        self._spools[spool_id] = dataclasses.replace(self._spools[spool_id], archived=True, archived_at=at)
 
     async def list_spools(self) -> list[Spool]:
         self._enter("list_spools")

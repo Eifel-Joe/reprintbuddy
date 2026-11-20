@@ -622,6 +622,19 @@ def parse_print_defaults(data: object) -> PrintOptions:
     )
 
 
+def _archive_time(value: object) -> datetime | None:
+    """The time of `archived_at` as naive UTC, or None when it is not a time.
+
+    Until 1.2.1 only its presence counted (`archived`); the time only places the last row of the spool
+    in the record (Spec 9.2, p717). A text of another form must not make the whole spool list unreadable,
+    so it gives None (the record then takes today) instead of `BambuddyUnexpected`.
+    """
+    try:
+        return _utc(value)
+    except BambuddyUnexpected:
+        return None
+
+
 def parse_spools(data: object) -> list[Spool]:
     """The spools of either list (`GET /inventory/spools`, `GET /spoolman/inventory/spools`).
 
@@ -650,6 +663,7 @@ def parse_spools(data: object) -> list[Spool]:
                 remaining_g=max(0.0, float(label) - float(used)),
                 archived=bool(d.get("archived_at")),
                 created_at=_utc(d.get("created_at")),
+                archived_at=_archive_time(d.get("archived_at")),
             )
         )
     return out

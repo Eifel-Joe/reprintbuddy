@@ -126,6 +126,22 @@ def test_spool_archived_and_missing_created_at():
     data[0]["created_at"] = None
     first = parse_spools(data)[0]
     assert first.archived is True and first.created_at is None
+    # the day of its last row in the record (Spec 9.2, p717), naive UTC like `created_at`
+    assert first.archived_at == datetime(2026, 11, 3, 15, 2, 9)
+
+
+@pytest.mark.parametrize("value", ["yesterday", 12345, True])
+def test_an_archive_time_of_another_form_still_reads_the_list(value):
+    """Only the presence of `archived_at` counted until 1.2.1; its time must not break the list."""
+    data = load("spools_builtin.json")
+    data[0]["archived_at"] = value
+    first = parse_spools(data)[0]
+    assert first.archived is True and first.archived_at is None
+
+
+def test_spool_not_archived_has_no_archive_time():
+    first = parse_spools(load("spools_builtin.json"))[0]
+    assert first.archived is False and first.archived_at is None
 
 
 def test_spool_color_missing_or_malformed_is_none():

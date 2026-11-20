@@ -1153,7 +1153,10 @@ def take_pages(shot: Shooter, scn: Scenario) -> None:
     shot.page("assembly", "/assembly")
     shot.page("label-preview", f"/articles/{cable}", before=wait_label, element="#label")
     shot.page("reorder", "/reorder")
-    shot.page("filament-page", "/filament")
+    # the switch of the column "Verbrauch" (Spec 9.3, p717) on its default, whatever an earlier run kept
+    shot.page("filament-page", "/filament", before=lambda b: b.evaluate(
+        "(()=>{const s=document.querySelector('[data-usage-select]');if(s){s.value='avg30';"
+        "s.dispatchEvent(new Event('change',{bubbles:true}))}})()"))
     # the sort with two suppliers (Spec 9.3): the block of suppliers of the reorder settings
     shot.page("filament-settings", f"/filament/{scn.sorts['petg_black']}")
     shot.page("orders", "/orders")

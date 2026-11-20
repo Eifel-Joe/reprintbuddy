@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -51,10 +53,11 @@ async def filament_list(request: Request):
     directory = [s for s in db.scalars(select(FilamentSort)) if s.id in ticked and not s.legacy]
     configured = set(db.scalars(select(FilamentSettings.spool_filament_id)))
     demand = reorder.filament_demand(db)
+    # every view of the column "Verbrauch" in one query; the page shows Ø 30 days, the script the choice
+    usage = filament.usage(db, [sort.id for sort in directory], today)
     rows = []
     for sort in directory:
         entry = sorts.get(sort.id) if sorts is not None else None
-        per_day, days = filament.consumption(db, sort.id, today)
         is_reordered = sort.id in reordered
         rows.append({
             "id": sort.id,
@@ -63,7 +66,7 @@ async def filament_list(request: Request):
             "swatch": sort.color_hex if sort.color_hex and COLOR.fullmatch(sort.color_hex) else None,
             "stock": f"{entry.stock_g:.0f}" if entry is not None else None,
             "spools": entry.spools if entry is not None else None,
-            "per_day": per_day if days else None,  # `num` filter
+            "usage": {view: usage[view].get(sort.id) for view in filament.USAGE_VIEWS},  # `num` filter
             "demand": f"{demand.get(sort.id, 0.0):.0f}" if is_reordered else None,
             "reordered": is_reordered,
             "configured": sort.id in configured,
@@ -87,7 +90,54 @@ async def filament_list(request: Request):
     return render(
         request, "filament_list.html", active_nav="filament", rows=rows, unmapped=unmapped, cards=cards,
         live=sorts is not None and day is None, stale_day=stale_day, as_of=as_of,
+        usage_views=_usage_views(lang, rows, today, filament.first_record_day(db)),
     )
+
+
+# The texts of the views (literal keys: the language files keep only texts the code names).
+_VIEW_KEYS = {
+    "avg30": "filament.usage.view.avg30", "avg7": "filament.usage.view.avg7",
+    "today": "filament.usage.view.today", "yesterday": "filament.usage.view.yesterday",
+    "week": "filament.usage.view.week", "month": "filament.usage.view.month",
+    "year": "filament.usage.view.year", "total": "filament.usage.view.total",
+}
+_MONTH_KEYS = (
+    "date.month.1", "date.month.2", "date.month.3", "date.month.4", "date.month.5", "date.month.6",
+    "date.month.7", "date.month.8", "date.month.9", "date.month.10", "date.month.11", "date.month.12",
+)
+
+
+def _usage_views(lang: str, rows: list[dict[str, object]], today: date, first_day: date | None) -> list[dict[str, object]]:
+    """The views of the column "Verbrauch" for the head and the switch (Spec 9.3, p717).
+
+    The calendar periods are named so that nobody takes them for the last n days: "diese Woche (KW 47)"
+    (ISO week, which may begin in the year before), "dieser Monat (November)" in the language of the
+    page, "dieses Jahr (2026)", and "gesamt (seit 14.11.2026)" with the first day of the record. All of
+    them are days of the record in UTC (Spec 10.5a), like `today`.
+    An average adds over how many days, while the record is shorter than its window ("Ø 30 Tage,
+    bisher 6"). Those days are the longest of the rows shown: a sort recorded for fewer days says its own
+    days in its cell, so the head never claims more than a row has.
+    """
+    params: dict[str, dict[str, object]] = {
+        "week": {"week": today.isocalendar().week},
+        "month": {"month": translate(lang, _MONTH_KEYS[today.month - 1])},
+        "year": {"year": today.year},
+    }
+    views = []
+    for view in filament.USAGE_VIEWS:
+        if view == "total":
+            name = (translate(lang, "filament.usage.view.total", day=format_date(first_day, lang)) if first_day
+                    else translate(lang, "filament.usage.view.total_none"))
+        else:
+            name = translate(lang, _VIEW_KEYS[view], **params.get(view, {}))
+        window = filament.USAGE_WINDOW.get(view)
+        days = max((u.days for r in rows if (u := r["usage"][view]) is not None), default=0)
+        note = translate(lang, "filament.usage.so_far", view=name, days=days) if window and 0 < days < window else name
+        views.append({
+            "view": view, "average": window is not None, "name": name, "note": note, "days": days,
+            "title": translate(lang, "filament.col.per_day" if window else "filament.usage.head_sum"),
+        })
+    return views
 
 
 def _settings_page(request: Request, sort: FilamentSort, values: dict[str, object],

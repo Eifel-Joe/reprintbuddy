@@ -59,7 +59,7 @@ def test_single_head():
 
 
 def test_the_head_of_the_versions_folder_of_this_code():
-    assert head_of_dir(VERSIONS) == "0022"
+    assert head_of_dir(VERSIONS) == "0023"
 
 
 def _package(path: Path, tag: str, versions: dict[str, str]) -> Path:
@@ -78,7 +78,7 @@ def _package(path: Path, tag: str, versions: dict[str, str]) -> Path:
 def test_the_head_of_a_package_is_read_without_unpacking_it(tmp_path):
     versions = {path.name: path.read_text(encoding="utf-8") for path in VERSIONS.glob("*.py")}
     archive = _package(tmp_path / "p.tar.gz", "v1.0.0", versions)
-    assert head_of_package(archive, "v1.0.0") == "0022"
+    assert head_of_package(archive, "v1.0.0") == "0023"
     assert not (tmp_path / "reprintbuddy-v1.0.0").exists()
 
 
@@ -117,7 +117,7 @@ def test_downgrade_and_current_revision(tmp_path):
     engine = make_engine(path)
     upgrade(engine)
     engine.dispose()
-    assert current_revision(path) == "0022"
+    assert current_revision(path) == "0023"
     downgrade(path, "0021")
     assert current_revision(path) == "0021"
 

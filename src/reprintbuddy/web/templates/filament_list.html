@@ -9,12 +9,17 @@
 {% elif stale_day %}<p class="alert" role="status">{{ t('filament.stale', day=stale_day) }}</p>
 {% else %}<p class="alert" role="status">{{ t('filament.stock_unknown') }}</p>{% endif %}
 {% if rows %}
+{# The column "Verbrauch" can be switched (Spec 9.3, p717): every view is in the page, only the choice is
+   shown. Without JavaScript Ø 30 days applies and the switch stays hidden; filament_usage.js shows it and
+   keeps the choice in the browser. #}
+<p class="usage-choice" data-usage-choice hidden><label>{{ t('filament.usage.choose') }}
+  <select data-usage-select>{% for v in usage_views %}<option value="{{ v.view }}"{% if loop.first %} selected{% endif %}>{{ v.name }}</option>{% endfor %}</select></label></p>
 <div class="card table-wrap table-card">
   <table>
     <thead><tr>
       <th>{{ t('filament.col.sort') }}</th><th>{{ t('articles.filament.material') }}</th>
       <th class="num">{{ t('filament.col.stock') }}{% if as_of %}<span class="col-note">{{ as_of }}</span>{% endif %}</th><th class="num">{{ t('filament.col.spools') }}{% if as_of %}<span class="col-note">{{ as_of }}</span>{% endif %}</th>
-      <th class="num">{{ t('filament.col.per_day') }}</th><th class="num">{{ t('filament.col.demand') }}</th>
+      <th class="num">{% for v in usage_views %}<span data-usage-head="{{ v.view }}"{% if not loop.first %} hidden{% endif %}>{{ v.title }}<span class="col-note">{{ v.note }}</span></span>{% endfor %}</th><th class="num">{{ t('filament.col.demand') }}</th>
       <th class="actions-col"><span class="sr-only">{{ t('list.col.actions') }}</span></th>
     </tr></thead>
     <tbody>
@@ -25,7 +30,7 @@
         <td>{{ r.material }}</td>
         <td class="num nowrap">{% if r.stock is not none %}{{ r.stock }} g{% else %}—{% endif %}</td>
         <td class="num nowrap">{% if r.spools is not none %}{{ r.spools }}{% else %}—{% endif %}</td>
-        <td class="num{% if r.per_day is not none %} nowrap{% endif %}">{% if r.per_day is not none %}{{ r.per_day|num }} g{% else %}<span class="muted">{{ t('filament.no_history') }}</span>{% endif %}</td>
+        <td class="num">{% for v in usage_views %}{% set u = r.usage[v.view] %}<span data-usage="{{ v.view }}"{% if not loop.first %} hidden{% endif %}>{% if u is not none %}<span class="nowrap">{{ u.grams|num if v.average else u.grams|num(0) }} g</span>{% if v.average and u.days < v.days %}<span class="col-note muted">{{ tc('filament.usage.cell_so_far', u.days) }}</span>{% endif %}{% else %}<span class="muted">{{ t('filament.no_history') }}</span>{% endif %}</span>{% endfor %}</td>
         <td class="num nowrap">{% if r.demand is not none %}{{ r.demand }} g{% else %}—{% endif %}</td>
         <td class="actions-col">{% call ui.row_actions() -%}
           {{ ui.icon_button('pencil' if r.configured else 'settings', t('filament.edit_settings' if r.configured else 'filament.configure'), '/filament/' ~ r.id, r.label) }}
@@ -56,3 +61,4 @@
 {% endif %}
 {% endcall %}
 {% endblock %}
+{% block scripts %}<script src="/static/js/filament_usage.js?v={{ app_version }}" defer></script>{% endblock %}

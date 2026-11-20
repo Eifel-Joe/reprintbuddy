@@ -7,7 +7,8 @@ Reprintbuddy watches your filament so that it can suggest orders in time. Bambud
 - Bambuddy keeps the filament, either with its own spool management or in Spoolman mode. **Spoolman is optional.** Reprintbuddy reads the spool list through Bambuddy, from the mode that is running, and never writes to it. It never talks to Spoolman itself. For this the Bambuddy group needs the rights listed in [First setup](../start/setup.md).
 - Bambuddy gives spools no identifier that groups them. A **spool sort** is therefore every spool with the same brand, material, subtype and colour value. The colour name does not count. Sorts are never merged: two spools whose colour values differ slightly are two sorts (you can tick both for an article).
 - The **stock** of a spool sort is the sum of the remaining weights of its spools that are not archived, in grams.
-- With every regular query Reprintbuddy records the remaining weight of each spool for the day. From the last 30 days it works out the **use per day** of a sort.
+- With every regular query Reprintbuddy records the remaining weight of each spool for the day. From the last 30 days it works out the **use per day** of a sort. Only decreases count; a new or refilled spool adds nothing. Days are the days of this record, in UTC.
+- When you archive a spool, its use keeps counting up to its last remaining weight, also on the day you archive it: a spool printed empty and archived at once does not lose its last use. From then on it no longer counts for the stock or the spools. A spool deleted in Bambuddy instead of archived loses its use of the current day.
 
 ## Tell an article which filament it may use
 
@@ -37,7 +38,7 @@ An archived article's assignment is read-only. After you change an article's pri
 
 *Filament* lists the spool sorts that are ticked in at least one active article.
 
-![The Filament page with the spool sorts, their stock, use per day and planned demand](../assets/images/en/filament-page.png)
+![The Filament page with the spool sorts, their stock, the use with the choice “Column use” above it, and the planned demand](../assets/images/en/filament-page.png)
 
 | Column | Meaning |
 |---|---|
@@ -45,8 +46,26 @@ An archived article's assignment is read-only. After you change an article's pri
 | **Material** | The material of the sort. |
 | **Stock** | Sum of the remaining weights in grams. |
 | **Spools** | The number of spools of this sort. |
-| **Use per day** | Grams used per day over the last 30 days, or "no history yet" until two different days are recorded. |
+| **Use** | Switchable, see below. Default: grams used per day over the last 30 days (**Ø 30 days**), or "no history yet" until two different days are recorded. |
 | **Planned demand** | Only for reordered sorts: the grams for the prints in Reprintbuddy's queue and in progress, plus the prints still missing up to the target quantity of the articles. |
+
+### Switch the column Use
+
+Above the table, under **Column use**, you choose what the column shows:
+
+| Choice | Meaning |
+|---|---|
+| **Ø 30 days** | Grams per day on average over the last 30 days. The default and the base of the [reorder suggestions](reorder.md) and of the reach on the [Overview](overview.md). |
+| **Ø 7 days** | Grams per day on average over the last 7 days. |
+| **today**, **yesterday** | Grams used on that day. |
+| **this week (week 47)** | Grams since Monday of this calendar week, today included. The number is the ISO calendar week; around New Year it may have begun in the old year (week 53 or week 1). |
+| **this month (November)** | Grams since the first of this month. |
+| **this year (2026)** | Grams since 1 January. |
+| **total (since 2026-11-14)** | Grams since the first day of the record, which the choice names. The record is never deleted. |
+
+The head of the column names the choice. For an average it adds over how many days it is taken while the record is shorter than the days of the choice, for example **Ø 30 days, so far 6**. A sort with fewer days than the others says its own in its row (**so far 3 days**). Everything is counted the same way: the decreases between two records of the same spool. A decrease belongs to the day of the later record; **today** is the decrease since yesterday's record, and **this week** begins with the decrease from Sunday to Monday. Week, month and year are calendar periods, not sliding windows. A choice needs records on two days of its period (for **today** from yesterday and today); otherwise it says "no history yet", even when the sort has been recorded for longer, for example after a day on which Bambuddy could not be reached. All days are days of the record in UTC; shortly after midnight on your clock the day may still be the previous one.
+
+Your browser remembers the choice for the next visit, each device its own. Without JavaScript the page shows **Ø 30 days** and no choice. The tile **Filament** of the Overview and the reorder suggestions always use **Ø 30 days**.
 
 The cards on top count spool sorts, total stock, spools and the reordered sorts **Without settings**. A note above the table says whether the stock is **Live from Bambuddy.** or how old it is. When the numbers are the last recorded ones, the day also stands under the cards for stock and spools and in the head of the columns **Stock** and **Spools**, as **As of …**, so that nobody takes them for live numbers. Below the table, a note lists filament slots that have no ticked spool sort yet; each entry leads to its assignment.
 

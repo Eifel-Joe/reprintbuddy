@@ -92,7 +92,10 @@ def test_live_stock_is_not_marked(bb_client, fake_bambuddy):  # p63: nothing to 
     fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black", remaining_g=800.0)
     use_sort(bb_client)
     page = bb_client.get("/filament").text
-    assert "kpi-note" not in page and "col-note" not in page and "As of" not in page
+    # the usage column names its view in a note of its own (p717); the stock and spool columns have none
+    head = re.search(r"<thead>(.*?)</thead>", page, re.S).group(1)
+    stock_heads = re.findall(r'<th class="num">(?:(?!</th>).)*</th>', head, re.S)[:2]
+    assert "kpi-note" not in page and all("col-note" not in h for h in stock_heads) and "As of" not in page
 
 
 def test_filament_page_unknown_without_record(bb_client, fake_bambuddy):  # Anti-Ziel 4

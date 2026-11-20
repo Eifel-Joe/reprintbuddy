@@ -1,6 +1,6 @@
 """A small git repository with version tags and database steps, for the checks of the release way.
 
-`ReleaseRepo(tmp_path)` holds the migration steps of this code, committed and tagged v1.0.0 (head 0022);
+`ReleaseRepo(tmp_path)` holds the migration steps of this code, committed and tagged v1.0.0 (the head of this code);
 `add_step(name)` appends a step of tests/beta_steps.py and commits it, `tag(name)` tags the commit.
 Tests: tests/test_release_notes_check.py, tests/test_release_workflow.py.
 """
@@ -15,6 +15,10 @@ import pytest
 from beta_steps import STEPS, revision_of
 
 from reprintbuddy.db import MIGRATIONS_DIR
+from reprintbuddy.db import MIGRATIONS_DIR as _MIGRATIONS_DIR
+from reprintbuddy.ops.migrationsteps import head_of_dir as _head_of_dir
+
+HEAD = _head_of_dir(_MIGRATIONS_DIR / "versions")  # the head of this code: the stable head in these tests
 
 VERSIONS = Path("src") / "reprintbuddy" / "migrations" / "versions"
 
@@ -26,7 +30,7 @@ class ReleaseRepo:
             pytest.skip("git is not installed")
         self.path = tmp_path / "repo"
         shutil.copytree(MIGRATIONS_DIR / "versions", self.path / VERSIONS, ignore=shutil.ignore_patterns("__pycache__"))
-        self.head = "0022"
+        self.head = HEAD
         self.count = 0
         self.run("init", "-q")
         self.commit("stable")

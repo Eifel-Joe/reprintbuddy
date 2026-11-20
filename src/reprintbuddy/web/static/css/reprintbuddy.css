@@ -698,6 +698,11 @@ html[lang="de"] .kpi-label { hyphens: auto; }
 /* Recorded numbers say from when they are (p63): a small line under the label, under the column head. */
 .kpi-note { color: var(--text-2); font-size: 11px; margin-top: 1px; overflow-wrap: break-word; }
 .col-note { display: block; font-size: 10px; font-weight: 400; letter-spacing: 0; text-transform: none; white-space: nowrap; }
+/* The switch of the column "Verbrauch" on the filament page (Spec 9.3, p717): shown by filament_usage.js. */
+.usage-choice { display: flex; justify-content: flex-end; margin: 0 0 0.6rem; }
+.usage-choice label { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0.5rem; max-width: 100%; font-size: 13px; color: var(--text-2); white-space: nowrap; }
+.usage-choice select { width: auto; max-width: 100%; }
+.usage-choice[hidden], [data-usage][hidden], [data-usage-head][hidden] { display: none; }
 
 /* Symbol buttons at the end of a row: small picture, 44 px target. */
 .icon-btn {
