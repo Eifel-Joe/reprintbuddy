@@ -294,6 +294,30 @@ async def test_fake_positions_one_sequence_over_printers(fake_bambuddy):  # v0.3
     ]
 
 
+async def test_fake_insert_position_like_bambuddy(fake_bambuddy):  # 1.2.2, replacements to the top
+    """`add_to_queue` (`print_queue.py` at f23e80954, `:1418-1434`): `insert_position` is 1-based and
+    compared with the stored positions; every pending entry at or behind it moves back by one, gaps
+    stay, a running entry keeps its place, a position past the end means the end; `insert_at_top`
+    alone is position 1."""
+    def request(*, top=False, position=None):
+        return EnqueueRequest(library_file_id=1, plate_id=1, target_model="A1", printer_id=None,
+                              insert_at_top=top, insert_position=position)
+
+    first = await fake_bambuddy.enqueue(request(top=True))  # empty queue
+    assert first.position == 1
+    running = fake_bambuddy.add_foreign_item("Running", status="printing")
+    gone = fake_bambuddy.add_foreign_item("Deleted")
+    last = fake_bambuddy.add_foreign_item("Last")
+    fake_bambuddy.delete_item(gone.id)  # positions 1 and 3: a gap
+    inserted = await fake_bambuddy.enqueue(request(position=2))
+    top = await fake_bambuddy.enqueue(request(top=True))
+    past = await fake_bambuddy.enqueue(request(position=99))
+    by_id = {i.id: i for i in await fake_bambuddy.list_queue()}
+    assert {i: by_id[i].position for i in (top.id, first.id, inserted.id, last.id, past.id)} == {
+        top.id: 1, first.id: 2, inserted.id: 3, last.id: 5, past.id: 6}
+    assert (by_id[running.id].status, by_id[running.id].position) == ("printing", running.position)
+
+
 async def test_insert_next_keeps_own_order(db, fake_bambuddy):
     f1 = fake_bambuddy.add_foreign_item("Other 1")
     f2 = fake_bambuddy.add_foreign_item("Other 2")
@@ -327,6 +351,111 @@ async def test_insert_next_off_appends(db, fake_bambuddy):
         i1 = s.get(Dispatch, r1.dispatch_id).bambuddy_item_id
         i2 = s.get(Dispatch, r2.dispatch_id).bambuddy_item_id
     assert [i.id for i in await fake_bambuddy.list_queue()] == [f1.id, f2.id, i1, i2]
+
+
+# ---- replacements to the top of Bambuddy's queue (Spec 7.3 "Ausnahme Ersatzdrucke", 1.2.2) -------
+
+
+def item_of(db, res):
+    with db() as s:
+        return s.get(Dispatch, res.dispatch_id).bambuddy_item_id
+
+
+async def pending_ids(fake):
+    return [i.id for i in await fake.list_queue() if i.status == "pending"]
+
+
+@pytest.mark.parametrize("origin", ["scrap", "failure"])
+@pytest.mark.parametrize("insert_next", [False, True])
+async def test_replacement_goes_ahead_of_every_waiting_print(db, fake_bambuddy, origin, insert_next):
+    """Ahead of foreign and own waiting prints, whatever "insert next" says."""
+    f1 = fake_bambuddy.add_foreign_item("Other 1")
+    with db.begin() as s:
+        a = article(s).id
+        entry(s, a)  # minimum stock
+    await hand(db, fake_bambuddy, insert_next=insert_next)
+    fake_bambuddy.add_foreign_item("Other 2")
+    before = await pending_ids(fake_bambuddy)
+    assert f1.id in before and len(before) == 3
+    with db.begin() as s:
+        entry(s, a, origin=origin)
+    res, result = await hand(db, fake_bambuddy, insert_next=insert_next)
+    assert result == "queued"
+    assert await pending_ids(fake_bambuddy) == [item_of(db, res), *before]
+    req = fake_bambuddy.enqueued[-1]
+    assert (req.insert_at_top, req.insert_position) == (True, None)
+
+
+@pytest.mark.parametrize("insert_next", [False, True])
+async def test_replacements_keep_the_order_of_their_hand_over(db, fake_bambuddy, insert_next):
+    """A new replacement goes behind the replacements already waiting in front, not before them;
+    a print of the minimum stock stays where the switch puts it."""
+    f1 = fake_bambuddy.add_foreign_item("Other 1")
+    with db.begin() as s:
+        a = article(s).id
+        entry(s, a, 2, origin="scrap")
+    r1, _ = await hand(db, fake_bambuddy, insert_next=insert_next)
+    r2, _ = await hand(db, fake_bambuddy, insert_next=insert_next)
+    with db.begin() as s:
+        entry(s, a)  # minimum stock
+    n, _ = await hand(db, fake_bambuddy, insert_next=insert_next)
+    with db.begin() as s:
+        entry(s, a, origin="failure")
+    r3, _ = await hand(db, fake_bambuddy, insert_next=insert_next)
+    i1, i2, i3, ni = (item_of(db, r) for r in (r1, r2, r3, n))
+    rest = [ni, f1.id] if insert_next else [f1.id, ni]  # "insert next": behind the last own waiting print
+    assert await pending_ids(fake_bambuddy) == [i1, i2, i3, *rest]
+    places = [(r.insert_at_top, r.insert_position) for r in fake_bambuddy.enqueued]
+    normal = (False, 3) if insert_next else (False, None)
+    assert places == [(True, None), (False, 2), normal, (False, 3)]
+
+
+async def test_replacement_into_an_empty_queue(db, fake_bambuddy):
+    with db.begin() as s:
+        entry(s, article(s).id, origin="failure")
+    res, result = await hand(db, fake_bambuddy)
+    assert result == "queued"
+    (item,) = await fake_bambuddy.list_queue()
+    assert item.id == item_of(db, res) and item.position == 1
+    req = fake_bambuddy.enqueued[-1]
+    assert (req.insert_at_top, req.insert_position) == (True, None)
+
+
+@pytest.mark.parametrize("insert_next", [False, True])
+async def test_replacement_leaves_a_running_print_alone(db, fake_bambuddy, insert_next):
+    """A running print is not a waiting one: an earlier replacement that already prints does not hold
+    the new one back, and neither it nor a foreign running print changes."""
+    printer = fake_bambuddy.add_printer("Printer 1", "A1")
+    with db.begin() as s:
+        a = article(s).id
+        entry(s, a, origin="scrap")
+    earlier, _ = await hand(db, fake_bambuddy)
+    fake_bambuddy.set_status(item_of(db, earlier), "printing", printer_id=printer.id)
+    foreign_running = fake_bambuddy.add_foreign_item("Other running", status="printing")
+    f1 = fake_bambuddy.add_foreign_item("Other 1")
+    with db.begin() as s:
+        entry(s, a, origin="failure")
+    res, _ = await hand(db, fake_bambuddy, insert_next=insert_next)
+    req = fake_bambuddy.enqueued[-1]
+    assert (req.insert_at_top, req.insert_position) == (True, None)
+    assert await pending_ids(fake_bambuddy) == [item_of(db, res), f1.id]
+    running = {i.id: i for i in await fake_bambuddy.list_queue() if i.status == "printing"}
+    assert set(running) == {item_of(db, earlier), foreign_running.id}
+
+
+async def test_replacement_queue_unreadable_puts_it_back(db, fake_bambuddy):
+    """With the switch off a replacement still reads Bambuddy's queue first; not reachable: back, not sent."""
+    with db.begin() as s:
+        a = article(s).id
+        entry(s, a, origin="scrap")
+    fake_bambuddy.fail_next("list_queue", BambuddyUnavailable("timeout"))
+    res, result = await hand(db, fake_bambuddy, insert_next=False)
+    assert result == "not_sent"
+    assert fake_bambuddy.enqueued == []
+    with db.begin() as s:
+        (back,) = entries_by_position(s)
+        assert (back.origin, back.prints) == ("scrap", 1)
+        assert s.get(Dispatch, res.dispatch_id).enqueue_sent_at is None
 
 
 def test_confirm_dispatch_printing(db):

@@ -169,6 +169,23 @@ async def test_completion_no_reprint(engine_env):
     assert env.engine.status.last_poll_at is not None
 
 
+async def test_replacement_after_a_failure_goes_to_the_top_of_bambuddys_queue(engine_env):
+    """Spec 7.3 "Ausnahme Ersatzdrucke" (1.2.2): failed in Bambuddy, replaced, handed over in the same
+    tick ahead of the prints waiting there, with "insert next" off (the default)."""
+    env = engine_env
+    await env.engine.tick(poll=False)
+    (item_id,) = item_ids(env.sm)
+    foreign = [env.fake.add_foreign_item("Other 1").id, env.fake.add_foreign_item("Other 2").id]
+    env.fake.set_status(item_id, "failed")
+
+    await env.engine.tick(poll=True)
+
+    assert statuses(env.sm) == ["failed", "queued"]
+    replacement = item_ids(env.sm)[1]
+    assert [i.id for i in await env.fake.list_queue()] == [replacement, *foreign]
+    assert (env.fake.enqueued[-1].insert_at_top, env.fake.enqueued[-1].insert_position) == (True, None)
+
+
 async def test_queue_stopped_creates_but_does_not_dispatch(engine_env):
     env = engine_env
     setting(env.sm, "queue_running", False)
