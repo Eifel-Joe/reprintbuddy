@@ -21,18 +21,31 @@ import pytest
 from test_install_script import INSTALL_SH, REPO, bash, fake_python, lines, os_release, run  # noqa: F401
 
 ZONES = ["Etc/UTC", "Europe/Berlin", "Europe/Vienna", "America/New_York", "Etc/GMT+5", "UTC"]
+# On the list, but its file is missing: since Debian 13 the old names come with tzdata-legacy (113 of 598 names
+# in a Debian 13 container without it), and `timedatectl set-timezone` refuses them.
+LEGACY = "US/Eastern"
 QUESTION = re.compile(r"Time zone of this server: (\S+), time now \d\d:\d\d\. Is that right\? \[Y/n\]")
+
+
+def zoneinfo(root: Path) -> None:
+    """The installed zone files under a test root (REPRINTBUDDY_DESTDIR): all of ZONES, not LEGACY."""
+    for zone in ZONES:
+        path = root / "usr/share/zoneinfo" / zone
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"TZif2")
 
 
 def stubs(folder: Path, *, current: str = "Etc/UTC", list_fails: bool = False, set_fails: bool = False,
           reconfigure_fails: bool = False) -> tuple[dict, Path]:
-    """`timedatectl` and `dpkg-reconfigure` that write every call to calls.log. After `set-timezone` or a
-    selection, `show` answers the new zone (Europe/Vienna for the selection)."""
+    """`timedatectl`, `dpkg-reconfigure` and `systemctl` that write every call to calls.log. After `set-timezone`,
+    `show` answers the new zone. The selection writes Europe/Vienna the way tzdata does, past timedated: like the
+    real timedated, `show` keeps answering the old zone until timedated is restarted (seen in a Debian 13 container)."""
     folder.mkdir(parents=True, exist_ok=True)
     log = folder / "calls.log"
     state = folder / "zone"
+    pending = folder / "localtime"  # what tzdata wrote and timedated has not read yet
     state.write_text(current + "\n", encoding="utf-8", newline="\n")
-    listing = "\\n".join(ZONES)
+    listing = "\\n".join([*ZONES, LEGACY])
     scripts = {
         "timedatectl": (
             "#!/bin/sh\n"
@@ -46,7 +59,12 @@ def stubs(folder: Path, *, current: str = "Etc/UTC", list_fails: bool = False, s
         "dpkg-reconfigure": (
             "#!/bin/sh\n"
             f'echo "dpkg-reconfigure $* DEBIAN_FRONTEND=$DEBIAN_FRONTEND" >> "{log.as_posix()}"\n'
-            + ("exit 10\n" if reconfigure_fails else f'echo Europe/Vienna > "{state.as_posix()}"\n')
+            + ("exit 10\n" if reconfigure_fails else f'echo Europe/Vienna > "{pending.as_posix()}"\n')
+        ),
+        "systemctl": (
+            "#!/bin/sh\n"
+            f'echo "systemctl $*" >> "{log.as_posix()}"\n'
+            f'if [ "$1" = try-restart ] && [ -e "{pending.as_posix()}" ]; then mv "{pending.as_posix()}" "{state.as_posix()}"; fi\n'
         ),
     }
     for name, body in scripts.items():
@@ -74,45 +92,72 @@ def test_without_a_terminal_nothing_is_asked_and_nothing_is_called(bash, tmp_pat
     assert result.returncode == 0, result.stderr
     assert "Is that right?" not in result.stdout + result.stderr
     assert "time zone" not in lines(result).lower()
-    assert calls(log) == []
+    # only the check whether an update runs (refuse_during_update) asks systemctl
+    assert [c for c in calls(log) if not c.startswith("systemctl show")] == []
 
 
 def test_a_valid_zone_given_as_option_is_set(bash, tmp_path):
     os_release(tmp_path)
+    zoneinfo(tmp_path)
     env, log = stubs(tmp_path / "stubs")
     result = run(bash, tmp_path, "--repo", REPO, "--timezone", "Europe/Berlin", env_extra=env)
     assert result.returncode == 0, result.stderr
     out = lines(result)
     assert "+ timedatectl set-timezone Europe/Berlin" in out
-    # checked against the list, but a dry run sets nothing
-    assert "timedatectl list-timezones" in calls(log)
+    # checked against the list (before the packages, and again after them), but a dry run sets nothing
+    assert calls(log).count("timedatectl list-timezones") == 2
     assert changes(log) == []
-    # after the packages (tzdata comes with them), before the user and the code
+    # set after the packages (tzdata comes with them), before the user and the code
     assert out.index("apt-get install") < out.index("timedatectl set-timezone") < out.index("useradd")
 
 
 @pytest.mark.parametrize(
-    "zone", ["Europe/Atlantis", "europe/berlin", "localtime", "posixrules", "", "Europe/Berlin ", "../UTC"]
+    "zone",
+    ["Europe/Atlantis", "europe/berlin", "localtime", "posixrules", "", "Europe/Berlin ", "../UTC", "-x", LEGACY],
 )
-def test_an_unknown_zone_stops_before_anything_is_set_up(bash, tmp_path, zone):
+def test_an_unknown_zone_stops_before_anything_is_changed(bash, tmp_path, zone):
     os_release(tmp_path)
+    zoneinfo(tmp_path)
     env, log = stubs(tmp_path / "stubs")
     result = run(bash, tmp_path, "--repo", REPO, "--timezone", zone, env_extra=env)
     assert result.returncode == 2
-    assert "Unknown time zone" in result.stderr
+    assert f"Unknown time zone: {zone}" in result.stderr
     assert "timedatectl list-timezones" in result.stderr  # where the names come from
-    out = lines(result)
-    assert "set-timezone" not in out and "useradd" not in out and "/opt/reprintbuddy" not in out
+    # before the packages: nothing at all is changed (review p718)
+    assert not [line for line in lines(result).splitlines() if line.startswith("+")]
     assert changes(log) == []
 
 
-def test_without_a_list_of_zones_the_option_stops_with_a_message(bash, tmp_path):
+def test_an_old_name_that_is_not_installed_says_where_it_comes_from(bash, tmp_path):
+    """Debian 13 moved the old names (US/Eastern, Europe/Kiev, ...) to tzdata-legacy; they stay on the list of
+    `timedatectl list-timezones`, but `set-timezone` refuses them."""
+    os_release(tmp_path)
+    zoneinfo(tmp_path)
+    env, _ = stubs(tmp_path / "stubs")
+    result = run(bash, tmp_path, "--repo", REPO, "--timezone", LEGACY, env_extra=env)
+    assert result.returncode == 2
+    assert "tzdata-legacy" in result.stderr
+
+
+def test_an_option_after_timezone_is_not_taken_for_a_zone(bash, tmp_path):
+    """`--timezone --dry-run` must not swallow the dry run and go on for real (review p718): a value that cannot be
+    a zone name stops the run while the options are read, before anything else."""
+    result = run(bash, tmp_path, "--timezone", "--dry-run", "--repo", REPO, dry=False, destdir=False)
+    assert result.returncode == 2
+    assert "Unknown time zone: --dry-run" in result.stderr
+    assert "apt-get" not in lines(result) and "Run this script as root." not in result.stderr
+
+
+def test_without_a_list_of_zones_the_check_waits_for_the_packages_then_stops(bash, tmp_path):
+    """Without tzdata there is no list before the packages; the check comes again after them (tzdata is one of
+    them) and stops with a message when there is still none."""
     os_release(tmp_path)
     env, log = stubs(tmp_path / "stubs", list_fails=True)
     result = run(bash, tmp_path, "--repo", REPO, "--timezone", "Europe/Berlin", env_extra=env)
     assert result.returncode == 1
     assert "The time zone cannot be checked here" in result.stderr
-    assert "useradd" not in lines(result)
+    out = lines(result)
+    assert "apt-get install" in out and "useradd" not in out
     assert changes(log) == []
 
 
@@ -148,10 +193,14 @@ def call(bash, tmp_path, *, terminal: bool, answer: str = "", choice: str | None
     library = tmp_path / "install-lib.sh"
     library.write_text(body[: -len('main "$@"')], encoding="utf-8", newline="\n")
     env, log = stubs(tmp_path / "stubs", **stub_options)
+    root = tmp_path / "root"
+    zoneinfo(root)
     env = dict(os.environ, **env, DEBIAN_FRONTEND="noninteractive")  # main exports this before the step runs
     env.pop("TZ", None)
+    env.pop("REPRINTBUDDY_DESTDIR", None)
     program = (
         f'source "{library.as_posix()}"\n'
+        f'DESTDIR="{root.as_posix()}"\n'
         f"DRY_RUN={1 if dry else 0}\n"
         + (f"TIME_ZONE_CHOICE={shlex_quote(choice)}\nTIME_ZONE_GIVEN=1\n" if choice is not None else "")
         + f"stdin_is_terminal() {{ return {0 if terminal else 1}; }}\n"
@@ -179,13 +228,16 @@ def test_in_a_terminal_yes_or_enter_changes_nothing(bash, tmp_path, answer):
     assert changes(log) == []
 
 
-@pytest.mark.parametrize("answer", ["n\n", "N\n", "no\n", "maybe\nn\n"])
+@pytest.mark.parametrize("answer", ["n\n", "N\n", "no\n", "maybe\nn\n", "n"])
 def test_in_a_terminal_no_opens_debians_selection(bash, tmp_path, answer):
+    """A "n" without a newline (then Ctrl-D) is a no as well (review p718)."""
     result, log = call(bash, tmp_path, terminal=True, answer=answer)
     assert result.returncode == 0, result.stderr
     # the selection asks, so it must not get the noninteractive frontend the rest of the script uses
     assert changes(log) == ["dpkg-reconfigure tzdata DEBIAN_FRONTEND=dialog"]
     assert "set-timezone" not in "\n".join(calls(log))  # nothing typed in freely
+    # timedated read the zone before the selection; it is restarted so that the new zone is shown (review p718)
+    assert "systemctl try-restart systemd-timedated.service" in calls(log)
     assert re.search(r"Time zone of this server is now Europe/Vienna, time now \d\d:\d\d\.", result.stdout)
 
 
@@ -219,13 +271,13 @@ def test_the_option_sets_the_zone_and_asks_nothing(bash, tmp_path, terminal):
     assert re.search(r"Time zone of this server is now America/New_York, time now \d\d:\d\d\.", result.stdout)
 
 
-@pytest.mark.parametrize("zone", ["Mars/Olympus", "Etc/UTC\nEurope/Berlin", "Europe/*", ""])
+@pytest.mark.parametrize("zone", ["Mars/Olympus", "Etc/UTC\nEurope/Berlin", "Europe/*", "", LEGACY])
 def test_an_unknown_zone_sets_nothing(bash, tmp_path, zone):
     """Two names on two lines are two lines of the list, not one name. Checked here and not on the command line:
     on Windows an argument with a newline does not reach bash in one piece."""
     result, log = call(bash, tmp_path, terminal=True, choice=zone)
     assert result.returncode == 2
-    assert f"Unknown time zone: {zone}." in result.stderr
+    assert f"Unknown time zone: {zone}" in result.stderr
     assert changes(log) == []
     assert "done" not in result.stdout
 
@@ -301,3 +353,31 @@ def test_in_a_real_terminal_the_whole_script_asks(bash, tmp_path, answer, select
     assert QUESTION.search(result.stdout).group(1) == "Etc/UTC"
     assert ("+ DEBIAN_FRONTEND=dialog dpkg-reconfigure tzdata" in result.stdout) is selected
     assert changes(log) == []  # a dry run
+
+
+def test_a_language_cut_off_at_the_end_of_input_still_counts(bash, tmp_path):
+    """The same reading as the time zone question: "de" without a newline (then Ctrl-D) is de, not the default."""
+    body = INSTALL_SH.read_text(encoding="utf-8").rstrip("\n")
+    library = tmp_path / "install-lib.sh"
+    library.write_text(body[: -len('main "$@"')], encoding="utf-8", newline="\n")
+    root = tmp_path / "root"
+    root.mkdir()
+    program = (
+        f'source "{library.as_posix()}"\nDESTDIR="{root.as_posix()}"\n'
+        "choose_language\n"
+        'echo "language=${LANGUAGE_CHOICE}"\n'
+    )
+    env = dict(os.environ)
+    env.pop("REPRINTBUDDY_DESTDIR", None)
+    if not sys.platform.startswith("linux"):
+        pytest.skip("choose_language asks [ -t 0 ] itself; a pseudo terminal is Linux only")
+    import pty
+
+    master, slave = pty.openpty()
+    try:
+        os.write(master, b"de\x04\x04")  # Ctrl-D hands "de" over without a newline, a second Ctrl-D ends the input
+        done = subprocess.run([bash, "-c", program], stdin=slave, capture_output=True, text=True, env=env, timeout=60)
+    finally:
+        os.close(slave)
+        os.close(master)
+    assert "language=de" in done.stdout, done.stdout + done.stderr

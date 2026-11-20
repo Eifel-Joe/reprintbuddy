@@ -33,6 +33,7 @@ DATA_DIR="/var/lib/reprintbuddy"
 DB_FILE="${DATA_DIR}/reprintbuddy.db"
 VENV_DIR="${INSTALL_DIR}/.venv"
 SERVICE="reprintbuddy.service"
+ZONEINFO_DIR="/usr/share/zoneinfo" # the installed zone files (tzdata), only read
 
 DRY_RUN=0
 LANGUAGE_CHOICE=""
@@ -137,6 +138,13 @@ parse_args() {
         "" | en | de) ;;
         *) die 2 "Unknown language: ${LANGUAGE_CHOICE} (use en or de)." ;;
     esac
+    # Only the characters of zone names (letters, digits, _ + - /), and no option: `--timezone --dry-run` would
+    # otherwise take the dry run for a zone and go on for real (review p718). The list comes later.
+    if [ "${TIME_ZONE_GIVEN}" -eq 1 ]; then
+        case "${TIME_ZONE_CHOICE}" in
+            "" | -* | *[!A-Za-z0-9_+/-]*) refuse_time_zone ;;
+        esac
+    fi
     if [ -n "${DESTDIR}" ] && [ "${DRY_RUN}" -ne 1 ]; then
         die 2 "REPRINTBUDDY_DESTDIR is only allowed with --dry-run."
     fi
@@ -219,7 +227,7 @@ choose_language() {
         local answer
         while true; do
             printf 'Language for Reprintbuddy [en/de] (default: en): '
-            read -r answer || answer=""
+            read -r answer || true # at the end of input: what came before it, or nothing (= the default)
             case "${answer}" in
                 "") break ;;
                 en | de)
@@ -240,10 +248,11 @@ stdin_is_terminal() {
 # the server's zone still holds for the command line, the system log and the rules that run without a browser.
 # A Debian container from a template is often on Etc/UTC. In a terminal every run shows the zone and the time it
 # gives and asks (default yes, nothing changes); no opens Debian's full selection, region first, then place.
-# Nothing is typed in freely. Without a terminal nothing is asked; --timezone sets a zone from the list. It runs
-# after the packages (tzdata comes with them) and before anything of Reprintbuddy is set up, so an unknown name
-# stops the run with only the packages in place, which every run puts there anyway. The service reads the zone
-# when it starts: start_service restarts it at the end of every run. Tests: tests/install/test_install_time_zone.py.
+# Nothing is typed in freely. Without a terminal nothing is asked; --timezone sets a zone from the list. The name
+# is checked before anything changes (main); the question and the setting come after the packages, since tzdata
+# comes with them. On a system without tzdata there is no list before that, and the check waits for the packages.
+# The service reads the zone when it starts: start_service restarts it at the end of every run.
+# Tests: tests/install/test_install_time_zone.py.
 current_time_zone() {
     local zone
     zone="$(timedatectl show --property=Timezone --value 2>/dev/null || true)"
@@ -269,27 +278,51 @@ select_time_zone() {
     if ! DEBIAN_FRONTEND=dialog dpkg-reconfigure tzdata; then
         say "The time zone selection did not finish."
     fi
+    # tzdata writes /etc/localtime itself; timedated read the zone for the question above and keeps answering
+    # that one until it starts again (seen in a Debian 13 container, review p718). An on-demand service: a
+    # restart only makes it read the zone anew.
+    systemctl try-restart systemd-timedated.service >/dev/null 2>&1 || true
     say_time_zone_now
 }
 
-# --timezone: only a name from the list of the system, compared line by line. "localtime" or "posixrules"
-# are files in the zone folder, not zones, and are not on the list.
-set_time_zone() {
+refuse_time_zone() {
+    die 2 "Unknown time zone: ${TIME_ZONE_CHOICE}. Use a name from \`timedatectl list-timezones\`, for example Europe/Berlin." \
+        "The time zone was not changed, and Reprintbuddy was not set up or changed."
+}
+
+# --timezone: only a name from the list of the system, compared line by line, whose file is installed.
+# "localtime" or "posixrules" are files in the zone folder, not zones, and are not on the list. Since Debian 13
+# the old names (US/Eastern, Europe/Kiev, ...) come with tzdata-legacy: they stay on the list, but without that
+# package `timedatectl set-timezone` refuses them (113 of 598 names in a Debian 13 container, review p718).
+# Before the packages ("early") a missing list is no error yet: tzdata comes with them.
+check_time_zone_choice() {
     local zone="${TIME_ZONE_CHOICE}" zones
     zones="$(timedatectl list-timezones 2>/dev/null || true)"
     if [ -z "${zones}" ]; then
+        if [ "${1:-}" = early ]; then
+            return 0
+        fi
         die 1 "The time zone cannot be checked here: \`timedatectl list-timezones\` gave no list." \
             "Set the time zone of the system yourself, or run the installer without --timezone."
     fi
-    # Only the characters of zone names (letters, digits, _ + - /): an empty name or two names on two lines
-    # never count as one line of the list.
+    # Again only the characters of zone names, as in parse_args: grep -F would take two names on two lines for
+    # two patterns, and either would do.
     case "${zone}" in
-        "" | *[!A-Za-z0-9_+/-]*) zone="" ;;
+        "" | -* | *[!A-Za-z0-9_+/-]*) refuse_time_zone ;;
     esac
-    if [ -z "${zone}" ] || ! grep -Fxq -- "${zone}" <<<"${zones}"; then
-        die 2 "Unknown time zone: ${TIME_ZONE_CHOICE}. Use a name from \`timedatectl list-timezones\`, for example Europe/Berlin." \
+    if ! grep -Fxq -- "${zone}" <<<"${zones}"; then
+        refuse_time_zone
+    fi
+    if [ ! -f "${DESTDIR}${ZONEINFO_DIR}/${zone}" ]; then
+        die 2 "Unknown time zone: ${zone} is not installed on this system (old names come with the package tzdata-legacy)." \
+            "Use a name from \`timedatectl list-timezones\`, for example Europe/Berlin." \
             "The time zone was not changed, and Reprintbuddy was not set up or changed."
     fi
+}
+
+set_time_zone() {
+    local zone="${TIME_ZONE_CHOICE}"
+    check_time_zone_choice
     if ! run timedatectl set-timezone "${zone}"; then
         die 1 "The time zone could not be set (timedatectl set-timezone ${zone})."
     fi
@@ -310,7 +343,7 @@ choose_time_zone() {
     printf 'Time zone of this server: %s, time now %s. ' "$(current_time_zone)" "$(time_now)"
     while true; do
         printf 'Is that right? [Y/n] '
-        read -r answer || answer=""
+        read -r answer || true # at the end of input: what came before it, or nothing (= the default)
         case "${answer}" in
             "" | y | Y | yes | Yes | YES) return 0 ;;
             n | N | no | No | NO)
@@ -701,6 +734,9 @@ main() {
     require_debian
     require_repo_url
     refuse_during_update
+    if [ "${TIME_ZONE_GIVEN}" -eq 1 ]; then
+        check_time_zone_choice early # an unknown name stops the run before anything changes
+    fi
     choose_language
     install_packages
     require_python

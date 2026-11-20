@@ -109,7 +109,8 @@ Zeitzonen (`dpkg-reconfigure tzdata`, erst die Region, dann den Ort). Die Seiten
 Browsers; die Zone des Servers gilt für die Kommandozeile, das Systemprotokoll und die Regeln, die ohne Browser laufen,
 und Debian-Container aus einer Vorlage stehen oft auf `Etc/UTC`. Ohne Terminal (Installation per Skript) fragt das
 Skript nicht; gib die Zone als Option an, einen Namen aus `timedatectl list-timezones`. Ein unbekannter Name hält das
-Skript an, bevor es etwas einrichtet:
+Skript an, bevor es etwas ändert (auf einem System ohne das Paket `tzdata` erst nach den Paketen, die die Liste
+mitbringen):
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.1/install/install.sh)" _ --timezone Europe/Berlin

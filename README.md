@@ -104,8 +104,8 @@ you run it again later. Enter keeps the zone; `n` opens Debian's selection of al
 first the region, then the place). The pages show their times in the time zone of the browser; the zone of the server
 holds for the command line, the system log and the rules that run without a browser, and Debian containers made from a
 template are often on `Etc/UTC`. Without a terminal (an installation by script) the installer asks nothing; give the
-zone as an option, a name from `timedatectl list-timezones`. An unknown name stops the installer before it sets
-anything up:
+zone as an option, a name from `timedatectl list-timezones`. An unknown name stops the installer before it changes
+anything (on a system without the package `tzdata`, after installing the packages, which brings the list):
 
 ```bash
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.1/install/install.sh)" _ --timezone Europe/Berlin
