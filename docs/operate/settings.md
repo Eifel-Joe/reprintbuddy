@@ -19,7 +19,7 @@ There is **no configuration file**. Every setting lives in the database. The onl
 
 | Card and setting | What it does | Default | Accepts |
 |---|---|---|---|
-| **Language** | Language of the pages. | English (the installer and the first setup ask for it) | English, Deutsch |
+| **Language** | Language of the pages. Below it the card says in which time zone this browser sees the times, see [What is not on this page](#what-is-not-on-this-page). | English (the installer and the first setup ask for it) | English, Deutsch |
 | **QR codes**: **Address for QR codes (special cases only)** | The start of the address inside the QR codes. Needed only when Reprintbuddy is reached through a name or a proxy, for example `https://stock.example.com`. Empty: Reprintbuddy puts its own network address and port into the codes; the card shows which one ("Without an entry the codes carry: …"). | empty | An address with `http://` or `https://`, host and optional port. No user name, no `?` or `#`. |
 | **Restart**: **Restart Reprintbuddy** | Restarts the service, see [Update and backup](update-backup.md#restart). | | |
 | **Server**: **Listen address** | The address Reprintbuddy listens on. `0.0.0.0` means every address of the machine. | `0.0.0.0` | An address this machine can listen on. Otherwise the save is refused ("This machine cannot listen on this address"), because it would lock you out. |
@@ -40,7 +40,7 @@ All five settings of the card **Automation** are saved together; a wrong number 
 | **Automation (main switch)** | Off: the rule adds no entries to the queue. Replacements and manual prints still work. | off | Switch |
 | **Stop the queue (nothing is handed over to Bambuddy)** | Entries are still added to the queue, but nothing goes to Bambuddy. | off | Switch |
 | **Limit of open prints in Bambuddy** | How many prints may be queued or printing in Bambuddy at once. The rest waits in Reprintbuddy. | 10 | Whole number, 1 to 999 |
-| **Insert as next print** | On: ahead of all prints in Bambuddy that do not come from Reprintbuddy. Off: at the end. | off | Switch |
+| **Insert as next print** | On: in Bambuddy's queue ahead of all prints that do not come from Reprintbuddy. Off: at the end. Replacement prints always go to the front of Bambuddy's queue. If SJF (shortest job first) is on in Bambuddy, the print time decides there first. | off | Switch |
 | **Poll interval (minutes)** | How often Reprintbuddy asks Bambuddy about its prints. While the live channel is connected (see the *Bambuddy* tab), Bambuddy reports finished prints at once. | 15 | Whole number, 1 to 1440 |
 
 ## Labels
@@ -105,7 +105,8 @@ This tab holds the update, the full backup, the restore and the export. They are
 ## What is not on this page
 
 - The **path of the database** is not a setting. The service passes it with `--db`.
-- The **time zone** is not a setting. Every time (journal, log, messages, release notes, the date on a label) is shown in the time zone of the server, with its summer time. To change it, set the zone on the server, for example `timedatectl set-timezone Europe/Vienna`, and restart Reprintbuddy.
+- The **time zone** is not a setting. Every page shows its times (journal, log, messages, print plan, release notes, the date on a label) in the time zone of the browser that opens it, with its summer time; a PC and a phone in different zones each see their own. The page tells the server the zone of the browser, already on the sign-in page. The **Language** card on the *General* tab says which zone this browser sees, for example "Times are shown in the time zone of this browser: Europe/Berlin". The date of a booking is a day in that zone too: "today" in the date field and the end of the day of an inventory dated back.
+- Without JavaScript, or before the browser has told its zone, the time zone of the **server** holds ("… in the time zone of the server: Etc/UTC" on a server set to UTC). It also holds for the rules that run without a browser (which receipts belong to an order marked as ordered, counts dated back with versions before 0.3.16) and for the command line. To change it, set the zone on the server, for example `timedatectl set-timezone Europe/Vienna`, and restart Reprintbuddy. Exports and backups keep their times in UTC (`+00:00`).
 - Values Reprintbuddy keeps for itself are never shown: the secret that signs the session cookies, which it creates on the first start, and the marks that follow the connection check.
 - Settings of single articles, filament sorts and bought-in parts are on their own pages, not here.
 

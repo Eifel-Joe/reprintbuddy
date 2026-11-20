@@ -19,7 +19,7 @@ from reprintbuddy.bambuddy.types import Spool
 from reprintbuddy.domain import catalog, filament, rules, suppliers, workqueue
 from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
-from reprintbuddy.localtime import local_date
+from reprintbuddy.localtime import server_date
 from reprintbuddy.models import (
     naive_utc,
     Article,
@@ -258,7 +258,10 @@ def _spools_seen(session: Session, spools: Sequence[Spool] | None) -> list[_NewS
     latest = session.scalar(select(func.max(FilamentSnapshot.day)))
     if latest is None:
         return []
-    rows = session.scalars(select(FilamentSnapshot).where(FilamentSnapshot.day == latest))
+    # the last row of an archived spool is no spool there (Spec 9.2, p717)
+    rows = session.scalars(
+        select(FilamentSnapshot).where(FilamentSnapshot.day == latest, FilamentSnapshot.archived.is_(False))
+    )
     return [_NewSpool(r.spool_filament_id, r.label_g, r.spool_created_at) for r in rows]
 
 
@@ -269,6 +272,12 @@ def _part_receipts(session: Session, mark: ReorderMark) -> list[tuple[datetime, 
     the mark (Spec 9.4, p262). Before, the saving time alone decided: a receipt entered today but
     dated last week counted for yesterday's order. The day, not the hour: a receipt dated back has
     no real time of its own (it keeps the clock time of the saving).
+
+    Both days in the zone of the server (Spec 10.5a, 9.4): this runs for a page and in the background
+    (`close_arrived_marks` from the engine's hook), and a mark must close the same way whoever looks
+    first. Rejected: the zone of the browser of the page (a page in New York would close a mark the
+    engine had left open). Limit: a receipt typed in a browser far from the server and dated to the day
+    of marking may, close to midnight, fall on the neighbouring day of the server.
     """
     rows = session.execute(
         select(JournalEntry.at, JournalEntry.booked_at, JournalEntry.qty)
@@ -279,8 +288,8 @@ def _part_receipts(session: Session, mark: ReorderMark) -> list[tuple[datetime, 
         )
         .order_by(JournalEntry.at, JournalEntry.id)
     )
-    day = local_date(mark.marked_at)
-    return [(at, qty) for at, booked_at, qty in rows if local_date(booked_at) >= day]
+    day = server_date(mark.marked_at)
+    return [(at, qty) for at, booked_at, qty in rows if server_date(booked_at) >= day]
 
 
 def _arrived(session: Session, mark: ReorderMark, seen: Sequence[_NewSpool]) -> float:

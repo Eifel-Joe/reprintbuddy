@@ -18,7 +18,8 @@
   </select>
 {% endmacro %}
 {#- p172: every hand booking has a date (Spec 6.2): today by default, earlier days allowed, none later. -#}
-{% macro date_field(v) %}<label>{{ t('bookings.field.date') }} <input type="date" name="booked_on" value="{{ v.get('booked_on', today) }}" max="{{ today }}" min="2000-01-01" required></label>{% endmacro %}
+{#- Spec 10.5a: the form carries the zone its page was computed in, so "today" is read as it was offered. -#}
+{% macro date_field(v) %}<label>{{ t('bookings.field.date') }} <input type="date" name="booked_on" value="{{ v.get('booked_on', today) }}" max="{{ today }}" min="2000-01-01" required></label><input type="hidden" name="page_zone" value="{{ form_zone }}">{% endmacro %}
 {% call ui.page_head("arrow-left-right", t('bookings.title'), t('bookings.subtitle')) %}{% endcall %}
 <div class="forms-grid">
 

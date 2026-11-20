@@ -1,10 +1,13 @@
-"""Display formats. Times are stored as naive UTC and shown in the time zone of the server.
+"""Display formats. Times are stored as naive UTC and shown in the time zone of the browser (Spec 10.5a).
 
-p183 (v0.3.14): they were shown fixed in Europe/Berlin, wherever Reprintbuddy ran. Now the zone the machine
-is set to (`timedatectl set-timezone`, or `TZ` for the service) decides, with its own summer time.
-Rejected for now: a setting under Settings - the zone of the server is what the machine already knows.
-The zone and `to_local` live in `reprintbuddy.localtime` (p260), the one source for pages and domain.
-Tests: tests/web/test_server_time_zone.py; the other tests pin a zone (`conftest.fixed_display_zone`).
+p183 (v0.3.14): they were shown fixed in Europe/Berlin, wherever Reprintbuddy ran; from then on in the zone
+the machine is set to (`timedatectl set-timezone`, or `TZ` for the service). 1.2.2: in the zone the browser
+of the request reports (cookie `rb_zone`, `web.zone`), with its own summer time; without one in the zone of
+the server, as before. Rejected: a setting under Settings - one zone for every device, where a phone
+elsewhere would see the PC's times.
+The zones and `to_local` live in `reprintbuddy.localtime` (p260), the one source for pages and domain.
+Tests: tests/web/test_browser_zone.py, tests/web/test_server_time_zone.py; the other tests pin a zone of
+the server (`conftest.fixed_display_zone`).
 """
 
 from __future__ import annotations

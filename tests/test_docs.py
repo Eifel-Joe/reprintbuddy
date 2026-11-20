@@ -242,3 +242,80 @@ def test_contributing_explains_the_branches_and_the_way_to_a_stable_version(name
     # the pull request rule is in the list of rules above, too
     rules = text.split("\n## Pull requests\n" if lang == "en" else "\n## Pull Requests\n", 1)[1].split("\n## ", 1)[0]
     assert "`dev`" in rules, name
+
+
+# --- 1.2.2: replacement prints go to the front of Bambuddy's queue (Spec 7.3 "Ausnahme Ersatzdrucke") -------------
+
+REPLACEMENTS_FIRST = {
+    "en": "Replacement prints always go to the front of Bambuddy's queue",
+    "de": "Ersatzdrucke kommen in Bambuddys Warteschlange immer nach vorn",
+}
+
+
+@pytest.mark.parametrize("lang", ["en", "de"])
+@pytest.mark.parametrize(("page", "sjf"), [
+    ("use/automation", True), ("use/queue", True), ("operate/settings", True), ("help/limits", False),
+])
+def test_pages_say_replacements_go_to_the_front_of_bambuddys_queue(page, sjf, lang):
+    """The rule for "insert next" and its exception name Bambuddy's queue; where the place is explained, so is
+    Bambuddy's SJF ("shortest job first"), which puts the print time before the place."""
+    path = DOCS / (f"{page}.md" if lang == "en" else f"{page}.de.md")
+    text = " ".join(path.read_text(encoding="utf-8").split())
+    assert REPLACEMENTS_FIRST[lang] in text, path.name
+    if sjf:
+        assert "SJF" in text, path.name
+
+
+@pytest.mark.parametrize(("page", "words"), [
+    ("automation.md", ("ahead of every other waiting print", "even if you moved that one there",
+                       "only breaks a tie of equal print time")),
+    ("automation.de.md", ("vor alle anderen wartenden Drucke", "auch wenn du diesen dort verschoben hast",
+                          "zählt dann nur bei gleicher Druckzeit")),
+])
+def test_automation_page_says_where_a_new_replacement_goes(page, words):
+    """Decided in round 1.2.2 (review 2, 8): behind the last replacement still waiting in Bambuddy, wherever it
+    stands; "other" waiting prints, so the rule does not contradict itself; SJF puts the print time first."""
+    text = " ".join((DOCS / "use" / page).read_text(encoding="utf-8").split())
+    for phrase in words:
+        assert phrase in text, phrase
+
+
+# --- 1.2.2: the slots of one sort run empty one after the other (Spec 10.2 "Vorrat", "Nachladen", p716) -----------
+
+SLOT_NOTE_PAGES = {
+    "en": ("overview.md", "### Filament in the printers", "Prefer lowest remaining filament",
+           "or its setting to use the lowest spool first"),
+    "de": ("overview.de.md", "### Filament in den Druckern", "Niedrigsten Filamentrest bevorzugen",
+           "seine Einstellung „niedrigste Spule zuerst“ bildet Reprintbuddy nicht nach"),
+}
+
+
+@pytest.mark.parametrize("lang", ["en", "de"])
+def test_overview_page_explains_the_slot_note(lang):
+    """The calm note in the words of the interface, the order of the slots with Bambuddy's setting as its page
+    names it, and that the head line still names only the reload; the limits no longer say the setting is not
+    followed."""
+    from reprintbuddy.web.i18n import translate
+
+    page, heading, setting, old_limit = SLOT_NOTE_PAGES[lang]
+    text = (DOCS / "use" / page).read_text(encoding="utf-8").replace("\r\n", "\n")
+    section = " ".join(text.split("\n" + heading + "\n", 1)[1].split("\n## ", 1)[0].split("\n### ", 1)[0].split())
+    slot = translate(lang, "overview.plan.slot_ams", unit=1, slot=1)
+    following = translate(lang, "overview.plan.slot_ams", unit=1, slot=2)
+    note = translate(lang, "overview.plan.slot_empty", slot=slot, time="13:10", next=following)
+    assert f"**{note}**" in section
+    assert f"*{setting}*" in section
+    assert old_limit not in section
+
+
+@pytest.mark.parametrize(("page", "promise", "words"), [
+    ("overview.md", "and the print does not stop", ("in time order", "The reload is named once per sort")),
+    ("overview.de.md", "stoppt der Druck nicht", ("nach Zeit", "Nachladen steht je Sorte nur einmal")),
+])
+def test_overview_page_promises_no_more_than_the_plan_knows(page, promise, words):
+    """Review p716, 7 and 8: refilling lets the printer go on, it does not promise the print; the notes kept
+    by the limit of three show in time order, and "once per sort" is the reload, not the slot notes."""
+    text = " ".join((DOCS / "use" / page).read_text(encoding="utf-8").split())
+    assert promise not in text
+    for phrase in words:
+        assert phrase in text, phrase

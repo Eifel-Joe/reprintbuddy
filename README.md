@@ -87,16 +87,32 @@ Invented example data. More pictures are on the [documentation pages](https://ei
 ## Installation
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.1/install/install.sh)"
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2/install/install.sh)"
 ```
 
 Run it as root on that system. Fresh Debian systems often come without curl; the first part installs it.
-The installer puts the release in place whose tag is in the address (`v1.2.1` here): script and release are one
+The installer puts the release in place whose tag is in the address (`v1.2.2` here): script and release are one
 version. To skip the language question, add the language:
 
 ```bash
-apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.1/install/install.sh)" _ --language de
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2/install/install.sh)" _ --language de
 ```
+
+The installer then shows the time zone of the server and the time it gives, for example
+`Time zone of this server: Etc/UTC, time now 11:42. Is that right? [Y/n]`. It asks on every run in a terminal, also when
+you run it again later. Enter keeps the zone; `n` opens Debian's selection of all time zones (`dpkg-reconfigure tzdata`,
+first the region, then the place). The pages show their times in the time zone of the browser; the zone of the server
+holds for the command line, the system log and the rules that run without a browser, and Debian containers made from a
+template are often on `Etc/UTC`. Without a terminal (an installation by script) the installer asks nothing; give the
+zone as an option, a name from `timedatectl list-timezones`. An unknown name stops the installer before it changes
+anything (on a system without the package `tzdata`, after installing the packages, which brings the list):
+
+```bash
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2/install/install.sh)" _ --timezone Europe/Berlin
+```
+
+On Proxmox a container can also take the time zone of the host: run `pct set <ID> --timezone host` on the Proxmox
+host, then restart the container.
 
 To install another version, put its tag in the address in place of `<tag>` (from v0.3.14 on; the scripts of earlier
 tags put the newest release in place). The address of a tag is all it takes: there is no option for the version.
@@ -109,7 +125,8 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 
 What the installer does:
 
-- installs the packages it needs (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`),
+- installs the packages it needs (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`, `tzdata`),
+- shows the time zone of the server and lets you keep or choose it, or sets the one given with `--timezone`,
 - creates the system user `reprintbuddy`,
 - downloads the package of the release of the script from GitHub with its checksum file (nothing is
   installed if they do not match) and unpacks it to `/opt/reprintbuddy/releases/<tag>`, with the Python
@@ -253,8 +270,9 @@ There is **no configuration file**. Every setting lives in the database and is
 changed under *Settings* in the web interface: language, QR code address, Bambuddy connection,
 automation, labels, push messages, password, listen address, port, optional HTTPS certificate,
 restart, update check, update and backup, and export. *Settings → Log* only shows what happened (who changed what, sign-ins, updates, messages), see the documentation pages. The only thing
-given on the command line is the database path (`--db`). Times are shown in the time zone of the
-server (`timedatectl set-timezone …`, then restart).
+given on the command line is the database path (`--db`). Every page shows its times in the time zone
+of the browser that opens it; the time zone of the server (`timedatectl set-timezone …`, then restart)
+holds without JavaScript and for the rules that run without a browser.
 
 ## Update
 
@@ -538,7 +556,7 @@ systemctl list-unit-files 'reprintbuddy*'
 
 ### What stays
 
-- The Debian packages the installer added (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`). Other programs may use them, so they are not removed here. Remove one yourself only if you know that nothing else on the system needs it.
+- The Debian packages the installer added (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`, `tzdata`). Other programs may use them, so they are not removed here. Remove one yourself only if you know that nothing else on the system needs it.
 - Older lines in the system log (`journalctl -u reprintbuddy`) until the journal rotates them.
 - **In Bambuddy:** the user `reprintbuddy`, its group `Reprintbuddy` and its API key (see [First setup](#first-run)). If you no longer need them, delete them there, under *Settings → Users* and *Settings → API keys*. The print jobs Reprintbuddy queued and the print files you uploaded through it stay in Bambuddy like any other.
 

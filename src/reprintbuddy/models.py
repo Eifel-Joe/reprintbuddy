@@ -630,7 +630,8 @@ class FilamentSupplier(Base):
 
 
 class FilamentSnapshot(Base):
-    """One row per UTC day and spool: what Bambuddy reported (the source of the usage)."""
+    """One row per UTC day and spool: what Bambuddy reported (the source of the usage). An archived
+    spool has one more row, marked `archived`, on the day it was archived (Spec 9.2, p717)."""
 
     __tablename__ = "filament_snapshots"
     __table_args__ = (
@@ -646,6 +647,9 @@ class FilamentSnapshot(Base):
     remaining_g: Mapped[float] = mapped_column(Float)
     label_g: Mapped[int]
     spool_created_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    # 0023 (p717): the last row of an archived spool. It counts for the use up to its last weight,
+    # not for the stock or the number of spools (Spec 9.2).
+    archived: Mapped[bool] = _flag()
 
 
 class ReorderMark(Base):

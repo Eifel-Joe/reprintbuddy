@@ -914,7 +914,8 @@ def run_prints(server: Server, scn: Scenario) -> None:
         return next((i for i, n in named if n == name and i.id not in done), None)
 
     CLOCK.set(at(9, 9, 10))
-    for name, printer in (("Bracket large", 1), ("Cable guide", 3)):
+    # Two finished prints of the cable guide: "To check" shows one row per article with its prints (p713).
+    for name, printer in (("Bracket large", 1), ("Cable guide", 3), ("Cable guide", 2)):
         item = first(name)
         if item is not None:
             fake.set_status(item.id, "completed", printer_id=printer)
@@ -926,11 +927,14 @@ def run_prints(server: Server, scn: Scenario) -> None:
     # The print plan (0.4.2): Printer 1 prints the large bracket, 63 % done, 70 minutes left; Printer 2 has an
     # entry Bambuddy assigned to it (somebody else's); the rest of the queue is expected on the free printers.
     fake.set_printer_status(1, state="RUNNING", progress=63.0, remaining_min=70, subtask_name="Bracket large")
-    # The filament in the printers (p648): Printer 1 has plenty of white PLA and a black spool Bambuddy holds
-    # no grams for ("stock unknown"); Printer 2 has little white PLA left, so the plan asks to reload it.
+    # The filament in the printers (p648): Printer 1 has two spools of white PLA with the AMS filament backup on,
+    # the first nearly empty, so the plan notes where it runs empty and the printer goes on with the second
+    # (p716), and a black spool Bambuddy holds no grams for ("stock unknown"); Printer 2 has little white PLA
+    # left, so the plan asks to reload it.
     white, black = "#FFFFFF", "#000000"
-    fake.set_printer_slots(1, [AmsSlot(0, 0, "PLA", white, True), AmsSlot(0, 1, "PLA", black, True)],
-                           backup=True, grams={(0, 0): 640.0})
+    fake.set_printer_slots(1, [AmsSlot(0, 0, "PLA", white, True), AmsSlot(0, 1, "PLA", white, True),
+                               AmsSlot(0, 2, "PLA", black, True)],
+                           backup=True, grams={(0, 0): 30.0, (0, 1): 640.0})
     fake.set_printer_slots(2, [AmsSlot(0, 0, "PLA", white, True), AmsSlot(0, 1, "PETG", black, True)],
                            backup=False, grams={(0, 0): 50.0, (0, 1): 260.0})
     fake.add_foreign_item(tr("Spare knob", "Ersatzknauf"), status="pending", created_by="admin", printer_id=2,
@@ -1143,11 +1147,16 @@ def take_pages(shot: Shooter, scn: Scenario) -> None:
     shot.page("article-filaments", f"/articles/{a['bracket_small']}/filaments")
     shot.page("article-detail", f"/articles/{cable}", cap=1400, before=slim_detail)
     shot.page("queue", "/queue", cap=1350, before=lambda b: b.evaluate("document.getElementById('manual').style.display='none'"))  # the form is not the point here
-    shot.page("inspection", "/inspection")
+    # the row with two prints unfolded (Spec 8.2, p713): the single prints with their own field
+    shot.page("inspection", "/inspection", before=lambda b: b.evaluate(
+        "(()=>{const d=document.querySelector('details.inspect-prints');if(d)d.open=true})()"))
     shot.page("assembly", "/assembly")
     shot.page("label-preview", f"/articles/{cable}", before=wait_label, element="#label")
     shot.page("reorder", "/reorder")
-    shot.page("filament-page", "/filament")
+    # the switch of the column "Verbrauch" (Spec 9.3, p717) on its default, whatever an earlier run kept
+    shot.page("filament-page", "/filament", before=lambda b: b.evaluate(
+        "(()=>{const s=document.querySelector('[data-usage-select]');if(s){s.value='avg30';"
+        "s.dispatchEvent(new Event('change',{bubbles:true}))}})()"))
     # the sort with two suppliers (Spec 9.3): the block of suppliers of the reorder settings
     shot.page("filament-settings", f"/filament/{scn.sorts['petg_black']}")
     shot.page("orders", "/orders")

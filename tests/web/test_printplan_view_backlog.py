@@ -196,3 +196,31 @@ def test_empty_own_queue_gives_todays_plan(db):
                        ("Printer 1", "planned", "Spare part", "11:05", "12:05"),
                        ("Printer 2", "fixed", "Spare part", "10:00", "11:00")]
     assert (v.held, v.no_slot, v.stopped, v.unplaced, v.manual) == (0, 0, 0, 0, 0)
+
+
+def test_replacement_in_reprintbuddys_queue_is_planned_at_the_top(db):
+    """Spec 10.2 "Ersatzdrucke vorn" (1.2.2): a replacement still waiting in Reprintbuddy goes ahead of the
+    prints waiting in Bambuddy, also with "insert next" off."""
+    running = PrinterStatus(1, True, "RUNNING", 50.0, 30, "Halter", False, False)
+    with db.begin() as s:
+        make_dispatch(s, article(s, "Halter", plate_id=2).id, status="printing", bambuddy_item_id=7)
+        make_entry(s, article(s).id, origin="scrap")
+    queue = [queue_item(7, status="printing", printer_id=1), queue_item(8)]
+    one = [Printer(1, "Printer 1", "A1")]
+    v = view(db, board(running, printers=one, facts=facts()), queue)
+    assert [b[2] for b in bars(v)] == ["Halter", "Clip", "Spare part"]
+
+
+def test_replacement_follows_the_replacements_already_waiting_in_bambuddy(db):
+    """A handed-over replacement waiting in Bambuddy (an open print with origin failure) stays first; the new
+    one comes behind it, ahead of an own print of the minimum stock and a foreign print."""
+    running = PrinterStatus(1, True, "RUNNING", 50.0, 30, "Halter", False, False)
+    with db.begin() as s:
+        make_dispatch(s, article(s, "Halter", plate_id=2).id, status="printing", bambuddy_item_id=7)
+        make_dispatch(s, article(s, "Deckel", plate_id=3).id, origin="failure", bambuddy_item_id=8)
+        make_dispatch(s, article(s, "Fuss", plate_id=4).id, bambuddy_item_id=9)
+        make_entry(s, article(s).id, origin="failure")
+    queue = [queue_item(7, status="printing", printer_id=1), queue_item(8), queue_item(9), queue_item(10)]
+    one = [Printer(1, "Printer 1", "A1")]
+    v = view(db, board(running, printers=one, facts=facts()), queue)
+    assert [b[2] for b in bars(v)] == ["Halter", "Deckel", "Clip", "Fuss", "Spare part"]

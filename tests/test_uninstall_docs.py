@@ -81,7 +81,7 @@ def test_the_places_are_read_from_the_installer():
 
 
 # Paths the installer only reads, or that are part of a place the instructions name as a whole.
-READ_ONLY = {"/etc/os-release", "/usr/sbin/nologin", "/usr/bin/systemctl", "/dev/null"}
+READ_ONLY = {"/etc/os-release", "/usr/sbin/nologin", "/usr/bin/systemctl", "/dev/null", "/usr/share/zoneinfo"}
 
 
 def test_the_installer_creates_nothing_the_instructions_do_not_know():

@@ -3,6 +3,8 @@
 
 from datetime import datetime, timedelta
 
+import pytest
+
 from reprintbuddy.bambuddy.types import AmsSlot
 from reprintbuddy.domain.filamentplan import LanePrint, Marker, Need, lane_filament
 
@@ -63,17 +65,174 @@ def test_only_the_first_place_per_sort():
 
 
 def test_backup_on_pools_same_material_and_colour():
+    """Together the two slots last; the first runs empty on the way (p716: a calm note, no reload)."""
     jobs = [job(10, 12, pla(300))]
     grams = {(0, 0): 200.0, (0, 1): 200.0}
-    assert lane_filament(jobs, [BLACK, BLACK_2], grams, True, NOW).markers == ()
+    on = lane_filament(jobs, [BLACK, BLACK_2], grams, True, NOW)
+    assert slots(on) == [("slot_empty", at(11, 20), BLACK, BLACK_2)]
     off = lane_filament(jobs, [BLACK, BLACK_2], grams, False, NOW)
     assert kinds(off) == [("reload", at(11, 20), BLACK)]
     assert kinds(lane_filament(jobs, [BLACK, BLACK_2], grams, None, NOW)) == [("reload", at(11, 20), BLACK)]
 
 
-def test_pool_with_a_slot_of_unknown_grams_is_unknown():
-    r = lane_filament([job(10, 12, pla(300))], [BLACK, BLACK_2], {(0, 0): 200.0}, True, NOW)
-    assert kinds(r) == [("unknown_stock", None, BLACK)]
+@pytest.mark.parametrize("prefer_lowest", [True, False, None])
+def test_pool_with_a_slot_of_unknown_grams_is_unknown(prefer_lowest):
+    """p716: a slot without grams makes the whole sort unknown, as before; no slot notes. The note names the
+    slot without grams, not the one chosen (review p716, 2)."""
+    r = lane_filament([job(10, 12, pla(300))], [BLACK, BLACK_2], {(0, 0): 200.0}, True, NOW,
+                      prefer_lowest=prefer_lowest)
+    assert kinds(r) == [("unknown_stock", None, BLACK_2)]
+
+
+# ---- p716: the slots of one sort run empty one after the other (Spec 10.2 "Vorrat", "Nachladen") ----------------
+
+
+def slots(result):
+    return [(m.kind, m.at, m.slot, m.next_slot) for m in result.markers]
+
+
+def test_lowest_spool_first_slot_note_then_reload():
+    """Lowest spool first on: slot 2 (100 g) before slot 1 (300 g). 200 g over 10-12 empties slot 2 at 11:00;
+    400 g over 12-14 empties the sort half way, at 13:00, in slot 1, the slot then in use."""
+    jobs = [job(10, 12, pla(200)), job(12, 14, pla(400))]
+    grams = {(0, 0): 300.0, (0, 1): 100.0}
+    r = lane_filament(jobs, [BLACK, BLACK_2], grams, True, NOW, prefer_lowest=True)
+    assert slots(r) == [("slot_empty", at(11), BLACK_2, BLACK), ("reload", at(13), BLACK, None)]
+    assert [m.due for m in r.markers] == [False, False] and r.more == 0
+
+
+@pytest.mark.parametrize("prefer_lowest", [False, None])
+def test_lowest_spool_first_off_or_unknown_takes_the_slot_order(prefer_lowest):
+    """Off or unknown: slot 1 (300 g) first, empty at 12:30 in the second print; the sort at 13:00 in slot 2."""
+    jobs = [job(10, 12, pla(200)), job(12, 14, pla(400))]
+    grams = {(0, 0): 300.0, (0, 1): 100.0}
+    r = lane_filament(jobs, [BLACK, BLACK_2], grams, True, NOW, prefer_lowest=prefer_lowest)
+    assert slots(r) == [("slot_empty", at(12, 30), BLACK, BLACK_2), ("reload", at(13), BLACK_2, None)]
+
+
+def test_lowest_spool_first_then_the_next_lowest_and_ties_in_slot_order():
+    """Three slots of 300, 100 and 100 g: the two of 100 g first, in slot order, then the 300 g."""
+    third = AmsSlot(1, 0, "PLA", "#000000", True)
+    grams = {(0, 0): 300.0, (0, 1): 100.0, (1, 0): 100.0}
+    r = lane_filament([job(10, 15, pla(500))], [BLACK, BLACK_2, third], grams, True, NOW, prefer_lowest=True)
+    assert slots(r) == [("slot_empty", at(11), BLACK_2, third), ("slot_empty", at(12), third, BLACK)]
+
+
+@pytest.mark.parametrize("backup", [False, None])
+def test_backup_off_or_unknown_stays_as_before(backup):
+    """Without the backup the setting changes nothing: the chosen slot alone, no slot notes."""
+    jobs = [job(10, 12, pla(200)), job(12, 14, pla(400))]
+    grams = {(0, 0): 300.0, (0, 1): 100.0}
+    r = lane_filament(jobs, [BLACK, BLACK_2], grams, backup, NOW, prefer_lowest=True)
+    assert slots(r) == [("reload", at(12, 30), BLACK, None)]
+
+
+def test_one_slot_of_the_sort_stays_as_before():
+    r = lane_filament([job(10, 12, pla(400))], [BLACK, RED], {(0, 0): 100.0, (0, 2): 900.0}, True, NOW,
+                      prefer_lowest=True)
+    assert slots(r) == [("reload", at(10, 30), BLACK, None)]
+
+
+def test_a_slot_used_up_exactly_is_noted_where_the_next_print_starts():
+    """100 g in slot 1 and a print of 100 g: it lasts; the next print starts on slot 2, so slot 1 is empty then."""
+    jobs = [job(10, 11, pla(100)), job(11, 12, pla(50))]
+    r = lane_filament(jobs, [BLACK, BLACK_2], {(0, 0): 100.0, (0, 1): 100.0}, True, NOW)
+    assert slots(r) == [("slot_empty", at(11), BLACK, BLACK_2)]
+
+
+def test_running_print_counts_whole_for_the_slots_and_a_past_slot_note_is_now():
+    """Running since 09:00 until 11:00, 100 g whole: slot 1 (30 g) was empty at 09:36, already past."""
+    running = job(10, 11, pla(100), print_start=at(9))
+    r = lane_filament([running], [BLACK, BLACK_2], {(0, 0): 30.0, (0, 1): 200.0}, True, NOW)
+    (m,) = r.markers
+    assert (m.kind, m.at, m.due, m.slot, m.next_slot) == ("slot_empty", at(9, 36), True, BLACK, BLACK_2)
+
+
+def test_slot_note_after_an_unknown_need_is_at_the_latest():
+    r = lane_filament([unknown(10, 11), job(11, 12, pla(100))], [BLACK, BLACK_2],
+                      {(0, 0): 50.0, (0, 1): 500.0}, True, NOW)
+    (m,) = r.markers
+    assert m.kind == "slot_empty" and m.latest is True and m.at == at(11, 30)
+
+
+def test_at_most_three_notes_the_reload_before_slot_notes():
+    """Four slots of one sort all run empty: three slot notes and the reload, four in all. The orange note
+    stays; the calm ones fill up the three, shown in time order (Spec 10.2: slot notes count to the three)."""
+    four = [AmsSlot(0, i, "PLA", "#000000", True) for i in range(4)]
+    grams = {(0, i): 100.0 for i in range(4)}
+    r = lane_filament([job(10, 15, pla(500))], four, grams, True, NOW)
+    assert slots(r) == [("slot_empty", at(11), four[0], four[1]), ("slot_empty", at(12), four[1], four[2]),
+                        ("reload", at(14), four[3], None)]
+    assert r.more == 1 and r.hidden_reloads == ()
+
+
+def test_slot_notes_come_after_not_loaded_and_unknown_stock():
+    """A reload, "not loaded" and "stock unknown" go first; the calm slot note is counted in "+ n"."""
+    white = AmsSlot(1, 0, "PLA", "#FFFFFF", True)
+    jobs = [job(10, 12, pla(300), Need("PETG", "#FF0000", 10), Need("PLA", "#FFFFFF", 10)),
+            job(12, 14, pla(300))]
+    grams = {(0, 0): 200.0, (0, 1): 200.0}
+    r = lane_filament(jobs, [BLACK, BLACK_2, white], grams, True, NOW)
+    assert [m.kind for m in r.markers] == ["reload", "not_loaded", "unknown_stock"] and r.more == 1
+
+
+def test_slot_notes_do_not_count_as_reloads():
+    """The head line names only "Reload needed" (Spec 10.2): a hidden slot note counts in "+ n", never as a
+    hidden reload (review p716, 9). Four sorts run out, black PLA over two slots: three reloads shown, the
+    fourth reload and the slot note hidden."""
+    white = AmsSlot(1, 0, "PLA", "#FFFFFF", True)
+    petg = AmsSlot(1, 1, "PETG", "#FF0000", True)
+    abs_ = AmsSlot(1, 2, "ABS", "#00FF00", True)
+    grams = {(0, 0): 50.0, (0, 1): 50.0, (1, 0): 10.0, (1, 1): 20.0, (1, 2): 30.0}
+    needs = (pla(200), Need("PLA", "#FFFFFF", 100), Need("PETG", "#FF0000", 100), Need("ABS", "#00FF00", 100))
+    r = lane_filament([job(10, 12, *needs)], [BLACK, BLACK_2, white, petg, abs_], grams, True, NOW)
+    assert [(m.kind, m.slot) for m in r.markers] == [("reload", white), ("reload", petg), ("reload", abs_)]
+    assert [(m.kind, m.slot, m.at) for m in r.hidden_reloads] == [("reload", BLACK_2, at(11))]
+    assert r.more == 2
+
+
+# ---- review p716 ------------------------------------------------------------------------------------------------
+
+
+EXTERNAL = AmsSlot(255, 0, "PLA", "#000000", True)
+EXTERNAL_2 = AmsSlot(255, 1, "PLA", "#000000", True)
+
+
+def test_lowest_spool_first_takes_the_ams_before_an_external_spool():
+    """Review p716, 3: Bambuddy sorts slots with inventory grams first and never gives an external spool any
+    (`print_scheduler.py:5073`), so the external spool comes after the AMS whatever its grams."""
+    r = lane_filament([job(10, 15, pla(1000))], [BLACK, EXTERNAL], {(0, 0): 900.0, (255, 0): 100.0}, True, NOW,
+                      prefer_lowest=True)
+    assert slots(r) == [("slot_empty", at(14, 30), BLACK, EXTERNAL)]
+
+
+def test_lowest_spool_first_keeps_external_spools_in_slot_order():
+    """Two external spools: Bambuddy compares the printer's percentages there, which Reprintbuddy does not use;
+    the plan keeps their slot order."""
+    r = lane_filament([job(10, 15, pla(1000))], [EXTERNAL, EXTERNAL_2], {(255, 0): 900.0, (255, 1): 100.0}, True,
+                      NOW, prefer_lowest=True)
+    assert slots(r) == [("slot_empty", at(14, 30), EXTERNAL, EXTERNAL_2)]
+
+
+def test_two_needs_of_one_sort_in_a_print_feed_from_two_slots_at_once():
+    """Review p716, 4: each slot once per print, so two needs of black PLA print from two slots side by side;
+    neither runs empty first. No slot note for that print; the sum still decides the reload."""
+    r = lane_filament([job(10, 11, pla(50), pla(50))], [BLACK, BLACK_2], {(0, 0): 60.0, (0, 1): 60.0}, True, NOW)
+    assert r.markers == ()
+    short = lane_filament([job(10, 11, pla(50), pla(50))], [BLACK, BLACK_2], {(0, 0): 40.0, (0, 1): 40.0}, True,
+                          NOW)
+    assert [m.kind for m in short.markers] == ["reload"]
+
+
+def test_a_slot_with_zero_grams_is_empty_already():
+    """Review p716, 5: a slot Bambuddy holds 0 g for is no step in the order: no note for it, the printer
+    is never sent on to it, and the reload names the last slot with filament."""
+    first_empty = lane_filament([job(10, 12, pla(150))], [BLACK, BLACK_2], {(0, 0): 0.0, (0, 1): 100.0}, True, NOW)
+    assert slots(first_empty) == [("reload", at(11, 20), BLACK_2, None)]
+    last_empty = lane_filament([job(10, 12, pla(150))], [BLACK, BLACK_2], {(0, 0): 100.0, (0, 1): 0.0}, True, NOW)
+    assert slots(last_empty) == [("reload", at(11, 20), BLACK, None)]
+    none_left = lane_filament([job(10, 12, pla(10))], [BLACK, BLACK_2], {(0, 0): 0.0, (0, 1): 0.0}, True, NOW)
+    assert slots(none_left) == [("reload", at(10), BLACK, None)]
 
 
 def test_slot_choice_exact_colour_then_similar_then_material():

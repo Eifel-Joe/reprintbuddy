@@ -1,6 +1,6 @@
 """The choice in "To check" is a tick box, not a switch (v0.3.8 p117).
 
-A switch means "setting on/off"; here a print is only picked for "Selected all good". So the row
+A switch means "setting on/off"; here a row is only picked for "Selected all good". So the row
 boxes are plain tick boxes, a script adds a box in the table head ("select all", with a half state) and
 keeps "Selected all good" off while nothing is picked. Without the script the page works as before:
 no head box, the button is on, the server says "nothing is selected".
@@ -25,7 +25,13 @@ def test_row_boxes_are_not_in_a_switch_label(ready_client):
     page = ready_client.get(PAGE).text
     label = re.search(r'<label class="([^"]*inspect-select[^"]*)">', page).group(1)
     assert "check" not in label.split()  # `label.check` draws a switch
-    assert re.search(r'<input type="checkbox" name="ids" value="\d+" form="inspect-selected" aria-label="Select the print of Template A">', page)
+    # one box per article row, carrying all its prints (p713)
+    assert re.search(r'<input type="checkbox" name="group" value="\d+" form="inspect-selected" aria-label="Select the prints of Template A">', page)
+
+
+def test_the_script_counts_the_article_rows():
+    source = (STATIC / "js" / "inspection.js").read_text(encoding="utf-8")
+    assert '[name="group"][form="inspect-selected"]' in source
 
 
 def test_the_head_has_a_place_for_the_script_and_is_not_hidden_from_readers(ready_client):
@@ -102,3 +108,57 @@ def test_script_holds_the_list_while_the_head_box_has_the_focus_and_lines_the_bo
     assert 'setAttribute("data-live-busy"' in source and 'new CustomEvent("live-idle")' in source
     assert 'holder.className = "inspect-all-box"' in source
     assert re.search(r"\.inspect-all-box \{[^}]*width: 2\.75rem", CSS)  # the same column width as the row boxes
+
+
+# ---- unfolded rows stay open (p713 F8) -------------------------------------------------------
+
+
+def node_eval(script, *args):
+    try:
+        done = subprocess.run(
+            ["node", "-e", script, str(STATIC / "js" / "inspection.js"), *args],
+            capture_output=True, text=True, timeout=30,
+        )
+    except FileNotFoundError:
+        pytest.skip("node is not installed")
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+def test_script_remembers_the_open_rows():
+    result = node_eval(
+        "const m=require(process.argv[1]);"
+        "let s=null;"
+        "s=m.remember(s,'7',true); s=m.remember(s,'9',true); s=m.remember(s,'7',true);"
+        "const both=m.openIds(s);"
+        "s=m.remember(s,'7',false);"
+        "console.log(JSON.stringify([both,m.openIds(s),m.openIds(null),m.openIds('{broken'),m.openIds('{\"a\":1}'),m.openIds('[1,\"x\",null]')]))"
+    )
+    assert result == [["9", "7"], ["9"], [], [], [], ["x"]]  # opened again: the newest, last
+
+
+def test_script_keeps_at_most_fifty_rows():
+    result = node_eval(
+        "const m=require(process.argv[1]);let s=null;"
+        "for(let i=0;i<60;i++){s=m.remember(s,String(i),true);}"
+        "const ids=m.openIds(s);console.log(JSON.stringify([ids.length,ids[0],ids[49]]))"
+    )
+    assert result == [50, "10", "59"]
+
+
+def test_script_reads_and_writes_the_tab_store_only_inside_try():
+    source = (STATIC / "js" / "inspection.js").read_text(encoding="utf-8")
+    uses = [m.start() for m in re.finditer(r"sessionStorage", source)]
+    assert uses, "the open rows are kept in the tab's store"
+    for at in uses:
+        before = source[:at]
+        assert before.rfind("try {") > before.rfind("}"), "every use of sessionStorage sits in a try block"
+    assert '"toggle"' in source and "details.inspect-prints" in source
+
+
+def test_the_unfold_line_shows_an_arrow_that_turns_when_open():
+    """The line "Single prints (n)" is a flex box, which drops the browser's own marker: it draws its own
+    arrow, turned when the row is open, so it looks like something to tap (review p713)."""
+    rules = re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)
+    assert re.search(r"\.inspect-prints > summary::before \{[^}]*content:", rules)
+    assert re.search(r"\.inspect-prints\[open\] > summary::before \{[^}]*transform:", rules)

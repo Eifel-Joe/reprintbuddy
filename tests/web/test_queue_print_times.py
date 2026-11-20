@@ -57,6 +57,35 @@ def test_printing_starts_when_bambuddy_started_it_and_ends_with_the_running_bar(
     assert t[d] == pv.PrintTimes(start="09:12", end="about 11:00", duration="1 h 00")
 
 
+def test_printing_since_another_day_names_the_weekday(db):
+    """Spec 10.3a: "Uhrzeiten wie im Druckplan, an einem anderen Tag mit Wochentag", for the real start
+    too (without "about"). It was shown as a bare clock time, a start of yesterday evening read like one
+    later today."""
+    running = PrinterStatus(1, True, "RUNNING", 90.0, 60, "Clip", False, False)
+    d = dispatch(db, status="printing", item_id=7)
+    started = datetime(2026, 11, 18, 19, 0)  # Wednesday 20:00 in Berlin; now is Thursday 10:00
+    t = times(db, board(running, idle(2)), [queue_item(7, status="printing", printer_id=1, started_at=started)])
+    assert t[d].start == "Wed 20:00"
+    t = times(db, board(running, idle(2)), [queue_item(7, status="printing", printer_id=1, started_at=started)], lang="de")
+    assert t[d].start == "Mi 20:00"
+
+
+def test_the_day_of_the_start_is_the_browsers(db):
+    """Spec 10.5a: "today" in the zone of the browser. 03:00 UTC is 04:00 on Thursday in Berlin, like now,
+    but 22:00 on Wednesday in New York, where now is 04:00 on Thursday."""
+    from zoneinfo import ZoneInfo
+
+    from reprintbuddy import localtime
+
+    running = PrinterStatus(1, True, "RUNNING", 90.0, 60, "Clip", False, False)
+    d = dispatch(db, status="printing", item_id=7)
+    queue = [queue_item(7, status="printing", printer_id=1, started_at=datetime(2026, 11, 19, 3, 0))]
+    assert times(db, board(running, idle(2)), queue)[d].start == "04:00"
+    with localtime.shown_in(ZoneInfo("America/New_York")):
+        t = times(db, board(running, idle(2)), queue)
+    assert t[d].start == "Wed 22:00" and t[d].end == "about 05:00"
+
+
 def test_printing_without_a_start_from_bambuddy_says_running(db):
     running = PrinterStatus(1, True, "RUNNING", 50.0, 60, "Clip", False, False)
     d = dispatch(db, status="printing", item_id=7)

@@ -913,7 +913,8 @@ def test_a_part_mark_stays_open_until_the_ordered_amount_is_in(db):
 
 
 # ---- p262: a receipt counts from the day of the mark on (Spec 9.4) ------------------------------
-# The tests pin the display zone to Europe/Berlin (conftest), UTC+1 in November.
+# Both days in the zone of the server (Spec 10.5a); the tests pin it to Europe/Berlin (conftest), UTC+1
+# in November.
 
 
 def _marked_part(s, marked_at):
@@ -945,10 +946,17 @@ def test_a_receipt_dated_on_the_day_of_the_mark_counts_whatever_the_hour(db):
         assert mark.received_at is not None
 
 
-def test_the_day_is_the_one_of_the_display_zone(db):
+@pytest.mark.parametrize("browser", [None, "America/New_York"])
+def test_the_day_is_the_one_of_the_zone_of_the_server(db, browser):
     """Marked 00:30 on 7 Nov in Berlin (23:30 UTC on the 6th); a receipt dated 23:30 on 6 Nov in
-    Berlin (22:30 UTC) lies a day before, though both are the 6th in UTC."""
-    with db.begin() as s:
+    Berlin (22:30 UTC) lies a day before, though both are the 6th in UTC. Spec 10.5a: the same when a
+    page of a browser in New York checks the mark (both are the 6th there): the automatic check, which
+    has no browser, must come to the same result."""
+    from zoneinfo import ZoneInfo
+
+    from reprintbuddy import localtime
+
+    with db.begin() as s, localtime.shown_in(ZoneInfo(browser) if browser else None):
         part, _mark = _marked_part(s, datetime(2026, 11, 6, 23, 30))
         stock.receive_part(s, part.id, 50, "user", booked_at=datetime(2026, 11, 6, 22, 30))
         assert reorder.on_way(s, None) == {("part", part.id): 50.0}

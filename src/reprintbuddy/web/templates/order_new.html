@@ -47,6 +47,7 @@
       </label>
       <label>{{ t('orders.field.date') }}
         <input name="order_date" type="date" value="{{ values.order_date }}" required>
+        <input type="hidden" name="page_zone" value="{{ form_zone }}">{# Spec 10.5a: the zone of this page #}
       </label>
     </div>
     <label>{{ t('orders.field.note') }}

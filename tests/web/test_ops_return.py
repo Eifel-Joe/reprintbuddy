@@ -24,6 +24,10 @@ from reprintbuddy.ops.installation import write_marker
 from reprintbuddy.ops.releases import REWORK_LINE, package_name
 from reprintbuddy.ops.service import START_UPDATE_CMD
 from reprintbuddy.ops.status import UpdateStatus, read_status, write_status
+from reprintbuddy.db import MIGRATIONS_DIR as _MIGRATIONS_DIR
+from reprintbuddy.ops.migrationsteps import head_of_dir as _head_of_dir
+
+HEAD = _head_of_dir(_MIGRATIONS_DIR / "versions")  # the head of this code: the stable head in these tests
 
 BETA, STABLE = "v1.1.0-beta.1", "v1.0.0"
 
@@ -45,7 +49,7 @@ def add_journal(path, n=1):
 
 
 class Packages:
-    """Hands over a real package of each tag (head 0022, as v1.0.0 has it) and its checksum."""
+    """Hands over a real package of each tag (the head of this code, as v1.0.0 has it) and its checksum."""
 
     def __init__(self, folder):
         self.folder = folder
@@ -240,7 +244,7 @@ def test_confirming_case_1_queues_the_way_back_and_starts_the_helper(ops_env, tm
     assert response.status_code == 303
     status = read_status(ops_env.db_path.parent)
     assert (status.state, status.kind, status.from_tag, status.to_tag) == ("queued", "return", BETA, STABLE)
-    assert (status.return_case, status.target_head, status.return_backup) == (1, "0022", None)
+    assert (status.return_case, status.target_head, status.return_backup) == (1, HEAD, None)
     assert START_UPDATE_CMD in ops_env.runner.calls
 
 
@@ -436,13 +440,13 @@ def test_p610_the_pre_release_puts_back_the_database_of_a_cut_off_way_back_befor
     add_journal(source, 3)
     backup_database(source, tmp_path / "copies", label="x", now=datetime(2026, 11, 15, tzinfo=UTC)).rename(before)
     engine = make_engine(db)
-    upgrade(engine, revision="0022")  # the stable version's head
+    upgrade(engine, revision=HEAD)  # the stable version's head
     engine.dispose()
     write_status(
         data,
         UpdateStatus(
             state="running", step="install", from_tag="v" + __version__, to_tag=STABLE, kind="return", return_case=3,
-            started_at=datetime(2026, 11, 15, tzinfo=UTC), target_head="0022",
+            started_at=datetime(2026, 11, 15, tzinfo=UTC), target_head=HEAD,
         ),
     )
     app = create_app(db, run_engine=False)

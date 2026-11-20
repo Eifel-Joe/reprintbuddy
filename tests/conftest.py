@@ -225,14 +225,17 @@ def fresh_process_logging():
 
 @pytest.fixture(autouse=True)
 def fixed_display_zone(monkeypatch):
-    """p183: times are shown in the zone of the server. The tests pin one, so that they read the same on a
-    machine in any zone (CI runs in UTC); tests/web/test_server_time_zone.py sets the default back. The
-    zone lives in `reprintbuddy.localtime`, the one source for the pages and the domain (p260)."""
+    """Spec 10.5a: a page is shown in the zone of its browser (cookie), without one in the zone of the
+    server (p183), which also counts the days of the rules that run without a browser. The tests pin
+    the zone of the server, so that they read the same on a machine in any zone (CI runs in UTC); a
+    test with a browser zone sets the cookie or `localtime.shown_in`. tests/web/test_server_time_zone.py
+    sets the default back. The zones live in `reprintbuddy.localtime`, the one source for the pages and
+    the domain (p260)."""
     from zoneinfo import ZoneInfo
 
     from reprintbuddy import localtime
 
-    monkeypatch.setattr(localtime, "LOCAL_ZONE", ZoneInfo("Europe/Berlin"))
+    monkeypatch.setattr(localtime, "SERVER_ZONE", ZoneInfo("Europe/Berlin"))
 
 
 @pytest.fixture(autouse=True)

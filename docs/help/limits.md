@@ -21,7 +21,7 @@ To be safe, keep your print files in Bambuddy's own file manager. If an article 
 ## What Reprintbuddy never does in Bambuddy
 
 - **It never controls a printer.** No start, stop, pause or printer command. Which printer prints when is Bambuddy's decision.
-- **It adds entries to Bambuddy's queue, and nothing else there.** If you switch on **Insert as next print** (*Settings → Automation*), the entry is placed ahead of the prints that do not come from Reprintbuddy when it is created; a running print is never interrupted. See [Automation](../use/automation.md).
+- **It adds entries to Bambuddy's queue, and nothing else there.** If you switch on **Insert as next print** (*Settings → Automation*), the entry is placed ahead of the prints that do not come from Reprintbuddy when it is created; a running print is never interrupted. Replacement prints always go to the front of Bambuddy's queue, also with the switch off. See [Automation](../use/automation.md).
 - **It never changes, reorders, takes back or deletes** entries that it handed over. What lies in Bambuddy belongs to Bambuddy; reorder, move up or delete there.
 - **It does not change, replace, move or delete existing files or folders** in Bambuddy. The only thing it writes into Bambuddy's file manager is a **new print file** that you upload from Reprintbuddy, never into an existing name. It does not create folders, and it cannot delete a file it has uploaded; that is done in Bambuddy. Because of this, it checks a file before it sends anything (see [Articles](../use/articles.md)).
 - **It never writes to Spoolman**, and does not talk to Spoolman at all. It reads the filament stock through Bambuddy.

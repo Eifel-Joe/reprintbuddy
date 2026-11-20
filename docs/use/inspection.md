@@ -18,24 +18,30 @@ Reprintbuddy does not tell apart a piece on the shelf from one still lying on th
 
 ## To check
 
-When Bambuddy reports a print as finished, Reprintbuddy books its pieces as **Provisional** and adds one row to **To check**. Provisional pieces cannot be sold, but they count when Reprintbuddy decides whether to reprint.
+When Bambuddy reports a print as finished, Reprintbuddy books its pieces as **Provisional** and adds the print to **To check**. Provisional pieces cannot be sold, but they count when Reprintbuddy decides whether to reprint.
 
-![The list To check with one row per finished print](../assets/images/en/inspection.png)
+![The list To check with one row per article, one row unfolded to its single prints](../assets/images/en/inspection.png)
 
-Each row shows the article, when the print was reported finished, and the **Target**: the number of pieces the print should have made. A badge **Goes to assembly afterwards** appears for articles with hand work.
+The list has one row per article, whatever the prints came from (minimum stock, by hand or a replacement). The row shows the article, how many prints wait with the time each was reported finished, and the **Target**: the pieces these prints should have made together (pieces per print times prints). A badge **Goes to assembly afterwards** appears for articles with hand work.
 
-1. Count the good pieces of the print.
-2. Enter the pieces that are not good in **Scrap**. The default is 0, the most you can enter is the target. Empty means 0; anything that is not a whole number from 0 to the target is refused with a message that names this range.
+1. Count the good pieces of all prints of the row.
+2. Enter them in **Good**. The target is filled in, and it is also the most you can enter. Anything that is not a whole number from 0 to the target is refused with a message that names this range; an empty field too, because it could mean none or all.
 3. Press **Confirm**.
 
-The good pieces are the target minus the scrap. They become **Stock**, or **Awaiting assembly** if the article needs hand work. The scrap is written off, and Reprintbuddy puts a replacement print at the front of the queue, rounded up to whole prints. The replacement comes also if the automation is paused for that article. For a print of the minimum stock only what is missing to the target is replaced; if nothing is missing, the message says **No replacement needed** (see [Replacement for scrap and failures](automation.md#replacement-for-scrap-and-failures)).
+The good pieces become **Stock**, or **Awaiting assembly** if the article needs hand work. The rest, target minus good, is scrap: it is written off, the oldest print of the row first, and every print that lost pieces gets its replacement print at the front of Reprintbuddy's queue, rounded up to whole prints; at the hand-over it goes to the front of Bambuddy's queue too. The replacement comes also if the automation is paused for that article. For a print of the minimum stock only what is missing to the target is replaced; if nothing is missing, the message says **No replacement needed** (see [Replacement for scrap and failures](automation.md#replacement-for-scrap-and-failures)). The journal shows each print on its own line.
 
-To confirm several prints at once:
+The row books exactly the prints it showed. If one of them was confirmed elsewhere in the meantime, nothing is booked and a message asks you to count the row again; a print that was reported finished after the page was loaded stays in the list.
 
-- Tick the rows (the box in the table head ticks all of them) and press **Selected: all good**. The button stays off while nothing is ticked.
-- Press **All good** to confirm every row on the page as fully good.
+### Single prints
 
-Prints that someone else confirmed in the meantime are skipped, and the message says how many.
+A row with more than one print has **Single prints (n)** below it. Unfold it to see every print with its own finish time, target, **Good** field and **Confirm** button, for example when one print of several went wrong. A print confirmed there leaves the row. An unfolded row stays open while the list updates itself and after you confirm one of its prints.
+
+### Several articles at once
+
+- Tick the rows (the box in the table head ticks all of them) and press **Selected: all good**. Every print of a ticked row is confirmed as fully good. The button stays off while nothing is ticked.
+- Press **All good** to confirm every print on the page as fully good.
+
+Prints that someone else confirmed in the meantime are skipped, and the message says how many. Prints that came in after the page was loaded are not touched.
 
 The check takes no note. Neither does the assembly below. Both book with one click, and the journal shows the booking without a note (old entries keep theirs).
 
@@ -65,7 +71,7 @@ Pieces that already wait here stay bookable if you later untick the box. Article
 
 ## Bookings
 
-The page **Bookings** holds the stock changes that belong to no print and no order. Each booking has a **Date** and takes an optional **Note** of up to 500 characters. The date is today unless you change it; an earlier day is allowed, for example for a delivery that came yesterday, a later one is not. The booking changes the numbers at once either way; the date says when it counts in the journal and in the usage of bought parts. An inventory with an earlier date holds for the end of that day, in the time zone the times are shown in: Reprintbuddy takes the difference against the value of then, every booking of that day lies in the count, bookings after it stay. Example: you counted 10 yesterday evening and sold 2 this morning – enter 10 with yesterday's date, and the stock is 8. A sale yesterday afternoon is already in the count. If there is already an inventory of the same value after the date, Reprintbuddy refuses, because the later count set the value anew. It also refuses when a booking after it would go below 0 from the counted quantity; a use of bought parts after it takes off at most down to 0, as at assembly. The other way round, a sale, a receipt of bought parts or a stock in dated before an inventory of the stock it changes is refused: the count already holds it. The message names the item and the day of the count; if the booking came after the count, choose a later day or today. A count dated back takes in its whole day, also one dated back with an older version: it keeps its place within the day in the journal, but for this check it holds until the end of the day as well. The initial stock entered when a part is created counts as an inventory, too. A stock in with **Deduct parts** is refused as well when one of those parts was counted later; untick it if the parts are already in the count. In the journal the changes show **on the booking day … → …**. Below the forms the page shows the latest 20 bookings.
+The page **Bookings** holds the stock changes that belong to no print and no order. Each booking has a **Date** and takes an optional **Note** of up to 500 characters. The date is today unless you change it; an earlier day is allowed, for example for a delivery that came yesterday, a later one is not. The booking changes the numbers at once either way; the date says when it counts in the journal and in the usage of bought parts. The days are those of the time zone of the browser you book with, so "today" is your today also on a server in another zone; a form keeps the zone of the page it is on, so the day counts as the page offered it. An inventory with an earlier date holds for the end of that day in that zone: Reprintbuddy takes the difference against the value of then, every booking of that day lies in the count, bookings after it stay. Example: you counted 10 yesterday evening and sold 2 this morning – enter 10 with yesterday's date, and the stock is 8. A sale yesterday afternoon is already in the count. If there is already an inventory of the same value after the date, Reprintbuddy refuses, because the later count set the value anew. It also refuses when a booking after it would go below 0 from the counted quantity; a use of bought parts after it takes off at most down to 0, as at assembly. The other way round, a sale, a receipt of bought parts or a stock in dated before an inventory of the stock it changes is refused: the count already holds it. The message names the item and the day of the count; if the booking came after the count, choose a later day or today. A count dated back takes in its whole day, also one dated back with an older version: it keeps its place within the day in the journal, but for this check it holds until the end of the day as well. The initial stock entered when a part is created counts as an inventory, too. A stock in with **Deduct parts** is refused as well when one of those parts was counted later; untick it if the parts are already in the count. In the journal the changes show **on the booking day … → …**; a count dated back shows the day it was entered for, also in a browser in another zone (less than 12 hours apart). Below the forms the page shows the latest 20 bookings.
 
 ![The page Bookings with its forms and the latest bookings](../assets/images/en/bookings.png)
 

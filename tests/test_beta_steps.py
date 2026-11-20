@@ -5,7 +5,7 @@ import sqlite3
 import pytest
 from beta_steps import STEPS, beta_scripts, revision_of
 
-from reprintbuddy.db import make_engine, upgrade
+from reprintbuddy.db import MIGRATIONS_DIR, make_engine, upgrade
 from reprintbuddy.ops.migrationsteps import current_revision, downgrade, head_of_dir
 
 
@@ -43,8 +43,9 @@ def test_steps_that_only_add_go_forward_and_back(tmp_path):
     path = migrated(tmp_path, scripts)
     assert "t_notes" in tables(path) and "t_flag" in columns(path, "orders")
     # op.drop_column without batch mode: SQLite's own DROP COLUMN, the table is not rebuilt
-    downgrade(path, "0022", scripts)
-    assert current_revision(path) == "0022"
+    head = head_of_dir(MIGRATIONS_DIR / "versions")  # the head of this code, before the appended steps
+    downgrade(path, head, scripts)
+    assert current_revision(path) == head
     assert "t_notes" not in tables(path) and "t_flag" not in columns(path, "orders")
 
 

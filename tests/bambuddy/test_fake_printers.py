@@ -64,24 +64,27 @@ async def test_foreign_item_can_be_pinned_to_a_printer():
     assert [i.id for i in await fake.list_queue()] == [item.id]
 
 
-async def test_shortest_first_setting():
+async def test_plan_settings():
+    from reprintbuddy.bambuddy.types import PlanSettings
+
     fake = FakeBambuddy()
-    assert await fake.shortest_first() is False
+    assert await fake.plan_settings() == PlanSettings(shortest_first=False, prefer_lowest=None)
     fake.shortest = True
-    assert await fake.shortest_first() is True
+    fake.prefer_lowest = True
+    assert await fake.plan_settings() == PlanSettings(shortest_first=True, prefer_lowest=True)
 
 
-@pytest.mark.parametrize("method", ["printer_statuses", "shortest_first"])
+@pytest.mark.parametrize("method", ["printer_statuses", "plan_settings"])
 async def test_fail_next(method):
     fake = FakeBambuddy()
     fake.add_printer("Printer 1", "A1")
     fake.fail_next(method, BambuddyRejected("no", status=403))
-    call = fake.printer_statuses([1]) if method == "printer_statuses" else fake.shortest_first()
+    call = fake.printer_statuses([1]) if method == "printer_statuses" else fake.plan_settings()
     with pytest.raises(BambuddyRejected):
         await call
     fake.unavailable = True
     with pytest.raises(BambuddyUnavailable):
-        await (fake.printer_statuses([1]) if method == "printer_statuses" else fake.shortest_first())
+        await (fake.printer_statuses([1]) if method == "printer_statuses" else fake.plan_settings())
 
 
 async def test_foreign_item_for_any_printer_of_a_model():

@@ -78,6 +78,6 @@ systemctl list-unit-files 'reprintbuddy*'
 
 ## Was bleibt
 
-- Die Debian-Pakete, die der Installer nachinstalliert hat (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`). Andere Programme können sie nutzen, deshalb werden sie hier nicht entfernt. Entferne eines nur selbst, wenn du weißt, dass nichts anderes auf dem System es braucht.
+- Die Debian-Pakete, die der Installer nachinstalliert hat (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`, `tzdata`). Andere Programme können sie nutzen, deshalb werden sie hier nicht entfernt. Entferne eines nur selbst, wenn du weißt, dass nichts anderes auf dem System es braucht.
 - Ältere Zeilen im Systemprotokoll (`journalctl -u reprintbuddy`), bis das Journal sie rotiert.
 - **In Bambuddy:** der Benutzer `reprintbuddy`, seine Gruppe `Reprintbuddy` und sein API-Schlüssel (siehe [Ersteinrichtung](../start/setup.md)). Brauchst du sie nicht mehr, lösche sie dort unter *Einstellungen → Benutzer* und *Einstellungen → API-Schlüssel*. Die Druckaufträge, die Reprintbuddy eingereiht hat, und die Druckdateien, die du darüber hochgeladen hast, bleiben in Bambuddy wie alle anderen.

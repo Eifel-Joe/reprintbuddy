@@ -73,7 +73,7 @@ class MarkerView:
     """A filament note of a lane (p648): "Reload about 14:30 · PLA #000000 (AMS 1, slot 2)" and its place on
     the axis (percent), None without a time or beyond the axis."""
 
-    kind: str  # reload, not_loaded, unknown_stock
+    kind: str  # reload, slot_empty (p716), not_loaded, unknown_stock
     text: str
     left: float | None
     color: str | None  # "#RRGGBB" for the swatch
@@ -158,6 +158,7 @@ def plan_items(db: Session, queue: Sequence[QueueItem], now: datetime) -> list[P
     """Bambuddy's pending and printing entries in the order of its queue. Own entries (by id, or by the
     own Bambuddy user as on the queue page) carry the article's name, others the name of their file."""
     own_ids = dispatch.own_item_ids(db)
+    replacement_ids = dispatch.own_replacement_item_ids(db)  # Spec 10.2 "Ersatzdrucke vorn" (1.2.2)
     names = dispatch.article_names_by_item(db)
     username = st.get_setting(db, "bambuddy_username")
     found: list[PlanItem] = []
@@ -179,6 +180,7 @@ def plan_items(db: Session, queue: Sequence[QueueItem], now: datetime) -> list[P
             been_jumped=item.been_jumped,
             nozzle=item.nozzle_diameter,
             holds_slot=item.id in own_ids,
+            replacement=item.id in replacement_ids,
         ))
     return found
 
@@ -241,6 +243,7 @@ def backlog(db: Session, board: PrinterBoard, waiting_for_printer: Collection[in
             manual_start=False,
             starts_later=False,
             nozzle=facts.nozzle if facts is not None else None,
+            replacement=entry.origin in dispatch.REPLACEMENT_ORIGINS,  # to the top of Bambuddy's queue (1.2.2)
             ref=article.id,  # the reload hint finds its filament through the article (p648)
         )
         found.items.extend([item] * entry.prints)
@@ -438,11 +441,28 @@ def _filament(
             prints.append(LanePrint(bar.start, bar.end, start, needs))
         found[lane.printer_id] = lane_filament(
             prints, state.slots, board.slot_grams.get(lane.printer_id, {}), state.backup, now,
+            prefer_lowest=board.prefer_lowest,
         )
     return found
 
 
+def _slot_empty_text(lang: str, marker: Marker, now: datetime) -> str:
+    """"AMS 1, slot 3 empty about 10:30, continuing with AMS 1, slot 2" (Spec 10.2 "Nachladen", p716): the
+    slots named as in the other notes, so the sentence may begin with "external spool"; its first letter is
+    made a capital."""
+    where = slot_name(lang, marker.slot) if marker.slot is not None else ""
+    following = slot_name(lang, marker.next_slot) if marker.next_slot is not None else ""
+    if marker.due:
+        text = translate(lang, "overview.plan.slot_empty_now", slot=where, next=following)
+    else:
+        key = "overview.plan.slot_empty_latest" if marker.latest else "overview.plan.slot_empty"
+        text = translate(lang, key, slot=where, time=_when(marker.at, now, lang), next=following)
+    return text[:1].upper() + text[1:]
+
+
 def _marker_text(lang: str, marker: Marker, now: datetime, names: ColorNames | None = None) -> str:
+    if marker.kind == "slot_empty":
+        return _slot_empty_text(lang, marker, now)
     sort = _sort(lang, marker.material, marker.color, names)
     if marker.kind == "not_loaded":
         return translate(lang, "overview.plan.not_loaded", sort=sort)
@@ -544,7 +564,9 @@ def in_progress_times(
             continue
         if bar.kind == "running":
             started = item.started_at if item is not None else None
-            start = to_local(started).strftime("%H:%M") if started is not None else translate(lang, "queue.running")
+            # The real start, without "about"; on another day with the weekday like every time of the plan
+            # (Spec 10.3a). It was a bare clock time: a start of yesterday evening read like one later today.
+            start = _when(started, now, lang) if started is not None else translate(lang, "queue.running")
         else:
             start = translate(lang, "queue.time_about", time=_when(bar.start, now, lang))
         end_key = "queue.time_about" if bar.duration_known else "queue.time_at_least"
