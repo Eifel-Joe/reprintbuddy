@@ -107,8 +107,10 @@ def test_a_valid_zone_given_as_option_is_set(bash, tmp_path):
     # checked against the list (before the packages, and again after them), but a dry run sets nothing
     assert calls(log).count("timedatectl list-timezones") == 2
     assert changes(log) == []
-    # set after the packages (tzdata comes with them), before the user and the code
-    assert out.index("apt-get install") < out.index("timedatectl set-timezone") < out.index("useradd")
+    # set after the packages (tzdata comes with them), before the folders and the code (not before useradd: where
+    # the user exists, as in a test container, there is none)
+    folders = out.index("chmod 700 /var/lib/reprintbuddy")
+    assert out.index("apt-get install") < out.index("timedatectl set-timezone") < folders
 
 
 @pytest.mark.parametrize(
@@ -157,7 +159,7 @@ def test_without_a_list_of_zones_the_check_waits_for_the_packages_then_stops(bas
     assert result.returncode == 1
     assert "The time zone cannot be checked here" in result.stderr
     out = lines(result)
-    assert "apt-get install" in out and "useradd" not in out
+    assert "apt-get install" in out and "chmod 700 /var/lib/reprintbuddy" not in out
     assert changes(log) == []
 
 
