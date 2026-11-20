@@ -154,3 +154,11 @@ def test_script_reads_and_writes_the_tab_store_only_inside_try():
         before = source[:at]
         assert before.rfind("try {") > before.rfind("}"), "every use of sessionStorage sits in a try block"
     assert '"toggle"' in source and "details.inspect-prints" in source
+
+
+def test_the_unfold_line_shows_an_arrow_that_turns_when_open():
+    """The line "Single prints (n)" is a flex box, which drops the browser's own marker: it draws its own
+    arrow, turned when the row is open, so it looks like something to tap (review p713)."""
+    rules = re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)
+    assert re.search(r"\.inspect-prints > summary::before \{[^}]*content:", rules)
+    assert re.search(r"\.inspect-prints\[open\] > summary::before \{[^}]*transform:", rules)

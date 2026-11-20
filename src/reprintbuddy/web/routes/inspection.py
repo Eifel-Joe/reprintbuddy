@@ -177,8 +177,11 @@ async def resolve_article(article_id: int, request: Request, db: Session = Depen
     return await run_form_action(
         request, check=lambda: _good_value(form.get("good")), work=save, done=done,
         duplicate_url=_back(article),
+        # A changed row (p713 F3) comes back with its new target: the typed count belonged to the old prints,
+        # and refilled it would book with one tap against the new ones (review p713).
         on_error=lambda text, status, exc: _inspection_page(
-            request, db, article=article, error_article=article_id, error=text, values=values, status=status
+            request, db, article=article, error_article=article_id, error=text,
+            values=None if isinstance(exc, ConflictError) else values, status=status,
         ),
     )
 

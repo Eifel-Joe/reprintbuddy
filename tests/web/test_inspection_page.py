@@ -602,3 +602,30 @@ def test_p411_scrap_with_the_target_reached_says_no_replacement_is_needed(ready_
     assert en("inspections.replacement_not_needed") in page
     assert en("inspections.replacement_created") not in page
     assert en("queue.origin.scrap") not in ready_client.get("/queue").text
+
+
+# ---- review fixes (p713) ------------------------------------------------------------------------------
+
+
+def test_after_a_changed_row_the_field_shows_the_new_target_not_the_old_count(ready_client):
+    """F3: the typed count belonged to the old prints; refilling it would let one tap book it against
+    the new ones. The row comes back with its new target, to be counted again."""
+    a, i1 = finished(ready_client, units=4)
+    _a, i2 = finished(ready_client, units=4)
+    inner, ids = row_form(ready_client, a)
+    token = _TOKEN.search(inner).group(1)
+    with sm_of(ready_client).begin() as s:
+        inspection.resolve(s, i2, 4, "user")
+    finished(ready_client, units=4)  # a new print came in meanwhile: the row is again 8
+    response, _ = confirm_row(ready_client, a, "5", ids=ids, token=token)
+    assert response.status_code == 200
+    good = re.search(r'<input[^>]*name="good"[^>]*>', lines(response.text)[0]).group(0)
+    assert 'value="8"' in good and 'value="5"' not in good
+
+
+def test_the_all_good_message_counts_prints():
+    assert "print" in en("inspections.all_done") and "Druck" in de("inspections.all_done")
+
+
+def test_the_help_says_a_replacement_comes_only_if_needed():  # p411, Spec 7.5
+    assert "if needed" in en("info.inspection_good") and "falls nötig" in de("info.inspection_good")
