@@ -306,3 +306,16 @@ def test_overview_page_explains_the_slot_note(lang):
     assert f"**{note}**" in section
     assert f"*{setting}*" in section
     assert old_limit not in section
+
+
+@pytest.mark.parametrize(("page", "promise", "words"), [
+    ("overview.md", "and the print does not stop", ("in time order", "The reload is named once per sort")),
+    ("overview.de.md", "stoppt der Druck nicht", ("nach Zeit", "Nachladen steht je Sorte nur einmal")),
+])
+def test_overview_page_promises_no_more_than_the_plan_knows(page, promise, words):
+    """Review p716, 7 and 8: refilling lets the printer go on, it does not promise the print; the notes kept
+    by the limit of three show in time order, and "once per sort" is the reload, not the slot notes."""
+    text = " ".join((DOCS / "use" / page).read_text(encoding="utf-8").split())
+    assert promise not in text
+    for phrase in words:
+        assert phrase in text, phrase
