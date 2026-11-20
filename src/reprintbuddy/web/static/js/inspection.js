@@ -1,4 +1,4 @@
-/* "To check": a box in the table head that picks all prints (half state when only some are picked),
+/* "To check": a box in the table head that picks all article rows (half state when only some are picked),
    and "Selected all good" stays off while nothing is picked (p117). Without this file the head has no
    box and the button is on; the server then answers "nothing is selected". The text of the box comes
    from the page (data-label). The list is swapped by live.js now and then, so the box is put back
@@ -7,7 +7,7 @@
   "use strict";
 
   var HEAD = ".inspect-head-select";
-  var ROWS = 'input[type="checkbox"][name="ids"][form="inspect-selected"]';
+  var ROWS = 'input[type="checkbox"][name="group"][form="inspect-selected"]'; // one box per article row (p713)
   var BUTTON = '#inspect-selected button[type="submit"]';
 
   // What the head box and the button show for `total` rows of which `ticked` are picked.

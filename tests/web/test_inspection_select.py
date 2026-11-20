@@ -1,6 +1,6 @@
 """The choice in "To check" is a tick box, not a switch (v0.3.8 p117).
 
-A switch means "setting on/off"; here a print is only picked for "Selected all good". So the row
+A switch means "setting on/off"; here a row is only picked for "Selected all good". So the row
 boxes are plain tick boxes, a script adds a box in the table head ("select all", with a half state) and
 keeps "Selected all good" off while nothing is picked. Without the script the page works as before:
 no head box, the button is on, the server says "nothing is selected".
@@ -25,7 +25,13 @@ def test_row_boxes_are_not_in_a_switch_label(ready_client):
     page = ready_client.get(PAGE).text
     label = re.search(r'<label class="([^"]*inspect-select[^"]*)">', page).group(1)
     assert "check" not in label.split()  # `label.check` draws a switch
-    assert re.search(r'<input type="checkbox" name="ids" value="\d+" form="inspect-selected" aria-label="Select the print of Template A">', page)
+    # one box per article row, carrying all its prints (p713)
+    assert re.search(r'<input type="checkbox" name="group" value="\d+" form="inspect-selected" aria-label="Select the prints of Template A">', page)
+
+
+def test_the_script_counts_the_article_rows():
+    source = (STATIC / "js" / "inspection.js").read_text(encoding="utf-8")
+    assert '[name="group"][form="inspect-selected"]' in source
 
 
 def test_the_head_has_a_place_for_the_script_and_is_not_hidden_from_readers(ready_client):
