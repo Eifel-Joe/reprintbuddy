@@ -150,12 +150,21 @@ def open_count(client) -> int:
         return dispatch_domain.open_count(s)
 
 
-def confirm_inspection(client, dispatch_id: int, scrap: int) -> None:
-    """Page "To check": the operator enters the scrap of the print (default 0) and presses "Confirm"."""
+def confirm_inspection(client, dispatch_id: int, good: int) -> None:
+    """Page "To check": the operator enters the good pieces in the row of the article and presses
+    "Confirm" (Spec 8.2 since 20.11.2026). The browser sends the prints the row shows; the finished
+    print must be one of them."""
     with sm_of(client)() as s:
-        inspection_id = s.scalar(select(Inspection.id).where(Inspection.dispatch_id == dispatch_id))
-    assert inspection_id is not None
-    post_form(client, "/inspection", f"/inspection/{inspection_id}", scrap=str(scrap))
+        inspection_id, article_id = s.execute(
+            select(Inspection.id, Inspection.article_id).where(Inspection.dispatch_id == dispatch_id)
+        ).one()
+    action = f"/inspection/articles/{article_id}"
+    page = client.get("/inspection").text
+    row = re.search(r'<form[^>]*action="%s"[^>]*>(.*?)</form>' % re.escape(action), page, re.S)
+    assert row, f"no row with action {action} on /inspection"
+    ids = re.findall(r'type="hidden" name="ids" value="(\d+)"', row.group(1))
+    assert str(inspection_id) in ids
+    post_form(client, "/inspection", action, ids=ids, good=str(good))
 
 
 def open_inspections(client) -> int:
@@ -197,7 +206,7 @@ def test_spec12_steps(ready_client, fake_bambuddy):
     # the next tick adds nothing.
     assert open_inspections(client) == 1
     assert "Template A" in client.get("/inspection").text
-    confirm_inspection(client, first.id, scrap=0)
+    confirm_inspection(client, first.id, good=1)
     assert numbers(client, article_id) == (1, 0, 0)
     assert open_inspections(client) == 0
     done = client.get("/inspection").text
@@ -231,13 +240,13 @@ def test_spec12_steps(ready_client, fake_bambuddy):
     assert last_item_id is not None
 
     # Step 6: Bambuddy finishes that print, a regular tick books it; on the page "To check" no piece
-    # is good: exactly one replacement entry at the front of Reprintbuddy's queue, handed over
+    # is good (good 0 of 1, so the one piece is scrap): exactly one replacement entry at the front of Reprintbuddy's queue, handed over
     # by the next tick as a new print in Bambuddy.
     fake.set_status(last_item_id, "completed")
     tick(client, poll=True)
     assert open_inspections(client) == 1
     entries_before_scrap = entries_of(client)
-    confirm_inspection(client, last_dispatch(client).id, scrap=1)
+    confirm_inspection(client, last_dispatch(client).id, good=0)
     assert open_inspections(client) == 0
     replacement_page = client.get("/inspection").text
     assert en("inspections.done", name="Template A", good=0, scrap=1) in replacement_page
