@@ -108,3 +108,49 @@ def test_script_holds_the_list_while_the_head_box_has_the_focus_and_lines_the_bo
     assert 'setAttribute("data-live-busy"' in source and 'new CustomEvent("live-idle")' in source
     assert 'holder.className = "inspect-all-box"' in source
     assert re.search(r"\.inspect-all-box \{[^}]*width: 2\.75rem", CSS)  # the same column width as the row boxes
+
+
+# ---- unfolded rows stay open (p713 F8) -------------------------------------------------------
+
+
+def node_eval(script, *args):
+    try:
+        done = subprocess.run(
+            ["node", "-e", script, str(STATIC / "js" / "inspection.js"), *args],
+            capture_output=True, text=True, timeout=30,
+        )
+    except FileNotFoundError:
+        pytest.skip("node is not installed")
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+def test_script_remembers_the_open_rows():
+    result = node_eval(
+        "const m=require(process.argv[1]);"
+        "let s=null;"
+        "s=m.remember(s,'7',true); s=m.remember(s,'9',true); s=m.remember(s,'7',true);"
+        "const both=m.openIds(s);"
+        "s=m.remember(s,'7',false);"
+        "console.log(JSON.stringify([both,m.openIds(s),m.openIds(null),m.openIds('{broken'),m.openIds('{\"a\":1}'),m.openIds('[1,\"x\",null]')]))"
+    )
+    assert result == [["9", "7"], ["9"], [], [], [], ["x"]]  # opened again: the newest, last
+
+
+def test_script_keeps_at_most_fifty_rows():
+    result = node_eval(
+        "const m=require(process.argv[1]);let s=null;"
+        "for(let i=0;i<60;i++){s=m.remember(s,String(i),true);}"
+        "const ids=m.openIds(s);console.log(JSON.stringify([ids.length,ids[0],ids[49]]))"
+    )
+    assert result == [50, "10", "59"]
+
+
+def test_script_reads_and_writes_the_tab_store_only_inside_try():
+    source = (STATIC / "js" / "inspection.js").read_text(encoding="utf-8")
+    uses = [m.start() for m in re.finditer(r"sessionStorage", source)]
+    assert uses, "the open rows are kept in the tab's store"
+    for at in uses:
+        before = source[:at]
+        assert before.rfind("try {") > before.rfind("}"), "every use of sessionStorage sits in a try block"
+    assert '"toggle"' in source and "details.inspect-prints" in source
