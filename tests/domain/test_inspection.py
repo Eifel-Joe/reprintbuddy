@@ -487,3 +487,156 @@ def test_groups_of_one_article(db):
     with db.begin() as s:
         assert [g.article_id for g in inspection.list_groups(s, article_id=b)] == [b]
         assert inspection.list_groups(s, article_id=b + 100) == []
+
+
+# ---- confirm the row of an article by its good units (p713, Spec 8.2, 7.5) ---------------------
+
+
+def prints_of(s, article_id, *units_and_origin):
+    """Finished prints of `article_id`, oldest first (one hour apart): their inspection ids."""
+    ids = []
+    for age, (units, origin) in enumerate(units_and_origin):
+        row, _ = finished_print(s, article_id, units=units, origin=origin)
+        ids.append(aged(s, row, len(units_and_origin) - age))
+    return ids
+
+
+def test_group_all_good(db):
+    with db.begin() as s:
+        a = make_article(s, units_per_print=4).id
+        ids = prints_of(s, a, (4, "rule"), (4, "rule"))
+    with db.begin() as s:
+        result = inspection.resolve_group(s, a, ids, 8, "user")
+        assert isinstance(result, inspection.GroupResult)
+        assert (result.article_id, result.good, result.scrap) == (a, 8, 0)
+        assert [(p.inspection_id, p.good, p.scrap) for p in result.prints] == [(ids[0], 4, 0), (ids[1], 4, 0)]
+        assert result.replacements == 0 and result.replacement_not_needed is False
+    with db.begin() as s:
+        assert counters(s, a) == (0, 8, 0)
+        assert len(journal(s, "inspection_good")) == 2  # p713 F9: the journal stays one line per print
+        assert queue(s) == []
+
+
+def test_group_scrap_goes_to_the_oldest_print_first(db):  # Spec 8.2: oldest first
+    with db.begin() as s:
+        a = make_article(s, units_per_print=4, min_stock=20).id
+        ids = prints_of(s, a, (4, "manual"), (4, "manual"), (4, "manual"))
+    with db.begin() as s:
+        result = inspection.resolve_group(s, a, list(reversed(ids)), 7, "user")
+        assert (result.good, result.scrap) == (7, 5)
+        assert [(p.inspection_id, p.good, p.scrap) for p in result.prints] == [
+            (ids[0], 0, 4), (ids[1], 3, 1), (ids[2], 4, 0),
+        ]
+    with db.begin() as s:
+        assert [s.get(Inspection, i).good_units for i in ids] == [0, 3, 4]
+        assert counters(s, a) == (0, 7, 0)
+
+
+def test_group_replacement_per_print_follows_7_5(db):  # Spec 8.2: rule 7.5 per print as before (p411)
+    with db.begin() as s:
+        a = make_article(s, units_per_print=4).id  # no minimum stock: a print of the rule is not missing
+        ids = prints_of(s, a, (4, "rule"), (4, "manual"))
+    with db.begin() as s:
+        result = inspection.resolve_group(s, a, ids, 2, "user")
+        assert [(p.good, p.scrap) for p in result.prints] == [(0, 4), (2, 2)]
+        assert result.prints[0].replacement_entry_id is None
+        assert result.prints[1].replacement_entry_id is not None
+        assert result.replacements == 1 and result.replacement_not_needed is False
+    with db.begin() as s:
+        (entry,) = queue(s)
+        assert (entry.origin, entry.prints, entry.position) == ("scrap", 1, 0)
+        assert len(journal(s, "replacement_not_needed")) == 1
+
+
+def test_group_scrap_without_any_replacement_says_not_needed(db):
+    with db.begin() as s:
+        a = make_article(s, units_per_print=4).id
+        ids = prints_of(s, a, (4, "rule"), (4, "rule"))
+    with db.begin() as s:
+        result = inspection.resolve_group(s, a, ids, 6, "user")
+        assert result.replacements == 0 and result.replacement_not_needed is True
+
+
+def test_group_refuses_a_print_resolved_meanwhile_and_books_nothing(db):  # Review Focus 2, p713 F3
+    with db.begin() as s:
+        a = make_article(s, units_per_print=2).id
+        ids = prints_of(s, a, (2, "manual"), (2, "manual"))
+    with db.begin() as s:
+        inspection.resolve(s, ids[1], 2, "user")
+    with db.begin() as s:
+        with pytest.raises(ConflictError) as err:
+            inspection.resolve_group(s, a, ids, 1, "user")
+        assert err.value.key == "inspections.group_changed"
+    with db.begin() as s:
+        assert s.get(Inspection, ids[0]).resolved_at is None
+        assert counters(s, a) == (2, 2, 0)
+        assert queue(s) == []
+
+
+def test_group_takes_only_the_given_prints(db):  # Review Focus 1: a print reported after the page
+    with db.begin() as s:
+        a = make_article(s, units_per_print=2).id
+        ids = prints_of(s, a, (2, "manual"), (2, "manual"))
+        later, _ = finished_print(s, a, units=2)
+        later_id = later.id
+    with db.begin() as s:
+        result = inspection.resolve_group(s, a, ids, 4, "user")
+        assert [p.inspection_id for p in result.prints] == ids
+    with db.begin() as s:
+        assert s.get(Inspection, later_id).resolved_at is None
+        assert counters(s, a) == (2, 4, 0)
+
+
+def test_group_refuses_prints_of_another_article(db):
+    with db.begin() as s:
+        a = make_article(s).id
+        b = make_article(s, name="Template B").id
+        mine = prints_of(s, a, (1, "rule"))
+        other = prints_of(s, b, (1, "rule"))
+    with db.begin() as s:
+        with pytest.raises(ConflictError):
+            inspection.resolve_group(s, a, mine + other, 2, "user")
+        with pytest.raises(ConflictError):
+            inspection.resolve_group(s, a, [mine[0] + 1000], 1, "user")
+
+
+def test_group_without_ids(db):
+    with db.begin() as s:
+        a = make_article(s).id
+        with pytest.raises(ValidationError) as err:
+            inspection.resolve_group(s, a, [], 0, "user")
+        assert err.value.key == "inspections.none_selected"
+
+
+def test_group_counts_a_print_given_twice_once(db):
+    with db.begin() as s:
+        a = make_article(s, units_per_print=2).id
+        ids = prints_of(s, a, (2, "manual"))
+    with db.begin() as s:
+        result = inspection.resolve_group(s, a, ids + ids, 2, "user")
+        assert len(result.prints) == 1 and result.good == 2
+
+
+@pytest.mark.parametrize("good", [-1, 5, True, "3", 2.0, None])
+def test_group_good_out_of_range(db, good):  # Review Focus 3: 0 to the target number of the row
+    with db.begin() as s:
+        a = make_article(s, units_per_print=2).id
+        ids = prints_of(s, a, (2, "manual"), (2, "manual"))
+    with db.begin() as s:
+        with pytest.raises(ValidationError) as err:
+            inspection.resolve_group(s, a, ids, good, "user")
+        assert err.value.key == "form.invalid_number"
+        assert err.value.params["max"] == 4 and err.value.params["min"] == 0
+    with db.begin() as s:
+        assert counters(s, a) == (4, 0, 0)
+
+
+def test_group_merges_part_shortages_per_part(db):
+    with db.begin() as s:
+        a = make_article(s, units_per_print=2).id
+        insert = with_insert(s, a, stock_=1)  # 2 per unit: each print of 2 needs 4
+        ids = prints_of(s, a, (2, "manual"), (2, "manual"))
+        part = insert.id
+    with db.begin() as s:
+        result = inspection.resolve_group(s, a, ids, 4, "user")
+        assert result.shortages == [PartShortage(part_id=part, needed=8, had=1)]
