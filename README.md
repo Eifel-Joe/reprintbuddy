@@ -98,6 +98,22 @@ version. To skip the language question, add the language:
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.1/install/install.sh)" _ --language de
 ```
 
+The installer then shows the time zone of the server and the time it gives, for example
+`Time zone of this server: Etc/UTC, time now 11:42. Is that right? [Y/n]`. It asks on every run in a terminal, also when
+you run it again later. Enter keeps the zone; `n` opens Debian's selection of all time zones (`dpkg-reconfigure tzdata`,
+first the region, then the place). The pages show their times in the time zone of the browser; the zone of the server
+holds for the command line, the system log and the rules that run without a browser, and Debian containers made from a
+template are often on `Etc/UTC`. Without a terminal (an installation by script) the installer asks nothing; give the
+zone as an option, a name from `timedatectl list-timezones`. An unknown name stops the installer before it sets
+anything up:
+
+```bash
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.1/install/install.sh)" _ --timezone Europe/Berlin
+```
+
+On Proxmox a container can also take the time zone of the host: run `pct set <ID> --timezone host` on the Proxmox
+host, then restart the container.
+
 To install another version, put its tag in the address in place of `<tag>` (from v0.3.14 on; the scripts of earlier
 tags put the newest release in place). The address of a tag is all it takes: there is no option for the version.
 If Reprintbuddy is already installed, the installer keeps that version and only repairs the rest; when the system
@@ -110,6 +126,7 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 What the installer does:
 
 - installs the packages it needs (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`, `tzdata`),
+- shows the time zone of the server and lets you keep or choose it, or sets the one given with `--timezone`,
 - creates the system user `reprintbuddy`,
 - downloads the package of the release of the script from GitHub with its checksum file (nothing is
   installed if they do not match) and unpacks it to `/opt/reprintbuddy/releases/<tag>`, with the Python

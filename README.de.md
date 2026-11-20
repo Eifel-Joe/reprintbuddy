@@ -102,6 +102,22 @@ Ohne Rückfrage nach der Sprache, mit angehängter Sprache:
 apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.1/install/install.sh)" _ --language de
 ```
 
+Danach zeigt das Skript die Zeitzone des Servers und die Uhrzeit, die sich daraus ergibt, zum Beispiel
+`Time zone of this server: Etc/UTC, time now 11:42. Is that right? [Y/n]` (das Skript spricht Englisch). Es fragt bei
+jedem Lauf im Terminal, auch wenn du es später erneut ausführst. Enter behält die Zone; `n` öffnet Debians Auswahl aller
+Zeitzonen (`dpkg-reconfigure tzdata`, erst die Region, dann den Ort). Die Seiten zeigen ihre Zeiten in der Zeitzone des
+Browsers; die Zone des Servers gilt für die Kommandozeile, das Systemprotokoll und die Regeln, die ohne Browser laufen,
+und Debian-Container aus einer Vorlage stehen oft auf `Etc/UTC`. Ohne Terminal (Installation per Skript) fragt das
+Skript nicht; gib die Zone als Option an, einen Namen aus `timedatectl list-timezones`. Ein unbekannter Name hält das
+Skript an, bevor es etwas einrichtet:
+
+```bash
+apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.githubusercontent.com/Eifel-Joe/reprintbuddy/v1.2.2-beta.1/install/install.sh)" _ --timezone Europe/Berlin
+```
+
+Unter Proxmox kann ein Container auch die Zeitzone des Hosts übernehmen: `pct set <ID> --timezone host` auf dem
+Proxmox-Host ausführen, dann den Container neu starten.
+
 Willst du eine andere Version installieren, setzt du ihren Tag anstelle von `<tag>` in die Adresse (ab v0.3.14; die
 Skripte früherer Tags legen das neueste Release auf). Mehr braucht es nicht: eine Option für die Version gibt es nicht.
 Ist Reprintbuddy schon installiert, behält das Skript diese Version und bessert nur den Rest aus; unterscheiden sich
@@ -114,6 +130,7 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 Das Skript
 
 - installiert die nötigen Pakete (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`, `tzdata`),
+- zeigt die Zeitzone des Servers und lässt sie bestätigen oder wählen, oder setzt die mit `--timezone` angegebene,
 - legt den Systembenutzer `reprintbuddy` an,
 - lädt das Paket des Release des Skripts mit seiner Prüfsummen-Datei von GitHub (passt beides nicht
   zusammen, wird nichts installiert), entpackt es nach `/opt/reprintbuddy/releases/<tag>` und legt die

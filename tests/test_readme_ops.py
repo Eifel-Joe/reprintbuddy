@@ -460,3 +460,32 @@ def test_p610_a_stop_from_outside_and_its_limit_are_explained(name, stopped, cut
     text = " ".join(read(name).split())
     for part in (stopped, cut_off, limit, "systemctl start reprintbuddy"):
         assert part in text, (name, part)
+
+
+# --- p718: the installer confirms or chooses the time zone of the server (Spec 11.3a "Zeitzone") ----------------
+
+TIME_ZONE_WORDS = {
+    "en": ("Time zone of this server: Etc/UTC, time now", "Is that right? [Y/n]", "`dpkg-reconfigure tzdata`",
+           "first the region, then the place", "Without a terminal", "`timedatectl list-timezones`",
+           "every run"),
+    "de": ("Time zone of this server: Etc/UTC, time now", "Is that right? [Y/n]", "`dpkg-reconfigure tzdata`",
+           "erst die Region, dann den Ort", "Ohne Terminal", "`timedatectl list-timezones`", "jedem Lauf"),
+}
+
+
+@pytest.mark.parametrize(
+    ("name", "lang"),
+    [("README.md", "en"), ("README.de.md", "de"), ("docs/start/install.md", "en"), ("docs/start/install.de.md", "de")],
+)
+def test_p718_the_time_zone_step_of_the_installer_is_described(name, lang):
+    text = read(name)
+    flat = text.replace("\n", " ")
+    for words in TIME_ZONE_WORDS[lang]:
+        assert words in flat, (name, words)
+    # the option for scripted installations, as a command of its own that can be copied
+    ref = "v{{ version }}" if name.startswith("docs/") else "v" + reprintbuddy.__version__
+    assert install_command(ref) + " _ --timezone Europe/Berlin" in text, name
+    # the Proxmox way for a container
+    assert "`pct set <ID> --timezone host`" in flat, name
+    # said once: the section that already explains the browser's zone is not repeated on these pages
+    assert flat.count("pct set <ID> --timezone host") == 1, name
