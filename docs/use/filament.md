@@ -58,10 +58,12 @@ Above the table, under **Column use**, you choose what the column shows:
 | **Ø 30 days** | Grams per day on average over the last 30 days. The default and the base of the [reorder suggestions](reorder.md) and of the reach on the [Overview](overview.md). |
 | **Ø 7 days** | Grams per day on average over the last 7 days. |
 | **today**, **yesterday** | Grams used on that day. |
-| **week (last 7 days)**, **month (last 30 days)**, **year (last 365 days)** | Grams used in these days together. |
-| **total (since the record began)** | Grams since Reprintbuddy has recorded the sort. The record is never deleted. |
+| **this week (week 47)** | Grams since Monday of this calendar week, today included. The number is the ISO calendar week; around New Year it may have begun in the old year (week 53 or week 1). |
+| **this month (November)** | Grams since the first of this month. |
+| **this year (2026)** | Grams since 1 January. |
+| **total (since 2026-11-14)** | Grams since the first day of the record, which the choice names. The record is never deleted. |
 
-The head of the column names the choice. For an average it adds over how many days it is taken while the record is shorter than the days of the choice, for example **Ø 30 days, so far 6**. A sort with fewer days than the others says its own in its row (**so far 3 days**). Everything is counted the same way: the decreases between two records of the same spool, both inside the chosen days. So **month** is **Ø 30 days** times its days.
+The head of the column names the choice. For an average it adds over how many days it is taken while the record is shorter than the days of the choice, for example **Ø 30 days, so far 6**. A sort with fewer days than the others says its own in its row (**so far 3 days**). Everything is counted the same way: the decreases between two records of the same spool. A decrease belongs to the day of the later record; **today** is the decrease since yesterday's record, and **this week** begins with the decrease from Sunday to Monday. Week, month and year are calendar periods, not sliding windows. All days are days of the record in UTC; shortly after midnight on your clock the day may still be the previous one.
 
 Your browser remembers the choice for the next visit, each device its own. Without JavaScript the page shows **Ø 30 days** and no choice. The tile **Filament** of the Overview and the reorder suggestions always use **Ø 30 days**.
 

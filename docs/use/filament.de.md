@@ -58,10 +58,12 @@ Die Zuordnung eines archivierten Artikels lässt sich nur ansehen. Nach **Druckd
 | **Ø 30 Tage** | Gramm je Tag im Schnitt der letzten 30 Tage. Die Vorgabe und die Grundlage der [Bestellvorschläge](reorder.md) und der Reichweite auf der [Übersicht](overview.md). |
 | **Ø 7 Tage** | Gramm je Tag im Schnitt der letzten 7 Tage. |
 | **heute**, **gestern** | Gramm, die an diesem Tag verbraucht wurden. |
-| **Woche (letzte 7 Tage)**, **Monat (letzte 30 Tage)**, **Jahr (letzte 365 Tage)** | Gramm, die in diesen Tagen zusammen verbraucht wurden. |
-| **gesamt (seit Beginn der Aufzeichnung)** | Gramm, seit Reprintbuddy die Sorte aufzeichnet. Die Aufzeichnung wird nie gelöscht. |
+| **diese Woche (KW 47)** | Gramm seit Montag dieser Kalenderwoche, heute eingeschlossen. Die Nummer ist die Kalenderwoche nach ISO; um Neujahr kann sie im alten Jahr begonnen haben (KW 53 oder KW 1). |
+| **dieser Monat (November)** | Gramm seit dem Ersten dieses Monats. |
+| **dieses Jahr (2026)** | Gramm seit dem 1. Januar. |
+| **gesamt (seit 14.11.2026)** | Gramm seit dem ersten Tag der Aufzeichnung, der in der Wahl steht. Die Aufzeichnung wird nie gelöscht. |
 
-Der Kopf der Spalte nennt die Wahl. Bei einem Schnitt steht dabei, über wie viele Tage gemittelt ist, solange es weniger Aufzeichnung gibt als die Tage der Wahl, zum Beispiel **Ø 30 Tage, bisher 6**. Hat eine Sorte weniger Tage als die anderen, steht ihre Zahl in ihrer Zeile (**bisher 3 Tage**). Gezählt wird überall gleich: die Abnahmen zwischen zwei Aufzeichnungen derselben Spule, beide in den gewählten Tagen. Darum ist **Monat** der **Ø 30 Tage** mal seine Tage.
+Der Kopf der Spalte nennt die Wahl. Bei einem Schnitt steht dabei, über wie viele Tage gemittelt ist, solange es weniger Aufzeichnung gibt als die Tage der Wahl, zum Beispiel **Ø 30 Tage, bisher 6**. Hat eine Sorte weniger Tage als die anderen, steht ihre Zahl in ihrer Zeile (**bisher 3 Tage**). Gezählt wird überall gleich: die Abnahmen zwischen zwei Aufzeichnungen derselben Spule. Eine Abnahme gehört zum Tag der späteren Aufzeichnung; **heute** ist also die Abnahme seit der Aufzeichnung von gestern, und **diese Woche** beginnt mit der Abnahme von Sonntag auf Montag. Woche, Monat und Jahr sind Kalenderzeiträume, keine gleitenden Fenster. Alle Tage sind Tage der Aufzeichnung in UTC; kurz nach Mitternacht deiner Uhr kann der Tag noch der vorige sein.
 
 Dein Browser merkt sich die Wahl für den nächsten Besuch, jedes Gerät seine eigene. Ohne JavaScript zeigt die Seite **Ø 30 Tage** und keine Wahl. Die Kachel **Filament** der Übersicht und die Bestellvorschläge rechnen immer mit **Ø 30 Tage**.
 
