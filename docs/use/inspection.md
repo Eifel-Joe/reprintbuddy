@@ -18,24 +18,30 @@ Reprintbuddy does not tell apart a piece on the shelf from one still lying on th
 
 ## To check
 
-When Bambuddy reports a print as finished, Reprintbuddy books its pieces as **Provisional** and adds one row to **To check**. Provisional pieces cannot be sold, but they count when Reprintbuddy decides whether to reprint.
+When Bambuddy reports a print as finished, Reprintbuddy books its pieces as **Provisional** and adds the print to **To check**. Provisional pieces cannot be sold, but they count when Reprintbuddy decides whether to reprint.
 
-![The list To check with one row per finished print](../assets/images/en/inspection.png)
+![The list To check with one row per article, one row unfolded to its single prints](../assets/images/en/inspection.png)
 
-Each row shows the article, when the print was reported finished, and the **Target**: the number of pieces the print should have made. A badge **Goes to assembly afterwards** appears for articles with hand work.
+The list has one row per article, whatever the prints came from (minimum stock, by hand or a replacement). The row shows the article, how many prints wait with the time each was reported finished, and the **Target**: the pieces these prints should have made together (pieces per print times prints). A badge **Goes to assembly afterwards** appears for articles with hand work.
 
-1. Count the good pieces of the print.
-2. Enter the pieces that are not good in **Scrap**. The default is 0, the most you can enter is the target. Empty means 0; anything that is not a whole number from 0 to the target is refused with a message that names this range.
+1. Count the good pieces of all prints of the row.
+2. Enter them in **Good**. The target is filled in, and it is also the most you can enter. Anything that is not a whole number from 0 to the target is refused with a message that names this range; an empty field too, because it could mean none or all.
 3. Press **Confirm**.
 
-The good pieces are the target minus the scrap. They become **Stock**, or **Awaiting assembly** if the article needs hand work. The scrap is written off, and Reprintbuddy puts a replacement print at the front of the queue, rounded up to whole prints. The replacement comes also if the automation is paused for that article. For a print of the minimum stock only what is missing to the target is replaced; if nothing is missing, the message says **No replacement needed** (see [Replacement for scrap and failures](automation.md#replacement-for-scrap-and-failures)).
+The good pieces become **Stock**, or **Awaiting assembly** if the article needs hand work. The rest, target minus good, is scrap: it is written off, the oldest print of the row first, and every print that lost pieces gets its replacement print at the front of Reprintbuddy's queue, rounded up to whole prints. The replacement comes also if the automation is paused for that article. For a print of the minimum stock only what is missing to the target is replaced; if nothing is missing, the message says **No replacement needed** (see [Replacement for scrap and failures](automation.md#replacement-for-scrap-and-failures)). The journal shows each print on its own line.
 
-To confirm several prints at once:
+The row books exactly the prints it showed. If one of them was confirmed elsewhere in the meantime, nothing is booked and a message asks you to count the row again; a print that was reported finished after the page was loaded stays in the list.
 
-- Tick the rows (the box in the table head ticks all of them) and press **Selected: all good**. The button stays off while nothing is ticked.
-- Press **All good** to confirm every row on the page as fully good.
+### Single prints
 
-Prints that someone else confirmed in the meantime are skipped, and the message says how many.
+A row with more than one print has **Single prints (n)** below it. Unfold it to see every print with its own finish time, target, **Good** field and **Confirm** button, for example when one print of several went wrong. A print confirmed there leaves the row. An unfolded row stays open while the list updates itself and after you confirm one of its prints.
+
+### Several articles at once
+
+- Tick the rows (the box in the table head ticks all of them) and press **Selected: all good**. Every print of a ticked row is confirmed as fully good. The button stays off while nothing is ticked.
+- Press **All good** to confirm every print on the page as fully good.
+
+Prints that someone else confirmed in the meantime are skipped, and the message says how many. Prints that came in after the page was loaded are not touched.
 
 The check takes no note. Neither does the assembly below. Both book with one click, and the journal shows the booking without a note (old entries keep theirs).
 
