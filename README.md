@@ -109,7 +109,7 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 
 What the installer does:
 
-- installs the packages it needs (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`),
+- installs the packages it needs (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`, `tzdata`),
 - creates the system user `reprintbuddy`,
 - downloads the package of the release of the script from GitHub with its checksum file (nothing is
   installed if they do not match) and unpacks it to `/opt/reprintbuddy/releases/<tag>`, with the Python
@@ -539,7 +539,7 @@ systemctl list-unit-files 'reprintbuddy*'
 
 ### What stays
 
-- The Debian packages the installer added (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`). Other programs may use them, so they are not removed here. Remove one yourself only if you know that nothing else on the system needs it.
+- The Debian packages the installer added (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`, `tzdata`). Other programs may use them, so they are not removed here. Remove one yourself only if you know that nothing else on the system needs it.
 - Older lines in the system log (`journalctl -u reprintbuddy`) until the journal rotates them.
 - **In Bambuddy:** the user `reprintbuddy`, its group `Reprintbuddy` and its API key (see [First setup](#first-run)). If you no longer need them, delete them there, under *Settings → Users* and *Settings → API keys*. The print jobs Reprintbuddy queued and the print files you uploaded through it stay in Bambuddy like any other.
 

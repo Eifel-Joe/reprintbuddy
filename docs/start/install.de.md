@@ -28,7 +28,7 @@ apt-get update && apt-get install -y curl && bash -c "$(curl -fsSL https://raw.g
 
 ## Was das Installationsskript tut
 
-- installiert die Pakete, die es braucht (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`),
+- installiert die Pakete, die es braucht (`python3`, `python3-venv`, `curl`, `sudo`, `ca-certificates`, `tzdata`),
 - legt den Systembenutzer `reprintbuddy` an,
 - lädt das Paket des Release des Skripts von GitHub (`reprintbuddy-<tag>.tar.gz`) mit seiner Prüfsummen-Datei, installiert nichts, wenn beides nicht zusammenpasst, und entpackt es nach `/opt/reprintbuddy/releases/<tag>`; `/opt/reprintbuddy/release.json` nennt die installierte Version. Die Python-Umgebung liegt in `/opt/reprintbuddy/.venv`. git braucht es nicht,
 - legt `/var/lib/reprintbuddy` (Modus 700) an, mit Datenbank, Sicherungen und Update-Zustand,
