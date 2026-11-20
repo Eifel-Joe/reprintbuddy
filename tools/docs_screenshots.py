@@ -926,11 +926,14 @@ def run_prints(server: Server, scn: Scenario) -> None:
     # The print plan (0.4.2): Printer 1 prints the large bracket, 63 % done, 70 minutes left; Printer 2 has an
     # entry Bambuddy assigned to it (somebody else's); the rest of the queue is expected on the free printers.
     fake.set_printer_status(1, state="RUNNING", progress=63.0, remaining_min=70, subtask_name="Bracket large")
-    # The filament in the printers (p648): Printer 1 has plenty of white PLA and a black spool Bambuddy holds
-    # no grams for ("stock unknown"); Printer 2 has little white PLA left, so the plan asks to reload it.
+    # The filament in the printers (p648): Printer 1 has two spools of white PLA with the AMS filament backup on,
+    # the first nearly empty, so the plan notes where it runs empty and the printer goes on with the second
+    # (p716), and a black spool Bambuddy holds no grams for ("stock unknown"); Printer 2 has little white PLA
+    # left, so the plan asks to reload it.
     white, black = "#FFFFFF", "#000000"
-    fake.set_printer_slots(1, [AmsSlot(0, 0, "PLA", white, True), AmsSlot(0, 1, "PLA", black, True)],
-                           backup=True, grams={(0, 0): 640.0})
+    fake.set_printer_slots(1, [AmsSlot(0, 0, "PLA", white, True), AmsSlot(0, 1, "PLA", white, True),
+                               AmsSlot(0, 2, "PLA", black, True)],
+                           backup=True, grams={(0, 0): 30.0, (0, 1): 640.0})
     fake.set_printer_slots(2, [AmsSlot(0, 0, "PLA", white, True), AmsSlot(0, 1, "PETG", black, True)],
                            backup=False, grams={(0, 0): 50.0, (0, 1): 260.0})
     fake.add_foreign_item(tr("Spare knob", "Ersatzknauf"), status="pending", created_by="admin", printer_id=2,
