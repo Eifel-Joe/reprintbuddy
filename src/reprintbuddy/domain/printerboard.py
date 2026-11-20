@@ -70,6 +70,8 @@ class PrinterBoard:
         self.statuses: dict[int, PrinterStatus] = {}
         self.at: datetime | None = None  # the last answer, from a query or a live message
         self.shortest_first = False  # Bambuddy's "shortest job first", read with the query
+        # Bambuddy's "lowest spool first" (p716), read with the same request; None: not known (slot order).
+        self.prefer_lowest: bool | None = None
         # Files of Reprintbuddy's own queue (p646); kept across queries, so a known version is not asked again.
         self.file_facts: dict[FileKey, FileFacts] = {}
         # p648: grams left per slot (ams_id, tray_id) of the spools Bambuddy assigned, per printer with work;
@@ -83,7 +85,8 @@ class PrinterBoard:
     # ---- writes ---------------------------------------------------------------------------
 
     def replace(
-        self, printers: Sequence[Printer], statuses: Mapping[int, PrinterStatus], *, shortest_first: bool = False
+        self, printers: Sequence[Printer], statuses: Mapping[int, PrinterStatus], *, shortest_first: bool = False,
+        prefer_lowest: bool | None = None,
     ) -> None:
         """A regular query answered: the whole state, published at once."""
         for pid, status in statuses.items():
@@ -91,6 +94,7 @@ class PrinterBoard:
         self.printers = tuple(printers)
         self.statuses = dict(statuses)
         self.shortest_first = shortest_first
+        self.prefer_lowest = prefer_lowest
         self.at = self._now()
         self._send()
 

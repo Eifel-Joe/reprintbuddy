@@ -57,7 +57,7 @@ async def test_the_readings_in_the_background_parse(server) -> None:
     assert await client.list_all_items() == []
     assert await client.spool_mode() == "builtin"
     assert await client.list_spools() == []
-    assert await client.shortest_first() is False
+    assert (await client.plan_settings()).shortest_first is False
     await client.print_defaults()
     assert await client.list_folders() == []
     assert await client.list_files(None) == []

@@ -86,6 +86,16 @@ class PrintOptions:
 
 
 @dataclass(frozen=True)
+class PlanSettings:
+    """What the print plan reads of Bambuddy's settings, with one `GET /settings/` per regular query (Spec 7.6,
+    10.2): "shortest job first" (`queue_shortest_first`, 0.4.2) and "lowest spool first"
+    (`prefer_lowest_filament`, p716). `prefer_lowest` None: not known (missing or of another form)."""
+
+    shortest_first: bool = False
+    prefer_lowest: bool | None = None
+
+
+@dataclass(frozen=True)
 class EnqueueRequest:
     """One print as one single queue entry (Spec 7.6): no batch, no quantity."""
 
