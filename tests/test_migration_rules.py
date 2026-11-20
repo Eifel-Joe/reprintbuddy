@@ -121,7 +121,7 @@ def test_the_filled_database_has_a_row_in_every_table(tmp_path):
 @pytest.mark.parametrize("names", [("add_table",), ("add_column",)])
 def test_steps_that_only_add_pass_the_check(tmp_path, names):
     scripts = beta_scripts(tmp_path, *names)
-    assert check_step(tmp_path, scripts, "0022", revision_of(1)) == ([], [])
+    assert check_step(tmp_path, scripts, HEAD, revision_of(1)) == ([], [])
 
 
 EXPECTED = {
@@ -138,19 +138,19 @@ EXPECTED = {
 @pytest.mark.parametrize("name", VIOLATIONS)
 def test_the_check_catches_a_step_that_breaks_the_rule(tmp_path, name):
     scripts = beta_scripts(tmp_path, name)
-    adds, back = check_step(tmp_path, scripts, "0022", revision_of(1))
+    adds, back = check_step(tmp_path, scripts, HEAD, revision_of(1))
     said = adds + (back or [])
     assert any(EXPECTED[name] in line for line in said), said
 
 
 def test_a_marked_rework_step_is_not_held_to_the_rule(tmp_path):
     scripts = beta_scripts(tmp_path, "rework_marked")
-    assert check_step(tmp_path, scripts, "0022", revision_of(1), rework=True) == ([], None)
+    assert check_step(tmp_path, scripts, HEAD, revision_of(1), rework=True) == ([], None)
 
 
 def test_a_step_without_marks_is_named(tmp_path):
     scripts = beta_scripts(tmp_path, "add_table", "no_note")
-    steps = list(reversed(steps_between("0022", revision_of(2), scripts)))
+    steps = list(reversed(steps_between(HEAD, revision_of(2), scripts)))
     assert mark_violations(steps) == [
         f"step {revision_of(2)}: no return_note with \"de\" and \"en\"",
         f"step {revision_of(2)}: no rework = True/False",
