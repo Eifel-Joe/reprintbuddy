@@ -20,6 +20,7 @@ from reprintbuddy.bambuddy.types import (
     LibraryFile,
     LibraryFolder,
     Plate,
+    PlanSettings,
     PrintOptions,
     Printer,
     PrinterStatus,
@@ -557,10 +558,19 @@ def parse_printer_statuses(data: object) -> list[PrinterStatus]:
     return [parse_printer_status(entry) for entry in _list(data, "printer status list")]
 
 
-def parse_shortest_first(data: object) -> bool:
-    """Bambuddy's setting "shortest job first" (`queue_shortest_first`, `schemas/settings.py:490`)
-    from `GET /settings/`; missing (an older Bambuddy) is off, its default."""
-    return bool(_opt(_object(data, "settings"), "queue_shortest_first", bool))
+def parse_plan_settings(data: object) -> PlanSettings:
+    """Bambuddy's settings for the print plan from `GET /settings/` (`AppSettings`, `schemas/settings.py`).
+
+    "Shortest job first" (`queue_shortest_first`, `:493`): missing (an older Bambuddy) is off, its default.
+    "Lowest spool first" (`prefer_lowest_filament`, `:105`, p716): missing or of another form is unknown, so
+    the plan takes the slot order (Spec 10.2). Only shown, so an odd value of it never fails the read; the
+    queue order keeps its setting.
+    """
+    d = _object(data, "settings")
+    return PlanSettings(
+        shortest_first=bool(_opt(d, "queue_shortest_first", bool)),
+        prefer_lowest=_flag(d.get("prefer_lowest_filament")),
+    )
 
 
 def parse_spool_mode(data: object) -> SpoolMode:

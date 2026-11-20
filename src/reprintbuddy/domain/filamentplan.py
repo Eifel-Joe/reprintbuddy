@@ -12,13 +12,18 @@ Per lane, in the order of its prints:
 - **Stock**: the grams Bambuddy holds for the spool assigned to the slot. With the AMS filament backup on,
   every loaded slot of the same material and colour pools (as Bambuddy's own check at the start,
   `filament_deficit.py:876-908`); off or unknown, the slot alone. A pool with a slot of unknown grams is
-  unknown: never a guess, never the AMS percentage.
+  unknown, named by that slot: never a guess, never the AMS percentage.
+- **Slots one after the other** (p716): the slots of a pool run empty in turn, lowest stock first when
+  Bambuddy's "lowest spool first" is on (external spools last), else in slot order; a slot of 0 g is no
+  step (`_drain_order`). Each slot that runs empty before the last one gets a calm note "slot m empty,
+  continuing with slot k", except inside a print that feeds two needs from the pool at once.
 - **Reload**: where the pool runs dry, linear over the print's whole time; already past: "now". Only the
-  first place per pool; after it the pool counts as reloaded.
+  first place per pool; after it the pool counts as reloaded. It names the slot in use then, the last one.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -27,9 +32,10 @@ from typing import Literal
 from reprintbuddy.bambuddy.types import AmsSlot
 
 SIMILAR_CHANNEL = 40  # Bambuddy's `_colors_are_similar`: each RGB channel at most this far apart
+EXTERNAL_AMS_ID = 255  # how Bambuddy stores an external spool's slot (`utils/tray_ids.py:55`, `parse._slot`)
 MAX_MARKERS = 3  # per lane; more are counted as "+ n" (Spec 10.2)
 
-MarkerKind = Literal["reload", "not_loaded", "unknown_stock"]
+MarkerKind = Literal["reload", "slot_empty", "not_loaded", "unknown_stock"]
 SlotKey = tuple[int, int]
 
 
@@ -56,10 +62,11 @@ class Marker:
     kind: MarkerKind
     material: str | None
     color: str | None
-    slot: AmsSlot | None  # the slot chosen; None for "not loaded"
-    at: datetime | None  # when to reload; None without a time
+    slot: AmsSlot | None  # the slot chosen, for "slot_empty" the one that runs empty; None for "not loaded"
+    at: datetime | None  # when to reload or when the slot runs empty; None without a time
     due: bool = False  # the moment is already past: "reload now"
     latest: bool = False  # a print before it has an unknown need: "at the latest"
+    next_slot: AmsSlot | None = None  # "slot_empty": the slot the printer goes on with (p716)
 
 
 @dataclass(frozen=True)
@@ -108,16 +115,59 @@ def choose_slot(need: Need, loaded: Sequence[AmsSlot], used: set[SlotKey]) -> Am
     return None
 
 
+def _drain_order(pool: Sequence[AmsSlot], grams: Mapping[SlotKey, float], prefer_lowest: bool | None) -> list[AmsSlot]:
+    """The order in which the slots of one pool run empty (Spec 10.2 "Vorrat", p716).
+
+    Root: with the backup on, the plan summed the pool, so a slot that ran empty on the way went unseen until
+    the whole sort was gone. Bambuddy picks the slot when a print starts: with "lowest spool first" the one
+    with the fewest inventory grams, a tie by slot position (`print_scheduler.py:4761-4784`,
+    `_prefer_lowest_sort_key`); otherwise the first in slot order. A slot run empty is no candidate any more,
+    so the next start takes the next lowest (or the next in slot order). `pool` comes in slot order and the
+    sort is stable, so a tie keeps it. Rejected: following the slot the printer's backup switches to in the
+    middle of a print; Bambuddy does not report it, and the next start picks by the same rule anyway.
+    """
+    # Review p716, 5: a slot Bambuddy holds 0 g for is empty already; as a step it would get a note "empty" at the
+    # start of the first print and be named as the slot the printer goes on with. Rejected: keeping it and
+    # noting "empty now"; nothing runs empty there, the printer never takes it.
+    with_filament = [s for s in pool if grams[_key(s)] > 0]
+    if prefer_lowest is not True:
+        return with_filament
+    # Review p716, 3: Bambuddy ranks slots with inventory grams before all others and never looks up grams for an
+    # external spool (`print_scheduler.py:5073`), so external spools come last, among themselves by the printer's
+    # percentage, which Reprintbuddy does not use (Spec 10.2): there they keep their slot order.
+    return sorted(with_filament, key=lambda s: (s.ams_id == EXTERNAL_AMS_ID,
+                                                0.0 if s.ams_id == EXTERNAL_AMS_ID else grams[_key(s)]))
+
+
+def _pool(slot: AmsSlot, loaded: Sequence[AmsSlot], backup: bool | None) -> list[AmsSlot]:
+    """The slots whose stock counts for a need served from `slot`, in slot order (module text, "Stock")."""
+    if backup is not True:
+        return [slot]
+    return [s for s in loaded if _material(s.material) == _material(slot.material)
+            and (s.color or "").upper() == (slot.color or "").upper()]
+
+
+def _pool_key(pool: Sequence[AmsSlot]) -> tuple[SlotKey, ...]:
+    return tuple(sorted(_key(s) for s in pool))
+
+
+def _moment(job: LanePrint, share: float) -> datetime:
+    """Where in a print a share of its need is used up, linear over its whole print time."""
+    return job.print_start + (job.end - job.print_start) * min(1.0, max(0.0, share))
+
+
 def lane_filament(
     prints: Sequence[LanePrint], slots: Sequence[AmsSlot], grams: Mapping[SlotKey, float],
-    backup: bool | None, now: datetime,
+    backup: bool | None, now: datetime, *, prefer_lowest: bool | None = None,
 ) -> LaneFilament:
-    """Walk the prints of one lane in order (see the module text). Pure: same input, same answer."""
+    """Walk the prints of one lane in order (see the module text). Pure: same input, same answer.
+    `prefer_lowest`: Bambuddy's "lowest spool first"; None not known (slot order)."""
     loaded = [s for s in slots if s.loaded]
     consumed: dict[tuple[SlotKey, ...], float] = {}
     done: set[tuple[SlotKey, ...]] = set()
     reloads: list[Marker] = []
     others: list[Marker] = []
+    emptied: list[Marker] = []  # p716: slots of a pool that run empty before the last one
     seen_missing: set[tuple[str, str]] = set()
     reloaded: set[tuple[str, str]] = set()  # sorts with a reload note: each sort only once (Spec 10.2)
     unknown_needs: list[int] = []
@@ -128,44 +178,82 @@ def lane_filament(
             unknown_before = True
             continue
         used: set[SlotKey] = set()
+        chosen: list[tuple[Need, AmsSlot | None, list[AmsSlot]]] = []
         for need in job.needs:
             if not need.grams > 0:
                 continue
             slot = choose_slot(need, loaded, used)
+            if slot is not None:
+                used.add(_key(slot))
+            chosen.append((need, slot, _pool(slot, loaded, backup) if slot is not None else []))
+        sharing = Counter(_pool_key(pool) for _need, slot, pool in chosen if slot is not None)
+        for need, slot, pool in chosen:
             if slot is None:
                 sort = (_material(need.material), (need.color or "").upper())
                 if sort not in seen_missing:
                     seen_missing.add(sort)
                     others.append(Marker("not_loaded", need.material, need.color, None, None))
                 continue
-            used.add(_key(slot))
-            pool = (
-                [s for s in loaded if _material(s.material) == _material(slot.material)
-                 and (s.color or "").upper() == (slot.color or "").upper()]
-                if backup is True else [slot]
-            )
-            pool_key = tuple(sorted(_key(s) for s in pool))
+            pool_key = _pool_key(pool)
             if pool_key in done:
                 continue
-            if any(_key(s) not in grams for s in pool):
+            missing = next((s for s in pool if _key(s) not in grams), None)
+            if missing is not None:
                 done.add(pool_key)
-                others.append(Marker("unknown_stock", slot.material, slot.color, slot, None))
+                # Review p716, 2: the note names the slot Bambuddy holds no grams for, where the spool is to be
+                # assigned; with the backup off that is the chosen slot, as before.
+                others.append(Marker("unknown_stock", slot.material, slot.color, missing, None))
                 continue
             supply = sum(grams[_key(s)] for s in pool)
             before = consumed.get(pool_key, 0.0)
-            consumed[pool_key] = before + need.grams
-            if consumed[pool_key] <= supply:
+            after = before + need.grams
+            consumed[pool_key] = after
+            order = _drain_order(pool, grams, prefer_lowest)
+            # Review p716, 4: two needs of one pool in one print take two slots (each slot once per print) and
+            # print from both side by side, so none runs empty first: no slot note inside that print, the sum
+            # still decides the reload. Rejected: draining them one after the other (a note for a slot that
+            # does not run empty) and splitting the need per slot (Bambuddy reports neither the share nor
+            # which slot the printer goes on with).
+            steps = zip(order, order[1:]) if sharing[pool_key] == 1 else ()
+            filled = 0.0
+            for current, following in steps:
+                filled += grams[_key(current)]
+                # The slot runs empty inside this need when its end lies in [before, after): one used up exactly
+                # by the need before is noted here, at the start of this print, where the printer goes on.
+                if before <= filled < after:
+                    moment = _moment(job, (filled - before) / need.grams)
+                    emptied.append(Marker("slot_empty", current.material, current.color, current, moment,
+                                          due=moment <= now, latest=unknown_before, next_slot=following))
+            if after <= supply:
                 continue
             done.add(pool_key)
             sort = (_material(slot.material), (slot.color or "").upper())
             if sort in reloaded:  # a second slot of the same sort (backup off): already named
                 continue
             reloaded.add(sort)
-            share = min(1.0, max(0.0, (supply - before) / need.grams))
-            moment = job.print_start + (job.end - job.print_start) * share
-            reloads.append(Marker("reload", slot.material, slot.color, slot, moment,
+            moment = _moment(job, (supply - before) / need.grams)
+            # The slot in use when the sort runs dry; with no gram left anywhere, the slot chosen.
+            reloads.append(Marker("reload", slot.material, slot.color, order[-1] if order else slot, moment,
                                   due=moment <= now, latest=unknown_before))
-    ordered = sorted(reloads, key=lambda m: m.at or now) + others
-    hidden = tuple(m for m in ordered[MAX_MARKERS:] if m.kind == "reload")
-    return LaneFilament(tuple(ordered[:MAX_MARKERS]), max(0, len(ordered) - MAX_MARKERS), tuple(unknown_needs),
-                        hidden)
+    return _limit(reloads, others, emptied, tuple(unknown_needs), now)
+
+
+def _limit(
+    reloads: list[Marker], others: list[Marker], emptied: list[Marker], unknown_needs: tuple[int, ...],
+    now: datetime,
+) -> LaneFilament:
+    """At most MAX_MARKERS notes per lane, slot notes included (Spec 10.2, p716).
+
+    Which ones: reloads first, then "not loaded" and "stock unknown", then the calm slot notes, so a slot note
+    never pushes an orange reload into "+ n". Shown: those with a time in time order (a slot note before a
+    reload of the same moment), then those without. Without slot notes this is the order before p716.
+    Rejected: all notes in time order, cut after three; four slots of one sort would then hide the reload.
+    """
+    def by_time(m: Marker) -> tuple[datetime, bool]:
+        return m.at or now, m.kind == "reload"
+
+    ranked = sorted(reloads, key=by_time) + others + sorted(emptied, key=by_time)
+    chosen = ranked[:MAX_MARKERS]
+    shown = sorted((m for m in chosen if m.at is not None), key=by_time) + [m for m in chosen if m.at is None]
+    hidden = tuple(m for m in ranked[MAX_MARKERS:] if m.kind == "reload")
+    return LaneFilament(tuple(shown), max(0, len(ranked) - MAX_MARKERS), unknown_needs, hidden)

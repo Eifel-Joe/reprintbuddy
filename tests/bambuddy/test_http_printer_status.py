@@ -10,7 +10,7 @@ from fixtures import API, client, load
 
 from reprintbuddy.bambuddy.client import BambuddyRejected, BambuddyUnavailable, BambuddyUnexpected
 from reprintbuddy.bambuddy.parse import parse_printer_status
-from reprintbuddy.bambuddy.types import PrinterStatus
+from reprintbuddy.bambuddy.types import PlanSettings, PrinterStatus
 
 
 def _row(printer_id: int, **changes) -> dict:
@@ -102,14 +102,32 @@ def test_wrong_shape_is_unexpected(data):
         parse_printer_status(data)
 
 
-async def test_shortest_first_from_the_settings(respx_mock):
-    respx_mock.get(f"{API}/settings/").respond(200, json={"queue_shortest_first": True, "default_timelapse": False})
-    assert await client().shortest_first() is True
+async def test_plan_settings_from_one_read_of_the_settings(respx_mock):
+    """"Shortest job first" and "lowest spool first" (p716) come with the same `GET /settings/`
+    (`settings:read`): one request, as before p716."""
+    route = respx_mock.get(f"{API}/settings/").respond(
+        200, json={"queue_shortest_first": True, "prefer_lowest_filament": True, "default_timelapse": False})
+    assert await client().plan_settings() == PlanSettings(shortest_first=True, prefer_lowest=True)
+    assert route.call_count == 1
 
 
-async def test_shortest_first_missing_is_off(respx_mock):
+async def test_plan_settings_lowest_spool_off(respx_mock):
+    respx_mock.get(f"{API}/settings/").respond(200, json={"prefer_lowest_filament": False})
+    assert await client().plan_settings() == PlanSettings(shortest_first=False, prefer_lowest=False)
+
+
+async def test_plan_settings_missing_fields(respx_mock):
+    """An older Bambuddy: shortest job first off (its default), lowest spool first unknown (Spec 10.2: slot order)."""
     respx_mock.get(f"{API}/settings/").respond(200, json={"default_timelapse": False})
-    assert await client().shortest_first() is False
+    assert await client().plan_settings() == PlanSettings(shortest_first=False, prefer_lowest=None)
+
+
+@pytest.mark.parametrize("value", ["true", 1, None, [True]])
+async def test_plan_settings_odd_lowest_spool_value_is_unknown(respx_mock, value):
+    """Only shown: an odd value is unknown and does not cost the queue order its setting."""
+    respx_mock.get(f"{API}/settings/").respond(
+        200, json={"queue_shortest_first": True, "prefer_lowest_filament": value})
+    assert await client().plan_settings() == PlanSettings(shortest_first=True, prefer_lowest=None)
 
 
 @pytest.mark.parametrize("minutes", [-5, 7 * 24 * 60 + 1, 4294967295])

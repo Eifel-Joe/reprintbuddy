@@ -49,16 +49,24 @@ PRINTERS = [Printer(1, "Printer 1", "A1"), Printer(2, "Printer 2", "A1")]
 def test_unknown_at_first():
     board, published, *_ = make()
     assert board.printers is None and board.statuses == {} and board.at is None
-    assert board.shortest_first is False and published == []
+    assert board.shortest_first is False and board.prefer_lowest is None and published == []
 
 
 def test_replace_publishes_at_once():
     board, published, *_ = make()
-    board.replace(PRINTERS, {1: status()}, shortest_first=True)
+    board.replace(PRINTERS, {1: status()}, shortest_first=True, prefer_lowest=True)
     assert board.printers == tuple(PRINTERS)
     assert board.statuses == {1: status()}
-    assert board.at == T0 and board.shortest_first is True
+    assert board.at == T0 and board.shortest_first is True and board.prefer_lowest is True
     assert published == [frozenset({TOPIC})]
+
+
+def test_replace_without_the_setting_makes_it_unknown():
+    """p716: a query that could not read "lowest spool first" does not keep the value of an earlier one."""
+    board, *_ = make()
+    board.replace(PRINTERS, {1: status()}, prefer_lowest=False)
+    board.replace(PRINTERS, {1: status()})
+    assert board.prefer_lowest is None
 
 
 def test_update_of_unknown_printer_is_ignored():

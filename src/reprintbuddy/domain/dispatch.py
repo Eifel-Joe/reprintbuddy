@@ -43,6 +43,10 @@ from reprintbuddy.models import Article, Dispatch, JournalEntry, WorkQueueEntry,
 HandOverResult = Literal["queued", "unclear", "not_sent", "rejected", "held_for_update"]
 MAX_MESSAGE = 500
 
+# Replacement for scrap or for a failed print (Spec 7.5): first in Reprintbuddy's queue, and at the hand-over
+# first in Bambuddy's (Spec 7.3, "Ausnahme Ersatzdrucke", 1.2.2).
+REPLACEMENT_ORIGINS = frozenset({"scrap", "failure"})
+
 
 @dataclass(frozen=True)
 class Reservation:
@@ -52,6 +56,7 @@ class Reservation:
     plate_id: int
     target_model: str | None
     printer_id: int | None
+    origin: str  # of the work queue entry; a replacement goes to the top of Bambuddy's queue (1.2.2)
 
 
 def _dispatch(session: Session, dispatch_id: int) -> Dispatch:
@@ -130,29 +135,39 @@ def _reserve(
         plate_id=row.plate_id,
         target_model=target_model,
         printer_id=printer_id,
+        origin=row.origin,
     )
 
 
 def next_insert_position(
-    queue: Sequence[QueueItem], own_item_ids: Collection[int]
+    queue: Sequence[QueueItem], ahead_ids: Collection[int]
 ) -> tuple[bool, int | None]:
-    """Where the next own print goes with "insert next" (Spec 7.3).
+    """Where the next print goes ahead of others (Spec 7.3): behind the last waiting entry of `ahead_ids`.
 
-    Behind the last own waiting entry, so own prints keep their order; to the top when
-    no own entry waits. Returns `(insert_at_top, insert_position)`.
+    So those entries keep their order, wherever they stand in Bambuddy's queue; to the top when none of
+    them waits (a running one does not wait). Returns `(insert_at_top, insert_position)`. With "insert
+    next" the ids are all own prints; for a replacement only the own replacements
+    (`own_replacement_item_ids`, 1.2.2).
 
     Positions are compared over all printers, not per printer: Bambuddy keeps one sequence over
     every pending entry, pinned or "any <model>" (`backend/app/services/queue_position.py`,
     `max_queue_position`; `api/routes/print_queue.py`, `add_to_queue`: "Positions are one sequence
     across every pending item (#3200)"; read in v1.3.1b1-daily.20261104 and on `main`, file last
     changed 2026-09-30). Checked in v0.3.17 (p320), no per-printer numbering.
+
+    Limit (review 1.2.2, 5): Bambuddy orders by (position, id) and takes no position below 1. An entry
+    with the same position as the last of `ahead_ids` and a higher id (`reorder_queue` keeps the places
+    of entries on printers the caller cannot see), or with position 0 (made without one, e.g. by a
+    pipeline run), stays ahead of the new print. The position at creation cannot do better, and nothing
+    in Bambuddy is moved (Spec 7.3).
     """
-    own = [i for i in queue if i.id in own_item_ids and i.status == "pending"]
-    if not own:
+    waiting = [i for i in queue if i.id in ahead_ids and i.status == "pending"]
+    if not waiting:
         return True, None
-    positions = [i.position for i in own if i.position is not None]
+    positions = [i.position for i in waiting if i.position is not None]
     if not positions:
-        # Own entries wait but Bambuddy names no position: appending keeps them in front.
+        # They wait but Bambuddy names no position (never seen: its column defaults to 0): appending at
+        # least keeps the new print behind them; it does not put it ahead of anybody else.
         return False, None
     return False, max(positions) + 1
 
@@ -196,6 +211,19 @@ def own_item_ids(session: Session) -> set[int]:
         session.scalars(
             select(Dispatch.bambuddy_item_id).where(
                 Dispatch.status.in_(OPEN_STATES), Dispatch.bambuddy_item_id.is_not(None)
+            )
+        )
+    )
+
+
+def own_replacement_item_ids(session: Session) -> set[int]:
+    """Bambuddy queue ids of the open replacement prints (`REPLACEMENT_ORIGINS`)."""
+    return set(
+        session.scalars(
+            select(Dispatch.bambuddy_item_id).where(
+                Dispatch.status.in_(OPEN_STATES),
+                Dispatch.bambuddy_item_id.is_not(None),
+                Dispatch.origin.in_(REPLACEMENT_ORIGINS),
             )
         )
     )
@@ -396,12 +424,25 @@ async def hand_over(
     backup would be in Bambuddy but back in the restored work queue - printed twice.
     """
     insert_at_top, insert_position = False, None
+    replacement = res.origin in REPLACEMENT_ORIGINS
     try:
-        if insert_next:
+        # 1.2.2 (Spec 7.3, "Ausnahme Ersatzdrucke") - root cause: a replacement went where every print
+        # goes (end, or with "insert next" behind all own waiting prints), so it waited behind prints
+        # handed over long before, though it replaces one that should be done already.
+        # Fix: a replacement goes behind the last own replacement still waiting in Bambuddy, at the top
+        # when none waits - ahead of every other waiting print, whatever the switch says; replacements
+        # keep their order. Only the position at creation, nothing in Bambuddy is moved (Spec 7.3).
+        # Decided in round 1.2.2 (review 2): "the last waiting one" wherever it stands, as "insert next"
+        # does with all own prints; one moved back by hand in Bambuddy keeps the next one behind it.
+        # NOT-TO-DO: always `insert_at_top` - a second replacement would overtake the first. Counting only
+        # the replacements in an unbroken run at the top - a print put at the top in Bambuddy after the
+        # first replacement breaks the run, and the next replacement would overtake the first.
+        # Tests: test_dispatch.py::test_replacements_keep_the_order_of_their_hand_over and the ones around it.
+        if replacement or insert_next:
             queue = await client.list_queue()
             with sm() as session:
-                own = own_item_ids(session)
-            insert_at_top, insert_position = next_insert_position(queue, own)
+                ahead = own_replacement_item_ids(session) if replacement else own_item_ids(session)
+            insert_at_top, insert_position = next_insert_position(queue, ahead)
         # p342 (0.4.0): Bambuddy's `POST /queue/` does not apply its own "Default print
         # options"; sent without them, the print ran with fixed defaults instead (no bed
         # levelling, no flow calibration). So they are read right before each hand-over and
