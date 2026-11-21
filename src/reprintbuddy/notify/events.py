@@ -234,7 +234,7 @@ def red_articles(session: Session) -> dict[int, str]:
 def _detect_reorder(session: Session, cfg: _Config, ctx: Context) -> None:
     """Spec 10.6 event 5 and D4, D5: at regular queries only; unknown filament stock settles nothing."""
     sorts = filament.known_sorts(session, None)[0] if ctx.filament_known else None
-    found = reorder.suggestions(session, sorts=sorts, today=ctx.now.date())
+    found = reorder.suggestions(session, sorts=sorts, today=filament.record_day(ctx.now))
     current = {f"{s.item_type}:{s.item_id}" for s in found}
     received: dict[str, datetime] = {}
     open_marks: set[str] = set()

@@ -6,7 +6,7 @@ names the choice; an average says over how many days while the record is shorter
 """
 
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -23,7 +23,7 @@ JS = Path(__file__).resolve().parents[2] / "src" / "reprintbuddy" / "web" / "sta
 
 
 def _sort_with_record(client, days: int, per_day: float, **fields) -> int:
-    today = utcnow().date()
+    today = filament.record_day(utcnow())
     with sm_of(client).begin() as s:
         sort = make_sort(s, **fields)
         assign_sort(s, sort, name=f"Uses {sort.id}")
@@ -68,7 +68,7 @@ def test_every_view_is_in_the_row(bb_client, fake_bambuddy):
     fake_bambuddy.add_spool("PLA")
     sort = _sort_with_record(bb_client, 400, 10.0)
     row = _row(bb_client.get("/filament").text, sort)
-    today = utcnow().date()
+    today = filament.record_day(utcnow())
     days = {view: (today - start).days + 1 for view, start in filament.usage_starts(today).items()}
     assert {view: _cell(row, view) for view in filament.USAGE_VIEWS} == {
         "avg30": "10.0 g", "avg7": "10.0 g", "today": "10 g", "yesterday": "10 g",  # whole grams like the stock column
@@ -110,7 +110,7 @@ def test_the_head_names_the_choice(bb_client, fake_bambuddy):
     _sort_with_record(bb_client, 40, 10.0)
     page = bb_client.get("/filament").text
     head = re.search(r"<thead>(.*?)</thead>", page, re.S).group(1)
-    names = {v["view"]: v["name"] for v in _usage_views("en", [], utcnow().date(), utcnow().date() - timedelta(days=40))}
+    names = {v["view"]: v["name"] for v in _usage_views("en", [], filament.record_day(utcnow()), filament.record_day(utcnow()) - timedelta(days=40))}
     for view in filament.USAGE_VIEWS:
         title = en("filament.col.per_day" if view in filament.USAGE_WINDOW else "filament.usage.head_sum")
         part = re.search(rf'<span data-usage-head="{view}"[^>]*>(.*?)</span></span>', head, re.S).group(1)
@@ -153,7 +153,7 @@ def test_a_view_without_record_says_so(bb_client, fake_bambuddy):
     with sm_of(bb_client).begin() as s:
         sort = make_sort(s)
         assign_sort(s, sort)
-        make_snapshot(s, utcnow().date(), 1, sort.id, 800.0)
+        make_snapshot(s, filament.record_day(utcnow()), 1, sort.id, 800.0)
     row = _row(bb_client.get("/filament").text, sort.id)
     for view in filament.USAGE_VIEWS:
         assert en("filament.no_history") in _cell(row, view)
@@ -166,7 +166,7 @@ def test_german_texts(bb_client, fake_bambuddy):
         st.set_setting(s, "language", "de", commit=False)
     page = bb_client.get("/filament").text
     assert "Ø 30 Tage, bisher 6" in page
-    first = utcnow().date() - timedelta(days=6)
+    first = filament.record_day(utcnow()) - timedelta(days=6)
     for text in ("heute", "gestern", "diese Woche (KW ", "dieser Monat (", "dieses Jahr (", f"gesamt (seit {first:%d.%m.%Y})"):
         assert text in page
     assert de("filament.usage.choose") in page
@@ -200,3 +200,44 @@ def test_one_day_in_the_row_is_singular(bb_client, fake_bambuddy):
     short = _sort_with_record(bb_client, 1, 10.0, material="PETG", color_hex="#FFFFFF", color_name="White")
     cell = _cell(_row(bb_client.get("/filament").text, short), "avg30")
     assert "so far 1 day" in cell and "1 days" not in cell
+
+
+# ---- the days of the server's zone (Spec 9.3, 10.5a, p719) ----------------------------------------
+# The tests pin the server's zone to Europe/Berlin (`conftest.fixed_display_zone`).
+
+
+def _page_at(client, monkeypatch, now: datetime) -> str:
+    from reprintbuddy.web.routes import filament as route
+
+    monkeypatch.setattr(route, "utcnow", lambda: now)
+    return client.get("/filament").text
+
+
+def test_today_turns_over_at_the_servers_midnight(bb_client, fake_bambuddy, monkeypatch):
+    """The finding of p719: at 0:56 in Berlin (23:56 UTC) "today" showed the 1041 g of the day before."""
+    fake_bambuddy.add_spool("PLA")
+    with sm_of(bb_client).begin() as s:
+        sort = make_sort(s)
+        assign_sort(s, sort)
+        make_snapshot(s, date(2026, 11, 19), 1, sort.id, 3000.0)
+        make_snapshot(s, date(2026, 11, 20), 1, sort.id, 1959.0)
+        make_snapshot(s, date(2026, 11, 21), 1, sort.id, 1959.0)  # the first tick after midnight
+    row = _row(_page_at(bb_client, monkeypatch, datetime(2026, 11, 20, 23, 56)), sort.id)
+    assert (_cell(row, "today"), _cell(row, "yesterday")) == ("0 g", "1041 g")
+
+
+@pytest.mark.parametrize(("now", "names"), [
+    # 00:30 on 1 January 2027 in Berlin, still 2026 in UTC
+    (datetime(2026, 12, 31, 23, 30), ("this week (week 53)", "this month (January)", "this year (2027)")),
+    # 00:30 on 1 December in Berlin
+    (datetime(2026, 11, 30, 23, 30), ("this week (week 49)", "this month (December)", "this year (2026)")),
+    # 00:30 on Monday 16 November in Berlin, Sunday in UTC (week 46)
+    (datetime(2026, 11, 15, 23, 30), ("this week (week 47)", "this month (November)", "this year (2026)")),
+])
+def test_the_calendar_periods_are_those_of_the_servers_day(bb_client, fake_bambuddy, monkeypatch, now, names):
+    fake_bambuddy.add_spool("PLA")
+    with sm_of(bb_client).begin() as s:
+        assign_sort(s, make_sort(s))
+    head = re.search(r"<thead>(.*?)</thead>", _page_at(bb_client, monkeypatch, now), re.S).group(1)
+    for name in names:
+        assert name in head

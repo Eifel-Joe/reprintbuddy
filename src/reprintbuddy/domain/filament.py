@@ -24,6 +24,7 @@ from reprintbuddy.domain import color, inputs, rules, suppliers
 from reprintbuddy.domain import articlesets
 from reprintbuddy.domain import catalog
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
+from reprintbuddy.localtime import server_date
 from reprintbuddy.models import (
     Article,
     ArticleFilament,
@@ -369,6 +370,24 @@ def stock_from_snapshots(session: Session) -> tuple[dict[int, SortStock], date |
     }, latest
 
 
+def record_day(now: datetime) -> date:
+    """The day of the record, of "today" in the views of the use and of the 30 days of the
+    suggestions: the calendar day of `now` (naive UTC, or aware) in the zone of the server.
+
+    Root (p719): up to 1.2.2 these were UTC days, so at 0:56 in Berlin "today" still showed the whole
+    day before, and the tick recorded the new morning on the old day. Spec 9.3, 10.5a: the days of the
+    server's zone, which turn over at its midnight. Every place that counts these days takes it from
+    here: the tick (`poll_hook`), the filament page, the suggestions (`reorder.current`), the overview's
+    reach and the event of a new suggestion. Rows recorded up to 1.2.2 stay UTC days; around midnight
+    they lie up to a few hours off (Spec 10.5a), nothing rewrites them.
+    Rejected: the zone of the browser (the record is written by the engine without one, and two devices
+    would see different days of one row); rewriting the old rows (which hour a row was taken is not
+    stored, so its day in the server's zone is not known).
+    Tests: tests/domain/test_filament_server_days.py, tests/web/test_filament_usage_column.py.
+    """
+    return server_date(now)
+
+
 def record_snapshot(session: Session, spools: Sequence[Spool], day: date) -> int:
     """One row per non-archived spool and day; a second call on the same day overwrites. An archived
     spool keeps one last row (`_record_archived`). Returns the number of living spools."""
@@ -403,14 +422,15 @@ def record_snapshot(session: Session, spools: Sequence[Spool], day: date) -> int
 
 def _record_archived(session: Session, archived: Sequence[Spool], today: date) -> list[int]:
     """The last row of each archived spool whose latest row is still a living one; returns the ids of
-    the archived spools that have a row today.
+    the archived spools whose rows of today stay.
 
     Root (p717): until 1.2.1 the row of a spool archived on the same day was deleted, so a spool printed
     empty and archived that day lost its use of the day. Spec 9.2: its use counts up to its last weight,
     also on that day; the stock and the number of spools leave it out (`stock_from_snapshots`).
 
-    The row lands on the day of `archived_at` (UTC), never before the spool's latest row (that row is
-    overwritten) and never after today; without a time it is today. So a pause of the record, or the
+    The row lands on the day of `archived_at` in the zone of the server (p719), never before the spool's latest row (that row is
+    overwritten) and never after today, unless that latest row is already after today (an old UTC day on
+    a server west of UTC, p719); without a time it is today. So a pause of the record, or the
     update from 1.2.1 (which had dropped that row), does not move the use to today. In Spoolman mode
     Bambuddy sends the spool's last use there (else its registration): the day of its last print, as
     right for the use. Its spool sort is that of the latest row, so the spool's series stays in one sort.
@@ -441,8 +461,10 @@ def _record_archived(session: Session, archived: Sequence[Spool], today: date) -
             if last.day == today:
                 today_ids.append(spool.id)
             continue
-        wanted = spool.archived_at.date() if spool.archived_at is not None else today
-        target = min(max(wanted, last.day), today)
+        wanted = record_day(spool.archived_at) if spool.archived_at is not None else today
+        # A latest row after today: written by 1.2.2 in UTC on a server west of UTC (review p719, 1).
+        # It becomes the last row; the row of today stays (the spool keeps its use), no second one.
+        target = last.day if last.day > today else min(max(wanted, last.day), today)
         row = last
         if target != last.day:
             row = FilamentSnapshot(day=target, spool_id=spool.id, spool_filament_id=last.spool_filament_id)
@@ -451,7 +473,7 @@ def _record_archived(session: Session, archived: Sequence[Spool], today: date) -
         row.label_g = spool.label_g
         row.spool_created_at = spool.created_at
         row.archived = True
-        if target == today:
+        if target >= today:
             today_ids.append(spool.id)
     return today_ids
 
@@ -932,5 +954,5 @@ async def poll_hook(client: BambuddyClient, sm: sessionmaker, now: datetime) -> 
 
     spools = await client.list_spools()  # no transaction open during the network call
     with sm.begin() as session:
-        record_snapshot(session, spools, now.date())
+        record_snapshot(session, spools, record_day(now))
         reorder.close_arrived_marks(session, spools, now)

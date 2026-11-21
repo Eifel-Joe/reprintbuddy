@@ -630,7 +630,8 @@ class FilamentSupplier(Base):
 
 
 class FilamentSnapshot(Base):
-    """One row per UTC day and spool: what Bambuddy reported (the source of the usage). An archived
+    """One row per day and spool, the day in the server's zone (p719; rows up to 1.2.2 carry UTC days):
+    what Bambuddy reported (the source of the usage). An archived
     spool has one more row, marked `archived`, on the day it was archived (Spec 9.2, p717)."""
 
     __tablename__ = "filament_snapshots"

@@ -15,7 +15,7 @@ from fastapi import APIRouter, Request
 from sqlalchemy.orm import Session
 
 from reprintbuddy import settings as st
-from reprintbuddy.domain import assembled, catalog, inspection, orders, reorder, seen, workqueue
+from reprintbuddy.domain import assembled, catalog, filament, inspection, orders, reorder, seen, workqueue
 from reprintbuddy.models import utcnow
 from reprintbuddy.web import overview_view, printplan_view, regions
 from reprintbuddy.web.deps import current_language, db_session, get_bambuddy, render
@@ -59,7 +59,7 @@ def _tiles(request: Request, db: Session, lang: str, articles: list, state: reor
     checks = inspection.list_open(db)
     suggestions = state.suggestions
     known_stock = state.sorts is not None
-    reach = reorder.filament_reach(db, state, utcnow().date(), request.state.overview_spools) if known_stock else []
+    reach = reorder.filament_reach(db, state, filament.record_day(utcnow()), request.state.overview_spools) if known_stock else []
     return {
         "orders_tile": overview_view.orders_tile(
             lang, open_count=len(open_orders),

@@ -97,11 +97,12 @@ def test_an_archived_spool_gets_one_row_and_no_more(db):
 
 def test_the_row_lands_on_the_day_bambuddy_archived_the_spool(db):
     """A pause of the record (or the update from 1.2.1, which had dropped that row) does not move the
-    use to today: the row lands on the day of `archived_at`."""
+    use to today: the row lands on the day of `archived_at` (in the server's zone, p719: 22:50 UTC is 23:50
+    in Berlin; tests/domain/test_filament_server_days.py has the time after midnight)."""
     (spool,) = _spools(500.0)
     with db.begin() as s:
         filament.record_snapshot(s, [spool], DAY)
-        filament.record_snapshot(s, [_archived(spool, 20.0, datetime(2026, 3, 13, 23, 50))], DAY + timedelta(days=10))
+        filament.record_snapshot(s, [_archived(spool, 20.0, datetime(2026, 3, 13, 22, 50))], DAY + timedelta(days=10))
     with db.begin() as s:
         assert _rows(s) == [(DAY, spool.id, 500.0, False), (date(2026, 3, 13), spool.id, 20.0, True)]
 
