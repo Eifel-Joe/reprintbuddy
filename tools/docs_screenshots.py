@@ -274,9 +274,11 @@ class Mock:
 
 # The pictures show this version, never the installed one (p190): the menu foot, the line "installed" and
 # the card "Update" would otherwise be out of date with every release and every picture would have to be
-# taken again for a step of the version alone. The stand-in starts with 1 on purpose: no release of the
-# project looks like it, so nobody takes it for an old version.
-SHOT_VERSION = "1.2.3"
+# taken again for a step of the version alone. The stand-in lies far above every release on purpose:
+# nobody takes it for an old version, and no release reaches it. The first stand-in, 1.2.3, was chosen
+# while the project was at 0.x and became a real release; the guard in
+# tests/test_docs_screenshots_version.py caught it.
+SHOT_VERSION = "9.8.7"
 
 
 def next_version() -> str:
