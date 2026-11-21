@@ -36,7 +36,8 @@ def shots(monkeypatch):
 def test_the_stand_in_is_no_real_version(shots):
     assert re.fullmatch(r"\d+\.\d+\.\d+", shots.SHOT_VERSION)
     assert shots.SHOT_VERSION != reprintbuddy.__version__
-    assert shots.SHOT_VERSION.startswith("1.")  # no release of this project looks like it
+    # far above every release, so no release reaches it (the first stand-in, 1.2.3, became a real release)
+    assert int(shots.SHOT_VERSION.split(".")[0]) >= 9
     assert shots.next_version() != shots.SHOT_VERSION
 
 
