@@ -288,6 +288,16 @@ def test_a_part_suggestion_reports_at_a_regular_query_only(db):
     assert send_round(db, ctx(poll=True)) == []
 
 
+
+def test_the_suggestions_of_an_event_count_the_servers_days(db, monkeypatch):
+    """p719: 23:30 UTC on 20 November is the 21st in the server's zone (Europe/Berlin in the tests)."""
+    from reprintbuddy.domain import reorder
+
+    seen = []
+    monkeypatch.setattr(reorder, "suggestions", lambda session, **kw: seen.append(kw["today"]) or [])
+    round_(db, ctx(poll=True, now=datetime(2026, 11, 20, 23, 30)))
+    assert seen == [datetime(2026, 11, 21).date()]
+
 def reorder_mark(s, ref, *, gone_since=None, first_seen_at=NOW - timedelta(days=20)):
     s.add(NotifyMark(kind="reorder", ref=ref, state="sent", first_seen_at=first_seen_at, gone_since=gone_since))
 

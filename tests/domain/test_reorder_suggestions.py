@@ -583,6 +583,53 @@ def test_part_consumption_counts_by_the_booking_date(db):
         assert reorder.part_consumption(s, part.id, TODAY) == 1.0  # 30 over 30 days; by `at` it would be 129 / 1
 
 
+
+def test_part_consumption_counts_the_days_of_the_servers_zone(db):
+    """p719: the 30 days and the days of history are days of the server's zone (Europe/Berlin in the
+    tests), like the day `today` they count back from. 21 November 2026 in Berlin: the window begins at
+    00:00 on 22 October CEST, 22:00 UTC on the 21st; the oldest booking, 23:30 UTC on 10 November, is the
+    11th in Berlin, 10 days back."""
+    today = date(2026, 11, 21)
+    with db.begin() as s:
+        part = make_part(s)
+        first = datetime(2026, 11, 10, 23, 30)
+        s.add(JournalEntry(at=first, booked_at=first, actor="user", kind="inventory", qty=0))
+        assert reorder.part_consumption(s, part.id, today) == 0.0
+        for booked, qty in ((datetime(2026, 10, 21, 22, 30), 40), (datetime(2026, 10, 21, 21, 30), 99)):
+            s.add(JournalEntry(at=booked, booked_at=booked, actor="user", kind="part_consumed",
+                               part_id=part.id, qty=qty, details={"cause": "assembly"}))
+        s.flush()
+        # 00:30 on 22 October in Berlin counts, 23:30 on the 21st does not; the oldest row is now 31 days
+        # back, so 30 days of history
+        assert reorder.part_consumption(s, part.id, today) == 40 / 30
+        s.query(JournalEntry).filter(JournalEntry.kind == "part_consumed").delete()
+        s.add(JournalEntry(at=first, booked_at=first, actor="user", kind="part_consumed",
+                           part_id=part.id, qty=50, details={"cause": "assembly"}))
+        s.flush()
+        assert reorder.part_consumption(s, part.id, today) == 5.0  # 50 over 10 days (UTC: 11)
+
+
+
+def test_part_consumption_of_a_server_in_utc_counts_as_before(db, monkeypatch):
+    """Review p719, 4: with the server in UTC the window begins at 00:00 UTC, as up to 1.2.2."""
+    from reprintbuddy import localtime
+
+    monkeypatch.setattr(localtime, "SERVER_ZONE", UTC)
+    today = date(2026, 11, 21)
+    with db.begin() as s:
+        part = make_part(s)
+        first = datetime(2026, 11, 10, 23, 30)
+        s.add(JournalEntry(at=first, booked_at=first, actor="user", kind="part_consumed", part_id=part.id,
+                           qty=33, details={"cause": "assembly"}))
+        s.flush()
+        assert reorder.part_consumption(s, part.id, today) == 3.0  # 33 over 11 days: the 10th in UTC (Berlin: the 11th, 10 days)
+        for booked, qty in ((datetime(2026, 10, 22, 0, 0), 22), (datetime(2026, 10, 21, 23, 59), 99)):
+            s.add(JournalEntry(at=booked, booked_at=booked, actor="user", kind="part_consumed",
+                               part_id=part.id, qty=qty, details={"cause": "assembly"}))
+        s.flush()
+        assert reorder.part_consumption(s, part.id, today) == (33 + 22) / 30  # 00:00 UTC counts, 23:59 before not
+
+
 # ---- several suppliers per part (Spec 9.3, 9.4) -----------------------------------------------
 
 

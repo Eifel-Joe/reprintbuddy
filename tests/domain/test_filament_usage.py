@@ -2,7 +2,7 @@
 
 Ø 30 days (the default and the base of the reorder suggestions), Ø 7 days, today, yesterday, this week
 (ISO calendar week from Monday), this month, this year (calendar periods) and total (since the record
-began). Days are the days of the record (UTC, Spec 10.5a). The rule is that of `consumption` (Spec 9.2):
+began). Days are the days of the record (the server's zone, Spec 9.3, 10.5a, p719). The rule is that of `consumption` (Spec 9.2):
 only the decreases between two consecutive rows of a spool count. A drop belongs to the day of its later
 row: a period from day S counts the drops that arrive on S up to today, from the row of the day before S
 on (as "today" counts the drop from yesterday's row). An average divides by the days between the first
