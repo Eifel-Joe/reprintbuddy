@@ -11,9 +11,10 @@ Times are stored as naive UTC. Two zones (Spec 10.5a, 1.2.2):
   answer is computed in that one (`web.zone.zone_of_form`). Only the web layer uses these helpers
   (tests/test_zone_helpers_guard.py): a task started in a request keeps the request's zone.
 - The zone of the server (p183, v0.3.14: the zone the machine is set to, `timedatectl set-timezone` or
-  `TZ` for the service): `to_server_local`, `server_date`, `end_of_server_day`. For the rules that
-  compare stored days and also run without a browser (the day of marking, Spec 9.4; old counts dated
-  back, p301): their result must not depend on which device happened to look first.
+  `TZ` for the service): `to_server_local`, `server_date`, `start_of_server_day`, `end_of_server_day`.
+  For the rules that compare stored days and also run without a browser (the day of marking, Spec 9.4;
+  old counts dated back, p301; the days of the filament record and of the usage, Spec 9.3, p719): their
+  result must not depend on which device happened to look first.
 
 Root cause (1.2.2): one module variable held the zone for the whole process. A server in UTC showed
 every time an hour or two off to a browser in Berlin, and between midnight and 1 o'clock (2 in summer)
@@ -117,6 +118,12 @@ def server_date(dt: datetime) -> date:
 def end_of_server_day(day: date) -> datetime:
     """`end_of_local_day` in the zone of the server."""
     return _at(day, time.max, SERVER_ZONE)
+
+
+def start_of_server_day(day: date) -> datetime:
+    """The first moment of `day` in the zone of the server, as naive UTC (p719: the 30 days of a part's
+    usage)."""
+    return _at(day, time.min, SERVER_ZONE)
 
 
 DAY_END_MICROSECOND = 999_999  # `time.max`: a count dated back is stored at the end of its day (p260)

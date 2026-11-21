@@ -36,16 +36,17 @@ def _defaults() -> dict[str, object]:
 async def filament_list(request: Request):
     spools = await page_spools(request)  # before any write transaction
     lang = current_language(request)
-    today = utcnow().date()
+    now = utcnow()
+    today = filament.record_day(now)  # the server's day, not the browser's (Spec 9.3, p719)
     db = db_session(request)  # the rest only reads, on the request's normal session
     # The stock and the suggestions with the reorder page's function (p64): a sort with a suggestion is
     # "low" (Spec 9.4, 0.4.1), the sorts the overview's card "Filament" counts. It writes what the
     # reorder page writes (new sorts, Entscheidung 4; arrived marks closed).
     if not may_write(request):  # p230: a restore or an update runs, the page reads the record only
-        state = reorder.current(db, None, utcnow(), write=False)
+        state = reorder.current(db, None, now, write=False)
     else:
         with write_transaction(request) as tx:
-            state = reorder.current(tx, spools, utcnow())
+            state = reorder.current(tx, spools, now)
     sorts, day = state.sorts, state.day
     short = {sug.item_id for sug in state.suggestions if sug.item_type == "filament"}
     ticked = filament.ticked_sort_ids(db)  # only spool sorts ticked in an active article (Spec 9.3)
@@ -113,7 +114,7 @@ def _usage_views(lang: str, rows: list[dict[str, object]], today: date, first_da
     The calendar periods are named so that nobody takes them for the last n days: "diese Woche (KW 47)"
     (ISO week, which may begin in the year before), "dieser Monat (November)" in the language of the
     page, "dieses Jahr (2026)", and "gesamt (seit 14.11.2026)" with the first day of the record. All of
-    them are days of the record in UTC (Spec 10.5a), like `today`.
+    them are days of the record in the zone of the server (Spec 9.3, 10.5a, p719), like `today`.
     An average adds over how many days, while the record is shorter than its window ("Ø 30 Tage,
     bisher 6"). Those days are the longest of the rows shown: a sort recorded for fewer days says its own
     days in its cell, so the head never claims more than a row has.

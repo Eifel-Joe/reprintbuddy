@@ -19,7 +19,7 @@ from reprintbuddy.bambuddy.types import Spool
 from reprintbuddy.domain import catalog, filament, rules, suppliers, workqueue
 from reprintbuddy.domain import articlesets
 from reprintbuddy.domain.errors import ConflictError, NotFoundError, ValidationError
-from reprintbuddy.localtime import server_date
+from reprintbuddy.localtime import server_date, start_of_server_day
 from reprintbuddy.models import (
     naive_utc,
     Article,
@@ -145,12 +145,13 @@ def part_consumption(session: Session, part_id: int, today: date) -> float:
     assembly, "inspection good" of an article without hand work, stock in without a print with
     "deduct parts" ticked (p174: before, only assembly counted, so the parts of articles without
     hand work had a usage of 0 and their suggestions came too late). Rows count by their booking
-    date, not by when they were saved (p172).
+    date, not by when they were saved (p172). The days are those of the server's zone, like `today`
+    (p719): the window begins at its midnight, the days of history count from the oldest row's day there.
     """
     oldest = session.scalar(select(func.min(JournalEntry.booked_at)))
     if oldest is None:
         return 0.0
-    since = datetime.combine(today - timedelta(days=WINDOW_DAYS), datetime.min.time())
+    since = start_of_server_day(today - timedelta(days=WINDOW_DAYS))
     rows = session.scalars(
         select(JournalEntry).where(
             JournalEntry.kind == "part_consumed",
@@ -159,7 +160,7 @@ def part_consumption(session: Session, part_id: int, today: date) -> float:
         )
     )
     used = sum(r.qty for r in rows)
-    days = max(1, min(WINDOW_DAYS, (today - oldest.date()).days))
+    days = max(1, min(WINDOW_DAYS, (today - server_date(oldest)).days))
     return used / days
 
 
@@ -489,10 +490,10 @@ def current(session: Session, spools: Sequence[Spool] | None, now: datetime, *, 
     stay open until the next page that may write."""
     if not write:
         sorts, day = filament.known_sorts(session, None)
-        return Current(sorts, day, suggestions(session, sorts=sorts, today=now.date()))
+        return Current(sorts, day, suggestions(session, sorts=sorts, today=filament.record_day(now)))
     sorts, day = filament.known_sorts(session, spools)
     close_arrived_marks(session, spools, now)
-    return Current(sorts, day, suggestions(session, sorts=sorts, today=now.date(), spools=spools))
+    return Current(sorts, day, suggestions(session, sorts=sorts, today=filament.record_day(now), spools=spools))
 
 
 def filament_reach(

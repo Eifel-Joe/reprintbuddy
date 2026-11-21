@@ -7,6 +7,7 @@ import re
 
 from conftest import csrf_of, run_tick, sm_of
 from factories import make_article, make_filament_settings, make_sort
+from reprintbuddy.domain import filament
 from reprintbuddy.models import ArticleFilament, ArticleFilamentSort, FilamentSettings, FilamentSnapshot, FilamentSort, utcnow
 
 
@@ -111,7 +112,7 @@ def test_daily_record_through_ticker(bb_client, fake_bambuddy):
     fake_bambuddy.add_spool("PLA", color_hex="#000000", color_name="Black")
     fake_bambuddy.add_spool("PETG", color_hex="#FFFFFF", color_name="White")
     engine = bb_client.app.state.ticker
-    today = utcnow().date()
+    today = filament.record_day(utcnow())  # the server's day (p719)
 
     run_tick(engine, poll=True)
 
