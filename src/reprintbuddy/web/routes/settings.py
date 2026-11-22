@@ -67,6 +67,7 @@ SECTION_TAB = {
     "language": "general",
     "server": "general",
     "qr": "general",
+    "plan": "general",  # the reserve of the reload note in the print plan (Spec 10.2 "Reserve", p720)
     "bambuddy": "bambuddy",
     "password": "account",
     "automation": "automation",
@@ -110,6 +111,8 @@ def _page(
         "queue_cap": st.get_setting(db, "queue_cap"),
         "insert_next": st.get_setting(db, "insert_next"),
         "poll_minutes": st.get_setting(db, "poll_minutes"),
+        "plan_reserve": st.get_setting(db, "plan_reserve"),
+        "plan_reserve_grams": st.get_setting(db, "plan_reserve_grams"),
         **notify_view.stored_values(db),
     }
     values.update(typed)
@@ -187,6 +190,33 @@ async def save_qr(request: Request, db: Session = Depends(get_db)):
     except ValueError:
         return _page(request, db, "settings.invalid_qr_base_url", "qr", busy=await ops_ready(request), qr_base_url=typed)
     return _saved(request, tab=SECTION_TAB["qr"])
+
+
+@router.post("/settings/plan", dependencies=[Depends(verify_csrf)])
+async def save_plan(request: Request, db: Session = Depends(get_db)):
+    """The card "Print plan" (Spec 10.2 "Reserve", p720): the switch and the reserve per sort in grams.
+
+    An unticked box is not sent: missing means off. The grams are a whole number from 1 to 500; a wrong one
+    saves nothing, also with the switch off. With the switch off an empty field keeps the stored grams, so
+    switching off needs no number; with it on the field is required. Both in one transaction, so the log
+    names only what changed (Spec 10.7, "Reserve 30 -> 40 g").
+    """
+    form = await request.form()
+    on = form.get("plan_reserve") is not None
+    typed = str(form.get("plan_reserve_grams", "")).strip()
+    grams: int | None = None
+    if typed or on:
+        try:
+            # int() of "2.5" or "30,5" raises as well; "+40" or "40" are 40. Not a number at all: same message.
+            grams = int(st.validate("plan_reserve_grams", int(typed)))
+        except ValueError:
+            return _page(request, db, "settings.invalid_plan_reserve_grams", "plan", busy=await ops_ready(request),
+                         plan_reserve=on, plan_reserve_grams=typed)
+    with write_transaction(request) as session:
+        st.set_setting(session, "plan_reserve", on, commit=False)
+        if grams is not None:
+            st.set_setting(session, "plan_reserve_grams", grams, commit=False)
+    return _saved(request, tab=SECTION_TAB["plan"])
 
 
 @router.post("/settings/bambuddy", dependencies=[Depends(verify_csrf)])

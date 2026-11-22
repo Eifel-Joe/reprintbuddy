@@ -17,10 +17,14 @@ Es gibt **keine Konfigurationsdatei**. Jede Einstellung liegt in der Datenbank. 
 
 ## Allgemein
 
+![Der Reiter Allgemein mit Sprache, QR-Codes, der Reserve des Druckplans und dem Server](../assets/images/de/settings-general.png)
+
 | Karte und Einstellung | Wirkung | Vorgabe | Erlaubt |
 |---|---|---|---|
 | **Sprache** | Sprache der Seiten. Darunter sagt die Karte, in welcher Zeitzone dieser Browser die Zeiten sieht, siehe [Was nicht auf dieser Seite steht](#was-nicht-auf-dieser-seite-steht). | Englisch (das Installationsskript und die Ersteinrichtung fragen danach) | English, Deutsch |
 | **QR-Codes**: **Adresse für QR-Codes (nur für Sonderfälle)** | Der Anfang der Adresse in den QR-Codes. Nur nötig, wenn Reprintbuddy über einen Namen oder einen Proxy erreicht wird, zum Beispiel `https://lager.example.com`. Leer: Reprintbuddy trägt seine eigene Netzwerkadresse mit Port in die Codes ein; die Karte zeigt, welche („Ohne Eintrag tragen die Codes: …“). | leer | Eine Adresse mit `http://` oder `https://`, Rechnername und wahlweise Port. Ohne Benutzername, ohne `?` und `#`. |
+| **Druckplan**: **Reserve beim Nachladen** | Der Druckplan der Übersicht zählt eine Spulensorte schon als aufgebraucht, wenn ihr Vorrat auf die Reserve sinkt, und setzt **Nachladen** dorthin statt erst bei 0 g: Bambuddys Restgewicht ist gerechnet, nicht gewogen (nie gewogene Spulen stehen mit dem Gewicht vom Etikett drin, der Verbrauch ist die Schätzung aus der Druckdatei). Aus: Der Druckplan rechnet wie früher bis 0 g. Siehe [Filament in den Druckern](../use/overview.de.md#filament-in-den-druckern). | an | Schalter |
+| **Druckplan**: **Reserve je Sorte (g)** | Die Gramm je Sorte, die als aufgebraucht gelten. Die Hinweise **Slot … leer** rechnen ohne sie. Bei ausgeschaltetem Schalter darf das Feld leer bleiben; der gespeicherte Wert bleibt. | 30 | Ganze Zahl von 1 bis 500 |
 | **Neustart**: **Reprintbuddy neu starten** | Startet den Dienst neu, siehe [Update und Sicherung](update-backup.md#neustart). | | |
 | **Server**: **Lauschadresse** | Die Adresse, auf der Reprintbuddy lauscht. `0.0.0.0` heißt: alle Adressen des Rechners. | `0.0.0.0` | Eine Adresse, auf der dieser Rechner lauschen kann. Sonst wird das Speichern abgelehnt („Dieser Rechner kann auf dieser Adresse nicht lauschen“), weil es dich aussperren würde. |
 | **Server**: **Port** | Der Port der Weboberfläche. | `8080` | 1 bis 65535. Unter 1024 ergänzt die Seite einen Hinweis: Der vom Installationsskript eingerichtete Dienst darf solche Ports belegen, ein anders gestarteter vielleicht nicht. |

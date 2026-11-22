@@ -19,6 +19,8 @@ Per lane, in the order of its prints:
   continuing with slot k", except inside a print that feeds two needs from the pool at once.
 - **Reload**: where the pool runs dry, linear over the print's whole time; already past: "now". Only the
   first place per pool; after it the pool counts as reloaded. It names the slot in use then, the last one.
+- **Reserve** (p720): with a reserve, a pool counts as dry once its stock falls to the reserve; only the reload
+  moves, the slot notes still run to 0 g. Stock already at or below the reserve: the start of the print.
 """
 
 from __future__ import annotations
@@ -151,6 +153,20 @@ def _pool_key(pool: Sequence[AmsSlot]) -> tuple[SlotKey, ...]:
     return tuple(sorted(_key(s) for s in pool))
 
 
+def _in_use(order: Sequence[AmsSlot], grams: Mapping[SlotKey, float], used: float, chosen: AmsSlot) -> AmsSlot:
+    """The slot in use once `used` grams of the pool are gone, in drain order; with no gram left, the slot chosen.
+
+    Review p720, 1: the reload named the last slot, right while it sat at 0 g; at the reserve an earlier slot may
+    still be in use. At 0 g (`used` = the whole stock) this is the last slot, as before. Stock at or below the
+    reserve (`used` <= 0): the first slot, the one the printer starts on."""
+    filled = 0.0
+    for current in order:
+        filled += grams[_key(current)]
+        if filled >= used:
+            return current
+    return order[-1] if order else chosen
+
+
 def _moment(job: LanePrint, share: float) -> datetime:
     """Where in a print a share of its need is used up, linear over its whole print time."""
     return job.print_start + (job.end - job.print_start) * min(1.0, max(0.0, share))
@@ -158,13 +174,15 @@ def _moment(job: LanePrint, share: float) -> datetime:
 
 def lane_filament(
     prints: Sequence[LanePrint], slots: Sequence[AmsSlot], grams: Mapping[SlotKey, float],
-    backup: bool | None, now: datetime, *, prefer_lowest: bool | None = None,
+    backup: bool | None, now: datetime, *, prefer_lowest: bool | None = None, reserve: float = 0.0,
 ) -> LaneFilament:
     """Walk the prints of one lane in order (see the module text). Pure: same input, same answer.
-    `prefer_lowest`: Bambuddy's "lowest spool first"; None not known (slot order)."""
+    `prefer_lowest`: Bambuddy's "lowest spool first"; None not known (slot order). `reserve`: the grams per
+    sort that count as used up already (Spec 10.2 "Reserve"); 0 with the switch off."""
     loaded = [s for s in slots if s.loaded]
     consumed: dict[tuple[SlotKey, ...], float] = {}
-    done: set[tuple[SlotKey, ...]] = set()
+    done: set[tuple[SlotKey, ...]] = set()  # pools run dry (0 g) or of unknown stock: nothing more to note
+    named: set[tuple[SlotKey, ...]] = set()  # pools whose reload is placed (at the reserve, p720)
     reloads: list[Marker] = []
     others: list[Marker] = []
     emptied: list[Marker] = []  # p716: slots of a pool that run empty before the last one
@@ -224,17 +242,25 @@ def lane_filament(
                     moment = _moment(job, (filled - before) / need.grams)
                     emptied.append(Marker("slot_empty", current.material, current.color, current, moment,
                                           due=moment <= now, latest=unknown_before, next_slot=following))
-            if after <= supply:
-                continue
-            done.add(pool_key)
-            sort = (_material(slot.material), (slot.color or "").upper())
-            if sort in reloaded:  # a second slot of the same sort (backup off): already named
-                continue
-            reloaded.add(sort)
-            moment = _moment(job, (supply - before) / need.grams)
-            # The slot in use when the sort runs dry; with no gram left anywhere, the slot chosen.
-            reloads.append(Marker("reload", slot.material, slot.color, order[-1] if order else slot, moment,
-                                  due=moment <= now, latest=unknown_before))
+            # p720: Bambuddy's grams are reckoned, not weighed (label weight, the file's estimate), so the sort
+            # counts as used up at the reserve. Only the reload moves: the slot notes above stay at 0 g, since the
+            # printer does go on with the next slot there. Rejected: lowering each slot's grams by the reserve; that
+            # would move the slot notes and make a pool of small slots look empty.
+            usable = supply - reserve
+            if after > usable and pool_key not in named:
+                named.add(pool_key)
+                sort = (_material(slot.material), (slot.color or "").upper())
+                if sort not in reloaded:  # else a second slot of the same sort (backup off): already named
+                    reloaded.add(sort)
+                    moment = _moment(job, (usable - before) / need.grams)  # below the reserve already: the start
+                    reloads.append(Marker("reload", slot.material, slot.color, _in_use(order, grams, usable, slot),
+                                          moment, due=moment <= now, latest=unknown_before))
+            # Review p720, 2: the pool is done only at 0 g. Before p720 the reload was there too; with a reserve the
+            # slots still run empty after it, in later prints as well, and keep their notes (Spec 10.2 "Reserve":
+            # the slot notes reckon without it). Rejected: stopping at the reload; a slot note would then show
+            # inside the print of the reload but vanish in the next one.
+            if after > supply:
+                done.add(pool_key)
     return _limit(reloads, others, emptied, tuple(unknown_needs), now)
 
 

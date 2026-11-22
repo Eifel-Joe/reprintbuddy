@@ -36,6 +36,9 @@ EXPECTED_DEFAULTS = {
     "ha_token_rejected": False,
     "orders_seen_id": None,
     "reorder_seen": None,
+    # 1.2.4, Spec 10.2 "Reserve" (p720): the reload note at the reserve; on with 30 g, also after the update
+    "plan_reserve": True,
+    "plan_reserve_grams": 30,
 }
 
 
@@ -113,6 +116,10 @@ def test_bool_fields_reject_non_bool(session):
         ("poll_minutes", 1441),
         ("queue_cap", 0),
         ("queue_cap", 1000),
+        ("plan_reserve_grams", 0),
+        ("plan_reserve_grams", 501),
+        ("plan_reserve_grams", 2.5),
+        ("plan_reserve", 1),
         ("host", ""),
         ("bambuddy_username", ""),
         ("bambuddy_api_key", ""),

@@ -413,6 +413,8 @@ def _filament(
     wanted = {bar.ref for lane in plan.lanes for bar in lane.bars if bar.ref is not None}
     wanted |= {articles_by_item[b.item_id] for lane in plan.lanes for b in lane.bars if b.item_id in articles_by_item}
     article_needs = _needs_of_articles(db, wanted)
+    # Spec 10.2 "Reserve" (p720): the grams per sort that count as used up; the switch off reckons to 0 g.
+    reserve = float(st.get_setting(db, "plan_reserve_grams")) if st.get_setting(db, "plan_reserve") else 0.0  # type: ignore[arg-type]
     found: dict[int, LaneFilament] = {}
     for lane in plan.lanes:
         state = board.statuses.get(lane.printer_id)
@@ -441,7 +443,7 @@ def _filament(
             prints.append(LanePrint(bar.start, bar.end, start, needs))
         found[lane.printer_id] = lane_filament(
             prints, state.slots, board.slot_grams.get(lane.printer_id, {}), state.backup, now,
-            prefer_lowest=board.prefer_lowest,
+            prefer_lowest=board.prefer_lowest, reserve=reserve,
         )
     return found
 

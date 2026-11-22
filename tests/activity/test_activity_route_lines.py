@@ -292,6 +292,24 @@ def test_the_automation_settings_saved_on_the_page(ready_client):
     assert "poll_minutes" not in names  # unchanged
 
 
+def test_the_print_plan_reserve_saved_on_the_page(ready_client):
+    """Spec 10.2 "Reserve" (p720): "Reserve 30 -> 40 g", the switch "on -> off", only what changed."""
+    before = len(lines_of(ready_client, "settings_changed"))
+    response = ready_client.post(
+        "/settings/plan",
+        data={"csrf_token": csrf_of(ready_client, "/settings"), "plan_reserve": "on", "plan_reserve_grams": "40"},
+    )
+    assert response.status_code == 303
+    names = setting_names(new_settings_line(ready_client, before))
+    assert names == {"plan_reserve_grams": {"setting": "plan_reserve_grams", "old": 30, "new": 40}}
+    response = ready_client.post(
+        "/settings/plan", data={"csrf_token": csrf_of(ready_client, "/settings"), "plan_reserve_grams": "40"}
+    )
+    assert response.status_code == 303
+    names = setting_names(new_settings_line(ready_client, before + 1))
+    assert names == {"plan_reserve": {"setting": "plan_reserve", "old": True, "new": False}}
+
+
 def test_the_main_switch_of_the_automation_on_the_overview(ready_client):
     before = len(lines_of(ready_client, "settings_changed"))
     action = "/settings/automation/main"
