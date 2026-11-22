@@ -17,6 +17,8 @@ ValueKind = Literal[
 
 SETTINGS: dict[str, ValueKind] = {
     "language": "language",
+    "plan_reserve": "switch",  # Settings -> General, card "Print plan" (Spec 10.2 "Reserve", p720)
+    "plan_reserve_grams": "number",
     "poll_minutes": "number",
     "queue_cap": "number",
     "insert_next": "switch",
@@ -53,6 +55,9 @@ NAMES: dict[str, str] = {key: key for key in SETTINGS} | {
     "tls_key": "https_key",
     "ha_token": "ha_access_token",
 }
+
+# The unit after the numbers of a setting, by its name in the log: "Reserve: 30 -> 40 g" (Spec 10.2 "Reserve").
+UNITS: dict[str, str] = {"plan_reserve_grams": "g"}
 
 # What the log says of a value it does not show (secrets, the certificate, lists, texts).
 CHANGES: tuple[str, ...] = ("changed", "removed", "uploaded")

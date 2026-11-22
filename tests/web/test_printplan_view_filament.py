@@ -1,18 +1,28 @@
 """The reload hint in the print plan of the overview (Spec 10.2 "Filament in den Druckern", p648).
 
-09:00 UTC is 10:00 on the page (Europe/Berlin in November, `conftest.fixed_display_zone`).
+09:00 UTC is 10:00 on the page (Europe/Berlin in November, `conftest.fixed_display_zone`). The tests here
+reckon to 0 g, as before 1.2.4: the reserve (p720) is switched off for them; `test_printplan_view_reserve.py`
+has it on.
 """
 
 from datetime import datetime, timedelta
 
 import pytest
 from factories import make_article, make_dispatch, make_entry
+from reprintbuddy import settings as st
 from reprintbuddy.bambuddy.types import AmsSlot, FilamentRequirement, Printer, PrinterStatus, QueueItem
 from reprintbuddy.domain.printerboard import FileFacts, PrinterBoard
 from reprintbuddy.models import ArticleFilament
 from reprintbuddy.web import printplan_view as pv
 
 NOW = datetime(2026, 11, 19, 9, 0)  # 10:00 in Berlin
+
+
+@pytest.fixture(autouse=True)
+def reserve_off(db):
+    """Spec 10.2 "Reserve" off: the cases below keep their numbers from before p720."""
+    with db.begin() as s:
+        st.set_setting(s, "plan_reserve", False, commit=False)
 BLACK = AmsSlot(0, 1, "PLA", "#000000", True)
 
 
