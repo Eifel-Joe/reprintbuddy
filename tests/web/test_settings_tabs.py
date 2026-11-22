@@ -37,6 +37,7 @@ def test_the_tab_table_has_the_agreed_shape():
         "language": "general",
         "server": "general",
         "qr": "general",
+        "plan": "general",  # 1.2.4 p720: the card "Print plan" (Spec 10.2 "Reserve")
         "bambuddy": "bambuddy",
         "password": "account",
         "automation": "automation",
@@ -58,7 +59,7 @@ def test_eight_tabs_general_active_with_its_cards(ready_client):
         ("", "/settings?tab=log"),
     ]
     assert 'aria-current="page"' in page
-    assert card_forms(page) == ["settings-language", "settings-qr", "settings-server"]
+    assert card_forms(page) == ["settings-language", "settings-qr", "settings-plan", "settings-server"]
     assert 'id="ops-restart"' in page
     assert 'action="/settings/password"' not in page
     assert 'action="/settings/bambuddy"' not in page
@@ -89,7 +90,7 @@ def test_each_tab_shows_only_its_cards(ready_client):
 def test_an_unknown_tab_opens_general(ready_client, query):
     page = ready_client.get("/settings" + query).text
     assert tab_links(page)[0] == (" active", "/settings?tab=general")
-    assert card_forms(page) == ["settings-language", "settings-qr", "settings-server"]
+    assert card_forms(page) == ["settings-language", "settings-qr", "settings-plan", "settings-server"]
 
 
 def test_a_wrong_password_reopens_the_account_tab_with_the_error(ready_client):
@@ -241,7 +242,7 @@ def test_general_tab_columns(ready_client):  # p85
 
 
 COLUMNS_OF_TAB = {  # p104: the cards of each tab, per column, by the id a card (or its form) carries
-    "general": [["settings-language", "settings-qr", "ops-restart"], ["settings-server"]],
+    "general": [["settings-language", "settings-qr", "settings-plan", "ops-restart"], ["settings-server"]],
     "automation": [["automation-form"], []],
     "bambuddy": [["settings-bambuddy"], ["live-channel"]],
     "account": [["settings-password"], []],
