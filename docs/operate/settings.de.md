@@ -17,6 +17,8 @@ Es gibt **keine Konfigurationsdatei**. Jede Einstellung liegt in der Datenbank. 
 
 ## Allgemein
 
+![Der Reiter Allgemein mit Sprache, QR-Codes, der Reserve des Druckplans und dem Server](../assets/images/de/settings-general.png)
+
 | Karte und Einstellung | Wirkung | Vorgabe | Erlaubt |
 |---|---|---|---|
 | **Sprache** | Sprache der Seiten. Darunter sagt die Karte, in welcher Zeitzone dieser Browser die Zeiten sieht, siehe [Was nicht auf dieser Seite steht](#was-nicht-auf-dieser-seite-steht). | Englisch (das Installationsskript und die Ersteinrichtung fragen danach) | English, Deutsch |

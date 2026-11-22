@@ -75,6 +75,7 @@ from reprintbuddy.domain import assembled, catalog, filament, orders, pauses, re
 from reprintbuddy.ops.context import OpsContext  # noqa: E402
 from reprintbuddy.ops.runner import CommandResult  # noqa: E402
 from reprintbuddy.web import app as web_app  # noqa: E402
+from reprintbuddy.web import netaddr  # noqa: E402
 from reprintbuddy.web.app import create_app  # noqa: E402
 from reprintbuddy.web.routes import ops as ops_routes  # noqa: E402
 
@@ -99,7 +100,7 @@ ALL_NAMES = (
     "article-filaments", "article-detail", "queue", "inspection", "assembly", "label-preview",
     "reorder", "filament-page", "filament-settings", "orders", "parts", "sets", "set-form", "bookings", "journal",
     "assembled-form", "assembled-detail",
-    "settings-bambuddy", "settings-automation", "settings-notifications", "settings-labels",
+    "settings-general", "settings-bambuddy", "settings-automation", "settings-notifications", "settings-labels",
     "settings-log", "settings-update", "articles-mobile", "overview-mobile",
 )
 
@@ -1169,6 +1170,7 @@ def take_pages(shot: Shooter, scn: Scenario) -> None:
     shot.page("assembled-detail", f"/articles/{a['hose']}", cap=1100)
     shot.page("bookings", "/bookings", cap=990)  # the four forms; the fifth would be cut
     shot.page("journal", "/journal", before=lambda b: keep_rows(b, 15))
+    shot.page("settings-general", "/settings?tab=general")  # with the card "Print plan" (Spec 10.2 "Reserve", p720)
     shot.page("settings-bambuddy", "/settings?tab=bambuddy")
     shot.page("settings-automation", "/settings?tab=automation")
     shot.page("settings-notifications", "/settings?tab=notify", cap=1400)
@@ -1219,6 +1221,9 @@ def main() -> None:
     args = parser.parse_args()
     sys.stdout.reconfigure(line_buffering=True)  # progress lines appear at once
     freeze_application_clock()
+    # The card "QR codes" names the server's own network address (Spec 8.4); a picture must not show the address
+    # of the machine that took it. A documentation address (RFC 5737) instead; the port is the picture server's.
+    netaddr.machine_address = lambda: "192.0.2.10"
     started = time.monotonic()
     sizes: dict[str, int] = {}
     for lang in ([args.lang] if args.lang else ["en", "de"]):

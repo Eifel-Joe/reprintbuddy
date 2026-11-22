@@ -17,6 +17,8 @@ There is **no configuration file**. Every setting lives in the database. The onl
 
 ## General
 
+![The General tab with language, QR codes, the print plan's reserve and the server](../assets/images/en/settings-general.png)
+
 | Card and setting | What it does | Default | Accepts |
 |---|---|---|---|
 | **Language** | Language of the pages. Below it the card says in which time zone this browser sees the times, see [What is not on this page](#what-is-not-on-this-page). | English (the installer and the first setup ask for it) | English, Deutsch |
