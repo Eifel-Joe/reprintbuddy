@@ -947,6 +947,16 @@ body.queue-dragging { cursor: grabbing; user-select: none; -webkit-user-select: 
   width: min(18rem, 100%); margin-top: 0;
 }
 .setting-control input[type="checkbox"] { margin: 0; }
+/* p781: next to a long hint the box of the field shrank (flex-shrink 1, min-width 0) and the field, whose width is
+   "100% of its box" in the rule above, shrank with it: 500 showed as "50", the last digit behind the spin arrows
+   (measured at 1024 px: 9 px of room for a text 24 px wide). The field keeps its width of 6.5rem (the wrapper of
+   the arrows, spinbox.js, and the box keep it too); the hint gives way, it wraps. Below 900 px the rows wrap and
+   the field fills its row, as before. Test: test_number_fields_fit.py. */
+@media (min-width: 900px) {
+  .setting-control:has(input[type="number"]) { flex: 0 0 auto; }
+  .setting-control .spin { flex: none; }
+  .setting-control input[type="number"]:not([type="checkbox"]):not([type="file"]) { width: 6.5rem; }
+}
 /* Wide fields (PEM text, files): under their label, across the whole card. */
 .setting-row.stack { flex-direction: column; align-items: stretch; gap: 6px; }
 .setting-row.stack .setting-control { width: 100%; flex: none; }
