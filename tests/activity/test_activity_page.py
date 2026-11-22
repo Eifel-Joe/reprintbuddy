@@ -172,3 +172,21 @@ def test_the_way_back_is_named_in_the_log(ready_client):
                                     details={"from": "v1.1.0-beta.1", "to": "v1.0.0", "result": "done", "return": True}))
     html = ready_client.get(PAGE).text
     assert "Way back to the stable version" in html
+
+
+def test_the_reserve_is_shown_in_grams_in_both_languages(ready_client):
+    """Spec 10.2 "Reserve": the log says "Reserve 30 → 40 g" (Spec 10.7: numbers and switches old → new)."""
+    with sm_of(ready_client).begin() as s:
+        s.query(ActivityEntry).delete()
+    add(
+        ready_client,
+        ActivityEntry(at=datetime(2026, 11, 22, 8, 0), area="settings", kind="settings_changed", actor="user",
+                      details={"settings": [{"setting": "plan_reserve", "old": True, "new": False},
+                                            {"setting": "plan_reserve_grams", "old": 30, "new": 40}]}),
+    )
+    (row,) = [text_of(r) for r in table_rows(ready_client.get(PAGE).text)]
+    assert "Reserve when reloading: on → off" in row and "Reserve: 30 → 40 g" in row
+    with sm_of(ready_client).begin() as s:
+        st.set_setting(s, "language", "de", commit=False)  # itself a line of the log, newest first
+    (row,) = [text_of(r) for r in table_rows(ready_client.get(PAGE).text) if "Reserve" in r]
+    assert "Reserve beim Nachladen: an → aus" in row and "Reserve: 30 → 40 g" in row

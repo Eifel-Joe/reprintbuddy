@@ -46,6 +46,19 @@
   </form>
 </section>
 
+{# The reserve of the reload note in the print plan of the overview (Spec 10.2 "Reserve", p720). Here and not
+   on the filament pages: it is about the plan, not about a sort. No `required` on the grams: switching off
+   needs no number (an empty field keeps the stored one). #}
+<section class="card" id="plan-reserve-card">
+  {% call ui.card_head("clock", t('settings.plan_title')) %}<button class="btn" type="submit" form="settings-plan">{{ t('settings.save') }}</button>{% endcall %}
+  {% if error and error_section == 'plan' %}<p class="alert" role="alert">{{ t(error) }}</p>{% endif %}
+  <form id="settings-plan" method="post" action="/settings/plan">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% call ui.setting_row(t('settings.plan_reserve'), t('settings.plan_reserve_hint'), "plan-reserve") %}{{ ui.switch("plan_reserve", plan_reserve, t('settings.plan_reserve'), "plan-reserve") }}{% endcall %}
+    {% call ui.setting_row(t('settings.plan_reserve_grams'), t('settings.plan_reserve_grams_hint'), "plan-reserve-grams") %}<input type="number" id="plan-reserve-grams" name="plan_reserve_grams" value="{{ plan_reserve_grams }}" min="1" max="500" step="1" inputmode="numeric">{% endcall %}
+  </form>
+</section>
+
 <section class="card" id="ops-restart">
   {% call ui.card_head("refresh-cw", t('ops.restart.title')) %}
   <form method="post" action="/settings/restart">
