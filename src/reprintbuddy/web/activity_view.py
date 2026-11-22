@@ -13,6 +13,7 @@ from fastapi import Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from reprintbuddy.activity import values
 from reprintbuddy.activity.kinds import ACTORS, AREAS
 from reprintbuddy.i18n import load_locales, translate
 from reprintbuddy.models import ActivityEntry
@@ -63,7 +64,9 @@ def _setting_line(lang: str, change: dict[str, Any]) -> str:
     label = _t(lang, f"activity.setting.{change.get('setting')}")
     if "change" in change:
         return f"{label}: {_t(lang, 'activity.change.' + str(change['change']))}"
-    return f"{label}: {_value(lang, change.get('old'))} → {_value(lang, change.get('new'))}"
+    unit = values.UNITS.get(str(change.get("setting")))
+    line = f"{label}: {_value(lang, change.get('old'))} → {_value(lang, change.get('new'))}"
+    return f"{line} {unit}" if unit else line
 
 
 def _withdrawn_lines(lang: str, details: dict[str, Any]) -> list[str]:

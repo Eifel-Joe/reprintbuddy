@@ -71,6 +71,10 @@ DEFAULTS: dict[str, object] = {
     # shared by every device; set by Reprintbuddy, not shown. None: the page was never loaded.
     "orders_seen_id": None,  # the highest order id when /orders was last loaded
     "reorder_seen": None,  # the suggestions /reorder showed then, as "filament:3", "part:7"
+    # The print plan counts a sort as used up at this reserve (Spec 10.2 "Reserve", p720). No migration: an
+    # update from 1.2.3 has no row, so these defaults apply, on with 30 g as the spec wants after the update.
+    "plan_reserve": True,
+    "plan_reserve_grams": 30,
 }
 
 SENSITIVE: frozenset[str] = frozenset({"bambuddy_api_key", "tls_key", "ha_token"})
@@ -361,6 +365,8 @@ _VALIDATORS: dict[str, Callable[[Any], object]] = {
     "ha_token_rejected": _bool,
     "orders_seen_id": _seen_id,
     "reorder_seen": _seen_keys,
+    "plan_reserve": _bool,
+    "plan_reserve_grams": _int_range(1, 500),
 }
 
 

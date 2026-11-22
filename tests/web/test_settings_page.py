@@ -464,6 +464,7 @@ def test_all_settings_posts_require_csrf(ready_client):
         "/settings/notify",
         "/settings/notify/test",
         "/settings/password",
+        "/settings/plan",  # 1.2.4 p720: the reserve of the print plan
         "/settings/qr",
         "/settings/restart",
         "/settings/restore",
