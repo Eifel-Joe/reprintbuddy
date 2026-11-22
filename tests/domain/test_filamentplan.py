@@ -371,3 +371,37 @@ def test_reserve_after_an_unknown_need_is_still_at_the_latest():
     r = lane_filament([unknown(10, 11), job(11, 19, pla(80))], [BLACK], {(0, 0): 100.0}, None, NOW, reserve=30)
     (m,) = r.markers
     assert (m.kind, m.at, m.latest) == ("reload", at(18), True)
+
+
+def test_reserve_names_the_slot_in_use_where_the_stock_reaches_the_reserve():
+    """Review p720, 1: slot 1 holds 100 g, slot 2 10 g, reserve 30 g. 105 g over 10-17 (15 g an hour): the sort
+    reaches the reserve after 80 g, at 15:20, while slot 1 is still in use; slot 1 empties at 16:40 as before."""
+    grams = {(0, 0): 100.0, (0, 1): 10.0}
+    r = lane_filament([job(10, 17, pla(105))], [BLACK, BLACK_2], grams, True, NOW, reserve=30)
+    assert slots(r) == [("reload", at(15, 20), BLACK, None), ("slot_empty", at(16, 40), BLACK, BLACK_2)]
+
+
+def test_reserve_keeps_slot_notes_after_the_reload_in_a_later_print():
+    """Review p720, 2: the slot notes reckon without the reserve, also in a print after the reload. 90 g over 10-13
+    reaches the reserve (80 g) at 12:40; slot 1 empties 10 g into the next print, at 14:00, as without reserve."""
+    jobs = [job(10, 13, pla(90)), job(13, 17, pla(40))]
+    grams = {(0, 0): 100.0, (0, 1): 10.0}
+    without = lane_filament(jobs, [BLACK, BLACK_2], grams, True, NOW)
+    assert slots(without) == [("slot_empty", at(14), BLACK, BLACK_2), ("reload", at(15), BLACK_2, None)]
+    r = lane_filament(jobs, [BLACK, BLACK_2], grams, True, NOW, reserve=30)
+    assert slots(r) == [("reload", at(12, 40), BLACK, None), ("slot_empty", at(14), BLACK, BLACK_2)]
+
+
+def test_reserve_with_lowest_spool_first_crossed_inside_the_first_slot():
+    """Lowest first: slot 2 (60 g) before slot 1 (300 g); reserve 330 g of 360 g is reached after 30 g, inside slot 2."""
+    grams = {(0, 0): 300.0, (0, 1): 60.0}
+    r = lane_filament([job(10, 16, pla(120))], [BLACK, BLACK_2], grams, True, NOW, prefer_lowest=True, reserve=330)
+    assert slots(r) == [("reload", at(11, 30), BLACK_2, None), ("slot_empty", at(13), BLACK_2, BLACK)]
+
+
+def test_reserve_with_backup_off_counts_per_slot_and_names_the_sort_once():
+    """Backup off: the chosen slot alone, the reserve against its grams; a second slot of the sort adds nothing."""
+    jobs = [job(10, 14, pla(80)), job(14, 18, pla(80))]
+    grams = {(0, 0): 100.0, (0, 1): 100.0}
+    r = lane_filament(jobs, [BLACK, BLACK_2], grams, False, NOW, reserve=30)
+    assert slots(r) == [("reload", at(13, 30), BLACK, None)]
